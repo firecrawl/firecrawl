@@ -14,7 +14,7 @@ import {
 } from "./types";
 import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
-import { TransportableError } from "../../lib/error";
+import { isTransportableError } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import { withSpan, setSpanAttributes, SpanKind } from "../../lib/otel-tracer";
@@ -610,17 +610,16 @@ export async function parseController(
         }
 
         const timeoutErr =
-          e instanceof TransportableError &&
+          isTransportableError(e) &&
           (e.code === "SCRAPE_TIMEOUT" ||
             e.code === "CONCURRENCY_QUEUE_TIMEOUT");
 
         setSpanAttributes(span, {
           "parse.error": e instanceof Error ? e.message : String(e),
-          "parse.error_type":
-            e instanceof TransportableError ? e.code : "unknown",
+          "parse.error_type": isTransportableError(e) ? e.code : "unknown",
         });
 
-        if (e instanceof TransportableError) {
+        if (isTransportableError(e)) {
           if (!timeoutErr) {
             logger.error("Error in parseController", {
               version: "v2",

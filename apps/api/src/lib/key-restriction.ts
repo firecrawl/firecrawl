@@ -124,18 +124,14 @@ const ENDPOINT_GROUPS: [string[], string][] = [
   [["developer"], "research"],
   [["llmstxt"], "llmstxt"],
   [["deep-research"], "deep-research"],
+  [["team"], "account"],
+  [["concurrency-check"], "account"],
+  [["slack"], "account"],
 ];
 
-// Account/metadata endpoints that never fetch web content; always reachable
-// so restricted keys keep working with SDK bookkeeping calls.
-const ALWAYS_ALLOWED_PREFIXES = [
-  "team",
-  "concurrency-check",
-  "feedback",
-  "slack",
-  "support",
-  "keyless",
-];
+// Metadata/support endpoints that never fetch web content; always reachable
+// regardless of the endpoint allowlist.
+const ALWAYS_ALLOWED_PREFIXES = ["feedback", "support", "keyless"];
 
 function matchSegments(segments: string[], pattern: string[]): boolean {
   if (segments.length < pattern.length) return false;

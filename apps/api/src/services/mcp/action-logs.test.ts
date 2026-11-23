@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
+import { config } from "../../config";
 
 const ch = vi.hoisted(() => ({
   client: { query: vi.fn() } as { query: ReturnType<typeof vi.fn> } | null,
@@ -99,6 +100,46 @@ describe("MCP action log contract", () => {
     expect(() => input({ resource: "https://example.com/v2/mcp" })).toThrow(
       "resource must be a canonical hosted MCP URL",
     );
+  });
+
+  it("accepts a prefixed resource only under a configured prefix", () => {
+    const previous = config.MCP_ACTION_LOG_RESOURCE_PREFIXES;
+    const refusal = "resource must be a canonical hosted MCP URL";
+    const prefixed = "https://builds.example.com/build-1a2b3c4/v2/mcp-oauth";
+    try {
+      config.MCP_ACTION_LOG_RESOURCE_PREFIXES = undefined;
+      expect(() => input({ resource: prefixed })).toThrow(refusal);
+
+      config.MCP_ACTION_LOG_RESOURCE_PREFIXES =
+        "https://builds.example.com/, https://other.example.com/mcp/";
+      for (const resource of [
+        prefixed,
+        "https://builds.example.com/a/v2/mcp",
+        "https://builds.example.com/build-1/v2/mcp-search",
+        "https://other.example.com/mcp/build-1/v2/mcp-oauth",
+        "https://mcp.firecrawl.dev/v2/mcp",
+      ]) {
+        expect(input({ resource }).resource).toBe(resource);
+      }
+      for (const resource of [
+        "https://builds.example.com/v2/mcp-oauth",
+        "https://builds.example.com/build-1/v2/other",
+        "https://builds.example.com/build-1/v2/mcp-oauth/",
+        "https://builds.example.com/build-1/v2/mcp-oauth?key=x",
+        "https://builds.example.com/build-1/extra/v2/mcp-oauth",
+        "https://builds.example.com/../build-1/v2/mcp-oauth",
+        "https://builds.example.com/Build-1/v2/mcp-oauth",
+        "https://builds.example.com/-build/v2/mcp-oauth",
+        "https://builds.example.com.evil.example/build-1/v2/mcp-oauth",
+        "http://builds.example.com/build-1/v2/mcp-oauth",
+        "https://other.example.com/build-1/v2/mcp-oauth",
+        "https://example.com/v2/mcp",
+      ]) {
+        expect(() => input({ resource })).toThrow(refusal);
+      }
+    } finally {
+      config.MCP_ACTION_LOG_RESOURCE_PREFIXES = previous;
+    }
   });
 
   it("accepts UUIDv7 request IDs", () => {

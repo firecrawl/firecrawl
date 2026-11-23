@@ -1,3 +1,4 @@
+import compression from "compression";
 import express, { Request, Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { z } from "zod";
@@ -634,6 +635,7 @@ function paperId(req: Request) {
 
 export function createResearchRouter(options: { legacy?: boolean } = {}) {
   const router = express.Router();
+  router.use(compression({ threshold: 1024 }));
 
   if (options.legacy) {
     router.use((req, _res, next) => {

@@ -45,6 +45,7 @@ interface ScrapeSearchOptions {
   keylessReserved?: boolean;
   threatProtectionPolicy?: ThreatProtectionPolicy | null;
   safeModeBypassed?: boolean;
+  workContactOnly?: boolean;
 }
 
 async function scrapeSearchResultDirect(
@@ -97,6 +98,7 @@ async function scrapeSearchResultDirect(
           agentIndexOnly: options.agentIndexOnly ?? false,
           threatProtection: options.threatProtectionPolicy ?? undefined,
           safeModeBypassed: options.safeModeBypassed === true,
+          ...(options.workContactOnly ? { workContactOnly: true } : {}),
         },
         skipNuq: true,
         origin: options.origin,

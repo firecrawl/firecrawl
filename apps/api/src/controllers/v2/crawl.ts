@@ -254,6 +254,7 @@ export async function crawlController(
               allowExternalLinks: false,
               useIndex: true,
               maxFireEngineResults: 500,
+              zeroDataRetention,
             });
           return generateCrawlerOptionsFromPrompt(
             enhancedPrompt,
