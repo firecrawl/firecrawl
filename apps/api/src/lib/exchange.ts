@@ -4,7 +4,7 @@ import { z } from "zod";
 import { config } from "../config";
 import type { DocumentProvider, FormatObject } from "../controllers/v2/types";
 import { hasLedgerAcceptance } from "../services/alexandria/terms";
-import { type ErrorCodes, TransportableError } from "./error";
+import { type ErrorCode, TransportableError } from "./error";
 import { logger as rootLogger } from "./logger";
 import { isXTwitterUrl } from "./x-twitter-url";
 
@@ -701,6 +701,10 @@ export function getEnrichmentSettingsUrl(): string {
  * the error is one entry of a list.
  */
 export class ThirdPartyDataTermsRequiredError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "THIRD_PARTY_DATA_TERMS_REQUIRED",
+  ];
+
   public readonly terms: ExchangeTerms;
   /** Set when the provider is a step in the team's enrichment order, which can drop it instead. */
   public readonly enrichment: boolean;
@@ -745,7 +749,7 @@ export class ThirdPartyDataTermsRequiredError extends TransportableError {
   }
 
   static deserialize(
-    _code: ErrorCodes,
+    _code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ThirdPartyDataTermsRequiredError(data.terms, {
@@ -761,6 +765,10 @@ export class ThirdPartyDataTermsRequiredError extends TransportableError {
  * option the provider's data can't honor.
  */
 export class ThirdPartyDataUnsupportedOptionError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "THIRD_PARTY_DATA_UNSUPPORTED_OPTION",
+  ];
+
   public readonly option: string;
 
   constructor(option: string) {
@@ -788,7 +796,7 @@ export class ThirdPartyDataUnsupportedOptionError extends TransportableError {
   }
 
   static deserialize(
-    _code: ErrorCodes,
+    _code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ThirdPartyDataUnsupportedOptionError(data.option);

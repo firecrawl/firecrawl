@@ -16,6 +16,7 @@ import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
 import {
   getTimeoutProcessingDetails,
+  isTransportableError,
   TransportableError,
 } from "../../lib/error";
 import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
@@ -471,17 +472,16 @@ export async function scrapeController(
         }
 
         const timeoutErr =
-          e instanceof TransportableError &&
+          isTransportableError(e) &&
           (e.code === "SCRAPE_TIMEOUT" ||
             e.code === "CONCURRENCY_QUEUE_TIMEOUT");
 
         setSpanAttributes(span, {
           "scrape.error": e instanceof Error ? e.message : String(e),
-          "scrape.error_type":
-            e instanceof TransportableError ? e.code : "unknown",
+          "scrape.error_type": isTransportableError(e) ? e.code : "unknown",
         });
 
-        if (e instanceof TransportableError) {
+        if (isTransportableError(e)) {
           if (!timeoutErr) {
             logger.error(`Error in scrapeController`, {
               version: "v2",
