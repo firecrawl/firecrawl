@@ -1,0 +1,26 @@
+apps/api/src/lib/job-priority.ts
+  s_5c00d0c4ec2dfa::t_bc1514762f3b3d 7-12,19-22,24-27,38,64-66
+apps/api/src/lib/__tests__/job-priority.test.ts
+  s_5c00d0c4ec2dfa::t_28612d5ca879f0 188-234
+apps/api/src/lib/redis-timeout.ts
+  s_5c00d0c4ec2dfa::t_bde83a1bbc722f 1
+  s_5c00d0c4ec2dfa::t_2f2f3dd4f8913b 2-31
+apps/api/src/lib/__tests__/redis-timeout.test.ts
+  s_5c00d0c4ec2dfa::t_4f220d6d4d2bb5 1-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a6ef9b78fddcac54e67b18ad695a72e3c476c12c",
+  "prompts": {},
+  "sessions": {
+    "s_5c00d0c4ec2dfa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c92271bf-a8e6-452c-8df9-37e5fba35b34",
+        "model": "claude-mythos-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

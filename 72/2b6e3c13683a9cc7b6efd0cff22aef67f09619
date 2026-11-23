@@ -1,0 +1,23 @@
+apps/api/src/services/alexandria/retrieve.test.ts
+  s_5c00d0c4ec2dfa::t_c6302136c7c160 2,7-16,960-978
+  s_5c00d0c4ec2dfa::t_5d4e95b45939f7 55,82-90,408,753,811,863,892,909,919-959,998
+apps/api/src/services/alexandria/retrieve.ts
+  s_5c00d0c4ec2dfa::t_4b14e27e4005cc 2,69,77-84,334-335
+  s_5c00d0c4ec2dfa::t_a0d17fb1eafa66 3,68,70-76,323-324
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "722b6e3c13683a9cc7b6efd0cff22aef67f09619",
+  "prompts": {},
+  "sessions": {
+    "s_5c00d0c4ec2dfa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c92271bf-a8e6-452c-8df9-37e5fba35b34",
+        "model": "claude-mythos-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}

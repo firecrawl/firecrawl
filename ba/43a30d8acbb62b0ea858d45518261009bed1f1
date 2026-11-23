@@ -1,0 +1,28 @@
+apps/api/src/lib/crawl-redis.ts
+  s_5c00d0c4ec2dfa::t_9b218802b1815a 1,1226-1242,1245-1254
+  s_5c00d0c4ec2dfa::t_ae1e5195b24ed1 1001-1071,1074-1094,1096-1199,1203-1225,1244
+  s_5c00d0c4ec2dfa::t_73b642a96d252a 1243
+apps/api/src/lib/crawl-redis-lock-batch.test.ts
+  s_5c00d0c4ec2dfa::t_ed6536888c1af1 1-315
+  s_5c00d0c4ec2dfa::t_57d9da00fa3093 316-438
+apps/api/src/services/worker/scrape-worker.ts
+  s_5c00d0c4ec2dfa::t_3c0c85923be460 127-128,777-778,860-865
+  s_5c00d0c4ec2dfa::t_ded6d0891281f2 26,32,779-793,795,797-826,828-837,839-841,843-854,856-859
+  s_5c00d0c4ec2dfa::t_973b5525fae708 758-759,769-776,794,827
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ba43a30d8acbb62b0ea858d45518261009bed1f1",
+  "prompts": {},
+  "sessions": {
+    "s_5c00d0c4ec2dfa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c92271bf-a8e6-452c-8df9-37e5fba35b34",
+        "model": "claude-mythos-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
