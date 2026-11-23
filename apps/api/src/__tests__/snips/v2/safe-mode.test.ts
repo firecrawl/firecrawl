@@ -325,6 +325,18 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
           "/exchange/provider-terms",
           undefined,
         ],
+        [
+          "POST /exchange/provider-terms/accept",
+          "post",
+          "/exchange/provider-terms/accept",
+          {},
+        ],
+        [
+          "GET /exchange/recommendations",
+          "get",
+          "/exchange/recommendations",
+          undefined,
+        ],
       ] as const)(
         "refuses %s",
         async (_name, method, path, body) => {
