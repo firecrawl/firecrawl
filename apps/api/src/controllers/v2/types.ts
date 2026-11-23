@@ -21,7 +21,9 @@ import {
 } from "../../lib/entities";
 import {
   agentOptionsExtract,
+  agentRemovedRefineOpts,
   AuthCreditUsageChunk,
+  isAgentExtractModelValid,
   ScrapeOptions as V1ScrapeOptions,
 } from "../v1/types";
 import type { InternalOptions } from "../../scraper/scrapeURL";
@@ -1098,6 +1100,10 @@ const extractOptions = z
   .refine(obj => obj.urls || obj.prompt, {
     error: "Either 'urls' or 'prompt' must be provided.",
   })
+  .refine(
+    obj => !isAgentExtractModelValid(obj.agent?.model),
+    agentRemovedRefineOpts,
+  )
   .transform(obj => ({
     ...obj,
     allowExternalLinks: obj.allowExternalLinks || obj.enableWebSearch,

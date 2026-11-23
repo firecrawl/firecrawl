@@ -576,9 +576,9 @@ const baseScrapeOptions = z.strictObject({
   __forceFirePDF: z.boolean().prefault(false).optional(),
 });
 
-const fire1RefineOpts = {
+export const agentRemovedRefineOpts = {
   message:
-    "You may only specify the FIRE-1 model in agent or jsonOptions.agent, but not both.",
+    "The 'agent' option (FIRE-1) has been removed. Use /v2/agent for tasks that need navigation, or a 'json' format on /v2/scrape for structured data from a page. See https://docs.firecrawl.dev/features/agent.",
 } as const;
 
 const waitForRefineOpts = {
@@ -678,15 +678,8 @@ const scrapeOptionsBase = baseScrapeOptions.extend({
 
 type ScrapeOptionsBase = z.infer<typeof scrapeOptionsBase>;
 
-const fire1Refine = (obj: ScrapeOptionsBase): boolean => {
-  if (
-    obj.agent?.model?.toLowerCase() === "fire-1" &&
-    obj.jsonOptions?.agent?.model?.toLowerCase() === "fire-1"
-  ) {
-    return false;
-  }
-  return true;
-};
+const agentRemovedRefine = (obj: ScrapeOptionsBase): boolean =>
+  !obj.agent && !obj.jsonOptions?.agent && !obj.extract?.agent;
 
 const waitForRefine = (obj?: ScrapeOptionsBase): boolean => {
   if (obj && obj.waitFor !== undefined && obj.timeout !== undefined) {
@@ -725,7 +718,7 @@ export const scrapeOptions = scrapeOptionsBase
     },
   )
   .refine(extractRefine, extractRefineOpts)
-  .refine(fire1Refine, fire1RefineOpts)
+  .refine(agentRemovedRefine, agentRemovedRefineOpts)
   .refine(waitForRefine, waitForRefineOpts)
   .transform(obj => {
     return extractTransform(obj) as typeof obj;
@@ -808,6 +801,10 @@ const extractV1Options = z
   .refine(obj => obj.urls || obj.prompt, {
     error: "Either 'urls' or 'prompt' must be provided.",
   })
+  .refine(
+    obj => !isAgentExtractModelValid(obj.agent?.model),
+    agentRemovedRefineOpts,
+  )
   .transform(obj => ({
     ...obj,
     allowExternalLinks: obj.allowExternalLinks || obj.enableWebSearch,
@@ -817,8 +814,8 @@ const extractV1Options = z
     extractRefineOpts,
   )
   .refine(
-    x => (x.scrapeOptions ? fire1Refine(x.scrapeOptions) : true),
-    fire1RefineOpts,
+    x => (x.scrapeOptions ? agentRemovedRefine(x.scrapeOptions) : true),
+    agentRemovedRefineOpts,
   )
   .refine(
     x => (x.scrapeOptions ? waitForRefine(x.scrapeOptions) : true),
@@ -858,7 +855,7 @@ const scrapeRequestSchemaBase = baseScrapeOptions
 
 export const scrapeRequestSchema = scrapeRequestSchemaBase
   .refine(extractRefine, extractRefineOpts)
-  .refine(fire1Refine, fire1RefineOpts)
+  .refine(agentRemovedRefine, agentRemovedRefineOpts)
   .refine(waitForRefine, waitForRefineOpts)
   .transform(obj => {
     return extractTransform(obj) as typeof obj;
@@ -881,7 +878,7 @@ const batchScrapeRequestSchemaBase = baseScrapeOptions.extend({
 export const batchScrapeRequestSchema = batchScrapeRequestSchemaBase
   .strict()
   .refine(extractRefine, extractRefineOpts)
-  .refine(fire1Refine, fire1RefineOpts)
+  .refine(agentRemovedRefine, agentRemovedRefineOpts)
   .refine(waitForRefine, waitForRefineOpts)
   .transform(obj => extractTransform(obj) as typeof obj);
 
@@ -900,7 +897,7 @@ export const batchScrapeRequestSchemaNoURLValidation =
   batchScrapeRequestSchemaNoURLValidationBase
     .strict()
     .refine(extractRefine, extractRefineOpts)
-    .refine(fire1Refine, fire1RefineOpts)
+    .refine(agentRemovedRefine, agentRemovedRefineOpts)
     .refine(waitForRefine, waitForRefineOpts)
     .transform(obj => extractTransform(obj) as typeof obj);
 
@@ -966,8 +963,8 @@ export const crawlRequestSchema = crawlRequestSchemaBase
     extractRefineOpts,
   )
   .refine(
-    x => (x.scrapeOptions ? fire1Refine(x.scrapeOptions) : true),
-    fire1RefineOpts,
+    x => (x.scrapeOptions ? agentRemovedRefine(x.scrapeOptions) : true),
+    agentRemovedRefineOpts,
   )
   .refine(
     x => (x.scrapeOptions ? waitForRefine(x.scrapeOptions) : true),
@@ -1716,7 +1713,7 @@ export const searchRequestSchema = z
       .prefault({}),
   })
   .refine(x => extractRefine(x.scrapeOptions), extractRefineOpts)
-  .refine(x => fire1Refine(x.scrapeOptions), fire1RefineOpts)
+  .refine(x => agentRemovedRefine(x.scrapeOptions), agentRemovedRefineOpts)
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => ({
     ...x,
