@@ -2,6 +2,7 @@
  * The service: what one deployment of the API is made of, built once from a
  * config and read by the rest of the code.
  */
+import type { TransportableErrorClass } from "../lib/error";
 import {
   buildHooks,
   type HookHandlers,
@@ -34,6 +35,12 @@ export interface Extension {
   /** The owner of everything listed here, as `describe()` shows it. */
   name: string;
   hooks?: HookHandlers;
+  /**
+   * Error classes that can cross the job queue. A function is called the first
+   * time the service looks an error up, so that listing classes does not load
+   * them when the service is built.
+   */
+  errors?: TransportableErrorClass[] | (() => TransportableErrorClass[]);
   /** Process roles, by name. A later extension replaces a role of the same name. */
   workers?: Record<string, Worker>;
 }
@@ -60,13 +67,22 @@ export interface ServiceDescription {
   modules: string[];
   /** For each hook point with a handler, the owner of each handler, in the order they run. */
   hooks: Record<string, string[]>;
+  /** For each error code with a class, the extension the class comes from. */
+  errors: Record<string, string>;
   /** For each process role, the extension it comes from. */
   roles: Record<string, string>;
+}
+
+/** The error classes of a service, by the code each carries across the job queue. */
+export interface ErrorRegistry {
+  /** The class registered under a code, or undefined when the service has none. */
+  classFor(code: string): TransportableErrorClass | undefined;
 }
 
 export interface Service {
   readonly modules: Readonly<Modules>;
   readonly hooks: Hooks;
+  readonly errors: ErrorRegistry;
   readonly workers: Readonly<Record<string, Worker>>;
   /** What the service was made of when it was created. Each call returns a copy. */
   describe(): ServiceDescription;
@@ -100,6 +116,41 @@ export function createService(
     (hook, error) => parts.logger.error("Hook handler failed", { hook, error }),
   );
 
+  // Snapshot extension names and error sources at creation so mutating an
+  // extension later cannot change what loads or is described, while keeping
+  // lazy error loaders deferred until first lookup.
+  const errorSources = extensions.map(extension => ({
+    owner: extension.name,
+    errors:
+      typeof extension.errors === "function"
+        ? extension.errors
+        : [...(extension.errors ?? [])],
+  }));
+
+  type RegisteredError = { owner: string; errorClass: TransportableErrorClass };
+  let errorsByCode: Map<string, RegisteredError> | undefined;
+  const registeredErrors = () => {
+    if (errorsByCode) return errorsByCode;
+    const byCode = new Map<string, RegisteredError>();
+    for (const source of errorSources) {
+      const listed =
+        typeof source.errors === "function" ? source.errors() : source.errors;
+      for (const errorClass of listed) {
+        for (const code of errorClass.codes) {
+          const taken = byCode.get(code);
+          if (taken) {
+            throw new Error(
+              `Error code "${code}" is registered by "${taken.owner}" and by "${source.owner}"`,
+            );
+          }
+          byCode.set(code, { owner: source.owner, errorClass });
+        }
+      }
+    }
+    errorsByCode = byCode;
+    return byCode;
+  };
+
   // Worked out here, from the extensions as the handlers and roles above were
   // just read from them, so it stays true to what the service runs whatever
   // happens to an extension object later. The two records have no prototype,
@@ -119,7 +170,7 @@ export function createService(
       roleOwners[role] = extension.name;
     }
   }
-  const description: ServiceDescription = {
+  const baseDescription = {
     extensions: names,
     modules: Object.keys(modules).sort(),
     hooks: sortedByKey(handlerOwners),
@@ -129,8 +180,24 @@ export function createService(
   return Object.freeze({
     modules,
     hooks,
+    errors: Object.freeze({
+      classFor: (code: string) => registeredErrors().get(code)?.errorClass,
+    }),
     workers,
-    describe: () => structuredClone(description),
+    describe(): ServiceDescription {
+      // Built from entries, so that a code is listed whatever its name is.
+      const errors = Object.fromEntries(
+        [...registeredErrors()].map(([code, { owner }]) => [code, owner]),
+      );
+      const copy = structuredClone(baseDescription);
+      return {
+        extensions: copy.extensions,
+        modules: copy.modules,
+        hooks: copy.hooks,
+        errors: sortedByKey(errors),
+        roles: copy.roles,
+      };
+    },
   });
 }
 
@@ -161,6 +228,9 @@ export const service: Service = {
   },
   get hooks() {
     return current().hooks;
+  },
+  get errors() {
+    return current().errors;
   },
   get workers() {
     return current().workers;
