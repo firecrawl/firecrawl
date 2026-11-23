@@ -1694,7 +1694,10 @@ describe("firebill requests", () => {
     ).resolves.toBe(false);
   });
 
-  it("omits the customer when the settle is not gated", async () => {
+  // firebill keeps no lock table, so a confirm that overshoots its hold can
+  // only be billed (firebill#69) if the confirm names the lock: org, team,
+  // feature and hold.
+  it("names the lock on every confirm, gated or not", async () => {
     state.configRef = firebillConfig();
     const svc = makeService();
 
@@ -1703,6 +1706,31 @@ describe("firebill requests", () => {
       action: "confirm",
       overrideValue: 7,
       team: { teamId: "team-1", orgId: "org-1" },
+      heldValue: 5,
+    });
+
+    const body = JSON.parse(
+      mockFetch.mock.calls
+        .filter(([url]) => String(url).endsWith("/v1/finalize"))
+        .pop()![1].body,
+    );
+    expect(body.customer_id).toBe("org-1");
+    expect(body.entity_id).toBe("team-1");
+    expect(body.feature_id).toBe("CREDITS");
+    expect(body.held_value).toBe(5);
+    expect(body).not.toHaveProperty("external_request_id");
+  });
+
+  // A release bills nothing, so an ungated one still names nobody.
+  it("omits the lock's customer on an ungated release", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    await svc.finalizeCreditsLock({
+      lockId: "monitor_check-1",
+      action: "release",
+      team: { teamId: "team-1", orgId: "org-1" },
+      heldValue: 5,
     });
 
     const body = JSON.parse(
@@ -1711,7 +1739,9 @@ describe("firebill requests", () => {
         .pop()![1].body,
     );
     expect(body).not.toHaveProperty("customer_id");
+    expect(body).not.toHaveProperty("entity_id");
     expect(body).not.toHaveProperty("feature_id");
+    expect(body).not.toHaveProperty("held_value");
   });
 
   it("omits the operation id when there is no partner to report to", async () => {
@@ -1761,6 +1791,9 @@ describe("firebill requests", () => {
       },
       // Deterministic per (lock, action) so a reconciler re-finalize dedupes.
       idempotency_key: "fc:finalize:confirm:monitor_check-1",
+      customer_id: "org-1",
+      feature_id: "CREDITS",
+      entity_id: "team-1",
     });
   });
 
