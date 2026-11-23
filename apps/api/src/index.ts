@@ -32,6 +32,7 @@ import { v7 as uuidv7 } from "uuid";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
 import { exchangeRouter } from "./routes/exchange";
+import { registerExchangeFileRoutes } from "./routes/exchange-files";
 import { exchangeInternalRouter } from "./routes/exchange-internal";
 import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
@@ -93,6 +94,9 @@ const captureRawBody = (
 };
 
 registerMcpActionLogIngestRoute(app);
+// Marketplace file bytes stream through to Exchange untouched, so these come before the body
+// parsers, and carry their own CORS (the website only) before the catch-all one.
+registerExchangeFileRoutes(app);
 
 app.use(bodyParser.urlencoded({ extended: true, verify: captureRawBody }));
 app.use(bodyParser.json({ limit: "10mb", verify: captureRawBody }));
