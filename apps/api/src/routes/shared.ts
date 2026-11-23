@@ -43,6 +43,7 @@ import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
 import { isFreeCatalogueSearch } from "../search/alexandria";
 import { wantsGovCategory } from "../search/gov";
 import { getScrapeZDR, getThreatProtection } from "../lib/zdr-helpers";
+import { resolveZDRPolicy } from "../lib/zdr-policy";
 import { getSafeMode, isLockdownZeroDataRetention } from "../lib/safe-mode";
 import {
   agentInteropStatus,
@@ -437,6 +438,7 @@ export function authMiddleware(
       };
       req.acuc = chunk ?? undefined;
       req.caller = { teamId: team_id };
+      req.zdrPolicy = resolveZDRPolicy(chunk?.flags ?? undefined);
       next();
     })().catch(err => next(err));
   };
