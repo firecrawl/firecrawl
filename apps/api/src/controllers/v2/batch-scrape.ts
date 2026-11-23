@@ -189,6 +189,7 @@ export async function batchScrapeController(
         origin: req.body.origin ?? null,
         zeroDataRetention:
           zeroDataRetention || appendTarget?.zeroDataRetention === true,
+        safeMode: req.body.safeMode,
       })
     ) {
       return null;

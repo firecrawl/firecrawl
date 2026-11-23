@@ -167,6 +167,7 @@ export function getItemsToScrape(
     org_id?: string | null;
     origin?: string | null;
     zeroDataRetention?: boolean;
+    safeMode?: boolean;
   },
 ): ScrapeItem[] {
   const items: ScrapeItem[] = [];

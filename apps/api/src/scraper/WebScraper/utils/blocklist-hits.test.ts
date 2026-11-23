@@ -96,6 +96,7 @@ it("records no hit for zero data retention requests", async () => {
   isUrlBlocked(url, { scrapeZDR: "allowed" }, { origin: "test" });
   await vi.advanceTimersByTimeAsync(5000);
 
+  expect(insertedHits).toHaveBeenCalledOnce();
   expect(
     insertedHits.mock.calls[0][0].map(hit => [hit.url, hit.domain]),
   ).toEqual([

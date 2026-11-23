@@ -163,6 +163,7 @@ export async function batchScrapeController(
             origin: req.body.origin ?? null,
             zeroDataRetention:
               zeroDataRetention || appendTarget?.zeroDataRetention === true,
+            safeMode: req.body.safeMode,
           })
         ) {
           urls.push(nu);
@@ -184,6 +185,7 @@ export async function batchScrapeController(
           origin: req.body.origin ?? null,
           zeroDataRetention:
             zeroDataRetention || appendTarget?.zeroDataRetention === true,
+          safeMode: req.body.safeMode,
         }),
       ) ?? [];
     if (blockedURLs.length > 0) {

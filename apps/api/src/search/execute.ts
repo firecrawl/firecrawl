@@ -763,6 +763,7 @@ export async function executeSearch(
       org_id: orgId ?? null,
       origin,
       zeroDataRetention,
+      safeMode: context.safeModeBypassed ? false : undefined,
     });
 
     if (itemsToScrape.length > 0) {
