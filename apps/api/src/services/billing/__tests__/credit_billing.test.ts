@@ -27,9 +27,7 @@ vi.mock("../../autumn/autumn.service", () => ({
     endpoint === "search" ? "SEARCH_CREDITS" : "CREDITS",
 }));
 
-vi.mock("../../notification/email_notification", () => ({
-  sendNotification: vi.fn(),
-}));
+vi.mock("../../notification/email_notification", () => ({}));
 vi.mock("../../redis", () => ({
   getValue: vi.fn(),
   setValue: vi.fn(),
@@ -138,7 +136,7 @@ describe("billTeam", () => {
   });
 
   // preview/keyless teams have no org, and this is the one boundary that
-  // accepts that: the ledger is still enqueued, Autumn is simply not told.
+  // accepts that: the operation is still enqueued, Autumn is simply not told.
   it("skips Autumn entirely when the team has no org", async () => {
     await billTeam("preview_abc", null, 3, null, {
       endpoint: "search",
@@ -187,7 +185,7 @@ describe("billTeam for a hosted MCP call", () => {
     hostedMcp: true,
   };
 
-  it("charges the whole call on MCP credits and queues an ordinary ledger operation", async () => {
+  it("charges the whole call on MCP credits and queues the billing operation", async () => {
     await billTeam("team-1", "org-1", 3, 123, hostedMcpScrape);
 
     expect(trackCredits).toHaveBeenCalledExactlyOnceWith(

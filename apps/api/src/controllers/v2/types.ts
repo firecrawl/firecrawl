@@ -3,7 +3,6 @@ import type { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { Request, Response } from "express";
 import { hasCategory } from "../../lib/search-query-builder";
 import { config } from "../../config";
-import { isRequestedModelSupported } from "../../lib/extraction-provider";
 import { z } from "zod";
 import { browserProfileNameSchema } from "../../lib/browser-profiles";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
@@ -367,14 +366,6 @@ const jsonFormatWithOptions = z.strictObject({
     })
     .superRefine(addStrictSchemaIssue),
   prompt: z.string().max(10000).optional(),
-  // Optional: name a configured extraction model for this request.
-  model: z
-    .string()
-    .max(100)
-    .optional()
-    .refine(val => val === undefined || isRequestedModelSupported(val), {
-      message: "Unsupported extraction model.",
-    }),
   // Deprecated: lifted into the top-level checkPromptInjection at parse time.
   checkPromptInjection: z.boolean().optional(),
 });
@@ -2138,6 +2129,9 @@ export const LOCKDOWN_DEFAULT_MAX_AGE_MS = 2 * 365 * 24 * 60 * 60 * 1000;
 export type TeamFlags = {
   exchangeRetrieve?: boolean;
   alexandriaAutoTools?: boolean;
+  alexandriaToolFusion?: boolean;
+  // Search skips highlights entirely, including their index lookups.
+  skipSearchHighlights?: boolean;
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
@@ -2155,6 +2149,7 @@ export type TeamFlags = {
     disablePlatformSelection?: boolean;
     disableCountrySelection?: boolean;
     disableAutomaticReferrer?: boolean;
+    respectPaywalls?: boolean;
     allowlist?: string[];
   };
   siemLogging?: boolean;
@@ -2162,6 +2157,9 @@ export type TeamFlags = {
   forceZDR?: boolean;
   allowZDR?: boolean;
   scrapeZDR?: "disabled" | "allowed" | "forced";
+  // Zero data retention for Alexandria provider tools and the Exchange proxy.
+  // Forced scrape ZDR implies it. Exchange is told per call by header.
+  alexandriaZDR?: "disabled" | "allowed" | "forced";
   searchZDR?: "disabled" | "allowed" | "forced" | "forced-zdr" | "forced-anon";
   zdrCost?: number;
   /** How long an agent run's ZDR result is kept, in minutes. Unset is the default (24 hours). */
@@ -2191,8 +2189,19 @@ export type TeamFlags = {
   // Every request is processed by US-based vendors only. A route with no US
   // vendor is refused or skipped with a warning.
   usOnly?: boolean;
+  // Staff-set: the org has a signed contract on file.
+  signedContract?: boolean;
+  // Staff-set: the date range of the org's enterprise pilot, as ISO 8601
+  // strings. No endDate means the pilot has no end.
+  enterprisePilot?: { startDate?: string; endDate?: string } | null;
+  // Alexandria Verified: the dashboard's Verified pages open, and Exchange
+  // providers marked verifiedOnly (Yelp) execute. Org flag, overridable per team.
+  alexandriaVerified?: boolean;
+  // PDF and image parsing runs only on reserved processing capacity. A parse
+  // that cannot be kept there is refused.
+  reservedCapacity?: boolean;
   // Per-team extensions past a deprecation's sunset (lib/deprecations.ts):
-  // surface or entry key to the ISO 8601 instant the route keeps working until.
+  // surface or entry key to the YYYY-MM-DD or UTC timestamp it runs until.
   deprecationExtensions?: Record<string, string>;
   organizationDataSourceAccess?: Record<
     string,
@@ -2957,11 +2966,15 @@ export type SearchFeedbackResponse =
 // Generic Endpoint Feedback
 // =============================================
 
+// "interact" takes the scrape job id the session was opened on, "browser" the
+// browser session id.
 const endpointFeedbackEndpointSchema = z.enum([
   "search",
   "scrape",
   "parse",
   "map",
+  "interact",
+  "browser",
 ]);
 
 export type EndpointFeedbackEndpoint = z.infer<
@@ -3068,6 +3081,8 @@ export type EndpointFeedbackResponse =
       success: true;
       feedbackId: string;
       creditsRefunded: number;
+      /** Alexandria only: states the refund, or why there was none. */
+      message?: string;
       alreadySubmitted?: boolean;
       dailyCapReached?: boolean;
       websiteCapReached?: boolean;

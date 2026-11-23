@@ -106,6 +106,9 @@ export function browserError(
     error instanceof BrowserSessionError || error instanceof HangarError;
   return res.status(knownError ? error.status : 502).json({
     success: false,
+    ...(error instanceof BrowserSessionError && error.code
+      ? { code: error.code }
+      : {}),
     error: knownError ? error.message : "Browser operation failed.",
   });
 }

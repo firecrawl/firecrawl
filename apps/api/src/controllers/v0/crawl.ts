@@ -50,6 +50,7 @@ import {
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { requestCreditsShards } from "../../lib/request-credits-store";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
+import { ipWhitelistRefusal } from "../../lib/permissions";
 
 export async function crawlController(req: Request, res: Response) {
   try {
@@ -226,6 +227,14 @@ export async function crawlController(req: Request, res: Response) {
         code: "US_ONLY_UNAVAILABLE",
         error: usOnlyLocationError,
       });
+    }
+
+    const ipWhitelistError = ipWhitelistRefusal(
+      auth.chunk?.flags,
+      pageOptions?.geolocation?.country,
+    );
+    if (ipWhitelistError) {
+      return res.status(403).json({ error: ipWhitelistError });
     }
 
     // if (mode === "single_urls" && !url.includes(",")) { // NOTE: do we need this?

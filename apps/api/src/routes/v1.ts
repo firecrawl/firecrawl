@@ -19,7 +19,6 @@ import { searchController } from "../controllers/v1/search";
 import { crawlErrorsController } from "../controllers/v1/crawl-errors";
 import { tokenUsageController } from "../controllers/v1/token-usage";
 import { ongoingCrawlsController } from "../controllers/v1/crawl-ongoing";
-import { fireclawController } from "../controllers/v1/fireclaw";
 import {
   authMiddleware,
   checkCreditsMiddleware,
@@ -50,6 +49,7 @@ v1Router.use(requestTimingMiddleware("v1"));
 v1Router.post(
   "/scrape",
   authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
+  deprecationMiddleware("v1_scrape"),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
   checkCreditsMiddleware(1),
@@ -60,6 +60,7 @@ v1Router.post(
 v1Router.post(
   "/crawl",
   authMiddleware(RateLimiterMode.Crawl),
+  deprecationMiddleware("v1_crawl"),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
   checkCreditsMiddleware(),
@@ -71,6 +72,7 @@ v1Router.post(
 v1Router.post(
   "/batch/scrape",
   authMiddleware(RateLimiterMode.Scrape),
+  deprecationMiddleware("v1_batch_scrape"),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
   checkCreditsMiddleware(),
@@ -82,6 +84,7 @@ v1Router.post(
 v1Router.post(
   "/search",
   authMiddleware(RateLimiterMode.Search, { allowKeyless: true }),
+  deprecationMiddleware("v1_search"),
   inferIntegrationMiddleware,
   restrictedOptionsCountryCheck,
   checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID),
@@ -91,6 +94,7 @@ v1Router.post(
 v1Router.post(
   "/map",
   authMiddleware(RateLimiterMode.Map),
+  deprecationMiddleware("v1_map"),
   inferIntegrationMiddleware,
   checkCreditsMiddleware(1),
   blocklistMiddleware,
@@ -100,6 +104,7 @@ v1Router.post(
 v1Router.get(
   "/crawl/ongoing",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_crawl_ongoing"),
   wrap(ongoingCrawlsController),
 );
 
@@ -107,12 +112,14 @@ v1Router.get(
 v1Router.get(
   "/crawl/active",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_crawl_active"),
   wrap(ongoingCrawlsController),
 );
 
 v1Router.get(
   "/crawl/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_crawl_status"),
   validateJobIdParam,
   wrap(crawlStatusController),
 );
@@ -120,6 +127,7 @@ v1Router.get(
 v1Router.get(
   "/batch/scrape/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_batch_scrape_status"),
   validateJobIdParam,
   // Yes, it uses the same controller as the normal crawl status controller
   wrap((req: any, res): any => crawlStatusController(req, res, true)),
@@ -128,24 +136,28 @@ v1Router.get(
 v1Router.get(
   "/crawl/:jobId/errors",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_crawl_errors"),
   wrap(crawlErrorsController),
 );
 
 v1Router.get(
   "/batch/scrape/:jobId/errors",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_batch_scrape_errors"),
   wrap(crawlErrorsController),
 );
 
 v1Router.get(
   "/scrape/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_scrape_status"),
   wrap(scrapeStatusController),
 );
 
 v1Router.get(
   "/concurrency-check",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_concurrency_check"),
   wrap(concurrencyCheckController),
 );
 
@@ -181,12 +193,14 @@ v1Router.get(
 v1Router.delete(
   "/crawl/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_crawl_cancel"),
   crawlCancelController,
 );
 
 v1Router.delete(
   "/batch/scrape/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  deprecationMiddleware("v1_batch_scrape_cancel"),
   crawlCancelController,
 );
 // v1Router.get("/checkJobStatus/:jobId", crawlJobStatusPreviewController);
@@ -201,39 +215,37 @@ v1Router.delete(
 // v1Router.get("/health/liveness", livenessController);
 // v1Router.get("/health/readiness", readinessController);
 
-v1Router.post(
-  "/fireclaw",
-  authMiddleware(RateLimiterMode.Scrape),
-  checkCreditsMiddleware(100),
-  wrap(fireclawController),
-);
-
 v1Router.get(
   "/team/credit-usage",
   authMiddleware(RateLimiterMode.Account),
+  deprecationMiddleware("v1_team_credit_usage"),
   wrap(creditUsageController),
 );
 
 v1Router.get(
   "/team/credit-usage/historical",
   authMiddleware(RateLimiterMode.Account),
+  deprecationMiddleware("v1_team_credit_usage_historical"),
   wrap(creditUsageHistoricalController),
 );
 
 v1Router.get(
   "/team/token-usage",
   authMiddleware(RateLimiterMode.Account),
+  deprecationMiddleware("v1_team_token_usage"),
   wrap(tokenUsageController),
 );
 
 v1Router.get(
   "/team/token-usage/historical",
   authMiddleware(RateLimiterMode.Account),
+  deprecationMiddleware("v1_team_token_usage_historical"),
   wrap(tokenUsageHistoricalController),
 );
 
 v1Router.get(
   "/team/queue-status",
   authMiddleware(RateLimiterMode.Account),
+  deprecationMiddleware("v1_team_queue_status"),
   wrap(queueStatusController),
 );

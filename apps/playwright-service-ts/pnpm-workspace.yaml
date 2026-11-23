@@ -4,6 +4,9 @@ minimumReleaseAgeExclude:
   # GHSA-27r3-jxmh-p828: allow today's patched release through the age gate.
   - body-parser@2.4.0
   - ip-address@10.7.4
+  # Chromium 158 rejects the compromised eMudhra intermediate CAs.
+  - playwright-core@1.65.0
+  - playwright@1.65.0
 overrides:
   "body-parser@>=2.0.0 <2.4.0": "2.4.0"
   "path-to-regexp@<8.4.0": ">=8.4.0"

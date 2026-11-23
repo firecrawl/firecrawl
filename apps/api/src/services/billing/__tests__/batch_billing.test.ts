@@ -5,10 +5,9 @@ import { vi } from "vitest";
 // stays module-level: its factory only captures it lazily.
 const {
   logger,
-  withAuth,
   trackCredits,
   refundCredits,
-  billTeam7,
+  reportExchangeBilling,
   getACUCTeam,
 } = vi.hoisted(() => {
   const logger: any = {
@@ -19,20 +18,15 @@ const {
   };
   return {
     logger,
-    withAuth: vi.fn((fn: any) => fn),
     trackCredits: vi.fn<(args: any) => Promise<boolean>>(),
     refundCredits: vi.fn<(args: any) => Promise<void>>(),
-    billTeam7: vi.fn<(params: any) => Promise<{ api_key: string }[]>>(),
+    reportExchangeBilling: vi.fn<(args: any) => Promise<void>>(),
     getACUCTeam: vi.fn<(teamId: string) => Promise<any>>(),
   };
 });
 
 vi.mock("../../../lib/logger", () => ({
   logger,
-}));
-
-vi.mock("../../../lib/withAuth", () => ({
-  withAuth,
 }));
 
 vi.mock("../../autumn/autumn.service", () => ({
@@ -45,8 +39,8 @@ vi.mock("../../autumn/autumn.service", () => ({
     endpoint === "search" ? "SEARCH_CREDITS" : "CREDITS",
 }));
 
-vi.mock("../../../db/rpc", () => ({
-  billTeam7,
+vi.mock("../../../lib/exchange", () => ({
+  reportExchangeBilling,
 }));
 
 // orgIdFromAcuc answers null without it, so the legacy op resolves no org.
@@ -144,73 +138,56 @@ beforeEach(() => {
   queue = [];
   billedTeams.clear();
   locks.clear();
-  billTeam7.mockResolvedValue([]);
   trackCredits.mockResolvedValue(true);
   refundCredits.mockResolvedValue(undefined);
   getACUCTeam.mockResolvedValue({ team_id: "team-1", org_id: "org-legacy" });
 });
 
 describe("processBillingBatch", () => {
-  it("commits the ledger but never re-tracks usage to Autumn", async () => {
-    // Even when an op was not request-tracked, the batch must not track usage
-    // to Autumn — request-time tracking is the single source, so re-tracking
-    // here would double-count. The batch only commits the ledger.
+  it("finalizes the group without re-tracking or refunding the Autumn charge", async () => {
+    // Request-time tracking is the charge. The batch must not track again
+    // and must not refund a charge that finalized.
     queue = [makeOp()];
 
     await processBillingBatch();
 
-    expect(billTeam7).toHaveBeenCalled();
     expect(trackCredits).not.toHaveBeenCalled();
+    expect(refundCredits).not.toHaveBeenCalled();
+    expect(queue).toHaveLength(0);
+    expect(logger.info).toHaveBeenCalledWith(
+      "✅ Successfully billed team team-1 for 10 credits",
+    );
   });
 
-  it("does not re-track even when the op was already tracked at request time", async () => {
+  it("does not re-track or refund when the op was already tracked at request time", async () => {
     queue = [makeOp({ autumnTrackInRequest: true })];
 
     await processBillingBatch();
 
-    expect(billTeam7).toHaveBeenCalled();
     expect(trackCredits).not.toHaveBeenCalled();
+    expect(refundCredits).not.toHaveBeenCalled();
   });
 
-  it("refunds request-tracked credits when billing returns success false", async () => {
-    queue = [makeOp({ autumnTrackInRequest: true })];
-    billTeam7.mockRejectedValueOnce(new Error("db failed"));
+  it("confirms Exchange accesses for a committed group", async () => {
+    queue = [
+      makeOp({
+        autumnTrackInRequest: true,
+        exchange_access_event_id: "evt-1",
+        billing_reference: "ref-1",
+      }),
+    ];
 
     await processBillingBatch();
 
-    expect(refundCredits).toHaveBeenCalledWith({
-      teamId: "team-1",
-      orgId: "org-1",
-      value: 10,
-      properties: {
-        source: "processBillingBatch",
-        endpoint: "extract",
-        apiKeyId: 123,
-      },
-      featureId: "CREDITS",
+    expect(refundCredits).not.toHaveBeenCalled();
+    expect(reportExchangeBilling).toHaveBeenCalledWith({
+      accessEventId: "evt-1",
+      status: "confirmed",
+      billingReference: "ref-1",
     });
   });
 
-  it("refunds when billing throws", async () => {
-    queue = [makeOp({ autumnTrackInRequest: true })];
-    billTeam7.mockRejectedValueOnce(new Error("rpc exploded"));
-
-    await processBillingBatch();
-
-    expect(refundCredits).toHaveBeenCalledWith({
-      teamId: "team-1",
-      orgId: "org-1",
-      value: 10,
-      properties: {
-        source: "processBillingBatch",
-        endpoint: "extract",
-        apiKeyId: 123,
-      },
-      featureId: "CREDITS",
-    });
-  });
-
-  it("continues processing later groups when an Autumn refund fails", async () => {
+  it("finalizes every group without refunding", async () => {
     queue = [
       makeOp({
         team_id: "team-1",
@@ -221,27 +198,68 @@ describe("processBillingBatch", () => {
         autumnTrackInRequest: true,
       }),
     ];
-    billTeam7
-      .mockRejectedValueOnce(new Error("db failed"))
-      .mockResolvedValueOnce([]);
-    refundCredits.mockRejectedValueOnce(new Error("refund failed"));
 
     await processBillingBatch();
 
-    expect(refundCredits).toHaveBeenCalledWith({
-      teamId: "team-1",
-      orgId: "org-1",
-      value: 10,
-      properties: {
-        source: "processBillingBatch",
-        endpoint: "extract",
-        apiKeyId: 123,
-      },
-      featureId: "CREDITS",
-    });
-    expect(billTeam7).toHaveBeenCalledTimes(2);
-    // The batch never tracks usage to Autumn, regardless of the request-time flag.
+    expect(refundCredits).not.toHaveBeenCalled();
     expect(trackCredits).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(
+      "✅ Successfully billed team team-1 for 10 credits",
+    );
+    expect(logger.info).toHaveBeenCalledWith(
+      "✅ Successfully billed team team-2 for 10 credits",
+    );
+  });
+
+  it("refunds when finalization throws and still finalizes the next group if the refund fails", async () => {
+    queue = [
+      makeOp({
+        team_id: "team-1",
+        autumnTrackInRequest: true,
+        exchange_access_event_id: "evt-failed",
+      }),
+      makeOp({
+        team_id: "team-2",
+        autumnTrackInRequest: true,
+        exchange_access_event_id: "evt-ok",
+      }),
+    ];
+    logger.info.mockImplementation((message: string) => {
+      if (message === "✅ Successfully billed team team-1 for 10 credits") {
+        throw new Error("finalization failed");
+      }
+    });
+    refundCredits.mockRejectedValueOnce(new Error("refund failed"));
+
+    try {
+      await processBillingBatch();
+
+      expect(refundCredits).toHaveBeenCalledExactlyOnceWith({
+        teamId: "team-1",
+        orgId: "org-1",
+        value: 10,
+        properties: {
+          source: "processBillingBatch",
+          endpoint: "extract",
+          apiKeyId: 123,
+        },
+        featureId: "CREDITS",
+      });
+      expect(logger.warn).toHaveBeenCalledWith(
+        "Failed to refund Autumn request-tracked credits",
+        expect.objectContaining({ team_id: "team-1", credits: 10 }),
+      );
+      expect(reportExchangeBilling).toHaveBeenCalledExactlyOnceWith({
+        accessEventId: "evt-ok",
+        status: "confirmed",
+      });
+      expect(logger.info).toHaveBeenCalledWith(
+        "✅ Successfully billed team team-2 for 10 credits",
+      );
+      expect(trackCredits).not.toHaveBeenCalled();
+    } finally {
+      logger.info.mockReset();
+    }
   });
 
   // Transitional: operations enqueued before org_id was carried. Remove with
@@ -251,13 +269,13 @@ describe("processBillingBatch", () => {
       makeOp({ org_id: undefined, autumnTrackInRequest: true }),
       makeOp({ org_id: undefined, autumnTrackInRequest: true }),
     ];
-    billTeam7.mockRejectedValue(new Error("db failed"));
 
     await processBillingBatch();
 
     expect(getACUCTeam).toHaveBeenCalledTimes(1);
-    expect(refundCredits).toHaveBeenCalledWith(
-      expect.objectContaining({ teamId: "team-1", orgId: "org-legacy" }),
+    expect(refundCredits).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(
+      "✅ Successfully billed team team-1 for 20 credits",
     );
   });
 
@@ -272,7 +290,6 @@ describe("processBillingBatch", () => {
 
     // Nothing billed and nothing refunded for them; both are back on the
     // queue in their original shape, still without org_id.
-    expect(billTeam7).not.toHaveBeenCalled();
     expect(refundCredits).not.toHaveBeenCalled();
     expect(queue).toHaveLength(2);
     expect(JSON.parse(queue[0])).not.toHaveProperty("org_id");
@@ -282,122 +299,34 @@ describe("processBillingBatch", () => {
     );
   });
 
-  it("bills a legacy operation whose team is confirmed to have no org", async () => {
+  it("finalizes a legacy operation whose team is confirmed to have no org", async () => {
     queue = [makeOp({ org_id: undefined, autumnTrackInRequest: true })];
     getACUCTeam.mockResolvedValue({ team_id: "team-1", org_id: null });
-    billTeam7.mockRejectedValueOnce(new Error("db failed"));
 
     await processBillingBatch();
 
-    expect(billTeam7).toHaveBeenCalled();
-    // A confirmed null is an org-less team: the refund is skipped, not deferred.
+    // A confirmed null is an org-less team: nothing is refunded, and the
+    // charge was never tracked to Autumn for lack of an org.
     expect(refundCredits).not.toHaveBeenCalled();
     expect(queue).toHaveLength(0);
   });
 
   it("does not look anything up for an operation that carries its org", async () => {
     queue = [makeOp({ org_id: "org-1", autumnTrackInRequest: true })];
-    billTeam7.mockRejectedValueOnce(new Error("db failed"));
 
     await processBillingBatch();
 
     expect(getACUCTeam).not.toHaveBeenCalled();
-    expect(refundCredits).toHaveBeenCalledWith(
-      expect.objectContaining({ teamId: "team-1", orgId: "org-1" }),
-    );
-  });
-
-  it("refunds against an org resolved at refund time when the op recorded null", async () => {
-    queue = [makeOp({ org_id: null, autumnTrackInRequest: true })];
-    billTeam7.mockRejectedValueOnce(new Error("db failed"));
-
-    await processBillingBatch();
-
-    expect(getACUCTeam).toHaveBeenCalledWith("team-1");
-    expect(refundCredits).toHaveBeenCalledWith(
-      expect.objectContaining({ teamId: "team-1", orgId: "org-legacy" }),
-    );
-  });
-
-  it("resolves the refund-time org once per team across a batch", async () => {
-    queue = [
-      makeOp({ org_id: null, autumnTrackInRequest: true }),
-      makeOp({ org_id: null, autumnTrackInRequest: true, api_key_id: 456 }),
-    ];
-    billTeam7.mockRejectedValue(new Error("db failed"));
-
-    await processBillingBatch();
-
-    expect(getACUCTeam).toHaveBeenCalledTimes(1);
-    expect(refundCredits).toHaveBeenCalledTimes(2);
-  });
-
-  it("skips the refund when the refund-time lookup confirms no org", async () => {
-    queue = [makeOp({ org_id: null, autumnTrackInRequest: true })];
-    getACUCTeam.mockResolvedValue({ team_id: "team-1", org_id: null });
-    billTeam7.mockRejectedValueOnce(new Error("db failed"));
-
-    await processBillingBatch();
-
-    expect(refundCredits).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith(
-      "Skipping Autumn refund: no org for the team",
-      { team_id: "team-1", credits: 10 },
-    );
-  });
-
-  it("retries at refund time past a lookup that failed earlier in the batch", async () => {
-    queue = [
-      // The legacy op's lookup throws and is memoized unresolved; the null-org
-      // op that follows must not inherit that failure.
-      makeOp({ org_id: undefined, autumnTrackInRequest: true }),
-      makeOp({ org_id: null, autumnTrackInRequest: true, api_key_id: 456 }),
-    ];
-    getACUCTeam
-      .mockRejectedValueOnce(new Error("acuc unavailable"))
-      .mockResolvedValue({ team_id: "team-1", org_id: "org-legacy" });
-    billTeam7.mockRejectedValue(new Error("db failed"));
-
-    await processBillingBatch();
-
-    expect(getACUCTeam).toHaveBeenCalledTimes(2);
-    expect(refundCredits).toHaveBeenCalledWith(
-      expect.objectContaining({ teamId: "team-1", orgId: "org-legacy" }),
-    );
-  });
-
-  it("spends the refund-time retry once per team across a batch", async () => {
-    queue = [
-      // The legacy op's lookup throws and is memoized unresolved; the two
-      // null-org groups that follow share the single retry it earns, so an
-      // outage costs one extra call rather than one per group.
-      makeOp({ org_id: undefined, autumnTrackInRequest: true }),
-      makeOp({ org_id: null, autumnTrackInRequest: true, api_key_id: 456 }),
-      makeOp({ org_id: null, autumnTrackInRequest: true, api_key_id: 789 }),
-    ];
-    getACUCTeam.mockRejectedValue(new Error("acuc unavailable"));
-    billTeam7.mockRejectedValue(new Error("db failed"));
-
-    await processBillingBatch();
-
-    expect(getACUCTeam).toHaveBeenCalledTimes(2);
     expect(refundCredits).not.toHaveBeenCalled();
   });
 
-  it("skips the refund when the refund-time lookup throws", async () => {
+  it("finalizes an operation that recorded a null org without a refund lookup", async () => {
     queue = [makeOp({ org_id: null, autumnTrackInRequest: true })];
-    getACUCTeam.mockRejectedValue(new Error("acuc unavailable"));
-    billTeam7.mockRejectedValueOnce(new Error("db failed"));
 
     await processBillingBatch();
 
+    expect(getACUCTeam).not.toHaveBeenCalled();
     expect(refundCredits).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith(
-      "Skipping Autumn refund: no org for the team",
-      { team_id: "team-1", credits: 10 },
-    );
-    // The op still billed and is not requeued: only the legacy branch defers.
-    expect(billTeam7).toHaveBeenCalled();
     expect(queue).toHaveLength(0);
   });
 });
@@ -411,28 +340,18 @@ describe("hosted MCP charges", () => {
       ...overrides,
     });
 
-  it("writes a hosted charge as one ordinary ledger row", async () => {
-    queue = [hosted()];
-
-    await processBillingBatch();
-
-    expect(billTeam7).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ credits: 5, subscription_id: null }),
-    );
-  });
-
-  it("refunds a hosted charge and a regular one each to the feature it was charged on", async () => {
+  it("finalizes a hosted charge without refunding it", async () => {
     queue = [hosted(), makeOp({ autumnTrackInRequest: true })];
-    billTeam7.mockRejectedValue(new Error("db failed"));
 
     await processBillingBatch();
 
-    expect(refundCredits).toHaveBeenCalledTimes(2);
-    expect(refundCredits).toHaveBeenCalledWith(
-      expect.objectContaining({ value: 5, featureId: "MCP_CREDITS" }),
+    expect(refundCredits).not.toHaveBeenCalled();
+    expect(trackCredits).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(
+      "✅ Successfully billed team team-1 for 5 credits",
     );
-    expect(refundCredits).toHaveBeenCalledWith(
-      expect.objectContaining({ value: 10, featureId: "CREDITS" }),
+    expect(logger.info).toHaveBeenCalledWith(
+      "✅ Successfully billed team team-1 for 10 credits",
     );
   });
 });
@@ -460,7 +379,10 @@ describe("startBillingBatchProcessing", () => {
 
     queue = [makeOp()];
     await vi.advanceTimersByTimeAsync(15000);
-    expect(billTeam7).toHaveBeenCalledTimes(1);
+    expect(refundCredits).not.toHaveBeenCalled();
     expect(queue).toHaveLength(0);
+    expect(logger.info).toHaveBeenCalledWith(
+      "✅ Successfully billed team team-1 for 10 credits",
+    );
   });
 });

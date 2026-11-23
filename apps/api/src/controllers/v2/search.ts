@@ -1,4 +1,4 @@
-import { NextFunction, Request, Response } from "express";
+import { Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
 import { timingSafeSecretEqual } from "../../lib/secret-compare";
@@ -12,6 +12,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import {
   adjustKeylessCredits,
   keylessLimitBody,
+  keylessProviderToolsBody,
   logKeylessCreditUsage,
   reserveKeylessCredits,
 } from "../../lib/keyless";
@@ -27,7 +28,12 @@ import { z } from "zod";
 import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
 import type { BillingMetadata } from "../../services/billing/types";
-import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
+import {
+  getSearchForcedKind,
+  getSearchZDR,
+  isAlexandriaZDRForced,
+} from "../../lib/zdr-helpers";
+import { teamPlanClass } from "../../lib/team-plan-class";
 import {
   withSpan,
   setSpanAttributes,
@@ -47,7 +53,7 @@ import {
   isLockdownZeroDataRetention,
   getEffectiveSearchForcedKind,
 } from "../../lib/safe-mode";
-import { checkPermissions } from "../../lib/permissions";
+import { checkPermissions, ipWhitelistRefusal } from "../../lib/permissions";
 import {
   actionTypesOf,
   checkKeyEndpointRestriction,
@@ -63,12 +69,13 @@ import {
 } from "../../lib/index-daily-limit";
 import { requestOrigin } from "../../lib/request-origin";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
-import { applyNotice, type Notice } from "../../lib/deprecations";
 import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 import { recordDiscoveredTools } from "../../lib/alexandria-discovery";
+import { lineageIds } from "../../lib/feedback-trace";
 import {
   autoToolsEnabled,
   queryInferenceEnabled,
+  toolFusionEnabled,
 } from "../../search/tool-intent";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 import { UsOnlyUpstreamRefusalError } from "../../lib/research-upstream";
@@ -77,26 +84,8 @@ import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 const IMAGE_SEARCH_US_ONLY_MESSAGE =
   "Image search is not available for teams restricted to US-only processing.";
 
-const RESEARCH_CATEGORY_NOTICE: Notice = {
-  message:
-    "On 2026-11-16, the 'research' search category will query the Firecrawl Research Index (PubMed, bioRxiv, medRxiv, arXiv) rather than restricting web results to a fixed list of 14 academic domains. Results will move from data.web to data.research and will match the records returned by the Research Index endpoint GET /search/research/papers, with the fields paperId, primaryId, ids, title, abstract and score. To adopt those records today, call GET /search/research/papers (https://docs.firecrawl.dev/api-reference/endpoint/research-search-papers). To continue receiving web pages from academic domains, use includeDomains. The pdf and developer categories are unchanged. See https://docs.firecrawl.dev/features/research",
-  links: ['<https://docs.firecrawl.dev/features/research>; rel="help"'],
-};
-
 const GITHUB_CATEGORY_REMOVED =
   "The 'github' search category was removed. To search GitHub issues, pull requests and READMEs, send the 'developer' category on its own (it can't be combined with other categories), or call GET or POST /v2/search/developer (https://docs.firecrawl.dev/features/developer). To keep web results from github.com, use includeDomains: [\"github.com\"].";
-
-// Ahead of auth and validation so rejected requests carry the notice too.
-export function researchCategoryNoticeMiddleware(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) {
-  if (hasCategory(req.body?.categories, "research")) {
-    applyNotice(res, RESEARCH_CATEGORY_NOTICE);
-  }
-  next();
-}
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
@@ -170,6 +159,11 @@ async function searchControllerInner(
   try {
     const rawOrigin =
       typeof req.body?.origin === "string" ? req.body.origin : undefined;
+    const headerOrigin = req.headers["x-origin"];
+    // A team held to Alexandria zero data retention names no session or conversation.
+    const lineage = isAlexandriaZDRForced(req.acuc?.flags ?? undefined)
+      ? {}
+      : lineageIds(req);
     delete (req.body as Record<string, unknown>)?.objective;
     delete (req.body as Record<string, unknown>)?.clientModel;
     if (hasCategory(req.body?.categories, "github")) {
@@ -200,10 +194,10 @@ async function searchControllerInner(
       (wantsTools || wantsSkills || req.body.domainTools) &&
       req.auth.team_id.startsWith("preview_keyless_")
     ) {
-      return res.status(403).json({
-        success: false,
-        error: "An API key is required for provider tools.",
-      });
+      applyAgentAuthDiscoveryHeader(res);
+      return res
+        .status(403)
+        .json(keylessProviderToolsBody(req.auth.team_id, req));
     }
     if ((wantsTools || wantsSkills) && !req.body.query.trim())
       return res.status(400).json({
@@ -349,6 +343,20 @@ async function searchControllerInner(
         success: false,
         code: "US_ONLY_UNAVAILABLE",
         error: usOnlyLocationError,
+      });
+    }
+
+    const ipWhitelistError =
+      requestedFormats.length > 0
+        ? ipWhitelistRefusal(
+            req.acuc?.flags,
+            req.body.scrapeOptions?.location?.country,
+          )
+        : undefined;
+    if (ipWhitelistError) {
+      return res.status(403).json({
+        success: false,
+        error: ipWhitelistError,
       });
     }
 
@@ -556,6 +564,7 @@ async function searchControllerInner(
         domainTools: req.body.domainTools,
         toolDetail: req.body.toolDetail,
         inferToolQuery: queryInferenceEnabled(),
+        toolFusion: toolFusionEnabled(req.acuc?.flags),
         autoTools:
           (sourcesOmitted || req.body.domainTools === true) &&
           !req.auth.team_id.startsWith("preview_keyless_") &&
@@ -568,8 +577,15 @@ async function searchControllerInner(
         orgId: req.acuc?.org_id ?? null,
         origin: req.body.origin,
         integration: req.body.integration,
+        // The origin as the caller named it: the schema default would label every caller "api".
+        clientOrigin:
+          rawOrigin ??
+          (typeof headerOrigin === "string" ? headerOrigin : undefined),
+        clientSession: lineage.sessionId,
+        clientThread: lineage.threadId,
         apiKeyId: req.acuc?.api_key_id ?? null,
         flags: req.acuc?.flags ?? null,
+        teamPlanClass: teamPlanClass(req.acuc),
         requestId: agentRequestId ?? jobId,
         jobId,
         apiVersion: "v2",
@@ -580,6 +596,9 @@ async function searchControllerInner(
         keylessReserved: reservedKeylessCredits > 0,
         threatProtectionPolicy: threatProtection.policy,
         safeModeBypassed: safeMode.bypassed === true,
+        ...(req.headers["x-firecrawl-work-contact-only"] === "true"
+          ? { workContactOnly: true }
+          : {}),
       },
       logger,
     );
@@ -714,11 +733,13 @@ async function searchControllerInner(
       markAlexandriaActivity(req.auth.team_id);
     }
     if (result.response.tools) {
+      setSpanAttributes(span, { "search.tool_fusion": result.toolFusion });
       recordDiscoveredTools(
         req.auth.team_id,
         result.toolsAuto ? "auto_search" : "search",
         jobId,
         result.response.tools,
+        lineage,
       );
     }
     const warning = [

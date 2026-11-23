@@ -3,7 +3,11 @@ import { describe, it, expect, afterEach } from "vitest";
 import { config } from "../../../config";
 import { encryptSlackToken, decryptSlackToken } from "./crypto";
 import { verifySlackSignature } from "./signature";
-import { buildMonitorAlertMessage, escapeSlackText, slackLink } from "./messages";
+import {
+  buildMonitorAlertMessage,
+  escapeSlackText,
+  slackLink,
+} from "./messages";
 import { sanitizeRedirectPath } from "./redirect";
 
 const ORIGINAL_ENCRYPTION_KEY = config.SLACK_TOKEN_ENCRYPTION_KEY;
@@ -16,9 +20,7 @@ afterEach(() => {
 
 describe("slack token crypto", () => {
   it("round-trips a token with AES-256-GCM when a key is configured", () => {
-    config.SLACK_TOKEN_ENCRYPTION_KEY = crypto
-      .randomBytes(32)
-      .toString("hex");
+    config.SLACK_TOKEN_ENCRYPTION_KEY = crypto.randomBytes(32).toString("hex");
     // Opaque placeholder — the crypto layer treats the token as bytes, and we
     // avoid real Slack bot-token shapes so secret scanners don't flag it.
     const token = "slack-bot-token-placeholder";
@@ -37,9 +39,7 @@ describe("slack token crypto", () => {
   });
 
   it("throws when a GCM token is read without its key", () => {
-    config.SLACK_TOKEN_ENCRYPTION_KEY = crypto
-      .randomBytes(32)
-      .toString("hex");
+    config.SLACK_TOKEN_ENCRYPTION_KEY = crypto.randomBytes(32).toString("hex");
     const stored = encryptSlackToken("bot-token-placeholder");
     config.SLACK_TOKEN_ENCRYPTION_KEY = undefined;
     expect(() => decryptSlackToken(stored)).toThrow();
@@ -166,6 +166,33 @@ describe("slack message builder", () => {
     // Header text is plain_text; the monitor name is not escaped there but the
     // fallback text keeps it readable.
     expect(serialized).toContain("meaningful");
+    expect(serialized).toContain("2 changed (1 meaningful)");
+    expect(serialized).not.toContain("noise omitted");
+  });
+
+  it("labels noise rows left out of the page list without changing the changed total", () => {
+    const { blocks } = buildMonitorAlertMessage({
+      monitorName: "Docs",
+      dashboardUrl: "https://www.firecrawl.dev/app/monitoring/m1?checkId=c1",
+      checkId: "c1",
+      summary: { changed: 3, new: 1, removed: 0, error: 0, totalPages: 4 },
+      pages: [
+        {
+          url: "https://example.com/price",
+          status: "changed",
+          judgment: { meaningful: true, reason: "Pro price changed" },
+        },
+        { url: "https://example.com/new-page", status: "new", judgment: null },
+      ],
+      creditsUsed: 1,
+      noiseOmitted: 1,
+    });
+
+    const serialized = JSON.stringify(blocks);
+    expect(serialized).toContain("https://example.com/price");
+    expect(serialized).toContain("https://example.com/new-page");
+    expect(serialized).toContain("3 changed (1 meaningful, 1 noise omitted)");
+    expect(serialized).toContain("1 new");
   });
 
   it("bounds long page URLs so section blocks stay within Slack's 3000-char limit", () => {

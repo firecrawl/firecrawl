@@ -65,7 +65,7 @@ pub async fn convert_document_to_markdown(
     })?
 }
 
-fn convert_document_bytes_to_markdown(
+pub fn convert_document_bytes_to_markdown(
   data: &[u8],
   extension_hint: Option<String>,
 ) -> Result<String> {

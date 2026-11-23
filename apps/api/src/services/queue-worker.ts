@@ -20,6 +20,7 @@ import {
   consumeMonitorSearchCheckJobs,
 } from "./monitoring/queue";
 import { shutdownPubSubLogging } from "./logging/log_job";
+import { startRole } from "../main";
 
 configDotenv();
 
@@ -57,17 +58,15 @@ async function processFinishCrawlJobInternal(_job: NuQJob) {
 
 let isShuttingDown = false;
 
-if (require.main === module) {
-  process.on("SIGINT", () => {
-    _logger.debug("Received SIGINT. Shutting down gracefully...");
-    isShuttingDown = true;
-  });
+process.on("SIGINT", () => {
+  _logger.debug("Received SIGINT. Shutting down gracefully...");
+  isShuttingDown = true;
+});
 
-  process.on("SIGTERM", () => {
-    _logger.debug("Received SIGTERM. Shutting down gracefully...");
-    isShuttingDown = true;
-  });
-}
+process.on("SIGTERM", () => {
+  _logger.debug("Received SIGTERM. Shutting down gracefully...");
+  isShuttingDown = true;
+});
 
 const crawlFinishWorker = async () => {
   const __logger = _logger.child({
@@ -200,7 +199,7 @@ app.listen(workerPort, (error?: Error) => {
   _logger.info(`Liveness endpoint is running on port ${workerPort}`);
 });
 
-(async () => {
+export async function start() {
   await initializeBlocklist().catch(e => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);
@@ -249,4 +248,8 @@ app.listen(workerPort, (error?: Error) => {
   await shutdownPubSubLogging();
   await shutdownTracing();
   process.exit(0);
-})();
+}
+
+if (require.main === module) {
+  void startRole("queue-worker");
+}

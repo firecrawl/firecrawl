@@ -17,6 +17,8 @@ import {
   SSLError,
   SiteError,
   SiteRestrictionError,
+  SiteBlockNoRetryError,
+  isNoRetrySiteBlock,
   UnsupportedFileError,
 } from "../../error";
 import { Meta } from "../..";
@@ -49,7 +51,7 @@ export type FireEngineScrapeRequestCommon = {
   // skipDnsCheck?: boolean; // unused, default: false
 
   priority?: number; // default: 1
-  // team_id?: string; // unused
+  team_id?: string;
   logRequest?: boolean; // default: true
   instantReturn?: boolean; // default: false
   geolocation?: { country?: string; languages?: string[] };
@@ -298,6 +300,15 @@ export async function fireEngineScrape<
       meta.internalOptions.safeMode?.disableSiteHandling
     ) {
       throw new SiteRestrictionError();
+    }
+    if (isNoRetrySiteBlock(failedParse.data, status.error)) {
+      logger.info(
+        "Fire Engine reported a site block that a retry does not get past.",
+        {
+          error: status.error,
+        },
+      );
+      throw new SiteBlockNoRetryError(status.error);
     }
     if (
       failedParse.data.retryWithStealth &&

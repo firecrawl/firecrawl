@@ -21,3 +21,17 @@ export function calculateBrowserSessionCredits(
   const minCredits = Math.ceil(creditsPerHour / 60);
   return Math.max(minCredits, Math.ceil(hours * creditsPerHour));
 }
+
+/** The longest session, in whole seconds, whose charge stays within `credits`. */
+export function browserSecondsForCredits(
+  credits: number,
+  creditsPerHour: number,
+): number {
+  let seconds = Math.floor((credits * 3600) / creditsPerHour);
+  while (
+    seconds > 0 &&
+    calculateBrowserSessionCredits(seconds * 1000, creditsPerHour) > credits
+  )
+    seconds--;
+  return seconds;
+}

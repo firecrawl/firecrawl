@@ -26,7 +26,7 @@ import {
   resolveSafeMode,
   getEffectiveSearchForcedKind,
 } from "../../lib/safe-mode";
-import { checkPermissions } from "../../lib/permissions";
+import { checkPermissions, ipWhitelistRefusal } from "../../lib/permissions";
 import {
   transformToV1Response,
   filterDocumentsWithContent,
@@ -41,6 +41,7 @@ import {
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { usOnlyLocationRefusal } from "../../lib/us-only";
+import { teamPlanClass } from "../../lib/team-plan-class";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 export async function searchController(
@@ -158,6 +159,21 @@ export async function searchController(
       });
     }
 
+    const ipWhitelistError =
+      requestedFormats.length > 0
+        ? ipWhitelistRefusal(
+            req.acuc?.flags,
+            req.body.scrapeOptions?.location?.country,
+            req.body.scrapeOptions?.geolocation?.country,
+          )
+        : undefined;
+    if (ipWhitelistError) {
+      return res.status(403).json({
+        success: false,
+        error: ipWhitelistError,
+      });
+    }
+
     // Search only scrapes (and only honors scrapeOptions) when formats are
     // requested, so the scrape-option checks apply only then.
     if (
@@ -254,6 +270,7 @@ export async function searchController(
         integration: req.body.integration,
         apiKeyId: req.acuc?.api_key_id ?? null,
         flags: req.acuc?.flags ?? null,
+        teamPlanClass: teamPlanClass(req.acuc),
         requestId: jobId,
         jobId,
         apiVersion: "v1",

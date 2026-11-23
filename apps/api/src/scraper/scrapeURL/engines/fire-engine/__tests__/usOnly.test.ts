@@ -43,6 +43,7 @@ const safeMode: ResolvedSafeMode = {
   disablePlatformSelection: false,
   disableCountrySelection: false,
   disableAutomaticReferrer: true,
+  respectPaywalls: false,
 };
 
 function meta({

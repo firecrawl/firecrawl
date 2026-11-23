@@ -4,6 +4,8 @@ import { logger as _logger } from "../../lib/logger";
 import { WebhookQueueMessage } from "./types";
 
 const WEBHOOK_QUEUE_NAME = "webhooks";
+// Declared by the webhook dispatcher with a queue-level TTL and no dead-letter target.
+const ZDR_WEBHOOK_QUEUE_NAME = "webhooks.zdr";
 const CONNECT_TIMEOUT = 5000;
 const DRAIN_TIMEOUT = 30000;
 
@@ -40,6 +42,7 @@ class WebhookQueue {
       this.channel = await this.connection.createChannel();
 
       await this.channel.checkQueue(WEBHOOK_QUEUE_NAME);
+      await this.channel.checkQueue(ZDR_WEBHOOK_QUEUE_NAME);
 
       this._registerConnectionEvents();
 
@@ -88,16 +91,26 @@ class WebhookQueue {
     });
   }
 
-  async publish(message: WebhookQueueMessage): Promise<void> {
+  async publish(
+    message: WebhookQueueMessage,
+    options: { zeroDataRetention?: boolean } = {},
+  ): Promise<void> {
     await this.connect();
 
     if (!this.channel) throw new Error("Channel not available");
 
     const buffer = Buffer.from(JSON.stringify(message));
 
-    const canSendMore = this.channel.sendToQueue(WEBHOOK_QUEUE_NAME, buffer, {
+    const queue = options.zeroDataRetention
+      ? ZDR_WEBHOOK_QUEUE_NAME
+      : WEBHOOK_QUEUE_NAME;
+
+    const canSendMore = this.channel.sendToQueue(queue, buffer, {
       persistent: true,
       contentType: "application/json",
+      ...(options.zeroDataRetention && {
+        timestamp: Math.floor(Date.now() / 1000),
+      }),
     });
 
     if (!canSendMore) {

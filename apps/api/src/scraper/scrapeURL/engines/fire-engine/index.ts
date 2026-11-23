@@ -23,6 +23,7 @@ import {
   DNSResolutionError,
   SiteError,
   SiteRestrictionError,
+  SiteBlockNoRetryError,
   SSLError,
   UnsupportedFileError,
   FEPageLoadFailed,
@@ -157,6 +158,7 @@ async function performFireEngineScrape<
             error instanceof EngineError ||
             error instanceof SiteError ||
             error instanceof SiteRestrictionError ||
+            error instanceof SiteBlockNoRetryError ||
             error instanceof SSLError ||
             error instanceof DNSResolutionError ||
             error instanceof ActionError ||
@@ -487,6 +489,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       FireEngineScrapeRequestChromeCDP = {
       url: meta.rewrittenUrl ?? meta.url,
       scrapeId: meta.id,
+      team_id: meta.internalOptions.teamId,
       engine: "chrome-cdp",
       ...(wantsRawBase64 ? { format: "rawBase64" as const } : {}),
       instantReturn: false,

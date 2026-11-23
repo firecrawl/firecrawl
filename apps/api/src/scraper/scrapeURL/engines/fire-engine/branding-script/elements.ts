@@ -4,6 +4,7 @@ import {
   getComputedStyleCached,
   recordError,
   toPx,
+  truncateText,
 } from "./helpers";
 import {
   getEffectiveFill,
@@ -139,10 +140,7 @@ export const getLabelColor = (el: Element, cs: CSSStyleDeclaration): string => {
       // descendant that hides itself is passed over.
       if (style.visibility === "hidden") {
         const parent = node.parentElement;
-        if (
-          !parent ||
-          getComputedStyleCached(parent).visibility !== "hidden"
-        ) {
+        if (!parent || getComputedStyleCached(parent).visibility !== "hidden") {
           return false;
         }
       }
@@ -155,7 +153,9 @@ export const getLabelColor = (el: Element, cs: CSSStyleDeclaration): string => {
       return true;
     };
     if (hasOwnText(el)) return cs.getPropertyValue("color");
-    const queue: Array<{ node: Element; depth: number }> = [{ node: el, depth: 0 }];
+    const queue: Array<{ node: Element; depth: number }> = [
+      { node: el, depth: 0 },
+    ];
     for (let i = 0; i < queue.length && i < 60; i++) {
       const { node, depth } = queue[i];
       if (depth >= 6) continue;
@@ -309,9 +309,9 @@ export const getStyleSnapshot = (el: Element): StyleSnapshot => {
     el.tagName.toLowerCase() === "input" &&
     (inputEl.type === "submit" || inputEl.type === "button")
   ) {
-    text = (inputEl.value && inputEl.value.trim().substring(0, 100)) || "";
+    text = (inputEl.value && truncateText(inputEl.value.trim(), 100)) || "";
   } else {
-    text = (el.textContent && el.textContent.trim().substring(0, 100)) || "";
+    text = (el.textContent && truncateText(el.textContent.trim(), 100)) || "";
   }
 
   const isInputField = el.matches(
@@ -334,14 +334,14 @@ export const getStyleSnapshot = (el: Element): StyleSnapshot => {
           const label = document.querySelector(
             'label[for="' + CSS.escape(el.id) + '"]',
           );
-          if (label) return (label.textContent || "").trim().substring(0, 100);
+          if (label) return truncateText((label.textContent || "").trim(), 100);
         }
         const parentLabel = el.closest("label");
         if (parentLabel) {
           const clone = parentLabel.cloneNode(true) as HTMLElement;
           const inputInClone = clone.querySelector("input,select,textarea");
           if (inputInClone) inputInClone.remove();
-          return (clone.textContent || "").trim().substring(0, 100);
+          return truncateText((clone.textContent || "").trim(), 100);
         }
         return "";
       })(),
