@@ -26,6 +26,7 @@ import {
 } from "../../services/worker/nuq-router";
 import { ScrapeJobSingleUrls } from "../../types";
 import { readScrapeJobState } from "../../lib/job-state-store";
+import { storedZeroDataRetention } from "../../lib/request-context";
 import { readRequestCredits } from "../../lib/request-credits-store";
 import { readRequestCreditsFromAnalytics } from "../../lib/request-credits-analytics";
 configDotenv();
@@ -169,7 +170,7 @@ export async function crawlStatusController(
   }
 
   const zeroDataRetention = !!(
-    groupAnyJob?.data?.zeroDataRetention ?? sc?.zeroDataRetention
+    storedZeroDataRetention(groupAnyJob?.data) ?? storedZeroDataRetention(sc)
   );
 
   const numericStats = await scrapeQueue.getGroupNumericStats(

@@ -4,6 +4,7 @@ import { Logger } from "winston";
 import { logger as _logger } from "../../../lib/logger";
 import { config } from "../../../config";
 import { QueueFullError } from "../../../lib/queue-full-error";
+import { storedZeroDataRetention } from "../../../lib/request-context";
 import { getNuqFdbDatabase } from "./client";
 import {
   NuqFdbKeyspace,
@@ -476,7 +477,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         if (crawlGated) flags |= F_CRAWL_GATED;
         if (keyGated) flags |= F_KEY_GATED;
         if (j.options.listenable) flags |= F_LISTENABLE;
-        if ((j.data as any)?.zeroDataRetention) flags |= F_ZDR;
+        if (storedZeroDataRetention(j.data)) flags |= F_ZDR;
         if (countable) flags |= F_COUNTABLE;
         if (groupLive) flags |= F_GACC;
 
