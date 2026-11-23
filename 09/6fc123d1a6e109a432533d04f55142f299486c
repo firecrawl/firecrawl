@@ -1,0 +1,23 @@
+apps/api/src/services/alexandria/replay-store.ts
+  s_5c00d0c4ec2dfa::t_83af7733b7ee41 114,118,158,182,214,216,264,267
+apps/api/src/services/alexandria/replay-store.test.ts
+  s_5c00d0c4ec2dfa::t_151ad1b322306f 90-91,102,189,192,194,198,219-233,239-240,245-247,251-259,262,266,269-270,278-280,282,286-290,306-307,315,319-320,322-324
+apps/api/src/services/alexandria/README.md
+  s_5c00d0c4ec2dfa::t_e11ecd4778c62a 73-74,96-106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "096fc123d1a6e109a432533d04f55142f299486c",
+  "prompts": {},
+  "sessions": {
+    "s_5c00d0c4ec2dfa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c92271bf-a8e6-452c-8df9-37e5fba35b34",
+        "model": "claude-mythos-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
