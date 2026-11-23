@@ -84,6 +84,7 @@ const FORWARDED_PATH_ROOTS = new Set([
   "discover",
   "enrichment",
   "ingest",
+  "onboarding",
   "platform",
   "provider-skills",
   "provider-terms",
