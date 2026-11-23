@@ -381,7 +381,9 @@ impl BrowserPool {
       .set_user_agent(self.user_agent.as_str())
       .await
       .map_err(|e| format!("could not set the user agent: {e}"))?;
-    if let Some(language) = accept_language {
+    if let Some(language) =
+      accept_language.filter(|value| reqwest::header::HeaderValue::from_str(value).is_ok())
+    {
       page
         .execute(SetExtraHttpHeadersParams::new(Headers::new(
           serde_json::json!({ "Accept-Language": language }),
