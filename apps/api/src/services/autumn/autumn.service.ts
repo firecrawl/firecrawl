@@ -418,7 +418,9 @@ export class AutumnService {
     // unsettled.
     if (!firebillConfigured()) return true;
 
-    // Every confirm names the lock it settles: org, team, feature and hold.
+    // A confirm that names its team sends the lock it settles: org, team,
+    // feature and hold. A confirm without a team (no org) sends none of
+    // them, so firebill cannot bill its overshoot and parks it as before.
     // firebill keeps no lock table and Autumn has no read of a lock, so this
     // is the only place it can learn them. It needs them to bill a run that
     // cost more than it held when the balance cannot cover the excess
