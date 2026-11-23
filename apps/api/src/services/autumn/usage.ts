@@ -406,8 +406,11 @@ export async function getTeamBalance(
   // when credits reset monthly inside a longer (yearly) subscription period:
   // nextResetAt is the period end, and we derive the start from the interval.
   const resetAt: number | undefined = creditBalance?.nextResetAt;
-  const interval = breakdowns?.find(
+  const recurring = breakdowns?.filter(
     (b: any) => b.reset?.interval && b.reset.interval !== "one_off",
+  );
+  const interval = (
+    recurring?.find((b: any) => b.reset.resetsAt === resetAt) ?? recurring?.[0]
   )?.reset?.interval;
   const subscriptionOutlastsMonthlyReset =
     interval === "month" &&
