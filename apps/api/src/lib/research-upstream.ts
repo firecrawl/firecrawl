@@ -1,5 +1,6 @@
 import { Agent, fetch, type Response } from "undici";
 import { config } from "../config";
+import { logger } from "./logger";
 
 const TIMEOUT_MS = 120_000;
 const CONNECT_TIMEOUT_MS = 10_000;
@@ -88,8 +89,8 @@ async function postSearchPlatform(
   body: unknown,
   headers: Record<string, string>,
   timeoutMs: number,
+  base = config.SEARCH_PLATFORM_URL,
 ) {
-  const base = config.SEARCH_PLATFORM_URL;
   if (!base) return null;
 
   return fetch(base.replace(/\/+$/, "") + path, {
@@ -127,20 +128,67 @@ export async function fetchGovUpstream(options: {
   headers: Record<string, string>;
   timeoutMs: number;
 }) {
+  const payload = {
+    query: options.query,
+    top_k: options.k,
+    jurisdiction: options.jurisdiction,
+    court: options.court,
+    court_type: options.courtType,
+    cites: options.cites,
+    domain: options.domain,
+    sources: options.sources,
+  };
+
+  if (!config.GOV_SEARCH_VIA_RESEARCH_PROXY) {
+    return postSearchPlatform(
+      "/api/v1/gov-search",
+      payload,
+      options.headers,
+      options.timeoutMs,
+    );
+  }
+
+  const fallbackBase =
+    config.SEARCH_PLATFORM_URL &&
+    config.SEARCH_PLATFORM_URL !== config.RESEARCH_PROXY_URL
+      ? config.SEARCH_PLATFORM_URL
+      : undefined;
+  const primaryTimeoutMs = fallbackBase
+    ? Math.min(options.timeoutMs, Math.max(3_000, Math.floor(options.timeoutMs * 0.6)))
+    : options.timeoutMs;
+  const startedAt = Date.now();
+
+  try {
+    const res = await postSearchPlatform(
+      "/api/v1/gov-search",
+      payload,
+      options.headers,
+      primaryTimeoutMs,
+      config.RESEARCH_PROXY_URL,
+    );
+    if (!fallbackBase || (res && res.status !== 429 && res.status < 500)) {
+      return res;
+    }
+    logger.warn("gov research proxy returned retryable status; falling back", {
+      module: "research-upstream",
+      status: res?.status,
+    });
+    res?.body?.cancel().catch(() => {});
+  } catch (err) {
+    if (!fallbackBase) throw err;
+    logger.warn("gov research proxy request failed; falling back", {
+      module: "research-upstream",
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  const remainingMs = Math.max(1, options.timeoutMs - (Date.now() - startedAt));
   return postSearchPlatform(
     "/api/v1/gov-search",
-    {
-      query: options.query,
-      top_k: options.k,
-      jurisdiction: options.jurisdiction,
-      court: options.court,
-      court_type: options.courtType,
-      cites: options.cites,
-      domain: options.domain,
-      sources: options.sources,
-    },
+    payload,
     options.headers,
-    options.timeoutMs,
+    remainingMs,
+    fallbackBase,
   );
 }
 

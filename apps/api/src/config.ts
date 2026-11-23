@@ -129,6 +129,11 @@ const configSchema = z.object({
   ),
   RESEARCH_PROXY_URL: z.string().url().optional(),
   SEARCH_PLATFORM_URL: z.string().url().optional(),
+  // When true, government search goes to RESEARCH_PROXY_URL, with the
+  // research and developer indexes, instead of SEARCH_PLATFORM_URL.
+  GOV_SEARCH_VIA_RESEARCH_PROXY: emptyStringAsDefault(
+    z.stringbool().default(false),
+  ),
   // When true, a plain web search that the search platform classifies as
   // government is served through the Government Index. It needs
   // SEARCH_PLATFORM_URL. Unset or empty, no search is routed.
@@ -895,6 +900,13 @@ const validatedConfigSchema = configSchema.superRefine((value, context) => {
       path: ["GOV_ROUTING_ENABLED"],
       message:
         "GOV_ROUTING_ENABLED needs SEARCH_PLATFORM_URL: set it, or turn routing off",
+    });
+  }
+  if (value.GOV_SEARCH_VIA_RESEARCH_PROXY && !value.RESEARCH_PROXY_URL) {
+    context.addIssue({
+      code: "custom",
+      path: ["GOV_SEARCH_VIA_RESEARCH_PROXY"],
+      message: "GOV_SEARCH_VIA_RESEARCH_PROXY needs RESEARCH_PROXY_URL",
     });
   }
   for (const error of getMcpActionLogConfigErrors(value)) {
