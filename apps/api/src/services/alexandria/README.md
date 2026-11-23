@@ -73,7 +73,11 @@ The charge id is `sha256(teamId, x-request-id)`; send `x-request-id` on every
 paid request or a retry is a new charge. One Redis record per charge id lives
 seven days:
 
-- completed: replays the response and its `scrape_id`, no second execution
+- completed, within the hour: replays the response and its `scrape_id`, no
+  second execution. The response is kept apart from the record, gzipped, in a
+  Redis cache entry that lives one hour; one over 1 MiB gzipped is not kept
+- completed, response no longer kept: 409 `response_not_retained`, no second
+  execution
 - same id, different payload: 409 `duplicate_request`
 - still running: 409 `request_in_flight`
 - refused before execution (authorization, quote, hold, Exchange 4xx or
