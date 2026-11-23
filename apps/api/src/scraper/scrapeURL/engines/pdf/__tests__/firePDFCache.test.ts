@@ -1831,6 +1831,7 @@ describe("FirePDF cache through the lookup service", () => {
       fetchMock.mockRejectedValueOnce(new Error("timed out"));
       expect(await lookupSpanAttributes()).toEqual({
         "pdf.cache_outcome": "error",
+        "error.expected": false,
       });
       const [span] = exporter
         .getFinishedSpans()
