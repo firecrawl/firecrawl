@@ -911,7 +911,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           jobId: job.data.crawl_id,
           webhook: job.data.webhook,
           v0: false,
-          zeroDataRetention: job.data.zeroDataRetention,
+          zeroDataRetention: ctx.zeroDataRetention,
         });
         if (sender) {
           logger.debug("Calling webhook with success...", {
@@ -1172,7 +1172,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         jobId: (job.data.crawl_id ?? job.id) as string,
         webhook: job.data.webhook,
         v0: Boolean(!job.data.v1),
-        zeroDataRetention: job.data.zeroDataRetention,
+        zeroDataRetention: ctx.zeroDataRetention,
       });
 
       // at this point we don't have a document, send a minimal payload to let users identify the errored URL
