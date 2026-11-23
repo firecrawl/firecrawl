@@ -14,6 +14,7 @@ import {
   freshFeedUpstreamPath,
   isFreshFeedUpstream,
   isValidFreshFeedCollection,
+  isValidFreshFeedFilterToken,
   normalizeFreshFeedUpstreams,
   parseFreshFeedFilters,
   resolveFreshFeedVertical,
@@ -197,6 +198,31 @@ function isAllowedFilterSubset(inbound: string, lockedValue: string): boolean {
   return true;
 }
 
+function isAllowedAgentsSuperset(
+  inbound: string,
+  lockedValue: string,
+): boolean {
+  const requested = inbound.split(",");
+  if (requested.length === 0) return false;
+  const requestedFolded = new Set<string>();
+  for (const token of requested) {
+    if (!isValidFreshFeedFilterToken(token)) {
+      return false;
+    }
+    const folded = token.toLowerCase();
+    if (requestedFolded.has(folded)) {
+      return false;
+    }
+    requestedFolded.add(folded);
+  }
+  for (const required of lockedValue.split(",")) {
+    if (!requestedFolded.has(required.toLowerCase())) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function buildUpstreamTarget(
   originalUrl: string,
   upstreamPath: string,
@@ -229,7 +255,11 @@ function buildUpstreamTarget(
       };
     }
     if (inboundValues.length === 1) {
-      if (!isAllowedFilterSubset(inboundValues[0], lockedValue)) {
+      const matchesFilter =
+        key === "agents"
+          ? isAllowedAgentsSuperset(inboundValues[0], lockedValue)
+          : isAllowedFilterSubset(inboundValues[0], lockedValue);
+      if (!matchesFilter) {
         return {
           error:
             key === "subcategory" && forcedSubcategory

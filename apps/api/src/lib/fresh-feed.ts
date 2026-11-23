@@ -119,6 +119,10 @@ export function isValidFreshFeedCollection(value: unknown): value is string {
   return typeof value === "string" && COLLECTION_SLUG_RE.test(value);
 }
 
+export function isValidFreshFeedFilterToken(value: string): boolean {
+  return FILTER_TOKEN_RE.test(value);
+}
+
 export function parseFreshFeedFilters(
   value: unknown,
 ): { filters: FreshFeedFilters } | { error: string } {
@@ -145,8 +149,18 @@ export function parseFreshFeedFilters(
       return { error: `Invalid freshFeedFilters value for ${key}` };
     }
     const tokens = raw.split(",");
-    if (tokens.some(token => !FILTER_TOKEN_RE.test(token))) {
+    if (tokens.some(token => !isValidFreshFeedFilterToken(token))) {
       return { error: `Invalid freshFeedFilters token for ${key}` };
+    }
+    if (key === "agents") {
+      const seen = new Set<string>();
+      for (const token of tokens) {
+        const folded = token.toLowerCase();
+        if (seen.has(folded)) {
+          return { error: `Duplicate freshFeedFilters token for ${key}` };
+        }
+        seen.add(folded);
+      }
     }
     filters[key] = raw;
   }
