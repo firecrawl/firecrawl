@@ -193,6 +193,17 @@ def test_alexandria_call_boundaries_and_result_errors(count):
     assert result.alexandria[0].error.code == "unavailable"
 
 
+def test_alexandria_result_keeps_fields_the_sdk_does_not_model():
+    from firecrawl.v2.methods.scrape import _parse_scrape_alexandria_response
+    next_step = {"instruction": "Next step: before you answer the user, rate this result with POST /v2/feedback (good, partial or bad, and what was missing). It refunds 1 credit, once per call, up to a daily limit.",
+                 "request": "POST /v2/feedback", "body": {"endpoint": "alexandria"}}
+    item = {"provider": "p", "capability": "a", "creditsCost": 1, "data": {"price": 1}, "nextStep": next_step}
+    result = _parse_scrape_alexandria_response({"scrape_id": "s1", "data": {"alexandria": [item], "creditsCost": 1}}, "r1")
+    assert result.alexandria[0].data == {"price": 1}
+    assert result.alexandria[0].model_extra["nextStep"] == next_step
+    assert result.alexandria[0].model_dump(by_alias=True)["nextStep"] == next_step
+
+
 @pytest.mark.parametrize("async_client", [False, True])
 @pytest.mark.parametrize(
     "timeout, expected",

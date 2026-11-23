@@ -631,6 +631,9 @@ export type InternalOptions = {
   saveScrapeResultToGCS?: boolean; // Passed along to fire-engine
   bypassBilling?: boolean;
   zeroDataRetention?: boolean;
+  /** Asks third-party data providers to leave personal email addresses and
+   * personal phone numbers out of their records; work emails are unaffected. */
+  workContactOnly?: boolean;
   /** null: the team has no flags. Absent: not snapshotted, so a check that
    * must fail closed treats the org as unresolved. */
   teamFlags?: TeamFlags | null;
