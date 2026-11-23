@@ -107,6 +107,54 @@ describe("feedback ZDR persistence guards", () => {
     ).toBe(true);
   });
 
+  it.each(["interact", "browser"] as const)(
+    "follows the team's scrape ZDR mode for %s feedback",
+    endpoint => {
+      for (const flags of [{ scrapeZDR: "forced" }, { forceZDR: true }]) {
+        expect(
+          shouldSkipPersistenceForForcedZdr(
+            reqWithFlags(flags),
+            options(endpoint),
+          ),
+        ).toBe(true);
+      }
+
+      for (const flags of [
+        {},
+        { scrapeZDR: "allowed" },
+        { allowZDR: true },
+        { searchZDR: "forced-zdr" },
+      ]) {
+        expect(
+          shouldSkipPersistenceForForcedZdr(
+            reqWithFlags(flags),
+            options(endpoint),
+          ),
+        ).toBe(false);
+      }
+    },
+  );
+
+  it.each(["interact", "browser"] as const)(
+    "follows the session's own ZDR flag for %s feedback",
+    endpoint => {
+      // A session row carries no request options, which must not read as ZDR.
+      expect(
+        shouldSkipPersistenceForJobZdr(
+          { ...job(endpoint, null), zero_data_retention: false },
+          options(endpoint),
+        ),
+      ).toBe(false);
+
+      expect(
+        shouldSkipPersistenceForJobZdr(
+          { ...job(endpoint, null), zero_data_retention: true },
+          options(endpoint),
+        ),
+      ).toBe(true);
+    },
+  );
+
   it("skips persistence for legacy forced ZDR", () => {
     expect(
       shouldSkipPersistenceForForcedZdr(

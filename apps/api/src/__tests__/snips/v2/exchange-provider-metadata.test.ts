@@ -100,7 +100,7 @@ const stubMeta = () =>
     internalOptions: { teamId: "team-1", orgId: "org-1" },
     featureFlags: new Set(),
     mock: null,
-    abort: { asSignal: () => undefined },
+    abort: { asSignal: () => undefined, scrapeTimeout: () => undefined },
     logger: {
       info: vi.fn(),
       warn: vi.fn(),

@@ -22,7 +22,7 @@ beforeAll(async () => {
 //
 // Request-level async opt-in is disabled by default; this suite runs only in
 // environments that intentionally allow the override. The outer PDF engine
-// may still fall back to MinerU when async FirePDF is unavailable, so this
+// may still fall back to pdf-parse when async FirePDF is unavailable, so this
 // asserts the user-visible contract rather than the serving engine.
 const SHOULD_RUN =
   ALLOW_TEST_SUITE_WEBSITE &&

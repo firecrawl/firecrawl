@@ -33,7 +33,6 @@ const fallbackRateLimits: Record<RateLimiterMode, number> = {
   browserReplay: 500,
   account: 1000,
   supportAsk: 3,
-  supportDocsSearch: 3,
   research: 100,
   developerSearch: 100,
   govSearch: 300,

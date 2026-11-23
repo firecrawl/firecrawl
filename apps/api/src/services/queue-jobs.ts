@@ -22,7 +22,7 @@ import { getACUCTeam } from "../controllers/auth";
 import { DEFAULT_TEAM_LIMITS } from "./autumn/autumn.service";
 import { getCrawl } from "../lib/crawl-redis";
 import { Logger } from "winston";
-import { ScrapeJobTimeoutError, TransportableError } from "../lib/error";
+import { isTransportableError, ScrapeJobTimeoutError } from "../lib/error";
 import { deserializeTransportableError } from "../lib/error-serde";
 import { abTestJob } from "./ab-test";
 import { NuQJob, scrapeQueue } from "./worker/nuq";
@@ -840,7 +840,7 @@ export async function waitForJob(
       ].filter(x => x !== null),
     );
   } catch (e) {
-    if (e instanceof TransportableError) {
+    if (isTransportableError(e)) {
       throw e;
     } else if (e instanceof Error) {
       const x = deserializeTransportableError(e.message);

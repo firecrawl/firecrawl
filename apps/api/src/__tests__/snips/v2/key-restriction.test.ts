@@ -1,5 +1,14 @@
 import { eq } from "drizzle-orm";
-import { idmux, map, scrape, scrapeRaw, scrapeTimeout, searchRaw } from "./lib";
+import request from "supertest";
+import {
+  idmux,
+  map,
+  scrape,
+  scrapeRaw,
+  scrapeTimeout,
+  searchRaw,
+  TEST_API_URL,
+} from "./lib";
 import { createTestIdUrl, describeIf, Identity, TEST_PRODUCTION } from "../lib";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
@@ -133,6 +142,45 @@ describeIf(TEST_PRODUCTION)(
         expect(response.body.error).toContain(
           "restricted to the following endpoints",
         );
+      },
+      scrapeTimeout * 2,
+    );
+
+    it.concurrent(
+      "gates account endpoints on the account group",
+      async () => {
+        const blockedIdentity = await idmux({
+          name: "key-restriction/account-blocked",
+          credits: 10000,
+          flags: { keyRestriction: true },
+        });
+        await seedRestriction(blockedIdentity, {
+          allowedEndpoints: ["scrape"],
+        });
+
+        const blocked = await request(TEST_API_URL)
+          .get("/v2/team/credit-usage")
+          .set("Authorization", `Bearer ${blockedIdentity.apiKey}`);
+        expect(blocked.statusCode).toBe(403);
+        expect(blocked.body.success).toBe(false);
+        expect(blocked.body.error).toContain(
+          "restricted to the following endpoints",
+        );
+
+        const allowedIdentity = await idmux({
+          name: "key-restriction/account-allowed",
+          credits: 10000,
+          flags: { keyRestriction: true },
+        });
+        await seedRestriction(allowedIdentity, {
+          allowedEndpoints: ["scrape", "account"],
+        });
+
+        const allowed = await request(TEST_API_URL)
+          .get("/v2/team/credit-usage")
+          .set("Authorization", `Bearer ${allowedIdentity.apiKey}`);
+        expect(allowed.statusCode).toBe(200);
+        expect(allowed.body.success).toBe(true);
       },
       scrapeTimeout * 2,
     );

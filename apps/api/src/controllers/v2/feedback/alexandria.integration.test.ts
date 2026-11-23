@@ -42,6 +42,11 @@ CREATE TABLE alexandria_feedback (
   schema_version integer NOT NULL DEFAULT 2,
   credits_refunded integer NOT NULL DEFAULT 0 CHECK (credits_refunded >= 0),
   refund_policy jsonb,
+  external_request_id text,
+  session_id text,
+  session_source text,
+  thread_id text,
+  thread_source text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
