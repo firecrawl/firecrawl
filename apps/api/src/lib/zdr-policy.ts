@@ -11,7 +11,8 @@ import {
  * A team's ZDR modes, resolved once per request from its flags. Scrape and
  * search are independent: one being forced says nothing about the other.
  * Safe Mode lockdown implies ZDR for both unless the request bypasses it.
- * Alexandria follows its own flag and is forced whenever scrape is.
+ * Alexandria follows its own flag and is forced whenever the scrape flag is;
+ * Safe Mode lockdown does not reach it, matching getAlexandriaZDR.
  */
 export type ZDRPolicy = Readonly<{
   scrape: ReturnType<typeof getScrapeZDR>;
