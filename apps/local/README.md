@@ -1,127 +1,251 @@
 # Firecrawl Local
 
-A single Rust binary that scrapes, crawls and maps the web from your own machine. It speaks the Firecrawl v2 API, plugs into AI agents through the Firecrawl MCP server, and needs no database, queue or container.
+Firecrawl Local is one binary that scrapes, crawls and maps websites from your own machine. It turns pages into clean markdown, plugs into AI agents as an MCP server, and serves the Firecrawl v2 API on localhost, so code written for Firecrawl runs against it unchanged. There is no database, queue or container to run.
 
-It shares its HTML cleaning code with the Firecrawl API. Firecrawl Local compiles `apps/api/native/src` directly, so a page cleaned locally and a page cleaned in the cloud go through the same rules.
+Pages are fetched and cleaned on your machine with the same cleaning code the Firecrawl API uses. Search, pages that refuse your machine, and Alexandria data providers go to [Firecrawl Cloud](#what-runs-where), which you can turn off.
 
-## Build
+- [Install](#install)
+- [Quick start](#quick-start)
+- [Add it to your AI agent](#add-it-to-your-ai-agent)
+- [Run the Firecrawl API locally](#run-the-firecrawl-api-locally)
+- [Command reference](#command-reference)
+- [What runs where](#what-runs-where)
+- [Security](#security)
+- [Configuration](#configuration)
+- [Limits](#limits)
+- [Development](#development)
 
-You need git, [Rust](https://rustup.rs) and a C compiler (`build-essential` on Debian and Ubuntu, the Xcode command line tools on macOS).
+## Install
 
-```sh
-cd apps/local
-cargo build --release
-./target/release/firecrawl-local --help
+You need Rust and a C compiler. On macOS, install the Xcode command line tools with `xcode-select --install`. On Debian and Ubuntu, install `build-essential`. Then install Firecrawl Local from crates.io.
+
+```bash
+cargo install firecrawl-local
+firecrawl-local --version
 ```
 
-Once a release is on crates.io, `cargo install firecrawl-local` installs the same binary without cloning the repository.
+To build the latest code from this repository instead, clone it and build `apps/local`. The binary lands in `target/release/firecrawl-local`.
 
-Pages that need JavaScript are rendered in the Chrome or Chromium already installed on the machine. Without one it still handles static pages, and a page that needed a browser comes back with a `warning` saying so. Set `FIRECRAWL_CHROME_PATH` to point it at a specific browser.
+```bash
+git clone https://github.com/firecrawl/firecrawl.git
+cd firecrawl/apps/local
+cargo build --release
+./target/release/firecrawl-local --version
+```
 
-Chrome keeps its sandbox on. Inside a Docker container that needs user namespaces, which Docker's default seccomp profile blocks. To render JavaScript pages there, run the container with a profile that keeps Docker's defaults and also allows `clone`, `setns` and `unshare`. Playwright [publishes one](https://playwright.dev/docs/docker) for sandboxed Chromium.
+Two optional extras unlock more of it.
 
-```sh
+- **Chrome or Chromium.** Firecrawl Local renders pages that need JavaScript in the browser already installed on your machine. Without one, static pages still work and a page that needed a browser comes back with a warning saying so.
+- **Node.js 22 or newer.** The MCP server is the `firecrawl-mcp` npm package, which Firecrawl Local runs through `npx`.
+
+## Quick start
+
+Scrape a page and print its markdown.
+
+```bash
+firecrawl-local scrape https://example.com --markdown
+```
+
+Crawl a site and save one markdown file per page.
+
+```bash
+firecrawl-local crawl https://docs.firecrawl.dev --limit 50 --out ./pages
+```
+
+List every URL on a site.
+
+```bash
+firecrawl-local map https://firecrawl.dev
+```
+
+Without `--markdown`, `scrape` prints the same JSON the Firecrawl API returns. Ask for more formats with `--format markdown,links` (the choices are `markdown`, `html`, `rawHtml` and `links`). PDFs and Office documents are parsed on your machine too.
+
+## Add it to your AI agent
+
+`init` adds Firecrawl Local as an MCP server to every AI tool it finds on your machine.
+
+```bash
+firecrawl-local init
+```
+
+It knows Claude Code, Claude Desktop, Cursor, Windsurf, Gemini CLI and Codex. It backs up each config file before changing it. Add `--dry-run` to see the changes without writing them, or `--agent cursor` to set up one tool. Restart the tool afterwards so it loads the new server.
+
+To add it by hand, register `firecrawl-local mcp` as a stdio MCP server. In a JSON config that looks like this, with the full path to the binary.
+
+```json
+{
+  "mcpServers": {
+    "firecrawl": {
+      "command": "/path/to/firecrawl-local",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Your agent gets the standard Firecrawl MCP tools. `firecrawl-local mcp` starts the local API on a loopback port and runs the `firecrawl-mcp` package against it, so scrape, crawl, map and batch scrape run on your machine and the other tools go to Firecrawl Cloud.
+
+## Run the Firecrawl API locally
+
+`serve` answers the Firecrawl v2 API on port 3002.
+
+```bash
+firecrawl-local serve
+```
+
+From another terminal, scrape a page through it.
+
+```bash
+curl -s http://localhost:3002/v2/scrape \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com","formats":["markdown"]}'
+```
+
+Point any Firecrawl SDK at it by setting its API URL to `http://localhost:3002`. No API key is needed for local routes.
+
+```python
+from firecrawl import Firecrawl
+
+app = Firecrawl(api_url="http://localhost:3002")
+print(app.scrape("https://example.com").markdown)
+```
+
+```js
+import { Firecrawl } from "firecrawl";
+
+const app = new Firecrawl({ apiUrl: "http://localhost:3002" });
+const doc = await app.scrape("https://example.com");
+console.log(doc.markdown);
+```
+
+These routes run on your machine.
+
+| Route | What it does |
+| --- | --- |
+| `POST /v2/scrape` | Scrape one URL |
+| `POST /v2/map` | List a site's URLs |
+| `POST /v2/crawl`, `GET` and `DELETE /v2/crawl/{id}` | Start, check and cancel a crawl |
+| `POST /v2/batch/scrape`, `GET` and `DELETE /v2/batch/scrape/{id}` | Start, check and cancel a batch scrape |
+| `GET /health` | Health check |
+
+Every other `/v2` route, such as `/v2/search`, is passed on to Firecrawl Cloud, unless `FIRECRAWL_CLOUD` says otherwise. The v0 and v1 routes are not served. Crawl and batch jobs live in memory and expire an hour after they start.
+
+## Command reference
+
+| Command | What it does | Runs on |
+| --- | --- | --- |
+| `scrape <urls...>` | Scrape one or more URLs | Your machine |
+| `crawl <url>` | Follow links from a start URL | Your machine |
+| `map <url>` | List a site's URLs from its sitemaps and start page | Your machine |
+| `serve` | Run the Firecrawl v2 API on localhost | Your machine |
+| `mcp` | Run the Firecrawl MCP server over stdio | Your machine, other tools on Firecrawl Cloud |
+| `init` | Add the MCP server to the AI tools on this machine | Your machine |
+| `search <query>` | Search the web | Firecrawl Cloud |
+| `find-tools <query>` | Find Alexandria data providers | Firecrawl Cloud, needs sign-in |
+| `data <provider> <capability>` | Run an Alexandria data provider | Firecrawl Cloud, needs sign-in |
+| `login` | Sign in to Firecrawl in the browser | Firecrawl Cloud |
+
+Run `firecrawl-local <command> --help` for every option. The ones you will reach for most are below.
+
+- **scrape.** `--markdown` prints only the markdown, `--format` picks output formats, `--full-page` keeps navigation and footers, and `--timeout` sets the per-page limit in milliseconds.
+- **crawl.** `--limit` caps the page count (default 100), `--max-depth` caps link depth, `--include` and `--exclude` take path regexes, `--entire-domain` follows links outside the start path, and `--out` writes markdown files instead of JSON.
+- **map.** `--search` keeps only URLs containing some text, and `--limit` caps the count.
+- **serve.** `--port` (default 3002), `--host`, `--token` and `--allow-private`, covered in [Security](#security).
+- **Any command.** `--browser auto|never|always` decides when to use Chrome.
+
+## What runs where
+
+Scraping, crawling, mapping and document parsing run on your machine and send nothing to Firecrawl. Three things need Firecrawl Cloud because a laptop does not have the index, the network or the data.
+
+| Feature | Why it goes to the cloud | Account needed |
+| --- | --- | --- |
+| Search | There is no search index on your machine | No, keyless search is rate limited |
+| Pages that refuse your machine | When a site blocks both the plain fetch and the local browser, Firecrawl Cloud fetches it | No |
+| Alexandria data providers | The providers run on Firecrawl Cloud | Yes, a free account |
+
+A page Firecrawl Cloud fetched for you carries `"source": "firecrawl-cloud"`. If the cloud cannot get it either, the result has `"blocked": true` and a warning that says why. Cloud calls carry a random install ID and the name of the tool that made them, which is how Firecrawl counts installs.
+
+To sign in, run `login`. It opens the browser and saves your API key in the same place the Firecrawl CLI keeps it, so either tool's login works for both.
+
+```bash
+firecrawl-local login
+```
+
+A running `serve` picks up the login straight away, and so do the MCP server's search and scrape tools. The MCP server's Alexandria tools check for a key when they start, so restart your AI tool after signing in to use them.
+
+`FIRECRAWL_CLOUD` controls the hand-off.
+
+| Value | Effect |
+| --- | --- |
+| `auto` (default) | Search, the blocked-page fallback and Alexandria all work |
+| `search` | Only search goes to Firecrawl Cloud |
+| `off` | Nothing goes to Firecrawl Cloud |
+
+An unrecognised value counts as `off`. `login` always talks to Firecrawl, because signing in is its job.
+
+## Security
+
+The defaults differ between the tools you run yourself and the API server, because the API takes requests from other programs.
+
+- **`scrape`, `crawl`, `map` and `mcp`** run for the person at the keyboard, so they can reach `localhost` and your private network. `scrape`, `crawl` and `mcp` take `--public-only` to refuse those addresses.
+- **`serve`** listens on `127.0.0.1` and refuses localhost and private addresses unless you pass `--allow-private`. Binding another address with `--host` requires `--token`, and requests are checked against an allowed Host list that `--allowed-host` adds to.
+- **Always refused.** Link-local and cloud metadata addresses are blocked in every mode, including after redirects and DNS resolution.
+
+An AI agent that reads a page with hidden instructions could be steered into opening an internal URL. If your agent browses sites you do not trust, register the MCP server as `firecrawl-local mcp --public-only`.
+
+The same rules cover the browser. Chrome runs headless and sandboxed with a throwaway profile, behind a loopback proxy inside Firecrawl Local that checks every connection it opens, including redirects, subresources, script requests and WebSockets.
+
+Firecrawl Local identifies itself in its User-Agent and reads `robots.txt` when crawling, where site owners can address it as `FirecrawlLocal`.
+
+### Running in Docker
+
+Chrome keeps its sandbox on, which needs user namespaces, and Docker's default seccomp profile blocks them. To render JavaScript pages in a container, use a profile that keeps Docker's defaults and also allows `clone`, `setns` and `unshare`. Playwright publishes one.
+
+```bash
 curl -fsSLO https://raw.githubusercontent.com/microsoft/playwright/main/utils/docker/seccomp_profile.json
 docker run --security-opt seccomp=seccomp_profile.json your-image
 ```
 
-Do not use `seccomp=unconfined` for this. It removes the whole filter from a container that is loading pages you do not control.
+Do not use `seccomp=unconfined` for this. It removes the whole filter from a container that loads pages you do not control.
 
-## Use it from the command line
-
-```sh
-firecrawl-local scrape https://example.com --markdown
-firecrawl-local crawl https://docs.example.com --limit 200 --out ./pages
-firecrawl-local map https://example.com
-```
-
-`scrape` returns the same JSON shape as the Firecrawl API. `--format` takes `markdown`, `html`, `rawHtml` and `links`, and `--full-page` keeps navigation and footers. PDFs and office documents are parsed locally.
-
-## Use it from an AI agent
-
-```sh
-firecrawl-local init
-```
-
-`init` adds Firecrawl Local as an MCP server to the AI coding tools it finds on the machine (Claude Code, Claude desktop, Cursor, Windsurf, Gemini CLI and Codex). It backs up each config file before changing it, and `--dry-run` shows the change without writing it. To wire it up by hand, run `firecrawl-local mcp` as a stdio MCP server.
-
-Firecrawl Local does not carry an MCP server of its own. `firecrawl-local mcp` starts its API on a loopback port and runs the [Firecrawl MCP server](https://github.com/firecrawl/firecrawl-mcp-server) against it, so the tools, their descriptions and their updates are the same ones every other Firecrawl MCP user gets. Scrape, map, crawl and batch scrape are answered on your machine, and the other tools are passed on to Firecrawl cloud. It needs Node.js 22 or newer, because the MCP server is the `firecrawl-mcp` package run through `npx`.
-
-## Use it as a local API
-
-```sh
-firecrawl-local serve --port 3002
-curl -s localhost:3002/v2/scrape -H 'content-type: application/json' \
-  -d '{"url":"https://example.com","formats":["markdown"]}'
-```
-
-`serve` answers `/v2/scrape`, `/v2/map`, `/v2/crawl` and `/v2/batch/scrape`, so existing Firecrawl SDKs work when pointed at it. The older v0 and v1 routes are not served. Crawl and batch jobs are kept in memory and expire an hour after they are created.
-
-Every other `/v2` route, such as `/search`, `/agent` and data providers, is passed on to Firecrawl cloud when the cloud setting allows that route, and answers `CLOUD_ONLY` otherwise. By default they are passed on, without a key until you sign in, the same as the command line and the MCP server. `FIRECRAWL_CLOUD=search` passes on search only, `FIRECRAWL_CLOUD=off` passes on nothing, and a value that is not recognised is read as `off`. Forwarded requests must be `application/json` or come from a tool, not a web page, and bodies may be up to 64 MB. Structured JSON output and browser actions on a local scrape are not implemented. The full self-hosted server in `apps/api` is unchanged.
-
-## What runs locally and what runs on Firecrawl cloud
-
-Scrape, crawl, map and document parsing run on your machine and send nothing to Firecrawl.
-
-Everything else uses Firecrawl cloud, because it needs an index, data or a service the machine does not have. The three you will meet most are these.
-
-- **Search.** `firecrawl-local search` and the MCP server's `firecrawl_search` tool query Firecrawl's search.
-- **Pages that will not load locally.** When a site refuses a plain fetch and the local browser, Firecrawl Local asks Firecrawl cloud for the page and marks the result with `source: firecrawl-cloud`. If the cloud cannot take it either, the result is marked `blocked` and carries a `warning` that says why.
-- **Alexandria data providers.** `find-tools` and `data` reach structured data providers and need a Firecrawl account.
-
-`firecrawl-local login` signs in through the browser and saves the key where the Firecrawl CLI keeps it. Set `FIRECRAWL_CLOUD=off` to turn off search, the cloud fallback and data providers, or `FIRECRAWL_CLOUD=search` to allow search only. `login` always talks to Firecrawl, since signing in is its whole job. A login is picked up by `serve` and by the MCP server's search and scrape tools while they are running. The MCP server's Alexandria tools check for a key when it starts, so restart the MCP server after signing in to use them.
-
-Without an account, Firecrawl cloud allows a limited amount of search. When that runs out, or when a call needs an account, the answer says to run `firecrawl-local login`.
-
-## Safety defaults
-
-- `serve` listens on `127.0.0.1`. Binding any other address requires `--token`, and requests are checked against an allowed `Host` list.
-- `serve` callers cannot reach localhost or private networks unless `--allow-private` is set. The command line and the MCP server run for the person at the keyboard, so they allow local and private targets by default; pass `--public-only` to refuse them there too.
-- Because the command line and the MCP server can reach local and private addresses, an AI agent that follows instructions hidden in a page could be steered into reading an internal page. If the agent browses sites you do not trust, register the MCP server as `firecrawl-local mcp --public-only`.
-- Link-local and cloud metadata addresses are refused in every mode, including after redirects and DNS resolution.
-- The same rules cover the browser. Chrome runs behind a loopback proxy inside Firecrawl Local that checks every connection it opens, including redirects, subresources, scripts' own requests and WebSockets. With private targets off, a public page cannot make the browser call a private address. With them on, as in the command line's default, a page the browser loads can reach the local network the way it could in your own browser.
-- The local browser runs headless and sandboxed with a throwaway profile.
-- It identifies itself in its User-Agent and reads `robots.txt` when crawling.
-
-## Environment variables
+## Configuration
 
 | Variable | Effect |
 | --- | --- |
-| `FIRECRAWL_LOCAL_BROWSER` | `auto` (default), `never` or `always` |
+| `FIRECRAWL_CLOUD` | `auto`, `search` or `off`, see [What runs where](#what-runs-where) |
+| `FIRECRAWL_API_KEY` | Firecrawl API key, used instead of the saved login |
+| `FIRECRAWL_API_URL` | Firecrawl Cloud address |
+| `FIRECRAWL_LOCAL_BROWSER` | `auto` (default), `never` or `always`, same as `--browser` |
 | `FIRECRAWL_CHROME_PATH` | Path to the Chrome or Chromium to use |
-| `FIRECRAWL_CLOUD` | `auto` (also `on`, `yes`, `fallback`), `search` or `off` (also `no`, `none`, `disabled`). Unrecognized values are read as `off` |
-| `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL` | Firecrawl cloud key and address |
-| `FIRECRAWL_LOCAL_TOKEN` | Bearer token for `serve` |
-| `FIRECRAWL_LOCAL_ALLOW_PRIVATE` | Let `serve` callers reach private addresses |
+| `FIRECRAWL_LOCAL_TOKEN` | Bearer token for `serve`, same as `--token` |
+| `FIRECRAWL_LOCAL_ALLOW_PRIVATE` | Let `serve` callers reach private addresses, same as `--allow-private` |
 | `FIRECRAWL_LOCAL_USER_AGENT` | Override the User-Agent |
 | `FIRECRAWL_LOCAL_SCROLL` | Scroll rendered pages before reading them |
-| `FIRECRAWL_LOCAL_TRACE` | Print browser settle timing to stderr |
 | `FIRECRAWL_LOCAL_HOME` | Folder for Firecrawl Local's own files, such as its install ID |
-| `FIRECRAWL_CLI_CREDENTIALS` | Path of the saved login file, which defaults to the Firecrawl CLI's |
-| `FIRECRAWL_WEB_URL` | Address of the site `login` opens, for testing against another deployment |
-| `FIRECRAWL_MCP_PACKAGE` | The npm package `mcp` runs, which defaults to `firecrawl-mcp` |
+| `FIRECRAWL_CLI_CREDENTIALS` | Path of the saved login, which defaults to the Firecrawl CLI's |
+| `FIRECRAWL_MCP_PACKAGE` | npm package `mcp` runs, default `firecrawl-mcp` |
+| `FIRECRAWL_LOCAL_TRACE` | Print browser timing to stderr, for debugging |
+| `FIRECRAWL_WEB_URL` | Site `login` opens, for testing against another deployment |
 
-## Releases
+## Limits
 
-`.github/workflows/publish-local.yml` publishes the crate to crates.io when the version in `Cargo.toml` on main is newer than the published one. It uses trusted publishing, so there is no token stored in the repository, and the publish step waits for approval in the `release` environment.
+- Local scrapes skip the `json` and `summary` formats with a warning, and ignore browser `actions`. Screenshots need Chrome.
+- Crawl and batch jobs are kept in memory, so they end when `serve` stops.
+- The v0 and v1 API routes are not served.
 
-A crate on crates.io cannot reach `apps/api/native/src`, so `scripts/vendor-native.sh` copies the shared cleaning code into `src/native` before packaging. `build.rs` uses that copy only when the repository's files are not there, so a build inside the repository always uses the shared files.
+For a full Firecrawl server with queues, workers and every format, see the [self-hosting guide](https://docs.firecrawl.dev/contributing/self-host). It lives in `apps/api` and is unchanged by Firecrawl Local.
 
-Two things have to happen once, by hand, before the workflow can publish.
+## Development
 
-1. Publish `nodesig` 1.0.0 to crates.io from [firecrawl/nodesig](https://github.com/firecrawl/nodesig). crates.io does not accept git dependencies, and the cleaning code depends on it.
-2. Publish the first version of `firecrawl-local` with an API token, since trusted publishing only works for a crate that already exists. Then add a trusted publisher in the crate's settings on crates.io with repository `firecrawl/firecrawl`, workflow `publish-local.yml` and environment `release`.
-
-```sh
+```bash
 cd apps/local
-./scripts/vendor-native.sh
-cargo publish --allow-dirty
-```
-
-After that, a release is a version bump in `Cargo.toml`.
-
-## Tests
-
-```sh
 cargo test
 ```
+
+Firecrawl Local compiles the HTML cleaning code in `apps/api/native/src` directly, so a change there changes both the API and Firecrawl Local.
+
+### Releases
+
+`.github/workflows/publish-local.yml` publishes the crate to crates.io when the version in `Cargo.toml` on `main` is newer than the published one, so a release is a version bump. It uses trusted publishing, and the publish step waits for approval in the `release` environment.
+
+A crate on crates.io cannot reach `apps/api/native/src`, so `scripts/vendor-native.sh` copies the shared code into `src/native` before packaging. `build.rs` uses that copy only when the repository's files are missing, so a build inside the repository always uses the shared files.
