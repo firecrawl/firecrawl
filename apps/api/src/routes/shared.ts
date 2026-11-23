@@ -392,15 +392,7 @@ export function authMiddleware(
           ? options.allowKeyless(req)
           : options.allowKeyless;
 
-      let currentRateLimiterMode = rateLimiterMode;
-      if (
-        currentRateLimiterMode === RateLimiterMode.Extract &&
-        isAgentExtractModelValid((req.body as any)?.agent?.model)
-      ) {
-        currentRateLimiterMode = RateLimiterMode.ExtractAgentPreview;
-      }
-
-      const auth = await authenticateUser(req, res, currentRateLimiterMode, {
+      const auth = await authenticateUser(req, res, rateLimiterMode, {
         ...options,
         allowKeyless,
       });
@@ -444,6 +436,7 @@ export function authMiddleware(
         ...(hostedMcp ? { hostedMcp: true } : {}),
       };
       req.acuc = chunk ?? undefined;
+      req.caller = { teamId: team_id };
       next();
     })().catch(err => next(err));
   };
