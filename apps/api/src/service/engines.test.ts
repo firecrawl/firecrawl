@@ -175,9 +175,11 @@ describe("buildEngineRegistry", () => {
       buildEngineRegistry([
         {
           owner: "core",
-          engines: [makeEngine("__proto__", { features: { __proto__: true } })],
+          engines: [
+            makeEngine("__proto__", { features: { ["__proto__"]: true } }),
+          ],
           engineFeatures: makeFeatures({
-            __proto__: { priority: 0 },
+            ["__proto__"]: { priority: 0 },
             constructor: { priority: 15 },
           }),
         },
