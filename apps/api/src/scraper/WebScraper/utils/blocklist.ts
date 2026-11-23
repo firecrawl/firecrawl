@@ -84,8 +84,6 @@ function hitTeamId(teamId: string | null | undefined): string | null {
   return isValidUuid(stored) ? stored : null;
 }
 
-const ZDR_REDACTED = "<redacted due to zero data retention>";
-
 function recordHit(
   url: string,
   domain: string,
@@ -94,21 +92,19 @@ function recordHit(
 ): void {
   if (context === undefined || context.record === false) return;
   if (config.USE_DB_AUTHENTICATION !== true) return;
-  const zeroDataRetention =
+  if (
     context.zeroDataRetention === true ||
     getScrapeZDR(flags ?? undefined) === "forced" ||
     isLockdownZeroDataRetention(
       flags,
       typeof context.safeMode === "boolean" ? context.safeMode : undefined,
-    );
+    )
+  )
+    return;
   hitBuffer.push({
     id: uuidv7(),
-    domain: zeroDataRetention ? ZDR_REDACTED : domain,
-    url: zeroDataRetention
-      ? ZDR_REDACTED
-      : url.length > 2048
-        ? url.slice(0, 2048)
-        : url,
+    domain,
+    url: url.length > 2048 ? url.slice(0, 2048) : url,
     team_id: hitTeamId(context.team_id),
     origin: context.origin ?? null,
   });
