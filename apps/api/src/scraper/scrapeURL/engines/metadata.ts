@@ -7,7 +7,6 @@
  */
 import type {
   EngineFeature,
-  EngineFeatureMap,
   EngineFeatureName,
   EngineName,
 } from "../../../service/engines";
@@ -39,7 +38,7 @@ export const coreEngineFeatures = {
   stealthProxy: { priority: 20 },
   branding: { priority: 20 }, // Requires CDP executeJavascript
   disableAdblock: { priority: 10 },
-} as const satisfies Record<string, EngineFeature> & EngineFeatureMap;
+} as const satisfies Record<EngineFeatureName, EngineFeature>;
 
 const chromeCdpFeatures = {
   actions: true,
