@@ -609,9 +609,15 @@ impl Engine {
       .browser
       .as_ref()
       .ok_or_else(|| ScrapeError::new(501, "NO_BROWSER", "No Chrome was found on this machine."))?;
+    let accept_language = opts
+      .headers
+      .iter()
+      .find(|(name, _)| name.eq_ignore_ascii_case("accept-language"))
+      .map(|(_, value)| value.as_str());
     let rendered = browser
       .render(
         requested,
+        accept_language,
         wait_for,
         timeout.max(Duration::from_secs(10)),
         screenshot,
