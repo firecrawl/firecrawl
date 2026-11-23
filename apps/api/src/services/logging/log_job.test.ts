@@ -13,12 +13,10 @@ const {
   writeApiJobAccess,
   writeFeedbackJob,
   writeScrapeJobState,
-  writeExtractJobState,
   withSpan,
   setSpanAttributes,
   spans,
   enqueueZdrCleanupJob,
-  saveExtractResult,
 } = vi.hoisted(() => {
   const logger: any = {
     info: vi.fn(),
@@ -58,12 +56,10 @@ const {
     writeApiJobAccess: vi.fn(async () => true),
     writeFeedbackJob: vi.fn(async () => true),
     writeScrapeJobState: vi.fn(async () => true),
-    writeExtractJobState: vi.fn(async () => true),
     withSpan,
     setSpanAttributes: vi.fn(),
     spans,
     enqueueZdrCleanupJob: vi.fn(async () => {}),
-    saveExtractResult: vi.fn(async () => {}),
   };
 });
 
@@ -108,7 +104,6 @@ vi.mock("../../lib/feedback-job-store", () => ({
 
 vi.mock("../../lib/job-state-store", () => ({
   writeScrapeJobState,
-  writeExtractJobState,
 }));
 
 vi.mock("../../lib/keyless", () => ({
@@ -117,7 +112,6 @@ vi.mock("../../lib/keyless", () => ({
 
 vi.mock("../../lib/gcs-jobs", () => ({
   saveDeepResearchToGCS: vi.fn(),
-  saveExtractToGCS: vi.fn(),
   saveLlmsTxtToGCS: vi.fn(),
   saveMapToGCS: vi.fn(),
   saveScrapeToGCS: vi.fn(),
@@ -126,10 +120,6 @@ vi.mock("../../lib/gcs-jobs", () => ({
 
 vi.mock("../../lib/zdr-queue", () => ({
   enqueueZdrCleanupJob,
-}));
-
-vi.mock("../../lib/extract/extract-redis", () => ({
-  saveExtractResult,
 }));
 
 vi.mock("../posthog", () => ({
@@ -148,7 +138,6 @@ vi.mock("../../lib/otel-tracer", () => ({
 import {
   logRequest,
   logScrape,
-  logExtract,
   logSearch,
   shutdownPubSubLogging,
   type LoggedSearch,
@@ -521,57 +510,6 @@ describe("operational job state logging", () => {
         creditsBilled: 1,
         error: "boom",
       }),
-    );
-  });
-
-  it("writes terminal extract state", async () => {
-    const id = "019e6f45-7778-727d-adf0-0abe9d5062b6";
-    await logExtract({
-      id,
-      request_id: id,
-      urls: ["https://example.com"],
-      team_id: "team-id",
-      options: {},
-      model_kind: "fire-1",
-      credits_cost: 3,
-      is_successful: false,
-      error: "failed",
-    });
-
-    expect(writeExtractJobState).toHaveBeenCalledWith(
-      id,
-      expect.objectContaining({
-        status: "failed",
-        creditsBilled: 3,
-        error: "failed",
-      }),
-    );
-  });
-
-  it("writes extract state before result storage fails", async () => {
-    const id = "019e6f45-7778-727d-adf0-0abe9d5062b6";
-    saveExtractResult.mockRejectedValueOnce(new Error("Redis unavailable"));
-
-    await expect(
-      logExtract({
-        id,
-        request_id: id,
-        urls: ["https://example.com"],
-        team_id: "team-id",
-        options: {},
-        model_kind: "fire-1",
-        credits_cost: 3,
-        is_successful: true,
-        result: { ok: true },
-      }),
-    ).rejects.toThrow("Redis unavailable");
-
-    expect(writeExtractJobState).toHaveBeenCalledWith(
-      id,
-      expect.objectContaining({ status: "completed" }),
-    );
-    expect(writeExtractJobState.mock.invocationCallOrder[0]).toBeLessThan(
-      saveExtractResult.mock.invocationCallOrder[0],
     );
   });
 });

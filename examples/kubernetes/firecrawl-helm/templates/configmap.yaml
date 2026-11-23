@@ -18,7 +18,6 @@ data:
   PORT: {{ default (printf "%v" .Values.service.api.port) .Values.config.PORT | quote }}
   HOST: {{ .Values.config.HOST | quote }}
   WORKER_PORT: {{ default (printf "%v" .Values.worker.port) .Values.config.WORKER_PORT | quote }}
-  EXTRACT_WORKER_PORT: {{ default (printf "%v" .Values.extractWorker.port) .Values.config.EXTRACT_WORKER_PORT | quote }}
   NUQ_WORKER_PORT: {{ default (printf "%v" .Values.nuqWorker.port) .Values.config.NUQ_WORKER_PORT | quote }}
   NUQ_PREFETCH_WORKER_PORT: {{ default (printf "%v" .Values.nuqPrefetchWorker.port) .Values.config.NUQ_PREFETCH_WORKER_PORT | quote }}
   CCLOG_WORKER_PORT: {{ default (printf "%v" .Values.cclogWorker.port) .Values.config.CCLOG_WORKER_PORT | quote }}

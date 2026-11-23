@@ -52,12 +52,6 @@ export function getScrapeJobAccess(
   return resolveOperationalJobAccess({ id, kinds: ["scrape"] });
 }
 
-export function getExtractJobAccess(
-  id: string,
-): Promise<OperationalJobAccess | null> {
-  return resolveOperationalJobAccess({ id, kinds: ["extract", "agent"] });
-}
-
 export function getAgentJobAccess(
   id: string,
   teamId?: string,

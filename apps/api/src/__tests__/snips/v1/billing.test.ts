@@ -1,16 +1,13 @@
-import { concurrentIf, TEST_PRODUCTION, TEST_SUITE_WEBSITE } from "../lib";
+import { TEST_PRODUCTION, TEST_SUITE_WEBSITE } from "../lib";
 import {
   batchScrape,
   crawl,
   creditUsage,
   describeV1,
-  EXTRACT_LIVE,
-  extract,
   idmux,
   map,
   scrape,
   search,
-  tokenUsage,
 } from "./lib";
 
 const sleep = (ms: number) => new Promise(x => setTimeout(() => x(true), ms));
@@ -349,44 +346,6 @@ describeV1(TEST_PRODUCTION)("Billing tests", () => {
       expect(rc1 - rc2).toBe(expectedCredits);
     },
     600000,
-  );
-
-  concurrentIf(EXTRACT_LIVE)(
-    "bills extract correctly",
-    async () => {
-      const identity = await idmux({
-        name: "billing/bills extract correctly",
-        tokens: 1000,
-      });
-
-      const rc1 = (await tokenUsage(identity)).remaining_tokens;
-
-      const extractResult = await extract(
-        {
-          urls: [base],
-          schema: {
-            type: "object",
-            properties: {
-              is_open_source: {
-                type: "boolean",
-              },
-            },
-            required: ["is_open_source"],
-          },
-          origin: "api-sdk",
-        },
-        identity,
-      );
-
-      expect(extractResult.tokensUsed).toBe(305);
-
-      await sleepForBatchBilling();
-
-      const rc2 = (await tokenUsage(identity)).remaining_tokens;
-
-      expect(rc1 - rc2).toBe(315); // rounded to closest 15 due to internal logic
-    },
-    300000,
   );
 
   it.concurrent(

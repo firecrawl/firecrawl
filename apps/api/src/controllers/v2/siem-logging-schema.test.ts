@@ -3,7 +3,6 @@ import {
   agentRequestSchema,
   batchScrapeRequestSchema,
   crawlRequestSchema,
-  extractRequestSchema,
   mapRequestSchema,
   scrapeRequestSchema,
   searchRequestSchema,
@@ -11,7 +10,6 @@ import {
 import {
   batchScrapeRequestSchema as batchScrapeRequestSchemaV1,
   crawlRequestSchema as crawlRequestSchemaV1,
-  extractRequestSchema as extractRequestSchemaV1,
   mapRequestSchema as mapRequestSchemaV1,
   scrapeRequestSchema as scrapeRequestSchemaV1,
   searchRequestSchema as searchRequestSchemaV1,
@@ -45,12 +43,6 @@ describe("auditMetadata request validation", () => {
     expect(
       searchRequestSchema.parse({
         query: "example",
-        scrapeOptions: { auditMetadata },
-      }).scrapeOptions?.auditMetadata,
-    ).toEqual(auditMetadata);
-    expect(
-      extractRequestSchema.parse({
-        urls: ["https://example.com"],
         scrapeOptions: { auditMetadata },
       }).scrapeOptions?.auditMetadata,
     ).toEqual(auditMetadata);
@@ -113,12 +105,6 @@ describe("auditMetadata request validation", () => {
         query: "example",
         scrapeOptions: { auditMetadata },
       }).scrapeOptions.auditMetadata,
-    ).toEqual(auditMetadata);
-    expect(
-      extractRequestSchemaV1.parse({
-        urls: ["https://example.com"],
-        scrapeOptions: { auditMetadata },
-      }).scrapeOptions?.auditMetadata,
     ).toEqual(auditMetadata);
     expect(
       mapRequestSchemaV1.parse({

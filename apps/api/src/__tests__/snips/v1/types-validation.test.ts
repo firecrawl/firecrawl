@@ -8,14 +8,11 @@ import {
 import {
   scrapeRequestSchema,
   scrapeOptions,
-  extractRequestSchema,
   crawlRequestSchema,
   mapRequestSchema,
   batchScrapeRequestSchema,
   ScrapeRequest,
   ScrapeRequestInput,
-  ExtractRequest,
-  ExtractRequestInput,
   CrawlRequest,
   CrawlRequestInput,
   MapRequest,
@@ -394,116 +391,6 @@ describe("V1 Types Validation", () => {
     });
   });
 
-  describe("extractRequestSchema", () => {
-    it("should accept valid extract request with urls", () => {
-      const input: ExtractRequestInput = {
-        urls: ["https://example.com"],
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      const result = extractRequestSchema.parse(input);
-      expect(result.urls).toEqual(["https://example.com"]);
-      expect(result.origin).toBe("api");
-      expect(result.timeout).toBe(60000);
-    });
-
-    it("should accept valid extract request with prompt", () => {
-      const input: ExtractRequestInput = {
-        prompt: "Extract the title",
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      const result = extractRequestSchema.parse(input);
-      expect(result.prompt).toBe("Extract the title");
-    });
-
-    it("should reject extract request without urls or prompt", () => {
-      const input = {
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      expect(() => extractRequestSchema.parse(input)).toThrow(
-        "Either 'urls' or 'prompt' must be provided",
-      );
-    });
-
-    it("should reject more than 10 URLs", () => {
-      const input: ExtractRequestInput = {
-        urls: Array.from({ length: 11 }, (_, i) => `https://example${i}.com`),
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      expect(() => extractRequestSchema.parse(input)).toThrow(
-        "Maximum of 10 URLs allowed per request while in beta",
-      );
-    });
-
-    it("should accept up to 10 URLs", () => {
-      const input: ExtractRequestInput = {
-        urls: Array.from({ length: 10 }, (_, i) => `https://example${i}.com`),
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      const result = extractRequestSchema.parse(input);
-      expect(result.urls).toHaveLength(10);
-    });
-
-    it("should reject invalid JSON schema", () => {
-      const input: ExtractRequestInput = {
-        urls: ["https://example.com"],
-        schema: {
-          type: "invalid-type",
-          properties: "not-an-object",
-        },
-      };
-
-      expect(() => extractRequestSchema.parse(input)).toThrow(
-        "Invalid JSON schema",
-      );
-    });
-
-    it("should transform allowExternalLinks when enableWebSearch is true", () => {
-      const input: ExtractRequestInput = {
-        urls: ["https://example.com"],
-        enableWebSearch: true,
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      const result = extractRequestSchema.parse(input);
-      expect(result.allowExternalLinks).toBe(true);
-    });
-  });
-
   describe("crawlRequestSchema", () => {
     it("should accept valid minimal crawl request", () => {
       const input: CrawlRequestInput = {
@@ -750,21 +637,6 @@ describe("V1 Types Validation", () => {
       expect(typeof result.origin).toBe("string");
       expect(typeof result.timeout).toBe("number");
       expect(Array.isArray(result.formats)).toBe(true);
-    });
-
-    it("should correctly infer ExtractRequest type", () => {
-      const result: ExtractRequest = extractRequestSchema.parse({
-        urls: ["https://example.com"],
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      });
-
-      expect(Array.isArray(result.urls)).toBe(true);
-      expect(typeof result.timeout).toBe("number");
     });
 
     it("should correctly infer CrawlRequest type", () => {

@@ -197,10 +197,6 @@ function validateSchemaForOpenAI(schema: any): boolean {
 const OPENAI_SCHEMA_ERROR_MESSAGE =
   "Schema contains invalid structure for OpenAI: object type with no 'properties' defined but 'additionalProperties: true' (schema-less dictionary not supported by OpenAI). Please define specific properties for your object.";
 
-export const agentOptionsExtract = z.strictObject({
-  model: z.string().prefault(agentExtractModelValue),
-});
-
 export const extractOptions = z
   .strictObject({
     mode: z.enum(["llm"]).prefault("llm"),
@@ -294,13 +290,6 @@ Key Instructions:
   }));
 
 export type ExtractOptions = z.infer<typeof extractOptions>;
-// Explicitly define input type to make schema optional in input
-export type ExtractOptionsInput = Omit<
-  z.input<typeof extractOptions>,
-  "schema"
-> & {
-  schema?: z.input<typeof extractOptions>["schema"];
-};
 
 const ACTIONS_MAX_WAIT_TIME = 60;
 const MAX_ACTIONS = 50;
@@ -747,94 +736,6 @@ export type ScrapeOptions = BaseScrapeOptions & {
 const ajv = new Ajv();
 addFormats(ajv);
 
-const extractV1Options = z
-  .strictObject({
-    urls: url
-      .array()
-      .max(10, "Maximum of 10 URLs allowed per request while in beta.")
-      .optional(),
-    prompt: z.string().max(10000).optional(),
-    systemPrompt: z.string().max(10000).optional(),
-    schema: z
-      .any()
-      .optional()
-      .refine(
-        val => {
-          if (!val) return true; // Allow undefined schema
-          try {
-            const validate = ajv.compile(val);
-            return typeof validate === "function";
-          } catch (e) {
-            return false;
-          }
-        },
-        {
-          error: "Invalid JSON schema.",
-        },
-      )
-      .transform(val => normalizeSchemaForOpenAI(val))
-      .refine(val => validateSchemaForOpenAI(val), {
-        message: OPENAI_SCHEMA_ERROR_MESSAGE,
-      })
-      .superRefine(addStrictSchemaIssue),
-    limit: z.int().positive().finite().optional(),
-    ignoreSitemap: z.boolean().prefault(false),
-    includeSubdomains: z.boolean().prefault(true),
-    allowExternalLinks: z.boolean().prefault(false),
-    enableWebSearch: z.boolean().prefault(false),
-    scrapeOptions: baseScrapeOptions
-      .prefault({ onlyMainContent: false })
-      .optional(),
-    origin: z.string().prefault("api"),
-    integration: integrationSchema.optional().transform(val => val || null),
-    urlTrace: z.boolean().prefault(false),
-    timeout: z.int().positive().min(1000).prefault(60000),
-    __experimental_streamSteps: z.boolean().prefault(false),
-    __experimental_llmUsage: z.boolean().prefault(false),
-    __experimental_showSources: z.boolean().prefault(false),
-    showSources: z.boolean().prefault(false),
-    // These two below don't do anything anymore
-    __experimental_cacheKey: z.string().optional(),
-    __experimental_cacheMode: z
-      .enum(["direct", "save", "load"])
-      .prefault("direct")
-      .optional(),
-    agent: agentOptionsExtract.optional(),
-    __experimental_showCostTracking: z.boolean().prefault(false),
-    ignoreInvalidURLs: z.boolean().prefault(false),
-    webhook: webhookSchema.optional(),
-    threatProtection: threatProtectionOverrideSchema.optional(),
-  })
-  .refine(obj => obj.urls || obj.prompt, {
-    error: "Either 'urls' or 'prompt' must be provided.",
-  })
-  .transform(obj => ({
-    ...obj,
-    allowExternalLinks: obj.allowExternalLinks || obj.enableWebSearch,
-  }))
-  .refine(
-    x => (x.scrapeOptions ? extractRefine(x.scrapeOptions) : true),
-    extractRefineOpts,
-  )
-  .refine(
-    x => (x.scrapeOptions ? fire1Refine(x.scrapeOptions) : true),
-    fire1RefineOpts,
-  )
-  .refine(
-    x => (x.scrapeOptions ? waitForRefine(x.scrapeOptions) : true),
-    waitForRefineOpts,
-  )
-  .transform(x => ({
-    ...x,
-    scrapeOptions: x.scrapeOptions
-      ? extractTransform(x.scrapeOptions)
-      : x.scrapeOptions,
-  }));
-
-export const extractRequestSchema = extractV1Options;
-export type ExtractRequest = z.infer<typeof extractRequestSchema>;
-export type ExtractRequestInput = z.input<typeof extractRequestSchema>;
-
 const scrapeRequestSchemaBase = baseScrapeOptions
   .omit({ timeout: true })
   .extend({
@@ -1185,42 +1086,6 @@ export type ScrapeResponse =
       data: Document;
       scrape_id?: string;
     };
-
-export interface URLTrace {
-  url: string;
-  status: "mapped" | "scraped" | "error";
-  timing: {
-    discoveredAt: string;
-    scrapedAt?: string;
-    completedAt?: string;
-  };
-  error?: string;
-  warning?: string;
-  contentStats?: {
-    rawContentLength: number;
-    processedContentLength: number;
-    tokensUsed: number;
-  };
-  relevanceScore?: number;
-  usedInCompletion?: boolean;
-  extractedFields?: string[];
-}
-
-export interface ExtractResponse {
-  success: boolean;
-  code?: ErrorCode;
-  error?: string;
-  data?: any;
-  scrape_id?: string;
-  id?: string;
-  warning?: string;
-  urlTrace?: URLTrace[];
-  sources?: {
-    [key: string]: string[];
-  };
-  tokensUsed?: number;
-  creditsUsed?: number;
-}
 
 export type CrawlResponse =
   | ErrorResponse

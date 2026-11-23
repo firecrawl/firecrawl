@@ -22,9 +22,7 @@ import {
   idmux,
   Identity,
   scrapeRaw,
-  extract,
   describeV1,
-  EXTRACT_LIVE,
   V1_LIVE,
 } from "./lib";
 import crypto from "crypto";
@@ -1623,33 +1621,6 @@ describeV1()("Scrape tests", () => {
         );
 
         expect(response.statusCode).toBe(200);
-      },
-      scrapeTimeout,
-    );
-
-    itIf(
-      EXTRACT_LIVE && (TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE)),
-    )(
-      "should normalize extract request with additionalProperties in schema",
-      async () => {
-        const identity = await idmux({ name: "schema-validation-test" });
-
-        const response = await extract(
-          {
-            urls: [base],
-            schema: {
-              type: "object",
-              properties: {
-                title: { type: "string" },
-              },
-              additionalProperties: true,
-            },
-            origin: "api-sdk",
-          },
-          identity,
-        );
-
-        expect(response.success).toBe(true);
       },
       scrapeTimeout,
     );

@@ -237,6 +237,7 @@ export const deterministic_json_llm_cache = pgTable(
   },
 );
 
+/** @public Mirrors a table that is still in the database but has no reader. */
 export const eb_sync = pgTable("eb-sync", {
   id: bigintNum("id").notNull().generatedByDefaultAsIdentity(),
   created_at: ts("created_at").notNull().defaultNow(),

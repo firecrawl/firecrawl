@@ -49,7 +49,6 @@ interface Services {
   nuqWorkers: ProcessResult[];
   nuqPrefetchWorker?: ProcessResult;
   nuqReconcilerWorker?: ProcessResult;
-  extractWorker?: ProcessResult;
   indexWorker?: ProcessResult;
   command?: ProcessResult;
   nuqPostgres?: {
@@ -83,7 +82,6 @@ const colors = {
 const processGroupColors: Record<string, string> = {
   api: colors.green,
   worker: colors.blue,
-  extract: colors.magenta,
   nuq: colors.cyan,
   index: colors.yellow,
   go: colors.yellow,
@@ -116,7 +114,6 @@ function formatDuration(nanoseconds: bigint): string {
 
 const PORT = config.PORT;
 const WORKER_PORT = config.WORKER_PORT;
-const EXTRACT_WORKER_PORT = config.EXTRACT_WORKER_PORT;
 const NUQ_WORKER_START_PORT = config.NUQ_WORKER_START_PORT;
 const NUQ_WORKER_COUNT = config.NUQ_WORKER_COUNT;
 const NUQ_PREFETCH_WORKER_PORT = NUQ_WORKER_START_PORT + NUQ_WORKER_COUNT;
@@ -856,16 +853,6 @@ async function startServices(command?: string[]): Promise<Services> {
     },
   );
 
-  const extractWorker = execForward(
-    "extract-worker",
-    roleCommand("extract-worker", "extract-worker:production"),
-    {
-      NUQ_REDUCE_NOISE: "true",
-      NUQ_POD_NAME: "extract-worker",
-      EXTRACT_WORKER_PORT: String(EXTRACT_WORKER_PORT),
-    },
-  );
-
   const nuqWorkers = Array.from({ length: NUQ_WORKER_COUNT }, (_, i) =>
     execForward(
       `${nuqWorkerRole}-${i}`,
@@ -941,7 +928,6 @@ async function startServices(command?: string[]): Promise<Services> {
     nuqPrefetchWorker,
     nuqReconcilerWorker,
     indexWorker,
-    extractWorker,
     command: commandProcess,
     nuqPostgres,
     nuqRabbitMQ,
@@ -959,7 +945,6 @@ async function stopDevelopmentServices(services: Services) {
     services.nuqPrefetchWorker?.process,
     services.nuqReconcilerWorker?.process,
     services.indexWorker?.process,
-    services.extractWorker?.process,
     services.command?.process,
   ].filter((p): p is ChildProcess => !!p);
 
@@ -1124,7 +1109,6 @@ async function waitForTermination(services: Services): Promise<void> {
   if (services.api) promises.push(services.api.promise);
   if (services.worker) promises.push(services.worker.promise);
   if (services.indexWorker) promises.push(services.indexWorker.promise);
-  if (services.extractWorker) promises.push(services.extractWorker.promise);
   if (services.nuqPrefetchWorker)
     promises.push(services.nuqPrefetchWorker.promise);
   if (services.nuqReconcilerWorker)

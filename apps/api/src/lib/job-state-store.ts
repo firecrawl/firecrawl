@@ -24,15 +24,7 @@ type ScrapeJobState = {
   origin?: string;
 };
 
-type ExtractJobState = {
-  status: "completed" | "failed";
-  completedAtMs: number;
-  creditsBilled: number;
-  error?: string;
-};
-
 type StoredScrapeJobState = ScrapeJobState & { version: 1 };
-type StoredExtractJobState = ExtractJobState & { version: 1 };
 
 function parseState<T>(
   value: Buffer | string,
@@ -87,21 +79,6 @@ function parseScrapeState(value: Buffer | string): ScrapeJobState {
           typeof (candidate.profile as any).saveChanges === "boolean")) &&
       (candidate.origin === undefined || typeof candidate.origin === "string"),
     "scrape state",
-  );
-  const { version: _, ...state } = row;
-  return state;
-}
-
-function parseExtractState(value: Buffer | string): ExtractJobState {
-  const row = parseState<StoredExtractJobState>(
-    value,
-    candidate =>
-      candidate.version === 1 &&
-      isTerminalStatus(candidate.status) &&
-      isFiniteNumber(candidate.completedAtMs) &&
-      isFiniteNumber(candidate.creditsBilled) &&
-      (candidate.error === undefined || typeof candidate.error === "string"),
-    "extract state",
   );
   const { version: _, ...state } = row;
   return state;
@@ -206,32 +183,5 @@ export function readScrapeJobState(id: string): Promise<ScrapeJobState | null> {
     tableId: config.BIGTABLE_SCRAPE_STATE_TABLE,
     spanName: "bigtable.scrape_state.read",
     parse: parseScrapeState,
-  });
-}
-
-export function writeExtractJobState(
-  id: string,
-  state: ExtractJobState,
-): Promise<boolean> {
-  return writeState({
-    id,
-    tableId: config.BIGTABLE_EXTRACT_STATE_TABLE,
-    spanName: "bigtable.extract_state.write",
-    value: {
-      version: 1,
-      ...state,
-      ...(state.error ? { error: state.error.slice(0, MAX_ERROR_LENGTH) } : {}),
-    },
-  });
-}
-
-export function readExtractJobState(
-  id: string,
-): Promise<ExtractJobState | null> {
-  return readState({
-    id,
-    tableId: config.BIGTABLE_EXTRACT_STATE_TABLE,
-    spanName: "bigtable.extract_state.read",
-    parse: parseExtractState,
   });
 }

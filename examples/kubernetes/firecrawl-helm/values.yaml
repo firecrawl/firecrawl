@@ -24,18 +24,6 @@ worker:
       memory: "4G"
       cpu: "1000m"
 
-extractWorker:
-  enabled: true
-  replicaCount: 1
-  port: 3004
-  resources:
-    requests:
-      memory: "2G"
-      cpu: "1000m"
-    limits:
-      memory: "3G"
-      cpu: "1000m"
-
 nuqWorker:
   replicaCount: 5
   port: 3006
@@ -141,7 +129,6 @@ config:
   PORT: "3002"
   HOST: "0.0.0.0"
   WORKER_PORT: "3005"
-  EXTRACT_WORKER_PORT: "3004"
   NUQ_WORKER_PORT: "3006"
   NUQ_PREFETCH_WORKER_PORT: "3011"
   CCLOG_WORKER_PORT: "3013"

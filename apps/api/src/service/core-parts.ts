@@ -19,10 +19,6 @@ const workers: Record<string, Worker> = {
     () =>
       require("../services/queue-worker") as typeof import("../services/queue-worker"),
   ),
-  "extract-worker": role(
-    () =>
-      require("../services/extract-worker") as typeof import("../services/extract-worker"),
-  ),
   "nuq-worker": role(
     () =>
       require("../services/worker/nuq-worker") as typeof import("../services/worker/nuq-worker"),

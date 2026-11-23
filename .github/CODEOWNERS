@@ -14,9 +14,6 @@
 ### /batch/scrape
 /apps/api/src/controllers/v2/batch-scrape*      @mogery 
 
-### /extract
-/apps/api/src/controllers/v2/extract*           @nickscamara
-
 ### /map
 /apps/api/src/controllers/v2/map*               @nickscamara @mogery
 
@@ -39,7 +36,6 @@
 /apps/api/src/controllers/v1/batch-scrape*      @mogery 
 
 ### /extract
-/apps/api/src/controllers/v1/extract*           @nickscamara
 /apps/api/src/lib/extract/*                     @nickscamara
 /apps/api/src/lib/generic-ai.ts                 @mogery @nickscamara # (AI SDK)
 

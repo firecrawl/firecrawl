@@ -242,9 +242,6 @@ importers:
       langsmith:
         specifier: ^0.6.0
         version: 0.6.3(@opentelemetry/api@1.9.1)(@opentelemetry/exporter-trace-otlp-proto@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))(openai@7.57.0(google-auth-library@11.3.4)(undici@7.30.1)(ws@8.21.0)(zod@4.6.7))(ws@8.21.0)
-      lodash:
-        specifier: ^4.18.0
-        version: 4.18.1
       marked:
         specifier: ^14.1.2
         version: 14.1.2
@@ -351,9 +348,6 @@ importers:
       '@types/he':
         specifier: ^1.2.3
         version: 1.2.3
-      '@types/lodash':
-        specifier: ^4.17.14
-        version: 4.17.14
       '@types/multer':
         specifier: ^2.1.0
         version: 2.1.0
@@ -2045,9 +2039,6 @@ packages:
 
   '@types/http-errors@2.0.4':
     resolution: {integrity: sha512-D0CFMMtydbJAegzOyHjtiKPLlvnm3iTZyZRSZoLq2mRhDdmLfIWOCYPfQJ4cu2erKghU++QvjcUjp/5h7hESpA==}
-
-  '@types/lodash@4.17.14':
-    resolution: {integrity: sha512-jsxagdikDiDBeIRaPYtArcT8my4tN1og7MtMRquFT3XNA6axxyHDRUemqDz/taRDdOUn0GnGHRCuff4q48sW9A==}
 
   '@types/long@4.0.2':
     resolution: {integrity: sha512-MqTGEo5bj5t157U6fA/BiDynNkn0YknVdh48CMPkTSpFTVmvao5UQmm7uEF6xBEo7qIMAlY/JSleYaE6VOdpaA==}
@@ -6087,8 +6078,6 @@ snapshots:
   '@types/he@1.2.3': {}
 
   '@types/http-errors@2.0.4': {}
-
-  '@types/lodash@4.17.14': {}
 
   '@types/long@4.0.2': {}
 

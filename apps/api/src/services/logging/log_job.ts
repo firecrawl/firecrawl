@@ -7,7 +7,6 @@ import { EXTERNAL_REQUEST_ID_MAX_BYTES } from "../../lib/external-request-id";
 import { configDotenv } from "dotenv";
 import {
   saveDeepResearchToGCS,
-  saveExtractToGCS,
   saveLlmsTxtToGCS,
   saveMapToGCS,
   saveScrapeToGCS,
@@ -23,7 +22,6 @@ import type {
 import type { CostTracking } from "../../lib/cost-tracking";
 import type { ErrorCode } from "../../lib/error";
 import type { Logger } from "winston";
-import { saveExtractResult } from "../../lib/extract/extract-redis";
 import { trackFirstSurfaceUse } from "../posthog";
 import { PubSub, type PublishOptions, type Topic } from "@google-cloud/pubsub";
 import { pubsubLogPublishTotal } from "../../lib/pubsub-log-metrics";
@@ -37,10 +35,7 @@ import {
 } from "../../lib/job-access-store";
 import { writeFeedbackJob } from "../../lib/feedback-job-store";
 import { setSpanAttributes, withSpan } from "../../lib/otel-tracer";
-import {
-  writeExtractJobState,
-  writeScrapeJobState,
-} from "../../lib/job-state-store";
+import { writeScrapeJobState } from "../../lib/job-state-store";
 import { buildReplayContextFromScrape } from "../../lib/scrape-interact/scrape-replay";
 import { browserOptionsFromScrape } from "../../lib/browser-options";
 import {
@@ -419,7 +414,6 @@ type LoggedRequest = {
     | "crawl"
     | "batch_scrape"
     | "search"
-    | "extract"
     | "llmstxt"
     | "deep_research"
     | "map"
@@ -1217,82 +1211,6 @@ async function logResearchEndpointInternal(research: LoggedResearchEndpoint) {
     },
     logger,
   );
-}
-
-export type LoggedExtract = {
-  id: string;
-  request_id: string;
-  urls: string[];
-  team_id: string;
-  options: any;
-  model_kind: "fire-0" | "fire-1";
-  credits_cost: number;
-  is_successful: boolean;
-  error?: string;
-  result?: any;
-  cost_tracking?: ReturnType<typeof CostTracking.prototype.toJSON>;
-};
-
-export async function logExtract(extract: LoggedExtract) {
-  return withLogSpan(
-    {
-      operation: "extract",
-      table: "extracts",
-      id: extract.id,
-      requestId: extract.request_id,
-    },
-    () => logExtractInternal(extract),
-  );
-}
-
-async function logExtractInternal(extract: LoggedExtract) {
-  const logger = _logger.child({
-    module: "log_job",
-    method: "logExtract",
-    extractId: extract.id,
-    requestId: extract.request_id,
-    teamId: extract.team_id,
-  });
-
-  await robustInsert(
-    "extracts",
-    {
-      id: extract.id,
-      request_id: extract.request_id,
-      urls: extract.urls,
-      team_id:
-        extract.team_id === "preview" || extract.team_id?.startsWith("preview_")
-          ? previewTeamId
-          : extract.team_id,
-      options: extract.options,
-      model_kind: extract.model_kind,
-      credits_cost: extract.credits_cost,
-      is_successful: extract.is_successful,
-      error: extract.error ?? null,
-      cost_tracking: extract.cost_tracking ?? null,
-    },
-    logger,
-  );
-
-  try {
-    await writeExtractJobState(extract.id, {
-      status: extract.is_successful ? "completed" : "failed",
-      completedAtMs: Date.now(),
-      creditsBilled: extract.credits_cost,
-      ...(extract.error ? { error: extract.error } : {}),
-    });
-  } catch (error) {
-    logger.error("Failed to write extract state to Bigtable", { error });
-  }
-
-  if (extract.result) {
-    if (config.GCS_BUCKET_NAME) {
-      await saveExtractToGCS(extract, logger);
-    } else {
-      // Fallback: save result to Redis with 24h TTL when GCS is not configured
-      await saveExtractResult(extract.id, extract.result);
-    }
-  }
 }
 
 export type LoggedMap = {

@@ -4,7 +4,6 @@ import { Document } from "../controllers/v1/types";
 import { withSpan, setSpanAttributes } from "./otel-tracer";
 import type {
   LoggedDeepResearch,
-  LoggedExtract,
   LoggedLlmsTxt,
   LoggedMap,
   LoggedScrape,
@@ -267,36 +266,6 @@ export async function saveSearchToGCS(
     },
     zeroDataRetention: search.zeroDataRetention,
     is_successful: search.is_successful,
-    logger: _logger,
-  });
-}
-
-export async function saveExtractToGCS(
-  extract: LoggedExtract,
-  _logger: Logger = logger,
-): Promise<void> {
-  return await saveJobToGCS({
-    mode: "extract",
-    id: extract.id,
-    team_id: extract.team_id,
-    request_id: extract.request_id,
-    num_docs: 1,
-    is_successful: extract.is_successful,
-    data: extract.result,
-    zeroDataRetention: false, // ZDR not supported on extract
-    metadata: {
-      mode: "extract",
-      job_id: extract.id,
-      num_docs: 1,
-      team_id:
-        extract.team_id === "preview" || extract.team_id?.startsWith("preview_")
-          ? null
-          : extract.team_id,
-      options: JSON.stringify(extract.options),
-      credits_cost: extract.credits_cost,
-      success: extract.is_successful,
-      error: extract.error ?? null,
-    },
     logger: _logger,
   });
 }

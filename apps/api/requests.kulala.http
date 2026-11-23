@@ -36,37 +36,6 @@ Authorization: Bearer {{$dotenv TEST_API_KEY}}
 DELETE {{baseUrl}}/v2/crawl/{{crawlId}} HTTP/1.1
 Authorization: Bearer {{$dotenv TEST_API_KEY}}
 
-### Extract website
-# @name extract
-POST {{baseUrl}}/v2/extract HTTP/1.1
-Authorization: Bearer {{$dotenv TEST_API_KEY}}
-content-type: application/json
-
-{
-  "urls": ["https://firecrawl.dev"],
-  "schema": {
-    "type": "object",
-    "properties": {
-      "companyName": {
-        "type": "string"
-      },
-      "companyDescription": {
-        "type": "string"
-      }
-    }
-  },
-  "agent": {
-    "model": "fire-1"
-  },
-  "origin": "api-sdk"
-}
-
-### Check Extract Status
-@extractId = {{extract.response.body.$.id}}
-# @name extractStatus
-GET {{baseUrl}}/v2/extract/{{extractId}} HTTP/1.1
-Authorization: Bearer {{$dotenv TEST_API_KEY}}
-
 ### Batch Scrape Websites
 # @name batchScrape
 POST {{baseUrl}}/v2/batch/scrape HTTP/1.1

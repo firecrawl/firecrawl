@@ -20,7 +20,6 @@ import {
   WebSearchResult,
 } from "../../lib/entities";
 import {
-  agentOptionsExtract,
   AuthCreditUsageChunk,
   ScrapeOptions as V1ScrapeOptions,
 } from "../v1/types";
@@ -1040,81 +1039,6 @@ addFormats(ajv);
 const agentAjv = new Ajv();
 addFormats(agentAjv);
 
-const extractOptions = z
-  .strictObject({
-    urls: URL.array()
-      .max(10, "Maximum of 10 URLs allowed per request while in beta.")
-      .optional(),
-    prompt: z.string().max(10000).optional(),
-    systemPrompt: z.string().max(10000).optional(),
-    schema: z
-      .any()
-      .optional()
-      .refine(
-        val => {
-          if (!val) return true; // Allow undefined schema
-          try {
-            const validate = ajv.compile(val);
-            return typeof validate === "function";
-          } catch (e) {
-            return false;
-          }
-        },
-        {
-          error: "Invalid JSON schema.",
-        },
-      )
-      .transform(val => normalizeSchemaForOpenAI(val))
-      .refine(val => validateSchemaForOpenAI(val), {
-        message: OPENAI_SCHEMA_ERROR_MESSAGE,
-      })
-      .superRefine(addStrictSchemaIssue),
-    limit: z.int().positive().finite().optional(),
-    ignoreSitemap: z.boolean().prefault(false),
-    includeSubdomains: z.boolean().prefault(true),
-    allowExternalLinks: z.boolean().prefault(false),
-    enableWebSearch: z.boolean().prefault(false),
-    scrapeOptions: baseScrapeOptions.optional(),
-    origin: z.string().prefault("api"),
-    integration: integrationSchema.optional().transform(val => val || null),
-    urlTrace: z.boolean().prefault(false),
-    timeout: z.int().positive().min(1000).optional(),
-    agent: agentOptionsExtract.optional(),
-    __experimental_streamSteps: z.boolean().prefault(false),
-    __experimental_llmUsage: z.boolean().prefault(false),
-    __experimental_showSources: z.boolean().prefault(false),
-    showSources: z.boolean().prefault(false),
-    // These two below don't do anything anymore
-    __experimental_cacheKey: z.string().optional(),
-    __experimental_cacheMode: z
-      .enum(["direct", "save", "load"])
-      .prefault("direct")
-      .optional(),
-    __experimental_showCostTracking: z.boolean().prefault(false),
-    ignoreInvalidURLs: z.boolean().prefault(true),
-    webhook: webhookSchema.optional(),
-    threatProtection: threatProtectionOverrideSchema.optional(),
-  })
-  .refine(obj => obj.urls || obj.prompt, {
-    error: "Either 'urls' or 'prompt' must be provided.",
-  })
-  .transform(obj => ({
-    ...obj,
-    allowExternalLinks: obj.allowExternalLinks || obj.enableWebSearch,
-  }))
-  .refine(
-    x => (x.scrapeOptions ? waitForRefine(x.scrapeOptions) : true),
-    waitForRefineOpts,
-  )
-  .transform(x => ({
-    ...x,
-    scrapeOptions: extractTransform(x.scrapeOptions),
-  }));
-
-export const extractRequestSchema = extractOptions;
-export type ExtractRequest = z.infer<typeof extractRequestSchema>;
-export type ExtractRequestInput = z.input<typeof extractRequestSchema>;
-
 const agentWebhookSchema = createWebhookSchema([
   "started",
   "action",
@@ -1683,22 +1607,6 @@ export interface URLTrace {
   relevanceScore?: number;
   usedInCompletion?: boolean;
   extractedFields?: string[];
-}
-
-export interface ExtractResponse {
-  success: boolean;
-  code?: ErrorCode;
-  error?: string;
-  data?: any;
-  scrape_id?: string;
-  id?: string;
-  warning?: string;
-  urlTrace?: URLTrace[];
-  sources?: {
-    [key: string]: string[];
-  };
-  tokensUsed?: number;
-  creditsUsed?: number;
 }
 
 export type AgentListResponse =

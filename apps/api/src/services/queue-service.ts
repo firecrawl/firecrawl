@@ -3,7 +3,6 @@ import { config } from "../config";
 import { logger } from "../lib/logger";
 import IORedis from "ioredis";
 import type { DeepResearchServiceOptions } from "../lib/deep-research/deep-research-service";
-import { addExtractJob, ExtractJobData } from "./extract-queue";
 import type { BillTeamJobData } from "./billing/types";
 import type { TrackParams } from "./autumn/types";
 
@@ -54,13 +53,6 @@ export type FirebillFinalizeRetryJobData = {
 export type FirebillRetryJobData =
   | FirebillTrackRetryJobData
   | FirebillFinalizeRetryJobData;
-
-export async function addExtractJobToQueue(
-  extractId: string,
-  data: ExtractJobData,
-): Promise<void> {
-  await addExtractJob(extractId, data);
-}
 
 export function getGenerateLlmsTxtQueue() {
   if (!generateLlmsTxtQueue) {

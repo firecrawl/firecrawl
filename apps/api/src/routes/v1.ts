@@ -12,8 +12,6 @@ import { crawlCancelController } from "../controllers/v1/crawl-cancel";
 import { scrapeStatusController } from "../controllers/v1/scrape-status";
 import { concurrencyCheckController } from "../controllers/v1/concurrency-check";
 import { batchScrapeController } from "../controllers/v1/batch-scrape";
-import { extractController } from "../controllers/v1/extract";
-import { extractStatusController } from "../controllers/v1/extract-status";
 import { creditUsageController } from "../controllers/v1/credit-usage";
 import { searchController } from "../controllers/v1/search";
 import { crawlErrorsController } from "../controllers/v1/crawl-errors";
@@ -39,7 +37,10 @@ import { queueStatusController } from "../controllers/v1/queue-status";
 import { creditUsageHistoricalController } from "../controllers/v1/credit-usage-historical";
 
 import { tokenUsageHistoricalController } from "../controllers/v1/token-usage-historical";
-import { deprecationMiddleware } from "../lib/deprecations";
+import {
+  deprecationMiddleware,
+  removedEndpointHandler,
+} from "../lib/deprecations";
 
 export const v1Router = express.Router();
 expressWs(express()).applyTo(v1Router);
@@ -164,22 +165,9 @@ v1Router.get(
 
 v1Router.ws("/crawl/:jobId", crawlStatusWSController);
 
-v1Router.post(
-  "/extract",
-  authMiddleware(RateLimiterMode.Extract),
-  inferIntegrationMiddleware,
-  deprecationMiddleware("v1_extract"),
-  restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(20),
-  wrap(extractController),
-);
+v1Router.post("/extract", removedEndpointHandler("v1_extract"));
 
-v1Router.get(
-  "/extract/:jobId",
-  authMiddleware(RateLimiterMode.ExtractStatus),
-  deprecationMiddleware("v1_extract_status"),
-  wrap(extractStatusController),
-);
+v1Router.get("/extract/:jobId", removedEndpointHandler("v1_extract_status"));
 
 v1Router.post(
   "/llmstxt",

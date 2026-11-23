@@ -98,7 +98,6 @@ describe("coreParts", () => {
       roles: {
         api: "core",
         "cclog-worker": "core",
-        "extract-worker": "core",
         harness: "core",
         "index-worker": "core",
         "nuq-fdb-worker": "core",

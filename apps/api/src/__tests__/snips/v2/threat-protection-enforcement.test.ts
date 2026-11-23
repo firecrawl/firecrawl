@@ -4,7 +4,6 @@ import {
   describeIf,
   idmux,
   Identity,
-  itIf,
   TEST_API_URL,
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
@@ -14,7 +13,6 @@ import {
   crawl,
   crawlStart,
   creditUsage,
-  EXTRACT_LIVE,
   map,
   scrape,
   scrapeRaw,
@@ -414,29 +412,6 @@ describeIf(TEST_PRODUCTION)("Threat protection enforcement", () => {
             hostname === "firecrawl.dev" || hostname.endsWith(".firecrawl.dev"),
           ).toBe(false);
         }
-      },
-      scrapeTimeout,
-    );
-
-    itIf(EXTRACT_LIVE)(
-      "extract: blocked target URLs are rejected before fetching",
-      async () => {
-        const res = await request(TEST_API_URL)
-          .post("/v2/extract")
-          .set("Authorization", `Bearer ${identity.apiKey}`)
-          .set("Content-Type", "application/json")
-          .send({
-            urls: [`https://${BLACKLISTED_DOMAIN}/page`],
-            prompt: "Extract the page title.",
-            ignoreInvalidURLs: false,
-            threatProtection: {
-              mode: "normal",
-              blacklist: [BLACKLISTED_DOMAIN],
-            },
-          });
-        expect(res.statusCode).toBe(403);
-        expect(res.body.success).toBe(false);
-        expect(res.body.error).toContain(BLACKLISTED_DOMAIN);
       },
       scrapeTimeout,
     );

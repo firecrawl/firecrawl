@@ -44,8 +44,6 @@ import { tokenUsageController } from "../controllers/v2/token-usage";
 import { crawlCancelController } from "../controllers/v2/crawl-cancel";
 import { concurrencyCheckController } from "../controllers/v2/concurrency-check";
 import { crawlStatusWSController } from "../controllers/v2/crawl-status-ws";
-import { extractController } from "../controllers/v2/extract";
-import { extractStatusController } from "../controllers/v2/extract-status";
 import {
   authMiddleware as sharedAuthMiddleware,
   checkCreditsMiddleware,
@@ -63,10 +61,7 @@ import {
 import { queueStatusController } from "../controllers/v2/queue-status";
 import { creditUsageHistoricalController } from "../controllers/v2/credit-usage-historical";
 import { tokenUsageHistoricalController } from "../controllers/v2/token-usage-historical";
-import {
-  deprecationMiddleware,
-  removedEndpointHandler,
-} from "../lib/deprecations";
+import { removedEndpointHandler } from "../lib/deprecations";
 import { isResearchKeylessDisabled } from "../lib/research-keyless";
 import { agentController } from "../controllers/v2/agent";
 import { agentStatusController } from "../controllers/v2/agent-status";
@@ -458,24 +453,9 @@ v2Router.get(
   wrap(crawlErrorsController),
 );
 
-v2Router.post(
-  "/extract",
-  authMiddleware(RateLimiterMode.Extract),
-  inferIntegrationMiddleware,
-  deprecationMiddleware("v2_extract"),
-  restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(20),
-  blocklistMiddleware,
-  wrap(extractController),
-);
+v2Router.post("/extract", removedEndpointHandler("v2_extract"));
 
-v2Router.get(
-  "/extract/:jobId",
-  authMiddleware(RateLimiterMode.ExtractStatus),
-  deprecationMiddleware("v2_extract_status"),
-  validateJobIdParam,
-  wrap(extractStatusController),
-);
+v2Router.get("/extract/:jobId", removedEndpointHandler("v2_extract_status"));
 
 v2Router.get(
   "/agent",
