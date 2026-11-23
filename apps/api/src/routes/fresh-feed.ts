@@ -8,6 +8,16 @@ import { v7 as uuidv7 } from "uuid";
 import type { RequestWithAuth } from "../controllers/v1/types";
 import { externalRequestId } from "../lib/external-request-id";
 import {
+  FRESH_FEED_COLLECTION_HEADER,
+  freshFeedUpstreamPath,
+  isFreshFeedUpstream,
+  isValidFreshFeedCollection,
+  normalizeFreshFeedUpstreams,
+  resolveFreshFeedVertical,
+  type FreshFeedUpstream,
+  type FreshFeedUpstreamUrls,
+} from "../lib/fresh-feed";
+import {
   getRoutePattern,
   httpRequestDurationSeconds,
 } from "../lib/http-metrics";
@@ -20,13 +30,25 @@ import { resolveIntegration } from "../utils/integration";
 import { checkCreditsMiddleware, wrap } from "./shared";
 
 const TIMEOUT_MS = 30_000;
-const UPSTREAM_PATH = "/fresh-vertical-feed/local/latest";
+const RESOLVED_TARGET = Symbol("freshFeedResolvedTarget");
 const FORWARDED_RESPONSE_HEADERS = [
   "content-type",
   "content-encoding",
   "content-length",
   "vary",
 ];
+
+type FreshFeedRouteSpec =
+  | { kind: "local" }
+  | { kind: "curated" }
+  | { kind: "vertical" };
+
+interface ResolvedFreshFeedTarget {
+  upstream: FreshFeedUpstream;
+  upstreamBase: string;
+  target: string;
+  collection?: string;
+}
 
 const DECODERS: Record<string, (body: Buffer) => Promise<Buffer>> = {
   identity: async body => body,
@@ -103,8 +125,154 @@ function rejectHead(_req: Request, res: Response) {
   res.status(405).set("Allow", "GET").end();
 }
 
-function freshFeedController(upstreamBase: string, timeoutMs: number) {
+function rejectVerticalHead(req: Request, res: Response) {
+  const vertical = req.params.vertical;
+  if (
+    typeof vertical === "string" &&
+    (resolveFreshFeedVertical(vertical) || isFreshFeedUpstream(vertical))
+  ) {
+    return rejectHead(req, res);
+  }
+  return res.status(404).end();
+}
+
+function buildUpstreamTarget(
+  originalUrl: string,
+  upstreamPath: string,
+  forcedSubcategory?: string,
+): { target: string } | { error: string } {
+  const queryStart = originalUrl.indexOf("?");
+  const rawQuery = queryStart === -1 ? "" : originalUrl.slice(queryStart);
+  if (!forcedSubcategory) {
+    return { target: upstreamPath + rawQuery };
+  }
+
+  const rawQueryBody =
+    queryStart === -1 ? "" : originalUrl.slice(queryStart + 1);
+  const inboundSubcategories = new URLSearchParams(rawQueryBody).getAll(
+    "subcategory",
+  );
+  if (
+    inboundSubcategories.length > 1 ||
+    (inboundSubcategories.length === 1 &&
+      inboundSubcategories[0] !== forcedSubcategory)
+  ) {
+    return {
+      error: "The subcategory parameter conflicts with this vertical route.",
+    };
+  }
+  if (inboundSubcategories.length === 1) {
+    return { target: upstreamPath + rawQuery };
+  }
+
+  const encoded = encodeURIComponent(forcedSubcategory);
+  if (rawQueryBody.length === 0) {
+    return { target: `${upstreamPath}?subcategory=${encoded}` };
+  }
+  const sep = rawQueryBody.endsWith("&") ? "" : "&";
+  return {
+    target: `${upstreamPath}?${rawQueryBody}${sep}subcategory=${encoded}`,
+  };
+}
+
+function resolveFreshFeedTarget(
+  upstreams: FreshFeedUpstreamUrls,
+  spec: FreshFeedRouteSpec,
+) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const authedReq = req as RequestWithAuth<any, any, any>;
+    const teamId = authedReq.auth?.team_id;
+    let upstream: FreshFeedUpstream;
+    let forcedSubcategory: string | undefined;
+
+    if (spec.kind === "local") {
+      const flagUpstream: unknown = authedReq.acuc?.flags?.freshFeedUpstream;
+      if (flagUpstream === undefined || flagUpstream === null) {
+        upstream = "local";
+      } else if (isFreshFeedUpstream(flagUpstream)) {
+        upstream = flagUpstream;
+      } else {
+        rootLogger.error("Invalid freshFeedUpstream flag", {
+          module: "api/fresh-feed",
+          teamId,
+          configuredUpstream:
+            typeof flagUpstream === "string"
+              ? flagUpstream.slice(0, 64)
+              : typeof flagUpstream,
+        });
+        return freshFeedError(res, 503, "The feed is temporarily unavailable.");
+      }
+    } else if (spec.kind === "curated") {
+      upstream = "curated";
+    } else {
+      const rawVertical = req.params.vertical;
+      const vertical =
+        typeof rawVertical === "string"
+          ? resolveFreshFeedVertical(rawVertical)
+          : undefined;
+      if (vertical) {
+        upstream = vertical.upstream;
+        forcedSubcategory = vertical.subcategory;
+      } else if (isFreshFeedUpstream(rawVertical)) {
+        upstream = rawVertical;
+      } else {
+        return freshFeedError(res, 404, "Unknown fresh feed vertical.");
+      }
+    }
+
+    const builtTarget = buildUpstreamTarget(
+      req.originalUrl,
+      freshFeedUpstreamPath(upstream),
+      forcedSubcategory,
+    );
+    if ("error" in builtTarget) {
+      return freshFeedError(res, 400, builtTarget.error);
+    }
+
+    const upstreamBase = upstreams[upstream];
+    if (!upstreamBase) {
+      rootLogger.error("Fresh feed upstream is not configured", {
+        module: "api/fresh-feed",
+        teamId,
+        upstream,
+      });
+      return freshFeedError(res, 503, "The feed is temporarily unavailable.");
+    }
+
+    const rawCollection: unknown = authedReq.acuc?.flags?.freshFeedCollection;
+    let collection: string | undefined;
+    if (rawCollection !== undefined && rawCollection !== null) {
+      if (!isValidFreshFeedCollection(rawCollection)) {
+        rootLogger.error("Invalid freshFeedCollection flag", {
+          module: "api/fresh-feed",
+          teamId,
+          upstream,
+          flagType: typeof rawCollection,
+        });
+        return freshFeedError(res, 503, "The feed is temporarily unavailable.");
+      }
+      collection = rawCollection;
+    }
+
+    (res.locals as Record<symbol, ResolvedFreshFeedTarget>)[RESOLVED_TARGET] = {
+      upstream,
+      upstreamBase,
+      target: builtTarget.target,
+      collection,
+    };
+    next();
+  };
+}
+
+function freshFeedController(timeoutMs: number) {
   return async (req: Request, res: Response) => {
+    const resolved = (res.locals as Record<symbol, ResolvedFreshFeedTarget>)[
+      RESOLVED_TARGET
+    ];
+    if (!resolved) {
+      return freshFeedError(res, 503, "The feed is temporarily unavailable.");
+    }
+
     const authedReq = req as RequestWithAuth<any, any, any>;
     const zeroDataRetention =
       getEffectiveSearchForcedKind(authedReq.acuc?.flags, undefined) !== null;
@@ -115,13 +283,11 @@ function freshFeedController(upstreamBase: string, timeoutMs: number) {
       module: "api/fresh-feed",
       jobId,
       teamId: authedReq.auth.team_id,
+      upstream: resolved.upstream,
       zeroDataRetention,
     });
 
-    const queryStart = req.originalUrl.indexOf("?");
-    const target =
-      UPSTREAM_PATH +
-      (queryStart === -1 ? "" : req.originalUrl.slice(queryStart));
+    const { upstreamBase, target, collection } = resolved;
 
     const callerGone = new AbortController();
     res.on("close", () => callerGone.abort());
@@ -139,11 +305,18 @@ function freshFeedController(upstreamBase: string, timeoutMs: number) {
       api_key_id: authedReq.acuc?.api_key_id ?? null,
     });
 
+    const headers: Record<string, string | string[] | undefined> = {
+      "accept-encoding": req.headers["accept-encoding"],
+    };
+    if (collection) {
+      headers[FRESH_FEED_COLLECTION_HEADER] = collection;
+    }
+
     let upstream: Dispatcher.ResponseData;
     try {
       // fetch always decodes the body; request hands back the feed's bytes as sent.
       upstream = await request(upstreamBase + target, {
-        headers: { "accept-encoding": req.headers["accept-encoding"] },
+        headers,
         headersTimeout: timeoutMs,
         bodyTimeout: timeoutMs,
         signal: callerGone.signal,
@@ -245,17 +418,31 @@ function freshFeedController(upstreamBase: string, timeoutMs: number) {
 }
 
 export function createFreshFeedRouter(
-  upstreamUrl: string,
+  upstream: string | FreshFeedUpstreamUrls,
   timeoutMs = TIMEOUT_MS,
 ) {
+  const upstreams = normalizeFreshFeedUpstreams(upstream);
   const router = express.Router();
-  router.head("/local/latest", rejectHead);
-  router.get(
-    "/local/latest",
-    requireFreshFeedFlag,
-    requireFreshFeedCredits,
-    compression(),
-    wrap(freshFeedController(upstreamUrl.replace(/\/+$/, ""), timeoutMs)),
-  );
+  const controller = wrap(freshFeedController(timeoutMs));
+
+  const mountRoute = (
+    path: string,
+    spec: FreshFeedRouteSpec,
+    headHandler: express.RequestHandler = rejectHead,
+  ) => {
+    router.head(path, headHandler);
+    router.get(
+      path,
+      requireFreshFeedFlag,
+      resolveFreshFeedTarget(upstreams, spec),
+      requireFreshFeedCredits,
+      compression(),
+      controller,
+    );
+  };
+
+  mountRoute("/local/latest", { kind: "local" });
+  mountRoute("/curated/latest", { kind: "curated" });
+  mountRoute("/:vertical/latest", { kind: "vertical" }, rejectVerticalHead);
   return router;
 }
