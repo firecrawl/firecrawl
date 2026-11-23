@@ -22,13 +22,9 @@ vi.mock("../../../services/redis", () => ({
 import { RacedRedirectError } from "../../../lib/error";
 import { serializeTransportableError } from "../../../lib/error-serde";
 import { SiteError } from "../../../scraper/scrapeURL/error";
-import { crawlErrorsController as v1CrawlErrorsController } from "../../v1/crawl-errors";
-import { crawlErrorsController as v2CrawlErrorsController } from "../crawl-errors";
+import { crawlErrorsController } from "../crawl-errors";
 
-describe.each([
-  ["v1", v1CrawlErrorsController],
-  ["v2", v2CrawlErrorsController],
-])("%s crawl errors", (_version, crawlErrorsController) => {
+describe("v2 crawl errors", () => {
   const siteError = new SiteError("ERR_CONNECTION_RESET");
   const truncated = serializeTransportableError(siteError).slice(0, 60);
 

@@ -1,7 +1,7 @@
 /**
  * Unit test for the crawl/batch errors listing: a page that failed on
  * unaccepted provider terms carries the same `requiresAction` a single
- * scrape's 403 body does, on v1 and v2.
+ * scrape's 403 body does.
  */
 
 const mocks = vi.hoisted(() => ({
@@ -20,16 +20,12 @@ vi.mock("../../../services/redis", () => ({
   redisEvictConnection: { smembers: mocks.smembers },
 }));
 
-import { crawlErrorsController as v1CrawlErrorsController } from "../../../controllers/v1/crawl-errors";
-import { crawlErrorsController as v2CrawlErrorsController } from "../../../controllers/v2/crawl-errors";
+import { crawlErrorsController } from "../../../controllers/v2/crawl-errors";
 import { ThirdPartyDataTermsRequiredError } from "../../../lib/exchange";
 import { serializeTransportableError } from "../../../lib/error-serde";
 import { SiteError } from "../../../scraper/scrapeURL/error";
 
-describe.each([
-  ["v1", v1CrawlErrorsController],
-  ["v2", v2CrawlErrorsController],
-])("%s crawl errors", (_version, crawlErrorsController) => {
+describe("v2 crawl errors", () => {
   const TERMS = { key: "acme", version: "2026-01-01" };
 
   beforeEach(() => {

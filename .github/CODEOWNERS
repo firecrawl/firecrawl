@@ -29,14 +29,8 @@
 ## V1 API
 /apps/api/src/routes/v1.ts                      @mogery @nickscamara
 
-### /scrape
-/apps/api/src/controllers/v1/scrape*            @mogery
-
 ### /crawl
 /apps/api/src/controllers/v1/crawl*             @mogery
-
-### /batch/scrape
-/apps/api/src/controllers/v1/batch-scrape*      @mogery 
 
 ### /extract
 /apps/api/src/controllers/v1/extract*           @nickscamara

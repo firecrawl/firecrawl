@@ -20,7 +20,6 @@ import {
   keylessTeamId,
   reserveKeylessCredits,
 } from "../../../lib/keyless";
-import { V1_LIVE } from "../v1/lib";
 
 // The keyless tier is disabled unless both limits are configured. The harness
 // passes the shell env through to the server, so we read the same env here and
@@ -394,48 +393,6 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
     scrapeTimeout,
   );
 
-  itIf(V1_LIVE)(
-    "rejects projected multi-credit v1 keyless scrape before scraping (429)",
-    async () => {
-      await request(TEST_API_URL)
-        .post("/v1/scrape")
-        .set("Content-Type", "application/json")
-        .send({ origin: "mcp" });
-      const ip = await currentKeylessIp();
-      await redisRateLimitClient.set(
-        `keyless_credits:${ip}`,
-        String(KEYLESS_CREDITS_PER_DAY - 1),
-      );
-
-      const blocked = await request(TEST_API_URL)
-        .post("/v1/scrape")
-        .set("Content-Type", "application/json")
-        .send({
-          url: TEST_SUITE_WEBSITE,
-          origin: "mcp",
-          proxy: "basic",
-          formats: ["json"],
-          jsonOptions: {
-            schema: {
-              type: "object",
-              properties: { title: { type: "string" } },
-            },
-          },
-        });
-
-      expect(blocked.statusCode).toBe(429);
-      expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
-      expect(blocked.body.error).toContain(
-        "Authorization: Bearer YOUR_API_KEY",
-      );
-      expect(blocked.headers["www-authenticate"]).toContain(
-        "resource_metadata",
-      );
-    },
-    scrapeTimeout,
-  );
-
   it(
     "reconciles keyless scrape reservation to actual credits (200)",
     async () => {
@@ -542,45 +499,6 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
 
       const blocked = await request(TEST_API_URL)
         .post("/v2/search")
-        .set("Content-Type", "application/json")
-        .send({
-          query: "firecrawl",
-          limit: 1,
-          origin: "mcp",
-          scrapeOptions: {
-            proxy: "basic",
-            formats: ["markdown"],
-          },
-        });
-
-      expect(blocked.statusCode).toBe(429);
-      expect(blocked.body.error).toContain("keyless free tier rate limit");
-      expect(blocked.body.error).toMatch(KEYLESS_SIGNUP_URL);
-      expect(blocked.body.error).toContain(
-        "Authorization: Bearer YOUR_API_KEY",
-      );
-      expect(blocked.headers["www-authenticate"]).toContain(
-        "resource_metadata",
-      );
-    },
-    scrapeTimeout,
-  );
-
-  itIf(V1_LIVE)(
-    "rejects projected v1 keyless search with scrape options before search (429)",
-    async () => {
-      await request(TEST_API_URL)
-        .post("/v1/scrape")
-        .set("Content-Type", "application/json")
-        .send({ origin: "mcp" });
-      const ip = await currentKeylessIp();
-      await redisRateLimitClient.set(
-        `keyless_credits:${ip}`,
-        String(KEYLESS_CREDITS_PER_DAY - 1),
-      );
-
-      const blocked = await request(TEST_API_URL)
-        .post("/v1/search")
         .set("Content-Type", "application/json")
         .send({
           query: "firecrawl",

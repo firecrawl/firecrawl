@@ -1,5 +1,4 @@
 import type { AgentInteropStatus } from "../../lib/agent-interop";
-import type { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { Request } from "express";
 import { config } from "../../config";
 import { z } from "zod";
@@ -30,22 +29,6 @@ import { threatProtectionOverrideSchema } from "../../lib/threat-protection/conf
 import { auditMetadataSchema } from "../../lib/siem-logging/types";
 import type { RateLimiterMode } from "../../types";
 import type { TeamPlanClass } from "../../lib/team-plan-class";
-
-type Format =
-  | "markdown"
-  | "html"
-  | "rawHtml"
-  | "rawBase64"
-  | "links"
-  | "screenshot"
-  | "screenshot@fullPage"
-  | "extract"
-  | "json"
-  | "summary"
-  | "changeTracking"
-  | "branding"
-  | "product"
-  | "menu";
 
 export const url = z
   .string()
@@ -885,25 +868,6 @@ export const batchScrapeRequestSchema = batchScrapeRequestSchemaBase
   .refine(waitForRefine, waitForRefineOpts)
   .transform(obj => extractTransform(obj) as typeof obj);
 
-const batchScrapeRequestSchemaNoURLValidationBase = baseScrapeOptions.extend({
-  urls: z.string().array().min(1),
-  origin: z.string().prefault("api"),
-  integration: integrationSchema.optional().transform(val => val || null),
-  webhook: webhookSchema.optional(),
-  appendToId: z.uuid().optional(),
-  ignoreInvalidURLs: z.boolean().prefault(false),
-  maxConcurrency: z.int().positive().optional(),
-  zeroDataRetention: z.boolean().optional(),
-});
-
-export const batchScrapeRequestSchemaNoURLValidation =
-  batchScrapeRequestSchemaNoURLValidationBase
-    .strict()
-    .refine(extractRefine, extractRefineOpts)
-    .refine(fire1Refine, fire1RefineOpts)
-    .refine(waitForRefine, waitForRefineOpts)
-    .transform(obj => extractTransform(obj) as typeof obj);
-
 export type BatchScrapeRequest = z.infer<typeof batchScrapeRequestSchema>;
 export type BatchScrapeRequestInput = z.input<typeof batchScrapeRequestSchema>;
 
@@ -931,19 +895,6 @@ const crawlerOptions = z.strictObject({
     )
     .optional(),
 });
-
-// export type CrawlerOptions = {
-//   includePaths?: string[];
-//   excludePaths?: string[];
-//   maxDepth?: number;
-//   limit?: number;
-//   allowBackwardLinks?: boolean; // DEPRECATED: use crawlEntireDomain
-//   crawlEntireDomain?: boolean;
-//   allowExternalLinks?: boolean;
-//   ignoreSitemap?: boolean;
-// };
-
-type CrawlerOptions = z.infer<typeof crawlerOptions>;
 
 const crawlRequestSchemaBase = crawlerOptions.extend({
   url,
@@ -1177,15 +1128,6 @@ export type ErrorResponse = {
   login_url?: string;
 };
 
-export type ScrapeResponse =
-  | ErrorResponse
-  | {
-      success: true;
-      warning?: string;
-      data: Document;
-      scrape_id?: string;
-    };
-
 export interface URLTrace {
   url: string;
   status: "mapped" | "scraped" | "error";
@@ -1221,97 +1163,6 @@ export interface ExtractResponse {
   tokensUsed?: number;
   creditsUsed?: number;
 }
-
-export type CrawlResponse =
-  | ErrorResponse
-  | {
-      success: true;
-      id: string;
-      url: string;
-    };
-
-export type BatchScrapeResponse =
-  | ErrorResponse
-  | {
-      success: true;
-      id: string;
-      url: string;
-      invalidURLs?: string[];
-    };
-
-// Note: This type has been transitioned to v2/types.ts (see MapV2Response) while maintaining backwards compatibility
-export type MapResponse =
-  | ErrorResponse
-  | {
-      success: true;
-      links: string[];
-      scrape_id?: string;
-    };
-
-export type CrawlStatusParams = {
-  jobId: string;
-};
-
-export type ConcurrencyCheckParams = {
-  teamId: string;
-};
-
-export type ConcurrencyCheckResponse =
-  | ErrorResponse
-  | {
-      success: true;
-      concurrency: number;
-      maxConcurrency: number;
-    };
-
-export type CrawlStatusResponse =
-  | ErrorResponse
-  | {
-      success: true;
-      status: "scraping" | "completed" | "failed" | "cancelled";
-      completed: number;
-      total: number;
-      creditsUsed: number;
-      expiresAt: string;
-      next?: string;
-      data: Document[];
-    }
-  | {
-      success: false;
-      status: "failed";
-      error: string;
-      completed: number;
-      total: number;
-      creditsUsed: number;
-      expiresAt: string;
-      data: Document[];
-    };
-
-export type OngoingCrawlsResponse =
-  | ErrorResponse
-  | {
-      success: true;
-      crawls: {
-        id: string;
-        teamId: string;
-        url: string;
-        created_at: string;
-        options: CrawlerOptions;
-      }[];
-    };
-
-export type CrawlErrorsResponse =
-  | ErrorResponse
-  | {
-      errors: {
-        id: string;
-        timestamp?: string;
-        url: string;
-        error: string;
-        requiresAction?: ThirdPartyDataTermsRequiredError["requiresAction"];
-      }[];
-      robotsBlocked: string[];
-    };
 
 type AuthObject = {
   team_id: string;
@@ -1506,81 +1357,6 @@ export interface RequestWithAuth<
   account?: Account;
 }
 
-export function toLegacyCrawlerOptions(x: CrawlerOptions) {
-  return {
-    includes: x.includePaths,
-    excludes: x.excludePaths,
-    maxCrawledLinks: x.limit,
-    maxDepth: x.maxDepth,
-    limit: x.limit,
-    generateImgAltText: false,
-    allowBackwardCrawling: x.crawlEntireDomain ?? x.allowBackwardLinks,
-    allowExternalContentLinks: x.allowExternalLinks,
-    allowSubdomains: x.allowSubdomains,
-    ignoreRobotsTxt: x.ignoreRobotsTxt,
-    ignoreSitemap: x.ignoreSitemap,
-    deduplicateSimilarURLs: x.deduplicateSimilarURLs,
-    ignoreQueryParameters: x.ignoreQueryParameters,
-    regexOnFullURL: x.regexOnFullURL,
-    maxDiscoveryDepth: x.maxDiscoveryDepth,
-    currentDiscoveryDepth: 0,
-    delay: x.delay,
-  };
-}
-
-export function toNewCrawlerOptions(x: any): CrawlerOptions {
-  return {
-    includePaths: x.includes,
-    excludePaths: x.excludes,
-    limit: x.limit,
-    maxDepth: x.maxDepth,
-    allowBackwardLinks: x.allowBackwardCrawling,
-    crawlEntireDomain: x.allowBackwardCrawling,
-    allowExternalLinks: x.allowExternalContentLinks,
-    allowSubdomains: x.allowSubdomains,
-    ignoreRobotsTxt: x.ignoreRobotsTxt,
-    ignoreSitemap: x.ignoreSitemap,
-    deduplicateSimilarURLs: x.deduplicateSimilarURLs,
-    ignoreQueryParameters: x.ignoreQueryParameters,
-    regexOnFullURL: x.regexOnFullURL,
-    maxDiscoveryDepth: x.maxDiscoveryDepth,
-    delay: x.delay,
-  };
-}
-
-function fromLegacyCrawlerOptions(
-  x: any,
-  teamId: string,
-): {
-  crawlOptions: CrawlerOptions;
-  internalOptions: InternalOptions;
-} {
-  return {
-    crawlOptions: crawlerOptions.parse({
-      includePaths: x.includes,
-      excludePaths: x.excludes,
-      limit: x.maxCrawledLinks ?? x.limit,
-      maxDepth: x.maxDepth,
-      allowBackwardLinks: x.allowBackwardCrawling,
-      crawlEntireDomain: x.allowBackwardCrawling,
-      allowExternalLinks: x.allowExternalContentLinks,
-      allowSubdomains: x.allowSubdomains,
-      ignoreRobotsTxt: x.ignoreRobotsTxt,
-      ignoreSitemap: x.ignoreSitemap,
-      deduplicateSimilarURLs: x.deduplicateSimilarURLs,
-      ignoreQueryParameters: x.ignoreQueryParameters,
-      regexOnFullURL: x.regexOnFullURL,
-      maxDiscoveryDepth: x.maxDiscoveryDepth,
-      delay: x.delay,
-    }),
-    internalOptions: {
-      v0CrawlOnlyUrls: x.returnOnlyUrls,
-      teamId,
-      orgId: null,
-    },
-  };
-}
-
 // Note: This interface has been transitioned to v2/types.ts while maintaining backwards compatibility
 export interface MapDocument {
   url: string;
@@ -1724,18 +1500,6 @@ export const searchRequestSchema = z
       x.country !== undefined ? x.country : x.location ? undefined : "us",
     scrapeOptions: extractTransform(x.scrapeOptions),
   }));
-
-export type SearchRequest = z.infer<typeof searchRequestSchema>;
-export type SearchRequestInput = z.input<typeof searchRequestSchema>;
-
-export type SearchResponse =
-  | ErrorResponse
-  | {
-      success: true;
-      warning?: string;
-      data: Document[];
-      id: string;
-    };
 
 export type TokenUsage = {
   promptTokens: number;
