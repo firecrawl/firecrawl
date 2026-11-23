@@ -79,6 +79,8 @@ import { getACUCTeam } from "../../controllers/auth";
 import { isUsOnly } from "../../lib/us-only";
 import type { TeamFlags } from "../../controllers/v1/types";
 import { orgIdForTeam } from "../../lib/team-org";
+import { requestContext } from "../../lib/request-context";
+import type { BillingMetadata } from "../billing/types";
 import {
   reconstructKnownState,
   searchStatusToPageStatus,
@@ -305,6 +307,18 @@ async function scrapeSearchMonitorPage(params: {
     api_key_id: null,
   });
 
+  const billing: BillingMetadata = {
+    endpoint: "monitor",
+    jobId: params.checkId,
+  };
+  const ctx = requestContext({
+    teamId: params.teamId,
+    zeroDataRetention: false,
+    flags: params.teamFlags ?? undefined,
+    orgId: null,
+    apiKeyId: null,
+    billing,
+  });
   const job: NuQJob<ScrapeJobData> = {
     id: scrapeId,
     status: "active",
@@ -313,6 +327,7 @@ async function scrapeSearchMonitorPage(params: {
     data: {
       mode: "single_urls",
       url: params.url,
+      ctx,
       team_id: params.teamId,
       scrapeOptions,
       internalOptions: {
@@ -338,7 +353,7 @@ async function scrapeSearchMonitorPage(params: {
       skipNuq: true,
       origin: "monitor",
       integration: null,
-      billing: { endpoint: "monitor", jobId: params.checkId },
+      billing,
       zeroDataRetention: false,
       apiKeyId: null,
     },
@@ -618,6 +633,18 @@ async function enqueueMonitorScrapeTarget(params: {
   // Safe Mode applies to monitor scrapes: resolve per-URL at the backstop from
   // the team's flags. orgId stays null (monitors' separate no-blocklist rule).
   const acuc = await getACUCTeam(params.monitor.team_id);
+  const billing: BillingMetadata = {
+    endpoint: "monitor",
+    jobId: params.check.id,
+  };
+  const ctx = requestContext({
+    teamId: params.monitor.team_id,
+    zeroDataRetention: false,
+    flags: acuc?.flags ?? undefined,
+    orgId: null,
+    apiKeyId: null,
+    billing,
+  });
 
   for (const [index, url] of params.target.urls.entries()) {
     const scrapeId = params.targetRun.expectedJobs[index];
@@ -643,6 +670,7 @@ async function enqueueMonitorScrapeTarget(params: {
       {
         mode: "single_urls",
         url,
+        ctx,
         team_id: params.monitor.team_id,
         scrapeOptions,
         internalOptions: {
@@ -656,7 +684,7 @@ async function enqueueMonitorScrapeTarget(params: {
         },
         origin: "monitor",
         integration: null,
-        billing: { endpoint: "monitor", jobId: params.check.id },
+        billing,
         zeroDataRetention: false,
         apiKeyId: null,
         monitoring: {
@@ -717,8 +745,21 @@ async function enqueueMonitorCrawlTarget(params: {
   // Safe Mode applies to monitor crawls: each child resolves it per-URL at the
   // backstop from the team's flags. orgId stays null (monitors' no-blocklist rule).
   const acuc = await getACUCTeam(params.monitor.team_id);
+  const billing: BillingMetadata = {
+    endpoint: "monitor",
+    jobId: params.check.id,
+  };
+  const ctx = requestContext({
+    teamId: params.monitor.team_id,
+    zeroDataRetention: false,
+    flags: acuc?.flags ?? undefined,
+    orgId: null,
+    apiKeyId: null,
+    billing,
+  });
 
   const sc: StoredCrawl = {
+    ctx,
     originUrl: body.url,
     crawlerOptions: toV0CrawlerOptions(crawlerOptions),
     scrapeOptions: body.scrapeOptions,
@@ -760,13 +801,14 @@ async function enqueueMonitorCrawlTarget(params: {
     {
       url: body.url,
       mode: "kickoff",
+      ctx,
       team_id: params.monitor.team_id,
       crawlerOptions,
       scrapeOptions: sc.scrapeOptions,
       internalOptions: sc.internalOptions,
       origin: "monitor",
       integration: null,
-      billing: { endpoint: "monitor", jobId: params.check.id },
+      billing,
       crawl_id: crawlId,
       v1: true,
       zeroDataRetention: false,

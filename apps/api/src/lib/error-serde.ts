@@ -2,13 +2,15 @@ import {
   ActionsNotSupportedError,
   ConcurrencyQueueTimeoutError,
   CrawlDenialError,
-  ErrorCodes,
+  type ErrorCode,
+  isTransportableError,
   MapFailedError,
   MapTimeoutError,
   RacedRedirectError,
   ScrapeJobTimeoutError,
   SitemapError,
   TransportableError,
+  type TransportableErrorClass,
   UnknownError,
   UnsupportedSiteError,
 } from "./error";
@@ -51,95 +53,189 @@ import {
   ThirdPartyDataTermsRequiredError,
   ThirdPartyDataUnsupportedOptionError,
 } from "./exchange";
+import { service } from "../service";
 
-// TODO: figure out correct typing for this
-const errorMap: Record<ErrorCodes, any> = {
-  THIRD_PARTY_DATA_TERMS_REQUIRED: ThirdPartyDataTermsRequiredError,
-  THIRD_PARTY_DATA_NOT_FOUND: ExchangeRefusedError,
-  THIRD_PARTY_DATA_UNSUPPORTED_URL: ExchangeRefusedError,
-  THIRD_PARTY_DATA_UNSUPPORTED_OPTION: ThirdPartyDataUnsupportedOptionError,
-  THIRD_PARTY_DATA_NOT_ENABLED: ExchangeRefusedError,
-  THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED: ExchangeRefusedError,
-  SAFE_MODE_BLOCKED: null,
-  SCRAPE_SITE_RESTRICTION_BLOCKED: SiteRestrictionError,
-  SCRAPE_TIMEOUT: ScrapeJobTimeoutError,
-  MAP_TIMEOUT: MapTimeoutError,
-  UNKNOWN_ERROR: UnknownError,
-  SCRAPE_ALL_ENGINES_FAILED: NoEnginesLeftError,
-  SCRAPE_SSL_ERROR: SSLError,
-  SCRAPE_SITE_ERROR: SiteError,
-  SCRAPE_PROXY_SELECTION_ERROR: ProxySelectionError,
-  SCRAPE_PDF_PREFETCH_FAILED: PDFPrefetchFailed,
-  SCRAPE_DOCUMENT_PREFETCH_FAILED: DocumentPrefetchFailed,
-  SCRAPE_JOB_CANCELLED: ScrapeJobCancelledError,
-  SCRAPE_RETRY_LIMIT: ScrapeRetryLimitError,
-  SCRAPE_ZDR_VIOLATION_ERROR: ZDRViolationError,
-  SCRAPE_DNS_RESOLUTION_ERROR: DNSResolutionError,
-  SCRAPE_PDF_INSUFFICIENT_TIME_ERROR: PDFInsufficientTimeError,
-  SCRAPE_PDF_ANTIBOT_ERROR: PDFAntibotError,
-  SCRAPE_PDF_FETCH_PROXY_ERROR: PDFFetchProxyError,
-  SCRAPE_PDF_OCR_REQUIRED: PDFOCRRequiredError,
-  SCRAPE_DOCUMENT_ANTIBOT_ERROR: DocumentAntibotError,
-  SCRAPE_DOCUMENT_FETCH_PROXY_ERROR: DocumentFetchProxyError,
-  SCRAPE_UNSUPPORTED_FILE_ERROR: UnsupportedFileError,
-  SCRAPE_NO_CACHED_DATA: NoCachedDataError,
-  SCRAPE_LOCKDOWN_CACHE_MISS: LockdownMissError,
-  SCRAPE_ACTION_ERROR: ActionError,
-  SCRAPE_ACTIONS_NOT_SUPPORTED: ActionsNotSupportedError,
-  SCRAPE_BRANDING_NOT_SUPPORTED: BrandingNotSupportedError,
-  AGENT_INDEX_ONLY: AgentIndexOnlyError,
-  SCRAPE_RACED_REDIRECT_ERROR: RacedRedirectError,
-  SCRAPE_SITEMAP_ERROR: SitemapError,
-  CRAWL_DENIAL: CrawlDenialError,
-  UNSUPPORTED_SITE: UnsupportedSiteError,
-  SCRAPE_AUDIO_UNSUPPORTED_URL: AudioUnsupportedUrlError,
-  SCRAPE_VIDEO_UNSUPPORTED_URL: VideoUnsupportedUrlError,
-  SCRAPE_MEDIA_ACCESS_DENIED: MediaAccessDeniedError,
-  SCRAPE_PROMPT_INJECTION_DETECTED: PromptInjectionDetectedError,
-  SCRAPE_PAYWALLED_CONTENT: PaywalledContentError,
-  SCRAPE_JSON_CONTENT_TOO_LARGE: JsonExtractionContentTooLargeError,
-  US_ONLY_UNAVAILABLE: UsOnlyUnavailableError,
-  RESERVED_CAPACITY_UNAVAILABLE: ReservedCapacityUnavailableError,
-  MAP_FAILED: MapFailedError,
-  CONCURRENCY_QUEUE_TIMEOUT: ConcurrencyQueueTimeoutError,
-  unsafe_domain_blocked: UnsafeDomainBlockedError,
-
-  // Zod errors
-  BAD_REQUEST: null,
-  BAD_REQUEST_INVALID_JSON: null,
-  CATEGORY_REMOVED: null,
-  INDEX_DAILY_LIMIT: null,
-  TOOL_DISCOVERY_UNAVAILABLE: null,
-  PARSE_UNSUPPORTED_OPTIONS: null,
-
-  // Agent thread rejections are API-level, never transported through workers.
-  thread_not_found: null,
-  thread_busy: null,
-  thread_expired: null,
-  threads_disabled: null,
-  exchange_not_enabled: null,
-  agent_not_found: null,
-  agent_status_unavailable: null,
-
-  // Agent zero data retention rejections are API-level too.
-  zdr_threads_unsupported: null,
-  zdr_expired: null,
-  zdr_no_snapshots: null,
-  zdr_not_enabled: null,
-  zdr_retention_misconfigured: null,
-};
+/**
+ * The service's own error classes. Reading a code that no class carries gives
+ * a plain TransportableError.
+ */
+export const coreErrors: TransportableErrorClass[] = [
+  ThirdPartyDataTermsRequiredError,
+  ExchangeRefusedError,
+  ThirdPartyDataUnsupportedOptionError,
+  SiteRestrictionError,
+  ScrapeJobTimeoutError,
+  MapTimeoutError,
+  UnknownError,
+  NoEnginesLeftError,
+  SSLError,
+  SiteError,
+  ProxySelectionError,
+  PDFPrefetchFailed,
+  DocumentPrefetchFailed,
+  ScrapeJobCancelledError,
+  ScrapeRetryLimitError,
+  ZDRViolationError,
+  DNSResolutionError,
+  PDFInsufficientTimeError,
+  PDFAntibotError,
+  PDFFetchProxyError,
+  PDFOCRRequiredError,
+  DocumentAntibotError,
+  DocumentFetchProxyError,
+  UnsupportedFileError,
+  NoCachedDataError,
+  LockdownMissError,
+  ActionError,
+  ActionsNotSupportedError,
+  BrandingNotSupportedError,
+  AgentIndexOnlyError,
+  RacedRedirectError,
+  SitemapError,
+  CrawlDenialError,
+  UnsupportedSiteError,
+  AudioUnsupportedUrlError,
+  VideoUnsupportedUrlError,
+  MediaAccessDeniedError,
+  PromptInjectionDetectedError,
+  PaywalledContentError,
+  JsonExtractionContentTooLargeError,
+  UsOnlyUnavailableError,
+  ReservedCapacityUnavailableError,
+  MapFailedError,
+  ConcurrencyQueueTimeoutError,
+  UnsafeDomainBlockedError,
+];
 
 export function serializeTransportableError(error: TransportableError) {
   return `${error.code}|${JSON.stringify(error.serialize())}`;
 }
 
 /**
- * Returns null when `data` is not a serialized error; callers also pass plain
- * error messages. A code with no class here gives a plain TransportableError.
+ * The size of the longest reason that every queue backend keeps whole for a
+ * failed job, in bytes of UTF-8. A serialized error that is cut cannot be read
+ * back.
  */
-export function deserializeTransportableError(
-  data: string,
-): InstanceType<(typeof errorMap)[keyof typeof errorMap]> | null {
+export const MAX_SERIALIZED_ERROR_BYTES = 90 * 1024;
+
+// What a stack or a message is cut to in an error that is longer than that.
+const SHORTENED_LENGTH = 4096;
+
+function shortened(text: string) {
+  if (text.length <= SHORTENED_LENGTH) {
+    return text;
+  }
+  // A character outside the basic plane takes two code units. A cut between
+  // them would leave half a character, so the first half goes too.
+  const kept = text.slice(0, SHORTENED_LENGTH).replace(/[\uD800-\uDBFF]$/, "");
+  return `${kept}... [truncated]`;
+}
+
+// What serializeThrownError returns for a value that can be read. Reading a
+// thrown value can itself throw, and then this throws.
+function serializeWithinLimit(error: unknown) {
+  const thrown = isTransportableError(error) ? error : new UnknownError(error);
+  // What the queue keeps whole and every reader takes, whether or not it has
+  // a class for the code.
+  const crosses = (serialized: string) => {
+    if (Buffer.byteLength(serialized, "utf8") > MAX_SERIALIZED_ERROR_BYTES) {
+      return false;
+    }
+    const written = parseSerializedError(serialized);
+    return (
+      written !== null &&
+      CODE.test(written.code) &&
+      typeof written.payload.message === "string"
+    );
+  };
+
+  try {
+    let payload = thrown.serialize();
+    const write = (fields: object) =>
+      `${thrown.code}|${JSON.stringify(fields)}`;
+
+    let serialized: string;
+    try {
+      serialized = write(payload);
+    } catch {
+      // The cause takes any value, and JSON cannot write every value, such as
+      // an object that refers to itself.
+      payload = { ...payload, cause: undefined };
+      serialized = write(payload);
+    }
+    if (crosses(serialized)) {
+      return serialized;
+    }
+
+    const stack = payload.stack && shortened(payload.stack);
+    const message = shortened(payload.message);
+    for (const shorter of [
+      { ...payload, stack },
+      { ...payload, stack, message },
+      { ...payload, stack, message, cause: undefined },
+      {
+        ...Object.fromEntries(
+          Object.entries(payload).map(([field, value]) => [
+            field,
+            typeof value === "string" ? shortened(value) : value,
+          ]),
+        ),
+        cause: undefined,
+      },
+    ]) {
+      serialized = write(shorter);
+      if (crosses(serialized)) {
+        return serialized;
+      }
+    }
+  } catch {
+    // `serialize()` threw, or what it returned cannot be written.
+  }
+
+  // This always fits: it holds two shortened texts and a fixed sentence, and a
+  // character takes six bytes at most when it is written as JSON.
+  const inner = new Error(shortened(String(thrown.message)));
+  inner.stack = thrown.stack && shortened(String(thrown.stack));
+  return serializeTransportableError(new UnknownError(inner));
+}
+
+/**
+ * The wire form of anything a job throws. What is not a transportable error
+ * goes out as UNKNOWN_ERROR. This never throws. What it returns fits the queue
+ * and is what every reader parses as a serialized error: a code, then a JSON
+ * object with a message. Reading back the fields that a class adds is up to
+ * that class.
+ *
+ * An error crosses with its code even when it cannot be written as it is. A
+ * cause that JSON cannot write is left out. An error that is too long for the
+ * queue to keep whole gets its stack shortened, then its message, then loses
+ * its cause, and then gets every other text it carries shortened, until it
+ * fits.
+ *
+ * An error that still does not fit, or that does not write itself as a reader
+ * takes it, goes out as UNKNOWN_ERROR with its message and its stack. A value
+ * that cannot be read at all goes out as UNKNOWN_ERROR with a fixed message.
+ */
+export function serializeThrownError(error: unknown) {
+  try {
+    return serializeWithinLimit(error);
+  } catch {
+    // Reading the thrown value threw, as it does for an object that cannot be
+    // made into a string.
+    return serializeTransportableError(
+      new UnknownError("The thrown value could not be read"),
+    );
+  }
+}
+
+// A code has no whitespace in it.
+const CODE = /^\S+$/;
+
+/**
+ * Splits a serialized error into its code and the object written after it.
+ * Returns null for a string that is not written that way.
+ */
+function parseSerializedError(data: string) {
   const [code, ...serialized] = data.split("|");
   if (serialized.length === 0) {
     return null;
@@ -153,17 +249,33 @@ export function deserializeTransportableError(
   if (typeof payload !== "object" || payload === null) {
     return null;
   }
+  return { code, payload: payload as Record<string, unknown> };
+}
 
-  const x = Object.hasOwn(errorMap, code) ? errorMap[code] : null;
-  if (x) {
-    return x.deserialize(code, payload);
-  }
-
-  const { message, stack, cause } = payload as Record<string, unknown>;
-  if (!/^\S+$/.test(code) || typeof message !== "string") {
+/**
+ * Returns null when `data` is not a serialized error; callers also pass plain
+ * error messages. A code that no registered class carries gives a plain
+ * TransportableError.
+ */
+export function deserializeTransportableError(
+  data: string,
+): TransportableError | null {
+  const parsed = parseSerializedError(data);
+  if (parsed === null) {
     return null;
   }
-  return TransportableError.deserialize(code as ErrorCodes, {
+  const { code, payload } = parsed;
+
+  const errorClass = service.errors.classFor(code);
+  if (errorClass) {
+    return errorClass.deserialize(code as ErrorCode, payload);
+  }
+
+  const { message, stack, cause } = payload;
+  if (!CODE.test(code) || typeof message !== "string") {
+    return null;
+  }
+  return TransportableError.deserialize(code as ErrorCode, {
     message,
     stack: typeof stack === "string" ? stack : undefined,
     cause,
