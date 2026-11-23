@@ -28,20 +28,19 @@ const fallbackRateLimits: Record<RateLimiterMode, number> = {
   extractStatus: 25000,
   crawlStatus: 25000,
   extractAgentPreview: 10,
-  scrapeAgentPreview: 10,
   browser: 2,
   browserExecute: 1000,
   browserReplay: 500,
   account: 1000,
   supportAsk: 3,
-  supportDocsSearch: 3,
   research: 100,
   developerSearch: 100,
-  govSearch: 100,
+  govSearch: 300,
   labs: 1000,
   exchange: 100,
   // Catalogue reads only; no paid tool runs behind them.
   exchangeDiscover: 10000,
+  freshFeed: 100,
 };
 
 /**

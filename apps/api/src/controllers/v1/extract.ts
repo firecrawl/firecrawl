@@ -10,7 +10,10 @@ import { addExtractJobToQueue } from "../../services/queue-service";
 import { saveExtract } from "../../lib/extract/extract-redis";
 import { getTeamIdSyncB } from "../../lib/extract/team-id-sync";
 import { ExtractResult } from "../../lib/extract/types";
-import { performExtraction_F0 } from "../../lib/extract/fire-0/extraction-service-f0";
+import {
+  checkExtractAvailable,
+  performExtraction_F0,
+} from "../../lib/extract/fire-0/extraction-service-f0";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { logger as _logger } from "../../lib/logger";
@@ -23,7 +26,6 @@ import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 
-import { config } from "../../config";
 import {
   checkUrlsAgainstThreatPolicy,
   resolveThreatProtection,
@@ -33,6 +35,8 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
+import { ipWhitelistRefusal } from "../../lib/permissions";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import { isSdkOrigin } from "../../lib/sdk-origin";
 async function oldExtract(
   req: RequestWithAuth<{}, ExtractResponse, ExtractRequest>,
@@ -113,7 +117,6 @@ export async function extractController(
   req: RequestWithAuth<{}, ExtractResponse, ExtractRequest>,
   res: Response<ExtractResponse>,
 ) {
-  const selfHosted = config.USE_DB_AUTHENTICATION !== true;
   const originalRequest = { ...req.body };
   req.body = extractRequestSchema.parse(req.body);
   const extractId = uuidv7();
@@ -123,6 +126,29 @@ export async function extractController(
       success: false,
       error:
         "Your team has zero data retention enabled. This is not supported on extract. Please contact support@firecrawl.com to unblock this feature.",
+    });
+  }
+
+  try {
+    checkExtractAvailable(req.acuc?.flags);
+  } catch (error) {
+    if (!(error instanceof UsOnlyUnavailableError)) throw error;
+    return res.status(403).json({
+      success: false,
+      code: error.code,
+      error: error.message,
+    });
+  }
+
+  const ipWhitelistError = ipWhitelistRefusal(
+    req.acuc?.flags,
+    req.body.scrapeOptions?.location?.country,
+    req.body.scrapeOptions?.geolocation?.country,
+  );
+  if (ipWhitelistError) {
+    return res.status(403).json({
+      success: false,
+      error: ipWhitelistError,
     });
   }
 

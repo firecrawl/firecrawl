@@ -3,7 +3,7 @@ Search functionality for Firecrawl v2 API.
 """
 
 from typing import Dict, Any, Union, List, TypeVar, Type
-from ..types import SearchRequest, SearchData, Document, SearchResultWeb, SearchResultNews, SearchResultImages, DiscoveredTool
+from ..types import SearchRequest, SearchData, Document, SearchResultWeb, SearchResultNews, SearchResultImages, DiscoveredTool, SkillCard
 from ..utils.agent_hints import agent_hint_metadata
 from ..utils.normalize import normalize_document_input, _map_search_result_keys
 from ..utils import HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
@@ -45,6 +45,8 @@ def search(
             out.images = _transform_array(data["images"], SearchResultImages)
         if "tools" in data:
             out.tools = [DiscoveredTool(**item) for item in data["tools"]]
+        if "skills" in data:
+            out.skills = [SkillCard(**item) for item in data["skills"]]
         return out
     except Exception as err:
         response = getattr(err, "response", None)
@@ -124,7 +126,13 @@ def _validate_search_request(request: SearchRequest) -> SearchRequest:
     
     # Validate sources (if provided)
     if request.sources is not None:
-        valid_sources = {"web", "news", "images", "alexandria"}
+        valid_sources = {
+            "web",
+            "news",
+            "images",
+            "alexandria",
+            "skills",
+        }
         for source in request.sources:
             if isinstance(source, str):
                 if source not in valid_sources:

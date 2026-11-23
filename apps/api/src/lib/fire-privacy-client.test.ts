@@ -2,6 +2,7 @@ import http from "http";
 import { AddressInfo } from "net";
 import { config } from "../config";
 import { redactText } from "./fire-privacy-client";
+import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
 
 type Handler = (
   req: http.IncomingMessage,
@@ -716,5 +717,99 @@ describe("redactText", () => {
     });
 
     expect(out.redactedMarkdown).toBe(" - email alice@example.com");
+  });
+});
+
+describe("redactText for US-only teams", () => {
+  function capturing(
+    reply: unknown,
+    status = 200,
+  ): { handler: Handler; bodies: Record<string, unknown>[] } {
+    const bodies: Record<string, unknown>[] = [];
+    return {
+      bodies,
+      handler: async (req, res) => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(chunk as Buffer);
+        bodies.push(JSON.parse(Buffer.concat(chunks).toString()));
+        res.statusCode = status;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify(reply));
+      },
+    };
+  }
+
+  it("sends data_region only when usOnly is set", async () => {
+    const reply = {
+      redacted_text: "Hi <PERSON>",
+      spans: [],
+      model_status: "ok",
+      data_region: "us",
+    };
+    const capture = capturing(reply);
+    handler = capture.handler;
+
+    const unpinned = await redactText({ text: "Hi Alice" });
+    const pinned = await redactText({ text: "Hi Alice", usOnly: true });
+
+    expect(Object.hasOwn(capture.bodies[0], "data_region")).toBe(false);
+    expect(capture.bodies[1]).toMatchObject({ data_region: "us" });
+    expect(unpinned.status).toBe("ok");
+    expect(pinned.status).toBe("ok");
+    expect(pinned.redactedMarkdown).toBe("Hi <PERSON>");
+  });
+
+  it("throws UsOnlyUnavailableError when the redaction service has no US capacity", async () => {
+    handler = capturing(
+      { code: "region_unavailable", data_region: "us" },
+      503,
+    ).handler;
+
+    await expect(
+      redactText({ text: "Hi Alice", usOnly: true }),
+    ).rejects.toBeInstanceOf(UsOnlyUnavailableError);
+  });
+
+  it("throws UsOnlyUnavailableError for a refusal on any status or region field", async () => {
+    handler = capturing({ error_code: "region_unavailable" }, 403).handler;
+
+    await expect(
+      redactText({ text: "Hi Alice", usOnly: true }),
+    ).rejects.toThrow("no US capacity could take this request");
+  });
+
+  it("throws UsOnlyUnavailableError when a pinned reply lacks the region echo", async () => {
+    handler = capturing({
+      redacted_text: "Hi <PERSON>",
+      spans: [],
+      model_status: "ok",
+    }).handler;
+
+    const error = await redactText({ text: "Hi Alice", usOnly: true }).catch(
+      e => e,
+    );
+    expect(error).toBeInstanceOf(UsOnlyUnavailableError);
+    expect(error.message).toContain("did not confirm US-only processing");
+  });
+
+  it("keeps an unpinned 503 as failed/service_unavailable", async () => {
+    handler = capturing(
+      { code: "region_unavailable", data_region: "us" },
+      503,
+    ).handler;
+
+    const out = await redactText({ text: "Hi Alice" });
+    expect(out.status).toBe("failed");
+    expect(out.reason).toBe("service_unavailable");
+    expect(out.redactedMarkdown).toBeNull();
+  });
+
+  it("keeps an ordinary pinned 503 as failed with no markdown", async () => {
+    handler = capturing({ error: "overloaded" }, 503).handler;
+
+    const out = await redactText({ text: "Hi Alice", usOnly: true });
+    expect(out.status).toBe("failed");
+    expect(out.reason).toBe("service_unavailable");
+    expect(out.redactedMarkdown).toBeNull();
   });
 });

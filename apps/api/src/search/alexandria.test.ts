@@ -257,3 +257,181 @@ it("keeps the results of queries that answered", async () => {
   expect(result.items).toHaveLength(1);
   expect(result.warning).toBeUndefined();
 });
+
+it("reports the tools the Exchange hid from a US-only team", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: {
+      success: true,
+      creditsCost: 0,
+      data: { items: [tool], usOnlyExcluded: 3 },
+    },
+  });
+  const result = await discoverTools({ ...input, usOnly: true }, logger);
+  expect(request.mock.calls[0][0]).toMatchObject({ usOnly: true });
+  expect(result.items).toHaveLength(1);
+  expect(result.usOnlyExcluded).toBe(3);
+  expect(result).not.toHaveProperty("warning");
+});
+
+it("asks Exchange for zero-data-retention providers only, on every leg", async () => {
+  request.mockImplementation(async args =>
+    args.path === "/v1/skills/resolve"
+      ? {
+          status: 200,
+          body: {
+            skills: [
+              {
+                id: "sample",
+                matchedDomains: ["example.com"],
+                domainCapabilities: { "example.com": ["records/search"] },
+              },
+            ],
+          },
+        }
+      : {
+          status: 200,
+          body: { success: true, creditsCost: 0, data: { items: [tool] } },
+        },
+  );
+  await discoverTools(
+    {
+      ...input,
+      zeroDataRetention: true,
+      urls: ["https://example.com/records"],
+    },
+    logger,
+  );
+  // The semantic lookup, the domain resolve, and the domain tool lookup.
+  const paths = request.mock.calls.map(([args]) => args.path).sort();
+  expect(paths).toEqual(["/v1/retrieve", "/v1/retrieve", "/v1/skills/resolve"]);
+  for (const [args] of request.mock.calls)
+    expect(args).toMatchObject({ zeroDataRetention: true });
+});
+
+it("reports no hidden tools when the Exchange hid nothing", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: { success: true, creditsCost: 0, data: { items: [tool] } },
+  });
+  const result = await discoverTools({ ...input, usOnly: true }, logger);
+  expect(result.items).toHaveLength(1);
+  expect(result).not.toHaveProperty("usOnlyExcluded");
+});
+
+it("numbers each lookup's Exchange request id from the caller's prefix", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: { success: true, creditsCost: 0, data: { items: [tool] } },
+  });
+  const exchangeRequestIds = {
+    prefix: "search-1:tools:raw",
+    sent: [] as string[],
+  };
+  await discoverTools(
+    { ...input, queries: ["first", "second"], exchangeRequestIds },
+    logger,
+  );
+  expect(request.mock.calls.map(([args]) => args.requestId).sort()).toEqual([
+    "search-1:tools:raw:1",
+    "search-1:tools:raw:2",
+  ]);
+  expect(exchangeRequestIds.sent.sort()).toEqual([
+    "search-1:tools:raw:1",
+    "search-1:tools:raw:2",
+  ]);
+});
+
+it("sends no request id when the caller passes none", async () => {
+  request.mockResolvedValue({
+    status: 200,
+    body: { success: true, creditsCost: 0, data: { items: [tool] } },
+  });
+  await discoverTools(input, logger);
+  expect(request.mock.calls[0][0].requestId).toBeUndefined();
+});
+
+describe("who is searching", () => {
+  const labels = {
+    feedbackStorage: "allowed" as const,
+    clientOrigin: "mcp-cursor",
+    clientIntegration: "n8n",
+    searchRoute: "search_auto" as const,
+    clientSession: "sess_01A",
+    clientThread: "thread:42.a-b",
+  };
+  const exchangeCaller = { ...labels, query: "weather in Lisbon" };
+  const answers = () =>
+    request.mockImplementation(async args =>
+      args.path === "/v1/skills/resolve"
+        ? {
+            status: 200,
+            body: {
+              skills: [{ id: "sample", matchedDomains: ["example.com"] }],
+            },
+          }
+        : {
+            status: 200,
+            body: { success: true, creditsCost: 0, data: { items: [tool] } },
+          },
+    );
+  const lookups = () =>
+    request.mock.calls
+      .map(([args]) => args)
+      .filter(args => args.path === "/v1/retrieve");
+
+  it("tells Exchange on every lookup and marks only the queries the caller did not write", async () => {
+    answers();
+    await discoverTools(
+      {
+        ...input,
+        queries: ["weather in Lisbon", "city weather forecast"],
+        exchangeCaller,
+      },
+      logger,
+    );
+    expect(lookups()).toHaveLength(2);
+    for (const args of lookups()) {
+      expect(args).toMatchObject(labels);
+      expect(args).not.toHaveProperty("query");
+    }
+    const rewritten = (query: string) =>
+      lookups().find(args => (args.body as any).options.query === query)!
+        .searchRewritten;
+    expect(rewritten("weather in Lisbon")).toBeUndefined();
+    expect(rewritten("city weather forecast")).toBe(true);
+  });
+
+  it("labels a domain lookup without marking it rewritten, and leaves the domain resolve alone", async () => {
+    answers();
+    await discoverTools(
+      {
+        ...input,
+        queries: undefined,
+        urls: ["https://example.com/records"],
+        exchangeCaller: { ...exchangeCaller, searchRoute: "search_source" },
+      },
+      logger,
+    );
+    expect(lookups()).toHaveLength(1);
+    expect(lookups()[0]).toMatchObject({
+      ...labels,
+      searchRoute: "search_source",
+    });
+    expect(lookups()[0]).not.toHaveProperty("searchRewritten");
+    const resolve = request.mock.calls
+      .map(([args]) => args)
+      .find(args => args.path === "/v1/skills/resolve")!;
+    for (const key of [...Object.keys(labels), "searchRewritten"])
+      expect(resolve).not.toHaveProperty(key);
+  });
+
+  it("sends the lookups as before when no caller is given", async () => {
+    answers();
+    await discoverTools({ ...input, queries: ["first", "second"] }, logger);
+    expect(lookups()).toHaveLength(2);
+    for (const args of lookups())
+      for (const key of [...Object.keys(labels), "searchRewritten"])
+        expect(args).not.toHaveProperty(key);
+  });
+});

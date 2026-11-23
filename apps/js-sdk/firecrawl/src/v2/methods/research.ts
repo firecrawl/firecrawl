@@ -6,12 +6,14 @@ import type {
   ReadPaperResponse,
   SimilarPapersOptions,
   SimilarPapersResponse,
+  LookupProteinOptions,
+  ProteinLookupResponse,
   SearchGithubOptions,
   GitHubSearchResponse,
 } from "../types";
 import { SdkError } from "../types";
 import { HttpClient } from "../utils/httpClient";
-import { throwForBadResponse } from "../utils/errorHandler";
+import { normalizeAxiosError, throwForBadResponse } from "../utils/errorHandler";
 
 const BASE = "/v2/search/research";
 
@@ -53,21 +55,16 @@ function normalizeResearchError(err: any, action: string): never {
     const body: any = err.response?.data;
     if (body && (body.detail || body.title)) {
       const message = body.detail || body.title;
-      throw new SdkError(message, status, body.type, body);
+      throw new SdkError(message, status, body.code ?? body.type, body);
     }
-    throw new SdkError(
-      err.message || `Request failed while trying to ${action}`,
-      status,
-      err.code,
-      body,
-    );
+    return normalizeAxiosError(err, action);
   }
   throw err;
 }
 
 /**
  * Client for the v2 research endpoints — Firecrawl's **research paper index**
- * (~43M paper abstracts) plus GitHub history/readmes.
+ * (~43M paper abstracts).
  *
  * The paper corpus is roughly 90% biomedical and life sciences — PubMed,
  * bioRxiv and medRxiv — with arXiv covering physics, mathematics and computer
@@ -93,7 +90,7 @@ export class ResearchClient {
   constructor(private readonly http: HttpClient) {}
 
   /**
-   * Search the research paper index by abstract relevance.
+   * Search the research paper index.
    *
    * Queries ~43M paper abstracts: PubMed, bioRxiv and medRxiv (about 90% of the
    * corpus — biomedical and life sciences) plus arXiv (physics, mathematics,
@@ -104,7 +101,10 @@ export class ResearchClient {
    *
    * @param query Natural-language search query, e.g. `"CRISPR base editing
    *   off-target effects in primary human T cells"`.
-   * @param options Optional filters (k, authors, categories, from, to). Note
+   * @param options Optional filters (k, authors, categories, from, to) and sort
+   *   (`relevance` by default or `date_desc`). Date sorting returns the newest
+   *   of the most relevant matches, newest first by created date. It does not
+   *   list every paper in a date range; add `from` (and `to`) for that.
    *   `categories` here filters *paper* subject categories (e.g. `"q-bio.GN"`)
    *   and is unrelated to the `categories` option of `search()`.
    */
@@ -122,6 +122,7 @@ export class ResearchClient {
     appendParam(params, "categories", options.categories);
     appendParam(params, "from", options.from);
     appendParam(params, "to", options.to);
+    appendParam(params, "sort", options.sort);
     try {
       const res = await this.http.get<SearchPapersResponse>(
         withQuery(this.http.getOrigin(), `${BASE}/papers`, params),
@@ -214,15 +215,40 @@ export class ResearchClient {
   }
 
   /**
+   * Look up one protein's curated UniProtKB/Swiss-Prot entry: subcellular
+   * location, function and GO cellular-component terms. Each statement carries
+   * its evidence and, where UniProt cites a paper, a `pmid:<id>` that
+   * `getPaper` accepts.
+   * @param protein A UniProt accession (`Q6P087`), entry name (`RUSD3_HUMAN`),
+   *   gene symbol (`RPUSD3`) or exact protein name.
+   * @param options Optional `organism`, default `9606` (human).
+   */
+  async lookupProtein(
+    protein: string,
+    options: LookupProteinOptions = {},
+  ): Promise<ProteinLookupResponse> {
+    if (!protein || !protein.trim())
+      throw new Error("protein cannot be empty");
+    const params = new URLSearchParams();
+    appendParam(params, "protein", protein);
+    appendParam(params, "organism", options.organism);
+    try {
+      const res = await this.http.get<ProteinLookupResponse>(
+        withQuery(this.http.getOrigin(), `${BASE}/proteins`, params),
+      );
+      if (res.status !== 200) throwForBadResponse(res, "look up protein");
+      return res.data;
+    } catch (err) {
+      return normalizeResearchError(err, "look up protein");
+    }
+  }
+
+  /**
    * Search the research index GitHub slice: issue/PR history and repository
    * readmes.
    *
-   * @deprecated Use `developerSearch()` on the client instead. This
-   * endpoint stops responding after 2026-11-03. The developer index searches
-   * GitHub issues, pull requests and readmes plus curated documentation
-   * sources, returns matched passages, and adds filters for repo, language,
-   * license and stars. It does not carry over the `scores` breakdown or the
-   * `resultType: "web"` fallback results. See
+   * @deprecated The research index GitHub search endpoint was removed after
+   * 2026-11-03. Use `developerSearch()` on the client instead. See
    * https://docs.firecrawl.dev/features/developer.
    * @param query Search query.
    * @param options Optional `k`.

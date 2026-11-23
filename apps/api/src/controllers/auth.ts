@@ -2,7 +2,10 @@ import { RateLimiterRedis } from "rate-limiter-flexible";
 import { isValidUuid } from "../lib/owner-id";
 import { config } from "../config";
 import { logger } from "../lib/logger";
-import { timingSafeSecretEqual } from "../lib/secret-compare";
+import {
+  hasHostedMcpProxySecret,
+  timingSafeSecretEqual,
+} from "../lib/secret-compare";
 import { parseApi } from "../lib/parseApi";
 import { withAuth } from "../lib/withAuth";
 import { getAgentSponsorStatus } from "../services/agent-sponsor";
@@ -28,6 +31,8 @@ import {
   reportKeylessPromptShown,
 } from "../lib/keyless";
 import { keylessSignupSurface } from "../lib/keyless-signup-link";
+import { KEYLESS_PLAN_CLASS } from "../lib/team-plan-class";
+import { consumeIndexRateLimit } from "../lib/index-daily-limit";
 import { isKeylessIpSuspicious } from "../lib/spur";
 import { verifyWorldIdCredential } from "../lib/world-id";
 import { keylessAuthTotal } from "../lib/keyless-metrics";
@@ -43,7 +48,11 @@ import {
   AuthCreditUsageChunkRow,
 } from "../db/rpc";
 import { AuthResponse, RateLimiterMode } from "../types";
-import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
+import {
+  AuthCreditUsageChunk,
+  AuthCreditUsageChunkFromTeam,
+  TeamFlags,
+} from "./v1/types";
 import {
   FIRECRAWL_REST_RESOURCE,
   OAuthIntrospectionUnavailableError,
@@ -51,6 +60,14 @@ import {
 } from "../services/oauth-token-introspection";
 import type { OAuthIntrospectionResponse } from "../services/oauth-token-introspection";
 import { verifyMcpDelegatedCredential } from "../lib/mcp-delegated-credential";
+import {
+  looksLikeJwt,
+  VercelJwksUnavailableError,
+} from "../lib/vercel-marketplace-oidc";
+import {
+  resolveVercelOidcToken,
+  type VercelOidcResolution,
+} from "../services/vercel-marketplace-oidc";
 import {
   autumnService,
   DEFAULT_TEAM_LIMITS,
@@ -65,7 +82,8 @@ const ACUC_TTL_SECONDS = 600;
 const ACUC_FAIL_OPEN_TTL_SECONDS = 60;
 // When Autumn can't answer, fail open rather than throttle or gate real teams
 // on the low defaults. Generous but bounded: the concurrency queue cap still
-// applies.
+// applies. The plan class is the exception and fails closed: these limits
+// carry none, so nothing is stated about a team whose plan could not be read.
 const FAIL_OPEN_LIMITS: TeamLimits = {
   concurrency_limit: 200,
   rate_limit_multiplier: 2500,
@@ -334,6 +352,7 @@ async function getACUC(
       concurrency_limit: limits.concurrency_limit,
       rate_limit_multiplier: limits.rate_limit_multiplier,
       is_paid_plan: limits.is_paid_plan,
+      plan_class: limits.plan_class,
     };
   } else {
     return null;
@@ -502,6 +521,21 @@ export async function getACUCTeam(
   } else {
     return null;
   }
+}
+
+/**
+ * The flags of the team behind a request's plain API key, read without rate
+ * limiting or the other auth checks. Null without a known API key.
+ */
+export async function getApiKeyTeamFlags(req: {
+  headers: { authorization?: string };
+}): Promise<TeamFlags | null> {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return null;
+  const normalizedApi = parseApi(token);
+  if (!normalizedApiIsUuid(normalizedApi)) return null;
+  const chunk = await getACUC(normalizedApi);
+  return chunk?.flags ?? null;
 }
 
 export async function clearACUC(api_key: string): Promise<void> {
@@ -773,6 +807,31 @@ async function handleKeylessAuth(
     };
   }
 
+  if (modeLabel === "gov" || modeLabel === "research") {
+    const perMinute = await consumeIndexRateLimit(
+      modeLabel,
+      teamId,
+      1,
+      undefined,
+      1,
+    );
+    if (!perMinute.ok) {
+      keylessAuthTotal.inc({ mode, outcome: "index_rate_limit" });
+      logger.warn("Keyless request blocked", {
+        ...baseLog,
+        blocked: true,
+        reason: "index_rate_limit",
+        retryAfterSeconds: perMinute.retryAfterSeconds,
+      });
+      return {
+        success: false,
+        error: perMinute.error,
+        status: 429,
+        retryAfterSeconds: perMinute.retryAfterSeconds,
+      };
+    }
+  }
+
   logger.debug("Keyless request consumed", { ...baseLog, blocked: false });
   keylessAuthTotal.inc({ mode, outcome: "allowed" });
 
@@ -780,11 +839,17 @@ async function handleKeylessAuth(
   // are skipped automatically; mockPreviewACUC supplies concurrency 2 + credits.
   // Actual credits consumed are charged to the IP's daily budget after the
   // request completes (see chargeKeylessCredits).
+  // The plan class is set here and not in mockPreviewACUC, which also builds
+  // the chunk of every other preview team: only a request that came through
+  // the keyless checks above is stated as keyless.
   return {
     success: true,
     team_id: teamId,
     org_id: null,
-    chunk: mockPreviewACUC(teamId, false),
+    chunk: {
+      ...mockPreviewACUC(teamId, false),
+      plan_class: KEYLESS_PLAN_CLASS,
+    },
   };
 }
 
@@ -1033,6 +1098,71 @@ async function supaAuthenticateUser(
       mode,
       minRateMultiplier,
     );
+  } else if (
+    config.USE_DB_AUTHENTICATION === true &&
+    config.VERCEL_MARKETPLACE_INTEGRATION_ID &&
+    looksLikeJwt(token)
+  ) {
+    // Vercel Marketplace OIDC resource token. It resolves to the API key issued
+    // for the resource, so per-key behavior and billing stay on the key path.
+    let resolution: VercelOidcResolution;
+    try {
+      resolution = await resolveVercelOidcToken(
+        token,
+        config.VERCEL_MARKETPLACE_INTEGRATION_ID,
+      );
+    } catch (error) {
+      if (error instanceof VercelJwksUnavailableError) {
+        return {
+          success: false,
+          error: "Vercel authentication is temporarily unavailable",
+          status: 503,
+        };
+      }
+      throw error;
+    }
+    if (!resolution.ok) {
+      return denied(req, "invalid_vercel_oidc_token", {
+        success: false,
+        error: "Unauthorized: Invalid token",
+        status: 401,
+      });
+    }
+
+    chunk = await getACUC(
+      resolution.apiKey,
+      false,
+      true,
+      RateLimiterMode.Scrape,
+      "general",
+    );
+    if (chunk === null) {
+      return denied(req, "unknown_key", {
+        success: false,
+        error: "Unauthorized: Invalid token",
+        status: 401,
+      });
+    }
+    if (chunk.team_id !== resolution.teamId) {
+      return denied(
+        req,
+        "vercel_oidc_team_mismatch",
+        {
+          success: false,
+          error: "Unauthorized: Invalid token",
+          status: 401,
+        },
+        chunk,
+      );
+    }
+
+    teamId = chunk.team_id;
+    subscriptionData = { team_id: teamId };
+    rateLimiter = await buildAuthenticatedRateLimiter(
+      chunk,
+      mode,
+      minRateMultiplier,
+    );
   } else {
     normalizedApi = parseApi(token);
     if (!normalizedApiIsUuid(normalizedApi)) {
@@ -1144,18 +1274,16 @@ async function supaAuthenticateUser(
     // Calls the hosted MCP makes on routes that opt in (every v2 route) get a
     // raised per-minute minimum, and scrape calls a raised concurrency
     // minimum. Two signals prove the hosted MCP made the call: a verified
-    // delegated credential (managed OAuth sessions) or the proxy secret it
-    // shares with the API (sessions that send a plain API key).
-    // `fco_` tokens never qualify: the hosted MCP keeps those for the issuer,
-    // so a REST call carrying one comes from the client itself. Origin and
-    // integration are client-set, so they never change the limit.
+    // delegated credential (managed OAuth sessions) or the hosted MCP proxy
+    // secret (with KEYLESS_PROXY_SECRET accepted as a rollout fallback) for
+    // plain API-key sessions. `fco_` tokens never qualify: the hosted MCP
+    // keeps those for the issuer, so a REST call carrying one comes from the
+    // client itself. Origin and integration are client-set, so they never
+    // change the limit.
     hostedMcpCall =
       hostedMcpDelegation ||
       (!token.startsWith("fco_") &&
-        timingSafeSecretEqual(
-          req.headers["x-firecrawl-keyless-secret"],
-          config.KEYLESS_PROXY_SECRET,
-        ));
+        hasHostedMcpProxySecret(req.headers, config));
     const hostedMcpRaise =
       options?.hostedMcpRateLimit === true && hostedMcpCall;
     // The tiers follow the team's own plan multiplier, not the one trusted
@@ -1195,13 +1323,6 @@ async function supaAuthenticateUser(
 
     const secs = Math.ceil(rateLimiterRes.msBeforeNext / 1000) || 1;
     const retryDate = new Date(Date.now() + rateLimiterRes.msBeforeNext);
-
-    // We can only send a rate limit email every 7 days, send notification already has the date in between checking
-    // const startDate = new Date();
-    // const endDate = new Date();
-    // endDate.setDate(endDate.getDate() + 7);
-
-    // await sendNotification(team_id, NotificationType.RATE_LIMIT_REACHED, startDate.toISOString(), endDate.toISOString());
 
     return {
       success: false,

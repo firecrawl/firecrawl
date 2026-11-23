@@ -10,10 +10,8 @@ import {
   getPDFPageMarkdown,
   getPDFPageMarkers,
 } from "../../../../../controllers/v2/types";
-import { deterministicPercentage } from "./routing";
 import { storage } from "../../../../../lib/gcs-jobs";
 import { FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE } from "../types";
-import { parseAlwaysFirePdf } from "./request-metadata";
 
 /** Input handle for a FirePDF async submit that travels by GCS reference
  * instead of inline base64. Produced by {@link uploadPdfInputForFirePdf}. */
@@ -196,23 +194,9 @@ export function largePdfLimitBytes(meta: Meta): number {
   return Math.min(Math.max(raw, 1), FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE);
 }
 
-/** Whether this request is diverted to MinerU. Deterministic on the scrape
- * id (same distribution as a random draw) precisely so every gate — the
- * fire-engine handoff grant, the download admission, and the PDF engine's
- * routing — sees the SAME verdict; a per-call random draw would let them
- * drift. Keyed apart from the async-cohort hash. Parse requests that must
- * reach FirePDF (parseAlwaysFirePdf) are never diverted. */
-export function mineruDiverted(meta: Meta): boolean {
-  return (
-    config.MINERU_PERCENT > 0 &&
-    !parseAlwaysFirePdf(meta) &&
-    deterministicPercentage(`mineru:${meta.id}`) < config.MINERU_PERCENT
-  );
-}
-
 /** The full request-level reachability check — byReferenceConfigured plus
- * the parser options that force FirePDF, fast-mode exclusion (its cost
- * ceiling skips the whole FirePDF chain), and the MinerU diversion. One
+ * the parser options that force FirePDF and fast-mode exclusion (its cost
+ * ceiling skips the whole FirePDF chain). One
  * definition shared by the PDF engine's download admission/routing gate
  * AND the fire-engine handoff grant, so the gates can never drift. */
 export function byReferenceReachableForRequest(meta: Meta): boolean {
@@ -223,7 +207,6 @@ export function byReferenceReachableForRequest(meta: Meta): boolean {
     getPDFPageMarkers(meta.options.parsers);
   return (
     getPDFMode(meta.options.parsers) !== "fast" &&
-    !(!forceRequested && mineruDiverted(meta)) &&
     byReferenceConfigured(meta, forceRequested)
   );
 }

@@ -161,6 +161,8 @@ export function buildFirePdfJobOptions(args: {
   pageMarkers: boolean;
   tableFormat: string | undefined;
   trainingCapture: FirePdfTrainingCapture | undefined;
+  dataRegion: string | undefined;
+  reserved?: boolean;
 }): Record<string, unknown> {
   return {
     // fire-pdf accepts only a positive integer here. When the router has no
@@ -184,6 +186,12 @@ export function buildFirePdfJobOptions(args: {
     ...(args.pageMarkers && { pageMarkers: true }),
     ...(args.tableFormat !== undefined && { tableFormat: args.tableFormat }),
     ...(args.trainingCapture && { training_capture: args.trainingCapture }),
+    // An idempotency key on the PDF service, so a pinned lookup only adopts
+    // a pinned job.
+    ...(args.dataRegion && { data_region: args.dataRegion }),
+    // Also an idempotency key, so a restricted lookup only adopts a job
+    // restricted the same way.
+    ...(args.reserved && { reserved: true }),
   };
 }
 

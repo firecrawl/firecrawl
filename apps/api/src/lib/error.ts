@@ -1,83 +1,108 @@
 import { EXPECTED_ERROR, isExpectedError } from "./otel-tracer";
 import { UNSUPPORTED_SITE_MESSAGE } from "./strings";
 
-export type ErrorCodes =
-  | "THIRD_PARTY_DATA_TERMS_REQUIRED"
-  | "THIRD_PARTY_DATA_NOT_FOUND"
-  | "THIRD_PARTY_DATA_UNSUPPORTED_URL"
-  | "THIRD_PARTY_DATA_UNSUPPORTED_OPTION"
-  | "THIRD_PARTY_DATA_NOT_ENABLED"
-  | "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED"
-  | "SCRAPE_TIMEOUT"
-  | "MAP_TIMEOUT"
-  | "UNKNOWN_ERROR"
-  | "SCRAPE_ALL_ENGINES_FAILED"
-  | "SCRAPE_SSL_ERROR"
-  | "SCRAPE_SITE_ERROR"
-  | "SCRAPE_PROXY_SELECTION_ERROR"
-  | "SCRAPE_PDF_PREFETCH_FAILED"
-  | "SCRAPE_DOCUMENT_PREFETCH_FAILED"
-  | "SCRAPE_JOB_CANCELLED"
-  | "SCRAPE_RETRY_LIMIT"
-  | "SCRAPE_ZDR_VIOLATION_ERROR"
-  | "SCRAPE_DNS_RESOLUTION_ERROR"
-  | "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR"
-  | "SCRAPE_PDF_ANTIBOT_ERROR"
-  | "SCRAPE_PDF_FETCH_PROXY_ERROR"
-  | "SCRAPE_PDF_OCR_REQUIRED"
-  | "SCRAPE_DOCUMENT_ANTIBOT_ERROR"
-  | "SCRAPE_DOCUMENT_FETCH_PROXY_ERROR"
-  | "SCRAPE_UNSUPPORTED_FILE_ERROR"
-  | "SCRAPE_ACTION_ERROR"
-  | "SCRAPE_RACED_REDIRECT_ERROR"
-  | "SCRAPE_NO_CACHED_DATA"
-  | "SCRAPE_LOCKDOWN_CACHE_MISS"
-  | "SCRAPE_SITEMAP_ERROR"
-  | "SCRAPE_ACTIONS_NOT_SUPPORTED"
-  | "SCRAPE_BRANDING_NOT_SUPPORTED"
-  | "AGENT_INDEX_ONLY"
-  | "INDEX_DAILY_LIMIT"
-  | "TOOL_DISCOVERY_UNAVAILABLE"
-  | "SCRAPE_AUDIO_UNSUPPORTED_URL"
-  | "SCRAPE_VIDEO_UNSUPPORTED_URL"
-  | "SCRAPE_MEDIA_ACCESS_DENIED"
-  | "SCRAPE_PROMPT_INJECTION_DETECTED"
-  | "SCRAPE_JSON_CONTENT_TOO_LARGE"
-  | "SCRAPE_X_TWITTER_CONFIGURATION_ERROR"
-  | "PARSE_UNSUPPORTED_OPTIONS"
-  | "CRAWL_DENIAL"
-  | "UNSUPPORTED_SITE"
-  | "MAP_FAILED"
-  | "BAD_REQUEST_INVALID_JSON"
-  | "BAD_REQUEST"
-  | "CONCURRENCY_QUEUE_TIMEOUT"
-  | "SAFE_MODE_BLOCKED"
-  | "SCRAPE_SITE_RESTRICTION_BLOCKED"
+/**
+ * Every error code, as the keys of an interface so that a package built on
+ * this one can add its own by declaration merging.
+ */
+export interface ErrorCodes {
+  THIRD_PARTY_DATA_TERMS_REQUIRED: true;
+  THIRD_PARTY_DATA_NOT_FOUND: true;
+  THIRD_PARTY_DATA_UNSUPPORTED_URL: true;
+  THIRD_PARTY_DATA_UNSUPPORTED_OPTION: true;
+  THIRD_PARTY_DATA_NOT_ENABLED: true;
+  THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED: true;
+  SCRAPE_TIMEOUT: true;
+  MAP_TIMEOUT: true;
+  UNKNOWN_ERROR: true;
+  SCRAPE_ALL_ENGINES_FAILED: true;
+  SCRAPE_SSL_ERROR: true;
+  SCRAPE_SITE_ERROR: true;
+  SCRAPE_PROXY_SELECTION_ERROR: true;
+  SCRAPE_PDF_PREFETCH_FAILED: true;
+  SCRAPE_DOCUMENT_PREFETCH_FAILED: true;
+  SCRAPE_JOB_CANCELLED: true;
+  SCRAPE_RETRY_LIMIT: true;
+  SCRAPE_ZDR_VIOLATION_ERROR: true;
+  SCRAPE_DNS_RESOLUTION_ERROR: true;
+  SCRAPE_PDF_INSUFFICIENT_TIME_ERROR: true;
+  SCRAPE_PDF_ANTIBOT_ERROR: true;
+  SCRAPE_PDF_FETCH_PROXY_ERROR: true;
+  SCRAPE_PDF_OCR_REQUIRED: true;
+  SCRAPE_DOCUMENT_ANTIBOT_ERROR: true;
+  SCRAPE_DOCUMENT_FETCH_PROXY_ERROR: true;
+  SCRAPE_UNSUPPORTED_FILE_ERROR: true;
+  SCRAPE_ACTION_ERROR: true;
+  SCRAPE_RACED_REDIRECT_ERROR: true;
+  SCRAPE_NO_CACHED_DATA: true;
+  SCRAPE_LOCKDOWN_CACHE_MISS: true;
+  SCRAPE_SITEMAP_ERROR: true;
+  SCRAPE_ACTIONS_NOT_SUPPORTED: true;
+  SCRAPE_BRANDING_NOT_SUPPORTED: true;
+  AGENT_INDEX_ONLY: true;
+  INDEX_DAILY_LIMIT: true;
+  TOOL_DISCOVERY_UNAVAILABLE: true;
+  SCRAPE_AUDIO_UNSUPPORTED_URL: true;
+  SCRAPE_VIDEO_UNSUPPORTED_URL: true;
+  SCRAPE_MEDIA_ACCESS_DENIED: true;
+  SCRAPE_PROMPT_INJECTION_DETECTED: true;
+  SCRAPE_PAYWALLED_CONTENT: true;
+  SCRAPE_JSON_CONTENT_TOO_LARGE: true;
+  US_ONLY_UNAVAILABLE: true;
+  RESERVED_CAPACITY_UNAVAILABLE: true;
+  PARSE_UNSUPPORTED_OPTIONS: true;
+  CRAWL_DENIAL: true;
+  UNSUPPORTED_SITE: true;
+  MAP_FAILED: true;
+  BAD_REQUEST_INVALID_JSON: true;
+  BAD_REQUEST: true;
+  CATEGORY_REMOVED: true;
+  CONCURRENCY_QUEUE_TIMEOUT: true;
+  SAFE_MODE_BLOCKED: true;
+  SCRAPE_SITE_RESTRICTION_BLOCKED: true;
   // Threat protection (enterprise domain risk blocking). Lowercase by design:
   // this is the documented, user-facing error code for the feature.
-  | "unsafe_domain_blocked"
+  unsafe_domain_blocked: true;
   // Agent threads. Lowercase for the same reason as unsafe_domain_blocked.
-  | "thread_not_found"
-  | "thread_busy"
-  | "thread_expired"
-  | "threads_disabled"
-  | "exchange_not_enabled"
+  thread_not_found: true;
+  thread_busy: true;
+  thread_expired: true;
+  threads_disabled: true;
+  exchange_not_enabled: true;
+  // GET /v2/agent/:jobId. The job id is unknown, or the status service
+  // could not be read and the caller should retry.
+  agent_not_found: true;
+  agent_status_unavailable: true;
   // Agent zero data retention. Lowercase to match the agent service's codes.
-  | "zdr_threads_unsupported"
-  | "zdr_expired"
-  | "zdr_no_snapshots"
-  | "zdr_not_enabled"
-  | "zdr_retention_misconfigured";
+  zdr_threads_unsupported: true;
+  zdr_expired: true;
+  zdr_no_snapshots: true;
+  zdr_not_enabled: true;
+  zdr_retention_misconfigured: true;
+}
+
+export type ErrorCode = keyof ErrorCodes;
+
+// Symbol.for gives every copy of this module in a process the same symbol.
+const transportableErrorBrand = Symbol.for("firecrawl.TransportableError");
 
 export class TransportableError extends Error {
-  public readonly code: ErrorCodes;
-  // A coded error is an answer the API gives the caller, not a defect. The
-  // one exception, UnknownError, is the wrapper for everything that is.
-  [EXPECTED_ERROR] = true;
+  public readonly code: ErrorCode;
 
-  constructor(code: ErrorCodes, message?: string, options?: ErrorOptions) {
+  constructor(code: ErrorCode, message?: string, options?: ErrorOptions) {
     super(message, options);
     this.code = code;
+  }
+
+  get [transportableErrorBrand](): true {
+    return true;
+  }
+
+  // A coded error is an answer the API gives the caller, not a defect. The
+  // one exception, UnknownError, is the wrapper for everything that is. A
+  // getter keeps the flag off the instance, like the brand above.
+  get [EXPECTED_ERROR](): boolean {
+    return true;
   }
 
   serialize() {
@@ -89,13 +114,37 @@ export class TransportableError extends Error {
   }
 
   static deserialize(
-    code: ErrorCodes,
+    code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new TransportableError(code, data.message, { cause: data.cause });
     x.stack = data.stack;
     return x;
   }
+}
+
+/**
+ * Whether a value is a transportable error: an error that carries the brand,
+ * has a code and can write itself. Unlike `instanceof`, this also holds for
+ * an error built by another copy of this module, so ask it wherever the
+ * question is whether an error can cross the job queue with its code.
+ */
+export function isTransportableError(
+  error: unknown,
+): error is TransportableError {
+  return (
+    error instanceof Error &&
+    (error as Partial<TransportableError>)[transportableErrorBrand] === true &&
+    typeof (error as Partial<TransportableError>).code === "string" &&
+    typeof (error as Partial<TransportableError>).serialize === "function"
+  );
+}
+
+/** A class of transportable error, registered under the codes it carries. */
+export interface TransportableErrorClass {
+  readonly codes: readonly ErrorCode[];
+  /** Rebuilds an error from the parsed payload its `serialize()` wrote. */
+  deserialize(code: ErrorCode, data: any): TransportableError;
 }
 
 /**
@@ -204,7 +253,7 @@ export function composeTimeoutProcessing(args: {
 export function getTimeoutProcessingDetails(
   e: unknown,
 ): ScrapeTimeoutProcessingDetails | undefined {
-  if (e instanceof TransportableError && e.code === "SCRAPE_TIMEOUT") {
+  if (isTransportableError(e) && e.code === "SCRAPE_TIMEOUT") {
     const p = (e as ScrapeJobTimeoutError).processing;
     if (p && p.state === "processing_continues") return p;
   }
@@ -212,6 +261,8 @@ export function getTimeoutProcessingDetails(
 }
 
 export class ScrapeJobTimeoutError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_TIMEOUT"];
+
   constructor(
     message: string = "The scrape operation timed out before completing. This happens when a page takes too long to load, render, or process. Possible causes: (1) The website is slow or unresponsive, (2) The page has heavy JavaScript that takes time to execute, (3) The page is very large or has many resources to load, (4) Network latency is high. To fix this, try increasing the timeout parameter in your scrape request, or if using actions, ensure your selectors are correct and the page is ready before actions are executed.",
     public processing?: ScrapeTimeoutProcessingDetails,
@@ -227,7 +278,7 @@ export class ScrapeJobTimeoutError extends TransportableError {
   }
 
   static deserialize(
-    _code: ErrorCodes,
+    _code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ScrapeJobTimeoutError(data.message, data.processing);
@@ -237,6 +288,8 @@ export class ScrapeJobTimeoutError extends TransportableError {
 }
 
 export class ConcurrencyQueueTimeoutError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["CONCURRENCY_QUEUE_TIMEOUT"];
+
   constructor(
     message: string = "The operation timed out while waiting for a concurrency slot to become available. This means that your requests are exhausting your concurrent browsers limit. Consider using batch endpoints which wait for concurrency slots to become available indefinitely, or consider upgrading your plan to incrase your concurrency limit at https://firecrawl.dev/pricing.",
   ) {
@@ -248,7 +301,7 @@ export class ConcurrencyQueueTimeoutError extends TransportableError {
   }
 
   static deserialize(
-    _code: ErrorCodes,
+    _code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ConcurrencyQueueTimeoutError(data.message);
@@ -258,6 +311,9 @@ export class ConcurrencyQueueTimeoutError extends TransportableError {
 }
 
 export class UnknownError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["UNKNOWN_ERROR"];
+  #expected = false;
+
   constructor(inner: unknown) {
     const innerMessage =
       inner && inner instanceof Error ? inner.message : String(inner);
@@ -271,29 +327,39 @@ export class UnknownError extends TransportableError {
     }
     // The wrapper is only as expected as what it wraps: a cancelled job
     // stays a normal outcome, a TypeError stays a defect.
-    this[EXPECTED_ERROR] = isExpectedError(inner);
+    this.#expected = isExpectedError(inner);
   }
 
   serialize() {
     // The wrapped error does not survive the queue, so its classification
     // travels explicitly; otherwise a cancelled job revived on the API side
     // would look like a defect.
-    return { ...super.serialize(), expected: this[EXPECTED_ERROR] };
+    // The flag is only written when set, so a defect's wire form is unchanged.
+    return {
+      ...super.serialize(),
+      ...(this.#expected ? { expected: true as const } : {}),
+    };
   }
 
   static deserialize(
-    _code: ErrorCodes,
+    _code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new UnknownError("dummy");
     x.message = data.message;
     x.stack = data.stack;
-    x[EXPECTED_ERROR] = data.expected === true;
+    x.#expected = data.expected === true;
     return x;
+  }
+
+  get [EXPECTED_ERROR](): boolean {
+    return this.#expected;
   }
 }
 
 export class MapTimeoutError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["MAP_TIMEOUT"];
+
   constructor() {
     super(
       "MAP_TIMEOUT",
@@ -306,7 +372,7 @@ export class MapTimeoutError extends TransportableError {
   }
 
   static deserialize(
-    _code: ErrorCodes,
+    _code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new MapTimeoutError();
@@ -316,6 +382,8 @@ export class MapTimeoutError extends TransportableError {
 }
 
 export class MapFailedError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["MAP_FAILED"];
+
   constructor(message: string) {
     super("MAP_FAILED", message);
   }
@@ -325,7 +393,7 @@ export class MapFailedError extends TransportableError {
   }
 
   static deserialize(
-    _code: ErrorCodes,
+    _code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new MapFailedError(data.message);
@@ -335,6 +403,8 @@ export class MapFailedError extends TransportableError {
 }
 
 export class RacedRedirectError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_RACED_REDIRECT_ERROR"];
+
   constructor() {
     super(
       "SCRAPE_RACED_REDIRECT_ERROR",
@@ -347,7 +417,7 @@ export class RacedRedirectError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new RacedRedirectError();
@@ -357,6 +427,8 @@ export class RacedRedirectError extends TransportableError {
 }
 
 export class SitemapError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_SITEMAP_ERROR"];
+
   constructor(message: string, cause?: unknown) {
     super("SCRAPE_SITEMAP_ERROR", message, { cause });
   }
@@ -366,7 +438,7 @@ export class SitemapError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new SitemapError(data.message, data.cause);
@@ -376,6 +448,8 @@ export class SitemapError extends TransportableError {
 }
 
 export class CrawlDenialError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["CRAWL_DENIAL"];
+
   /** The URL robots.txt disallows, or null when robots.txt did not cause the denial. */
   public robotsBlockedUrl: string | null;
 
@@ -396,7 +470,7 @@ export class CrawlDenialError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize> & { reason: string },
   ) {
     const x = new CrawlDenialError(data.reason, {
@@ -408,6 +482,8 @@ export class CrawlDenialError extends TransportableError {
 }
 
 export class UnsupportedSiteError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["UNSUPPORTED_SITE"];
+
   constructor() {
     super("UNSUPPORTED_SITE", UNSUPPORTED_SITE_MESSAGE);
   }
@@ -417,7 +493,7 @@ export class UnsupportedSiteError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new UnsupportedSiteError();
@@ -427,6 +503,10 @@ export class UnsupportedSiteError extends TransportableError {
 }
 
 export class ActionsNotSupportedError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "SCRAPE_ACTIONS_NOT_SUPPORTED",
+  ];
+
   constructor(message: string) {
     super("SCRAPE_ACTIONS_NOT_SUPPORTED", message);
   }
@@ -436,7 +516,7 @@ export class ActionsNotSupportedError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ActionsNotSupportedError(data.message);

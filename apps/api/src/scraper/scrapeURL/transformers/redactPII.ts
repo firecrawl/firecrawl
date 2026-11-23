@@ -1,6 +1,7 @@
 import { Meta } from "..";
 import { Document } from "../../../controllers/v2/types";
 import { redactText } from "../../../lib/fire-privacy-client";
+import { isUsOnly } from "../../../lib/us-only";
 
 export async function performRedactPII(
   meta: Meta,
@@ -23,6 +24,7 @@ export async function performRedactPII(
     // truthy here means it's the options object; falsy was already
     // bailed out of above.
     options: meta.options.redactPII || undefined,
+    usOnly: isUsOnly(meta.internalOptions?.teamFlags ?? undefined),
   });
 
   // Swap raw markdown for the redacted version. Caller asked for PII

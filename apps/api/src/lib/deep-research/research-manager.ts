@@ -9,7 +9,7 @@ import {
   generateCompletions,
   trimToTokenLimit,
 } from "../../scraper/scrapeURL/transformers/llmExtract";
-import { ExtractOptions } from "../../controllers/v1/types";
+import { ExtractOptions, TeamFlags } from "../../controllers/v1/types";
 
 import { getModel } from "../generic-ai";
 import { CostTracking } from "../cost-tracking";
@@ -148,8 +148,25 @@ export class ResearchStateManager {
   }
 }
 
+// Throws UsOnlyUnavailableError for a US-only team with no US route.
+export function researchModels(teamFlags: TeamFlags | null | undefined) {
+  const modelOptions = { teamFlags, feature: "Deep research" };
+  return {
+    model: getModel("gpt-4o-mini", "openai", modelOptions),
+    retryModel: getModel("gpt-4.1-mini", "openai", modelOptions),
+    finalAnalysisModel: getModel("gpt-4.1", undefined, modelOptions),
+  };
+}
+
 export class ResearchLLMService {
-  constructor(private readonly logger: Logger) {}
+  private readonly models: ReturnType<typeof researchModels>;
+
+  constructor(
+    private readonly logger: Logger,
+    teamFlags?: TeamFlags | null,
+  ) {
+    this.models = researchModels(teamFlags);
+  }
 
   async generateSearchQueries(
     topic: string,
@@ -161,6 +178,8 @@ export class ResearchLLMService {
       logger: this.logger.child({
         method: "generateSearchQueries",
       }),
+      model: this.models.model,
+      retryModel: this.models.retryModel,
       options: {
         systemPrompt:
           "You are an expert research agent that generates search queries (SERP) to explore topics deeply and thoroughly. Do not generate repeated queries. Today's date is " +
@@ -231,6 +250,8 @@ export class ResearchLLMService {
         logger: this.logger.child({
           method: "analyzeAndPlan",
         }),
+        model: this.models.model,
+        retryModel: this.models.retryModel,
         options: {
           systemPrompt:
             systemPrompt +
@@ -343,7 +364,8 @@ export class ResearchLLMService {
         ).text,
       },
       markdown: "",
-      model: getModel("gpt-4.1"),
+      model: this.models.finalAnalysisModel,
+      retryModel: this.models.retryModel,
       costTrackingOptions: {
         costTracking,
         metadata: {

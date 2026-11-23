@@ -5,6 +5,7 @@ import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { config } from "../../config";
 import { autumnClient } from "./client";
+import { planClassOf, type TeamPlanClass } from "../../lib/team-plan-class";
 import {
   firebillFinalize,
   firebillLock,
@@ -19,7 +20,6 @@ import type {
   TrackCreditsParams,
 } from "./types";
 
-export const TEAM_FEATURE_ID = "TEAM";
 export const CREDITS_FEATURE_ID = "CREDITS";
 export const SEARCH_CREDITS_FEATURE_ID = "SEARCH_CREDITS";
 /**
@@ -43,6 +43,18 @@ function billingEntityId(
   teamId: string,
 ): string | undefined {
   return featureId === MCP_CREDITS_FEATURE_ID ? undefined : teamId;
+}
+
+/**
+ * Properties sent with every charge, hold, check and refund. `teamId` is set
+ * here so an event names its team even when it carries no entity (MCP credits),
+ * and is written last so a caller cannot drop or misstate it.
+ */
+function eventProperties(
+  properties: Record<string, unknown> | undefined,
+  teamId: string,
+): Record<string, unknown> {
+  return { ...properties, teamId };
 }
 
 /**
@@ -75,6 +87,8 @@ export type TeamLimits = {
   concurrency_limit: number;
   rate_limit_multiplier: number;
   is_paid_plan: boolean;
+  /** The org's plan class from planClassOf; absent when that yields none. */
+  plan_class?: TeamPlanClass;
 };
 
 /** Limits for a team with no elevated entitlement (a 404 or no balance). */
@@ -232,7 +246,7 @@ export class AutumnService {
         entityId: billingEntityId(featureId, teamId) ?? "",
         featureId,
         value,
-        properties,
+        properties: eventProperties(properties, teamId),
       });
       if (result.status === "unavailable") return null;
       return {
@@ -329,7 +343,7 @@ export class AutumnService {
     const unreachable = (): LockCreditsResult =>
       partnerJobToken
         ? { status: "denied", reason: "gate_unavailable" }
-        : { status: "skipped" };
+        : { status: "skipped", reason: "unavailable" };
 
     try {
       // The hold still lives in Autumn (firebill keeps no lock state), but
@@ -346,7 +360,7 @@ export class AutumnService {
         // is what makes firebill lock-table-free); default to an hour, the
         // monitor runner's convention, when the caller sets none.
         expiresAt: expiresAt ?? Date.now() + 60 * 60 * 1000,
-        properties,
+        properties: eventProperties(properties, teamId),
         partnerJobToken,
       });
       if (result.status === "locked") {
@@ -398,24 +412,31 @@ export class AutumnService {
     externalRequestId,
     featureId = CREDITS_FEATURE_ID,
     heldValue,
+    durableRetry,
   }: FinalizeCreditsLockParams): Promise<boolean> {
     // Without firebill no hold was ever taken, so nothing can have gone
     // unsettled.
     if (!firebillConfigured()) return true;
 
-    // Named only for a gated settle: firebill needs the org to split the
-    // settle and to find the integration to report to. An ordinary finalize
-    // does neither, so it does not carry one.
+    // A confirm that names its team sends the lock it settles: org, team,
+    // feature and hold. A confirm without a team (no org) sends none of
+    // them, so firebill cannot bill its overshoot and parks it as before.
+    // firebill keeps no lock table and Autumn has no read of a lock, so this
+    // is the only place it can learn them. It needs them to bill a run that
+    // cost more than it held when the balance cannot cover the excess
+    // (firebill#69), as well as to split and report a gated run. A release
+    // bills nothing, so it carries them only when gated, as before.
     //
     // A gated caller that cannot name the org passes no team and the settle
-    // still lands, without the label. There is no durable retry on this path —
-    // `billMonitorCheck`'s only caller catches, writes
-    // `billing_status: "failed"`, and moves on, and nothing ever reads that
-    // back — so refusing would abandon the finalize entirely: the hold
-    // expires and the run goes unbilled at Autumn as well as unreported.
+    // still lands, without the label. The durable retry only re-sends a settle
+    // firebill never answered, not one that was never sent, so refusing would
+    // abandon the finalize entirely: the hold expires and the run goes
+    // unbilled at Autumn as well as unreported.
     // Settling and losing the label is the lesser loss, and firebill counts
     // the lost label as `partner_events_total{outcome="no_customer"}`.
-    const customerId = externalRequestId && team ? team.orgId : null;
+    const lock =
+      team && (action === "confirm" || externalRequestId) ? team : null;
+    const customerId = lock?.orgId ?? null;
     // Surfaced, not discarded. firebill answers `false` for a refusal, a
     // timeout, or a non-OK — none of which throw — so a caller that ignores
     // this records a run as billed that nobody billed.
@@ -423,11 +444,17 @@ export class AutumnService {
       lockId,
       action,
       overrideValue,
-      properties,
+      // A settle sends its own properties, so it names the team too when the
+      // caller passes one.
+      properties: team ? eventProperties(properties, team.teamId) : properties,
       externalRequestId,
       customerId,
-      featureId: customerId ? featureId : null,
-      heldValue: customerId ? heldValue : null,
+      featureId: lock ? featureId : null,
+      heldValue: lock ? heldValue : null,
+      // Exactly the entity the hold was taken against, empty for none (MCP
+      // credits), so firebill bills an overshoot on the same balance.
+      entityId: lock ? (billingEntityId(featureId, lock.teamId) ?? "") : null,
+      durableRetry,
     });
   }
 
@@ -455,7 +482,7 @@ export class AutumnService {
         entityId: billingEntityId(featureId, teamId),
         featureId,
         value,
-        properties,
+        properties: eventProperties(properties, teamId),
         idempotencyKey,
         externalRequestId,
         durableRetry,
@@ -477,8 +504,9 @@ export class AutumnService {
    * The team's limits from one uncached Autumn entity read, and its plan from
    * a customer read made in parallel (the ACUC caches both). An entity 404
    * gives the low default limits; a customer 404 gives no paid plan. A team is on a paid plan when its org has an
-   * active, non-add-on subscription to a plan outside FREE_PLAN_IDS. Throws
-   * when Autumn errors or the team has no org.
+   * active, non-add-on subscription to a plan outside FREE_PLAN_IDS. Its plan
+   * class comes from the same subscriptions (planClassOf), and a customer 404
+   * gives none. Throws when Autumn errors or the team has no org.
    */
   async getTeamLimits(
     teamId: string,
@@ -518,6 +546,7 @@ export class AutumnService {
           !subscription.addOn &&
           !FREE_PLAN_IDS.has(subscription.planId),
       ),
+      plan_class: planClassOf(customer?.subscriptions ?? []),
     };
   }
 
@@ -544,7 +573,10 @@ export class AutumnService {
         entityId: billingEntityId(featureId, teamId),
         featureId,
         value: -value,
-        properties: { ...properties, source: "autumn_refund" },
+        properties: eventProperties(
+          { ...properties, source: "autumn_refund" },
+          teamId,
+        ),
         idempotencyKey,
         externalRequestId,
         durableRetry,

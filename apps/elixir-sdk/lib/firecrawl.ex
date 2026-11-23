@@ -257,13 +257,18 @@ defmodule Firecrawl do
     from: [type: :string],
     k: [type: :integer],
     query: [type: :string, required: true],
+    sort: [type: {:in, [:relevance, :date_desc, "relevance", "date_desc"]}],
     to: [type: :string]
   ])
 
-  @research_search_papers_key_mapping %{authors: "authors", categories: "categories", from: "from", k: "k", query: "query", to: "to"}
+  @research_search_papers_key_mapping %{authors: "authors", categories: "categories", from: "from", k: "k", query: "query", sort: "sort", to: "to"}
 
   @doc """
   Search research papers.
+
+  `sort` accepts `relevance` (default) or `date_desc`, which returns the newest
+  of the most relevant matches, newest first by created date. It does not list
+  every paper in a date range; add `from` (and `to`) for that.
 
   `GET /search/research/papers`
   """
@@ -366,6 +371,36 @@ defmodule Firecrawl do
     Req.get!(client(opts), url: "/search/research/papers/#{URI.encode_www_form(id)}/similar", params: [{"origin", @sdk_origin} | to_query(params, @research_related_papers_key_mapping)])
   end
 
+  @research_lookup_protein_schema NimbleOptions.new!([
+    organism: [type: :string],
+    protein: [type: :string, required: true]
+  ])
+
+  @research_lookup_protein_key_mapping %{organism: "organism", protein: "protein"}
+
+  @doc """
+  Look up a protein's UniProt location, function and GO cellular-component terms.
+
+  The response's `notice` is the UniProt credit and license. Show it with the results.
+
+  `GET /search/research/proteins`
+  """
+  @spec lookup_protein(keyword(), keyword()) :: response()
+  def lookup_protein(params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @research_lookup_protein_schema) do
+      Req.get(client(opts), url: "/search/research/proteins", params: [{"origin", @sdk_origin} | to_query(params, @research_lookup_protein_key_mapping)])
+    end
+  end
+
+  @doc """
+  Bang variant of `lookup_protein`. Raises on error.
+  """
+  @spec lookup_protein!(keyword(), keyword()) :: Req.Response.t()
+  def lookup_protein!(params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @research_lookup_protein_schema)
+    Req.get!(client(opts), url: "/search/research/proteins", params: [{"origin", @sdk_origin} | to_query(params, @research_lookup_protein_key_mapping)])
+  end
+
   @research_search_github_schema NimbleOptions.new!([
     k: [type: :integer],
     query: [type: :string, required: true]
@@ -378,10 +413,10 @@ defmodule Firecrawl do
 
   `GET /search/research/github`
 
-  Deprecated: stops responding after 2026-11-03. Use `search_developer/2`, which
-  does not carry over the score breakdown or the web fallback results.
+  Deprecated: the research index GitHub search endpoint was removed after
+  2026-11-03. Use `search_developer/2` instead.
   """
-  @deprecated "Use search_developer/2; the endpoint stops responding after 2026-11-03"
+  @deprecated "The research index GitHub search endpoint was removed after 2026-11-03. Use search_developer/2 instead."
   @spec search_github(keyword(), keyword()) :: response()
   def search_github(params \\ [], opts \\ []) do
     with {:ok, params} <- NimbleOptions.validate(params, @research_search_github_schema) do
@@ -392,9 +427,10 @@ defmodule Firecrawl do
   @doc """
   Bang variant of `search_github`. Raises on error.
 
-  Deprecated: use `search_developer!/2`.
+  Deprecated: the research index GitHub search endpoint was removed after
+  2026-11-03. Use `search_developer!/2` instead.
   """
-  @deprecated "Use search_developer!/2; the endpoint stops responding after 2026-11-03"
+  @deprecated "The research index GitHub search endpoint was removed after 2026-11-03. Use search_developer!/2 instead."
   @spec search_github!(keyword(), keyword()) :: Req.Response.t()
   def search_github!(params \\ [], opts \\ []) do
     params = NimbleOptions.validate!(params, @research_search_github_schema)
@@ -422,7 +458,8 @@ defmodule Firecrawl do
 
   @doc """
   Search the developer index: public repositories, GitHub issues, merged pull
-  requests, READMEs and code documentation. Replaces the deprecated `search_github/2`.
+  requests, READMEs and code documentation. Replaces `search_github/2`, whose
+  endpoint was removed after 2026-11-03.
 
   `POST /search/developer`
 
@@ -2248,47 +2285,6 @@ defmodule Firecrawl do
   def search_and_scrape!(params \\ [], opts \\ []) do
     params = NimbleOptions.validate!(params, @search_and_scrape_schema)
     Req.post!(client(opts), url: "/search", json: to_body(params, @search_and_scrape_key_mapping))
-  end
-
-
-  @search_support_docs_schema NimbleOptions.new!([
-    question: [type: :string, required: true, doc: "Documentation question to answer."]
-  ])
-
-  @search_support_docs_key_mapping %{question: "question"}
-
-  @doc """
-  Search Firecrawl docs with citations
-
-  `POST /support/docs-search`
-
-  Tag: Support
-
-  ## Parameters
-
-  Validated by `NimbleOptions`. Pass params as a keyword list with snake_case keys.
-  See `@search_support_docs_schema` for the full schema.
-
-  ## Returns
-
-    * `{:ok, %Req.Response{}}` on success
-    * `{:error, exception}` on HTTP or validation failure
-  """
-  @spec search_support_docs(keyword(), keyword()) :: response()
-  def search_support_docs(params \\ [], opts \\ []) do
-    with {:ok, params} <- NimbleOptions.validate(params, @search_support_docs_schema) do
-      Req.post(client(opts), url: "/support/docs-search", json: to_body(params, @search_support_docs_key_mapping))
-    end
-  end
-
-
-  @doc """
-  Bang variant of `search_support_docs`. Raises on error.
-  """
-  @spec search_support_docs!(keyword(), keyword()) :: Req.Response.t()
-  def search_support_docs!(params \\ [], opts \\ []) do
-    params = NimbleOptions.validate!(params, @search_support_docs_schema)
-    Req.post!(client(opts), url: "/support/docs-search", json: to_body(params, @search_support_docs_key_mapping))
   end
 
 

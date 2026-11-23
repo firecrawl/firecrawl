@@ -76,6 +76,7 @@ import { monitorTelemetryMetadata } from "./search/tuning";
 import { computeGoalVersion } from "./search/dedupe";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { getACUCTeam } from "../../controllers/auth";
+import { isUsOnly } from "../../lib/us-only";
 import type { TeamFlags } from "../../controllers/v1/types";
 import { orgIdForTeam } from "../../lib/team-org";
 import {
@@ -397,6 +398,9 @@ async function billMonitorCheck(params: {
       // What the lock reserved. firebill adds it back to the ghost's reported
       // balance, which Autumn returns net of this very hold.
       heldValue: params.check.reserved_credits,
+      // A settle firebill never answered is re-sent from a durable queue under
+      // the same key, so a firebill outage does not leave the run unbilled.
+      durableRetry: true,
     });
   }
 
@@ -422,6 +426,27 @@ async function billMonitorCheck(params: {
     return false;
   }
 
+  // A run with no hold (the lock got no answer, or there was nothing to lock
+  // against) has no settle to bill it, so it is charged here with a plain
+  // track for what it actually cost. Keyed by the check, so a re-finalize
+  // dedupes instead of charging twice. A run with a hold never takes this
+  // branch: its charge is the confirm above.
+  const tracked =
+    !params.lockId && params.orgId
+      ? await autumnService.trackCredits({
+          teamId: params.monitor.team_id,
+          orgId: params.orgId,
+          value: params.actualCredits,
+          properties: {
+            source: "monitorCheck",
+            endpoint: "monitor",
+            jobId: params.check.id,
+          },
+          idempotencyKey: `fc:track:monitor:${params.check.id}`,
+          externalRequestId: params.check.partner_run_token,
+        })
+      : false;
+
   await getBillingQueue().add(
     "bill_team",
     {
@@ -433,7 +458,7 @@ async function billMonitorCheck(params: {
       timestamp: new Date().toISOString(),
       originating_job_id: params.check.id,
       api_key_id: null,
-      autumnTrackInRequest: Boolean(params.lockId),
+      autumnTrackInRequest: Boolean(params.lockId) || tracked,
     },
     {
       // Deterministic per check so a re-finalize (e.g. the reconciler re-running this
@@ -887,6 +912,7 @@ async function runMonitorSearchTarget(params: {
     knownPages,
     knownEvents,
     zeroDataRetention: false,
+    usOnly: isUsOnly(teamFlags),
     logger: logger.child({
       monitorId: monitor.id,
       checkId: check.id,

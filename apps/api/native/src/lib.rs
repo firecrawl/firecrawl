@@ -15,6 +15,7 @@ mod html;
 mod logging;
 mod pdf;
 mod utils;
+mod xml;
 
 pub use napi::bindgen_prelude::*;
 pub use serde::{Deserialize, Serialize};

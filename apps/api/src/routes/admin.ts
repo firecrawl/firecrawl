@@ -1,21 +1,20 @@
 import express, { NextFunction, Request, Response } from "express";
 import { Counter } from "prom-client";
 import { config } from "../config";
-import { acucCacheClearController } from "../controllers/v0/admin/acuc-cache-clear";
-import { autumnHealthController } from "../controllers/v0/admin/autumn-health";
-import { checkFireEngine } from "../controllers/v0/admin/check-fire-engine";
-import { concurrencyQueueBackfillController } from "../controllers/v0/admin/concurrency-queue-backfill";
-import { crawlMonitorController } from "../controllers/v0/admin/crawl-monitor";
-import { indexQueuePrometheus } from "../controllers/v0/admin/index-queue-prometheus";
-import { ipRestrictionCacheClearController } from "../controllers/v0/admin/ip-restriction-cache-clear";
-import { keyRestrictionCacheClearController } from "../controllers/v0/admin/key-restriction-cache-clear";
+import { acucCacheClearController } from "../controllers/admin/acuc-cache-clear";
+import { checkFireEngine } from "../controllers/admin/check-fire-engine";
+import { concurrencyQueueBackfillController } from "../controllers/admin/concurrency-queue-backfill";
+import { crawlMonitorController } from "../controllers/admin/crawl-monitor";
+import { indexQueuePrometheus } from "../controllers/admin/index-queue-prometheus";
+import { ipRestrictionCacheClearController } from "../controllers/admin/ip-restriction-cache-clear";
+import { keyRestrictionCacheClearController } from "../controllers/admin/key-restriction-cache-clear";
 import {
   metricsController,
   nuqFdbMetricsController,
   nuqMetricsController,
-} from "../controllers/v0/admin/metrics";
-import { triggerPrecrawl } from "../controllers/v0/admin/precrawl";
-import { redisHealthController } from "../controllers/v0/admin/redis-health";
+} from "../controllers/admin/metrics";
+import { triggerPrecrawl } from "../controllers/admin/precrawl";
+import { redisHealthController } from "../controllers/admin/redis-health";
 import { realtimeSearchController } from "../controllers/v2/f-search";
 import {
   handleIntegrationAdminCreateUserProxy,
@@ -57,11 +56,6 @@ if (config.BULL_AUTH_KEY && config.BULL_AUTH_KEY_PATH_ROUTES) {
   adminRouter.get(
     `/admin/${config.BULL_AUTH_KEY}/redis-health`,
     redisHealthController,
-  );
-
-  adminRouter.get(
-    `/admin/${config.BULL_AUTH_KEY}/autumn-health`,
-    autumnHealthController,
   );
 
   adminRouter.post(
@@ -132,8 +126,6 @@ if (config.BULL_AUTH_KEY) {
   opsRouter.use(adminAuth);
 
   opsRouter.get("/redis-health", redisHealthController);
-
-  opsRouter.get("/autumn-health", autumnHealthController);
 
   opsRouter.get("/feng-check", wrap(checkFireEngine));
 
@@ -211,8 +203,6 @@ adminRouter.post(
 export const adminInternalRouter = express.Router();
 
 adminInternalRouter.get("/admin/redis-health", redisHealthController);
-
-adminInternalRouter.get("/admin/autumn-health", autumnHealthController);
 
 adminInternalRouter.get("/admin/feng-check", wrap(checkFireEngine));
 

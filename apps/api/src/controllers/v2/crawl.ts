@@ -38,6 +38,7 @@ import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { checkUrl } from "../../lib/threat-protection";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
@@ -251,6 +252,7 @@ export async function crawlController(
               allowExternalLinks: false,
               useIndex: true,
               maxFireEngineResults: 500,
+              zeroDataRetention,
             });
           return generateCrawlerOptionsFromPrompt(
             enhancedPrompt,
@@ -258,6 +260,7 @@ export async function crawlController(
             new CostTracking(),
             { teamId: req.auth.team_id, crawlId: id },
             zeroDataRetention,
+            req.acuc?.flags,
           );
         },
       );
@@ -272,6 +275,13 @@ export async function crawlController(
         error: error.message,
         prompt: req.body.prompt,
       });
+      if (error instanceof UsOnlyUnavailableError) {
+        return res.status(403).json({
+          success: false,
+          code: error.code,
+          error: error.message,
+        });
+      }
       return res.status(400).json({
         success: false,
         error:

@@ -2,13 +2,15 @@ import {
   ActionsNotSupportedError,
   ConcurrencyQueueTimeoutError,
   CrawlDenialError,
-  ErrorCodes,
+  type ErrorCode,
+  isTransportableError,
   MapFailedError,
   MapTimeoutError,
   RacedRedirectError,
   ScrapeJobTimeoutError,
   SitemapError,
   TransportableError,
+  type TransportableErrorClass,
   UnknownError,
   UnsupportedSiteError,
 } from "./error";
@@ -40,8 +42,10 @@ import {
   VideoUnsupportedUrlError,
   MediaAccessDeniedError,
   PromptInjectionDetectedError,
+  PaywalledContentError,
   JsonExtractionContentTooLargeError,
-  XTwitterConfigurationError,
+  UsOnlyUnavailableError,
+  ReservedCapacityUnavailableError,
   ExchangeRefusedError,
 } from "../scraper/scrapeURL/error";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
@@ -49,90 +53,108 @@ import {
   ThirdPartyDataTermsRequiredError,
   ThirdPartyDataUnsupportedOptionError,
 } from "./exchange";
+import { service } from "../service";
 
-// TODO: figure out correct typing for this
-const errorMap: Record<ErrorCodes, any> = {
-  THIRD_PARTY_DATA_TERMS_REQUIRED: ThirdPartyDataTermsRequiredError,
-  THIRD_PARTY_DATA_NOT_FOUND: ExchangeRefusedError,
-  THIRD_PARTY_DATA_UNSUPPORTED_URL: ExchangeRefusedError,
-  THIRD_PARTY_DATA_UNSUPPORTED_OPTION: ThirdPartyDataUnsupportedOptionError,
-  THIRD_PARTY_DATA_NOT_ENABLED: ExchangeRefusedError,
-  THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED: ExchangeRefusedError,
-  SAFE_MODE_BLOCKED: null,
-  SCRAPE_SITE_RESTRICTION_BLOCKED: SiteRestrictionError,
-  SCRAPE_TIMEOUT: ScrapeJobTimeoutError,
-  MAP_TIMEOUT: MapTimeoutError,
-  UNKNOWN_ERROR: UnknownError,
-  SCRAPE_ALL_ENGINES_FAILED: NoEnginesLeftError,
-  SCRAPE_SSL_ERROR: SSLError,
-  SCRAPE_SITE_ERROR: SiteError,
-  SCRAPE_PROXY_SELECTION_ERROR: ProxySelectionError,
-  SCRAPE_PDF_PREFETCH_FAILED: PDFPrefetchFailed,
-  SCRAPE_DOCUMENT_PREFETCH_FAILED: DocumentPrefetchFailed,
-  SCRAPE_JOB_CANCELLED: ScrapeJobCancelledError,
-  SCRAPE_RETRY_LIMIT: ScrapeRetryLimitError,
-  SCRAPE_ZDR_VIOLATION_ERROR: ZDRViolationError,
-  SCRAPE_DNS_RESOLUTION_ERROR: DNSResolutionError,
-  SCRAPE_PDF_INSUFFICIENT_TIME_ERROR: PDFInsufficientTimeError,
-  SCRAPE_PDF_ANTIBOT_ERROR: PDFAntibotError,
-  SCRAPE_PDF_FETCH_PROXY_ERROR: PDFFetchProxyError,
-  SCRAPE_PDF_OCR_REQUIRED: PDFOCRRequiredError,
-  SCRAPE_DOCUMENT_ANTIBOT_ERROR: DocumentAntibotError,
-  SCRAPE_DOCUMENT_FETCH_PROXY_ERROR: DocumentFetchProxyError,
-  SCRAPE_UNSUPPORTED_FILE_ERROR: UnsupportedFileError,
-  SCRAPE_NO_CACHED_DATA: NoCachedDataError,
-  SCRAPE_LOCKDOWN_CACHE_MISS: LockdownMissError,
-  SCRAPE_ACTION_ERROR: ActionError,
-  SCRAPE_ACTIONS_NOT_SUPPORTED: ActionsNotSupportedError,
-  SCRAPE_BRANDING_NOT_SUPPORTED: BrandingNotSupportedError,
-  AGENT_INDEX_ONLY: AgentIndexOnlyError,
-  SCRAPE_RACED_REDIRECT_ERROR: RacedRedirectError,
-  SCRAPE_SITEMAP_ERROR: SitemapError,
-  CRAWL_DENIAL: CrawlDenialError,
-  UNSUPPORTED_SITE: UnsupportedSiteError,
-  SCRAPE_AUDIO_UNSUPPORTED_URL: AudioUnsupportedUrlError,
-  SCRAPE_VIDEO_UNSUPPORTED_URL: VideoUnsupportedUrlError,
-  SCRAPE_MEDIA_ACCESS_DENIED: MediaAccessDeniedError,
-  SCRAPE_PROMPT_INJECTION_DETECTED: PromptInjectionDetectedError,
-  SCRAPE_JSON_CONTENT_TOO_LARGE: JsonExtractionContentTooLargeError,
-  SCRAPE_X_TWITTER_CONFIGURATION_ERROR: XTwitterConfigurationError,
-  MAP_FAILED: MapFailedError,
-  CONCURRENCY_QUEUE_TIMEOUT: ConcurrencyQueueTimeoutError,
-  unsafe_domain_blocked: UnsafeDomainBlockedError,
-
-  // Zod errors
-  BAD_REQUEST: null,
-  BAD_REQUEST_INVALID_JSON: null,
-  INDEX_DAILY_LIMIT: null,
-  TOOL_DISCOVERY_UNAVAILABLE: null,
-  PARSE_UNSUPPORTED_OPTIONS: null,
-
-  // Agent thread rejections are API-level, never transported through workers.
-  thread_not_found: null,
-  thread_busy: null,
-  thread_expired: null,
-  threads_disabled: null,
-  exchange_not_enabled: null,
-
-  // Agent zero data retention rejections are API-level too.
-  zdr_threads_unsupported: null,
-  zdr_expired: null,
-  zdr_no_snapshots: null,
-  zdr_not_enabled: null,
-  zdr_retention_misconfigured: null,
-};
+/**
+ * The service's own error classes. Reading a code that no class carries gives
+ * a plain TransportableError.
+ */
+export const coreErrors: TransportableErrorClass[] = [
+  ThirdPartyDataTermsRequiredError,
+  ExchangeRefusedError,
+  ThirdPartyDataUnsupportedOptionError,
+  SiteRestrictionError,
+  ScrapeJobTimeoutError,
+  MapTimeoutError,
+  UnknownError,
+  NoEnginesLeftError,
+  SSLError,
+  SiteError,
+  ProxySelectionError,
+  PDFPrefetchFailed,
+  DocumentPrefetchFailed,
+  ScrapeJobCancelledError,
+  ScrapeRetryLimitError,
+  ZDRViolationError,
+  DNSResolutionError,
+  PDFInsufficientTimeError,
+  PDFAntibotError,
+  PDFFetchProxyError,
+  PDFOCRRequiredError,
+  DocumentAntibotError,
+  DocumentFetchProxyError,
+  UnsupportedFileError,
+  NoCachedDataError,
+  LockdownMissError,
+  ActionError,
+  ActionsNotSupportedError,
+  BrandingNotSupportedError,
+  AgentIndexOnlyError,
+  RacedRedirectError,
+  SitemapError,
+  CrawlDenialError,
+  UnsupportedSiteError,
+  AudioUnsupportedUrlError,
+  VideoUnsupportedUrlError,
+  MediaAccessDeniedError,
+  PromptInjectionDetectedError,
+  PaywalledContentError,
+  JsonExtractionContentTooLargeError,
+  UsOnlyUnavailableError,
+  ReservedCapacityUnavailableError,
+  MapFailedError,
+  ConcurrencyQueueTimeoutError,
+  UnsafeDomainBlockedError,
+];
 
 export function serializeTransportableError(error: TransportableError) {
   return `${error.code}|${JSON.stringify(error.serialize())}`;
 }
 
+/**
+ * The wire form of anything a job throws. What is not a transportable error
+ * goes out as UNKNOWN_ERROR.
+ */
+export function serializeThrownError(error: unknown) {
+  return serializeTransportableError(
+    isTransportableError(error) ? error : new UnknownError(error),
+  );
+}
+
+/**
+ * Returns null when `data` is not a serialized error; callers also pass plain
+ * error messages. A code that no registered class carries gives a plain
+ * TransportableError.
+ */
 export function deserializeTransportableError(
   data: string,
-): InstanceType<(typeof errorMap)[keyof typeof errorMap]> | null {
+): TransportableError | null {
   const [code, ...serialized] = data.split("|");
-  const x = errorMap[code];
-  if (!x) {
+  if (serialized.length === 0) {
     return null;
   }
-  return x.deserialize(code, JSON.parse(serialized.join("|")));
+  let payload: unknown;
+  try {
+    payload = JSON.parse(serialized.join("|"));
+  } catch {
+    return null;
+  }
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
+
+  const errorClass = service.errors.classFor(code);
+  if (errorClass) {
+    return errorClass.deserialize(code as ErrorCode, payload);
+  }
+
+  const { message, stack, cause } = payload as Record<string, unknown>;
+  if (!/^\S+$/.test(code) || typeof message !== "string") {
+    return null;
+  }
+  return TransportableError.deserialize(code as ErrorCode, {
+    message,
+    stack: typeof stack === "string" ? stack : undefined,
+    cause,
+  });
 }

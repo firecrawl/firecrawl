@@ -15,6 +15,17 @@ import { generateCompletions } from "../../scraper/scrapeURL/transformers/llmExt
 import { CostTracking } from "../cost-tracking";
 import { getACUCTeam } from "../../controllers/auth";
 import { orgIdFromAcuc } from "../team-org";
+import type { TeamFlags } from "../../controllers/v2/types";
+
+// Throws UsOnlyUnavailableError for a US-only team with no US route.
+export function llmsTxtModels(teamFlags: TeamFlags | null | undefined) {
+  const modelOptions = { teamFlags, feature: "LLMs.txt generation" };
+  return {
+    model: getModel("gpt-4o-mini", "openai", modelOptions),
+    retryModel: getModel("gpt-4.1-mini", "openai", modelOptions),
+  };
+}
+
 interface GenerateLLMsTextServiceOptions {
   generationId: string;
   teamId: string;
@@ -88,6 +99,10 @@ export async function performGenerateLlmsTxt(
   const acuc = await getACUCTeam(teamId);
 
   try {
+    // Built before the cache lookup and the per-page loop, whose errors are
+    // swallowed, so a US-only refusal fails the generation in every case.
+    const descriptionModels = llmsTxtModels(acuc?.flags);
+
     // Enforce max URL limit
     const effectiveMaxUrls = Math.min(maxUrls, 5000);
 
@@ -196,7 +211,8 @@ export async function performGenerateLlmsTxt(
 
             const { extract } = await generateCompletions({
               logger,
-              model: getModel("gpt-4o-mini", "openai"),
+              model: descriptionModels.model,
+              retryModel: descriptionModels.retryModel,
               options: {
                 systemPrompt: "",
                 schema: descriptionSchema,

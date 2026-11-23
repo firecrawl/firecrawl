@@ -1218,12 +1218,15 @@ pub enum SearchSource {
     News,
     Images,
     Alexandria,
+    Skills,
 }
 
 /// Search category types.
 #[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SearchCategory {
+    /// Removed. Use `Client::developer_search` for GitHub issues, pull requests
+    /// and READMEs.
     Github,
     Research,
     Pdf,

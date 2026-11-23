@@ -58,7 +58,6 @@ import { hasFormatOfType } from "../../lib/format-utils";
 import { getACUCTeam } from "../../controllers/auth";
 import { orgIdForTeam } from "../../lib/team-org";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
-import { CustomError } from "../../lib/custom-error";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
 import { CostTracking } from "../../lib/cost-tracking";
 import { chargeKeylessCredits } from "../../lib/keyless";
@@ -80,12 +79,12 @@ import {
   JobCancelledError,
   RacedRedirectError,
   ScrapeJobTimeoutError,
+  isTransportableError,
   SitemapError,
-  TransportableError,
   UnknownError,
   UnsupportedSiteError,
 } from "../../lib/error";
-import { serializeTransportableError } from "../../lib/error-serde";
+import { serializeThrownError } from "../../lib/error-serde";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
 import { trackScrape } from "../../lib/tracking";
 import type { NuQJob } from "./nuq";
@@ -483,7 +482,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
     if (
       pipeline.exchange === undefined &&
-      job.data.origin !== "monitor" &&
+      job.data.billing?.endpoint !== "monitor" &&
       !job.data.internalOptions?.isParse &&
       doc.metadata.url !== undefined &&
       doc.metadata.sourceURL !== undefined &&
@@ -754,8 +753,19 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 ? await getACUCTeam(sc.team_id).catch(() => null)
                 : null;
 
+            const crawlLimit = sc.crawlerOptions?.limit;
+            let remainingLimit =
+              typeof crawlLimit === "number" && discoveredLinks.length > 0
+                ? crawlLimit -
+                  (await redisEvictConnection.scard(
+                    "crawl:" + job.data.crawl_id + ":visited_unique",
+                  ))
+                : Infinity;
+
             for (const link of discoveredLinks) {
+              if (remainingLimit <= 0) break;
               if (await lockURL(job.data.crawl_id, sc, link)) {
+                remainingLimit--;
                 // This seems to work really welel
                 const jobPriority = await getJobPriority({
                   team_id: sc.team_id,
@@ -905,6 +915,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           jobId: job.data.crawl_id,
           webhook: job.data.webhook,
           v0: false,
+          zeroDataRetention: job.data.zeroDataRetention,
         });
         if (sender) {
           logger.debug("Calling webhook with success...", {
@@ -1125,10 +1136,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     } else {
       logger.error(`🐂 Job errored ${job.id} - ${error}`, { error });
 
-      if (error instanceof CustomError) {
-        // Here we handle the error, then save the failed job
-        logger.error(error.message); // or any other error handling
-      }
       logger.error(error);
       if (error.stack) {
         logger.error(error.stack);
@@ -1169,6 +1176,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         jobId: (job.data.crawl_id ?? job.id) as string,
         webhook: job.data.webhook,
         v0: Boolean(!job.data.v1),
+        zeroDataRetention: job.data.zeroDataRetention,
       });
 
       // at this point we don't have a document, send a minimal payload to let users identify the errored URL
@@ -1243,6 +1251,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           ? error
           : (error.message ??
             "Something went wrong... Contact help@mendable.ai"),
+      error_code: isTransportableError(error) ? error.code : undefined,
       time_taken: timeTakenInSeconds,
       team_id: job.data.team_id,
       options: job.data.scrapeOptions,
@@ -1638,6 +1647,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       url: job.data.sitemapUrl,
       maxAge: 48 * 60 * 60 * 1000,
       zeroDataRetention: job.data.zeroDataRetention ?? false,
+      usOnly: crawler.usOnly,
       location: job.data.location,
       crawlId: job.data.crawl_id,
       logger,
@@ -1914,10 +1924,11 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
       // The queue stores the failure as a serialized TransportableError. The
       // carrier keeps the code and expected-ness so the worker span's
       // exception is still grouped by code and filtered like the original.
-      const transportable =
-        error instanceof TransportableError ? error : new UnknownError(error);
+      const transportable = isTransportableError(error)
+        ? error
+        : new UnknownError(error);
       const carrier = Object.assign(
-        new Error(serializeTransportableError(transportable)),
+        new Error(serializeThrownError(transportable)),
         { code: transportable.code, stack: transportable.stack },
       );
       throw isExpectedError(transportable)

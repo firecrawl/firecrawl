@@ -1,4 +1,4 @@
-import { ErrorCodes, TransportableError } from "../../lib/error";
+import { ErrorCode, TransportableError } from "../../lib/error";
 import { Meta } from ".";
 import { Engine, FeatureFlag } from "./engines";
 import { isSelfHosted } from "../../lib/deployment";
@@ -12,29 +12,49 @@ export class EngineError extends Error {
   }
 }
 
-export class XTwitterConfigurationError extends TransportableError {
-  constructor() {
-    super(
-      "SCRAPE_X_TWITTER_CONFIGURATION_ERROR",
-      "X/Twitter scraping requires XAI_API_KEY to be configured.",
-    );
-  }
+/** A route the team's US-only restriction rules out, because no US-based vendor serves it. */
+export class UsOnlyUnavailableError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["US_ONLY_UNAVAILABLE"];
 
-  serialize() {
-    return super.serialize();
+  constructor(message: string) {
+    super("US_ONLY_UNAVAILABLE", message);
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
-    const x = new XTwitterConfigurationError();
+    const x = new UsOnlyUnavailableError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+/** Parsing the team's reserved capacity restriction rules out, because the PDF service could not run, or did not confirm running, it there. */
+export class ReservedCapacityUnavailableError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "RESERVED_CAPACITY_UNAVAILABLE",
+  ];
+
+  constructor(
+    message = "PDF processing is unavailable for this team's configuration. Please retry later.",
+  ) {
+    super("RESERVED_CAPACITY_UNAVAILABLE", message);
+  }
+
+  static deserialize(
+    _: ErrorCode,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ReservedCapacityUnavailableError(data.message);
     x.stack = data.stack;
     return x;
   }
 }
 
 export class NoEnginesLeftError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_ALL_ENGINES_FAILED"];
+
   public fallbackList: Engine[];
 
   constructor(fallbackList: Engine[]) {
@@ -55,7 +75,7 @@ export class NoEnginesLeftError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new NoEnginesLeftError(data.fallbackList);
@@ -67,7 +87,6 @@ export class NoEnginesLeftError extends TransportableError {
 export class AddFeatureError extends Error {
   [EXPECTED_ERROR] = true;
   public featureFlags: FeatureFlag[];
-  public statusCode?: number;
   public pdfPrefetch: Meta["pdfPrefetch"];
   public documentPrefetch: Meta["documentPrefetch"];
   public imagePrefetch: Meta["imagePrefetch"];
@@ -100,6 +119,8 @@ export class RemoveFeatureError extends Error {
 }
 
 export class SSLError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_SSL_ERROR"];
+
   constructor(
     public skipTlsVerification: boolean,
     public zeroDataRetention = false,
@@ -124,7 +145,7 @@ export class SSLError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new SSLError(data.skipTlsVerification, data.zeroDataRetention);
@@ -144,12 +165,19 @@ type ExchangeRefusalCode =
 // provider. Another attempt cannot change it, so it surfaces as-is instead of
 // as an engine failure.
 export class ExchangeRefusedError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "THIRD_PARTY_DATA_NOT_FOUND",
+    "THIRD_PARTY_DATA_UNSUPPORTED_URL",
+    "THIRD_PARTY_DATA_NOT_ENABLED",
+    "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED",
+  ];
+
   constructor(code: ExchangeRefusalCode, message: string) {
     super(code, message);
   }
 
   static deserialize(
-    code: ErrorCodes,
+    code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ExchangeRefusedError(
@@ -162,6 +190,8 @@ export class ExchangeRefusedError extends TransportableError {
 }
 
 export class SiteError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_SITE_ERROR"];
+
   constructor(public errorCode: string) {
     const errorExplanations: Record<string, string> = {
       ERR_TUNNEL_CONNECTION_FAILED:
@@ -210,7 +240,7 @@ export class SiteError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new SiteError(data.errorCode);
@@ -220,6 +250,10 @@ export class SiteError extends TransportableError {
 }
 
 export class ProxySelectionError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "SCRAPE_PROXY_SELECTION_ERROR",
+  ];
+
   constructor() {
     super(
       "SCRAPE_PROXY_SELECTION_ERROR",
@@ -234,7 +268,7 @@ export class ProxySelectionError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ProxySelectionError();
@@ -244,6 +278,10 @@ export class ProxySelectionError extends TransportableError {
 }
 
 export class SiteRestrictionError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "SCRAPE_SITE_RESTRICTION_BLOCKED",
+  ];
+
   constructor() {
     super(
       "SCRAPE_SITE_RESTRICTION_BLOCKED",
@@ -258,7 +296,7 @@ export class SiteRestrictionError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new SiteRestrictionError();
@@ -267,7 +305,40 @@ export class SiteRestrictionError extends TransportableError {
   }
 }
 
+// Fire Engine failed the scrape on a site block that it marked as not worth
+// retrying on another exit or tier: an instant-block rule with
+// retryWithStealth false, such as a sign-in wall a site shows every signed-out
+// visitor. The other engines get the same page, so the waterfall ends the
+// scrape on it with the usual NoEnginesLeftError instead of trying them.
+// Internal only; it never reaches the API response.
+export class SiteBlockNoRetryError extends Error {
+  constructor(public fireEngineError: string) {
+    super(
+      `Fire Engine reported a site block that a retry does not get past: ${fireEngineError}`,
+    );
+  }
+}
+
+// Whether a failed Fire Engine job is such a block. Fire Engine sends
+// retryWithStealth only when true, so "no retry" is site_protection without it,
+// limited to instant-block failures: other site_protection failures that skip
+// the stealth retry (a challenge solver at capacity, say) still go through the
+// waterfall.
+export function isNoRetrySiteBlock(
+  failed: { failureReason?: "site_protection"; retryWithStealth?: boolean },
+  error: unknown,
+): error is string {
+  return (
+    failed.failureReason === "site_protection" &&
+    !failed.retryWithStealth &&
+    typeof error === "string" &&
+    error.includes("instant-block:")
+  );
+}
+
 export class ActionError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_ACTION_ERROR"];
+
   constructor(public errorCode: string) {
     super(
       "SCRAPE_ACTION_ERROR",
@@ -283,7 +354,7 @@ export class ActionError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ActionError(data.errorCode);
@@ -293,6 +364,10 @@ export class ActionError extends TransportableError {
 }
 
 export class UnsupportedFileError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "SCRAPE_UNSUPPORTED_FILE_ERROR",
+  ];
+
   constructor(public reason: string) {
     super(
       "SCRAPE_UNSUPPORTED_FILE_ERROR",
@@ -308,7 +383,7 @@ export class UnsupportedFileError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new UnsupportedFileError(data.reason);
@@ -318,6 +393,8 @@ export class UnsupportedFileError extends TransportableError {
 }
 
 export class PDFAntibotError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_PDF_ANTIBOT_ERROR"];
+
   constructor() {
     super("SCRAPE_PDF_ANTIBOT_ERROR", "PDF scrape was prevented by anti-bot");
   }
@@ -327,7 +404,7 @@ export class PDFAntibotError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new PDFAntibotError();
@@ -337,6 +414,10 @@ export class PDFAntibotError extends TransportableError {
 }
 
 export class PDFFetchProxyError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "SCRAPE_PDF_FETCH_PROXY_ERROR",
+  ];
+
   constructor() {
     const message = isSelfHosted()
       ? "Failed to download the PDF file because the configured proxy could not establish a connection to the website (the proxy rejected the tunneling request). Check your proxy configuration (PROXY_SERVER) and whether the target site is reachable from it, then retry."
@@ -350,7 +431,7 @@ export class PDFFetchProxyError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new PDFFetchProxyError();
@@ -360,6 +441,10 @@ export class PDFFetchProxyError extends TransportableError {
 }
 
 export class PDFInsufficientTimeError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR",
+  ];
+
   constructor(
     public pageCount: number,
     public minTimeout: number,
@@ -379,7 +464,7 @@ export class PDFInsufficientTimeError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new PDFInsufficientTimeError(data.pageCount, data.minTimeout);
@@ -389,6 +474,8 @@ export class PDFInsufficientTimeError extends TransportableError {
 }
 
 export class DNSResolutionError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_DNS_RESOLUTION_ERROR"];
+
   constructor(public hostname: string) {
     super(
       "SCRAPE_DNS_RESOLUTION_ERROR",
@@ -404,7 +491,7 @@ export class DNSResolutionError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new DNSResolutionError(data.hostname);
@@ -421,6 +508,8 @@ export class IndexMissError extends Error {
 }
 
 export class NoCachedDataError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_NO_CACHED_DATA"];
+
   constructor() {
     super(
       "SCRAPE_NO_CACHED_DATA",
@@ -433,7 +522,7 @@ export class NoCachedDataError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new NoCachedDataError();
@@ -443,6 +532,8 @@ export class NoCachedDataError extends TransportableError {
 }
 
 export class LockdownMissError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_LOCKDOWN_CACHE_MISS"];
+
   constructor() {
     super(
       "SCRAPE_LOCKDOWN_CACHE_MISS",
@@ -455,7 +546,7 @@ export class LockdownMissError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new LockdownMissError();
@@ -465,6 +556,8 @@ export class LockdownMissError extends TransportableError {
 }
 
 export class ZDRViolationError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_ZDR_VIOLATION_ERROR"];
+
   constructor(public feature: string) {
     super(
       "SCRAPE_ZDR_VIOLATION_ERROR",
@@ -480,7 +573,7 @@ export class ZDRViolationError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ZDRViolationError(data.feature);
@@ -490,6 +583,8 @@ export class ZDRViolationError extends TransportableError {
 }
 
 export class PDFOCRRequiredError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_PDF_OCR_REQUIRED"];
+
   constructor(public pdfType: string) {
     super(
       "SCRAPE_PDF_OCR_REQUIRED",
@@ -505,7 +600,7 @@ export class PDFOCRRequiredError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new PDFOCRRequiredError(data.pdfType);
@@ -515,6 +610,8 @@ export class PDFOCRRequiredError extends TransportableError {
 }
 
 export class PDFPrefetchFailed extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_PDF_PREFETCH_FAILED"];
+
   constructor() {
     const message = isSelfHosted()
       ? "Failed to prefetch the PDF file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the PDF is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. Check your server logs for more details about the specific protection mechanism encountered."
@@ -528,7 +625,7 @@ export class PDFPrefetchFailed extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new PDFPrefetchFailed();
@@ -538,6 +635,10 @@ export class PDFPrefetchFailed extends TransportableError {
 }
 
 export class DocumentAntibotError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "SCRAPE_DOCUMENT_ANTIBOT_ERROR",
+  ];
+
   constructor() {
     super(
       "SCRAPE_DOCUMENT_ANTIBOT_ERROR",
@@ -550,7 +651,7 @@ export class DocumentAntibotError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new DocumentAntibotError();
@@ -560,6 +661,10 @@ export class DocumentAntibotError extends TransportableError {
 }
 
 export class DocumentFetchProxyError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "SCRAPE_DOCUMENT_FETCH_PROXY_ERROR",
+  ];
+
   constructor() {
     const message = isSelfHosted()
       ? "Failed to download the document file because the configured proxy could not establish a connection to the website (the proxy rejected the tunneling request). Check your proxy configuration (PROXY_SERVER) and whether the target site is reachable from it, then retry."
@@ -573,7 +678,7 @@ export class DocumentFetchProxyError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new DocumentFetchProxyError();
@@ -583,6 +688,10 @@ export class DocumentFetchProxyError extends TransportableError {
 }
 
 export class DocumentPrefetchFailed extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "SCRAPE_DOCUMENT_PREFETCH_FAILED",
+  ];
+
   constructor() {
     const message = isSelfHosted()
       ? "Failed to prefetch the document file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the document (DOCX, XLSX, etc.) is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. Check your server logs for more details about the specific protection mechanism encountered."
@@ -596,7 +705,7 @@ export class DocumentPrefetchFailed extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new DocumentPrefetchFailed();
@@ -606,6 +715,8 @@ export class DocumentPrefetchFailed extends TransportableError {
 }
 
 export class AgentIndexOnlyError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["AGENT_INDEX_ONLY"];
+
   constructor() {
     super(
       "AGENT_INDEX_ONLY",
@@ -618,7 +729,7 @@ export class AgentIndexOnlyError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new AgentIndexOnlyError();
@@ -628,6 +739,10 @@ export class AgentIndexOnlyError extends TransportableError {
 }
 
 export class AudioUnsupportedUrlError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "SCRAPE_AUDIO_UNSUPPORTED_URL",
+  ];
+
   constructor(message?: string) {
     super(
       "SCRAPE_AUDIO_UNSUPPORTED_URL",
@@ -640,7 +755,7 @@ export class AudioUnsupportedUrlError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new AudioUnsupportedUrlError(data.message);
@@ -650,6 +765,8 @@ export class AudioUnsupportedUrlError extends TransportableError {
 }
 
 export class MediaAccessDeniedError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_MEDIA_ACCESS_DENIED"];
+
   constructor(message?: string) {
     super(
       "SCRAPE_MEDIA_ACCESS_DENIED",
@@ -663,7 +780,7 @@ export class MediaAccessDeniedError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new MediaAccessDeniedError(data.message);
@@ -673,6 +790,10 @@ export class MediaAccessDeniedError extends TransportableError {
 }
 
 export class PromptInjectionDetectedError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "SCRAPE_PROMPT_INJECTION_DETECTED",
+  ];
+
   constructor(message?: string) {
     super(
       "SCRAPE_PROMPT_INJECTION_DETECTED",
@@ -686,7 +807,7 @@ export class PromptInjectionDetectedError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new PromptInjectionDetectedError(data.message);
@@ -695,7 +816,36 @@ export class PromptInjectionDetectedError extends TransportableError {
   }
 }
 
+export class PaywalledContentError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_PAYWALLED_CONTENT"];
+
+  constructor(message?: string) {
+    super(
+      "SCRAPE_PAYWALLED_CONTENT",
+      message ??
+        "The page is marked as paywalled (schema.org isAccessibleForFree is false), so Safe Mode refused the scrape.",
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCode,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new PaywalledContentError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class JsonExtractionContentTooLargeError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "SCRAPE_JSON_CONTENT_TOO_LARGE",
+  ];
+
   constructor(message?: string) {
     super(
       "SCRAPE_JSON_CONTENT_TOO_LARGE",
@@ -709,7 +859,7 @@ export class JsonExtractionContentTooLargeError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new JsonExtractionContentTooLargeError(data.message);
@@ -742,6 +892,10 @@ export function throwIfMediaAccessDenied(errorBody: unknown): void {
 }
 
 export class VideoUnsupportedUrlError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "SCRAPE_VIDEO_UNSUPPORTED_URL",
+  ];
+
   constructor(message?: string) {
     super(
       "SCRAPE_VIDEO_UNSUPPORTED_URL",
@@ -754,7 +908,7 @@ export class VideoUnsupportedUrlError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new VideoUnsupportedUrlError(data.message);
@@ -764,6 +918,10 @@ export class VideoUnsupportedUrlError extends TransportableError {
 }
 
 export class BrandingNotSupportedError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "SCRAPE_BRANDING_NOT_SUPPORTED",
+  ];
+
   constructor(message: string) {
     super("SCRAPE_BRANDING_NOT_SUPPORTED", message);
   }
@@ -773,7 +931,7 @@ export class BrandingNotSupportedError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new BrandingNotSupportedError(data.message);
@@ -819,6 +977,8 @@ export class WaterfallNextEngineSignal extends Error {
 }
 
 export class ScrapeJobCancelledError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_JOB_CANCELLED"];
+
   constructor() {
     super(
       "SCRAPE_JOB_CANCELLED",
@@ -831,7 +991,7 @@ export class ScrapeJobCancelledError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ScrapeJobCancelledError();
@@ -860,6 +1020,8 @@ export type ScrapeRetryStats = {
 };
 
 export class ScrapeRetryLimitError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = ["SCRAPE_RETRY_LIMIT"];
+
   constructor(
     public reason: ScrapeRetryLimitReason,
     public stats: ScrapeRetryStats,
@@ -879,7 +1041,7 @@ export class ScrapeRetryLimitError extends TransportableError {
   }
 
   static deserialize(
-    _: ErrorCodes,
+    _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     // Counters added after this error first shipped default to 0: during a

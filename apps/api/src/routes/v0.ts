@@ -5,8 +5,7 @@ import { scrapeController } from "../../src/controllers/v0/scrape";
 import { searchController } from "../../src/controllers/v0/search";
 import { crawlCancelController } from "../../src/controllers/v0/crawl-cancel";
 import { keyAuthController } from "../../src/controllers/v0/keyAuth";
-import { livenessController } from "../controllers/v0/liveness";
-import { readinessController } from "../controllers/v0/readiness";
+import { livenessController, readinessController } from "../controllers/health";
 import { deprecationMiddleware } from "../lib/deprecations";
 
 export const v0Router = express.Router();
@@ -38,6 +37,6 @@ v0Router.post(
   searchController,
 );
 
-// Health/Probe routes
+// Health/Probe routes, kept as aliases of /health/* in index.ts
 v0Router.get("/v0/health/liveness", livenessController);
 v0Router.get("/v0/health/readiness", readinessController);

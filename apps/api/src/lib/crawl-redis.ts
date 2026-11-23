@@ -1,5 +1,6 @@
 import { InternalOptions } from "../scraper/scrapeURL";
 import { ScrapeOptions, TeamFlags } from "../controllers/v2/types";
+import type { RequestContext } from "../service/request-context";
 import { WebhookConfig } from "../services/webhook/types";
 import { WebCrawler } from "../scraper/WebScraper/crawler";
 import { redisEvictConnection } from "../services/redis";
@@ -9,6 +10,7 @@ import type { Logger } from "winston";
 import { withSpan, setSpanAttributes } from "./otel-tracer";
 import { getScrapeZDR, getIgnoreRobots } from "./zdr-helpers";
 import { resolveSafeMode } from "./safe-mode";
+import { isUsOnly } from "./us-only";
 import {
   firstPipelineError,
   reportPipelineError,
@@ -16,6 +18,11 @@ import {
 } from "./redis-pipeline";
 
 export type StoredCrawl = {
+  /**
+   * The context of the request that started the crawl. Absent on a record
+   * written before the context existed; read it with `crawlContext`.
+   */
+  ctx?: RequestContext;
   originUrl?: string;
   crawlerOptions: any;
   scrapeOptions: Omit<ScrapeOptions, "timeout">;
@@ -1060,6 +1067,7 @@ export function crawlToCrawler(
     currentDiscoveryDepth: crawlerOptions?.currentDiscoveryDepth ?? 0,
     zeroDataRetention:
       (getScrapeZDR(teamFlags) === "forced" || sc.zeroDataRetention) ?? false,
+    usOnly: isUsOnly(sc.internalOptions?.teamFlags) || isUsOnly(teamFlags),
     location: sc.scrapeOptions?.location,
     headers: sc.scrapeOptions?.headers,
     robotsUserAgent: sc.crawlerOptions?.robotsUserAgent,

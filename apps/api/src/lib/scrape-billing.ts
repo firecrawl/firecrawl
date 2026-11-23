@@ -7,7 +7,7 @@ import {
 } from "../controllers/v2/types";
 import { CostTracking } from "./cost-tracking";
 import { hasFormatOfType } from "./format-utils";
-import { TransportableError } from "./error";
+import { isTransportableError } from "./error";
 import { FeatureFlag } from "../scraper/scrapeURL/engines";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { ExchangeScrapeMetadata, getExchangeSuccessCredits } from "./exchange";
@@ -16,7 +16,6 @@ import { UnsafeDomainBlockedError } from "./threat-protection/error";
 
 const creditsPerPDFPage = 1;
 const unblockedDomainCostBonus = 4;
-const xTwitterCostBonus = 29;
 const jsonCostBonus = 4;
 const redactPIICostBonus = 4;
 // Each additional PDF page also gets redacted through fire-privacy, so
@@ -134,7 +133,7 @@ export async function calculateCreditsToBeBilled(
     }
 
     if (
-      error instanceof TransportableError &&
+      isTransportableError(error) &&
       error.code === "SCRAPE_LOCKDOWN_CACHE_MISS"
     ) {
       creditsToBeBilled = 1;
@@ -227,10 +226,6 @@ export async function calculateCreditsToBeBilled(
 
   if (hasFormatOfType(options.formats, "video") && !mediaFormatsRefused) {
     creditsToBeBilled += 4;
-  }
-
-  if (document.metadata?.postprocessorsUsed?.includes("x-twitter")) {
-    creditsToBeBilled += xTwitterCostBonus;
   }
 
   if (internalOptions.zeroDataRetention && !options.lockdown) {
