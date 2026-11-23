@@ -200,6 +200,71 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     });
   });
 
+  describe("when the team is in Safe Mode lockdown", () => {
+    let lockdown: Identity;
+
+    beforeAll(async () => {
+      lockdown = await idmux({
+        name: "monitor/lockdown",
+        credits: 10000,
+        flags: { safeMode: true, safeModeConfig: { lockdown: true } },
+      });
+    }, 10000);
+
+    it("refuses a search monitor", async () => {
+      const create = await monitorCreateRaw(
+        {
+          name: "lockdown search monitor",
+          schedule: { cron: "0 * * * *", timezone: "UTC" },
+          goal: "New releases of the firecrawl SDK",
+          targets: [{ type: "search", queries: ["firecrawl sdk release"] }],
+          notification: { email: { enabled: false } },
+        },
+        lockdown,
+      );
+
+      expect(create.statusCode).toBe(400);
+      expect(create.body.success).toBe(false);
+      expect(create.body.error).toContain("zero data retention");
+    });
+
+    it("keeps a scrape monitor and refuses adding a search target to it", async () => {
+      const create = await monitorCreateRaw(
+        {
+          name: "scrape monitor on a lockdown team",
+          schedule: { cron: "0 * * * *", timezone: "UTC" },
+          targets: [
+            {
+              type: "scrape",
+              urls: [createTestIdUrl()],
+              scrapeOptions: { formats: ["markdown"] },
+            },
+          ],
+          notification: { email: { enabled: false } },
+        },
+        lockdown,
+      );
+      expect(create.statusCode).toBe(200);
+      expect(create.body.data.status).toBe("active");
+      const id = create.body.data.id;
+
+      try {
+        const addSearch = await monitorPatchRaw(
+          id,
+          {
+            goal: "New releases of the firecrawl SDK",
+            targets: [{ type: "search", queries: ["firecrawl sdk release"] }],
+          },
+          lockdown,
+        );
+        expect(addSearch.statusCode).toBe(400);
+        expect(addSearch.body.error).toContain("zero data retention");
+      } finally {
+        await monitorDeleteRaw(id, lockdown);
+      }
+    });
+  });
+
   it("accepts an origin field in the create body", async () => {
     const create = await monitorCreateRaw(
       {

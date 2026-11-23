@@ -7,6 +7,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 const fixture = vi.hoisted(() => ({
   db: undefined as ReturnType<typeof drizzle> | undefined,
   jobs: new Map<string, unknown>(),
+  sessions: [] as Array<{ id: string; scrape_id: string | null }>,
   refundCredits: vi.fn(
     async (_args: {
       value: number;
@@ -18,6 +19,12 @@ const fixture = vi.hoisted(() => ({
 vi.mock("../../../db/connection", () => ({ db: fixture.db, dbRr: fixture.db }));
 vi.mock("../../../lib/feedback-job-store", () => ({
   readFeedbackJob: async (jobId: string) => fixture.jobs.get(jobId) ?? null,
+}));
+vi.mock("../../../lib/browser-sessions", () => ({
+  getBrowserSession: async (id: string) =>
+    fixture.sessions.find(session => session.id === id) ?? null,
+  getBrowserSessionFromScrape: async (id: string) =>
+    fixture.sessions.find(session => session.scrape_id === id) ?? null,
 }));
 vi.mock("../../../services/autumn/autumn.service", () => ({
   CREDITS_FEATURE_ID: "CREDITS",
@@ -34,7 +41,7 @@ const ddl = `
 CREATE TABLE search_feedback (
   id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   search_id uuid,
-  endpoint text NOT NULL DEFAULT 'search',
+  endpoint text NOT NULL DEFAULT 'search' CHECK (endpoint IN ('search', 'scrape', 'parse', 'map', 'alexandria', 'interact', 'browser')),
   job_id uuid,
   request_id uuid,
   api_version text DEFAULT 'v2',
@@ -54,6 +61,12 @@ CREATE TABLE search_feedback (
   origin text,
   credits_refunded int4 NOT NULL DEFAULT 0,
   refund_policy jsonb,
+  external_request_id text,
+  session_id text,
+  session_source text,
+  thread_id text,
+  thread_source text,
+  objective text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -108,6 +121,48 @@ suite("repeated feedback submissions against PostgreSQL", () => {
     return result.rows;
   }
 
+  // A browser session of this team, and the id feedback names it by: the
+  // scrape job it was opened on for interact, its own id for browser.
+  function addSession(endpoint: "interact" | "browser") {
+    const session = {
+      id: randomUUID(),
+      scrape_id: endpoint === "interact" ? randomUUID() : null,
+      team_id: teamId,
+      request_id: randomUUID(),
+      zero_data_retention: false,
+      ttl_total: 600,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    fixture.sessions.push(session);
+    return { session, jobId: session.scrape_id ?? session.id };
+  }
+
+  const lineage = {
+    session_id: "sess_01HZX",
+    session_source: "token",
+    thread_id: "thread:42",
+    thread_source: "client",
+    objective: "Book a table for two.",
+  };
+  const traceHeaders = {
+    "External-Request-Id": "0190a5d4-7b10-7cc3-98c4-0242ac120002",
+    "X-Firecrawl-Mcp-Lineage": Buffer.from(JSON.stringify(lineage)).toString(
+      "base64url",
+    ),
+  };
+
+  async function storedFeedback(jobId: string) {
+    const result = await pool.query(
+      `SELECT id, endpoint, overall_rating, comment, metadata, credits_billed,
+              credits_refunded, external_request_id, session_id, session_source,
+              thread_id, thread_source, objective
+         FROM search_feedback WHERE job_id = $1`,
+      [jobId],
+    );
+    return result.rows;
+  }
+
   function refundsFor(jobId: string) {
     return fixture.refundCredits.mock.calls.filter(
       ([args]) => args.properties.jobId === jobId,
@@ -139,7 +194,7 @@ suite("repeated feedback submissions against PostgreSQL", () => {
     app.use(express.json());
     app.use((req, _res, next) => {
       Object.assign(req, {
-        auth: { team_id: teamId },
+        auth: { team_id: teamId, hostedMcp: true },
         acuc: { flags: {}, api_key_id: 42, org_id: "org-test" },
       });
       next();
@@ -189,6 +244,107 @@ suite("repeated feedback submissions against PostgreSQL", () => {
       ]);
     },
   );
+
+  it.each(["interact", "browser"] as const)(
+    "keeps one row per %s session and overwrites it with the latest rating",
+    async endpoint => {
+      const { session, jobId } = addSession(endpoint);
+      const metadata =
+        endpoint === "interact" ? { browserSessionId: session.id } : {};
+
+      const first = await request(app).post("/v2/feedback").send({
+        endpoint,
+        jobId,
+        rating: "good",
+        note: "The first page loaded.",
+      });
+      expect(first.status, JSON.stringify(first.body)).toBe(200);
+      expect(first.body).toMatchObject({ success: true, creditsRefunded: 0 });
+      expect(await storedFeedback(jobId)).toEqual([
+        {
+          id: first.body.feedbackId,
+          endpoint,
+          overall_rating: "good",
+          comment: "The first page loaded.",
+          metadata,
+          credits_billed: 0,
+          credits_refunded: 0,
+          external_request_id: null,
+          session_id: null,
+          session_source: null,
+          thread_id: null,
+          thread_source: null,
+          objective: null,
+        },
+      ]);
+
+      const second = await request(app)
+        .post("/v2/feedback")
+        .set(traceHeaders)
+        .send({
+          endpoint,
+          jobId,
+          rating: "bad",
+          note: "The second page never loaded.",
+        });
+      expect(second.status, JSON.stringify(second.body)).toBe(200);
+      expect(second.body).toMatchObject({
+        success: true,
+        feedbackId: first.body.feedbackId,
+        creditsRefunded: 0,
+      });
+      expect(second.body.alreadySubmitted).toBeUndefined();
+      expect(await storedFeedback(jobId)).toEqual([
+        {
+          id: first.body.feedbackId,
+          endpoint,
+          overall_rating: "bad",
+          comment: "The second page never loaded.",
+          metadata,
+          credits_billed: 0,
+          credits_refunded: 0,
+          external_request_id: "0190a5d4-7b10-7cc3-98c4-0242ac120002",
+          ...lineage,
+        },
+      ]);
+      expect(refundsFor(jobId)).toHaveLength(0);
+    },
+  );
+
+  it("stores the trace ids of a hosted MCP call on a scrape feedback row", async () => {
+    const jobId = addJob("scrape_basic");
+
+    const response = await request(app)
+      .post("/v2/feedback")
+      .set(traceHeaders)
+      .send(scrapeBody(jobId));
+
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(await storedFeedback(jobId)).toEqual([
+      expect.objectContaining({
+        id: response.body.feedbackId,
+        endpoint: "scrape",
+        external_request_id: "0190a5d4-7b10-7cc3-98c4-0242ac120002",
+        ...lineage,
+      }),
+    ]);
+  });
+
+  it("answers 404 for a session of another team", async () => {
+    const { session, jobId } = addSession("browser");
+    Object.assign(session, { team_id: randomUUID() });
+
+    const response = await request(app).post("/v2/feedback").send({
+      endpoint: "browser",
+      jobId,
+      rating: "bad",
+      note: "Not mine to rate.",
+    });
+
+    expect(response.status).toBe(404);
+    expect(response.body.feedbackErrorCode).toBe("JOB_NOT_FOUND");
+    expect(await storedFeedback(jobId)).toEqual([]);
+  });
 
   it.each([
     ["search feedback", "search" as const, submitSearch],

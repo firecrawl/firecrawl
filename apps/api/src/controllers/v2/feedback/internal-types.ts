@@ -10,6 +10,15 @@ import type { RefundClass } from "../../../lib/feedback-job-store";
 
 export type FeedbackRating = "good" | "partial" | "bad";
 
+/** Feedback on a browser session rather than a job: never refunded. */
+export type SessionFeedbackEndpoint = "interact" | "browser";
+
+export function isSessionEndpoint(
+  endpoint: EndpointFeedbackEndpoint,
+): endpoint is SessionFeedbackEndpoint {
+  return endpoint === "interact" || endpoint === "browser";
+}
+
 /** A valuable result addressed by its group and 1-indexed position in it. */
 export type ValuableResultInput = {
   source: SearchResultType;
@@ -58,6 +67,8 @@ export type FeedbackJobRow = {
   feedback_deadline_ms?: number;
   refund_class?: RefundClass;
   zero_data_retention?: boolean;
+  /** Interact only: the browser session behind the scrape job. */
+  browser_session_id?: string;
 };
 
 export type FeedbackRecordOptions = {

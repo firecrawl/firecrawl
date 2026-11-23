@@ -1,9 +1,20 @@
 import { fetch } from "undici";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { config } from "../config";
 import { exchangeRequest } from "../services/alexandria/client";
+import { createService, replaceService } from "../service/service";
 import {
+  coreErrors,
   deserializeTransportableError,
   serializeTransportableError,
 } from "./error-serde";
@@ -32,6 +43,19 @@ vi.mock("undici", () => ({
 vi.mock("../services/alexandria/client", () => ({
   exchangeRequest: vi.fn(),
 }));
+
+// What is read back from a job is rebuilt by the class the service has for its
+// code.
+const withCoreErrors = createService(
+  { modules: {} },
+  { core: { name: "core", errors: coreErrors }, logger: { error: vi.fn() } },
+);
+beforeAll(() => {
+  replaceService(withCoreErrors);
+});
+afterAll(() => {
+  replaceService(undefined);
+});
 
 const originalConfig = {
   FIRE_EXCHANGE_URL: config.FIRE_EXCHANGE_URL,

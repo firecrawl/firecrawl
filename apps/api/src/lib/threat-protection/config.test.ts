@@ -161,4 +161,52 @@ describe("threatProtectionConfigSchema", () => {
       }),
     ).toThrow();
   });
+
+  it("allows up to 10,000 blacklist/whitelist entries on org policy and caps overrides at 1,000", () => {
+    const orgEntries = Array.from(
+      { length: 10_000 },
+      (_, i) => `d${i}.example.com`,
+    );
+    const parsedOrg = threatProtectionConfigSchema.parse({
+      mode: "normal",
+      blacklist: orgEntries,
+      whitelist: orgEntries,
+    });
+    expect(parsedOrg.blacklist).toHaveLength(10_000);
+    expect(parsedOrg.whitelist).toHaveLength(10_000);
+
+    expect(() =>
+      threatProtectionConfigSchema.parse({
+        mode: "normal",
+        blacklist: [...orgEntries, "overflow.example.com"],
+      }),
+    ).toThrow();
+
+    expect(() =>
+      threatProtectionConfigSchema.parse({
+        mode: "normal",
+        whitelist: [...orgEntries, "overflow.example.com"],
+      }),
+    ).toThrow();
+
+    const overrideEntries = orgEntries.slice(0, 1_000);
+    const parsedOverride = threatProtectionOverrideSchema.parse({
+      blacklist: overrideEntries,
+      whitelist: overrideEntries,
+    });
+    expect(parsedOverride.blacklist).toHaveLength(1_000);
+    expect(parsedOverride.whitelist).toHaveLength(1_000);
+
+    expect(() =>
+      threatProtectionOverrideSchema.parse({
+        blacklist: [...overrideEntries, "overflow.example.com"],
+      }),
+    ).toThrow();
+
+    expect(() =>
+      threatProtectionOverrideSchema.parse({
+        whitelist: [...overrideEntries, "overflow.example.com"],
+      }),
+    ).toThrow();
+  });
 });

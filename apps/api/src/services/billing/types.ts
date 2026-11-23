@@ -5,6 +5,7 @@ export type BillingEndpoint =
   | "crawl"
   | "deep_research"
   | "extract"
+  | "fresh_feed"
   | "interact"
   | "llms_txt"
   | "map"
