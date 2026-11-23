@@ -134,23 +134,34 @@ const booleanFlag = z
     value === undefined ? undefined : value === true || value === "true",
   );
 
-const developerSearchSchema = z.strictObject({
-  query: z.string().min(1),
-  k: kSchema(100),
-  types: multiString,
-  repos: multiString,
-  sources: multiString,
-  passages: kSchema(5),
-  language: z.string().min(1).optional(),
-  topic: multiString,
-  license: z.string().min(1).optional(),
-  min_stars: starsSchema,
-  max_stars: starsSchema,
-  archived: booleanFlag,
-  fork: booleanFlag,
-  skills: z.enum(["only"]).optional(),
-  ...commonQuery,
-});
+const developerSearchSchema = z
+  .strictObject({
+    query: z.string().min(1),
+    k: kSchema(100),
+    limit: kSchema(100),
+    types: multiString,
+    repos: multiString,
+    sources: multiString,
+    passages: kSchema(5),
+    highlights: booleanFlag,
+    language: z.string().min(1).optional(),
+    topic: multiString,
+    license: z.string().min(1).optional(),
+    min_stars: starsSchema,
+    max_stars: starsSchema,
+    archived: booleanFlag,
+    fork: booleanFlag,
+    skills: z.enum(["only"]).optional(),
+    ...commonQuery,
+  })
+  .refine(
+    params =>
+      params.k === undefined ||
+      params.limit === undefined ||
+      params.k === params.limit,
+    { message: "k and limit must match when both are sent", path: ["limit"] },
+  )
+  .transform(({ limit, ...params }) => ({ ...params, k: params.k ?? limit }));
 
 const DEVELOPER_SEARCH_QUERY_KEYS = [
   "query",
