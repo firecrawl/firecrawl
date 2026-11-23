@@ -820,7 +820,10 @@ if (config.RESEARCH_PROXY_URL) {
   );
 }
 
-if (config.SEARCH_PLATFORM_URL) {
+if (
+  config.SEARCH_PLATFORM_URL ||
+  (config.GOV_SEARCH_VIA_RESEARCH_PROXY && config.RESEARCH_PROXY_URL)
+) {
   v2Router.use(
     "/search/gov",
     authMiddleware(RateLimiterMode.GovSearch, {

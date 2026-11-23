@@ -1,5 +1,6 @@
 import { Agent, fetch, type Response } from "undici";
 import { config } from "../config";
+import { logger } from "./logger";
 
 const TIMEOUT_MS = 120_000;
 const CONNECT_TIMEOUT_MS = 10_000;
@@ -115,13 +116,6 @@ export async function fetchQueryFeatures(options: {
   );
 }
 
-function govResearchProxyPercent(): number {
-  if (config.GOV_SEARCH_RESEARCH_PROXY_PERCENT > 0) {
-    return config.GOV_SEARCH_RESEARCH_PROXY_PERCENT;
-  }
-  return config.GOV_SEARCH_VIA_RESEARCH_PROXY ? 100 : 0;
-}
-
 export async function fetchGovUpstream(options: {
   query: string;
   k?: number;
@@ -144,17 +138,13 @@ export async function fetchGovUpstream(options: {
     domain: options.domain,
     sources: options.sources,
   };
-  const percent = govResearchProxyPercent();
-  const useResearchProxy =
-    percent >= 100 || (percent > 0 && Math.random() * 100 < percent);
 
-  if (!useResearchProxy) {
+  if (!config.GOV_SEARCH_VIA_RESEARCH_PROXY) {
     return postSearchPlatform(
       "/api/v1/gov-search",
       payload,
       options.headers,
       options.timeoutMs,
-      config.SEARCH_PLATFORM_URL,
     );
   }
 
@@ -179,12 +169,20 @@ export async function fetchGovUpstream(options: {
     if (!fallbackBase || (res && res.status !== 429 && res.status < 500)) {
       return res;
     }
+    logger.warn("gov research proxy returned retryable status; falling back", {
+      module: "research-upstream",
+      status: res?.status,
+    });
     res?.body?.cancel().catch(() => {});
   } catch (err) {
     if (!fallbackBase) throw err;
+    logger.warn("gov research proxy request failed; falling back", {
+      module: "research-upstream",
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
-  const remainingMs = Math.max(2_000, options.timeoutMs - (Date.now() - startedAt));
+  const remainingMs = Math.max(1, options.timeoutMs - (Date.now() - startedAt));
   return postSearchPlatform(
     "/api/v1/gov-search",
     payload,
