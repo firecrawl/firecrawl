@@ -21,12 +21,14 @@ import {
 } from "../../lib/entities";
 import {
   agentOptionsExtract,
+  agentRemovedRefineOpts,
   AuthCreditUsageChunk,
+  isAgentExtractModelValid,
   ScrapeOptions as V1ScrapeOptions,
 } from "../v1/types";
 import type { InternalOptions } from "../../scraper/scrapeURL";
 import type { PdfPageBlocks } from "../../scraper/scrapeURL/engines/pdf/types";
-import { ErrorCodes } from "../../lib/error";
+import { ErrorCode } from "../../lib/error";
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import { integrationSchema } from "../../utils/integration";
@@ -1098,6 +1100,10 @@ const extractOptions = z
   .refine(obj => obj.urls || obj.prompt, {
     error: "Either 'urls' or 'prompt' must be provided.",
   })
+  .refine(
+    obj => !isAgentExtractModelValid(obj.agent?.model),
+    agentRemovedRefineOpts,
+  )
   .transform(obj => ({
     ...obj,
     allowExternalLinks: obj.allowExternalLinks || obj.enableWebSearch,
@@ -1644,7 +1650,7 @@ export type VideoItem = {
 
 export type ErrorResponse = {
   success: false;
-  code?: ErrorCodes;
+  code?: ErrorCode;
   error: string;
   details?: any;
   sponsor_status?: string;
@@ -1687,7 +1693,7 @@ export interface URLTrace {
 
 export interface ExtractResponse {
   success: boolean;
-  code?: ErrorCodes;
+  code?: ErrorCode;
   error?: string;
   data?: any;
   scrape_id?: string;
@@ -2101,7 +2107,7 @@ export type CrawlErrorsResponse =
         id: string;
         timestamp?: string;
         url: string;
-        code?: ErrorCodes;
+        code?: ErrorCode;
         error: string;
         requiresAction?: ThirdPartyDataTermsRequiredError["requiresAction"];
       }[];
@@ -2394,8 +2400,6 @@ export function fromV1ScrapeOptions(
   delete (spreadScrapeOptions as any).webhook;
   delete (spreadScrapeOptions as any).zeroDataRetention;
   delete (spreadScrapeOptions as any).maxConcurrency;
-  // v2 scrapeOptions schema is strict and does not include `agent`. We carry it via internalOptions below.
-  delete (spreadScrapeOptions as any).agent;
 
   delete spreadScrapeOptions.__experimental_cache;
   delete spreadScrapeOptions.jsonOptions;
@@ -2485,12 +2489,9 @@ export function fromV1ScrapeOptions(
     internalOptions: {
       teamId,
       orgId: null,
-      v1Agent: v1ScrapeOptions.agent,
       v1JSONSystemPrompt: (
         v1ScrapeOptions.jsonOptions || v1ScrapeOptions.extract
       )?.systemPrompt,
-      v1JSONAgent: (v1ScrapeOptions.jsonOptions || v1ScrapeOptions.extract)
-        ?.agent,
       v1OriginalFormat,
     },
   };

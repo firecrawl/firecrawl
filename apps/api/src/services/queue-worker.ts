@@ -58,16 +58,6 @@ async function processFinishCrawlJobInternal(_job: NuQJob) {
 
 let isShuttingDown = false;
 
-process.on("SIGINT", () => {
-  _logger.debug("Received SIGINT. Shutting down gracefully...");
-  isShuttingDown = true;
-});
-
-process.on("SIGTERM", () => {
-  _logger.debug("Received SIGTERM. Shutting down gracefully...");
-  isShuttingDown = true;
-});
-
 const crawlFinishWorker = async () => {
   const __logger = _logger.child({
     module: "extract-worker",
@@ -200,6 +190,16 @@ app.listen(workerPort, (error?: Error) => {
 });
 
 export async function start() {
+  process.on("SIGINT", () => {
+    _logger.debug("Received SIGINT. Shutting down gracefully...");
+    isShuttingDown = true;
+  });
+
+  process.on("SIGTERM", () => {
+    _logger.debug("Received SIGTERM. Shutting down gracefully...");
+    isShuttingDown = true;
+  });
+
   await initializeBlocklist().catch(e => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);

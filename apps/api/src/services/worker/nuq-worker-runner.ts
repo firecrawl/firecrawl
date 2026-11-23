@@ -3,6 +3,7 @@ import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { shutdownTracing } from "../../otel";
 import { logger as _logger } from "../../lib/logger";
 import { jobDurationSeconds } from "../../lib/job-metrics";
+import { storedZeroDataRetention } from "../../lib/request-context";
 import { processJobInternal } from "./scrape-worker";
 import { NuQJob } from "./nuq";
 import { register } from "prom-client";
@@ -145,7 +146,7 @@ export async function runNuqWorker(options: {
     const logger = _logger.child({
       module: options.serviceName,
       scrapeId: job.id,
-      zeroDataRetention: job.data?.zeroDataRetention ?? false,
+      zeroDataRetention: storedZeroDataRetention(job.data) ?? false,
     });
 
     logger.info("Acquired job");
@@ -181,9 +182,7 @@ export async function runNuqWorker(options: {
 
     // The job span has ended by now; keep the queue bookkeeping (which records
     // the failure reason) unrecorded for zero-data-retention jobs too.
-    const zeroDataRetention =
-      (job.data as { zeroDataRetention?: boolean } | undefined)
-        ?.zeroDataRetention === true;
+    const zeroDataRetention = storedZeroDataRetention(job.data) === true;
 
     await withZeroDataRetention(zeroDataRetention, async () => {
       if (processResult.ok) {
