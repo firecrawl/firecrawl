@@ -161,6 +161,7 @@ export async function batchScrapeController(
             team_id: req.auth.team_id,
             org_id: req.acuc?.org_id ?? null,
             origin: req.body.origin ?? null,
+            zeroDataRetention,
           })
         ) {
           urls.push(nu);
@@ -180,6 +181,7 @@ export async function batchScrapeController(
           team_id: req.auth.team_id,
           org_id: req.acuc?.org_id ?? null,
           origin: req.body.origin ?? null,
+          zeroDataRetention,
         }),
       ) ?? [];
     if (blockedURLs.length > 0) {

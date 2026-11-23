@@ -1,6 +1,8 @@
 import type { NextFunction, Request, Response } from "express";
 import { parse } from "tldts";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
+import { isLockdownZeroDataRetention } from "../lib/safe-mode";
+import { getScrapeZDR } from "../lib/zdr-helpers";
 import type { RequestWithAuth } from "../controllers/v1/types";
 
 function bountyDomains(body: Record<string, unknown>): string[] {
@@ -48,6 +50,9 @@ export function bountyBlocklistMiddleware(
           team_id: request.auth.team_id,
           org_id: request.acuc?.org_id ?? null,
           origin: "exchange-bounty",
+          zeroDataRetention:
+            getScrapeZDR(request.acuc?.flags) === "forced" ||
+            isLockdownZeroDataRetention(request.acuc?.flags, undefined),
         },
       ),
     );

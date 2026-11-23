@@ -10,6 +10,8 @@ import { exchangeClaimsUrl } from "../../../lib/exchange";
 import { persistedTeamId } from "../../../lib/keyless-team";
 import { logger } from "../../../lib/logger";
 import { isValidUuid } from "../../../lib/owner-id";
+import { isLockdownZeroDataRetention } from "../../../lib/safe-mode";
+import { getScrapeZDR } from "../../../lib/zdr-helpers";
 
 configDotenv();
 
@@ -22,6 +24,8 @@ type BlockContext = {
   team_id?: string | null;
   org_id?: string | null;
   origin?: string | null;
+  /** The request's own zero data retention opt-in; team-forced ZDR and lockdown are read from the flags. */
+  zeroDataRetention?: boolean;
   /** False for a re-check of a request whose hit was already recorded. */
   record?: boolean;
 };
@@ -78,17 +82,29 @@ function hitTeamId(teamId: string | null | undefined): string | null {
   return isValidUuid(stored) ? stored : null;
 }
 
+const ZDR_REDACTED = "<redacted due to zero data retention>";
+
 function recordHit(
   url: string,
   domain: string,
+  flags: TeamFlags,
   context: BlockContext | undefined,
 ): void {
   if (context === undefined || context.record === false) return;
   if (config.USE_DB_AUTHENTICATION !== true) return;
+  // An unknown per-request Safe Mode bypass counts as lockdown, so it redacts.
+  const zeroDataRetention =
+    context.zeroDataRetention === true ||
+    getScrapeZDR(flags ?? undefined) === "forced" ||
+    isLockdownZeroDataRetention(flags, undefined);
   hitBuffer.push({
     id: uuidv7(),
-    domain,
-    url: url.length > 2048 ? url.slice(0, 2048) : url,
+    domain: zeroDataRetention ? ZDR_REDACTED : domain,
+    url: zeroDataRetention
+      ? ZDR_REDACTED
+      : url.length > 2048
+        ? url.slice(0, 2048)
+        : url,
     team_id: hitTeamId(context.team_id),
     origin: context.origin ?? null,
   });
@@ -328,7 +344,7 @@ export function isUrlBlocked(
     blob.allowedKeywords,
   );
   if (globalMatch !== null) {
-    recordHit(url, globalMatch, context);
+    recordHit(url, globalMatch, flags, context);
     return true;
   }
 
@@ -348,7 +364,7 @@ export function isUrlBlocked(
       orgBlob.allowedKeywords,
     );
     if (orgMatch !== null) {
-      recordHit(url, orgMatch, context);
+      recordHit(url, orgMatch, flags, context);
       return true;
     }
   }

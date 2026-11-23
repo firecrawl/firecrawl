@@ -762,6 +762,7 @@ export async function executeSearch(
       team_id: teamId,
       org_id: orgId ?? null,
       origin,
+      zeroDataRetention,
     });
 
     if (itemsToScrape.length > 0) {

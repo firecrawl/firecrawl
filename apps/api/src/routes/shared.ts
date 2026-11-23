@@ -537,6 +537,7 @@ function blocklistGate(
         team_id: req.acuc?.team_id ?? null,
         org_id: req.acuc?.org_id ?? null,
         origin: typeof req.body.origin === "string" ? req.body.origin : null,
+        zeroDataRetention: req.body.zeroDataRetention === true,
       })
     ) {
       return next();

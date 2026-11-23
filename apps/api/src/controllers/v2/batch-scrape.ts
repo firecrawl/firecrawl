@@ -186,6 +186,7 @@ export async function batchScrapeController(
         team_id: req.auth.team_id,
         org_id: req.acuc?.org_id ?? null,
         origin: req.body.origin ?? null,
+        zeroDataRetention,
       })
     ) {
       return null;
