@@ -23,11 +23,13 @@ import {
   generateURLPermutations,
   getCrawl,
   lockURL,
+  lockURLsBatch,
   lockURLsIndividually,
   normalizeURL,
   saveCrawl,
   setCrawlError,
   StoredCrawl,
+  unlockURLs,
 } from "../../lib/crawl-redis";
 import { checkUrlsAgainstThreatPolicy } from "../../lib/threat-protection/request";
 import type { ThreatDecision } from "../../lib/threat-protection/types";
@@ -122,6 +124,8 @@ configDotenv();
  * before answering anyway. A write normally takes a few milliseconds.
  */
 const SCRAPE_STATE_BARRIER_MS = 2_000;
+// How many of a page's links are locked before any of them is queued.
+const LINK_LOCK_GROUP_SIZE = 20;
 
 const jobLockExtendInterval = config.JOB_LOCK_EXTEND_INTERVAL;
 const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
@@ -751,6 +755,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 ? await getACUCTeam(sc.team_id).catch(() => null)
                 : null;
 
+            // The lock itself enforces the limit. This count only stops the
+            // worker asking once the limit is used up.
             const crawlLimit = sc.crawlerOptions?.limit;
             let remainingLimit =
               typeof crawlLimit === "number" && discoveredLinks.length > 0
@@ -760,71 +766,103 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                   ))
                 : Infinity;
 
-            for (const link of discoveredLinks) {
-              if (remainingLimit <= 0) break;
-              if (await lockURL(job.data.crawl_id, sc, link)) {
-                remainingLimit--;
-                // This seems to work really welel
-                const jobPriority = await getJobPriority({
-                  team_id: sc.team_id,
-                  acuc: crawlACUC,
-                  basePriority: job.data.crawl_id ? 20 : 10,
-                });
-                const jobId = uuidv7();
+            // Links are locked a group at a time, each group just before it
+            // is queued. A link that is locked but not yet queued is skipped
+            // by every later page, so the group bounds how many a worker
+            // that dies here can drop.
+            const lockedLinks: boolean[] = [];
 
-                logger.debug(
-                  "Determined job priority " +
-                    jobPriority +
-                    " for URL " +
-                    JSON.stringify(link),
-                  { jobPriority, url: link },
-                );
-
-                await addScrapeJob(
-                  {
-                    url: link,
-                    mode: "single_urls",
+            // Position of the link being queued, so a failure can release the
+            // locked links after it instead of leaving them visited but never
+            // queued.
+            let queueing = -1;
+            try {
+              for (const [i, link] of discoveredLinks.entries()) {
+                if (i % LINK_LOCK_GROUP_SIZE === 0) {
+                  if (remainingLimit <= 0) break;
+                  const group = await lockURLsBatch(
+                    job.data.crawl_id,
+                    sc,
+                    discoveredLinks.slice(i, i + LINK_LOCK_GROUP_SIZE),
+                    logger,
+                  );
+                  lockedLinks.push(...group);
+                  remainingLimit -= group.filter(Boolean).length;
+                }
+                if (lockedLinks[i]) {
+                  queueing = i;
+                  // This seems to work really welel
+                  const jobPriority = await getJobPriority({
                     team_id: sc.team_id,
-                    scrapeOptions: scrapeOptions.parse(sc.scrapeOptions),
-                    internalOptions: sc.internalOptions,
-                    crawlerOptions: {
-                      ...sc.crawlerOptions,
-                      currentDiscoveryDepth:
-                        (job.data.crawlerOptions?.currentDiscoveryDepth ?? 0) +
-                        1,
-                    },
-                    origin: job.data.origin,
-                    integration: job.data.integration,
-                    crawl_id: job.data.crawl_id,
-                    requestId: job.data.requestId,
-                    billing: job.data.billing,
-                    webhook: job.data.webhook,
-                    v1: job.data.v1,
-                    zeroDataRetention: job.data.zeroDataRetention,
-                    apiKeyId: job.data.apiKeyId,
-                    monitoring: job.data.monitoring
-                      ? {
-                          ...job.data.monitoring,
-                          source: "discovered" as const,
-                        }
-                      : undefined,
-                  },
-                  jobId,
-                  jobPriority,
-                );
+                    acuc: crawlACUC,
+                    basePriority: job.data.crawl_id ? 20 : 10,
+                  });
+                  const jobId = uuidv7();
 
-                await addCrawlJob(job.data.crawl_id, jobId, logger);
-                logger.debug("Added job for URL " + JSON.stringify(link), {
-                  jobPriority,
-                  url: link,
-                  newJobId: jobId,
-                });
-              } else {
-                // TODO: removed this, ok? too many 'not useful' logs (?) Mogery!
-                // logger.debug("Could not lock URL " + JSON.stringify(link), {
-                //   url: link,
-                // });
+                  logger.debug(
+                    "Determined job priority " +
+                      jobPriority +
+                      " for URL " +
+                      JSON.stringify(link),
+                    { jobPriority, url: link },
+                  );
+
+                  await addScrapeJob(
+                    {
+                      url: link,
+                      mode: "single_urls",
+                      team_id: sc.team_id,
+                      scrapeOptions: scrapeOptions.parse(sc.scrapeOptions),
+                      internalOptions: sc.internalOptions,
+                      crawlerOptions: {
+                        ...sc.crawlerOptions,
+                        currentDiscoveryDepth:
+                          (job.data.crawlerOptions?.currentDiscoveryDepth ??
+                            0) + 1,
+                      },
+                      origin: job.data.origin,
+                      integration: job.data.integration,
+                      crawl_id: job.data.crawl_id,
+                      requestId: job.data.requestId,
+                      billing: job.data.billing,
+                      webhook: job.data.webhook,
+                      v1: job.data.v1,
+                      zeroDataRetention: job.data.zeroDataRetention,
+                      apiKeyId: job.data.apiKeyId,
+                      monitoring: job.data.monitoring
+                        ? {
+                            ...job.data.monitoring,
+                            source: "discovered" as const,
+                          }
+                        : undefined,
+                    },
+                    jobId,
+                    jobPriority,
+                  );
+
+                  await addCrawlJob(job.data.crawl_id, jobId, logger);
+                  logger.debug("Added job for URL " + JSON.stringify(link), {
+                    jobPriority,
+                    url: link,
+                    newJobId: jobId,
+                  });
+                } else {
+                  // TODO: removed this, ok? too many 'not useful' logs (?) Mogery!
+                  // logger.debug("Could not lock URL " + JSON.stringify(link), {
+                  //   url: link,
+                  // });
+                }
               }
+            } catch (error) {
+              await unlockURLs(
+                job.data.crawl_id,
+                sc,
+                discoveredLinks.filter(
+                  (_, i) => lockedLinks[i] && i > queueing,
+                ),
+                logger,
+              );
+              throw error;
             }
           }
 
