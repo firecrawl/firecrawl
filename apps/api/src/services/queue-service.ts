@@ -47,6 +47,7 @@ export type FirebillFinalizeRetryJobData = {
   customerId?: string | null;
   featureId?: string | null;
   heldValue?: number | null;
+  entityId?: string | null;
   idempotencyKey: string;
 };
 
