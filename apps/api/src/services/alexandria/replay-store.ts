@@ -89,11 +89,11 @@ type Stored = Omit<Retrieval, "response"> & {
   // Which request wrote the record, so a claim whose answer was lost and retried can tell
   // its own record from another request's.
   owner: string;
-  // Written beside the Redis record that still decides; see mirroredStore.
+  // On a record written while Redis still decided and Bigtable held a copy of it.
   copy?: true;
 };
 
-const bigtableStore = (id: string, tableId: string, copy: boolean) => {
+const bigtableStore = (id: string, tableId: string): ReplayStore => {
   const owner = randomUUID();
   const cell = (record: Retrieval, now: number) => {
     const { response: _, ...state } = record;
@@ -102,7 +102,6 @@ const bigtableStore = (id: string, tableId: string, copy: boolean) => {
       version: 1,
       expiresAt: now + RETENTION_MS,
       owner,
-      ...(copy ? { copy: true as const } : {}),
     };
     return Buffer.from(JSON.stringify(stored));
   };
@@ -110,7 +109,6 @@ const bigtableStore = (id: string, tableId: string, copy: boolean) => {
   const read = async (): Promise<{
     record: Retrieval;
     owner: string;
-    copy: boolean;
   } | null> => {
     const table = await getBigtableTable(tableId);
     let rows;
@@ -132,11 +130,11 @@ const bigtableStore = (id: string, tableId: string, copy: boolean) => {
       version: _,
       expiresAt,
       owner: writer,
-      copy: copied,
+      copy: _copy,
       ...record
     } = JSON.parse(cellBytes(value).toString("utf8")) as Stored;
     if (expiresAt <= Date.now()) return null;
-    return { record, owner: writer, copy: copied === true };
+    return { record, owner: writer };
   };
 
   // Takes back a claim whose answer never arrived. Without it the charge id would stay
@@ -162,9 +160,7 @@ const bigtableStore = (id: string, tableId: string, copy: boolean) => {
     );
   };
 
-  const claim = async (
-    record: Retrieval,
-  ): Promise<Claim & { copy?: boolean }> => {
+  const claim = async (record: Retrieval): Promise<Claim> => {
     const now = Date.now();
     const table = await getBigtableTable(tableId);
     const { predicateMatched } = await checkAndMutateRow(
@@ -196,15 +192,11 @@ const bigtableStore = (id: string, tableId: string, copy: boolean) => {
     if (!predicateMatched) return { claimed: true };
     const existing = await read();
     if (existing?.owner === owner) return { claimed: true };
-    return {
-      claimed: false,
-      existing: existing?.record ?? null,
-      copy: existing?.copy,
-    };
+    return { claimed: false, existing: existing?.record ?? null };
   };
 
   return {
-    async claim(record: Retrieval) {
+    async claim(record) {
       try {
         return await claim(record);
       } catch (error) {
@@ -217,7 +209,7 @@ const bigtableStore = (id: string, tableId: string, copy: boolean) => {
         throw error;
       }
     },
-    async write(record: Retrieval) {
+    async write(record) {
       const now = Date.now();
       const table = await getBigtableTable(tableId);
       await table.mutate(
@@ -245,80 +237,8 @@ const bigtableStore = (id: string, tableId: string, copy: boolean) => {
   };
 };
 
-const COPY_CLAIM_TIMEOUT_MS = 500;
-const within = <T>(ms: number, work: Promise<T>): Promise<T | undefined> => {
-  let timer: NodeJS.Timeout;
-  return Promise.race([
-    work,
-    new Promise<undefined>(resolve => {
-      timer = setTimeout(() => resolve(undefined), ms);
-    }),
-  ]).finally(() => clearTimeout(timer));
-};
-
-// Redis decides, as it does on pods that know nothing of Bigtable, and every write is copied
-// to Bigtable so the table can be watched before anything depends on it. Copies run one
-// after another behind the request, and only once this request's own claim has reached the
-// row, so they never replace a row another request holds. A copy that fails is logged and
-// never fails the request, so a copy can be stale and is never trusted here.
-// The one Bigtable record that is trusted is one written by a pod that keeps the record in
-// Bigtable alone: such a pod never wrote to Redis, so its record is the request's only one.
-// Finding it is the one thing the request waits on Bigtable for, and for half a second at
-// most: past that it goes ahead on Redis's word.
-const mirroredStore = (id: string, tableId: string): ReplayStore => {
-  const redis = redisStore(id);
-  const bigtable = bigtableStore(id, tableId, true);
-  let last: Promise<unknown> = Promise.resolve();
-  let owns = false;
-  const copy = <T>(step: string, work: () => Promise<T>) => {
-    const done = last.then(work).catch(error => {
-      logger.warn("Alexandria replay record was not copied to Bigtable", {
-        chargeId: id,
-        step,
-        error,
-      });
-      return undefined;
-    });
-    last = done;
-    return done;
-  };
-  return {
-    async claim(record) {
-      const claim = await redis.claim(record);
-      if (!claim.claimed) return claim;
-      const copied = await within(
-        COPY_CLAIM_TIMEOUT_MS,
-        copy("claim", async () => {
-          const result = await bigtable.claim(record);
-          const trusted =
-            !result.claimed && result.existing !== null && !result.copy;
-          // Anything else found there is a copy Redis no longer backs, which this
-          // request's record replaces.
-          if (!result.claimed && !trusted) await bigtable.write(record);
-          owns = !trusted;
-          return trusted ? result : undefined;
-        }),
-      );
-      if (!copied || copied.claimed) return claim;
-      await redis.release();
-      return { claimed: false, existing: copied.existing };
-    },
-    async write(record) {
-      await redis.write(record);
-      void copy("write", async () => {
-        if (owns) await bigtable.write(record);
-      });
-    },
-    async release() {
-      await redis.release();
-      void copy("release", async () => {
-        if (owns) await bigtable.release();
-      });
-    },
-  };
-};
-
+// With a table configured the record lives in Bigtable alone; without one, in Redis.
 export const replayStore = (id: string): ReplayStore =>
   config.BIGTABLE_ALEXANDRIA_REPLAY_TABLE
-    ? mirroredStore(id, config.BIGTABLE_ALEXANDRIA_REPLAY_TABLE)
+    ? bigtableStore(id, config.BIGTABLE_ALEXANDRIA_REPLAY_TABLE)
     : redisStore(id);
