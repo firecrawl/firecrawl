@@ -7,13 +7,7 @@ import {
   getSearchZDR,
 } from "./zdr-helpers";
 
-/**
- * A team's ZDR modes, resolved once per request from its flags. Scrape and
- * search are independent: one being forced says nothing about the other.
- * Safe Mode lockdown implies ZDR for both unless the request bypasses it.
- * Alexandria follows its own flag and is forced whenever the scrape flag is;
- * Safe Mode lockdown does not reach it, matching getAlexandriaZDR.
- */
+/** A team's ZDR modes, resolved from its flags. */
 export type ZDRPolicy = Readonly<{
   scrape: ReturnType<typeof getScrapeZDR>;
   search: ReturnType<typeof getSearchZDR>;
@@ -44,10 +38,7 @@ function lockdownApplies(policy: ZDRPolicy, request: ZDRRequest): boolean {
   );
 }
 
-/**
- * Whether a scrape-side request runs under ZDR: when forced or under
- * lockdown, and on an explicit opt-in when allowed.
- */
+/** Whether a scrape request runs under ZDR. */
 export function isScrapeZDR(policy: ZDRPolicy, request: ZDRRequest): boolean {
   return (
     policy.scrape === "forced" ||
@@ -56,7 +47,7 @@ export function isScrapeZDR(policy: ZDRPolicy, request: ZDRRequest): boolean {
   );
 }
 
-/** The search kind a request is forced into, with lockdown forcing "zdr". */
+/** The search kind a request is forced into, or null. */
 export function getPolicySearchForcedKind(
   policy: ZDRPolicy,
   request: ZDRRequest,
