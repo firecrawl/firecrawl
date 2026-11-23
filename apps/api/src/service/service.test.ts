@@ -192,6 +192,7 @@ describe("describe", () => {
       },
       errors: { ALPHA: "second", TIMEOUT: "core", ZEBRA: "second" },
       roles: { api: "second", "queue-worker": "core", zebra: "second" },
+      env: {},
     });
     expect(Object.keys(description.hooks)).toEqual(["a.point", "b.point"]);
     expect(Object.keys(description.errors)).toEqual([
@@ -241,6 +242,7 @@ describe("describe", () => {
       hooks: { "a.point": ["mine"] },
       errors: { MINE: "mine" },
       roles: { api: "mine" },
+      env: {},
     });
   });
 
@@ -283,6 +285,7 @@ describe("describe", () => {
       hooks: {},
       errors: { TIMEOUT: "core" },
       roles: { api: "core" },
+      env: {},
     });
   });
 });

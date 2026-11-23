@@ -4,6 +4,7 @@ export type {
   TransportableErrorClass,
 } from "../lib/error";
 export { coreParts } from "./core-parts";
+export { assertEnv, defineEnv } from "./env";
 export type {
   Await,
   HookHandlers,
