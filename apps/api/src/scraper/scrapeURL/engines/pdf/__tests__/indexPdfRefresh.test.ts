@@ -4,8 +4,14 @@ vi.mock("../../../../../services", async importOriginal => ({
 }));
 
 import { config } from "../../../../../config";
-import { buildFallbackList, shouldUseIndex } from "../../index";
+import {
+  buildFallbackList,
+  coreEngineFeatures,
+  coreEngines,
+  shouldUseIndex,
+} from "../../index";
 import { AgentIndexOnlyError } from "../../../error";
+import { createService, replaceService } from "../../../../../service/service";
 
 type MutableConfig = {
   FIRECRAWL_INDEX_WRITE_ONLY?: boolean;
@@ -29,6 +35,26 @@ describe("URL index and PDF refresh", () => {
   const mutable = config as unknown as MutableConfig;
   let originalWriteOnly: boolean | undefined;
   let originalSkip: boolean;
+
+  beforeAll(() => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            engines: coreEngines,
+            engineFeatures: coreEngineFeatures,
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+  });
+
+  afterAll(() => {
+    replaceService(undefined);
+  });
 
   beforeEach(() => {
     originalWriteOnly = mutable.FIRECRAWL_INDEX_WRITE_ONLY;

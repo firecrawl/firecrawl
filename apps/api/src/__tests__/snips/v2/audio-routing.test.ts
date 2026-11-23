@@ -6,6 +6,9 @@
 
 describe("Audio format engine routing (buildFallbackList)", () => {
   let buildFallbackList: typeof import("../../../scraper/scrapeURL/engines/index.js").buildFallbackList;
+  let replaceService:
+    | typeof import("../../../service/service.js").replaceService
+    | undefined;
   let clearExchangeProvidersForTest: typeof import("../../../lib/exchange.js").clearExchangeProvidersForTest;
   let setExchangeProvidersForTest: typeof import("../../../lib/exchange.js").setExchangeProvidersForTest;
 
@@ -21,13 +24,27 @@ describe("Audio format engine routing (buildFallbackList)", () => {
 
     // Re-import engines fresh so it reads the env vars set above at eval time.
     vi.resetModules();
-    ({ buildFallbackList } = await import(
+    const enginesModule = await import(
       "../../../scraper/scrapeURL/engines/index.js"
-    ));
-    ({
-      clearExchangeProvidersForTest,
-      setExchangeProvidersForTest,
-    } = await import("../../../lib/exchange.js"));
+    );
+    const serviceModule = await import("../../../service/service.js");
+    buildFallbackList = enginesModule.buildFallbackList;
+    replaceService = serviceModule.replaceService;
+    replaceService(
+      serviceModule.createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            engines: enginesModule.coreEngines,
+            engineFeatures: enginesModule.coreEngineFeatures,
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+    ({ clearExchangeProvidersForTest, setExchangeProvidersForTest } =
+      await import("../../../lib/exchange.js"));
   });
 
   afterEach(() => {
@@ -35,6 +52,7 @@ describe("Audio format engine routing (buildFallbackList)", () => {
   });
 
   afterAll(() => {
+    replaceService?.(undefined);
     if (originalFireEngineUrl === undefined) {
       delete process.env.FIRE_ENGINE_BETA_URL;
     } else {
@@ -136,7 +154,9 @@ describe("Audio format engine routing (buildFallbackList)", () => {
     meta.url = "https://profiles.example/person/example-person";
     meta.options.formats = [{ type: "markdown" }];
     meta.internalOptions.agentIndexOnly = true;
-    meta.internalOptions.teamFlags = { professionalProfileCompanyDataBeta: true };
+    meta.internalOptions.teamFlags = {
+      professionalProfileCompanyDataBeta: true,
+    };
 
     const fallback = await buildFallbackList(meta);
     const engines = fallback.map(f => f.engine);
