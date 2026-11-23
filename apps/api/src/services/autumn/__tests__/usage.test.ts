@@ -503,6 +503,80 @@ describe("getTeamBalance", () => {
     expect(result!.planCredits).toBe(100000);
   });
 
+  it("uses the monthly credit window when a yearly subscription carries its yearly period", async () => {
+    const nextResetAt = Date.parse("2026-12-08T20:02:41.284Z");
+
+    mockEntitiesGet.mockResolvedValue({
+      balances: {
+        CREDITS: {
+          remaining: 77813,
+          granted: 100025,
+          usage: 22212,
+          unlimited: false,
+          nextResetAt,
+          breakdown: [
+            {
+              planId: "standard_yearly_100k",
+              includedGrant: 100000,
+              reset: { interval: "month", resetsAt: nextResetAt },
+            },
+          ],
+        },
+      },
+      subscriptions: [
+        {
+          status: "active",
+          currentPeriodStart: Date.parse("2026-09-08T20:03:45.000Z"),
+          currentPeriodEnd: Date.parse("2027-09-08T20:03:45.000Z"),
+        },
+      ],
+    });
+
+    const result = await getTeamBalance("team-1");
+
+    expect(result!.periodStart).toBe("2026-11-08T20:02:41.284Z");
+    expect(result!.periodEnd).toBe("2026-12-08T20:02:41.284Z");
+  });
+
+  it("keeps a monthly subscription's own period when credits reset monthly", async () => {
+    const startMs = Date.parse("2026-11-21T00:06:48.000Z");
+    const endMs = Date.parse("2026-12-21T00:06:48.000Z");
+
+    mockEntitiesGet.mockResolvedValue({
+      balances: {
+        CREDITS: {
+          remaining: 0,
+          granted: 100000,
+          usage: 100000,
+          unlimited: false,
+          nextResetAt: Date.parse("2026-12-21T00:03:42.270Z"),
+          breakdown: [
+            {
+              planId: "standard_monthly_100k",
+              includedGrant: 100000,
+              reset: {
+                interval: "month",
+                resetsAt: Date.parse("2026-12-21T00:03:42.270Z"),
+              },
+            },
+          ],
+        },
+      },
+      subscriptions: [
+        {
+          status: "active",
+          currentPeriodStart: startMs,
+          currentPeriodEnd: endMs,
+        },
+      ],
+    });
+
+    const result = await getTeamBalance("team-1");
+
+    expect(result!.periodStart).toBe(new Date(startMs).toISOString());
+    expect(result!.periodEnd).toBe(new Date(endMs).toISOString());
+  });
+
   it("Bug 5 — derives billing period from nextResetAt for yearly reset interval", async () => {
     const nextResetAt = 1764741007000; // 2025-12-03T05:50:07.000Z
 

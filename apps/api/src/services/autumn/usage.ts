@@ -13,6 +13,7 @@ export const TOKENS_PER_CREDIT = 15;
 const HISTORICAL_RANGE = "90d";
 const HISTORICAL_BIN_SIZE = "day";
 const DAY_MS = 24 * 60 * 60 * 1000;
+const LONGEST_MONTH_MS = 32 * DAY_MS;
 const HISTORICAL_WINDOW_MS = 90 * DAY_MS;
 
 // The historical/analytics aggregations below are bucketed by day (and
@@ -401,16 +402,23 @@ export async function getTeamBalance(
   let planCredits = creditBalance?.granted ?? 0;
   const breakdowns: Array<any> | undefined = creditBalance?.breakdown;
 
-  // For yearly plans, Autumn may not populate currentPeriodStart/End on the
-  // subscription.  Fall back to the balance's reset schedule: nextResetAt is
-  // the period end, and we derive the start from the reset interval.
-  if (periodStartEpoch == null && periodEndEpoch == null) {
-    const resetAt: number | undefined = creditBalance?.nextResetAt;
+  // Use the balance's reset schedule when the subscription has no period, or
+  // when credits reset monthly inside a longer (yearly) subscription period:
+  // nextResetAt is the period end, and we derive the start from the interval.
+  const resetAt: number | undefined = creditBalance?.nextResetAt;
+  const interval = breakdowns?.find(
+    (b: any) => b.reset?.interval && b.reset.interval !== "one_off",
+  )?.reset?.interval;
+  const subscriptionOutlastsMonthlyReset =
+    interval === "month" &&
+    periodStartEpoch != null &&
+    periodEndEpoch != null &&
+    periodEndEpoch - periodStartEpoch > LONGEST_MONTH_MS;
+  if (
+    (periodStartEpoch == null && periodEndEpoch == null) ||
+    subscriptionOutlastsMonthlyReset
+  ) {
     if (resetAt) {
-      const resetEntry = breakdowns?.find(
-        (b: any) => b.reset?.interval && b.reset.interval !== "one_off",
-      );
-      const interval = resetEntry?.reset?.interval;
       if (interval === "month" || interval === "year") {
         periodEndEpoch = resetAt;
         const endDate = new Date(resetAt);
