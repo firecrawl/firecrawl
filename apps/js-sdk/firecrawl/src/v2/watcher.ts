@@ -151,6 +151,8 @@ export class Watcher extends Emitter {
   private readonly timeout?: number;
   private ws?: WebSocket;
   private closed = false;
+  private isPolling = false;
+  private doneEmitted = false;
   private readonly emittedDocumentKeys = new Set<string>();
 
   constructor(http: HttpClient, jobId: string, opts: WatcherOptions = {}) {
@@ -232,8 +234,7 @@ export class Watcher extends Emitter {
           const payload = body.data || body;
           const data = (payload.data || []) as Document[];
           if (data.length) this.emitDocuments(data);
-          this.emit("done", { status: "completed", data, id: this.jobId, total: payload.total, completed: payload.completed, creditsUsed: payload.creditsUsed });
-          this.close();
+          this.emitDone("completed", data, payload);
           return;
         }
         const payload = body.data || body;
@@ -279,7 +280,21 @@ export class Watcher extends Emitter {
     }
   }
 
-  private emitSnapshot(payload: any) {
+  private emitDone(status: string, data: Document[], payload: any) {
+    if (this.doneEmitted) return;
+    this.doneEmitted = true;
+    this.emit("done", {
+      status,
+      data,
+      id: this.jobId,
+      total: payload.total ?? 0,
+      completed: payload.completed ?? 0,
+      creditsUsed: payload.creditsUsed,
+    });
+    this.close();
+  }
+
+  private emitSnapshot(payload: any, fromPollLoop = false) {
     const status = payload.status as Snapshot["status"];
     const data = (payload.data || []) as Document[];
     const snap: Snapshot = this.kind === "crawl"
@@ -304,13 +319,29 @@ export class Watcher extends Emitter {
           data,
         };
     this.emit("snapshot", snap);
-    if (["completed", "failed", "cancelled"].includes(status)) {
-      this.emit("done", { status, data, id: this.jobId, total: payload.total ?? 0, completed: payload.completed ?? 0, creditsUsed: payload.creditsUsed });
-      this.close();
+
+    const isTerminal = ["completed", "failed", "cancelled"].includes(status);
+    const isEmptyCompleted =
+      status === "completed" &&
+      (payload.total ?? 0) === 0 &&
+      (payload.completed ?? 0) === 0 &&
+      data.length === 0;
+
+    if (isTerminal) {
+      if (isEmptyCompleted && !fromPollLoop) {
+        // Issue #4223: an initial catchup frame reporting "completed" with total 0 and completed 0
+        // on a just-started crawl is an untrustworthy kickoff state. Do not close the watcher or
+        // emit "done"; instead, fall through to REST polling to verify the true status.
+        this.pollLoop();
+      } else {
+        this.emitDone(status, data, payload);
+      }
     }
   }
 
   private async pollLoop() {
+    if (this.isPolling || this.closed) return;
+    this.isPolling = true;
     const startTs = Date.now();
     const timeoutMs = this.timeout ? this.timeout * 1000 : undefined;
     while (!this.closed) {
@@ -319,10 +350,9 @@ export class Watcher extends Emitter {
           ? await getCrawlStatus(this.http as any, this.jobId)
           : await getBatchScrapeStatus(this.http as any, this.jobId);
         this.emitDocuments((snap.data || []) as Document[]);
-        this.emit("snapshot", snap);
+        this.emitSnapshot(snap, true);
         if (["completed", "failed", "cancelled"].includes(snap.status)) {
-          this.emit("done", { status: snap.status, data: snap.data, id: this.jobId, total: (snap as any).total ?? 0, completed: (snap as any).completed ?? 0, creditsUsed: (snap as any).creditsUsed });
-          this.close();
+          this.emitDone(snap.status, (snap.data || []) as Document[], snap as any);
           break;
         }
       } catch {
