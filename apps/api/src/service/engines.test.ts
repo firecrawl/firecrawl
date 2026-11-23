@@ -206,7 +206,55 @@ describe("buildEngineRegistry", () => {
     ]);
   });
 
-  it("rejects non-finite engine quality and invalid feature priority", () => {
+  it("rejects malformed engines and invalid feature priority", () => {
+    for (const badName of ["", 123 as unknown as string]) {
+      expect(() =>
+        buildEngineRegistry([
+          { owner: "core", engines: [makeEngine(badName)] },
+        ]),
+      ).toThrow("Engine name must be a non-empty string");
+    }
+
+    expect(() =>
+      buildEngineRegistry([
+        {
+          owner: "core",
+          engines: [
+            makeEngine("bad-enabled", {
+              enabled: true as unknown as () => boolean,
+            }),
+          ],
+        },
+      ]),
+    ).toThrow('Engine "bad-enabled" enabled must be a function');
+
+    expect(() =>
+      buildEngineRegistry([
+        {
+          owner: "core",
+          engines: [
+            makeEngine("bad-scrape", {
+              scrape: null as unknown as Engine["scrape"],
+            }),
+          ],
+        },
+      ]),
+    ).toThrow('Engine "bad-scrape" scrape must be a function');
+
+    expect(() =>
+      buildEngineRegistry([
+        {
+          owner: "core",
+          engines: [
+            makeEngine("bad-mrt", {
+              maxReasonableTime:
+                30000 as unknown as Engine["maxReasonableTime"],
+            }),
+          ],
+        },
+      ]),
+    ).toThrow('Engine "bad-mrt" maxReasonableTime must be a function');
+
     for (const quality of [
       Number.NaN,
       Number.POSITIVE_INFINITY,

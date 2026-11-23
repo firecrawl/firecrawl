@@ -128,8 +128,25 @@ const sortedByKey = <T>(record: Record<string, T>): Record<string, T> =>
   );
 
 function snapshotEngine(engine: Engine): Engine {
+  if (typeof engine.name !== "string" || engine.name.length === 0) {
+    throw new Error("Engine name must be a non-empty string");
+  }
   if (typeof engine.quality !== "number" || !Number.isFinite(engine.quality)) {
     throw new Error(`Engine "${engine.name}" quality must be a finite number`);
+  }
+  if (typeof engine.enabled !== "function") {
+    throw new Error(`Engine "${engine.name}" enabled must be a function`);
+  }
+  if (typeof engine.scrape !== "function") {
+    throw new Error(`Engine "${engine.name}" scrape must be a function`);
+  }
+  if (
+    engine.maxReasonableTime !== undefined &&
+    typeof engine.maxReasonableTime !== "function"
+  ) {
+    throw new Error(
+      `Engine "${engine.name}" maxReasonableTime must be a function`,
+    );
   }
 
   const features = Object.freeze(
