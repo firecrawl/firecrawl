@@ -1,0 +1,133 @@
+apps/api/src/controllers/v2/scrape-browser.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 57,219
+apps/api/src/search/scrape.test.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 55-101
+apps/api/src/services/worker/nuq-fdb/queue.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 7,60,480
+apps/api/src/scraper/scrapeURL/transformers/promptInjectionGuard.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 4
+apps/api/src/lib/crawl-redis.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 14,54,61,71,86,160-161,899,1032,1038,1073-1074
+apps/api/src/service/http.test.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 1-61
+apps/api/src/services/worker/nuq.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 6,834,879,883,899,944,948,1099,1117,1166,1302
+apps/api/src/lib/error-serde.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 114-201,204-217,220-228,231-233,235-236,238,252-267,274-275
+apps/api/src/services/worker/crawl-logic.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 13,58-60
+apps/api/src/lib/siem-logging/event.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 3,48,202,209,214
+apps/api/src/services/worker/scrape-worker.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 62,161,163,170,209,269,384,392,485,492-494,523,531,723,726,728,788,892,905,909,918,1001,1021,1025,1179,1260,1273,1277,1353,1384,1392,1411,1531,1534,1536,1566,1627,1634,1654,1706-1707,1709,1735,1807,1814,1819
+apps/api/src/service/env.test.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 1-302
+apps/api/src/services/worker/nuq-router.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 10,284
+apps/api/src/service/env.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 1-95
+apps/api/src/controllers/v1/types.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 278-279,565,567,663-664,703,786-789,799-800,840,863,882,948-949,1698
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.test.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 3-4,14
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 25,1063-1070
+apps/api/src/controllers/v2/scrape.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 42,233-241,417
+apps/api/src/__tests__/snips/v1/types-validation.test.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 278,281-292,294-304,320,880,889-891
+apps/api/src/services/extract-worker.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 216-220,222-225
+apps/api/src/services/monitoring/results.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 5,263
+apps/api/src/main/runWebScraper.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 8,18,36,38
+apps/api/src/service/http.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 1-35
+apps/api/src/services/indexing/index-worker.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 34,503-508,510,549,699-710
+apps/api/src/service/testing.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 26-32
+apps/api/src/service/core-parts.test.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 111
+apps/api/src/controllers/v2/research-proxy.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 137-164
+apps/api/src/lib/request-context.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 73-85
+apps/api/src/controllers/v2/crawl-status.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 32,194
+apps/api/src/lib/concurrency-limit.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 24,296,388,397
+apps/api/src/scraper/scrapeURL/lib/jsonExtract.test.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 1-140
+apps/api/src/controllers/v1/crawl-status.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 29,173
+apps/api/src/services/worker/nuq-worker-runner.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 6,149,185
+apps/api/src/lib/error-serde.test.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 38,57,706-958
+  s_6a7201d5c4fd9c::t_c49dc3eda7ced3 959
+apps/api/src/routes/shared.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 395,439
+apps/api/src/services/ab-test.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 11,23,27
+apps/api/src/controllers/v2/batch-scrape.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 41,493-502,504,543
+apps/api/src/lib/siem-logging/index.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 4,32-33,38
+apps/api/src/controllers/v1/crawl-errors.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 12,57
+apps/api/src/service/hooks.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 82,97,99-107,110,112,134
+apps/api/src/controllers/auth.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 238,409,860
+apps/api/src/service/service.test.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 42-43,195,218-290,356-367
+  s_6a7201d5c4fd9c::t_ddba7d8a78cf05 368
+apps/api/src/search/scrape.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 13,79-86
+apps/api/src/service/index.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 7,16-17
+apps/api/src/service/service.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 6,75-79,93,115-122,125-135,141,143,149,152,160-185,188,193,198,200-202,204-205,248-251,255,260-266,268-271,282
+apps/api/src/controllers/v2/parse.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 27,381-389,554
+apps/api/src/service/hooks.test.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 33-36,68-97
+  s_6a7201d5c4fd9c::t_cd801a70b033a4 98-99
+apps/api/src/services/monitoring/runner.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 82-83,310-321,330,356,636-647,673,687,748-759,762,804,811
+apps/api/src/controllers/v2/crawl.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 36-37,348-362,364,427,434
+apps/api/src/controllers/v2/crawl-errors.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 12,57
+apps/api/src/services/queue-worker.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 429-438
+apps/api/src/controllers/v2/types.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 24,26,1103-1106
+apps/api/src/controllers/__tests__/auth.test.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 197
+apps/api/src/lib/request-context.test.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 5-10,176-202
+  s_6a7201d5c4fd9c::t_ed4ea136e3c06c 203
+apps/api/src/scraper/scrapeURL/lib/jsonExtract.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 1-238
+apps/api/src/scraper/scrapeURL/transformers/promptInjectionGuard.test.ts
+  s_6a7201d5c4fd9c::t_8afef44dbc726e 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "10a860f75974107a7eaf2b26a90836ac2498561c",
+  "prompts": {},
+  "sessions": {
+    "s_6a7201d5c4fd9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc25e5bc-9ab3-420e-8413-1c98a5787305",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
