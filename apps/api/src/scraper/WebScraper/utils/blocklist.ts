@@ -26,6 +26,8 @@ type BlockContext = {
   origin?: string | null;
   /** The request's own zero data retention opt-in; team-forced ZDR and lockdown are read from the flags. */
   zeroDataRetention?: boolean;
+  /** The request's safeMode param; when absent, a lockdown org's hit is redacted. */
+  safeMode?: unknown;
   /** False for a re-check of a request whose hit was already recorded. */
   record?: boolean;
 };
@@ -92,11 +94,13 @@ function recordHit(
 ): void {
   if (context === undefined || context.record === false) return;
   if (config.USE_DB_AUTHENTICATION !== true) return;
-  // An unknown per-request Safe Mode bypass counts as lockdown, so it redacts.
   const zeroDataRetention =
     context.zeroDataRetention === true ||
     getScrapeZDR(flags ?? undefined) === "forced" ||
-    isLockdownZeroDataRetention(flags, undefined);
+    isLockdownZeroDataRetention(
+      flags,
+      typeof context.safeMode === "boolean" ? context.safeMode : undefined,
+    );
   hitBuffer.push({
     id: uuidv7(),
     domain: zeroDataRetention ? ZDR_REDACTED : domain,
