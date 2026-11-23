@@ -966,6 +966,21 @@ it("treats a cached response it cannot read as one it does not have", async () =
   expect(executions()).toHaveLength(1);
 });
 
+it("fails a repeat whose cached response cannot be read, so the same id can be retried", async () => {
+  await run();
+  const { id, response } = dropStoredResponse();
+  mocks.store.set(RESPONSE + id, gzipSync(JSON.stringify(response)));
+  mocks.redis.getBuffer.mockRejectedValueOnce(new Error("Redis unavailable"));
+
+  await expect(run()).rejects.toThrow("Redis unavailable");
+  expect(await run()).toMatchObject({
+    status: 200,
+    body: answer,
+    executed: false,
+  });
+  expect(executions()).toHaveLength(1);
+});
+
 it("refuses a repeat whose response is no longer kept, without running it again", async () => {
   await run();
   dropStoredResponse();

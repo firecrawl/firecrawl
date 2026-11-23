@@ -13,6 +13,9 @@ const gunzipAsync = promisify(gunzip);
 export async function cachedResponse(
   id: string,
 ): Promise<ExchangeResponse | null> {
+  // A read that fails is not a miss: the entry may well be there. It fails the repeat, which
+  // the caller answers with a retry of the same x-request-id, where a miss would tell the
+  // client its response is gone and to pay for the request again.
   const raw = await redisRateLimitClient.getBuffer(key(id));
   if (!raw) return null;
   try {
