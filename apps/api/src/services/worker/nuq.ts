@@ -71,6 +71,20 @@ function isExpectedAmqpCloseError(error: unknown): boolean {
   );
 }
 
+// How long one getJobToProcess() call waits on the prefetch subscription before
+// returning null to the worker loop. Waiting itself costs no broker traffic; this
+// only bounds how long a worker takes to notice shutdown.
+const PREFETCH_TAKE_WAIT_MS = 2000;
+
+type PrefetchSubscription = {
+  tag: string | null;
+  ready: Promise<void> | null;
+  pending: amqp.ConsumeMessage | null;
+  waiter: ((msg: amqp.ConsumeMessage | false) => void) | null;
+  onClose: () => void;
+  staleHits: number;
+};
+
 async function closeAmqpResource(
   close: () => Promise<unknown>,
   resource: string,
@@ -332,6 +346,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
     type: "rabbitmq";
     connection: amqp.ChannelModel;
     channel: amqp.Channel;
+    prefetchSub?: PrefetchSubscription | null;
   } | null = null;
   private senderStarting = false;
 
@@ -1320,6 +1335,132 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
   // === Consumer
 
+  // Idle workers used to poll "<queue>.prefetch" with basic.get every 1.5s. On a
+  // quorum queue every basic.get is a Raft command appended to the WAL, even
+  // when the queue is empty, so an idle deployment wrote to the broker's log
+  // non-stop. Instead each process keeps one push subscription (prefetch 1)
+  // and sleeps until the broker delivers a job. On take it cancels first and
+  // then acks, so no second job is pushed to a worker that is now busy; the
+  // next idle call subscribes again. Resolves to the delivery, or false when
+  // nothing arrived within waitMs (same contract as channel.get). Throws on
+  // broker errors so the caller falls back to Postgres.
+  private async takePrefetchedJob(
+    waitMs: number,
+  ): Promise<amqp.ConsumeMessage | false> {
+    const sender = this.sender!;
+    const channel = sender.channel;
+    let sub = sender.prefetchSub;
+    if (!sub) {
+      const created: PrefetchSubscription = {
+        tag: null,
+        ready: null,
+        pending: null,
+        waiter: null,
+        staleHits: 0,
+        onClose: () => {
+          if (sender.prefetchSub === created) sender.prefetchSub = null;
+          created.waiter?.(false);
+        },
+      };
+      sub = created;
+      channel.once("close", created.onClose);
+      sender.prefetchSub = created;
+      created.ready = (async () => {
+        await channel.prefetch(1);
+        const { consumerTag } = await channel.consume(
+          this.queueName + ".prefetch",
+          msg => {
+            if (msg === null) {
+              // Cancelled by the broker (e.g. queue deleted): give back a
+              // delivery buffered while the worker loop was sleeping.
+              if (created.pending) {
+                try {
+                  channel.nack(created.pending, false, true);
+                } catch {}
+                created.pending = null;
+              }
+              channel.removeListener("close", created.onClose);
+              created.onClose();
+              return;
+            }
+            if (created.waiter) created.waiter(msg);
+            else created.pending = msg;
+          },
+          { noAck: false },
+        );
+        created.tag = consumerTag;
+      })();
+    }
+
+    try {
+      await sub.ready;
+    } catch (err) {
+      channel.removeListener("close", sub.onClose);
+      if (sender.prefetchSub === sub) sender.prefetchSub = null;
+      throw err;
+    }
+
+    let msg: amqp.ConsumeMessage | false = sub.pending ?? false;
+    sub.pending = null;
+    if (!msg) {
+      const waiting = sub;
+      msg = await new Promise<amqp.ConsumeMessage | false>(resolve => {
+        const timer = setTimeout(() => {
+          waiting.waiter = null;
+          resolve(false);
+        }, waitMs);
+        waiting.waiter = m => {
+          clearTimeout(timer);
+          waiting.waiter = null;
+          resolve(m);
+        };
+      });
+    }
+
+    if (!msg) {
+      if (sender.prefetchSub === sub)
+        await this.dropPrefetchSubIfStale(sender, sub);
+      return false;
+    }
+
+    channel.removeListener("close", sub.onClose);
+    if (sender.prefetchSub === sub) sender.prefetchSub = null;
+    await channel.cancel(sub.tag!);
+    channel.ack(msg);
+    return msg;
+  }
+
+  // An idle subscriber with credit gets any ready message at once, so ready
+  // messages on two consecutive empty waits mean the subscription is dead
+  // without a cancel notification. RabbitMQ 3.13 does this when a quorum queue
+  // is deleted and re-declared at once: it keeps a consumer that never
+  // receives. A passive declare only reads queue metadata; it adds nothing to
+  // the queue's Raft log.
+  private async dropPrefetchSubIfStale(
+    sender: NonNullable<NuQ["sender"]>,
+    sub: PrefetchSubscription,
+  ) {
+    const channel = sender.channel;
+    const { messageCount } = await channel.checkQueue(
+      this.queueName + ".prefetch",
+    );
+    sub.staleHits = messageCount > 0 ? sub.staleHits + 1 : 0;
+    if (sub.staleHits < 2) return;
+
+    logger.warn("NuQ prefetch subscription stale, resubscribing", {
+      module: "nuq/rabbitmq",
+      messageCount,
+    });
+    channel.removeListener("close", sub.onClose);
+    if (sender.prefetchSub === sub) sender.prefetchSub = null;
+    await channel.cancel(sub.tag!);
+    // a delivery that raced the cancel goes back to the queue
+    if (sub.pending) {
+      channel.nack(sub.pending, false, true);
+      sub.pending = null;
+    }
+  }
+
   public async getJobToProcess(): Promise<NuQJob<any, any> | null> {
     const start = Date.now();
     try {
@@ -1328,10 +1469,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
         if (this.sender) {
           try {
-            const job = await this.sender.channel.get(
-              this.queueName + ".prefetch",
-              { noAck: true },
-            );
+            const job = await this.takePrefetchedJob(PREFETCH_TAKE_WAIT_MS);
             if (job !== false) {
               return this.rabbitRowToJob(JSON.parse(job.content.toString()));
             } else {
@@ -1342,8 +1480,12 @@ class NuQ<JobData = any, JobReturnValue = any> {
               module: "nuq/rabbitmq",
               err,
             });
-            // Reset sender so it can be re-established on next call
+            // Reset sender so it can be re-established on next call. Close the
+            // abandoned connection so no subscription or unacked delivery is
+            // left on it (the broker requeues unacked deliveries on close).
+            const abandoned = this.sender;
             this.sender = null;
+            abandoned?.connection.close().catch(() => {});
           }
         } else {
           logger.warn("NuQ sender not started, falling back to postgres", {
