@@ -323,6 +323,8 @@ async function recommendationsController(req: Request, res: Response) {
 
 async function providerTermsAcceptController(req: Request, res: Response) {
   const authedReq = req as RequestWithAuth<any, any, any>;
+  const lockdown = safeModeLockdownExchangeRefusal(authedReq.acuc?.flags);
+  if (lockdown) return res.status(403).json(lockdown);
   const orgId = orgIdFromAcuc(authedReq.acuc);
   if (orgId === null) {
     return exchangeError(
