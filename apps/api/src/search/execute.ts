@@ -68,6 +68,7 @@ import { isUsOnly } from "../lib/us-only";
 import type { TeamPlanClass } from "../lib/team-plan-class";
 import { isAlexandriaZDRForced } from "../lib/zdr-helpers";
 import { alexandriaFeedbackStorage } from "../lib/alexandria-feedback-storage";
+import { resolveSerpRedirect } from "../lib/serp-url";
 
 interface SearchOptions {
   query: string;
@@ -476,9 +477,30 @@ export async function executeSearch(
       ? results
       : kept?.map((result, index) => ({ ...result, position: index + 1 }));
   };
-  searchResponse.web = keepOperatorMatches(searchResponse.web);
-  searchResponse.news = keepOperatorMatches(searchResponse.news);
-  searchResponse.images = keepOperatorMatches(searchResponse.images);
+  // Upstream results can carry a Google redirect link instead of the page.
+  const resolveRedirects = <T extends { url?: string; position?: number }>(
+    results: T[] | undefined,
+  ): T[] | undefined => {
+    const resolved = results?.flatMap(result => {
+      if (!result.url) return [result];
+      const url = resolveSerpRedirect(result.url);
+      return url === null
+        ? []
+        : [url === result.url ? result : { ...result, url }];
+    });
+    return resolved?.length === results?.length
+      ? resolved
+      : resolved?.map((result, index) => ({ ...result, position: index + 1 }));
+  };
+  searchResponse.web = keepOperatorMatches(
+    resolveRedirects(searchResponse.web),
+  );
+  searchResponse.news = keepOperatorMatches(
+    resolveRedirects(searchResponse.news),
+  );
+  searchResponse.images = keepOperatorMatches(
+    resolveRedirects(searchResponse.images),
+  );
   let indexResults =
     keepOperatorMatches(
       indexResultsPromise ? await indexResultsPromise : undefined,
