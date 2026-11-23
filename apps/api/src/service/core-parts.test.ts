@@ -5,6 +5,20 @@ import * as errorSerde from "../lib/error-serde";
 import { coreParts } from "./core-parts";
 import { createService } from "./service";
 
+const loadedSideEffectModules = vi.hoisted(() => [] as string[]);
+vi.mock("../config", () => {
+  loadedSideEffectModules.push("config");
+  return { config: {} };
+});
+vi.mock("../lib/exchange", () => {
+  loadedSideEffectModules.push("exchange");
+  return {};
+});
+vi.mock("../lib/deployment", () => {
+  loadedSideEffectModules.push("deployment");
+  return { isSelfHosted: () => true };
+});
+
 const errorClassesModule = "../lib/error-serde";
 
 // coreParts() loads its error classes with require() on the first lookup. The
@@ -110,5 +124,13 @@ describe("coreParts", () => {
       },
       env: {},
     });
+  });
+
+  it("loads core error classes without pulling in config, exchange, or deployment", () => {
+    answerRequire();
+    const built = createService({ modules: {} }, coreParts());
+
+    built.describe();
+    expect(loadedSideEffectModules).toEqual([]);
   });
 });

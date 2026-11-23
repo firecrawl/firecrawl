@@ -1,7 +1,11 @@
 import { config } from "../config";
+import { setIsSelfHostedReader } from "../scraper/scrapeURL/error";
+
 export function isSelfHosted(): boolean {
   return config.USE_DB_AUTHENTICATION !== true;
 }
+
+setIsSelfHostedReader(isSelfHosted);
 
 export function getErrorContactMessage(errorId?: string): string {
   if (isSelfHosted()) {
