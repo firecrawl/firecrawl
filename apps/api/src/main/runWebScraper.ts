@@ -1,9 +1,11 @@
+import { PaywalledContentError } from "../scraper/scrapeURL/error";
 import { ScrapeJobSingleUrls, RunWebScraperParams } from "../types";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
 import { scrapeURL, ScrapeUrlResponse } from "../scraper/scrapeURL";
 import type { NuQJob } from "../services/worker/nuq";
 import { CostTracking } from "../lib/cost-tracking";
+import { jobContext } from "../lib/request-context";
 configDotenv();
 
 export async function startWebScraperPipeline({
@@ -13,6 +15,7 @@ export async function startWebScraperPipeline({
   job: NuQJob<ScrapeJobSingleUrls>;
   costTracking: CostTracking;
 }) {
+  const ctx = jobContext(job.data);
   return await runWebScraper({
     url: job.data.url,
     scrapeOptions: {
@@ -30,8 +33,9 @@ export async function startWebScraperPipeline({
       teamId: job.data.team_id,
       origin: job.data.origin,
       ...job.data.internalOptions,
+      teamFlags: ctx.flags,
       // In-flight jobs enqueued before orgId existed may omit it.
-      orgId: job.data.internalOptions?.orgId ?? null,
+      orgId: ctx.orgId ?? null,
     },
     team_id: job.data.team_id,
     bull_job_id: job.id,
@@ -121,6 +125,7 @@ async function runWebScraper({
       }
     } catch (_error) {
       error = _error;
+      if (_error instanceof PaywalledContentError) break;
     }
   }
 

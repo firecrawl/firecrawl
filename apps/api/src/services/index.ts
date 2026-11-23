@@ -387,6 +387,7 @@ export async function getIndexInsertQueueLength(): Promise<number> {
 const OMCE_JOB_QUEUE_KEY = "omce-job-queue";
 const OMCE_JOB_QUEUE_BATCH_SIZE = 100;
 
+/** @public Unused while OMCE job inserts are disabled. */
 export async function addOMCEJob(data: [number, Buffer]) {
   await redisEvictConnection.sadd(OMCE_JOB_QUEUE_KEY, JSON.stringify(data));
 }
@@ -402,6 +403,7 @@ async function getOMCEJobs(): Promise<[number, Buffer][]> {
     .filter((x): x is [number, Buffer] => x !== undefined);
 }
 
+/** @public Unused while OMCE job inserts are disabled. */
 export async function processOMCEJobs() {
   const jobs = await getOMCEJobs();
   if (jobs.length === 0) {

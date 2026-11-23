@@ -65,7 +65,9 @@ import { calculateThreatScanCredits } from "../lib/scrape-billing";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
 import { isUsOnly } from "../lib/us-only";
-import { getScrapeZDR } from "../lib/zdr-helpers";
+import type { TeamPlanClass } from "../lib/team-plan-class";
+import { isAlexandriaZDRForced } from "../lib/zdr-helpers";
+import { alexandriaFeedbackStorage } from "../lib/alexandria-feedback-storage";
 
 interface SearchOptions {
   query: string;
@@ -99,8 +101,17 @@ interface SearchContext {
   orgId?: string | null;
   origin: string;
   integration?: string | null;
+  /** The origin as the caller named it, and its session and conversation ids. Labels for Exchange only. */
+  clientOrigin?: string;
+  clientSession?: string;
+  clientThread?: string;
   apiKeyId: number | null;
   flags: TeamFlags;
+  /**
+   * The team's plan class, stated on the web search call. Required so every
+   * caller decides; undefined states nothing. See teamPlanClass.
+   */
+  teamPlanClass: TeamPlanClass | undefined;
   requestId: string;
   jobId: string;
   apiVersion: string;
@@ -113,6 +124,8 @@ interface SearchContext {
   threatProtectionPolicy?: ThreatProtectionPolicy | null;
   /** Set when the request legitimately opted out of Safe Mode at the controller. */
   safeModeBypassed?: boolean;
+  /** Asks third-party data providers behind scraped results to leave personal email addresses and personal phone numbers out. */
+  workContactOnly?: boolean;
 }
 
 interface SearchExecuteResult {
@@ -208,9 +221,9 @@ export async function executeSearch(
 
   const num_results_buffer = Math.floor(limit * 2);
   const usOnly = isUsOnly(flags);
-  // A team held to zero data retention for scrapes still gets tools, but only from providers
+  // A team held to zero data retention for scrapes or Alexandria still gets tools, but only from providers
   // that support it. Read from team flags only, never from the request.
-  const toolsZeroDataRetention = getScrapeZDR(flags) === "forced";
+  const toolsZeroDataRetention = isAlexandriaZDRForced(flags);
   const usOnlyWarnings: string[] = [];
 
   logger.info("Searching for results");
@@ -248,6 +261,20 @@ export async function executeSearch(
     raw: { prefix: `${context.jobId}:tools:raw`, sent: [] as string[] },
     rewrite: { prefix: `${context.jobId}:tools:rewrite`, sent: [] as string[] },
   };
+  // Tells Exchange who is searching and how; sent with each find-tools lookup.
+  const exchangeCaller = config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED
+    ? {
+        feedbackStorage: alexandriaFeedbackStorage(teamId, flags),
+        clientOrigin: context.clientOrigin,
+        clientIntegration: context.integration,
+        searchRoute: wantsTools
+          ? ("search_source" as const)
+          : ("search_auto" as const),
+        clientSession: context.clientSession,
+        clientThread: context.clientThread,
+        query,
+      }
+    : undefined;
   // Tools found only through the rewrite or inferred domains are added after Jev confirms they fit the query.
   const extraDiscovery = toolIntent
     ? toolIntent
@@ -270,6 +297,7 @@ export async function executeSearch(
                   : intent.domains.map(domain => `https://${domain}/`),
               timeoutMs: Math.min(options.timeout, 3000),
               exchangeRequestIds: toolRequestIds.rewrite,
+              exchangeCaller,
             },
             logger,
           );
@@ -321,6 +349,7 @@ export async function executeSearch(
                   }),
             timeoutMs: options.timeout,
             exchangeRequestIds: toolRequestIds.raw,
+            exchangeCaller,
           },
           logger,
         )
@@ -421,6 +450,7 @@ export async function executeSearch(
             ...operators.excludedSites.filter(site => !site.includes("/")),
           ]),
           usOnly,
+          teamPlanClass: context.teamPlanClass,
         });
   const indexResultsPromise = indexCategorySearch
     ? indexCategorySearch(indexSearchOptions, logger)
@@ -750,6 +780,7 @@ export async function executeSearch(
         keylessReserved: context.keylessReserved,
         threatProtectionPolicy: threatPolicy ?? null,
         safeModeBypassed: context.safeModeBypassed ?? false,
+        ...(context.workContactOnly ? { workContactOnly: true } : {}),
       };
 
       const allDocsWithCostTracking = await scrapeSearchResults(
@@ -773,7 +804,12 @@ export async function executeSearch(
   // Runs after scraping (mergeScrapedContent rebuilds the result objects, so
   // highlight mutations must come last to survive). Uses the user's original
   // query, not the domain-filtered upstream query.
-  if (zeroDataRetention !== true && !isZDR && highlightsEnvReady()) {
+  if (
+    zeroDataRetention !== true &&
+    !isZDR &&
+    flags?.skipSearchHighlights !== true &&
+    highlightsEnvReady()
+  ) {
     const mode = searchHighlightsMode({
       requested: options.highlights,
       origin: context.origin,

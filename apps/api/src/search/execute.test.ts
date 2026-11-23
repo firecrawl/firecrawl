@@ -80,6 +80,7 @@ vi.mock("./safe-search", () => ({
 import { executeSearch } from "./execute";
 import { searchRequestSchema } from "../controllers/v2/types";
 import { logger as rootLogger } from "../lib/logger";
+import { config } from "../config";
 
 const impressions = vi
   .spyOn(rootLogger, "info")
@@ -97,6 +98,7 @@ const context = {
   origin: "api",
   apiKeyId: 1,
   flags: {},
+  teamPlanClass: undefined,
   requestId: "request-1",
   jobId: "job-1",
   apiVersion: "v2",
@@ -295,7 +297,9 @@ describe("executeSearch tool intent", () => {
   it.each([
     [{ scrapeZDR: "forced" }, true],
     [{ forceZDR: true }, true],
+    [{ alexandriaZDR: "forced" }, true],
     [{ scrapeZDR: "allowed" }, false],
+    [{ alexandriaZDR: "allowed" }, false],
     [{}, false],
   ])(
     "asks tool and skill discovery for zero-data-retention providers by team flags (%o)",
@@ -1410,5 +1414,130 @@ describe("executeSearch skill cards", () => {
       expect.objectContaining({ usOnly: true }),
       logger,
     );
+  });
+});
+
+describe("executeSearch team plan class", () => {
+  const webResult = {
+    url: "https://example.com/",
+    title: "Example",
+    description: "An example page.",
+  };
+
+  it("states the caller's plan class on the web search call", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+
+    await executeSearch(
+      options([]),
+      { ...context, teamPlanClass: "self_serve" },
+      logger,
+    );
+
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(mocks.search).toHaveBeenCalledWith(
+      expect.objectContaining({ teamPlanClass: "self_serve" }),
+    );
+  });
+
+  it("states nothing when the caller knows no plan class", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+
+    await executeSearch(options([]), context, logger);
+
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(mocks.search.mock.calls[0][0].teamPlanClass).toBeUndefined();
+  });
+});
+
+describe("executeSearch search context for Exchange", () => {
+  const original = {
+    enabled: config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED,
+    dbAuthentication: config.USE_DB_AUTHENTICATION,
+  };
+  const caller = {
+    ...context,
+    integration: "n8n",
+    clientOrigin: "mcp-cursor",
+    clientSession: "sess_01A",
+    clientThread: "thread:42.a-b",
+  };
+  const callers = () =>
+    mocks.discoverTools.mock.calls.map(([input]) => input.exchangeCaller);
+
+  beforeEach(() => {
+    config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED = true;
+    config.USE_DB_AUTHENTICATION = true;
+    mocks.search.mockResolvedValue({ web: [] });
+    mocks.inferToolIntent.mockResolvedValue({
+      toolQueries: ["city weather forecast"],
+      domains: [],
+      needsTools: true,
+    });
+  });
+
+  afterEach(() => {
+    config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED = original.enabled;
+    config.USE_DB_AUTHENTICATION = original.dbAuthentication;
+  });
+
+  it("labels both lookups of a search that named the source", async () => {
+    await executeSearch(
+      {
+        ...options([]),
+        query: "weather in Lisbon",
+        sources: [{ type: "alexandria" }],
+        inferToolQuery: true,
+      },
+      caller,
+      logger,
+    );
+    expect(callers()).toHaveLength(2);
+    for (const sent of callers())
+      expect(sent).toEqual({
+        feedbackStorage: "allowed",
+        clientOrigin: "mcp-cursor",
+        clientIntegration: "n8n",
+        searchRoute: "search_source",
+        clientSession: "sess_01A",
+        clientThread: "thread:42.a-b",
+        query: "weather in Lisbon",
+      });
+  });
+
+  it("labels the platform's own lookup on an ordinary search", async () => {
+    await executeSearch(
+      { ...options([]), query: "weather in Lisbon", autoTools: true },
+      { ...context, flags: { searchFeedbackOptOut: true } as any },
+      logger,
+    );
+    expect(mocks.discoverTools).toHaveBeenCalledTimes(1);
+    expect(mocks.discoverTools.mock.calls[0][0].queries).toEqual([
+      "weather in Lisbon",
+      "city weather forecast",
+    ]);
+    expect(callers()[0]).toEqual({
+      feedbackStorage: "opted_out",
+      clientOrigin: undefined,
+      clientIntegration: undefined,
+      searchRoute: "search_auto",
+      clientSession: undefined,
+      clientThread: undefined,
+      query: "weather in Lisbon",
+    });
+  });
+
+  it("sends the lookups unlabelled when the switch is off", async () => {
+    config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED = false;
+    await executeSearch(
+      {
+        ...options([]),
+        query: "weather in Lisbon",
+        sources: [{ type: "alexandria" }],
+        inferToolQuery: true,
+      },
+      caller,
+      logger,
+    );
+    expect(callers()).toEqual([undefined, undefined]);
   });
 });

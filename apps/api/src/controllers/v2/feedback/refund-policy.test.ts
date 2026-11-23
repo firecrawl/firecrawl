@@ -37,3 +37,39 @@ describe("precomputed feedback refund classes", () => {
     });
   });
 });
+
+describe("interact and browser session feedback", () => {
+  it.each(["interact", "browser"] as const)(
+    "has no refund for %s feedback",
+    endpoint => {
+      const session = { ...job(undefined), endpoint, credits_cost: 0 };
+
+      for (const rating of ["good", "partial", "bad"] as const) {
+        expect(computeRefundPolicy(session, rating)).toMatchObject({
+          desiredRefund: 0,
+          policy: {
+            endpoint,
+            mode: "none",
+            matchedReason: "zero_billed_credits",
+          },
+        });
+      }
+    },
+  );
+
+  it.each(["interact", "browser"] as const)(
+    "has no refund for %s feedback even if a row carried billed credits",
+    endpoint => {
+      expect(
+        computeRefundPolicy({ ...job("scrape_basic"), endpoint }, "bad"),
+      ).toMatchObject({
+        desiredRefund: 0,
+        policy: {
+          endpoint,
+          mode: "none",
+          matchedReason: "endpoint_not_refundable",
+        },
+      });
+    },
+  );
+});

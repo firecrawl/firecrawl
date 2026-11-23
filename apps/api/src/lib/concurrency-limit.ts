@@ -21,6 +21,7 @@ import {
 import { getACUCTeam } from "../controllers/auth";
 import { DEFAULT_TEAM_LIMITS } from "../services/autumn/autumn.service";
 import { reportPipelineError } from "./redis-pipeline";
+import { storedZeroDataRetention } from "./request-context";
 
 /**
  * CONCURRENCY granted by the Autumn `hobby` plan (firecrawl-web
@@ -292,7 +293,7 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
       logger.debug("Removed job from concurrency limit queue", {
         teamId,
         jobId: job.id,
-        zeroDataRetention: job.data?.zeroDataRetention,
+        zeroDataRetention: storedZeroDataRetention(job.data),
       });
       return { job, timeout: Infinity };
     }
@@ -384,7 +385,7 @@ export async function concurrentJobDone(job: NuQJob<any>) {
         logger.debug("Successfully promoted concurrent queued job", {
           teamId: job.data.team_id,
           jobId: nextJob.job.id,
-          zeroDataRetention: nextJob.job.data?.zeroDataRetention,
+          zeroDataRetention: storedZeroDataRetention(nextJob.job.data),
         });
         break;
       } else {
@@ -393,7 +394,7 @@ export async function concurrentJobDone(job: NuQJob<any>) {
           {
             teamId: job.data.team_id,
             jobId: nextJob.job.id,
-            zeroDataRetention: nextJob.job.data?.zeroDataRetention,
+            zeroDataRetention: storedZeroDataRetention(nextJob.job.data),
           },
         );
         await removeConcurrencyLimitActiveJob(job.data.team_id, nextJob.job.id);

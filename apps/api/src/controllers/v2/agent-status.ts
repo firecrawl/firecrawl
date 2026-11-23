@@ -10,6 +10,7 @@ import {
 import { getAgentJobAccess } from "../../lib/operational-job-access";
 import { agentJobExpiry, ZDR_EXPIRED_ERROR } from "../../lib/agent-job-expiry";
 import {
+  agentStatusUnavailable,
   ExtractV3AgentStatusError,
   getExtractV3AgentStatus,
 } from "../../lib/extract-v3-status";
@@ -60,11 +61,33 @@ function readThreadOptions(options: any): ThreadOptions {
   };
 }
 
+function sendAgentStatusError(
+  res: Response<AgentStatusResponse>,
+  error: ExtractV3AgentStatusError,
+) {
+  if (error.retryAfterSeconds !== undefined) {
+    res.setHeader("Retry-After", String(error.retryAfterSeconds));
+  }
+  return res.status(error.status).json({
+    success: false,
+    code: error.code,
+    error: error.message,
+  });
+}
+
 export async function agentStatusController(
   req: RequestWithAuth<{ jobId: string }, AgentStatusResponse, any>,
   res: Response<AgentStatusResponse>,
 ) {
-  const access = await getAgentJobAccess(req.params.jobId);
+  // A failed job-access read is an outage, not a missing job. Returning 404
+  // would tell the caller the run does not exist. 503 is retryable.
+  let access: Awaited<ReturnType<typeof getAgentJobAccess>>;
+  try {
+    access = await getAgentJobAccess(req.params.jobId, req.auth.team_id);
+  } catch {
+    // resolveOperationalJobAccess already logged the read, including teamId.
+    return sendAgentStatusError(res, agentStatusUnavailable());
+  }
 
   if (
     !access ||
@@ -82,11 +105,7 @@ export async function agentStatusController(
     agent = await getExtractV3AgentStatus(req.params.jobId);
   } catch (error) {
     if (!(error instanceof ExtractV3AgentStatusError)) throw error;
-    return res.status(error.status).json({
-      success: false,
-      code: error.code,
-      error: error.message,
-    });
+    return sendAgentStatusError(res, error);
   }
 
   const expiry = agentJobExpiry(access, agent);

@@ -2,11 +2,11 @@ import { rewriteUrl } from "../rewriteUrl";
 
 describe("rewriteUrl", () => {
   describe("Google Docs", () => {
-    it("should rewrite regular Google Docs URLs to PDF export", () => {
+    it("should rewrite regular Google Docs URLs to HTML export", () => {
       const url =
         "https://docs.google.com/document/d/1iqj3PY--4lSBpVkavEpjlayx0AHJDglOnJmHNOpFP1U/edit";
       expect(rewriteUrl(url)).toBe(
-        "https://docs.google.com/document/d/1iqj3PY--4lSBpVkavEpjlayx0AHJDglOnJmHNOpFP1U/export?format=pdf",
+        "https://docs.google.com/document/d/1iqj3PY--4lSBpVkavEpjlayx0AHJDglOnJmHNOpFP1U/export?format=html",
       );
     });
 
@@ -14,7 +14,7 @@ describe("rewriteUrl", () => {
       const url =
         "https://docs.google.com/document/d/1iqj3PY--4lSBpVkavEpjlayx0AHJDglOnJmHNOpFP1U/edit?usp=sharing";
       expect(rewriteUrl(url)).toBe(
-        "https://docs.google.com/document/d/1iqj3PY--4lSBpVkavEpjlayx0AHJDglOnJmHNOpFP1U/export?format=pdf",
+        "https://docs.google.com/document/d/1iqj3PY--4lSBpVkavEpjlayx0AHJDglOnJmHNOpFP1U/export?format=html",
       );
     });
 
@@ -34,17 +34,17 @@ describe("rewriteUrl", () => {
       const url =
         "http://docs.google.com/document/d/1iqj3PY--4lSBpVkavEpjlayx0AHJDglOnJmHNOpFP1U/edit";
       expect(rewriteUrl(url)).toBe(
-        "https://docs.google.com/document/d/1iqj3PY--4lSBpVkavEpjlayx0AHJDglOnJmHNOpFP1U/export?format=pdf",
+        "https://docs.google.com/document/d/1iqj3PY--4lSBpVkavEpjlayx0AHJDglOnJmHNOpFP1U/export?format=html",
       );
     });
   });
 
   describe("Google Presentations", () => {
-    it("should rewrite regular Google Slides URLs to PDF export", () => {
+    it("should rewrite regular Google Slides URLs to HTML export", () => {
       const url =
         "https://docs.google.com/presentation/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit";
       expect(rewriteUrl(url)).toBe(
-        "https://docs.google.com/presentation/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/export?format=pdf",
+        "https://docs.google.com/presentation/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/export?format=html",
       );
     });
 

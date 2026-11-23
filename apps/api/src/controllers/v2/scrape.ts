@@ -16,6 +16,7 @@ import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
 import {
   getTimeoutProcessingDetails,
+  isTransportableError,
   TransportableError,
 } from "../../lib/error";
 import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
@@ -38,6 +39,7 @@ import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { getJobPriority } from "../../lib/job-priority";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
+import { requestContext } from "../../lib/request-context";
 import { getErrorContactMessage } from "../../lib/deployment";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
@@ -228,6 +230,15 @@ export async function scrapeController(
         externalRequestId: externalRequestId(req),
         hostedMcp: req.auth.hostedMcp,
       };
+      const ctx = requestContext({
+        teamId: req.auth.team_id,
+        zeroDataRetention,
+        flags: req.acuc?.flags ?? null,
+        orgId: req.acuc?.org_id ?? null,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+        billing,
+      });
+      req.ctx = ctx;
 
       if (
         req.body.__agentInterop &&
@@ -403,6 +414,7 @@ export async function scrapeController(
                   data: {
                     url: req.body.url,
                     mode: "single_urls",
+                    ctx,
                     team_id: req.auth.team_id,
                     scrapeOptions: {
                       ...req.body,
@@ -421,6 +433,10 @@ export async function scrapeController(
                       unnormalizedSourceURL: preNormalizedBody.url,
                       bypassBilling: isDirectToBullMQ || !shouldBill,
                       zeroDataRetention,
+                      ...(req.headers["x-firecrawl-work-contact-only"] ===
+                      "true"
+                        ? { workContactOnly: true }
+                        : {}),
                       teamFlags: req.acuc?.flags ?? null,
                       orgId: req.acuc?.org_id ?? null,
                       teamConcurrency: baseConcurrency,
@@ -467,17 +483,16 @@ export async function scrapeController(
         }
 
         const timeoutErr =
-          e instanceof TransportableError &&
+          isTransportableError(e) &&
           (e.code === "SCRAPE_TIMEOUT" ||
             e.code === "CONCURRENCY_QUEUE_TIMEOUT");
 
         setSpanAttributes(span, {
           "scrape.error": e instanceof Error ? e.message : String(e),
-          "scrape.error_type":
-            e instanceof TransportableError ? e.code : "unknown",
+          "scrape.error_type": isTransportableError(e) ? e.code : "unknown",
         });
 
-        if (e instanceof TransportableError) {
+        if (isTransportableError(e)) {
           if (!timeoutErr) {
             logger.error(`Error in scrapeController`, {
               version: "v2",
@@ -580,6 +595,17 @@ export async function scrapeController(
           }
 
           if (e.code === "SCRAPE_PROMPT_INJECTION_DETECTED") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
+          if (e.code === "SCRAPE_PAYWALLED_CONTENT") {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });

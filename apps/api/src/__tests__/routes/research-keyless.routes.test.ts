@@ -37,6 +37,7 @@ async function appWithResearchGate(flag: string | undefined) {
   router.get("/papers", reached);
   router.get("/papers/*id/similar", reached);
   router.get("/papers/*id", reached);
+  router.get("/proteins", reached);
 
   app.use(
     "/v2/search/research",
@@ -141,6 +142,16 @@ describe("Research Index paper operation gate", () => {
     ).toBe(false);
   });
 
+  it("gates the protein lookup with the inspect entry", async () => {
+    const proteins = fakeRequest("/proteins", { protein: "RPUSD3" });
+
+    const inspectOff = await loadWithFlag("inspect");
+    expect(inspectOff.isResearchKeylessDisabled(proteins)).toBe(true);
+
+    const inspectOn = await loadWithFlag("search,read,similar");
+    expect(inspectOn.isResearchKeylessDisabled(proteins)).toBe(false);
+  });
+
   it("blocks only the named operation when the scope is narrowed", async () => {
     const { isResearchKeylessDisabled } = await loadWithFlag("inspect");
 
@@ -188,6 +199,7 @@ describe("keyless Research Index requests through the auth middleware", () => {
       "/v2/search/research/papers/2401.00001/similar",
       "/v2/search/research/papers/doi:10.1101/2025.07.31.667845?query=x",
       "/v2/search/research/papers/doi:10.1101/2025.07.31.667845/similar",
+      "/v2/search/research/proteins?protein=RPUSD3",
     ]) {
       const response = await request(app).get(path);
 

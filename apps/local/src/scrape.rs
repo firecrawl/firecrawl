@@ -690,7 +690,7 @@ fn process_html(
   let mut data = Map::new();
   let mut metadata: Map<String, Value> = Map::new();
 
-  let document = kuchikiki::parse_html().one(raw_html.as_str());
+  let document = kuchikiki::parse_html().one(raw_html.as_str()).document_node;
 
   // Read-only passes first, on the page as it was served.
   for (k, v) in html::extract_metadata_from_document(&document).map_err(parse_err)? {
@@ -737,7 +737,7 @@ fn process_html(
   if opts.only_main_content && opts.include_tags.is_empty() && prose_before >= 2_000 {
     let prose_after = paragraph_chars(&cleaned);
     if prose_after * 100 < prose_before * 35 {
-      let again = kuchikiki::parse_html().one(raw_html.as_str());
+      let again = kuchikiki::parse_html().one(raw_html.as_str()).document_node;
       keep_content_headers(&again);
       strip_page_furniture(&again);
       cleaned = transform(
@@ -1027,7 +1027,7 @@ mod tests {
 
   fn cleaned_text(html: &str) -> String {
     use kuchikiki::traits::TendrilSink;
-    let document = kuchikiki::parse_html().one(html);
+    let document = kuchikiki::parse_html().one(html).document_node;
     strip_edge_link_blocks(&document);
     document
       .text_contents()

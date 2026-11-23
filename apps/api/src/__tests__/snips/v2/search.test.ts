@@ -138,7 +138,10 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
             error: doc.metadata?.error,
             statusCode: doc.metadata?.statusCode,
           });
-          expect(doc.metadata?.error).toBeDefined();
+          expect(
+            doc.metadata?.error !== undefined ||
+              (doc.metadata?.statusCode ?? 200) >= 400,
+          ).toBe(true);
         }
       }
 

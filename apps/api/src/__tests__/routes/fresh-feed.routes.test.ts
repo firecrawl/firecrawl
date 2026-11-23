@@ -2,12 +2,23 @@ import express from "express";
 import { once } from "node:events";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { gzipSync } from "node:zlib";
+import { brotliCompressSync, gzipSync, zstdCompressSync } from "node:zlib";
 import request from "supertest";
 
 const mocks = vi.hoisted(() => ({
   flags: {} as Record<string, unknown>,
   logRequest: vi.fn(),
+  billTeam: vi.fn(),
+  checkCredits: vi.fn(),
+}));
+
+vi.mock("../../services/billing/credit_billing", () => ({
+  billTeam: mocks.billTeam,
+}));
+
+vi.mock("../../services/autumn/autumn.service", async importOriginal => ({
+  ...(await importOriginal<object>()),
+  autumnService: { checkCredits: mocks.checkCredits },
 }));
 
 vi.mock("../../lib/logger", () => {
@@ -25,7 +36,12 @@ vi.mock("../../services/logging/log_job", () => ({
   logRequest: mocks.logRequest,
 }));
 
-vi.mock("../../routes/shared", () => ({ wrap: (fn: any) => fn }));
+vi.mock("../../routes/shared", async importOriginal => ({
+  checkCreditsMiddleware: (
+    await importOriginal<typeof import("../../routes/shared")>()
+  ).checkCreditsMiddleware,
+  wrap: (fn: any) => fn,
+}));
 
 import { httpRequestDurationSeconds } from "../../lib/http-metrics";
 import { logger } from "../../lib/logger";
@@ -72,8 +88,8 @@ const upstreamServer = http.createServer((req, res) => {
 
 const app = express();
 app.use((req: any, _res, next) => {
-  req.auth = { team_id: "team-1" };
-  req.acuc = { flags: mocks.flags };
+  req.auth = { team_id: "team-1", org_id: "org-1" };
+  req.acuc = { flags: mocks.flags, org_id: "org-1", api_key_id: 7 };
   next();
 });
 
@@ -137,6 +153,8 @@ afterAll(async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.logRequest.mockResolvedValue(undefined);
+  mocks.billTeam.mockResolvedValue({ success: true });
+  mocks.checkCredits.mockResolvedValue({ allowed: true, remaining: 1e9 });
   mocks.flags = { freshFeed: true };
   upstream.requests.length = 0;
   upstream.status = 200;
@@ -388,5 +406,160 @@ describe("GET /v2/fresh-vertical-feed/local/latest", () => {
         ],
       ]);
     });
+  });
+});
+
+describe("billing per returned record", () => {
+  const page = (records: number) =>
+    JSON.stringify({
+      feed: "local",
+      events: Array.from({ length: records }, (_, n) => ({
+        id: `r${n}`,
+        text: "<p>fresh</p>".repeat(20),
+      })),
+      next_after: records,
+      more: records > 0,
+    });
+
+  it("bills nothing and checks no credits at rate 0", async () => {
+    upstream.body = page(500);
+
+    const response = await latest();
+
+    expect(response.status).toBe(200);
+    expect(mocks.checkCredits).not.toHaveBeenCalled();
+    expect(mocks.billTeam).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["identity", (b: string) => Buffer.from(b), undefined],
+    ["gzip", (b: string) => gzipSync(b), "gzip"],
+    ["br", (b: string) => brotliCompressSync(b), "br"],
+    ["zstd", (b: string) => zstdCompressSync(b), "zstd"],
+    [
+      "gzip then br",
+      (b: string) => brotliCompressSync(gzipSync(b)),
+      "gzip, br",
+    ],
+  ])(
+    "bills 500 credits for a 500-record %s page at rate 1 and relays its bytes unchanged",
+    async (_name, encode, contentEncoding) => {
+      mocks.flags = { freshFeed: true, freshFeedCreditsPerRecord: 1 };
+      const encoded = encode(page(500));
+      upstream.body = encoded;
+      upstream.headers = contentEncoding
+        ? { "content-encoding": contentEncoding }
+        : {};
+
+      const { response, body } = await undecoded({
+        headers: { "accept-encoding": contentEncoding ?? "identity" },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(body.equals(encoded)).toBe(true);
+      await vi.waitFor(() =>
+        expect(mocks.billTeam).toHaveBeenCalledExactlyOnceWith(
+          "team-1",
+          "org-1",
+          500,
+          7,
+          expect.objectContaining({
+            endpoint: "fresh_feed",
+            chargeId: expect.any(String),
+          }),
+          expect.anything(),
+        ),
+      );
+    },
+  );
+
+  it.each([0.5, "1", -1, Infinity])(
+    "treats a rate of %j as free",
+    async rate => {
+      mocks.flags = { freshFeed: true, freshFeedCreditsPerRecord: rate };
+      upstream.body = page(500);
+
+      const response = await latest();
+
+      expect(response.status).toBe(200);
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(mocks.checkCredits).not.toHaveBeenCalled();
+      expect(mocks.billTeam).not.toHaveBeenCalled();
+    },
+  );
+
+  it("bills nothing and logs no page content when a page is not JSON", async () => {
+    mocks.flags = { freshFeed: true, freshFeedCreditsPerRecord: 1 };
+    upstream.body = '{"events":[{"title":"private words"';
+
+    await undecoded({});
+
+    await vi.waitFor(() => expect(logger.error).toHaveBeenCalled());
+    expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain(
+      "private words",
+    );
+    expect(mocks.billTeam).not.toHaveBeenCalled();
+  });
+
+  it("bills nothing for an empty page", async () => {
+    mocks.flags = { freshFeed: true, freshFeedCreditsPerRecord: 1 };
+    upstream.body = page(0);
+
+    const response = await latest();
+
+    expect(response.status).toBe(200);
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(mocks.billTeam).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [400, ""],
+    [401, ""],
+    [500, ""],
+  ])("bills nothing when the feed answers %i", async status => {
+    mocks.flags = { freshFeed: true, freshFeedCreditsPerRecord: 1 };
+    upstream.status = status;
+    upstream.body = '{"events":[{"id":"a"}]}';
+
+    await latest();
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(mocks.billTeam).not.toHaveBeenCalled();
+  });
+
+  it("bills nothing when the feed times out", async () => {
+    mocks.flags = { freshFeed: true, freshFeedCreditsPerRecord: 1 };
+    upstream.silent = true;
+
+    const response = await latest("", SHORT_TIMEOUT_ROUTE);
+
+    expect(response.status).toBe(504);
+    expect(mocks.billTeam).not.toHaveBeenCalled();
+  }, 10_000);
+
+  it("bills nothing when the transfer breaks partway through the page", async () => {
+    mocks.flags = { freshFeed: true, freshFeedCreditsPerRecord: 1 };
+    upstream.body = page(500);
+    upstream.stallAfter = 200;
+
+    await undecoded({ route: SHORT_TIMEOUT_ROUTE });
+
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(mocks.billTeam).not.toHaveBeenCalled();
+  }, 10_000);
+
+  it("answers 402 before the feed is called when the team is short of credits", async () => {
+    mocks.flags = { freshFeed: true, freshFeedCreditsPerRecord: 1 };
+    mocks.checkCredits.mockResolvedValue({ allowed: false, remaining: 0 });
+
+    const response = await latest("?limit=500");
+
+    expect(response.status).toBe(402);
+    expect(response.body.success).toBe(false);
+    expect(mocks.checkCredits).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: "team-1", value: 1 }),
+    );
+    expect(upstream.requests).toEqual([]);
+    expect(mocks.billTeam).not.toHaveBeenCalled();
   });
 });

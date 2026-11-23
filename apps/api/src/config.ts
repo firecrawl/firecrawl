@@ -130,8 +130,9 @@ const configSchema = z.object({
   RESEARCH_PROXY_URL: z.string().url().optional(),
   SEARCH_PLATFORM_URL: z.string().url().optional(),
   // When true, a plain web search that the search platform classifies as
-  // government is served through the Government Index. It needs
-  // SEARCH_PLATFORM_URL. Unset or empty, no search is routed.
+  // government is served through the Government Index on RESEARCH_PROXY_URL.
+  // It needs SEARCH_PLATFORM_URL for query classification. Unset or empty, no
+  // search is routed.
   GOV_ROUTING_ENABLED: emptyStringAsDefault(z.stringbool().default(false)),
   // The longest a plain web search waits for the routing decision before the
   // regular web search starts; a decision that takes longer routes nothing.
@@ -142,6 +143,8 @@ const configSchema = z.object({
   // Per-team Government Index daily limits as teamId:limit,teamId:limit. A
   // listed team's limit replaces its plan limit.
   GOV_INDEX_CALLS_PER_DAY_OVERRIDES: teamDailyLimits,
+  // Per-team Research Index daily limits, in the same format.
+  RESEARCH_INDEX_CALLS_PER_DAY_OVERRIDES: teamDailyLimits,
   LABS_SEARCH_URL: z.string().url().optional(),
   LABS_SEARCH_SECRET: z.string().optional(),
   FRESH_FEED_URL: emptyStringAsUndefined(z.string().url()),
@@ -157,6 +160,9 @@ const configSchema = z.object({
   // forward the real client IP for keyless rate-limiting via the
   // `x-firecrawl-keyless-ip` header. Untrusted callers can't override their IP.
   KEYLESS_PROXY_SECRET: z.string().optional(),
+  // Shared secret that lets the hosted MCP server identify authenticated
+  // API-key requests it relays without holding KEYLESS_PROXY_SECRET.
+  HOSTED_MCP_PROXY_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
   // Dedicated HMAC key for joining keyless quota-exhaustion events to the
   // existing privacy-controlled conversion pipeline. Never use the proxy or
   // credential secrets here: this value is only an analytics pseudonymizer.
@@ -267,11 +273,17 @@ const configSchema = z.object({
   ),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
+  // Workload identity federation, used when OPENAI_API_KEY is unset: the
+  // pod's Google identity is exchanged for short-lived OpenAI tokens.
+  OPENAI_IDENTITY_PROVIDER_ID: emptyStringAsUndefined(z.string().trim().min(1)),
+  OPENAI_SERVICE_ACCOUNT_ID: emptyStringAsUndefined(z.string().trim().min(1)),
   // Key for US-only teams; OPENAI_API_KEY is never used for them.
   OPENAI_US_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
+  // Service account for US-only teams, used when OPENAI_US_API_KEY is unset.
+  OPENAI_US_SERVICE_ACCOUNT_ID: emptyStringAsUndefined(
+    z.string().trim().min(1),
+  ),
   OPENROUTER_API_KEY: z.string().optional(),
-  LLAMAPARSE_API_KEY: z.string().optional(),
-  STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
   PREVIEW_TOKEN: z.string().optional(),
@@ -286,6 +298,16 @@ const configSchema = z.object({
   FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(120),
   FEEDBACK_DAILY_CAP_CREDITS: z.coerce.number().int().nonnegative().default(50),
   FEEDBACK_REFUND_ENABLED: z.stringbool().default(true),
+  // Feedback window for interact and browser sessions, from their last activity.
+  BROWSER_FEEDBACK_MAX_AGE_SEC: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(3600),
+  // Kill switch for the feedback next step on Alexandria answers.
+  ALEXANDRIA_FEEDBACK_HINT_ENABLED: z.stringbool().default(true),
+  // Kill switch for search context sent to Exchange and search attribution on provider call logs.
+  ALEXANDRIA_SEARCH_CONTEXT_ENABLED: z.stringbool().default(true),
   ALEXANDRIA_FEEDBACK_WINDOW_SEC: z.coerce
     .number()
     .int()
@@ -322,6 +344,24 @@ const configSchema = z.object({
   MCP_ACTION_LOG_SECRET: z.string().optional(),
   MCP_ACTION_LOG_STORAGE_ENABLED: z.stringbool().default(false),
   MCP_ACTION_LOG_WRITES_ENABLED: z.stringbool().default(false),
+  // Comma-separated https URL prefixes, each ending in "/". Besides the
+  // canonical hosted MCP URLs, an action log may name a resource made of one
+  // of these, a deployment name and a canonical MCP path.
+  MCP_ACTION_LOG_RESOURCE_PREFIXES: emptyStringAsUndefined(
+    z
+      .string()
+      .refine(
+        value =>
+          value
+            .split(",")
+            .every(prefix =>
+              /^https:\/\/[a-z0-9.-]+(?::\d+)?\/(?:[a-z0-9._~-]+\/)*$/.test(
+                prefix.trim(),
+              ),
+            ),
+        "MCP_ACTION_LOG_RESOURCE_PREFIXES must be comma-separated https URL prefixes ending in /",
+      ),
+  ),
   // Autumn feature id of the balance hosted MCP calls spend first (see
   // AutumnService.trackHostedMcpCredits).
   MCP_CREDITS_FEATURE_ID: emptyStringAsDefault(
@@ -393,6 +433,14 @@ const configSchema = z.object({
   PARSE_UPLOAD_STORAGE_DRIVER: z.enum(["local", "gcs"]).optional(),
   PARSE_UPLOAD_REF_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
   PARSE_UPLOAD_PUBLIC_BASE_URL: z.string().url().optional(),
+  // Files of hosted MCP shell sessions. The routes that store them exist only
+  // when this is set.
+  GCS_COMPUTER_SESSION_FILES_BUCKET_NAME: emptyStringAsUndefined(
+    z.string().trim().min(1),
+  ),
+  // The public address download links are built on. Defaults to the address
+  // the request came in on.
+  COMPUTER_SESSION_FILES_PUBLIC_BASE_URL: emptyStringAsUndefined(z.url()),
 
   // Google Cloud Pub/Sub
   PUBSUB_CREDENTIALS: z.string().optional(),
@@ -453,6 +501,15 @@ const configSchema = z.object({
   // tool lookup, and add tools to default searches (also the alexandriaAutoTools
   // team flag).
   ANTHROPIC_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
+  // Workload identity federation, used when ANTHROPIC_API_KEY is unset: the
+  // pod's Google identity is exchanged for short-lived Anthropic tokens.
+  ANTHROPIC_FEDERATION_RULE_ID: emptyStringAsUndefined(
+    z.string().trim().min(1),
+  ),
+  ANTHROPIC_ORGANIZATION_ID: emptyStringAsUndefined(z.string().trim().min(1)),
+  ANTHROPIC_SERVICE_ACCOUNT_ID: emptyStringAsUndefined(
+    z.string().trim().min(1),
+  ),
   ALEXANDRIA_AUTO_TOOLS: z.stringbool().default(false),
   // Rank rewrite-found tools together with raw-query tools by reciprocal rank
   // fusion (also the alexandriaToolFusion team flag), waiting up to
@@ -469,6 +526,12 @@ const configSchema = z.object({
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),
   EXCHANGE_INTERNAL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
+  EXCHANGE_CREDIT_GRANTS_ENABLED: z.stringbool().default(false),
+  EXCHANGE_CREDIT_GRANT_MAX_CREDITS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(10000),
 
   // Fire Engine
   FIRE_ENGINE_BETA_URL: z.string().optional(),
@@ -539,18 +602,8 @@ const configSchema = z.object({
   // External Services
   PLAYWRIGHT_MICROSERVICE_URL: z.string().optional(),
   HTML_TO_MARKDOWN_SERVICE_URL: z.string().optional(),
-  SMART_SCRAPE_API_URL: z.string().optional(),
 
-  // PDF Processing
-  PDF_MU_V2_BASE_URL: z.string().optional(),
-  PDF_MU_V2_API_KEY: z.string().optional(),
-  PDF_MU_V2_EXPERIMENT: z.string().optional(),
-  PDF_MU_V2_EXPERIMENT_PERCENT: z.coerce.number().default(100),
-
-  // MinerU direct routing (bypass Rust extraction for a % of traffic)
-  MINERU_PERCENT: z.coerce.number().min(0).max(100).default(0),
-
-  // Fire PDF (replaces MinerU for a % of traffic)
+  // Fire PDF (OCR fallback for a % of PDFs)
   FIRE_PDF_ENABLE: z.stringbool().optional(),
   FIRE_PDF_PERCENT: z.coerce.number().min(0).max(100).default(10),
   FIRE_PDF_BASE_URL: z.string().optional(),
@@ -572,9 +625,9 @@ const configSchema = z.object({
   // FIRE_PDF_CACHE_BASE_URL and FIRE_PDF_BASE_URL.
   FIRE_PDF_CACHE_BACKGROUND_REFRESH: z.stringbool().default(false),
   // /v2/parse sends every PDF (auto/ocr mode) to FirePDF: no direct
-  // text-layer extraction, no FIRE_PDF_PERCENT sampling, no MinerU
-  // diversion. Explicit `mode: "fast"` keeps direct extraction. FirePDF
-  // failures still fall back to MinerU / pdf-parse. Needs FIRE_PDF_ENABLE.
+  // text-layer extraction, no FIRE_PDF_PERCENT sampling. Explicit
+  // `mode: "fast"` keeps direct extraction. FirePDF failures still fall back
+  // to pdf-parse. Needs FIRE_PDF_ENABLE.
   PARSE_PDF_ALWAYS_FIRE_PDF: z.stringbool().default(true),
   // Table rendering FirePDF applies to /v2/parse documents. `dynamic` keeps
   // pipe tables where they are lossless and HTML where structure needs it
@@ -589,6 +642,9 @@ const configSchema = z.object({
   // Async /jobs rollout is a separate, server-controlled cohort inside
   // traffic already selected for FirePDF. It is disabled by default.
   FIRE_PDF_ASYNC_PERCENT: z.coerce.number().min(0).max(100).default(0),
+  // Share of scrapes (by scrape id) that download a cut-off PDF handoff
+  // again directly. 0 disables the re-download; truncation is still logged.
+  PDF_TRUNCATED_REFETCH_PERCENT: z.coerce.number().min(0).max(100).default(0),
   // Separate cohort for crawl/batch-originated scrapes (any scrape
   // carrying a crawlId): no caller waits on one specific document, so
   // these can ramp onto the async lane ahead of interactive traffic.
@@ -648,13 +704,8 @@ const configSchema = z.object({
   // `largePdfs` team flag, which grants the same cap without a deploy.
   PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS: z.string().optional(),
 
-  // RunPod
-  RUNPOD_MU_API_KEY: z.string().optional(),
-  RUNPOD_MU_POD_ID: z.string().optional(),
-
   // PDF Rust Extraction (pdf-inspector)
   PDF_RUST_EXTRACT_ENABLE: z.stringbool().optional(),
-  PDF_SHADOW_COMPARISON_ENABLE: z.stringbool().optional(),
 
   // Webhooks
   SELF_HOSTED_WEBHOOK_URL: z.string().optional(),
@@ -720,7 +771,6 @@ const configSchema = z.object({
 
   // AI/ML
   MODEL_NAME: z.string().optional(),
-  MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
   // Uses Vertex with ambient credentials when VERTEX_CREDENTIALS is unset.
@@ -731,10 +781,6 @@ const configSchema = z.object({
   LANGSMITH_PROJECT: z.string().optional(),
   LANGSMITH_ENDPOINT: z.string().optional(),
   LANGSMITH_TRACING: z.stringbool().optional(),
-
-  // Rate Limiting
-  RATE_LIMIT_TEST_API_KEY_SCRAPE: z.coerce.number().optional(),
-  RATE_LIMIT_TEST_API_KEY_CRAWL: z.coerce.number().optional(),
 
   // Testing
   TEST_API_KEY: z.string().optional(),
@@ -766,7 +812,6 @@ const configSchema = z.object({
   NUQ_POD_NAME: z.string().default("main"),
 
   // Billing
-  AUTO_RECHARGE_ENABLED: z.stringbool().default(false),
   // firebill — durable usage-event store that sits in front of Autumn. Every
   // billing write (check, lock, track, refund, finalize) goes through it;
   // without both URL and SECRET set, billing is skipped.
@@ -860,5 +905,15 @@ const validatedConfigSchema = configSchema.superRefine((value, context) => {
     });
   }
 });
+
+// Docker Compose and the example Helm chart pass an empty OPENAI_BASE_URL when
+// the variable is not set, so an empty value counts as not set. @ai-sdk/openai
+// reads the variable from the environment itself, for the default provider it
+// creates when the package is loaded and in createOpenAI, and throws on an
+// empty value. It is therefore removed here, and lib/generic-ai.ts imports
+// this module before the package.
+if (process.env.OPENAI_BASE_URL?.trim() === "") {
+  delete process.env.OPENAI_BASE_URL;
+}
 
 export const config = validatedConfigSchema.parse(process.env);

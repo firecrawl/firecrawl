@@ -10,6 +10,7 @@ import { ScrapeJobData } from "../types";
 import { SearchV2Response } from "../lib/entities";
 import type { BillingMetadata } from "../services/billing/types";
 import { getScrapeZDR } from "../lib/zdr-helpers";
+import { requestContext } from "../lib/request-context";
 import type { ThreatProtectionPolicy } from "../lib/threat-protection/types";
 
 export interface DocumentWithCostTracking {
@@ -44,6 +45,7 @@ interface ScrapeSearchOptions {
   keylessReserved?: boolean;
   threatProtectionPolicy?: ThreatProtectionPolicy | null;
   safeModeBypassed?: boolean;
+  workContactOnly?: boolean;
 }
 
 async function scrapeSearchResultDirect(
@@ -74,6 +76,14 @@ async function scrapeSearchResultDirect(
       data: {
         url: searchResult.url,
         mode: "single_urls",
+        ctx: requestContext({
+          teamId: options.teamId,
+          zeroDataRetention,
+          flags,
+          orgId: options.orgId ?? null,
+          apiKeyId: options.apiKeyId,
+          billing: options.billing,
+        }),
         team_id: options.teamId,
         scrapeOptions: {
           ...options.scrapeOptions,
@@ -88,6 +98,7 @@ async function scrapeSearchResultDirect(
           agentIndexOnly: options.agentIndexOnly ?? false,
           threatProtection: options.threatProtectionPolicy ?? undefined,
           safeModeBypassed: options.safeModeBypassed === true,
+          ...(options.workContactOnly ? { workContactOnly: true } : {}),
         },
         skipNuq: true,
         origin: options.origin,

@@ -17,11 +17,7 @@ import {
 import { resolveBillingMetadata } from "../billing/types";
 import systemMonitor from "../system-monitor";
 import { v7 as uuidv7 } from "uuid";
-import {
-  processIndexInsertJobs,
-  processOMCEJobs,
-  queryDomainsForPrecrawl,
-} from "..";
+import { processIndexInsertJobs, queryDomainsForPrecrawl } from "..";
 import { queryTopUrlsForDomain } from "../../db/rpc";
 import { getSearchIndexClient } from "../../lib/search-index-client";
 // Search indexing is now handled by the separate search service
@@ -35,6 +31,7 @@ import {
   toV0CrawlerOptions,
 } from "../../controllers/v2/types";
 import { StoredCrawl, crawlToCrawler, saveCrawl } from "../../lib/crawl-redis";
+import { requestContext } from "../../lib/request-context";
 import { _addScrapeJobToBullMQ } from "../queue-jobs";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { crawlGroup, resolveNewGroupBackend } from "../worker/nuq-router";
@@ -44,6 +41,7 @@ import { logRequest, shutdownPubSubLogging } from "../logging/log_job";
 import { startSiemLoggingConsumer } from "../siem-logging/worker";
 import { closeSiemLoggingTransport } from "../../lib/siem-logging/transport";
 import { requestCreditsShards } from "../../lib/request-credits-store";
+import { startRole } from "../../main";
 
 const workerLockDuration = config.WORKER_LOCK_DURATION;
 const workerStalledCheckInterval = config.WORKER_STALLED_CHECK_INTERVAL;
@@ -502,7 +500,14 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               storeInCache: true,
               onlyMainContent: false,
             });
+            const ctx = requestContext({
+              teamId,
+              zeroDataRetention: false,
+              orgId: null,
+              apiKeyId: null,
+            });
             const sc: StoredCrawl = {
+              ctx,
               originUrl: url,
               crawlerOptions: toV0CrawlerOptions(crawlerOptions),
               scrapeOptions,
@@ -541,6 +546,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               {
                 url: url,
                 mode: "kickoff" as const,
+                ctx,
                 team_id: teamId,
                 crawlerOptions,
                 scrapeOptions: sc.scrapeOptions,
@@ -598,20 +604,6 @@ let isShuttingDown = false;
 function shutdownSiemLoggingTransport(): void {
   closeSiemLoggingTransport().catch(error => {
     logger.warn("Failed to close the SIEM logging transport", { error });
-  });
-}
-
-if (require.main === module) {
-  process.on("SIGINT", () => {
-    logger.info("Received SIGINT. Shutting down gracefully...");
-    isShuttingDown = true;
-    shutdownSiemLoggingTransport();
-  });
-
-  process.on("SIGTERM", () => {
-    logger.info("Received SIGTERM. Shutting down gracefully...");
-    isShuttingDown = true;
-    shutdownSiemLoggingTransport();
   });
 }
 
@@ -694,14 +686,28 @@ const workerFun = async (
 };
 
 const INDEX_INSERT_INTERVAL = 3000;
+const INDEX_INSERT_MAX_IN_FLIGHT_MS = 5 * 60 * 1000;
 const WEBHOOK_INSERT_INTERVAL = 15000;
-const OMCE_INSERT_INTERVAL = 5000;
+// OMCE job inserts are disabled to reduce index DB load.
+// const OMCE_INSERT_INTERVAL = 5000;
 const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
 // Search indexing is now handled by separate search service, not this worker
 // const SEARCH_INDEX_INTERVAL = 10000;
 
 // Start the workers
-(async () => {
+export async function start() {
+  process.on("SIGINT", () => {
+    logger.info("Received SIGINT. Shutting down gracefully...");
+    isShuttingDown = true;
+    shutdownSiemLoggingTransport();
+  });
+
+  process.on("SIGTERM", () => {
+    logger.info("Received SIGTERM. Shutting down gracefully...");
+    isShuttingDown = true;
+    shutdownSiemLoggingTransport();
+  });
+
   // Start billing worker and batch processing
   startBillingBatchProcessing();
   const billingWorkerPromise = workerFun(
@@ -720,18 +726,41 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
     logger.error("Failed to start the SIEM logging consumer", { error });
   });
 
+  let indexInsertStartedAt: number | null = null;
   const indexInserterInterval = setInterval(async () => {
     if (isShuttingDown) {
       return;
     }
 
-    await withSpan("firecrawl-index-worker-process-insert-jobs", async span => {
-      setSpanAttributes(span, {
-        "index.worker.operation": "process_insert_jobs",
-        "index.worker.type": "scheduled",
+    // Skip the tick while the previous insert is still running, unless it looks stuck.
+    if (indexInsertStartedAt !== null) {
+      const inFlightMs = Date.now() - indexInsertStartedAt;
+      if (inFlightMs < INDEX_INSERT_MAX_IN_FLIGHT_MS) {
+        return;
+      }
+      logger.warn("Previous index insert run is stuck, starting a new one", {
+        inFlightMs,
       });
-      await processIndexInsertJobs();
-    });
+    }
+
+    const startedAt = Date.now();
+    indexInsertStartedAt = startedAt;
+    try {
+      await withSpan(
+        "firecrawl-index-worker-process-insert-jobs",
+        async span => {
+          setSpanAttributes(span, {
+            "index.worker.operation": "process_insert_jobs",
+            "index.worker.type": "scheduled",
+          });
+          await processIndexInsertJobs();
+        },
+      );
+    } finally {
+      if (indexInsertStartedAt === startedAt) {
+        indexInsertStartedAt = null;
+      }
+    }
   }, INDEX_INSERT_INTERVAL);
 
   const webhookInserterInterval = setInterval(async () => {
@@ -750,18 +779,19 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
     await processBrowserSessionActivityJobs();
   }, BROWSER_ACTIVITY_INSERT_INTERVAL);
 
-  const omceInserterInterval = setInterval(async () => {
-    if (isShuttingDown) {
-      return;
-    }
-    await withSpan("firecrawl-index-worker-process-omce-jobs", async span => {
-      setSpanAttributes(span, {
-        "index.worker.operation": "process_omce_jobs",
-        "index.worker.type": "scheduled",
-      });
-      await processOMCEJobs();
-    });
-  }, OMCE_INSERT_INTERVAL);
+  // OMCE job inserts are disabled to reduce index DB load.
+  // const omceInserterInterval = setInterval(async () => {
+  //   if (isShuttingDown) {
+  //     return;
+  //   }
+  //   await withSpan("firecrawl-index-worker-process-omce-jobs", async span => {
+  //     setSpanAttributes(span, {
+  //       "index.worker.operation": "process_omce_jobs",
+  //       "index.worker.type": "scheduled",
+  //     });
+  //     await processOMCEJobs();
+  //   });
+  // }, OMCE_INSERT_INTERVAL);
 
   const engpickerPromise = (async () => {
     if (config.DISABLE_ENGPICKER) {
@@ -811,6 +841,10 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
   clearInterval(webhookInserterInterval);
   clearInterval(browserActivityInterval);
   clearInterval(browserReconcileInterval);
-  clearInterval(omceInserterInterval);
+  // clearInterval(omceInserterInterval);
   logger.info("All workers shut down, exiting process");
-})();
+}
+
+if (require.main === module) {
+  void startRole("index-worker");
+}

@@ -79,6 +79,8 @@ import { getACUCTeam } from "../../controllers/auth";
 import { isUsOnly } from "../../lib/us-only";
 import type { TeamFlags } from "../../controllers/v1/types";
 import { orgIdForTeam } from "../../lib/team-org";
+import { requestContext } from "../../lib/request-context";
+import type { BillingMetadata } from "../billing/types";
 import {
   reconstructKnownState,
   searchStatusToPageStatus,
@@ -305,6 +307,18 @@ async function scrapeSearchMonitorPage(params: {
     api_key_id: null,
   });
 
+  const billing: BillingMetadata = {
+    endpoint: "monitor",
+    jobId: params.checkId,
+  };
+  const ctx = requestContext({
+    teamId: params.teamId,
+    zeroDataRetention: false,
+    flags: params.teamFlags ?? undefined,
+    orgId: null,
+    apiKeyId: null,
+    billing,
+  });
   const job: NuQJob<ScrapeJobData> = {
     id: scrapeId,
     status: "active",
@@ -313,6 +327,7 @@ async function scrapeSearchMonitorPage(params: {
     data: {
       mode: "single_urls",
       url: params.url,
+      ctx,
       team_id: params.teamId,
       scrapeOptions,
       internalOptions: {
@@ -338,7 +353,7 @@ async function scrapeSearchMonitorPage(params: {
       skipNuq: true,
       origin: "monitor",
       integration: null,
-      billing: { endpoint: "monitor", jobId: params.checkId },
+      billing,
       zeroDataRetention: false,
       apiKeyId: null,
     },
@@ -398,6 +413,9 @@ async function billMonitorCheck(params: {
       // What the lock reserved. firebill adds it back to the ghost's reported
       // balance, which Autumn returns net of this very hold.
       heldValue: params.check.reserved_credits,
+      // A settle firebill never answered is re-sent from a durable queue under
+      // the same key, so a firebill outage does not leave the run unbilled.
+      durableRetry: true,
     });
   }
 
@@ -423,6 +441,27 @@ async function billMonitorCheck(params: {
     return false;
   }
 
+  // A run with no hold (the lock got no answer, or there was nothing to lock
+  // against) has no settle to bill it, so it is charged here with a plain
+  // track for what it actually cost. Keyed by the check, so a re-finalize
+  // dedupes instead of charging twice. A run with a hold never takes this
+  // branch: its charge is the confirm above.
+  const tracked =
+    !params.lockId && params.orgId
+      ? await autumnService.trackCredits({
+          teamId: params.monitor.team_id,
+          orgId: params.orgId,
+          value: params.actualCredits,
+          properties: {
+            source: "monitorCheck",
+            endpoint: "monitor",
+            jobId: params.check.id,
+          },
+          idempotencyKey: `fc:track:monitor:${params.check.id}`,
+          externalRequestId: params.check.partner_run_token,
+        })
+      : false;
+
   await getBillingQueue().add(
     "bill_team",
     {
@@ -434,7 +473,7 @@ async function billMonitorCheck(params: {
       timestamp: new Date().toISOString(),
       originating_job_id: params.check.id,
       api_key_id: null,
-      autumnTrackInRequest: Boolean(params.lockId),
+      autumnTrackInRequest: Boolean(params.lockId) || tracked,
     },
     {
       // Deterministic per check so a re-finalize (e.g. the reconciler re-running this
@@ -594,6 +633,18 @@ async function enqueueMonitorScrapeTarget(params: {
   // Safe Mode applies to monitor scrapes: resolve per-URL at the backstop from
   // the team's flags. orgId stays null (monitors' separate no-blocklist rule).
   const acuc = await getACUCTeam(params.monitor.team_id);
+  const billing: BillingMetadata = {
+    endpoint: "monitor",
+    jobId: params.check.id,
+  };
+  const ctx = requestContext({
+    teamId: params.monitor.team_id,
+    zeroDataRetention: false,
+    flags: acuc?.flags ?? undefined,
+    orgId: null,
+    apiKeyId: null,
+    billing,
+  });
 
   for (const [index, url] of params.target.urls.entries()) {
     const scrapeId = params.targetRun.expectedJobs[index];
@@ -619,6 +670,7 @@ async function enqueueMonitorScrapeTarget(params: {
       {
         mode: "single_urls",
         url,
+        ctx,
         team_id: params.monitor.team_id,
         scrapeOptions,
         internalOptions: {
@@ -632,7 +684,7 @@ async function enqueueMonitorScrapeTarget(params: {
         },
         origin: "monitor",
         integration: null,
-        billing: { endpoint: "monitor", jobId: params.check.id },
+        billing,
         zeroDataRetention: false,
         apiKeyId: null,
         monitoring: {
@@ -693,8 +745,21 @@ async function enqueueMonitorCrawlTarget(params: {
   // Safe Mode applies to monitor crawls: each child resolves it per-URL at the
   // backstop from the team's flags. orgId stays null (monitors' no-blocklist rule).
   const acuc = await getACUCTeam(params.monitor.team_id);
+  const billing: BillingMetadata = {
+    endpoint: "monitor",
+    jobId: params.check.id,
+  };
+  const ctx = requestContext({
+    teamId: params.monitor.team_id,
+    zeroDataRetention: false,
+    flags: acuc?.flags ?? undefined,
+    orgId: null,
+    apiKeyId: null,
+    billing,
+  });
 
   const sc: StoredCrawl = {
+    ctx,
     originUrl: body.url,
     crawlerOptions: toV0CrawlerOptions(crawlerOptions),
     scrapeOptions: body.scrapeOptions,
@@ -736,13 +801,14 @@ async function enqueueMonitorCrawlTarget(params: {
     {
       url: body.url,
       mode: "kickoff",
+      ctx,
       team_id: params.monitor.team_id,
       crawlerOptions,
       scrapeOptions: sc.scrapeOptions,
       internalOptions: sc.internalOptions,
       origin: "monitor",
       integration: null,
-      billing: { endpoint: "monitor", jobId: params.check.id },
+      billing,
       crawl_id: crawlId,
       v1: true,
       zeroDataRetention: false,

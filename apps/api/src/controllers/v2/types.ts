@@ -21,12 +21,14 @@ import {
 } from "../../lib/entities";
 import {
   agentOptionsExtract,
+  agentRemovedRefineOpts,
   AuthCreditUsageChunk,
+  isAgentExtractModelValid,
   ScrapeOptions as V1ScrapeOptions,
 } from "../v1/types";
 import type { InternalOptions } from "../../scraper/scrapeURL";
 import type { PdfPageBlocks } from "../../scraper/scrapeURL/engines/pdf/types";
-import { ErrorCodes } from "../../lib/error";
+import { ErrorCode } from "../../lib/error";
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import { integrationSchema } from "../../utils/integration";
@@ -1098,6 +1100,10 @@ const extractOptions = z
   .refine(obj => obj.urls || obj.prompt, {
     error: "Either 'urls' or 'prompt' must be provided.",
   })
+  .refine(
+    obj => !isAgentExtractModelValid(obj.agent?.model),
+    agentRemovedRefineOpts,
+  )
   .transform(obj => ({
     ...obj,
     allowExternalLinks: obj.allowExternalLinks || obj.enableWebSearch,
@@ -1644,7 +1650,7 @@ export type VideoItem = {
 
 export type ErrorResponse = {
   success: false;
-  code?: ErrorCodes;
+  code?: ErrorCode;
   error: string;
   details?: any;
   sponsor_status?: string;
@@ -1687,7 +1693,7 @@ export interface URLTrace {
 
 export interface ExtractResponse {
   success: boolean;
-  code?: ErrorCodes;
+  code?: ErrorCode;
   error?: string;
   data?: any;
   scrape_id?: string;
@@ -2101,7 +2107,7 @@ export type CrawlErrorsResponse =
         id: string;
         timestamp?: string;
         url: string;
-        code?: ErrorCodes;
+        code?: ErrorCode;
         error: string;
         requiresAction?: ThirdPartyDataTermsRequiredError["requiresAction"];
       }[];
@@ -2130,6 +2136,8 @@ export type TeamFlags = {
   exchangeRetrieve?: boolean;
   alexandriaAutoTools?: boolean;
   alexandriaToolFusion?: boolean;
+  // Search skips highlights entirely, including their index lookups.
+  skipSearchHighlights?: boolean;
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
@@ -2147,6 +2155,7 @@ export type TeamFlags = {
     disablePlatformSelection?: boolean;
     disableCountrySelection?: boolean;
     disableAutomaticReferrer?: boolean;
+    respectPaywalls?: boolean;
     allowlist?: string[];
   };
   siemLogging?: boolean;
@@ -2154,6 +2163,9 @@ export type TeamFlags = {
   forceZDR?: boolean;
   allowZDR?: boolean;
   scrapeZDR?: "disabled" | "allowed" | "forced";
+  // Zero data retention for Alexandria provider tools and the Exchange proxy.
+  // Forced scrape ZDR implies it. Exchange is told per call by header.
+  alexandriaZDR?: "disabled" | "allowed" | "forced";
   searchZDR?: "disabled" | "allowed" | "forced" | "forced-zdr" | "forced-anon";
   zdrCost?: number;
   /** How long an agent run's ZDR result is kept, in minutes. Unset is the default (24 hours). */
@@ -2183,6 +2195,14 @@ export type TeamFlags = {
   // Every request is processed by US-based vendors only. A route with no US
   // vendor is refused or skipped with a warning.
   usOnly?: boolean;
+  // Staff-set: the org has a signed contract on file.
+  signedContract?: boolean;
+  // Staff-set: the date range of the org's enterprise pilot, as ISO 8601
+  // strings. No endDate means the pilot has no end.
+  enterprisePilot?: { startDate?: string; endDate?: string } | null;
+  // Alexandria Verified: the dashboard's Verified pages open, and Exchange
+  // providers marked verifiedOnly (Yelp) execute. Org flag, overridable per team.
+  alexandriaVerified?: boolean;
   // PDF and image parsing runs only on reserved processing capacity. A parse
   // that cannot be kept there is refused.
   reservedCapacity?: boolean;
@@ -2380,8 +2400,6 @@ export function fromV1ScrapeOptions(
   delete (spreadScrapeOptions as any).webhook;
   delete (spreadScrapeOptions as any).zeroDataRetention;
   delete (spreadScrapeOptions as any).maxConcurrency;
-  // v2 scrapeOptions schema is strict and does not include `agent`. We carry it via internalOptions below.
-  delete (spreadScrapeOptions as any).agent;
 
   delete spreadScrapeOptions.__experimental_cache;
   delete spreadScrapeOptions.jsonOptions;
@@ -2471,12 +2489,9 @@ export function fromV1ScrapeOptions(
     internalOptions: {
       teamId,
       orgId: null,
-      v1Agent: v1ScrapeOptions.agent,
       v1JSONSystemPrompt: (
         v1ScrapeOptions.jsonOptions || v1ScrapeOptions.extract
       )?.systemPrompt,
-      v1JSONAgent: (v1ScrapeOptions.jsonOptions || v1ScrapeOptions.extract)
-        ?.agent,
       v1OriginalFormat,
     },
   };
@@ -2952,11 +2967,15 @@ export type SearchFeedbackResponse =
 // Generic Endpoint Feedback
 // =============================================
 
+// "interact" takes the scrape job id the session was opened on, "browser" the
+// browser session id.
 const endpointFeedbackEndpointSchema = z.enum([
   "search",
   "scrape",
   "parse",
   "map",
+  "interact",
+  "browser",
 ]);
 
 export type EndpointFeedbackEndpoint = z.infer<
@@ -3063,6 +3082,8 @@ export type EndpointFeedbackResponse =
       success: true;
       feedbackId: string;
       creditsRefunded: number;
+      /** Alexandria only: states the refund, or why there was none. */
+      message?: string;
       alreadySubmitted?: boolean;
       dailyCapReached?: boolean;
       websiteCapReached?: boolean;

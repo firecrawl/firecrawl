@@ -1,3 +1,4 @@
+import compression from "compression";
 import express, { Request, Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { z } from "zod";
@@ -49,6 +50,7 @@ const PAPER_SEARCH_TIMEOUT_MS = 30_000;
 const PAPER_INSPECT_TIMEOUT_MS = 5_000;
 const SIMILAR_PAPERS_TIMEOUT_MS = 10_000;
 const PAPER_READ_TIMEOUT_MS = 120_000;
+const PROTEIN_LOOKUP_TIMEOUT_MS = 5_000;
 
 // The paper endpoints, all served by the Research Index and limited by its
 // daily budget.
@@ -117,6 +119,12 @@ const similarPapersSchema = z.strictObject({
   ...commonQuery,
 });
 
+const proteinLookupSchema = z.strictObject({
+  protein: z.string().trim().min(1).max(200),
+  organism: z.string().trim().min(1).optional(),
+  ...commonQuery,
+});
+
 const starsSchema = z.coerce.number().int().nonnegative().optional();
 
 const booleanFlag = z
@@ -126,23 +134,34 @@ const booleanFlag = z
     value === undefined ? undefined : value === true || value === "true",
   );
 
-const developerSearchSchema = z.strictObject({
-  query: z.string().min(1),
-  k: kSchema(100),
-  types: multiString,
-  repos: multiString,
-  sources: multiString,
-  passages: kSchema(5),
-  language: z.string().min(1).optional(),
-  topic: multiString,
-  license: z.string().min(1).optional(),
-  min_stars: starsSchema,
-  max_stars: starsSchema,
-  archived: booleanFlag,
-  fork: booleanFlag,
-  skills: z.enum(["only"]).optional(),
-  ...commonQuery,
-});
+const developerSearchSchema = z
+  .strictObject({
+    query: z.string().min(1),
+    k: kSchema(100),
+    limit: kSchema(100),
+    types: multiString,
+    repos: multiString,
+    sources: multiString,
+    passages: kSchema(5),
+    highlights: booleanFlag,
+    language: z.string().min(1).optional(),
+    topic: multiString,
+    license: z.string().min(1).optional(),
+    min_stars: starsSchema,
+    max_stars: starsSchema,
+    archived: booleanFlag,
+    fork: booleanFlag,
+    skills: z.enum(["only"]).optional(),
+    ...commonQuery,
+  })
+  .refine(
+    params =>
+      params.k === undefined ||
+      params.limit === undefined ||
+      params.k === params.limit,
+    { message: "k and limit must match when both are sent", path: ["limit"] },
+  )
+  .transform(({ limit, ...params }) => ({ ...params, k: params.k ?? limit }));
 
 const DEVELOPER_SEARCH_QUERY_KEYS = [
   "query",
@@ -627,6 +646,7 @@ function paperId(req: Request) {
 
 export function createResearchRouter(options: { legacy?: boolean } = {}) {
   const router = express.Router();
+  router.use(compression({ threshold: 1024 }));
 
   if (options.legacy) {
     router.use((req, _res, next) => {
@@ -711,6 +731,23 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
       return controller(authedReq, res);
     }),
   );
+
+  if (!options.legacy) {
+    router.get(
+      "/proteins",
+      wrap(
+        createResearchController(proteinLookupSchema, ["protein", "organism"], {
+          kind: "research_paper_inspect",
+          table: "research_paper_inspects",
+          action: "lookupProtein",
+          targetHint: params => `protein:${params.protein}`,
+          upstreamPath: () => "/v2/research/proteins",
+          timeoutMs: PROTEIN_LOOKUP_TIMEOUT_MS,
+          billAs: "scrape",
+        }),
+      ),
+    );
+  }
 
   return router;
 }
