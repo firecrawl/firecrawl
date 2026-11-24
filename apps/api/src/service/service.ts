@@ -27,23 +27,33 @@ import {
   type RequestSchemas,
 } from "./request";
 import {
+  buildRouteRegistry,
+  type DescribedRoute,
+  type RouteRegistrar,
+  type RouterName,
+  type Routers,
+} from "./routes";
+import {
   buildSearchProviderRegistry,
   type DescribedSearchProvider,
   type SearchProvider,
   type SearchProviderRegistry,
 } from "./search-providers";
+import {
+  buildWorkerRegistry,
+  type RoleRegistry,
+  type Worker,
+  type WorkerRunEnv,
+} from "./workers";
 
 export type { Modules } from "./modules";
-
-/** A process role: what one process of the service runs. */
-export interface Worker {
-  /**
-   * `entry` is the file that starts any role as `node <entry> <role>`. A role
-   * that starts other processes starts them through it, whichever file its own
-   * process was started from.
-   */
-  run(env: { entry: string }): void | Promise<void>;
-}
+export type {
+  DescribedRoute,
+  RouteRegistrar,
+  RouterName,
+  Routers,
+} from "./routes";
+export type { RoleRegistry, Worker, WorkerRunEnv } from "./workers";
 
 /**
  * A named bundle of everything that can be added to a service without the
@@ -85,6 +95,12 @@ export interface Extension {
    * contributed by this extension.
    */
   request?: RequestContributions;
+  /**
+   * Express routes contributed by this extension. Non-core extensions mount
+   * before core's routes so a contributed route can answer first or call
+   * `next()`.
+   */
+  routes?: RouteRegistrar;
   /** Process roles, by name. A later extension replaces a role of the same name. */
   workers?: Record<string, Worker>;
 }
@@ -126,6 +142,8 @@ export interface ServiceDescription {
   llmProviders: Record<string, string>;
   /** Contributed request fields, formats, and rules, by owner. */
   request: DescribedRequestSchemas;
+  /** Express routes registered by extensions, in mount order. */
+  routes: DescribedRoute[];
   /** For each process role, the extension it comes from. */
   roles: Record<string, string>;
   /**
@@ -149,7 +167,10 @@ export interface Service {
   readonly searchProviders: SearchProviderRegistry;
   readonly llmProviders: LlmProviderRegistry;
   readonly schemas: RequestSchemas;
+  readonly roles: RoleRegistry;
   readonly workers: Readonly<Record<string, Worker>>;
+  /** Mounts every extension's Express routes onto `routers` in mount order. */
+  mountRoutes(routers: Routers): void;
   /** What the service was made of when it was created, plus declared env owners. Each call returns a copy. */
   describe(): ServiceDescription;
 }
@@ -205,10 +226,19 @@ export function createService(
         ? defaults.webhooks
         : config.modules.webhooks,
   });
-  const workers: Record<string, Worker> = Object.freeze(
-    Object.fromEntries(
-      extensions.flatMap(extension => Object.entries(extension.workers ?? {})),
-    ),
+  const { roles, workers, describedRoles } = buildWorkerRegistry(
+    extensions.map(extension => ({
+      owner: extension.name,
+      workers: extension.workers,
+    })),
+  );
+
+  const { mountRoutes, describeRoutes } = buildRouteRegistry(
+    extensions.map((extension, index) => ({
+      owner: extension.name,
+      isCore: index === 0,
+      routes: extension.routes,
+    })),
   );
 
   const { hooks, describedHooks } = buildHookRegistry(
@@ -290,16 +320,6 @@ export function createService(
     return byCode;
   };
 
-  // Worked out here, from the extensions as the roles above were just read
-  // from them, so it stays true to what the service runs whatever happens to
-  // an extension object later. The record has no prototype, so a name such as
-  // "constructor" is a key like any other.
-  const roleOwners: Record<string, string> = Object.create(null);
-  for (const extension of extensions) {
-    for (const role of Object.keys(extension.workers ?? {})) {
-      roleOwners[role] = extension.name;
-    }
-  }
   const baseDescription = {
     extensions: names,
     modules: Object.keys(modules).sort(),
@@ -309,7 +329,7 @@ export function createService(
     searchProviders: describedSearchProviders,
     llmProviders: describedLlmProviders,
     request: describedRequest,
-    roles: sortedByKey(roleOwners),
+    roles: describedRoles,
   };
 
   return Object.freeze({
@@ -322,7 +342,9 @@ export function createService(
     searchProviders,
     llmProviders,
     schemas,
+    roles,
     workers,
+    mountRoutes,
     describe(): ServiceDescription {
       // Built from entries, so that a code is listed whatever its name is.
       const errors = Object.fromEntries(
@@ -339,6 +361,7 @@ export function createService(
         searchProviders: copy.searchProviders,
         llmProviders: copy.llmProviders,
         request: copy.request,
+        routes: describeRoutes(),
         roles: copy.roles,
         env: sortedByKey(describeEnv()),
       };
@@ -411,9 +434,13 @@ export const service: Service = {
   get schemas() {
     return current().schemas;
   },
+  get roles() {
+    return current().roles;
+  },
   get workers() {
     return current().workers;
   },
+  mountRoutes: (routers: Routers) => current().mountRoutes(routers),
   describe: () => current().describe(),
 };
 
@@ -427,6 +454,12 @@ export function replaceService(next: Service | undefined): Service | undefined {
   startedRole = undefined;
   stopRun = undefined;
   return previous;
+}
+
+/** Optional execution controls for `run()`. */
+export interface RunOptions {
+  /** Abort signal forwarded to the worker's `run()` environment. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -443,10 +476,16 @@ export function replaceService(next: Service | undefined): Service | undefined {
  * throws synchronously when no `process.start` hook is registered, and
  * rejects the returned promise when `process.start` hooks run first.
  */
-export function run(next: Service, role: string, entry: string): Promise<void> {
-  if (!Object.hasOwn(next.workers, role)) {
+export function run(
+  next: Service,
+  role: string,
+  entry: string,
+  options?: RunOptions,
+): Promise<void> {
+  const worker = next.roles.get(role);
+  if (!worker) {
     throw new Error(
-      `Unknown role "${role}". Known roles: ${Object.keys(next.workers).sort().join(", ")}`,
+      `Unknown role "${role}". Known roles: ${next.roles.names().join(", ")}`,
     );
   }
   if (installed) {
@@ -456,10 +495,12 @@ export function run(next: Service, role: string, entry: string): Promise<void> {
   installed = next;
   startedRole = role;
   stopRun = undefined;
+  const env: WorkerRunEnv =
+    options?.signal !== undefined
+      ? { entry, signal: options.signal }
+      : { entry };
   if (!next.hooks.has("process.start")) {
-    return Promise.resolve(next.workers[role].run({ entry }));
+    return Promise.resolve(worker.run(env));
   }
-  return next.hooks
-    .run("process.start", { role })
-    .then(() => next.workers[role].run({ entry }));
+  return next.hooks.run("process.start", { role }).then(() => worker.run(env));
 }

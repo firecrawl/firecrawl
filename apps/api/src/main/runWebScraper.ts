@@ -33,6 +33,7 @@ export async function startWebScraperPipeline({
       teamId: job.data.team_id,
       origin: job.data.origin,
       ...job.data.internalOptions,
+      ctx,
       teamFlags: ctx.flags,
       // In-flight jobs enqueued before orgId existed may omit it.
       orgId: ctx.orgId ?? null,

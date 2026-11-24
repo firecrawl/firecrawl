@@ -395,6 +395,7 @@ describe("coreParts", () => {
         formats: {},
         rules: [],
       },
+      routes: [],
       roles: {
         api: "core",
         "cclog-worker": "core",
@@ -450,12 +451,15 @@ describe("coreParts", () => {
     expect(transformed instanceof Promise).toBe(false);
 
     expect(built.describe().hooks).toEqual({});
+    expect(built.describe().routes).toEqual([]);
+    expect(built.roles.names()).toHaveLength(11);
     expect(built.describe().modules).toEqual([
       "idempotency",
       "messages",
       "uploads",
       "webhooks",
     ]);
+    expect(required).not.toHaveBeenCalledWith("express");
     expect(required).not.toHaveBeenCalledWith(enginesModule);
     expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
     expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
