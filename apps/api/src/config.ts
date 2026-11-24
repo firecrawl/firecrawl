@@ -840,7 +840,6 @@ const configSchema = z.object({
   GITHUB_RUN_NUMBER: z.string().optional(),
   GITHUB_REF_NAME: z.string().optional(),
   RESTRICTED_COUNTRIES: delimitedList(",").optional(),
-  DISABLE_ENGPICKER: z.stringbool().optional(),
   DISABLE_MONITORING: z.stringbool().default(false),
 
   // Stamp an inferred `integration` on unlabelled direct callers.

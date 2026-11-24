@@ -21,7 +21,7 @@ import {
   wikipediaMaxReasonableTime,
   isWikimediaUrl,
 } from "./wikipedia";
-import { queryEngpickerVerdict, useIndex } from "../../../services";
+import { useIndex } from "../../../services";
 import { useFireEngine } from "./fire-engine/available";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import {
@@ -737,12 +737,6 @@ export async function buildFallbackList(meta: Meta): Promise<
     }
   }
 
-  const shouldPrioritizeTlsClient = meta.options.__experimental_engpicker
-    ? (await queryEngpickerVerdict(
-        meta.options.__experimental_omceDomain ?? new URL(meta.url).hostname,
-      )) === "TlsClientOk"
-    : false;
-
   const _engines: Engine[] = [
     ...engines,
 
@@ -913,21 +907,11 @@ export async function buildFallbackList(meta: Meta): Promise<
     !meta.featureFlags.has("audio") &&
     !meta.featureFlags.has("video")
   ) {
-    // The sort-time quality boost below cannot resurrect an engine that was
-    // spliced out here, so dropping tlsclient unconditionally would silently
-    // neuter the engpicker opt-in on exactly the TlsClientOk domains where
-    // engpicker measured its output to match chrome-cdp's. Keep both variants
-    // when that verdict is in hand; regular scrapes never set the flag, so they
-    // drop tlsclient as intended.
-    const enginesToDrop: Engine[] = ["fetch"];
-    if (!shouldPrioritizeTlsClient) {
-      enginesToDrop.push(
-        "fire-engine;tlsclient",
-        "fire-engine;tlsclient;stealth",
-      );
-    }
-
-    for (const engine of enginesToDrop) {
+    for (const engine of [
+      "fetch",
+      "fire-engine;tlsclient",
+      "fire-engine;tlsclient;stealth",
+    ] as Engine[]) {
       const index = _engines.indexOf(engine);
       if (index !== -1) {
         _engines.splice(index, 1);
@@ -1037,23 +1021,10 @@ export async function buildFallbackList(meta: Meta): Promise<
   if (meta.internalOptions.forceEngine === undefined) {
     // retain force engine order
     // THIS SUCKS BUT IT WORKS
-    const getEffectiveQuality = (engine: Engine) => {
-      let quality = engineOptions[engine].quality;
-      // When engpicker says TlsClientOk, prioritize tlsclient over CDP/CDPRetry
-      if (shouldPrioritizeTlsClient) {
-        if (engine === "fire-engine;tlsclient") {
-          quality += 50; // Boost to 60, above CDP (50) but below index (1000)
-        } else if (engine === "fire-engine;tlsclient;stealth") {
-          quality += 14; // Boost to -1, stays negative but above chrome-cdp;stealth (-2)
-        }
-      }
-      return quality;
-    };
-
     selectedEngines.sort(
       (a, b) =>
         b.supportScore - a.supportScore ||
-        getEffectiveQuality(b.engine) - getEffectiveQuality(a.engine),
+        engineOptions[b.engine].quality - engineOptions[a.engine].quality,
     );
   }
 

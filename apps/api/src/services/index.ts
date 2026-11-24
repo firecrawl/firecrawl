@@ -5,7 +5,6 @@ import {
   insertOmceJobIfNeeded,
   queryIndexAtSplitLevel as rpcQueryIndexAtSplitLevel,
   queryOmceSignatures as rpcQueryOmceSignatures,
-  queryEngpickerVerdict as rpcQueryEngpickerVerdict,
   queryIndexAtSplitLevelWithMeta as rpcQueryIndexAtSplitLevelWithMeta,
   queryIndexAtDomainSplitLevelWithMeta as rpcQueryIndexAtDomainSplitLevelWithMeta,
   queryDomainPriority as rpcQueryDomainPriority,
@@ -495,43 +494,6 @@ export async function queryOMCESignatures(
   } catch (error) {
     _logger.warn("Error querying index (omce)", { error, hostname });
     return [];
-  }
-}
-
-export async function queryEngpickerVerdict(
-  hostname: string,
-): Promise<"TlsClientOk" | "ChromeCdpRequired" | "Uncertain" | "Unknown"> {
-  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
-    return "Unknown";
-  }
-
-  const domainSplitsHash = generateDomainSplits(hostname).map(x => hashURL(x));
-
-  const level = domainSplitsHash.length - 1;
-  if (domainSplitsHash.length === 0) {
-    return "Unknown";
-  }
-
-  // 250ms max time taken
-  try {
-    const data = await Promise.race([
-      rpcQueryEngpickerVerdict(domainSplitsHash[level]),
-      new Promise<{ verdict: string }[]>(resolve =>
-        setTimeout(() => resolve([{ verdict: "Unknown" }]), 250),
-      ),
-    ]);
-
-    return (data?.[0]?.verdict ?? "Unknown") as
-      | "TlsClientOk"
-      | "ChromeCdpRequired"
-      | "Uncertain"
-      | "Unknown";
-  } catch (error) {
-    _logger.warn("Error querying index (engpicker)", {
-      error,
-      hostname,
-    });
-    return "Unknown";
   }
 }
 
