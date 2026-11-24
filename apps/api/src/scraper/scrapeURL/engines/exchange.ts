@@ -9,11 +9,8 @@ import {
   getExchangeResponseLogContext,
   ThirdPartyDataTermsRequiredError,
 } from "../../../lib/exchange";
-import {
-  markExpectedError,
-  setSpanAttributes,
-  withSpan,
-} from "../../../lib/otel-tracer";
+import { markExpectedError } from "../../../lib/expected-error";
+import { setSpanAttributes, withSpan } from "../../../lib/otel-tracer";
 import { robustFetch } from "../lib/fetch";
 import { safeMarkdownToHtml } from "./pdf/markdownToHtml";
 import { EngineError, ExchangeRefusedError } from "../error";

@@ -8,7 +8,7 @@ import { logsMessages } from "../../service/defaults";
 import { installedService } from "../../service/service";
 import type { Meta } from ".";
 import type { Engine, FeatureFlag } from "./engines";
-import { EXPECTED_ERROR } from "../../lib/otel-tracer";
+import { EXPECTED_ERROR } from "../../lib/expected-error";
 
 const defaultMessages = logsMessages();
 const messages = () => installedService()?.modules.messages ?? defaultMessages;

@@ -11,9 +11,6 @@ import {
 import { ZodError } from "zod";
 import {
   createTracerProvider,
-  EXPECTED_ERROR,
-  isExpectedError,
-  markExpectedError,
   recordSpanException,
   recordUnhandledException,
   serializeTraceContext,
@@ -24,6 +21,11 @@ import {
   withZeroDataRetention,
   type SerializedTraceContext,
 } from "./otel-tracer";
+import {
+  EXPECTED_ERROR,
+  isExpectedError,
+  markExpectedError,
+} from "./expected-error";
 
 describe("otel-tracer", () => {
   const exporter = new InMemorySpanExporter();

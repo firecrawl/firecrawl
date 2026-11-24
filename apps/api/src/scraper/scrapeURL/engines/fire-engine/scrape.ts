@@ -5,10 +5,8 @@ import { InternalAction } from "../../../../controllers/v1/types";
 import { robustFetch } from "../../lib/fetch";
 import { MockState } from "../../lib/mock";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
-import {
-  markExpectedError,
-  serializeTraceContext,
-} from "../../../../lib/otel-tracer";
+import { markExpectedError } from "../../../../lib/expected-error";
+import { serializeTraceContext } from "../../../../lib/otel-tracer";
 import { fireEngineFileSchema } from "./fileSchema";
 import {
   ActionError,

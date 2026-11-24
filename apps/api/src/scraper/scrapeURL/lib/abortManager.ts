@@ -1,4 +1,4 @@
-import { EXPECTED_ERROR } from "../../../lib/otel-tracer";
+import { EXPECTED_ERROR } from "../../../lib/expected-error";
 
 export type AbortInstance = {
   signal: AbortSignal;

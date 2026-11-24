@@ -109,9 +109,8 @@ import {
   withSpan,
   withZeroDataRetention,
   setSpanAttributes,
-  isExpectedError,
-  markExpectedError,
 } from "../../lib/otel-tracer";
+import { isExpectedError, markExpectedError } from "../../lib/expected-error";
 import { ScrapeUrlResponse } from "../../scraper/scrapeURL";
 import { logScrape, type ScrapeStateOutcome } from "../logging/log_job";
 import { FeatureFlag } from "../../scraper/scrapeURL/engines";

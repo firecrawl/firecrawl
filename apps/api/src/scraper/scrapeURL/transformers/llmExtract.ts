@@ -29,10 +29,8 @@ import {
   typeIncludes,
 } from "../../../lib/openai-strict-schema";
 import { CostTracking } from "../../../lib/cost-tracking";
-import {
-  EXPECTED_ERROR,
-  isZeroDataRetentionActive,
-} from "../../../lib/otel-tracer";
+import { EXPECTED_ERROR } from "../../../lib/expected-error";
+import { isZeroDataRetentionActive } from "../../../lib/otel-tracer";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { aiTelemetry } from "../../../lib/ai-telemetry";
 

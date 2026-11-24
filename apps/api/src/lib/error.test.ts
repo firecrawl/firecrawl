@@ -15,7 +15,7 @@ import {
   deserializeTransportableError,
   serializeTransportableError,
 } from "./error-serde";
-import { isExpectedError } from "./otel-tracer";
+import { isExpectedError } from "./expected-error";
 import { createService, replaceService } from "../service/service";
 
 describe("isTransportableError", () => {

@@ -20,7 +20,7 @@ import { MockState } from "../../lib/mock";
 import { fireEngineURL } from "./scrape";
 import { fireEngineFileSchema } from "./fileSchema";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
-import { markExpectedError } from "../../../../lib/otel-tracer";
+import { markExpectedError } from "../../../../lib/expected-error";
 import { Meta } from "../..";
 
 const browserCookieSchema = z

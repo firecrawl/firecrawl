@@ -1,4 +1,4 @@
-import { EXPECTED_ERROR, isExpectedError } from "./otel-tracer";
+import { EXPECTED_ERROR, isExpectedError } from "./expected-error";
 import { UNSUPPORTED_SITE_MESSAGE } from "./strings";
 
 /**

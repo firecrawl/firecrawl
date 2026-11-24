@@ -1,4 +1,4 @@
-import { EXPECTED_ERROR } from "./otel-tracer";
+import { EXPECTED_ERROR } from "./expected-error";
 
 const QUEUE_FULL_ERROR_NAME = "QueueFullError";
 
