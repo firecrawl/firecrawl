@@ -1,5 +1,6 @@
 import type { BatchScrapeJob, CrawlJob, Document } from "./types";
 import type { HttpClient } from "./utils/httpClient";
+import { isRetryableError } from "./utils/errorHandler";
 import { getBatchScrapeStatus } from "./methods/batch";
 import { getCrawlStatus } from "./methods/crawl";
 
@@ -325,8 +326,17 @@ export class Watcher extends Emitter {
           this.close();
           break;
         }
-      } catch {
-        // ignore polling errors
+      } catch (err: any) {
+        if (this.closed) {
+          break;
+        }
+        if (!isRetryableError(err)) {
+          const message = err instanceof Error ? err.message : String(err);
+          this.emit("error", { status: "failed", data: [], error: message, id: this.jobId });
+          this.close();
+          break;
+        }
+        // ignore transient polling errors
       }
       if (timeoutMs && Date.now() - startTs > timeoutMs) {
         this.emit("error", { status: "failed", data: [], error: "Watcher timeout", id: this.jobId });
