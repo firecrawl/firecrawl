@@ -4,6 +4,35 @@
  * This file imports only types so creating or describing a service never loads
  * implementations, configuration, or clients.
  */
+import type { RequestContext } from "./request-context";
+
+/** Options for a blocklist check beyond the request context. */
+export interface BlocklistCheckOptions {
+  /** Caller origin recorded on blocklist hits when hit recording is enabled. */
+  origin?: string | null;
+  /** Set to false for a re-check whose hit should not be recorded again. */
+  record?: boolean;
+}
+
+/**
+ * URL blocklist module: preloaded at process startup and queried synchronously
+ * on request and worker paths.
+ */
+export interface BlocklistModule {
+  /** Loads any backing blocklist data at startup; a throw stops the process. */
+  init(): Promise<void>;
+  /** Returns whether `url` is blocked under `ctx`. */
+  isBlocked(
+    url: string,
+    ctx: RequestContext,
+    options?: BlocklistCheckOptions,
+  ): boolean;
+  /**
+   * Returns whether `ctx` has caller-scoped blocklist rules beyond global
+   * entries, so shared caches can bypass reuse safely.
+   */
+  hasScopedRules(ctx: RequestContext): boolean;
+}
 
 export type FetchProxyFileKind = "PDF" | "document";
 
@@ -109,6 +138,7 @@ export interface UploadsModule {
  * calls by name.
  */
 export interface Modules {
+  blocklist: BlocklistModule;
   messages: MessagesModule;
   uploads: UploadsModule;
 }
@@ -146,7 +176,16 @@ function freezeUploadDriver(driver: UploadDriver): Readonly<UploadDriver> {
  * later cannot alter the service.
  */
 export function freezeModules(modules: Modules): Readonly<Modules> {
-  const { messages, uploads } = modules;
+  const { blocklist, messages, uploads } = modules;
+  if (
+    typeof blocklist !== "object" ||
+    blocklist === null ||
+    typeof blocklist.init !== "function" ||
+    typeof blocklist.isBlocked !== "function" ||
+    typeof blocklist.hasScopedRules !== "function"
+  ) {
+    throw new Error("Invalid blocklist module");
+  }
   if (
     typeof messages !== "object" ||
     messages === null ||
@@ -166,6 +205,11 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
     throw new Error("Invalid uploads module");
   }
 
+  const frozenBlocklist: BlocklistModule = Object.freeze({
+    init: blocklist.init.bind(blocklist),
+    isBlocked: blocklist.isBlocked.bind(blocklist),
+    hasScopedRules: blocklist.hasScopedRules.bind(blocklist),
+  });
   const frozenMessages: MessagesModule = Object.freeze({
     errorContact: messages.errorContact.bind(messages),
     restrictedCountryContact: messages.restrictedCountryContact.bind(messages),
@@ -180,6 +224,7 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
   });
 
   return Object.freeze({
+    blocklist: frozenBlocklist,
     messages: frozenMessages,
     uploads: frozenUploads,
   });

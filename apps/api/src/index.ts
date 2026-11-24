@@ -40,7 +40,6 @@ import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
 import { nuqShutdown } from "./services/worker/nuq";
 import { service } from "./service";
-import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
 import { warmExchangeCatalog } from "./lib/exchange";
 import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
 import responseTime from "response-time";
@@ -227,7 +226,7 @@ function startAdminInternalServer(port: number) {
 async function startServer(port = DEFAULT_PORT) {
   startNodeRuntimeMetrics();
   try {
-    await initializeBlocklist();
+    await service.modules.blocklist.init();
     initializeEngineForcing();
     warmExchangeCatalog();
   } catch (error) {

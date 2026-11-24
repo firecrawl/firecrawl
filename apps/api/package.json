@@ -24,6 +24,22 @@
       "types": "./src/service/testing.ts",
       "default": "./dist/src/service/testing.js"
     },
+    "./unstable/db-connection": {
+      "types": "./src/db/connection.ts",
+      "default": "./dist/src/db/connection.js"
+    },
+    "./unstable/db-schema": {
+      "types": "./src/db/schema/index.ts",
+      "default": "./dist/src/db/schema/index.js"
+    },
+    "./unstable/exchange": {
+      "types": "./src/lib/exchange.ts",
+      "default": "./dist/src/lib/exchange.js"
+    },
+    "./unstable/keyless-team": {
+      "types": "./src/lib/keyless-team.ts",
+      "default": "./dist/src/lib/keyless-team.js"
+    },
     "./unstable/zdr-queue": {
       "types": "./src/lib/zdr-queue.ts",
       "default": "./dist/src/lib/zdr-queue.js"

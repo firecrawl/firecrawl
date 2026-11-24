@@ -7,7 +7,12 @@ export type {
 export type { SearchResultType, SearchV2Response } from "../lib/entities";
 export type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 export { coreParts } from "./core-parts";
-export { defaultModules, logsMessages, memoryUploads } from "./defaults";
+export {
+  defaultModules,
+  logsMessages,
+  memoryUploads,
+  noBlocklist,
+} from "./defaults";
 export type {
   DescribedEngineFeature,
   Engine,
@@ -65,6 +70,8 @@ export type {
   LlmProviders,
 } from "./llm-providers";
 export type {
+  BlocklistCheckOptions,
+  BlocklistModule,
   DirectUploadInput,
   DirectUploadResult,
   FetchProxyFileKind,

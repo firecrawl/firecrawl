@@ -158,7 +158,7 @@ export function createService(
       throw new Error("Invalid modules config");
     }
     for (const key of Object.keys(config.modules)) {
-      if (key !== "messages" && key !== "uploads") {
+      if (key !== "blocklist" && key !== "messages" && key !== "uploads") {
         throw new Error(`Unknown module slot "${key}"`);
       }
     }
@@ -166,6 +166,10 @@ export function createService(
 
   const defaults = defaultModules();
   const modules = freezeModules({
+    blocklist:
+      config.modules?.blocklist === undefined
+        ? defaults.blocklist
+        : config.modules.blocklist,
     messages:
       config.modules?.messages === undefined
         ? defaults.messages

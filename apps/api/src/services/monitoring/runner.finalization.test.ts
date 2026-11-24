@@ -38,7 +38,6 @@ vi.mock("./search/persist", () => ({
   reconstructKnownState: () => ({ knownPages: new Map(), knownEvents: [] }),
   searchStatusToPageStatus: (status: string) => status,
 }));
-vi.mock("../../scraper/WebScraper/utils/blocklist", () => ({}));
 vi.mock("../../controllers/auth", () => ({ getACUCTeam: vi.fn() }));
 vi.mock("./store", () => ({
   getMonitorCheckForUpdate: vi.fn(),

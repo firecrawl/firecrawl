@@ -38,7 +38,7 @@ import {
   NoCachedDataError,
   UsOnlyUnavailableError,
 } from "../error";
-import { isUrlBlocked } from "../../WebScraper/utils/blocklist";
+import { requestContext } from "../../../lib/request-context";
 import { isUsOnly } from "../../../lib/us-only";
 import { isXTwitterUrl } from "../../../lib/x-twitter-url";
 import { hasCustomRequestContext } from "../lib/request-context";
@@ -314,12 +314,19 @@ export async function buildFallbackList(meta: Meta): Promise<
       true;
     let blocked = false;
     try {
-      blocked = isUrlBlocked(url, meta.internalOptions.teamFlags ?? null, {
-        team_id: meta.internalOptions.teamId ?? null,
-        org_id: meta.internalOptions.orgId ?? null,
-        origin: null,
-        record: false,
-      });
+      blocked = service.modules.blocklist.isBlocked(
+        url,
+        requestContext({
+          teamId: meta.internalOptions.teamId ?? "",
+          zeroDataRetention: meta.internalOptions.zeroDataRetention ?? false,
+          flags: meta.internalOptions.teamFlags ?? null,
+          orgId: meta.internalOptions.orgId ?? null,
+        }),
+        {
+          origin: null,
+          record: false,
+        },
+      );
     } catch (error) {
       // Beta teams fail closed, as they always have. Anyone else keeps the
       // normal engines, since an unreadable blocklist must not fail every
