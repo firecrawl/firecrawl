@@ -305,6 +305,7 @@ describe("coreParts", () => {
         "jobStore",
         "limits",
         "messages",
+        "policy",
         "uploads",
         "webhooks",
       ],
@@ -473,6 +474,7 @@ describe("coreParts", () => {
       "jobStore",
       "limits",
       "messages",
+      "policy",
       "uploads",
       "webhooks",
     ]);

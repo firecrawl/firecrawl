@@ -20,6 +20,7 @@ export {
   queueJobStore,
   redisIdempotency,
   unmeteredBilling,
+  unrestrictedPolicy,
 } from "./defaults";
 export type {
   DefaultModules,
@@ -72,8 +73,20 @@ export type {
   Transform,
   ValueOf,
 } from "./hooks";
-export { authenticate } from "./http";
-export type { AuthRoute, CoreRouteKind, RouteKind } from "./http";
+export {
+  authenticate,
+  finalizeResponse,
+  openRequest,
+  rejectRequest,
+  resolveRequestContext,
+  sendRefusal,
+} from "./http";
+export type {
+  AuthRoute,
+  CoreRouteKind,
+  OpenRequestOptions,
+  RouteKind,
+} from "./http";
 export type {
   LlmModel,
   LlmModelOptions,
@@ -83,6 +96,8 @@ export type {
   LlmProviders,
 } from "./llm-providers";
 export type {
+  Admission,
+  AdmitInput,
   AuthModule,
   AuthResult,
   Authorization,
@@ -110,6 +125,10 @@ export type {
   MapChargeState,
   MessagesModule,
   Modules,
+  PolicyContextInput,
+  PolicyContextResult,
+  PolicyHttpContext,
+  PolicyModule,
   PrepareUploadInput,
   PrepareUploadResult,
   QueueBackendOverride,
@@ -117,6 +136,7 @@ export type {
   SettleOutcome,
   StoredJob,
   StoredUploadRef,
+  SystemContextPurpose,
   UploadDriver,
   UploadsModule,
   UploadTarget,

@@ -19,12 +19,13 @@ import type {
   LimitsModule,
   MessagesModule,
   Modules,
+  PolicyModule,
   StoredJob,
   UploadDriver,
   UploadsModule,
   WebhooksModule,
 } from "./modules";
-import type { BaseCaller } from "./request-context";
+import type { BaseCaller, BaseRequestContext } from "./request-context";
 
 /**
  * Default authentication module that admits every request under a single fixed
@@ -405,11 +406,63 @@ export function directWebhooks(
 }
 
 /**
- * The default slot table, with `auth` typed on `BaseCaller`. Assignable to
- * `Modules` only when `Caller` has not been widened with required fields.
+ * Default policy module: admits every request with no restrictions, preserves
+ * caller-requested `zeroDataRetention`, and propagates `zeroDataRetention` and
+ * `usOnly` to system sub-requests. Typed on `BaseRequestContext` so widening
+ * `RequestContext` rejects it at compile time.
  */
-export type DefaultModules = Omit<Modules, "auth"> & {
+export function unrestrictedPolicy(): PolicyModule<BaseRequestContext> {
+  return {
+    async admit({ caller, body }) {
+      const record = body as {
+        zeroDataRetention?: unknown;
+        robotsUserAgent?: unknown;
+        lockdown?: unknown;
+      };
+      const zeroDataRetention = record.zeroDataRetention === true;
+      const robotsUserAgent =
+        typeof record.robotsUserAgent === "string"
+          ? record.robotsUserAgent
+          : undefined;
+      const lockdown = record.lockdown === true;
+      return {
+        ok: true,
+        ctx: {
+          teamId: caller.teamId,
+          zeroDataRetention,
+          ...(robotsUserAgent !== undefined ? { robotsUserAgent } : {}),
+          ...(lockdown ? { lockdown: true } : {}),
+        },
+        body,
+      };
+    },
+    system(purpose, parent) {
+      return {
+        teamId: purpose,
+        zeroDataRetention: parent?.zeroDataRetention ?? false,
+        ...(parent?.usOnly ? { usOnly: true } : {}),
+      };
+    },
+    async context({ caller }) {
+      return {
+        ok: true,
+        ctx: {
+          teamId: caller.teamId,
+          zeroDataRetention: false,
+        },
+      };
+    },
+  };
+}
+
+/**
+ * The default slot table, with `auth` typed on `BaseCaller` and `policy` typed
+ * on `BaseRequestContext`. Assignable to `Modules` only when neither `Caller`
+ * nor `RequestContext` has been widened with required fields.
+ */
+export type DefaultModules = Omit<Modules, "auth" | "policy"> & {
   auth: AuthModule<BaseCaller>;
+  policy: PolicyModule<BaseRequestContext>;
 };
 
 /** Returns fresh instances of every default module slot. */
@@ -420,6 +473,7 @@ export function defaultModules(): DefaultModules {
     blocklist: noBlocklist(),
     limits: noLimits(),
     messages: logsMessages(),
+    policy: unrestrictedPolicy(),
     uploads: memoryUploads(),
     jobStore: queueJobStore(),
     idempotency: redisIdempotency(),

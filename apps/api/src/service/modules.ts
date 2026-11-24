@@ -9,7 +9,13 @@ import type { Document, ScrapeOptions } from "../controllers/v2/types";
 import type { CostTracking } from "../lib/cost-tracking";
 import type { RateLimiterMode } from "../types";
 import type { JobKind, Refusal, ScrapeState } from "./hooks";
-import type { BaseCaller, Caller, RequestContext } from "./request-context";
+import type { RequestBodies, RequestKind } from "./request";
+import type {
+  BaseCaller,
+  BaseRequestContext,
+  Caller,
+  RequestContext,
+} from "./request-context";
 
 /** Route kinds declared by the core API. */
 export type CoreRouteKind = `${RateLimiterMode}`;
@@ -497,6 +503,71 @@ export interface WebhooksModule {
   shutdown?(): Promise<void>;
 }
 
+/** HTTP request metadata passed to `PolicyModule.admit` and `PolicyModule.context`. */
+export interface PolicyHttpContext {
+  ip?: string;
+  headers: Request["headers"];
+  path?: string;
+  method?: string;
+  rawBody?: unknown;
+  req?: Request;
+}
+
+/** Input passed to `PolicyModule.admit` after schema validation. */
+export interface AdmitInput<K extends RequestKind = RequestKind> {
+  kind: K;
+  caller: Caller;
+  body: RequestBodies[K];
+  http?: PolicyHttpContext;
+}
+
+/** Outcome of `PolicyModule.admit`. */
+export type Admission<
+  K extends RequestKind = RequestKind,
+  X extends BaseRequestContext = RequestContext,
+> =
+  | {
+      ok: true;
+      ctx: X;
+      body: RequestBodies[K];
+      warnings?: string[];
+      headers?: Record<string, string>;
+      /** True when the policy module already evaluated URL blocklist rules. */
+      blocklistChecked?: boolean;
+      /** URLs dropped during admission for partial-admission endpoints like batch scrape. */
+      droppedUrls?: string[];
+    }
+  | { ok: false; refusal: Refusal };
+
+/** Background or internal work purposes for `PolicyModule.system`. */
+export type SystemContextPurpose = "robots-txt" | "sitemap" | (string & {});
+
+/** Input passed to `PolicyModule.context` for auxiliary authenticated routes. */
+export interface PolicyContextInput {
+  route: string;
+  caller: Caller;
+  http?: PolicyHttpContext;
+}
+
+/** Outcome of `PolicyModule.context`. */
+export type PolicyContextResult<X extends BaseRequestContext = RequestContext> =
+
+    | { ok: true; ctx: X; headers?: Record<string, string> }
+    | { ok: false; refusal: Refusal };
+
+/**
+ * Request admission and context construction. The type parameter keeps
+ * `unrestrictedPolicy()` typed on `BaseRequestContext`, so widening
+ * `RequestContext` rejects the unrestricted default at compile time.
+ */
+export interface PolicyModule<X extends BaseRequestContext = RequestContext> {
+  admit<K extends RequestKind>(input: AdmitInput<K>): Promise<Admission<K, X>>;
+  /** Context for work core starts itself (robots.txt and sitemap fetches). */
+  system(purpose: SystemContextPurpose, parent?: RequestContext): X;
+  /** Optional context resolver for auxiliary routes outside the six request kinds. */
+  context?(input: PolicyContextInput): Promise<PolicyContextResult<X>>;
+}
+
 /**
  * The module slots: one implementation for each piece of behaviour the service
  * calls by name.
@@ -507,6 +578,7 @@ export interface Modules {
   blocklist: BlocklistModule;
   limits: LimitsModule;
   messages: MessagesModule;
+  policy: PolicyModule;
   uploads: UploadsModule;
   jobStore: JobStoreModule;
   idempotency: IdempotencyModule;
@@ -589,6 +661,7 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
     blocklist,
     limits,
     messages,
+    policy,
     uploads,
     jobStore,
     idempotency,
@@ -641,6 +714,15 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
     typeof messages.filePrefetchFailedContact !== "function"
   ) {
     throw new Error("Invalid messages module");
+  }
+  if (
+    typeof policy !== "object" ||
+    policy === null ||
+    typeof policy.admit !== "function" ||
+    typeof policy.system !== "function" ||
+    (policy.context !== undefined && typeof policy.context !== "function")
+  ) {
+    throw new Error("Invalid policy module");
   }
   if (
     typeof uploads !== "object" ||
@@ -698,6 +780,13 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
     filePrefetchFailedContact:
       messages.filePrefetchFailedContact.bind(messages),
   });
+  const frozenPolicy: PolicyModule = Object.freeze({
+    admit: policy.admit.bind(policy),
+    system: policy.system.bind(policy),
+    ...(policy.context !== undefined
+      ? { context: policy.context.bind(policy) }
+      : {}),
+  });
   const frozenDriver = freezeUploadDriver(uploads.driver());
   const frozenUploads: UploadsModule = Object.freeze({
     driver: () => frozenDriver,
@@ -720,6 +809,7 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
     blocklist: frozenBlocklist,
     limits: frozenLimits,
     messages: frozenMessages,
+    policy: frozenPolicy,
     uploads: frozenUploads,
     jobStore: frozenJobStore,
     idempotency: frozenIdempotency,

@@ -19,7 +19,12 @@ import {
   type LlmProviderRegistry,
 } from "./llm-providers";
 import { freezeModules, type Modules } from "./modules";
-import type { BaseCaller, Caller } from "./request-context";
+import type {
+  BaseCaller,
+  BaseRequestContext,
+  Caller,
+  RequestContext,
+} from "./request-context";
 import {
   buildRequestSchemaRegistry,
   type DescribedRequestSchemas,
@@ -106,22 +111,31 @@ export interface Extension {
   workers?: Record<string, Worker>;
 }
 
+type RequiredAuthSlot = BaseCaller extends Caller ? never : "auth";
+type RequiredPolicySlot = BaseRequestContext extends RequestContext
+  ? never
+  : "policy";
+type RequiredModuleSlots = RequiredAuthSlot | RequiredPolicySlot;
+
 /**
  * Module slot configuration. When `Caller` is widened with required fields,
  * `auth` must be supplied explicitly instead of falling back to `openAuth()`.
+ * When `RequestContext` is widened with required fields, `policy` must be
+ * supplied explicitly instead of falling back to `unrestrictedPolicy()`.
  */
-export type ModulesConfig = BaseCaller extends Caller
+export type ModulesConfig = [RequiredModuleSlots] extends [never]
   ? Partial<Modules>
-  : Partial<Omit<Modules, "auth">> & Pick<Modules, "auth">;
+  : Partial<Omit<Modules, RequiredModuleSlots>> &
+      Pick<Modules, RequiredModuleSlots>;
 
 /** The whole config. Everything that is not a slot belongs to a named extension. */
-export type ServiceConfig = (BaseCaller extends Caller
+export type ServiceConfig = ([RequiredModuleSlots] extends [never]
   ? {
       /** Module slots to override; omitted slots use the built-in defaults. */
       modules?: ModulesConfig;
     }
   : {
-      /** Module slots; `auth` is required because `Caller` has been widened. */
+      /** Module slots; required slots must be supplied when `Caller` or `RequestContext` is widened. */
       modules: ModulesConfig;
     }) & {
   /** Applied in list order, after the service's own extension. */
@@ -217,6 +231,7 @@ export function createService(
         key !== "blocklist" &&
         key !== "limits" &&
         key !== "messages" &&
+        key !== "policy" &&
         key !== "uploads" &&
         key !== "jobStore" &&
         key !== "idempotency" &&
@@ -249,6 +264,10 @@ export function createService(
       config.modules?.messages === undefined
         ? defaults.messages
         : config.modules.messages,
+    policy:
+      config.modules?.policy === undefined
+        ? (defaults.policy as Modules["policy"])
+        : config.modules.policy,
     uploads:
       config.modules?.uploads === undefined
         ? defaults.uploads

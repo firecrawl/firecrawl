@@ -17,6 +17,7 @@ import {
   queueJobStore,
   redisIdempotency,
   unmeteredBilling,
+  unrestrictedPolicy,
 } from "./defaults";
 import { currentLimits, resolveJobPriority } from "../lib/limits";
 import type {
@@ -28,6 +29,7 @@ import type {
   LimitsModule,
   MessagesModule,
   Modules,
+  PolicyModule,
   UploadsModule,
   WebhooksModule,
 } from "./modules";
@@ -376,6 +378,7 @@ describe("service module slots", () => {
     expect(Object.isFrozen(built.modules.blocklist)).toBe(true);
     expect(Object.isFrozen(built.modules.limits)).toBe(true);
     expect(Object.isFrozen(built.modules.messages)).toBe(true);
+    expect(Object.isFrozen(built.modules.policy)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads.driver())).toBe(true);
     expect(Object.isFrozen(built.modules.jobStore)).toBe(true);
@@ -389,6 +392,7 @@ describe("service module slots", () => {
       "jobStore",
       "limits",
       "messages",
+      "policy",
       "uploads",
       "webhooks",
     ]);
@@ -759,6 +763,31 @@ describe("service module slots", () => {
     ).toThrow("Invalid webhooks module");
     expect(() =>
       createService(
+        { modules: { policy: {} as unknown as PolicyModule } },
+        parts,
+      ),
+    ).toThrow("Invalid policy module");
+    expect(() =>
+      createService(
+        { modules: { policy: null as unknown as PolicyModule } },
+        parts,
+      ),
+    ).toThrow("Invalid policy module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            policy: {
+              ...unrestrictedPolicy(),
+              context: "not-a-function",
+            } as unknown as PolicyModule,
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid policy module");
+    expect(() =>
+      createService(
         {
           modules: {
             jobStore: {
@@ -942,5 +971,49 @@ describe("currentLimits", () => {
       },
     );
     expect(onError).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("unrestrictedPolicy", () => {
+  it("admits requests and preserves caller-requested zeroDataRetention and robotsUserAgent", async () => {
+    const policy = unrestrictedPolicy();
+    const admitted = await policy.admit({
+      kind: "scrape",
+      caller: { teamId: "team-1" },
+      body: {
+        url: "https://example.com",
+        zeroDataRetention: true,
+        robotsUserAgent: "CustomBot",
+      } as never,
+    });
+
+    expect(admitted.ok).toBe(true);
+    if (admitted.ok) {
+      expect(admitted.ctx).toEqual({
+        teamId: "team-1",
+        zeroDataRetention: true,
+        robotsUserAgent: "CustomBot",
+      });
+    }
+  });
+
+  it("propagates zeroDataRetention and usOnly on system contexts", () => {
+    const policy = unrestrictedPolicy();
+
+    expect(policy.system("robots-txt")).toEqual({
+      teamId: "robots-txt",
+      zeroDataRetention: false,
+    });
+    expect(
+      policy.system("sitemap", {
+        teamId: "team-1",
+        zeroDataRetention: true,
+        usOnly: true,
+      }),
+    ).toEqual({
+      teamId: "sitemap",
+      zeroDataRetention: true,
+      usOnly: true,
+    });
   });
 });
