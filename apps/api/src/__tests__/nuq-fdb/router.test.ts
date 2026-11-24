@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { vi } from "vitest";
 import { config } from "../../config";
 import { redisEvictConnection } from "../../services/redis";
+import * as queueService from "../../services/queue-service";
 import { requestContext } from "../../lib/request-context";
 import { noLimits } from "../../service/defaults";
 import { testService, withService } from "../../service/testing";
@@ -325,6 +326,20 @@ describeIf("NuQ router (forced FDB mode)", () => {
 
   test("external slot release follows recorded FDB backend when settlement omits context", async () => {
     const forcedBackend = config.NUQ_BACKEND;
+    const markers = new Map<string, string>();
+    const fakeRedis = {
+      zcount: vi.fn(async () => 0),
+      set: vi.fn(async (key: string, value: string) => {
+        markers.set(key, value);
+        return "OK";
+      }),
+      get: vi.fn(async (key: string) => markers.get(key) ?? null),
+      del: vi.fn(async (key: string) => (markers.delete(key) ? 1 : 0)),
+      zrem: vi.fn(async () => 0),
+    };
+    const redisSpy = vi
+      .spyOn(queueService, "getRedisConnection")
+      .mockReturnValue(fakeRedis as any);
     config.NUQ_BACKEND = "pg";
     try {
       const limits = {
@@ -350,15 +365,18 @@ describeIf("NuQ router (forced FDB mode)", () => {
             await reserveExternalSlot(teamId, holder, 30_000, 10, ctx),
           ).toBe(true);
           expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(1);
+          expect(markers.size).toBe(1);
 
           // Settlement runs without the original request context; the recorded
           // backend marker still routes the release to FDB.
           await mirrorExternalSlotRelease(teamId, holder);
           expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(0);
+          expect(markers.size).toBe(0);
         },
       );
     } finally {
       config.NUQ_BACKEND = forcedBackend;
+      redisSpy.mockRestore();
     }
   });
 });
