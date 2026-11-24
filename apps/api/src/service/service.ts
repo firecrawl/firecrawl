@@ -24,6 +24,12 @@ import {
   type LlmProviderRegistry,
 } from "./llm-providers";
 import { freezeModules, type Modules } from "./modules";
+import {
+  buildSearchProviderRegistry,
+  type DescribedSearchProvider,
+  type SearchProvider,
+  type SearchProviderRegistry,
+} from "./search-providers";
 
 export type { Modules } from "./modules";
 
@@ -63,6 +69,11 @@ export interface Extension {
    */
   engineFeatures?: EngineFeatureMap;
   /**
+   * Search providers contributed by this extension. A later provider of the
+   * same name replaces an earlier one.
+   */
+  searchProviders?: readonly SearchProvider[];
+  /**
    * LLM providers contributed by this extension. A later provider of the same
    * name replaces an earlier one.
    */
@@ -100,6 +111,8 @@ export interface ServiceDescription {
   engines: Record<string, string>;
   /** For each registered scrape engine feature, its owner and scoring priority. */
   engineFeatures: Record<string, DescribedEngineFeature>;
+  /** For each registered search provider, its owner and priority. */
+  searchProviders: Record<string, DescribedSearchProvider>;
   /** For each registered LLM provider, the extension it comes from. */
   llmProviders: Record<string, string>;
   /** For each process role, the extension it comes from. */
@@ -122,6 +135,7 @@ export interface Service {
   readonly hooks: Hooks;
   readonly errors: ErrorRegistry;
   readonly engines: EngineRegistry;
+  readonly searchProviders: SearchProviderRegistry;
   readonly llmProviders: LlmProviderRegistry;
   readonly workers: Readonly<Record<string, Worker>>;
   /** What the service was made of when it was created, plus declared env owners. Each call returns a copy. */
@@ -188,6 +202,14 @@ export function createService(
       engineFeatures: extension.engineFeatures,
     })),
   );
+
+  const { registry: searchProviders, describedSearchProviders } =
+    buildSearchProviderRegistry(
+      extensions.map(extension => ({
+        owner: extension.name,
+        searchProviders: extension.searchProviders,
+      })),
+    );
 
   const { registry: llmProviders, describedLlmProviders } =
     buildLlmProviderRegistry(
@@ -257,6 +279,7 @@ export function createService(
     hooks: sortedByKey(handlerOwners),
     engines: describedEngines,
     engineFeatures: describedFeatures,
+    searchProviders: describedSearchProviders,
     llmProviders: describedLlmProviders,
     roles: sortedByKey(roleOwners),
   };
@@ -268,6 +291,7 @@ export function createService(
       classFor: (code: string) => registeredErrors().get(code)?.errorClass,
     }),
     engines,
+    searchProviders,
     llmProviders,
     workers,
     describe(): ServiceDescription {
@@ -283,6 +307,7 @@ export function createService(
         errors: sortedByKey(errors),
         engines: copy.engines,
         engineFeatures: copy.engineFeatures,
+        searchProviders: copy.searchProviders,
         llmProviders: copy.llmProviders,
         roles: copy.roles,
         env: sortedByKey(describeEnv()),
@@ -329,6 +354,9 @@ export const service: Service = {
   },
   get engines() {
     return current().engines;
+  },
+  get searchProviders() {
+    return current().searchProviders;
   },
   get llmProviders() {
     return current().llmProviders;
