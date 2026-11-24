@@ -197,6 +197,7 @@ export function createService(
     }
     for (const key of Object.keys(config.modules)) {
       if (
+        key !== "blocklist" &&
         key !== "messages" &&
         key !== "uploads" &&
         key !== "idempotency" &&
@@ -209,6 +210,10 @@ export function createService(
 
   const defaults = defaultModules();
   const modules = freezeModules({
+    blocklist:
+      config.modules?.blocklist === undefined
+        ? defaults.blocklist
+        : config.modules.blocklist,
     messages:
       config.modules?.messages === undefined
         ? defaults.messages

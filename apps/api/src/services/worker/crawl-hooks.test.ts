@@ -170,10 +170,6 @@ vi.mock("../../lib/keyless", () => ({
   chargeKeylessCredits: vi.fn(async () => undefined),
 }));
 
-vi.mock("../../scraper/WebScraper/utils/blocklist", () => ({
-  isUrlBlocked: vi.fn(() => false),
-}));
-
 vi.mock("../../scraper/WebScraper/crawler", () => ({
   DenialReason: {
     ROBOTS_TXT: "robots",

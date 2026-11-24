@@ -8,7 +8,8 @@ import {
   toLegacyDocument,
   url as urlSchema,
 } from "../v1/types";
-import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist"; // Import the isUrlBlocked function
+import { requestContext } from "../../lib/request-context";
+import { service } from "../../service";
 import {
   defaultPageOptions,
   defaultExtractorOptions,
@@ -36,6 +37,7 @@ import {
 } from "../../lib/threat-protection/request";
 import {
   getSafeMode,
+  isLockdownZeroDataRetention,
   SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
@@ -78,11 +80,20 @@ async function scrapeHelper(
   }
 
   if (
-    isUrlBlocked(url, acuc?.flags ?? null, {
-      team_id,
-      org_id: acuc?.org_id ?? null,
-      origin: req.body?.origin ?? null,
-    })
+    service.modules.blocklist.isBlocked(
+      url,
+      requestContext({
+        teamId: team_id,
+        zeroDataRetention:
+          getScrapeZDR(acuc?.flags) === "forced" ||
+          isLockdownZeroDataRetention(acuc?.flags, undefined),
+        flags: acuc?.flags ?? null,
+        orgId: acuc?.org_id ?? null,
+      }),
+      {
+        origin: req.body?.origin ?? null,
+      },
+    )
   ) {
     return {
       success: false,
