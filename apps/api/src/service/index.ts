@@ -78,6 +78,7 @@ export {
   finalizeResponse,
   openRequest,
   rejectRequest,
+  requestKindForPath,
   resolveRequestContext,
   sendRefusal,
 } from "./http";

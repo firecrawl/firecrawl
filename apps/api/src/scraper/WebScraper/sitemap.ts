@@ -7,6 +7,8 @@ import { CostTracking } from "../../lib/cost-tracking";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import type { ScrapeOptions } from "../../controllers/v2/types";
 import { Engine } from "../scrapeURL/engines";
+import type { RequestContext } from "../../service/request-context";
+import { installedService } from "../../service/service";
 import {
   ParsedSitemap,
   parseSitemapXml,
@@ -80,6 +82,14 @@ export async function getLinksFromSitemap(
     } else {
       try {
         const forceEngine: Engine[] = ["fetch"];
+        const parentCtx: RequestContext = {
+          teamId: "sitemap",
+          zeroDataRetention,
+          ...(usOnly ? { usOnly: true } : {}),
+        };
+        const systemCtx =
+          installedService()?.modules.policy.system("sitemap", parentCtx) ??
+          parentCtx;
 
         const response = await scrapeURL(
           "sitemap;" + crawlId,
@@ -92,6 +102,7 @@ export async function getLinksFromSitemap(
             ...(headers ? { headers } : {}),
           }),
           {
+            ctx: systemCtx,
             forceEngine,
             sitemapFetch: mode === "fire-engine" ? "http" : "direct",
             v0DisableJsDom: true,
@@ -105,9 +116,8 @@ export async function getLinksFromSitemap(
                   },
                 }
               : undefined,
-            teamId: "sitemap",
-            zeroDataRetention,
-            ...(usOnly ? { teamFlags: { usOnly: true } } : {}),
+            teamId: systemCtx.teamId,
+            zeroDataRetention: systemCtx.zeroDataRetention,
           },
           new CostTracking(),
         );

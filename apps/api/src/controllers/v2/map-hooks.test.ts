@@ -105,7 +105,13 @@ import type { HookHandlers } from "../../service/hooks";
 import { createService, replaceService } from "../../service/service";
 import { mapController } from "./map";
 
-function installHooks(hooks?: HookHandlers, report = vi.fn()) {
+function installHooks(hooks?: HookHandlers | HookHandlers[], report = vi.fn()) {
+  const extensions = hooks
+    ? (Array.isArray(hooks) ? hooks : [hooks]).map((h, i) => ({
+        name: `test-hooks-${i}`,
+        hooks: h,
+      }))
+    : [];
   replaceService(
     createService(
       {
@@ -115,7 +121,7 @@ function installHooks(hooks?: HookHandlers, report = vi.fn()) {
             charge: mocks.billingCharge,
           },
         },
-        extensions: hooks ? [{ name: "test-hooks", hooks }] : [],
+        extensions,
       },
       {
         core: { name: "core" },
@@ -292,21 +298,24 @@ describe("map lifecycle hooks", () => {
     expect(mocks.fireEngineMap).not.toHaveBeenCalled();
 
     const finished: number[] = [];
-    installHooks({
-      "map.collect": urls => [...urls, "https://blocked.example/malware"],
-      "map.finished": event => {
-        finished.push(event.urls);
+    installHooks([
+      {
+        "map.collect": urls => [...urls, "https://blocked.example/malware"],
+        "map.finished": event => {
+          finished.push(event.urls);
+        },
       },
-    });
-    mocks.resolveThreatProtection.mockResolvedValue({
-      policy: { mode: "block" },
-    });
-    mocks.checkUrlsAgainstThreatPolicy.mockResolvedValue({
-      decisionsByUrl: new Map([
-        ["https://example.com/av-1", { allowed: true }],
-        ["https://blocked.example/malware", { allowed: false }],
-      ]),
-    });
+      {
+        "map.collect": (urls, info) => {
+          if (info.state) {
+            info.state.threatDecisions = urls.map(url => ({
+              allowed: !url.includes("blocked.example"),
+            }));
+          }
+          return urls.filter(url => !url.includes("blocked.example"));
+        },
+      },
+    ]);
 
     const res = makeRes();
     await mapController(makeReq({ url: "https://example.com" }), res);

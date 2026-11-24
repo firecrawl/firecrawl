@@ -122,11 +122,13 @@ function mockModel() {
 function makeReq(
   body: Record<string, unknown>,
   flags: Record<string, unknown>,
+  ctx?: Record<string, unknown>,
 ) {
   return {
     body,
     auth: { team_id: TEAM_ID },
     acuc: { api_key_id: 7, org_id: null, flags },
+    ...(ctx ? { ctx } : {}),
     headers: {},
     protocol: "http",
     host: "localhost",
@@ -211,20 +213,22 @@ describe("crawl prompt telemetry under zero data retention", () => {
 
   it.each([
     [
-      "team-scoped",
+      "context-scoped",
       { url: "https://example.com", prompt: PROMPT },
       { scrapeZDR: "forced" },
+      { teamId: TEAM_ID, zeroDataRetention: true },
     ],
     [
       "request-scoped",
       { url: "https://example.com", prompt: PROMPT, zeroDataRetention: true },
       { scrapeZDR: "allowed" },
+      undefined,
     ],
   ])(
     "records nothing from the prompt step of a %s ZDR crawl",
-    async (_scope, body, flags) => {
+    async (_scope, body, flags, ctx) => {
       const res = makeRes();
-      await crawlController(makeReq(body, flags), res);
+      await crawlController(makeReq(body, flags, ctx), res);
 
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(
@@ -241,20 +245,22 @@ describe("crawl prompt telemetry under zero data retention", () => {
 
   it.each([
     [
-      "team-scoped",
+      "context-scoped",
       { url: "https://example.com", prompt: PROMPT },
       { scrapeZDR: "forced" },
+      { teamId: TEAM_ID, zeroDataRetention: true },
     ],
     [
       "request-scoped",
       { url: "https://example.com", prompt: PROMPT, zeroDataRetention: true },
       {},
+      undefined,
     ],
   ])(
     "records nothing from a %s ZDR params preview",
-    async (_scope, body, flags) => {
+    async (_scope, body, flags, ctx) => {
       const res = makeRes();
-      await crawlParamsPreviewController(makeReq(body, flags), res);
+      await crawlParamsPreviewController(makeReq(body, flags, ctx), res);
 
       expect(res.status).toHaveBeenCalledWith(200);
       expect(telemetryOfCalls()).toEqual([

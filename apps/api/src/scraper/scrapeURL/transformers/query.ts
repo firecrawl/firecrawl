@@ -6,7 +6,6 @@ import { config } from "../../../config";
 import { getModel } from "../../../lib/generic-ai";
 import { service } from "../../../service";
 import { hasFormatOfType } from "../../../lib/format-utils";
-import { isUsOnly } from "../../../lib/us-only";
 import { calculateCost } from "./llmExtract";
 import { modelPrices } from "../../../lib/model-prices";
 import {
@@ -420,7 +419,7 @@ export async function performQuery(
     return document;
   }
 
-  if (isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+  if (meta.ctx.usOnly || meta.ctx.flags?.usOnly) {
     addWarning(
       document,
       "Query mode is not supported for teams restricted to US-only processing.",

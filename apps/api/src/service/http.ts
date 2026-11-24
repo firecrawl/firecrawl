@@ -21,6 +21,26 @@ import { service } from "./service";
 
 export type { AuthRoute, CoreRouteKind, RouteKind };
 
+/** Maps a v1/v2 route path to its `RequestKind`, if it is one of the six core kinds. */
+export function requestKindForPath(path: string): RequestKind | undefined {
+  switch (path.replace(/^\/v\d+/, "")) {
+    case "/scrape":
+      return "scrape";
+    case "/parse":
+      return "parse";
+    case "/crawl":
+      return "crawl";
+    case "/batch/scrape":
+      return "batchScrape";
+    case "/map":
+      return "map";
+    case "/search":
+      return "search";
+    default:
+      return undefined;
+  }
+}
+
 /** Sends a ready-made HTTP refusal if the response has not already been sent. */
 export function sendRefusal(res: Response, refusal: Refusal): void {
   if (res.headersSent) return;
@@ -60,7 +80,12 @@ export function authenticate(
       .then(() => service.modules.auth.authenticate(req, route))
       .then(result => {
         if (!result.ok) {
-          sendRefusal(res, result.refusal);
+          const requestKind = requestKindForPath(req.path);
+          if (requestKind) {
+            rejectRequest(req, res, requestKind, result.refusal);
+          } else {
+            sendRefusal(res, result.refusal);
+          }
           return;
         }
         if (!res.headersSent) {
@@ -168,7 +193,7 @@ export function openRequest(
       }
 
       const rawBody = req.body;
-      req.rawBody = rawBody;
+      req.rawRequestBody = rawBody;
       const id = req.requestId ?? uuidv7();
       req.requestId = id;
 
@@ -201,6 +226,9 @@ export function openRequest(
 
       req.ctx = admission.ctx;
       req.body = admission.body;
+      if (admission.blocklistChecked) {
+        req.requestBlocklistChecked = true;
+      }
       if (admission.warnings && admission.warnings.length > 0) {
         req.requestWarnings = admission.warnings;
       }

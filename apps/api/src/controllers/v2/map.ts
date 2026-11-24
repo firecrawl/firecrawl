@@ -11,14 +11,9 @@ import { logMap, logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import { service } from "../../service";
+import { finalizeResponse, service, type RequestContext } from "../../service";
 import { logger as _logger } from "../../lib/logger";
 import { MapTimeoutError } from "../../lib/error";
-import { checkPermissions } from "../../lib/permissions";
-import {
-  resolveSafeMode,
-  isLockdownZeroDataRetention,
-} from "../../lib/safe-mode";
 import {
   applyMapCollectHook,
   getMapResults,
@@ -26,52 +21,19 @@ import {
 } from "../../lib/map-utils";
 import { v7 as uuidv7 } from "uuid";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { AvgrabResolveError, resolveViaAvgrab } from "../../lib/avgrab-resolve";
-import {
-  checkUrlsAgainstThreatPolicy,
-  resolveThreatProtection,
-} from "../../lib/threat-protection/request";
 import { installedService } from "../../service/service";
-import type { ThreatDecision } from "../../lib/threat-protection/types";
 
 configDotenv();
-
-async function filterMapResultsByThreatPolicy(
-  links: MapDocument[],
-  policy: Parameters<typeof checkUrlsAgainstThreatPolicy>[1] | null,
-  teamId: string,
-): Promise<{ links: MapDocument[]; threatDecisions: ThreatDecision[] }> {
-  if (!policy || links.length === 0) {
-    return { links, threatDecisions: [] };
-  }
-  const { decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
-    links.map(x => x.url),
-    policy,
-    {
-      teamId,
-      localRulesOnly: policy.mode === "zscaler",
-    },
-  );
-  return {
-    links: links.filter(x => {
-      const decision = decisionsByUrl.get(x.url);
-      return decision === undefined || decision.allowed;
-    }),
-    threatDecisions: [...decisionsByUrl.values()],
-  };
-}
 
 export async function mapController(
   req: RequestWithAuth<{}, MapResponse, MapRequest>,
   res: Response<MapResponse>,
 ) {
-  // Safe Mode lockdown is cache-only, which implies zero data retention.
-  const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
-    isLockdownZeroDataRetention(req.acuc?.flags, undefined);
+  const zeroDataRetention = req.ctx?.zeroDataRetention === true;
+  const mapId = req.requestId ?? uuidv7();
   const logger = _logger.child({
-    jobId: uuidv7(),
+    jobId: mapId,
     teamId: req.auth.team_id,
     module: "api/v2",
     method: "mapController",
@@ -82,77 +44,31 @@ export async function mapController(
     (req as any).requestTiming?.startTime || new Date().getTime();
   const controllerStartTime = new Date().getTime();
 
-  const originalRequest = req.body;
-  req.body = getV2RequestSchemas().map.parse(req.body);
-
-  // Map is link discovery, not content scraping, but it is outbound to the
-  // target. Under Safe Mode: force domainControls so discovered links are
-  // filtered, and under lockdown serve from the index only (no sitemap/robots
-  // fetch to the target).
-  const safeMode = resolveSafeMode(req.acuc?.flags, undefined, req.body.url);
-  const lockdownIndexOnly = safeMode.safeMode?.lockdown === true;
-  if (lockdownIndexOnly) {
-    req.body.useIndex = true;
-  }
-  // Map's ignoreRobotsTxt is top-level, so checkPermissions (which reads it
-  // under crawlerOptions) can't see it — enforce robots here for Safe Mode.
-  if (
-    safeMode.safeMode?.enforceRobots &&
-    !lockdownIndexOnly &&
-    req.body.ignoreRobotsTxt
-  ) {
-    return res.status(403).json({
-      success: false,
-      code: "SAFE_MODE_BLOCKED",
-      error:
-        "Safe Mode: robots.txt is always honored for your organization; the ignoreRobotsTxt parameter is not allowed.",
-    });
-  }
-
-  const threatProtection = await resolveThreatProtection({
-    teamId: req.auth.team_id,
-    orgId: req.acuc?.org_id ?? null,
-    flags: req.acuc?.flags ?? null,
-    override: req.body.threatProtection,
-    force: safeMode.safeMode?.domainControls === true,
-  });
-  if (threatProtection.error) {
-    return res.status(403).json({
-      success: false,
-      error: threatProtection.error,
-    });
-  }
-
-  const permissions = checkPermissions(req.body, req.acuc?.flags, {
-    threatProtectionOrgConfig: threatProtection.orgConfig,
-    safeMode: safeMode.safeMode ?? null,
-  });
-  if (permissions.error) {
-    return res.status(403).json({
-      success: false,
-      code: permissions.code,
-      error: permissions.error,
-    });
+  const originalRequest = req.rawRequestBody ?? req.body;
+  if (!req.ctx) {
+    req.body = getV2RequestSchemas().map.parse(req.body);
   }
 
   const middlewareTime = controllerStartTime - middlewareStartTime;
 
-  const mapId = uuidv7();
-  const ctx =
-    req.ctx ??
-    requestContext({
-      teamId: req.auth.team_id,
-      zeroDataRetention,
-      flags: req.acuc?.flags ?? null,
-      orgId: req.acuc?.org_id ?? null,
-      apiKeyId: req.acuc?.api_key_id ?? null,
-      billing: {
-        endpoint: "map",
-        jobId: mapId,
-        externalRequestId: externalRequestId(req),
-        hostedMcp: req.auth.hostedMcp,
-      },
-    });
+  const billing = req.ctx?.billing ?? {
+    endpoint: "map" as const,
+    jobId: mapId,
+    externalRequestId: externalRequestId(req),
+    hostedMcp: req.auth.hostedMcp,
+  };
+  const ctx: RequestContext = req.ctx
+    ? req.ctx.billing
+      ? req.ctx
+      : { ...req.ctx, billing }
+    : requestContext({
+        teamId: req.auth.team_id,
+        zeroDataRetention,
+        flags: req.acuc?.flags ?? null,
+        orgId: req.acuc?.org_id ?? null,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+        billing,
+      });
   req.ctx = ctx;
 
   logger.info("Map request", {
@@ -176,11 +92,10 @@ export async function mapController(
   });
 
   // Short-circuit: if the URL matches avgrab's resolve pattern, delegate
-  // entirely. Skipped under Safe Mode so results still flow through the
-  // standard path (domain-controls filtering + lockdown index-only).
+  // entirely. Skipped under lockdown so results stay cache-only.
   let avgrabResults: MapDocument[] | null = null;
   try {
-    avgrabResults = safeMode.safeMode
+    avgrabResults = ctx.lockdown
       ? null
       : await resolveViaAvgrab(req.body.url, req.body.limit, logger);
   } catch (error) {
@@ -202,17 +117,13 @@ export async function mapController(
   }
 
   if (avgrabResults !== null) {
-    const collected = await applyMapCollectHook(avgrabResults, {
+    const mapState: Record<string, unknown> = {};
+    const collectedResults = await applyMapCollectHook(avgrabResults, {
       ctx,
       url: req.body.url,
       limit: req.body.limit,
+      state: mapState,
     });
-    const { links: collectedResults, threatDecisions } =
-      await filterMapResultsByThreatPolicy(
-        collected,
-        threatProtection.policy,
-        req.auth.team_id,
-      );
 
     void service.modules.billing
       .charge({
@@ -221,11 +132,9 @@ export async function mapController(
         requestId: mapId,
         urls: collectedResults.length,
         state: {
+          ...mapState,
           perUrl: true,
-          // Suffixed so this early-return path can never collide with the main
-          // map charge below, even if both ever billed the same mapId.
           chargeId: `${mapId}:avgrab`,
-          threatDecisions,
         },
       })
       .catch(error => {
@@ -273,11 +182,12 @@ export async function mapController(
       });
     }
 
-    return res.status(200).json({
+    const payload = await finalizeResponse(req, "map", {
       success: true,
       id: mapId,
       links: collectedResults,
     });
+    return res.status(200).json(payload as MapResponse);
   }
 
   let result: MapResult;
@@ -339,26 +249,13 @@ export async function mapController(
     }
   }
 
-  // Threat protection: remove blocked links from the returned URL list
-  // entirely. "zscaler" mode evaluates map results against local rules only
-  // so inline classification does not exhaust the tenant's urlLookup budget.
-  const filtered = await filterMapResultsByThreatPolicy(
-    result.mapResults,
-    threatProtection.policy,
-    req.auth.team_id,
-  );
-  result.mapResults = filtered.links;
-  const threatDecisions = filtered.threatDecisions;
-
   void service.modules.billing
     .charge({
       kind: "map",
       ctx,
       requestId: mapId,
       urls: result.mapResults.length,
-      state: {
-        threatDecisions,
-      },
+      state: result.state ?? {},
     })
     .catch(error => {
       logger.error("Failed to bill team for map credits", {
@@ -435,12 +332,12 @@ export async function mapController(
     }
   }
 
-  const response = {
+  const response = await finalizeResponse(req, "map", {
     success: true as const,
     id: result.job_id,
     links: result.mapResults,
     ...(warning && { warning }),
-  };
+  });
 
-  return res.status(200).json(response);
+  return res.status(200).json(response as MapResponse);
 }

@@ -9,7 +9,12 @@ import { logSearch, logRequest } from "../../services/logging/log_job";
 import { trackSearchRequest } from "../../lib/tracking";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import { service, type SettleOutcome } from "../../service";
+import {
+  finalizeResponse,
+  service,
+  type RequestContext,
+  type SettleOutcome,
+} from "../../service";
 import { logger as _logger } from "../../lib/logger";
 import { getErrorHttpResponse, ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
@@ -17,7 +22,6 @@ import { CategoryOption } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
 import { applySearchPlanHook } from "../../search/plan-hook";
 import type { BillingMetadata } from "../../services/billing/types";
-import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
 import { teamPlanClass } from "../../lib/team-plan-class";
 import {
   withSpan,
@@ -26,20 +30,6 @@ import {
   SpanKind,
   type Span,
 } from "../../lib/otel-tracer";
-import { resolveThreatProtection } from "../../lib/threat-protection/request";
-import {
-  resolveSafeMode,
-  isLockdownZeroDataRetention,
-  getEffectiveSearchForcedKind,
-} from "../../lib/safe-mode";
-import { checkPermissions, ipWhitelistRefusal } from "../../lib/permissions";
-import {
-  actionTypesOf,
-  checkKeyFormatRestriction,
-  formatTypesOf,
-} from "../../lib/key-restriction";
-import { isAgentInteropSecretValid } from "../../lib/agent-interop";
-import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 import { installedService } from "../../service/service";
 
 const IMAGE_SEARCH_US_ONLY_MESSAGE =
@@ -49,19 +39,13 @@ export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
   res: Response<SearchResponse>,
 ) {
-  // Resolved before any span starts so the whole request stays unrecorded for
-  // zero-data-retention and anonymous searches (see otel-tracer).
   const enterprise: unknown[] = Array.isArray(req.body?.enterprise)
     ? req.body.enterprise
     : [];
   const zeroDataRetentionTrace =
-    Boolean(getSearchForcedKind(req.acuc?.flags)) ||
+    req.ctx?.zeroDataRetention === true ||
     enterprise.includes("zdr") ||
-    enterprise.includes("anon") ||
-    isLockdownZeroDataRetention(
-      req.acuc?.flags,
-      req.body?.scrapeOptions?.safeMode,
-    );
+    enterprise.includes("anon");
 
   return withSpan(
     "api.search.request",
@@ -86,22 +70,14 @@ async function searchControllerInner(
     (req as any).requestTiming?.startTime || new Date().getTime();
   const controllerStartTime = new Date().getTime();
 
-  const jobId = uuidv7();
-  const searchZDRMode = getSearchZDR(req.acuc?.flags);
-  // Safe Mode lockdown forces the "zdr" kind like the searchZDR flag does
-  // (see getEffectiveSearchForcedKind).
-  const flagForcedKind = getSearchForcedKind(req.acuc?.flags);
-  const teamForcedKind = getEffectiveSearchForcedKind(
-    req.acuc?.flags,
-    req.body?.scrapeOptions?.safeMode,
-  );
+  const jobId = req.requestId ?? uuidv7();
+  let zeroDataRetention = req.ctx?.zeroDataRetention === true;
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,
     module: "api/v2",
     method: "searchController",
-    zeroDataRetention: teamForcedKind !== null,
-    teamForcedKind,
+    zeroDataRetention,
   });
 
   const middlewareTime = controllerStartTime - middlewareStartTime;
@@ -110,7 +86,6 @@ async function searchControllerInner(
     config.SEARCH_PREVIEW_TOKEN,
   );
 
-  let zeroDataRetention = teamForcedKind !== null;
   let billingHandle: unknown = undefined;
   let settledBilling = false;
   let jobIdField: { jobId?: string } = {};
@@ -136,157 +111,21 @@ async function searchControllerInner(
   };
 
   try {
-    const rawBody = req.body as unknown as Record<string, unknown> | undefined;
-    delete rawBody?.objective;
-    delete rawBody?.clientModel;
-    req.body = getV2RequestSchemas().search.parse(req.body);
-
-    const requestedFormats = formatTypesOf(req.body.scrapeOptions?.formats);
-    const keyRestriction = await checkKeyFormatRestriction(
-      requestedFormats,
-      // Search only scrapes (and only runs actions) when formats are
-      // requested; without them scrapeOptions is ignored entirely.
-      requestedFormats.length > 0
-        ? actionTypesOf(req.body.scrapeOptions?.actions)
-        : [],
-      req.acuc?.api_key_id,
-      req.acuc?.flags ?? null,
-    );
-    if (!keyRestriction.allowed) {
-      return res.status(keyRestriction.status).json({
-        success: false,
-        error: keyRestriction.error,
-      });
+    if (!req.ctx) {
+      const rawBody = req.body as unknown as
+        | Record<string, unknown>
+        | undefined;
+      delete rawBody?.objective;
+      delete rawBody?.clientModel;
+      req.body = getV2RequestSchemas().search.parse(req.body);
     }
 
-    const categories = req.body.categories as CategoryOption[];
-
-    if (
-      req.body.__agentInterop &&
-      config.AGENT_INTEROP_SECRET &&
-      !isAgentInteropSecretValid(req.body.__agentInterop.auth)
-    ) {
-      return res.status(403).json({
-        success: false,
-        error: "Invalid agent interop.",
-      });
-    } else if (req.body.__agentInterop && !config.AGENT_INTEROP_SECRET) {
-      return res.status(403).json({
-        success: false,
-        error: "Agent interop is not enabled.",
-      });
-    }
-
-    // Image search has no US-only route: it is dropped with a warning, or
-    // refused when nothing else was asked for.
+    const requestedFormats = req.body.scrapeOptions?.formats ?? [];
     let usOnlyImagesWarning: string | undefined;
-    const sources = req.body.sources as Array<{ type: string }>;
-    if (
-      isUsOnly(req.acuc?.flags) &&
-      sources.some(source => source.type === "images")
-    ) {
-      req.body.sources = sources.filter(
-        source => source.type !== "images",
-      ) as SearchRequest["sources"];
-      if (req.body.sources.length === 0) {
-        return res.status(403).json({
-          success: false,
-          code: "US_ONLY_UNAVAILABLE",
-          error: IMAGE_SEARCH_US_ONLY_MESSAGE,
-        });
-      }
-      usOnlyImagesWarning = IMAGE_SEARCH_US_ONLY_MESSAGE;
-    }
-
-    // Safe Mode: validate the per-request param up front and reject scrape
-    // options it forbids (the worker backstop would otherwise strip them
-    // silently). Domain controls force threat protection over the results.
-    const safeMode = resolveSafeMode(
-      req.acuc?.flags,
-      req.body.scrapeOptions?.safeMode,
-    );
-    if (safeMode.error) {
-      return res.status(403).json({
-        success: false,
-        code: safeMode.code,
-        error: safeMode.error,
-      });
-    }
-
-    // Threat protection: resolve the effective policy. Blocked domains are
-    // removed from search results entirely, and scraped results inherit the
-    // policy through the scrape pipeline.
-    const threatProtection = await resolveThreatProtection({
-      teamId: req.auth.team_id,
-      orgId: req.acuc?.org_id ?? null,
-      flags: req.acuc?.flags ?? null,
-      override:
-        req.body.threatProtection ?? req.body.scrapeOptions?.threatProtection,
-      force: safeMode.safeMode?.domainControls === true,
-    });
-    if (threatProtection.error) {
-      return res.status(403).json({
-        success: false,
-        error: threatProtection.error,
-      });
-    }
-
-    const usOnlyLocationError =
-      requestedFormats.length > 0
-        ? usOnlyLocationRefusal(
-            req.acuc?.flags,
-            req.body.scrapeOptions?.location?.country,
-          )
-        : undefined;
-    if (usOnlyLocationError) {
-      return res.status(403).json({
-        success: false,
-        code: "US_ONLY_UNAVAILABLE",
-        error: usOnlyLocationError,
-      });
-    }
-
-    const ipWhitelistError =
-      requestedFormats.length > 0
-        ? ipWhitelistRefusal(
-            req.acuc?.flags,
-            req.body.scrapeOptions?.location?.country,
-          )
-        : undefined;
-    if (ipWhitelistError) {
-      return res.status(403).json({
-        success: false,
-        error: ipWhitelistError,
-      });
-    }
-
-    // Search only scrapes (and only honors scrapeOptions) when formats are
-    // requested, so the scrape-option checks apply only then.
-    if (
-      safeMode.safeMode &&
-      requestedFormats.length > 0 &&
-      req.body.scrapeOptions
-    ) {
-      const permissions = checkPermissions(
-        req.body.scrapeOptions,
-        req.acuc?.flags,
-        {
-          threatProtectionOrgConfig: threatProtection.orgConfig,
-          safeMode: safeMode.safeMode,
-        },
-      );
-      if (permissions.error) {
-        return res.status(403).json({
-          success: false,
-          code: permissions.code,
-          error: permissions.error,
-        });
-      }
-    }
 
     const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
     const agentRequestId = req.body.__agentInterop?.requestId ?? null;
-    const billing: BillingMetadata = {
+    const billing: BillingMetadata = req.ctx?.billing ?? {
       ...(req.body.__agentInterop
         ? { endpoint: "agent" as const, jobId }
         : { endpoint: "search" as const, jobId }),
@@ -300,53 +139,26 @@ async function searchControllerInner(
       origin: req.body.origin,
     });
 
-    // Kinds the request itself asked for, captured before the forced kind is
-    // injected: the entitlement check below applies to these only.
-    const requestedZDROrAnon =
-      req.body.enterprise?.includes("zdr") ||
-      req.body.enterprise?.includes("anon") ||
-      false;
-
-    // Inject the team-forced enterprise mode so downstream billing,
-    // upstream routing, and ZDR cleanup all see it.
-    if (teamForcedKind) {
-      const existing = req.body.enterprise ?? [];
-      if (!existing.includes(teamForcedKind)) {
-        req.body.enterprise = [...existing, teamForcedKind];
-      }
-    }
-
     const isZDR = req.body.enterprise?.includes("zdr");
     const isAnon = req.body.enterprise?.includes("anon");
     const isZDROrAnon = isZDR || isAnon;
-    zeroDataRetention = isZDROrAnon ?? false;
+    zeroDataRetention = req.ctx?.zeroDataRetention ?? Boolean(isZDROrAnon);
     logger = logger.child({ zeroDataRetention });
 
-    // Verify the team has searchZDR enabled before allowing enterprise ZDR/anon
-    // it asked for. Only the flag-forced kind exempts a team: a lockdown-forced
-    // "zdr" must not let an unentitled request add "anon".
-    if (requestedZDROrAnon && !flagForcedKind) {
-      if (searchZDRMode !== "allowed") {
-        return res.status(403).json({
-          success: false,
-          error:
-            "Zero Data Retention (ZDR) search is not enabled for your team. Contact support@firecrawl.com to enable this feature.",
+    const ctx: RequestContext = req.ctx
+      ? req.ctx.billing
+        ? req.ctx
+        : { ...req.ctx, billing }
+      : requestContext({
+          teamId: req.auth.team_id,
+          zeroDataRetention,
+          flags: req.acuc?.flags ?? null,
+          orgId: req.acuc?.org_id ?? null,
+          apiKeyId: req.acuc?.api_key_id ?? null,
+          concurrencyLimit: req.acuc?.concurrency_limit,
+          rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
+          billing,
         });
-      }
-    }
-
-    const ctx =
-      req.ctx ??
-      requestContext({
-        teamId: req.auth.team_id,
-        zeroDataRetention,
-        flags: req.acuc?.flags ?? null,
-        orgId: req.acuc?.org_id ?? null,
-        apiKeyId: req.acuc?.api_key_id ?? null,
-        concurrencyLimit: req.acuc?.concurrency_limit,
-        rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
-        billing,
-      });
     req.ctx = ctx;
 
     // Kick off the `requests` row insert without blocking: it queues on the
@@ -384,6 +196,7 @@ async function searchControllerInner(
       });
     if (!agentRequestId) jobIdField = { jobId };
 
+    const searchState: Record<string, unknown> = {};
     const planHooks = installedService()?.hooks;
     const planned = planHooks?.has("search.plan")
       ? await applySearchPlanHook(
@@ -392,7 +205,7 @@ async function searchControllerInner(
             limit: req.body.limit,
             sources: req.body.sources as Array<{ type: string }>,
           },
-          { ctx, body: req.body },
+          { ctx, body: req.body, state: searchState, logger },
         )
       : {
           query: req.body.query,
@@ -402,7 +215,7 @@ async function searchControllerInner(
 
     if (planHooks?.has("search.plan")) {
       if (
-        isUsOnly(req.acuc?.flags) &&
+        (ctx.usOnly || ctx.flags?.usOnly) &&
         planned.sources.some(source => source.type === "images")
       ) {
         planned.sources = planned.sources.filter(
@@ -496,14 +309,13 @@ async function searchControllerInner(
         billing,
         agentIndexOnly: (req as any).agentIndexOnly ?? false,
         keylessReserved: billingHandle !== undefined,
-        threatProtectionPolicy: threatProtection.policy,
-        safeModeBypassed: safeMode.bypassed === true,
         ...(req.headers["x-firecrawl-work-contact-only"] === "true"
           ? { workContactOnly: true }
           : {}),
         ctx,
         body: req.body,
         planApplied: true,
+        state: searchState,
       },
       logger,
     );
@@ -619,17 +431,27 @@ async function searchControllerInner(
         charged: searchCredits,
       });
     }
-    const warning = [usOnlyImagesWarning, result.usOnlyWarning]
+    const warning = [
+      ...(req.requestWarnings ?? []),
+      usOnlyImagesWarning,
+      result.usOnlyWarning,
+    ]
       .filter(Boolean)
       .join(" ");
     await settleBilling({ ok: true, charged: totalCredits });
-    return res.status(200).json({
-      success: true,
-      data: result.response,
-      ...(totalCredits !== undefined ? { creditsUsed: totalCredits } : {}),
-      id: jobId,
-      ...(warning ? { warning } : {}),
-    });
+    const payload = await finalizeResponse(
+      req,
+      "search",
+      {
+        success: true,
+        data: result.response,
+        ...(totalCredits !== undefined ? { creditsUsed: totalCredits } : {}),
+        id: jobId,
+        ...(warning ? { warning } : {}),
+      },
+      scrapedDocuments,
+    );
+    return res.status(200).json(payload as SearchResponse);
   } catch (error) {
     await settleBilling({ ok: false });
 

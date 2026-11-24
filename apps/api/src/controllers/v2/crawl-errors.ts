@@ -11,7 +11,6 @@ import { storedZeroDataRetention } from "../../lib/request-context";
 import { logger as _logger } from "../../lib/logger";
 import { deserializeTransportableError } from "../../lib/error-serde";
 import { TransportableError } from "../../lib/error";
-import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { scrapeQueue } from "../../services/worker/nuq-router";
 import { service } from "../../service";
 configDotenv();
@@ -99,8 +98,25 @@ export async function crawlErrorsController(
             ? {
                 code: error.code,
                 error: error.message,
-                ...(error instanceof ThirdPartyDataTermsRequiredError
-                  ? { requiresAction: error.requiresAction }
+                ...("requiresAction" in error &&
+                (
+                  error as {
+                    requiresAction?: Extract<
+                      CrawlErrorsResponse,
+                      { errors: unknown }
+                    >["errors"][number]["requiresAction"];
+                  }
+                ).requiresAction !== undefined
+                  ? {
+                      requiresAction: (
+                        error as {
+                          requiresAction?: Extract<
+                            CrawlErrorsResponse,
+                            { errors: unknown }
+                          >["errors"][number]["requiresAction"];
+                        }
+                      ).requiresAction,
+                    }
                   : {}),
               }
             : {

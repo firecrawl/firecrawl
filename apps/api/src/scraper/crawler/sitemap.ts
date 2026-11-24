@@ -2,6 +2,8 @@ import type { Logger } from "winston";
 import { scrapeOptions, ScrapeOptions } from "../../controllers/v2/types";
 import { logger as _logger } from "../../lib/logger";
 import { Engine } from "../scrapeURL/engines";
+import type { RequestContext } from "../../service/request-context";
+import { installedService } from "../../service/service";
 import { scrapeURL } from "../scrapeURL";
 import { CostTracking } from "../../lib/cost-tracking";
 import {
@@ -60,6 +62,14 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
   }
 
   const forceEngine: Engine[] = ["fetch"];
+  const parentCtx: RequestContext = {
+    teamId: "sitemap",
+    zeroDataRetention: options.zeroDataRetention,
+    ...(options.usOnly ? { usOnly: true } : {}),
+  };
+  const systemCtx =
+    installedService()?.modules.policy.system("sitemap", parentCtx) ??
+    parentCtx;
 
   const response = await scrapeURL(
     "sitemap;" + options.crawlId,
@@ -70,14 +80,14 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
       ...(options.location ? { location: options.location } : {}),
     }),
     {
+      ctx: systemCtx,
       forceEngine,
       sitemapFetch: "full",
       v0DisableJsDom: true,
       // externalAbort: options.abort,
-      teamId: "sitemap",
+      teamId: systemCtx.teamId,
       orgId: null,
-      zeroDataRetention: options.zeroDataRetention,
-      ...(options.usOnly ? { teamFlags: { usOnly: true } } : {}),
+      zeroDataRetention: systemCtx.zeroDataRetention,
       crawlId: options.crawlId,
       isPreCrawl: options.isPreCrawl,
     },

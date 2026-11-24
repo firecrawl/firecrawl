@@ -1,7 +1,6 @@
 import express from "express";
 import multer from "multer";
 import { RateLimiterMode } from "../types";
-import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
 import { searchController } from "../controllers/v2/search";
 import { scrapeController } from "../controllers/v2/scrape";
@@ -33,7 +32,6 @@ import {
   authMiddleware as sharedAuthMiddleware,
   checkCreditsMiddleware,
   blocklistMiddleware,
-  scrapeBlocklistMiddleware,
   restrictedOptionsCountryCheck,
   idempotencyMiddleware,
   requestTimingMiddleware,
@@ -44,6 +42,7 @@ import {
 } from "./shared";
 import { queueStatusController } from "../controllers/v2/queue-status";
 import { deprecationMiddleware } from "../lib/deprecations";
+import { openRequest, resolveRequestContext, service } from "../service";
 
 // Every v2 route opts in to hosted MCP rate-limit minimums; /v1 routes do not.
 const authMiddleware: typeof sharedAuthMiddleware = (mode, options = {}) =>
@@ -115,12 +114,20 @@ v2Router.post(
     allowKeyless: true,
     allowAgentManagedKey: true,
   }),
-  inferIntegrationMiddleware,
-  restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID, {
-    mcpCredits: true,
+  openRequest("search", {
+    authorizeState: { mcpCredits: true },
+    parse: rawBody => {
+      if (rawBody && typeof rawBody === "object" && !Array.isArray(rawBody)) {
+        const {
+          objective: _objective,
+          clientModel: _clientModel,
+          ...rest
+        } = rawBody as Record<string, unknown>;
+        return service.schemas.search.parse(rest);
+      }
+      return service.schemas.search.parse(rawBody);
+    },
   }),
-  blocklistMiddleware,
   wrap(searchController),
 );
 
@@ -133,7 +140,7 @@ v2Router.get(
 v2Router.post(
   "/parse/upload-url",
   authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
-  restrictedOptionsCountryCheck,
+  resolveRequestContext("parse-upload-url"),
   wrap(parseUploadUrlController),
 );
 
@@ -147,10 +154,12 @@ v2Router.put(
 v2Router.post(
   "/parse",
   authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
-  restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(1, undefined, { mcpCredits: true }),
   parsePayloadMiddleware,
-  inferIntegrationMiddleware,
+  openRequest("parse", {
+    units: 1,
+    authorizeState: { mcpCredits: true },
+    blocklist: "none",
+  }),
   wrap(parseController),
 );
 
@@ -160,16 +169,17 @@ v2Router.post(
     allowKeyless: true,
     allowAgentManagedKey: true,
   }),
-  inferIntegrationMiddleware,
-  restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(1, undefined, { mcpCredits: true }),
-  scrapeBlocklistMiddleware,
+  openRequest("scrape", {
+    units: 1,
+    authorizeState: { mcpCredits: true },
+  }),
   wrap(scrapeController),
 );
 
 v2Router.get(
   "/scrape/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
+  resolveRequestContext("scrape-status"),
   validateJobIdParam,
   wrap(scrapeStatusController),
 );
@@ -177,29 +187,29 @@ v2Router.get(
 v2Router.post(
   "/batch/scrape",
   authMiddleware(RateLimiterMode.Scrape, { allowAgentManagedKey: true }),
-  inferIntegrationMiddleware,
-  restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(undefined, undefined, { mcpCredits: true }),
-  blocklistMiddleware,
+  openRequest("batchScrape", {
+    authorizeState: { mcpCredits: true },
+    blocklist: "none",
+  }),
   wrap(batchScrapeController),
 );
 
 v2Router.post(
   "/map",
   authMiddleware(RateLimiterMode.Map),
-  inferIntegrationMiddleware,
-  checkCreditsMiddleware(1, undefined, { mcpCredits: true }),
-  blocklistMiddleware,
+  openRequest("map", {
+    units: 1,
+    authorizeState: { mcpCredits: true },
+  }),
   wrap(mapController),
 );
 
 v2Router.post(
   "/crawl",
   authMiddleware(RateLimiterMode.Crawl),
-  inferIntegrationMiddleware,
-  restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(undefined, undefined, { mcpCredits: true }),
-  scrapeBlocklistMiddleware,
+  openRequest("crawl", {
+    authorizeState: { mcpCredits: true },
+  }),
   idempotencyMiddleware,
   wrap(crawlController),
 );
@@ -207,6 +217,7 @@ v2Router.post(
 v2Router.post(
   "/crawl/params-preview",
   authMiddleware(RateLimiterMode.Crawl),
+  resolveRequestContext("crawl-params-preview"),
   checkCreditsMiddleware(),
   wrap(crawlParamsPreviewController),
 );

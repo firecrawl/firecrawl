@@ -16,7 +16,6 @@ import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
 import { getErrorHttpResponse, isTransportableError } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
-import { checkPermissions } from "../../lib/permissions";
 import { withSpan, setSpanAttributes, SpanKind } from "../../lib/otel-tracer";
 import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
@@ -26,11 +25,15 @@ import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import { service, type SettleOutcome } from "../../service";
+import {
+  finalizeResponse,
+  service,
+  type RequestContext,
+  type SettleOutcome,
+} from "../../service";
 import type { EngineName } from "../../service/engines";
 import { installedService } from "../../service/service";
 import type { BillingMetadata } from "../../services/billing/types";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import path from "node:path";
 import {
   DOCUMENT_EXTENSIONS,
@@ -41,7 +44,6 @@ import {
   imageExtensionFromContentType,
 } from "../../lib/image-formats";
 import { isImageOcrEnabled } from "../../lib/image-ocr-gate";
-import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import {
   HTML_CONTENT_TYPES,
   HTML_EXTENSIONS,
@@ -293,11 +295,8 @@ export async function parseController(
   req: RequestWithAuth<{}, ScrapeResponse, ParseRequest>,
   res: Response<ScrapeResponse>,
 ) {
-  // Resolved before the root span starts so the whole request trace stays
-  // unrecorded for zero-data-retention requests (see otel-tracer).
   const zeroDataRetentionTrace =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
-    req.body?.zeroDataRetention === true;
+    req.ctx?.zeroDataRetention === true || req.body?.zeroDataRetention === true;
 
   return withSpan(
     "api.parse.request",
@@ -306,7 +305,7 @@ export async function parseController(
         (req as any).requestTiming?.startTime || new Date().getTime();
       const controllerStartTime = new Date().getTime();
 
-      const jobId = uuidv7();
+      const jobId = req.requestId ?? uuidv7();
       const preNormalizedBody = sanitizeParseRequestForLogs(req.body);
 
       setSpanAttributes(span, {
@@ -320,12 +319,14 @@ export async function parseController(
         "parse.middleware_time_ms": controllerStartTime - middlewareStartTime,
       });
 
-      await withSpan("api.parse.validate", async validateSpan => {
-        req.body = getV2RequestSchemas().parse.parse(req.body);
-        setSpanAttributes(validateSpan, {
-          "validation.success": true,
+      if (!req.ctx) {
+        await withSpan("api.parse.validate", async validateSpan => {
+          req.body = getV2RequestSchemas().parse.parse(req.body);
+          setSpanAttributes(validateSpan, {
+            "validation.success": true,
+          });
         });
-      });
+      }
 
       const unsupportedOptionError = getUnsupportedParseOptionError(req.body);
       if (unsupportedOptionError) {
@@ -354,67 +355,30 @@ export async function parseController(
         });
       }
 
-      const permissions = await withSpan(
-        "api.parse.check_permissions",
-        async permSpan => {
-          const perms = checkPermissions(req.body, req.acuc?.flags);
-          setSpanAttributes(permSpan, {
-            "permissions.success": !perms.error,
-            "permissions.error": perms.error,
-          });
-          return perms;
-        },
-      );
-
-      if (permissions.error) {
-        setSpanAttributes(span, {
-          "parse.error": permissions.error,
-          "parse.status_code": 403,
-        });
-        return res.status(403).json({
-          success: false,
-          code: permissions.code,
-          error: permissions.error,
-        });
-      }
-
       const zeroDataRetention =
-        getScrapeZDR(req.acuc?.flags) === "forced" ||
-        (req.body.zeroDataRetention ?? false);
-      const billing: BillingMetadata = {
+        req.ctx?.zeroDataRetention ?? req.body.zeroDataRetention ?? false;
+      const billing: BillingMetadata = req.ctx?.billing ?? {
         ...(req.body.__agentInterop
           ? { endpoint: "agent" as const, jobId }
           : { endpoint: "parse" as const, jobId }),
         externalRequestId: externalRequestId(req),
         hostedMcp: req.auth.hostedMcp,
       };
-      const ctx = requestContext({
-        teamId: req.auth.team_id,
-        zeroDataRetention,
-        flags: req.acuc?.flags ?? null,
-        orgId: req.acuc?.org_id ?? null,
-        apiKeyId: req.acuc?.api_key_id ?? null,
-        billing,
-        concurrencyLimit: req.acuc?.concurrency_limit,
-        rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
-      });
+      const ctx: RequestContext = req.ctx
+        ? req.ctx.billing
+          ? req.ctx
+          : { ...req.ctx, billing }
+        : requestContext({
+            teamId: req.auth.team_id,
+            zeroDataRetention,
+            flags: req.acuc?.flags ?? null,
+            orgId: req.acuc?.org_id ?? null,
+            apiKeyId: req.acuc?.api_key_id ?? null,
+            billing,
+            concurrencyLimit: req.acuc?.concurrency_limit,
+            rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
+          });
       req.ctx = ctx;
-
-      if (
-        req.body.__agentInterop &&
-        config.AGENT_INTEROP_SECRET &&
-        !isAgentInteropSecretValid(req.body.__agentInterop.auth)
-      ) {
-        return res.status(403).json({
-          success: false,
-          error: "Invalid agent interop.",
-        });
-      } else if (req.body.__agentInterop && !config.AGENT_INTEROP_SECRET) {
-        return res.status(403).json({
-          success: false,
-          error: "Agent interop is not enabled.",
-        });
-      }
 
       const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
       const agentRequestId = req.body.__agentInterop?.requestId ?? null;
@@ -593,6 +557,7 @@ export async function parseController(
                       storeInCache: false,
                     },
                     internalOptions: {
+                      ctx,
                       teamId: req.auth.team_id,
                       saveScrapeResultToGCS: process.env
                         .GCS_FIRE_ENGINE_BUCKET_NAME
@@ -780,19 +745,26 @@ export async function parseController(
         concurrencyQueueDurationMs: lockTime || undefined,
       });
 
-      return res.status(200).json({
-        success: true,
-        data: {
-          ...doc!,
-          metadata: {
-            ...doc!.metadata,
-            concurrencyLimited,
-            concurrencyQueueDurationMs: concurrencyLimited
-              ? lockTime || 0
-              : undefined,
-          },
+      const responseDocument: Document = {
+        ...doc!,
+        metadata: {
+          ...doc!.metadata,
+          concurrencyLimited,
+          concurrencyQueueDurationMs: concurrencyLimited
+            ? lockTime || 0
+            : undefined,
         },
-      });
+      };
+      const payload = await finalizeResponse(
+        req,
+        "parse",
+        {
+          success: true,
+          data: responseDocument,
+        },
+        [responseDocument],
+      );
+      return res.status(200).json(payload as ScrapeResponse);
     },
     {
       attributes: {

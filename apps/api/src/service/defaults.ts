@@ -413,13 +413,25 @@ export function directWebhooks(
  */
 export function unrestrictedPolicy(): PolicyModule<BaseRequestContext> {
   return {
-    async admit({ caller, body }) {
+    async admit({ kind, caller, body }) {
       const record = body as {
         zeroDataRetention?: unknown;
+        ignoreRobotsTxt?: unknown;
         robotsUserAgent?: unknown;
         lockdown?: unknown;
+        enterprise?: unknown;
       };
-      const zeroDataRetention = record.zeroDataRetention === true;
+      const enterprise = Array.isArray(record.enterprise)
+        ? record.enterprise
+        : [];
+      const zeroDataRetention =
+        record.zeroDataRetention === true ||
+        (kind === "search" &&
+          (enterprise.includes("zdr") || enterprise.includes("anon")));
+      const ignoreRobotsTxt =
+        typeof record.ignoreRobotsTxt === "boolean"
+          ? record.ignoreRobotsTxt
+          : undefined;
       const robotsUserAgent =
         typeof record.robotsUserAgent === "string"
           ? record.robotsUserAgent
@@ -430,6 +442,7 @@ export function unrestrictedPolicy(): PolicyModule<BaseRequestContext> {
         ctx: {
           teamId: caller.teamId,
           zeroDataRetention,
+          ...(ignoreRobotsTxt !== undefined ? { ignoreRobotsTxt } : {}),
           ...(robotsUserAgent !== undefined ? { robotsUserAgent } : {}),
           ...(lockdown ? { lockdown: true } : {}),
         },

@@ -3,6 +3,8 @@ import { Logger } from "winston";
 import { ScrapeOptions, scrapeOptions } from "../controllers/v2/types";
 import { scrapeURL } from "../scraper/scrapeURL";
 import { Engine } from "../scraper/scrapeURL/engines";
+import type { RequestContext } from "../service/request-context";
+import { installedService } from "../service/service";
 import { CostTracking } from "./cost-tracking";
 
 const ROBOTS_MAX_AGE = 1 * 24 * 60 * 60 * 1000;
@@ -39,6 +41,14 @@ export async function fetchRobotsTxt(
   const robotsTxtUrl = `${urlObj.protocol}//${urlObj.host}/robots.txt`;
 
   const forceEngine: Engine[] = ["fetch"];
+  const parentCtx: RequestContext = {
+    teamId: "robots-txt",
+    zeroDataRetention,
+    ...(usOnly ? { usOnly: true } : {}),
+  };
+  const systemCtx =
+    installedService()?.modules.policy.system("robots-txt", parentCtx) ??
+    parentCtx;
 
   let content: string = "";
   const response = await scrapeURL(
@@ -53,6 +63,7 @@ export async function fetchRobotsTxt(
       ...(skipTlsVerification ? { skipTlsVerification } : {}),
     }),
     {
+      ctx: systemCtx,
       forceEngine,
       v0DisableJsDom: true,
       orgId: null,
@@ -65,9 +76,8 @@ export async function fetchRobotsTxt(
             },
           }
         : undefined,
-      teamId: "robots-txt",
-      zeroDataRetention,
-      ...(usOnly ? { teamFlags: { usOnly: true } } : {}),
+      teamId: systemCtx.teamId,
+      zeroDataRetention: systemCtx.zeroDataRetention,
     },
     new CostTracking(),
   );

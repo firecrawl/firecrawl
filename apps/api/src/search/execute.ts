@@ -33,14 +33,9 @@ import {
 } from "./highlights";
 import { trackSearchResults } from "../lib/tracking";
 import type { BillingMetadata } from "../services/billing/types";
-import type {
-  ThreatDecision,
-  ThreatProtectionPolicy,
-} from "../lib/threat-protection/types";
-import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
+import type { ThreatDecision } from "../lib/threat-protection/types";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
-import { isUsOnly } from "../lib/us-only";
 import type { TeamPlanClass } from "../lib/team-plan-class";
 import { requestContext } from "../lib/request-context";
 import type { SearchHit } from "../service/hooks";
@@ -94,12 +89,13 @@ interface SearchContext {
   billing?: BillingMetadata;
   agentIndexOnly?: boolean;
   keylessReserved?: boolean;
-  threatProtectionPolicy?: ThreatProtectionPolicy | null;
+  threatProtectionPolicy?: unknown;
   safeModeBypassed?: boolean;
   workContactOnly?: boolean;
   ctx?: RequestContext;
   body?: SearchRequest;
   planApplied?: boolean;
+  state?: Record<string, unknown>;
 }
 
 interface SearchExecuteResult {
@@ -191,10 +187,12 @@ export async function executeSearch(
     ? (context.body ?? buildSearchRequestFallback(options, context))
     : undefined;
 
+  const searchState: Record<string, unknown> = context.state ?? {};
+
   if (shouldRunPlan) {
     const planned = await applySearchPlanHook(
       { query, limit, sources },
-      { ctx: searchCtx!, body: searchBody! },
+      { ctx: searchCtx!, body: searchBody!, state: searchState, logger },
     );
     query = planned.query;
     limit = planned.limit;
@@ -202,7 +200,7 @@ export async function executeSearch(
   }
 
   const num_results_buffer = Math.floor(limit * 2);
-  const usOnly = context.ctx?.usOnly ?? isUsOnly(flags);
+  const usOnly = context.ctx?.usOnly === true || flags?.usOnly === true;
 
   logger.info("Searching for results");
 
@@ -349,6 +347,9 @@ export async function executeSearch(
     const transformed = await hooks.transform("search.results", hits, {
       ctx: searchCtx!,
       body: searchBody!,
+      state: searchState,
+      response: searchResponse,
+      logger,
     });
 
     const nextWeb: WebSearchResult[] = [];
@@ -427,42 +428,11 @@ export async function executeSearch(
     }
   }
 
-  // Threat protection: remove blocked results before slicing, counting,
-  // scraping, and returning. Decisions are returned to the caller for billing.
-  let threatDecisions: ThreatDecision[] = [];
-  const threatPolicy = context.threatProtectionPolicy;
-  if (threatPolicy && threatPolicy.mode !== "off") {
-    const urlsToCheck = [
-      ...(searchResponse.web ?? []).map(x => x.url),
-      ...(searchResponse.news ?? []).map(x => x.url),
-      ...(searchResponse.images ?? []).map(x => x.url),
-    ].filter((x): x is string => !!x);
-
-    if (urlsToCheck.length > 0) {
-      const { decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
-        urlsToCheck,
-        threatPolicy,
-        { teamId },
-      );
-      threatDecisions = [...decisionsByUrl.values()];
-      const isAllowed = (url: string | undefined | null): boolean => {
-        if (!url) return true;
-        const decision = decisionsByUrl.get(url);
-        return decision === undefined || decision.allowed;
-      };
-      if (searchResponse.web) {
-        searchResponse.web = searchResponse.web.filter(x => isAllowed(x.url));
-      }
-      if (searchResponse.news) {
-        searchResponse.news = searchResponse.news.filter(x => isAllowed(x.url));
-      }
-      if (searchResponse.images) {
-        searchResponse.images = searchResponse.images.filter(x =>
-          isAllowed(x.url),
-        );
-      }
-    }
-  }
+  const threatDecisions: ThreatDecision[] = Array.isArray(
+    searchState.threatDecisions,
+  )
+    ? (searchState.threatDecisions as ThreatDecision[])
+    : [];
 
   if (
     options.safe &&
@@ -524,7 +494,7 @@ export async function executeSearch(
       org_id: orgId ?? null,
       origin,
       zeroDataRetention,
-      safeMode: context.safeModeBypassed ? false : undefined,
+      ctx: context.ctx,
     });
 
     if (itemsToScrape.length > 0) {
@@ -541,8 +511,7 @@ export async function executeSearch(
         billing,
         agentIndexOnly: context.agentIndexOnly,
         keylessReserved: context.keylessReserved,
-        threatProtectionPolicy: threatPolicy ?? null,
-        safeModeBypassed: context.safeModeBypassed ?? false,
+        ctx: context.ctx,
         ...(context.workContactOnly ? { workContactOnly: true } : {}),
         ...(context.concurrencyLimit !== undefined
           ? { concurrencyLimit: context.concurrencyLimit }
