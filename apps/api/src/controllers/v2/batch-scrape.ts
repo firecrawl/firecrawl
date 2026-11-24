@@ -56,11 +56,7 @@ import {
   ThirdPartyDataUnsupportedOptionError,
 } from "../../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../../lib/exchange-request";
-import {
-  AGENT_REQUEST_CREDITS_SHARDS,
-  initializeRequestCredits,
-  requestCreditsShards,
-} from "../../lib/request-credits-store";
+import { service } from "../../service";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -405,54 +401,6 @@ export async function batchScrapeController(
     account: req.account,
   });
 
-  if (!req.body.appendToId && !req.body.__agentInterop) {
-    await logRequest({
-      id,
-      kind: "batch_scrape",
-      api_version: "v2",
-      external_request_id: externalRequestId(req),
-      team_id: req.auth.team_id,
-      origin: req.body.origin ?? "api",
-      integration: req.body.integration,
-      target_hint: urls[0] ?? "",
-      zeroDataRetention: zeroDataRetention || false,
-      api_key_id: req.acuc?.api_key_id ?? null,
-      jobAccessExpiresAt: new Date(
-        Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
-      ),
-      creditsShards: requestCreditsShards(urls.length),
-    });
-  } else if (!req.body.appendToId) {
-    // An agent-started batch is recorded under the agent's request rather
-    // than as a request of its own, so logRequest never created a credit
-    // row for it. Its status is still polled: v2 reads credits under the
-    // saved agent request id, v1 under the batch id, and its children record
-    // credits under the agent request id. Make sure both rows exist. The
-    // agent row is created once with the agent controller's shard count;
-    // for an agent that came through that controller this is a no-op, for
-    // one that reaches the API first through interop it is the only writer.
-    const agentRequestId = req.body.__agentInterop?.requestId;
-    if (agentRequestId) {
-      await initializeRequestCredits(
-        agentRequestId,
-        AGENT_REQUEST_CREDITS_SHARDS,
-      ).catch(error => {
-        logger.warn("Failed to initialize Bigtable request credits", {
-          error,
-          requestId: agentRequestId,
-          shards: AGENT_REQUEST_CREDITS_SHARDS,
-        });
-      });
-    }
-    const creditsShards = requestCreditsShards(urls.length);
-    await initializeRequestCredits(id, creditsShards).catch(error => {
-      logger.warn("Failed to initialize Bigtable request credits", {
-        error,
-        shards: creditsShards,
-      });
-    });
-  }
-
   const workContactOnly =
     req.headers["x-firecrawl-work-contact-only"] === "true";
   const sc: StoredCrawl = appendTarget
@@ -509,6 +457,73 @@ export async function batchScrapeController(
     billing,
   });
   req.ctx = ctx;
+
+  if (!req.body.appendToId && !req.body.__agentInterop) {
+    await service.modules.jobStore
+      .register({
+        id,
+        kind: "batchScrape",
+        ctx,
+        expiresAtMs:
+          Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+        clientOrigin: req.body.origin ?? "api",
+        estimatedJobs: urls.length,
+      })
+      .catch(error => {
+        logger.warn("Failed to register batch scrape job", {
+          error,
+          estimatedJobs: urls.length,
+        });
+      });
+    await logRequest({
+      id,
+      kind: "batch_scrape",
+      api_version: "v2",
+      external_request_id: externalRequestId(req),
+      team_id: req.auth.team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: urls[0] ?? "",
+      zeroDataRetention: zeroDataRetention || false,
+      api_key_id: req.acuc?.api_key_id ?? null,
+      skipJobStore: true,
+    });
+  } else if (!req.body.appendToId) {
+    // An agent-started batch is recorded under the parent request rather than
+    // as a request of its own, so initialize usage tracking for both ids
+    // without creating fetchable job-access rows.
+    const agentRequestId = req.body.__agentInterop?.requestId;
+    if (agentRequestId) {
+      await service.modules.jobStore
+        .register({
+          id: agentRequestId,
+          kind: "batchScrape",
+          ctx,
+          jobAccess: false,
+          estimatedJobs: 0,
+        })
+        .catch(error => {
+          logger.warn("Failed to initialize request usage tracking", {
+            error,
+            requestId: agentRequestId,
+          });
+        });
+    }
+    await service.modules.jobStore
+      .register({
+        id,
+        kind: "batchScrape",
+        ctx,
+        jobAccess: false,
+        estimatedJobs: urls.length,
+      })
+      .catch(error => {
+        logger.warn("Failed to initialize request usage tracking", {
+          error,
+          estimatedJobs: urls.length,
+        });
+      });
+  }
 
   if (!req.body.appendToId) {
     sc.ctx = ctx;

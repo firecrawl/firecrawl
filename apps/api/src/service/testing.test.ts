@@ -24,7 +24,11 @@ describe("testService", () => {
 
     expect(built.modules.messages.errorContact()).toBe("Custom contact.");
     expect(built.modules.uploads.driver().name).toBe("base-uploads");
-    expect(built.describe().modules).toEqual(["messages", "uploads"]);
+    expect(built.describe().modules).toEqual([
+      "jobStore",
+      "messages",
+      "uploads",
+    ]);
     expect(built.describe().extensions).toEqual(["core", "extra"]);
   });
 

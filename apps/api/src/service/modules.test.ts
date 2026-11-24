@@ -6,8 +6,18 @@ import {
   PDFFetchProxyError,
   PDFPrefetchFailed,
 } from "../scraper/scrapeURL/error";
-import { defaultModules, logsMessages, memoryUploads } from "./defaults";
-import type { MessagesModule, Modules, UploadsModule } from "./modules";
+import {
+  defaultModules,
+  logsMessages,
+  memoryUploads,
+  queueJobStore,
+} from "./defaults";
+import type {
+  JobStoreModule,
+  MessagesModule,
+  Modules,
+  UploadsModule,
+} from "./modules";
 import { createService, replaceService, type CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
@@ -181,11 +191,17 @@ describe("service module slots", () => {
     expect(Object.isFrozen(built.modules.messages)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads.driver())).toBe(true);
-    expect(built.describe().modules).toEqual(["messages", "uploads"]);
+    expect(Object.isFrozen(built.modules.jobStore)).toBe(true);
+    expect(built.describe().modules).toEqual([
+      "jobStore",
+      "messages",
+      "uploads",
+    ]);
     expect(built.modules.messages.errorContact()).toBe(
       logsMessages().errorContact(),
     );
     expect(built.modules.uploads.driver().name).toBe("local");
+    expect(built.modules.jobStore.storesResultsExternally?.()).toBe(false);
   });
 
   it("keeps defaults for unspecified slots and snapshots provided modules and drivers", async () => {
@@ -205,8 +221,19 @@ describe("service module slots", () => {
       delete: async () => {},
     };
     const customUploads: UploadsModule = { driver: () => customDriver };
+    const customJobStore: JobStoreModule = {
+      ...queueJobStore(),
+      storesResultsExternally: () => true,
+      usage: async () => 42,
+    };
     const built = createService(
-      { modules: { messages: customMessages, uploads: customUploads } },
+      {
+        modules: {
+          messages: customMessages,
+          uploads: customUploads,
+          jobStore: customJobStore,
+        },
+      },
       parts,
     );
 
@@ -216,9 +243,13 @@ describe("service module slots", () => {
       ...customDriver,
       name: "mutated",
     });
+    customJobStore.usage = async () => 999;
+    customJobStore.storesResultsExternally = () => false;
 
     expect(built.modules.messages.errorContact("42")).toBe("custom:42");
     expect(built.modules.uploads.driver().name).toBe("custom");
+    expect(built.modules.jobStore.storesResultsExternally?.()).toBe(true);
+    expect(await built.modules.jobStore.usage("req-1")).toBe(42);
     const data = await built.modules.uploads.driver().read({
       uploadId: "u1",
       teamId: "t1",
@@ -253,6 +284,44 @@ describe("service module slots", () => {
         parts,
       ),
     ).toThrow("Invalid uploads module");
+    expect(() =>
+      createService(
+        { modules: { jobStore: {} as unknown as JobStoreModule } },
+        parts,
+      ),
+    ).toThrow("Invalid jobStore module");
+    expect(() =>
+      createService(
+        { modules: { jobStore: null as unknown as JobStoreModule } },
+        parts,
+      ),
+    ).toThrow("Invalid jobStore module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            jobStore: {
+              ...queueJobStore(),
+              readMany: "not-a-function",
+            } as unknown as JobStoreModule,
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid jobStore module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            jobStore: {
+              ...queueJobStore(),
+              storesResultsExternally: "not-a-function",
+            } as unknown as JobStoreModule,
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid jobStore module");
     expect(() =>
       createService(
         {

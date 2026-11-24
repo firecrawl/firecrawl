@@ -452,6 +452,8 @@ type LoggedRequest = {
   /** An agent run's ZDR retention, recorded on its job access row. */
   jobAccessZeroDataRetentionMinutes?: number;
   creditsShards?: number;
+  /** Skip job-access and request-credits writes when handled by `service.modules.jobStore`. */
+  skipJobStore?: boolean;
 };
 
 /**
@@ -542,35 +544,37 @@ async function logRequestInternal(request: LoggedRequest) {
       : request.team_id;
   const jobAccessTeamId = normalizeJobAccessTeamId(request.team_id);
 
-  if (request.jobAccess !== false && isApiJobKind(request.kind)) {
-    try {
-      await writeApiJobAccess({
-        id: request.id,
-        teamId: jobAccessTeamId,
-        kind: request.kind,
-        expiresAt:
-          request.jobAccessExpiresAt ??
-          new Date(Date.now() + DEFAULT_JOB_ACCESS_TTL_MS),
-        clientOrigin: sanitizedOrigin,
-        zeroDataRetention: request.zeroDataRetention,
-        zeroDataRetentionMinutes: request.jobAccessZeroDataRetentionMinutes,
-      });
-    } catch (error) {
-      logger.error("Failed to write API job access to Bigtable", {
-        error,
-        kind: request.kind,
-      });
+  if (!request.skipJobStore) {
+    if (request.jobAccess !== false && isApiJobKind(request.kind)) {
+      try {
+        await writeApiJobAccess({
+          id: request.id,
+          teamId: jobAccessTeamId,
+          kind: request.kind,
+          expiresAt:
+            request.jobAccessExpiresAt ??
+            new Date(Date.now() + DEFAULT_JOB_ACCESS_TTL_MS),
+          clientOrigin: sanitizedOrigin,
+          zeroDataRetention: request.zeroDataRetention,
+          zeroDataRetentionMinutes: request.jobAccessZeroDataRetentionMinutes,
+        });
+      } catch (error) {
+        logger.error("Failed to write API job access to Bigtable", {
+          error,
+          kind: request.kind,
+        });
+      }
     }
-  }
 
-  if (request.creditsShards !== undefined) {
-    try {
-      await initializeRequestCredits(request.id, request.creditsShards);
-    } catch (error) {
-      logger.error("Failed to initialize request credits in Bigtable", {
-        error,
-        shards: request.creditsShards,
-      });
+    if (request.creditsShards !== undefined) {
+      try {
+        await initializeRequestCredits(request.id, request.creditsShards);
+      } catch (error) {
+        logger.error("Failed to initialize request credits in Bigtable", {
+          error,
+          shards: request.creditsShards,
+        });
+      }
     }
   }
 
@@ -624,9 +628,11 @@ export type LoggedScrape = {
   monitor_check_id?: string | null;
   /** False for jobs that must not be fetchable by id (defaults to true). */
   jobAccess?: boolean;
+  /** Skip job-store writes when handled by `service.modules.jobStore`. */
+  skipJobStore?: boolean;
 };
 
-export type ScrapeStateOutcome =
+type ScrapeStateOutcome =
   /** The terminal state is readable from Bigtable. */
   | "written"
   /** Nothing to write: a parse job, or no state table configured. */
@@ -678,7 +684,7 @@ async function logScrapeInternal(scrape: LoggedScrape, hooks?: LogScrapeHooks) {
   // waits for it, and nothing else here has to be readable that early.
   let stateOutcome: ScrapeStateOutcome = "skipped";
   try {
-    if (!scrape.is_parse) {
+    if (!scrape.skipJobStore && !scrape.is_parse) {
       const replay = scrape.zeroDataRetention
         ? undefined
         : buildReplayContextFromScrape({
@@ -763,7 +769,7 @@ async function logScrapeInternal(scrape: LoggedScrape, hooks?: LogScrapeHooks) {
     logger,
   );
 
-  if (scrape.id !== scrape.request_id) {
+  if (!scrape.skipJobStore && scrape.id !== scrape.request_id) {
     await recordRequestCreditsSafely(
       {
         requestId: scrape.request_id,
@@ -794,6 +800,7 @@ async function logScrapeInternal(scrape: LoggedScrape, hooks?: LogScrapeHooks) {
   }
 
   if (
+    !scrape.skipJobStore &&
     !scrape.is_parse &&
     scrape.doc &&
     config.GCS_BUCKET_NAME &&

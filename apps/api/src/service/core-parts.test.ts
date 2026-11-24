@@ -39,6 +39,14 @@ vi.mock("../lib/zdr-queue", () => {
   loadedSideEffectModules.push("zdr-queue");
   return {};
 });
+vi.mock("../services/worker/nuq-router", () => {
+  loadedSideEffectModules.push("nuq-router");
+  return {};
+});
+vi.mock("../lib/crawl-redis", () => {
+  loadedSideEffectModules.push("crawl-redis");
+  return {};
+});
 
 const errorClassesModule = "../lib/error-serde";
 const enginesModule = "../scraper/scrapeURL/engines";
@@ -255,7 +263,7 @@ describe("coreParts", () => {
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: ["messages", "uploads"],
+      modules: ["jobStore", "messages", "uploads"],
       hooks: {},
       errors: {
         AGENT_INDEX_ONLY: "core",
@@ -396,7 +404,11 @@ describe("coreParts", () => {
     expect(transformed instanceof Promise).toBe(false);
 
     expect(built.describe().hooks).toEqual({});
-    expect(built.describe().modules).toEqual(["messages", "uploads"]);
+    expect(built.describe().modules).toEqual([
+      "jobStore",
+      "messages",
+      "uploads",
+    ]);
     expect(required).not.toHaveBeenCalledWith(enginesModule);
     expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
     expect(required).not.toHaveBeenCalledWith(llmProvidersModule);

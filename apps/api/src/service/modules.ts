@@ -4,6 +4,9 @@
  * This file imports only types so creating or describing a service never loads
  * implementations, configuration, or clients.
  */
+import type { Document, ScrapeOptions } from "../controllers/v2/types";
+import type { JobKind } from "./hooks";
+import type { RequestContext } from "./request-context";
 
 export type FetchProxyFileKind = "PDF" | "document";
 
@@ -104,6 +107,113 @@ export interface UploadsModule {
   driver(): UploadDriver;
 }
 
+/** Metadata identifying a job registered or recorded in the job store. */
+export interface JobRecord {
+  id: string;
+  kind: JobKind;
+  ctx: RequestContext;
+  /** Parent request id for multi-job requests (crawl or batch scrape children). */
+  requestId?: string;
+  /** Expiry timestamp in epoch milliseconds when the caller sets a custom TTL. */
+  expiresAtMs?: number;
+  /** Caller surface or origin recorded alongside the job access entry. */
+  clientOrigin?: string | null;
+  /**
+   * Expected child job count for multi-job requests so metered stores can
+   * initialize usage tracking. Zero indicates an open-ended request whose
+   * total count is not known up front.
+   */
+  estimatedJobs?: number;
+  /** False when the job must not receive a fetchable access record. */
+  jobAccess?: boolean;
+  /** Scraped URL, passed when recording terminal scrape state or result payloads. */
+  url?: string;
+  /** Scrape options, passed when recording terminal scrape state or result payloads. */
+  options?: ScrapeOptions;
+  /** Credits billed for this job, passed when recording terminal state and child usage. */
+  creditsBilled?: number;
+  /** Elapsed scrape time in seconds, passed when recording result metadata. */
+  timeTakenSeconds?: number;
+  /** True when the scrape ran inline without being enqueued in the job queue. */
+  skipNuq?: boolean;
+  /** True for parse jobs, which do not persist scrape state or result payloads. */
+  isParse?: boolean;
+}
+
+/** Terminal outcome written to the job store when a job finishes. */
+export type JobOutcome =
+  | { state: "completed"; document: Document }
+  | { state: "failed"; error: string };
+
+/** Ownership and optional expiry metadata returned by `jobStore.owner`. */
+export interface JobOwner {
+  teamId: string;
+  /** Expiry timestamp in epoch milliseconds when the store bounds fetchability. */
+  expiresAtMs?: number;
+  /**
+   * Optional ownership predicate for stores that persist a normalized team id.
+   * When omitted, callers compare `owner.teamId === teamId`.
+   */
+  matchesTeam?(teamId: string): boolean;
+}
+
+/** Terminal state and optional document read from the job store. */
+export interface StoredJob {
+  state: "completed" | "failed";
+  document?: Document;
+  error?: string;
+  /** Epoch milliseconds when the job finished, if recorded by the store. */
+  completedAtMs?: number;
+}
+
+/** Options for `jobStore.usage`. */
+export interface JobUsageOptions {
+  /**
+   * When reading from an eventually consistent fallback store, resolve a
+   * missing record to 0 instead of null. Defaults to false.
+   */
+  emptyAsZero?: boolean;
+  /**
+   * When reading at request finalization, retry transient empty reads before
+   * returning null. Defaults to false.
+   */
+  finalize?: boolean;
+}
+
+/**
+ * Job ownership, terminal state, result, and request-usage persistence.
+ */
+export interface JobStoreModule {
+  /**
+   * Returns true when finished job results are persisted outside the queue,
+   * so workers omit inline queue return values and shed completed input data.
+   */
+  storesResultsExternally?(): boolean;
+  /** Registers a job's ownership and initializes request usage tracking. */
+  register(job: JobRecord): Promise<void>;
+  /** Returns the owner and optional expiry of a job, or null when not found. */
+  owner(id: string, kind: JobKind): Promise<JobOwner | null>;
+  /** Reads stored terminal state and optional result document for a job. */
+  read(id: string, kind: JobKind): Promise<StoredJob | null>;
+  /**
+   * Optional batch read for several job ids. Callers fall back to parallel
+   * `read` calls when omitted.
+   */
+  readMany?(
+    ids: readonly string[],
+    kind: JobKind,
+  ): Promise<Map<string, StoredJob>>;
+  /**
+   * Records a job's terminal state, result, and child usage. Awaited by the
+   * worker so synchronous scrapes wait for readable terminal state.
+   */
+  record(job: JobRecord, outcome: JobOutcome): Promise<void>;
+  /** Returns the metered usage total for a request, or null when unmetered. */
+  usage(requestId: string, options?: JobUsageOptions): Promise<number | null>;
+  /** Removes stored job artifacts; missing entries should be ignored. */
+  remove(id: string, kind: JobKind): Promise<void>;
+}
+
 /**
  * The module slots: one implementation for each piece of behaviour the service
  * calls by name.
@@ -111,6 +221,44 @@ export interface UploadsModule {
 export interface Modules {
   messages: MessagesModule;
   uploads: UploadsModule;
+  jobStore: JobStoreModule;
+}
+
+function freezeJobStore(jobStore: JobStoreModule): Readonly<JobStoreModule> {
+  if (
+    typeof jobStore !== "object" ||
+    jobStore === null ||
+    typeof jobStore.register !== "function" ||
+    typeof jobStore.owner !== "function" ||
+    typeof jobStore.read !== "function" ||
+    typeof jobStore.record !== "function" ||
+    typeof jobStore.usage !== "function" ||
+    typeof jobStore.remove !== "function" ||
+    (jobStore.storesResultsExternally !== undefined &&
+      typeof jobStore.storesResultsExternally !== "function") ||
+    (jobStore.readMany !== undefined && typeof jobStore.readMany !== "function")
+  ) {
+    throw new Error("Invalid jobStore module");
+  }
+
+  const frozen: JobStoreModule = {
+    ...(jobStore.storesResultsExternally !== undefined
+      ? {
+          storesResultsExternally:
+            jobStore.storesResultsExternally.bind(jobStore),
+        }
+      : {}),
+    register: jobStore.register.bind(jobStore),
+    owner: jobStore.owner.bind(jobStore),
+    read: jobStore.read.bind(jobStore),
+    ...(jobStore.readMany !== undefined
+      ? { readMany: jobStore.readMany.bind(jobStore) }
+      : {}),
+    record: jobStore.record.bind(jobStore),
+    usage: jobStore.usage.bind(jobStore),
+    remove: jobStore.remove.bind(jobStore),
+  };
+  return Object.freeze(frozen);
 }
 
 function freezeUploadDriver(driver: UploadDriver): Readonly<UploadDriver> {
@@ -146,7 +294,7 @@ function freezeUploadDriver(driver: UploadDriver): Readonly<UploadDriver> {
  * later cannot alter the service.
  */
 export function freezeModules(modules: Modules): Readonly<Modules> {
-  const { messages, uploads } = modules;
+  const { messages, uploads, jobStore } = modules;
   if (
     typeof messages !== "object" ||
     messages === null ||
@@ -178,9 +326,11 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
   const frozenUploads: UploadsModule = Object.freeze({
     driver: () => frozenDriver,
   });
+  const frozenJobStore = freezeJobStore(jobStore);
 
   return Object.freeze({
     messages: frozenMessages,
     uploads: frozenUploads,
+    jobStore: frozenJobStore,
   });
 }

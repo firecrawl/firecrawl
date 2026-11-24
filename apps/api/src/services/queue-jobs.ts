@@ -16,8 +16,8 @@ import {
 import { logger as _logger } from "../lib/logger";
 import { sendNotificationWithCustomDays } from "./notification/email_notification";
 import { shouldSendConcurrencyLimitNotification } from "./notification/notification-check";
-import { getJobFromGCS, removeJobFromGCS } from "../lib/gcs-jobs";
 import { Document } from "../controllers/v1/types";
+import { service } from "../service";
 import { getACUCTeam } from "../controllers/auth";
 import { DEFAULT_TEAM_LIMITS } from "./autumn/autumn.service";
 import { getCrawl } from "../lib/crawl-redis";
@@ -861,15 +861,15 @@ export async function waitForJob(
   logger.debug("Got job");
 
   if (!doc) {
-    const docs = await getJobFromGCS(jobId);
-    logger.debug("Got job from GCS");
-    if (!docs || docs.length === 0) {
-      throw new Error("Job not found in GCS");
+    const stored = await service.modules.jobStore.read(jobId, "scrape");
+    logger.debug("Got job from job store");
+    if (!stored?.document) {
+      throw new Error("Job result not found in job store");
     }
-    doc = docs[0]!;
+    doc = stored.document;
 
     if (zeroDataRetention) {
-      await removeJobFromGCS(jobId);
+      await service.modules.jobStore.remove(jobId, "scrape");
     }
   }
 

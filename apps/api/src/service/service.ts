@@ -158,7 +158,7 @@ export function createService(
       throw new Error("Invalid modules config");
     }
     for (const key of Object.keys(config.modules)) {
-      if (key !== "messages" && key !== "uploads") {
+      if (key !== "messages" && key !== "uploads" && key !== "jobStore") {
         throw new Error(`Unknown module slot "${key}"`);
       }
     }
@@ -174,6 +174,10 @@ export function createService(
       config.modules?.uploads === undefined
         ? defaults.uploads
         : config.modules.uploads,
+    jobStore:
+      config.modules?.jobStore === undefined
+        ? defaults.jobStore
+        : config.modules.jobStore,
   });
   const workers: Record<string, Worker> = Object.freeze(
     Object.fromEntries(

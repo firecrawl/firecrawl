@@ -7,7 +7,12 @@ export type {
 export type { SearchResultType, SearchV2Response } from "../lib/entities";
 export type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 export { coreParts } from "./core-parts";
-export { defaultModules, logsMessages, memoryUploads } from "./defaults";
+export {
+  defaultModules,
+  logsMessages,
+  memoryUploads,
+  queueJobStore,
+} from "./defaults";
 export type {
   DescribedEngineFeature,
   Engine,
@@ -68,10 +73,16 @@ export type {
   DirectUploadInput,
   DirectUploadResult,
   FetchProxyFileKind,
+  JobOutcome,
+  JobOwner,
+  JobRecord,
+  JobStoreModule,
+  JobUsageOptions,
   MessagesModule,
   Modules,
   PrepareUploadInput,
   PrepareUploadResult,
+  StoredJob,
   StoredUploadRef,
   UploadDriver,
   UploadsModule,
