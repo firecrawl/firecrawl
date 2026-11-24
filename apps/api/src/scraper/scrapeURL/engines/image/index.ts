@@ -5,7 +5,12 @@ import { EngineUnsuccessfulError, UnsupportedFileError } from "../../error";
 import { readFile, stat, unlink } from "node:fs/promises";
 import { useFireEngine } from "../fire-engine/available";
 import { scrapePDFWithFirePDF } from "../pdf/firePDF";
-import { recordFirePdfRoute } from "../pdf/fire-pdf/routing";
+import { toPublicBlocks } from "../pdf/blocks";
+import { getPDFBlocks } from "../../../../controllers/v2/types";
+import {
+  firePdfFeaturesLabel,
+  recordFirePdfRoute,
+} from "../pdf/fire-pdf/routing";
 import { FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE } from "../pdf/types";
 import {
   imageExtensionFromUrlPath,
@@ -21,11 +26,13 @@ import {
  * Image OCR is off until the deployment enables it (`IMAGE_OCR_ENABLED`,
  * default false). Once it is on, every request gets it unless it opts out
  * per request (a `parsers` list without `image`; a parse upload of an image
- * always counts); both conditions are folded into `meta.imageOcrEnabled`. The pdf
- * parser's options (mode, maxPages, pages, blocks, pageMarkers) are not
- * consulted: an image has no text layer to fall back on, so every admitted
- * image is OCR'd. A caller who wants the bytes instead uses the `rawBase64`
- * format, which the browser engine serves without ever reaching this engine.
+ * always counts); both conditions are folded into `meta.imageOcrEnabled`. Of
+ * the pdf parser's options only `blocks` is honored, so a caller who maps
+ * layout gets typed blocks for an image the same as for a PDF page. The
+ * others (mode, maxPages, pages, pageMarkers) are not consulted: an image has
+ * no text layer to fall back on, so every admitted image is OCR'd. A caller
+ * who wants the bytes instead uses the `rawBase64` format, which the browser
+ * engine serves without ever reaching this engine.
  */
 
 // Images reach fire-pdf inline (base64 JSON) and have no by-reference
@@ -141,11 +148,16 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
 
     const base64Content = buffer.toString("base64");
 
+    const includeBlocks = getPDFBlocks(meta.options.parsers);
     recordFirePdfRoute(meta, {
       sourceKind: "image",
       path: "sync",
       reason: "no_async_route",
-      features: "none",
+      features: firePdfFeaturesLabel({
+        pageMarkdown: false,
+        blocks: includeBlocks,
+        pageMarkers: false,
+      }),
     });
 
     let result: Awaited<ReturnType<typeof scrapePDFWithFirePDF>>;
@@ -162,7 +174,7 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
         1,
         "ocr",
         false,
-        false,
+        includeBlocks,
         false,
         "image",
       );
@@ -183,6 +195,9 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
       statusCode,
       html: result.html,
       markdown: result.markdown,
+      ...(includeBlocks && result.blocks
+        ? { blocks: toPublicBlocks(result.blocks) }
+        : {}),
       contentType,
       proxyUsed,
     };
