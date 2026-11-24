@@ -38,16 +38,6 @@ export async function search({
   // The legacy search route has no zero data retention or anonymous routing,
   // so a search that requires either goes through the v2 search.
   if (enterprise && enterprise.length > 0) {
-    if (
-      usOnly &&
-      !service.searchProviders
-        .enabled()
-        .some(provider => provider.supportsUsOnly === true)
-    ) {
-      throw new UsOnlyUnavailableError(
-        "Search is not available for teams restricted to US-only processing on this deployment.",
-      );
-    }
     const response = await searchV2({
       query,
       logger,

@@ -154,11 +154,24 @@ describe("legacy search", () => {
     await expect(
       search({ query: "example", logger, usOnly: true }),
     ).rejects.toThrow(UsOnlyUnavailableError);
+    expect(mocks.ddgSearch).not.toHaveBeenCalled();
+  });
+
+  it("forwards usOnly to v2 search when an enterprise kind is forced", async () => {
+    mocks.searchV2.mockRejectedValue(
+      new UsOnlyUnavailableError("US-only search unavailable"),
+    );
 
     await expect(
       search({ query: "example", logger, usOnly: true, enterprise: ["zdr"] }),
     ).rejects.toThrow(UsOnlyUnavailableError);
-    expect(mocks.searchV2).not.toHaveBeenCalled();
+    expect(mocks.searchV2).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "example",
+        usOnly: true,
+        enterprise: ["zdr"],
+      }),
+    );
   });
 
   it("routes legacy search through custom extension providers by priority", async () => {
