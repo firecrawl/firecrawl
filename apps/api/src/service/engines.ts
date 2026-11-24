@@ -168,6 +168,7 @@ function snapshotEngine(engine: Engine): Engine {
       : {}),
     ...(engine.explicitOnly ? { explicitOnly: true } : {}),
     ...(engine.cache ? { cache: true } : {}),
+    ...(engine.fileOnly ? { fileOnly: true } : {}),
     ...(engine.supportsProfile ? { supportsProfile: true } : {}),
     ...(engine.prefetchesFiles ? { prefetchesFiles: true } : {}),
     ...(engine.allowEmptyContent ? { allowEmptyContent: true } : {}),
