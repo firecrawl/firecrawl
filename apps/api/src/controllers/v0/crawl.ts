@@ -37,6 +37,7 @@ import {
 } from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
+import { requestContext } from "../../lib/request-context";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   isThreatProtectionForced,
@@ -292,7 +293,17 @@ export async function crawlController(req: Request, res: Response) {
       sc.robots = await crawler.getRobotsTxt();
     } catch (_) {}
 
-    sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
+    const ctx = requestContext({
+      teamId: sc.team_id,
+      zeroDataRetention: false,
+      flags: chunk?.flags ?? null,
+      orgId: chunk?.org_id ?? null,
+      apiKeyId: chunk?.api_key_id ?? null,
+      concurrencyLimit: chunk?.concurrency_limit,
+      rateLimitMultiplier: chunk?.rate_limit_multiplier,
+    });
+    sc.ctx = ctx;
+    sc.queueBackend = await resolveNewGroupBackend(sc.team_id, ctx);
     await crawlGroup.addGroup(
       id,
       sc.team_id,

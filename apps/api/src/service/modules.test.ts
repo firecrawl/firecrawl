@@ -14,7 +14,7 @@ import {
   noLimits,
   redisIdempotency,
 } from "./defaults";
-import { currentLimits } from "../lib/limits";
+import { currentLimits, resolveJobPriority } from "../lib/limits";
 import type {
   IdempotencyModule,
   LimitsModule,
@@ -679,5 +679,21 @@ describe("currentLimits", () => {
     );
 
     await expect(currentLimits().concurrency(ctx)).resolves.toBeNull();
+
+    const onError = vi.fn();
+    await withService(
+      testService(defaultModules(), parts, {
+        limits: {
+          ...noLimits(),
+          jobPriority: async () => {
+            throw new Error("priority failed");
+          },
+        },
+      }),
+      async () => {
+        await expect(resolveJobPriority(ctx, 21, onError)).resolves.toBe(21);
+      },
+    );
+    expect(onError).toHaveBeenCalledTimes(1);
   });
 });

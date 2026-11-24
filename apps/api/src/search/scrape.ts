@@ -2,7 +2,7 @@ import { v7 as uuidv7 } from "uuid";
 import type { Logger } from "winston";
 import { Document, ScrapeOptions, TeamFlags } from "../controllers/v2/types";
 import { CostTracking } from "../lib/cost-tracking";
-import { currentLimits } from "../lib/limits";
+import { resolveJobPriority } from "../lib/limits";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { NuQJob } from "../services/worker/nuq";
 import { processJobInternal } from "../services/worker/scrape-worker";
@@ -47,6 +47,8 @@ interface ScrapeSearchOptions {
   threatProtectionPolicy?: ThreatProtectionPolicy | null;
   safeModeBypassed?: boolean;
   workContactOnly?: boolean;
+  concurrencyLimit?: number;
+  rateLimitMultiplier?: number;
 }
 
 async function scrapeSearchResultDirect(
@@ -236,11 +238,12 @@ export async function scrapeSearchResults(
     orgId: options.orgId ?? null,
     apiKeyId: options.apiKeyId,
     billing: options.billing,
+    concurrencyLimit: options.concurrencyLimit,
+    rateLimitMultiplier: options.rateLimitMultiplier,
   });
 
-  const jobPriority = await currentLimits().jobPriority({
-    ctx,
-    base: 10,
+  const jobPriority = await resolveJobPriority(ctx, 10, error => {
+    logger.error("Failed to determine job priority", { error });
   });
 
   logger.info(`Starting ${items.length} concurrent scrapes for search results`);

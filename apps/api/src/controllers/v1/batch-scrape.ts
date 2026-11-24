@@ -45,6 +45,7 @@ import {
 } from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
+import { requestContext } from "../../lib/request-context";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
@@ -399,7 +400,17 @@ export async function batchScrapeController(
   }
 
   if (!req.body.appendToId) {
-    sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
+    const ctx = requestContext({
+      teamId: req.auth.team_id,
+      zeroDataRetention: zeroDataRetention ?? false,
+      flags: req.acuc?.flags ?? null,
+      orgId: req.acuc?.org_id ?? null,
+      apiKeyId: req.acuc?.api_key_id ?? null,
+      concurrencyLimit: req.acuc?.concurrency_limit,
+      rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
+    });
+    sc.ctx = ctx;
+    sc.queueBackend = await resolveNewGroupBackend(sc.team_id, ctx);
     await crawlGroup.addGroup(
       id,
       sc.team_id,

@@ -163,7 +163,7 @@ function startHeartbeat(
   holderId: string,
   intervalMs: number,
   mirrorState: MirrorState,
-  ctx?: RequestContext,
+  ctx: RequestContext,
 ) {
   let stopped = false;
   let wake: (() => void) | null = null;
@@ -227,7 +227,7 @@ function startHeartbeat(
 // external slot on the FDB ledger.
 async function resolveMirrorBackend(
   teamId: string,
-  ctx?: RequestContext,
+  ctx: RequestContext,
 ): Promise<MirrorBackend> {
   if (!(await isFdbTeam(teamId, ctx))) return "pg";
   if (fdbForced()) return "fdb";
@@ -250,7 +250,7 @@ async function mirrorSlotAcquire(
   teamId: string,
   holderId: string,
   state: MirrorState,
-  ctx?: RequestContext,
+  ctx: RequestContext,
 ): Promise<void> {
   const backend = await resolveMirrorBackend(teamId, ctx);
   if (backend === "fdb") {
@@ -295,7 +295,7 @@ async function withSemaphore<T>(
   signal: AbortSignal,
   timeoutMs: number,
   func: (limited: boolean) => Promise<T>,
-  ctx?: RequestContext,
+  ctx: RequestContext,
 ): Promise<T> {
   if (limit === null) {
     _logger.debug(`Bypassing concurrency limit for ${teamId}`, {

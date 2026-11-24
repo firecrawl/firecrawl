@@ -336,6 +336,7 @@ async function scrapeControllerInner(
         const doc = await processJobInternal(job);
         return doc ?? null;
       },
+      limitsCtx,
     );
   } catch (e) {
     if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {

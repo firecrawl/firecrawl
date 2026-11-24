@@ -84,7 +84,9 @@ async function optionalFdb<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 // Whether NEW work for this team should go to FDB. Existing crawls follow
-// their StoredCrawl.queueBackend marker instead.
+// their StoredCrawl.queueBackend marker instead. Request-scoped callers pass
+// `ctx`; omitting `ctx` leaves `flags` undefined so background team-ID-only
+// paths let `LimitsModule.queueBackend` resolve by `ctx.teamId`.
 export async function isFdbTeam(
   teamId: string | undefined,
   ctx?: RequestContext,

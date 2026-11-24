@@ -323,9 +323,15 @@ export async function concurrentJobDone(job: NuQJob<any>) {
     }
 
     // Once per call, not once per job promoted below.
-    const maxTeamConcurrency = await currentLimits().teamConcurrency(
-      job.data.team_id,
-    );
+    const maxTeamConcurrency = await currentLimits()
+      .teamConcurrency(job.data.team_id)
+      .catch(error => {
+        logger.warn(
+          "Failed to resolve team concurrency limit during job completion, proceeding without team cap",
+          { teamId: job.data.team_id, error },
+        );
+        return null;
+      });
 
     let staleSkipped = 0;
     while (staleSkipped < 100) {

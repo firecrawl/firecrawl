@@ -36,7 +36,7 @@ import { withSpan, setSpanAttributes, SpanKind } from "../../lib/otel-tracer";
 import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
-import { currentLimits } from "../../lib/limits";
+import { currentLimits, resolveJobPriority } from "../../lib/limits";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
@@ -389,9 +389,8 @@ export async function scrapeController(
           aborter.signal,
           timeout ?? 60_000,
           async limited => {
-            const jobPriority = await currentLimits().jobPriority({
-              ctx,
-              base: 10,
+            const jobPriority = await resolveJobPriority(ctx, 10, error => {
+              logger.error("Failed to determine job priority", { error });
             });
 
             lockTime = Date.now() - lockStart;

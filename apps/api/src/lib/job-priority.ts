@@ -1,7 +1,7 @@
 import { redisEvictConnection } from "../services/redis";
 import { logger } from "./logger";
 import type { AuthCreditUsageChunkFromTeam } from "../controllers/v1/types";
-import { currentLimits } from "./limits";
+import { resolveJobPriority } from "./limits";
 import { requestContext } from "./request-context";
 
 const SET_KEY_PREFIX = "limit_team_id:";
@@ -58,5 +58,9 @@ export async function getJobPriority({
     concurrencyLimit: acuc?.concurrency_limit,
     rateLimitMultiplier: acuc?.rate_limit_multiplier,
   });
-  return await currentLimits().jobPriority({ ctx, base: basePriority });
+  return await resolveJobPriority(ctx, basePriority, error => {
+    logger.error(`Get job priority failed: ${team_id}, ${basePriority}`, {
+      error,
+    });
+  });
 }

@@ -48,6 +48,7 @@ import type { TrackCreditsParams } from "../services/autumn/types";
 import { orgIdForTeam } from "./team-org";
 import { logRequest } from "../services/logging/log_job";
 import { externalRequestId } from "./external-request-id";
+import { requestContext } from "./request-context";
 import {
   updateKeylessBrowserCredits,
   logKeylessCreditUsage,
@@ -280,6 +281,15 @@ async function createBrowserSessionInternal(
   }
   const id = uuidv7();
   let browserId: string | undefined;
+  const slotCtx = requestContext({
+    teamId: req.auth.team_id,
+    zeroDataRetention,
+    flags: req.acuc?.flags ?? null,
+    orgId: req.acuc?.org_id ?? null,
+    apiKeyId: req.acuc?.api_key_id ?? null,
+    concurrencyLimit: req.acuc?.concurrency_limit,
+    rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
+  });
   try {
     if (
       !(await reserveExternalSlot(
@@ -287,6 +297,7 @@ async function createBrowserSessionInternal(
         id,
         (ttl + 300) * 1000,
         limit,
+        slotCtx,
       ))
     )
       throw new BrowserSessionError(
@@ -360,11 +371,12 @@ async function createBrowserSessionInternal(
     };
   } catch (error) {
     if (browserId) await stopHangarBrowser(browserId).catch(() => {});
-    await mirrorExternalSlotRelease(req.auth.team_id, id).catch(error =>
-      logger.error("Failed to release browser reservation", {
-        sessionId: id,
-        error,
-      }),
+    await mirrorExternalSlotRelease(req.auth.team_id, id, slotCtx).catch(
+      error =>
+        logger.error("Failed to release browser reservation", {
+          sessionId: id,
+          error,
+        }),
     );
     await updateKeylessBrowserCredits(req.auth.team_id, id, 0, true).catch(
       error =>

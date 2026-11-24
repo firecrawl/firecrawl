@@ -127,4 +127,20 @@ describe("Job Priority Tests", () => {
       },
     );
   });
+
+  test("getJobPriority falls back to basePriority when the limits module throws", async () => {
+    await withService(
+      testService(defaultModules(), parts, {
+        limits: {
+          ...noLimits(),
+          jobPriority: vi.fn().mockRejectedValue(new Error("limits failed")),
+        },
+      }),
+      async () => {
+        await expect(
+          getJobPriority({ team_id: "team1", basePriority: 15 }),
+        ).resolves.toBe(15);
+      },
+    );
+  });
 });

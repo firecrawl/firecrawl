@@ -20,6 +20,8 @@ export async function ongoingCrawlsController(
     flags: req.acuc?.flags ?? null,
     orgId: req.acuc?.org_id ?? null,
     apiKeyId: req.acuc?.api_key_id ?? null,
+    concurrencyLimit: req.acuc?.concurrency_limit,
+    rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
   });
 
   const ids = (

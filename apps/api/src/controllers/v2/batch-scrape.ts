@@ -19,7 +19,7 @@ import {
   saveCrawl,
   StoredCrawl,
 } from "../../lib/crawl-redis";
-import { currentLimits } from "../../lib/limits";
+import { resolveJobPriority } from "../../lib/limits";
 import { addScrapeJobs } from "../../services/queue-jobs";
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 import { logger as _logger } from "../../lib/logger";
@@ -535,9 +535,8 @@ export async function batchScrapeController(
   // otherwise we can use the default priority of 20
   if (urls.length > 1000) {
     // set base to 21
-    jobPriority = await currentLimits().jobPriority({
-      ctx,
-      base: 21,
+    jobPriority = await resolveJobPriority(ctx, 21, error => {
+      logger.error("Failed to determine job priority", { error });
     });
   }
   logger.debug("Using job priority " + jobPriority, { jobPriority });

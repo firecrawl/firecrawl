@@ -371,37 +371,38 @@ async function addScrapeJobRaw(
   if (directToBullMQ) {
     concurrencyLimited = "no";
   } else {
+    if (webScraperOptions.crawl_id) {
+      const crawl = await getCrawl(webScraperOptions.crawl_id);
+      const concurrencyLimit = !crawl
+        ? null
+        : crawl.crawlerOptions?.delay === undefined &&
+            crawl.maxConcurrency === undefined
+          ? null
+          : (crawl.maxConcurrency ?? 1);
+
+      if (concurrencyLimit !== null) {
+        maxCrawlConcurrency = concurrencyLimit;
+        currentCrawlConcurrency = (
+          await getCrawlConcurrencyLimitActiveJobs(webScraperOptions.crawl_id)
+        ).length;
+        const freeSlots = Math.max(
+          concurrencyLimit - currentCrawlConcurrency,
+          0,
+        );
+        if (freeSlots === 0) {
+          concurrencyLimited = "yes-crawl";
+        }
+      }
+    }
+
     maxConcurrency = await currentLimits().concurrency(
       jobContext(webScraperOptions),
     );
-    if (maxConcurrency === null) {
-      concurrencyLimited = "no";
-    } else {
-      if (webScraperOptions.crawl_id) {
-        const crawl = await getCrawl(webScraperOptions.crawl_id);
-        const concurrencyLimit = !crawl
-          ? null
-          : crawl.crawlerOptions?.delay === undefined &&
-              crawl.maxConcurrency === undefined
-            ? null
-            : (crawl.maxConcurrency ?? 1);
 
-        if (concurrencyLimit !== null) {
-          maxCrawlConcurrency = concurrencyLimit;
-          currentCrawlConcurrency = (
-            await getCrawlConcurrencyLimitActiveJobs(webScraperOptions.crawl_id)
-          ).length;
-          const freeSlots = Math.max(
-            concurrencyLimit - currentCrawlConcurrency,
-            0,
-          );
-          if (freeSlots === 0) {
-            concurrencyLimited = "yes-crawl";
-          }
-        }
-      }
-
-      if (concurrencyLimited === null) {
+    if (concurrencyLimited === null) {
+      if (maxConcurrency === null) {
+        concurrencyLimited = "no";
+      } else {
         const now = Date.now();
         await cleanOldConcurrencyLimitEntries(webScraperOptions.team_id, now);
         currentActiveConcurrency = (

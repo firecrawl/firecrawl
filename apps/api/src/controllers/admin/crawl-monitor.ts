@@ -90,7 +90,10 @@ export async function crawlMonitorController(
     flags: req.acuc?.flags ?? null,
     orgId: req.acuc?.org_id ?? null,
     apiKeyId: req.acuc?.api_key_id ?? null,
+    concurrencyLimit: req.acuc?.concurrency_limit,
+    rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
   });
+  sc.ctx = ctx;
   sc.queueBackend = await resolveNewGroupBackend(sc.team_id, ctx);
   await crawlGroup.addGroup(
     id,
@@ -111,6 +114,7 @@ export async function crawlMonitorController(
     {
       url: "https://firecrawl.dev",
       mode: "kickoff" as const,
+      ctx,
       team_id: req.auth.team_id,
       crawlerOptions: crawlerOptions.parse({ limit: 2 }),
       scrapeOptions: sc.scrapeOptions,
