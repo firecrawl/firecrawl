@@ -39,8 +39,6 @@ import { scrapeStatusController } from "../controllers/v2/scrape-status";
 import { crawlCancelController } from "../controllers/v2/crawl-cancel";
 import { concurrencyCheckController } from "../controllers/v2/concurrency-check";
 import { crawlStatusWSController } from "../controllers/v2/crawl-status-ws";
-import { extractController } from "../controllers/v2/extract";
-import { extractStatusController } from "../controllers/v2/extract-status";
 import {
   authMiddleware as sharedAuthMiddleware,
   checkCreditsMiddleware,
@@ -55,10 +53,7 @@ import {
   inferIntegrationMiddleware,
 } from "./shared";
 import { queueStatusController } from "../controllers/v2/queue-status";
-import {
-  deprecationMiddleware,
-  removedEndpointHandler,
-} from "../lib/deprecations";
+import { removedEndpointHandler } from "../lib/deprecations";
 import { isResearchKeylessDisabled } from "../lib/research-keyless";
 import { supportProxyController } from "../controllers/v2/support-proxy";
 import {
@@ -351,25 +346,6 @@ v2Router.get(
   authMiddleware(RateLimiterMode.CrawlStatus),
   validateJobIdParam,
   wrap(crawlErrorsController),
-);
-
-v2Router.post(
-  "/extract",
-  authMiddleware(RateLimiterMode.Extract),
-  inferIntegrationMiddleware,
-  deprecationMiddleware("v2_extract"),
-  restrictedOptionsCountryCheck,
-  checkCreditsMiddleware(20),
-  blocklistMiddleware,
-  wrap(extractController),
-);
-
-v2Router.get(
-  "/extract/:jobId",
-  authMiddleware(RateLimiterMode.ExtractStatus),
-  deprecationMiddleware("v2_extract_status"),
-  validateJobIdParam,
-  wrap(extractStatusController),
 );
 
 v2Router.get(

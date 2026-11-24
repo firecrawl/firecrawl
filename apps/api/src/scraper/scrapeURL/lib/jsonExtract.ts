@@ -4,7 +4,7 @@ import {
   GenerateCompletionsOptions,
   generateSchemaFromPrompt,
 } from "../transformers/llmExtract";
-import { TokenUsage } from "../../../controllers/v1/types";
+import { TokenUsage } from "../../../controllers/v2/types";
 import {
   CostLimitExceededError,
   CostTracking,

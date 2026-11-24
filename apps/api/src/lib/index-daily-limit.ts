@@ -1,5 +1,5 @@
 import { config } from "../config";
-import type { TeamFlags } from "../controllers/v1/types";
+import type { TeamFlags } from "../controllers/v2/types";
 import {
   getAutumnRateLimiter,
   redisRateLimitClient,

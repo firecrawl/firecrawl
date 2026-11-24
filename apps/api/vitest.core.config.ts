@@ -14,19 +14,6 @@ const outsideCoreSuite = [
   "src/scraper/WebScraper/__tests__/dns.test.ts",
   "src/scraper/scrapeURL/scrapeURL.test.ts",
 
-  // Cover the deprecated v0 and v1 API, extract and deep research.
-  "src/__tests__/deep-research/**",
-  "src/__tests__/routes/*deprecations*.test.ts",
-  "src/controllers/__tests__/crawl.test.ts",
-  "src/controllers/v1/**",
-  "src/controllers/v2/__tests__/extract-status-agent.test.ts",
-  "src/lib/__tests__/deduplicate-obs-array.test.ts",
-  "src/lib/__tests__/merge-null-val-objs.test.ts",
-  "src/lib/__tests__/mix-schemas.test.ts",
-  "src/lib/__tests__/spread-schema-objects.test.ts",
-  "src/lib/__tests__/transform-array-to-obj.test.ts",
-  "src/lib/extract/**",
-
   // Cover features that are off in the default self-hosted configuration.
   "src/__tests__/controllers/**",
   "src/__tests__/routes/fresh-feed.routes.test.ts",

@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import zlib from "node:zlib";
 import { request, type Dispatcher } from "undici";
 import { v7 as uuidv7 } from "uuid";
-import type { RequestWithAuth } from "../controllers/v1/types";
+import type { RequestWithAuth } from "../controllers/v2/types";
 import { externalRequestId } from "../lib/external-request-id";
 import {
   FRESH_FEED_COLLECTION_HEADER,

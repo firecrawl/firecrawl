@@ -9,12 +9,10 @@ import {
   type ScrapeOptionsRule,
 } from "../../service";
 import { withService } from "../../service/testing";
-import { scrapeOptions as v1ScrapeOptions } from "../v1/types";
 import {
   batchScrapeRequestSchema,
   batchScrapeRequestSchemaNoURLValidation,
   crawlRequestSchema,
-  fromV1ScrapeOptions,
   getV2RequestSchemas,
   mapRequestSchema,
   parseBatchScrapeRequest,
@@ -336,26 +334,13 @@ describe("v2 request schema wiring", () => {
       expect(parsedSearch.scrapeOptions.customLabel).toBe("search-ok");
       expect(parsedSearch.scrapeOptions.waitFor).toBe(4000);
 
-      // Standalone scrapeOptions and fromV1ScrapeOptions route through service.schemas.scrapeOptions
+      // Standalone scrapeOptions routes through service.schemas.scrapeOptions
       const parsedOpts = schemas.scrapeOptions.parse({
         formats: ["markdown", "customExtract"],
         customLabel: "standalone",
       }) as unknown as Record<string, unknown>;
       expect(parsedOpts.customLabel).toBe("standalone");
       expect(parsedOpts.waitFor).toBe(4000);
-
-      const converted = fromV1ScrapeOptions(
-        {
-          ...v1ScrapeOptions.parse({ formats: ["markdown"] }),
-          customLabel: "v1-bridge",
-        } as unknown as Parameters<typeof fromV1ScrapeOptions>[0],
-        undefined,
-        "team-1",
-      );
-      expect(
-        (converted.scrapeOptions as unknown as Record<string, unknown>)
-          .customLabel,
-      ).toBe("v1-bridge");
 
       // Invalid custom field value, invalid custom format option, and unknown key
       const invalidFieldErr = captureZodError(() =>

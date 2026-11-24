@@ -42,6 +42,8 @@ export type PseudoJob<T> = {
   failedReason?: string;
 };
 
+const JOB_STORE_READ_CONCURRENCY = 20;
+
 async function readStoredJobs(
   ids: readonly string[],
 ): Promise<Map<string, StoredJob>> {
@@ -50,12 +52,15 @@ async function readStoredJobs(
   if (store.readMany) {
     return store.readMany(ids, "scrape");
   }
-  const entries = await Promise.all(
-    ids.map(async id => [id, await store.read(id, "scrape")] as const),
-  );
   const result = new Map<string, StoredJob>();
-  for (const [id, job] of entries) {
-    if (job) result.set(id, job);
+  for (let i = 0; i < ids.length; i += JOB_STORE_READ_CONCURRENCY) {
+    const batch = ids.slice(i, i + JOB_STORE_READ_CONCURRENCY);
+    const entries = await Promise.all(
+      batch.map(async id => [id, await store.read(id, "scrape")] as const),
+    );
+    for (const [id, job] of entries) {
+      if (job) result.set(id, job);
+    }
   }
   return result;
 }

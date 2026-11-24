@@ -22,7 +22,7 @@ import {
   AuthCreditUsageChunk,
   AuthCreditUsageChunkFromTeam,
   TeamFlags,
-} from "./v1/types";
+} from "./v2/types";
 
 const ACUC_TTL_SECONDS = 600;
 // A chunk built on the fail-open limits is cached only briefly, so a

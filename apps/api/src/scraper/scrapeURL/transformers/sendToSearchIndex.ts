@@ -9,7 +9,7 @@
  * - 1.0 = 100% of documents indexed (full production)
  */
 
-import { Document } from "../../../controllers/v1/types";
+import { Document } from "../../../controllers/v2/types";
 import { searchIndexEnv } from "../../../lib/search-index-env";
 import { indexDocumentIfEnabled } from "../../../lib/search-index-client";
 import { logger as _logger } from "../../../lib/logger";

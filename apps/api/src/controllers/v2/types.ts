@@ -7,32 +7,16 @@ import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
-import { includesFormat } from "../../lib/format-utils";
 import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
 import { addStrictSchemaIssue } from "../../lib/openai-strict-schema";
 export { addStrictSchemaIssue };
-import {
-  ExtractorOptions,
-  PageOptions,
-  ScrapeActionContent,
-  Document as V0Document,
-  WebSearchResult,
-} from "../../lib/entities";
-import {
-  agentOptionsExtract,
-  agentRemovedRefineOpts,
-  AuthCreditUsageChunk,
-  isAgentExtractModelValid,
-  ScrapeOptions as V1ScrapeOptions,
-} from "../v1/types";
-import type { InternalOptions } from "../../scraper/scrapeURL";
+import { ScrapeActionContent } from "../../lib/entities";
+import type { FreshFeedFilters, FreshFeedUpstream } from "../../lib/fresh-feed";
+import type { TeamPlanClass } from "../../lib/team-plan-class";
+import type { RateLimiterMode } from "../../types";
 import { ErrorCode } from "../../lib/error";
-import Ajv from "ajv";
-import addFormats from "ajv-formats";
 import { integrationSchema } from "../../utils/integration";
 import { webhookSchema } from "../../services/webhook/schema";
-
-import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
 import { installedService } from "../../service/service";
 import {
   registerDefaultRequestSchemaBuilder,
@@ -346,6 +330,16 @@ const actionSchema = z.union([
   }),
 ]);
 
+export type Action = z.infer<typeof actionSchema>;
+
+export type InternalAction = Action & {
+  metadata?: {
+    [key: string]: unknown;
+  };
+  /** fire-engine, executeJavascript only. */
+  realViewport?: boolean;
+};
+
 const actionsSchema = z
   .array(actionSchema)
   .refine(actions => actions.length <= MAX_ACTIONS, {
@@ -604,7 +598,7 @@ const scrapeOptionFields = z.strictObject({
   checkPromptInjection: z.boolean().prefault(false),
 });
 
-const baseScrapeOptions = scrapeOptionFields.refine(
+export const baseScrapeOptions = scrapeOptionFields.refine(
   options =>
     !(
       options.checkPromptInjection &&
@@ -619,7 +613,7 @@ const baseScrapeOptions = scrapeOptionFields.refine(
 
 type ScrapeOptionsBase = z.infer<typeof baseScrapeOptions>;
 
-const waitForRefine = (obj?: ScrapeOptionsBase): boolean => {
+export const waitForRefine = (obj?: ScrapeOptionsBase): boolean => {
   if (obj && obj.waitFor && obj.timeout) {
     if (typeof obj.timeout !== "number" || obj.timeout <= 0) {
       return false;
@@ -628,7 +622,7 @@ const waitForRefine = (obj?: ScrapeOptionsBase): boolean => {
   }
   return true;
 };
-const waitForRefineOpts = {
+export const waitForRefineOpts = {
   message: "waitFor must not exceed half of timeout",
   path: ["waitFor"],
 };
@@ -691,7 +685,7 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
 };
 
 // Type-safe wrapper for nullable cases (used in optional scrapeOptions)
-const extractTransform = (
+export const extractTransform = (
   obj?: ScrapeOptionsBase,
 ): ScrapeOptionsBase | undefined => {
   return extractTransformImpl(obj);
@@ -731,88 +725,6 @@ export type UploadedParseFile = {
   contentType?: string;
   kind?: UploadedParseFileKind;
 };
-
-const ajv = new Ajv();
-addFormats(ajv);
-
-const extractOptions = z
-  .strictObject({
-    urls: URL.array()
-      .max(10, "Maximum of 10 URLs allowed per request while in beta.")
-      .optional(),
-    prompt: z.string().max(10000).optional(),
-    systemPrompt: z.string().max(10000).optional(),
-    schema: z
-      .any()
-      .optional()
-      .refine(
-        val => {
-          if (!val) return true; // Allow undefined schema
-          try {
-            const validate = ajv.compile(val);
-            return typeof validate === "function";
-          } catch (e) {
-            return false;
-          }
-        },
-        {
-          error: "Invalid JSON schema.",
-        },
-      )
-      .transform(val => normalizeSchemaForOpenAI(val))
-      .refine(val => validateSchemaForOpenAI(val), {
-        message: OPENAI_SCHEMA_ERROR_MESSAGE,
-      })
-      .superRefine(addStrictSchemaIssue),
-    limit: z.int().positive().finite().optional(),
-    ignoreSitemap: z.boolean().prefault(false),
-    includeSubdomains: z.boolean().prefault(true),
-    allowExternalLinks: z.boolean().prefault(false),
-    enableWebSearch: z.boolean().prefault(false),
-    scrapeOptions: baseScrapeOptions.optional(),
-    origin: z.string().prefault("api"),
-    integration: integrationSchema.optional().transform(val => val || null),
-    urlTrace: z.boolean().prefault(false),
-    timeout: z.int().positive().min(1000).optional(),
-    agent: agentOptionsExtract.optional(),
-    __experimental_streamSteps: z.boolean().prefault(false),
-    __experimental_llmUsage: z.boolean().prefault(false),
-    __experimental_showSources: z.boolean().prefault(false),
-    showSources: z.boolean().prefault(false),
-    // These two below don't do anything anymore
-    __experimental_cacheKey: z.string().optional(),
-    __experimental_cacheMode: z
-      .enum(["direct", "save", "load"])
-      .prefault("direct")
-      .optional(),
-    __experimental_showCostTracking: z.boolean().prefault(false),
-    ignoreInvalidURLs: z.boolean().prefault(true),
-    webhook: webhookSchema.optional(),
-    threatProtection: threatProtectionOverrideSchema.optional(),
-  })
-  .refine(obj => obj.urls || obj.prompt, {
-    error: "Either 'urls' or 'prompt' must be provided.",
-  })
-  .refine(
-    obj => !isAgentExtractModelValid(obj.agent?.model),
-    agentRemovedRefineOpts,
-  )
-  .transform(obj => ({
-    ...obj,
-    allowExternalLinks: obj.allowExternalLinks || obj.enableWebSearch,
-  }))
-  .refine(
-    x => (x.scrapeOptions ? waitForRefine(x.scrapeOptions) : true),
-    waitForRefineOpts,
-  )
-  .transform(x => ({
-    ...x,
-    scrapeOptions: extractTransform(x.scrapeOptions),
-  }));
-
-export const extractRequestSchema = extractOptions;
-export type ExtractRequest = z.infer<typeof extractRequestSchema>;
-export type ExtractRequestInput = z.input<typeof extractRequestSchema>;
 
 const scrapeRequestSchemaBase = baseScrapeOptions.safeExtend({
   url: URL,
@@ -976,7 +888,7 @@ export const crawlerOptions = z.strictObject({
 //   ignoreSitemap?: boolean;
 // };
 
-type CrawlerOptions = z.infer<typeof crawlerOptions>;
+export type CrawlerOptions = z.infer<typeof crawlerOptions>;
 
 const crawlRequestSchemaBase = crawlerOptions.extend({
   url: URL,
@@ -1166,42 +1078,6 @@ export type ScrapeResponse =
       scrape_id?: string;
     };
 
-export interface URLTrace {
-  url: string;
-  status: "mapped" | "scraped" | "error";
-  timing: {
-    discoveredAt: string;
-    scrapedAt?: string;
-    completedAt?: string;
-  };
-  error?: string;
-  warning?: string;
-  contentStats?: {
-    rawContentLength: number;
-    processedContentLength: number;
-    tokensUsed: number;
-  };
-  relevanceScore?: number;
-  usedInCompletion?: boolean;
-  extractedFields?: string[];
-}
-
-export interface ExtractResponse {
-  success: boolean;
-  code?: ErrorCode;
-  error?: string;
-  data?: any;
-  scrape_id?: string;
-  id?: string;
-  warning?: string;
-  urlTrace?: URLTrace[];
-  sources?: {
-    [key: string]: string[];
-  };
-  tokensUsed?: number;
-  creditsUsed?: number;
-}
-
 export type CrawlResponse =
   | ErrorResponse
   | {
@@ -1325,6 +1201,40 @@ type Account = {
   remainingCredits: number;
 };
 
+export type AuthCreditUsageChunk = {
+  api_key: string;
+  api_key_id: number;
+  api_key_id_text?: string;
+  team_id: string;
+  org_id: string;
+  flags: TeamFlags;
+
+  // teams.banned surfaced from auth_chunk_2: banned teams are rejected (403)
+  // in supaAuthenticateUser. Optional because pre-rollout cached ACUC entries
+  // and the bypass/preview mocks omit it (treated as not banned).
+  is_banned?: boolean;
+
+  // appended on JS-side
+  is_extract?: boolean;
+
+  // The team's effective Autumn limits and plan, always set by
+  // getACUC/getACUCTeam.
+  concurrency_limit: number;
+  rate_limit_multiplier: number;
+  is_paid_plan: boolean;
+  // The team's plan class before team flags are applied (see teamPlanClass):
+  // what planClassOf made of the org's billing record, or the keyless class
+  // on the chunk keyless auth builds.
+  plan_class?: TeamPlanClass;
+
+  // Agent signup: populated when the key is agent-provisioned
+  _agentSponsor?: {
+    status: "pending" | "verified" | "blocked";
+    verification_deadline: string;
+    email: string;
+  } | null;
+};
+
 export type TeamFlags = {
   exchangeRetrieve?: boolean;
   alexandriaAutoTools?: boolean;
@@ -1370,14 +1280,24 @@ export type TeamFlags = {
   ipRestriction?: boolean;
   // gates the per-key scope/format lockdown (key_restriction_config table)
   keyRestriction?: boolean;
+  skipCountryCheck?: boolean;
+  browserBeta?: boolean;
   bypassCreditChecks?: boolean;
   debugBranding?: boolean;
   maxBrowserSessions?: number;
   // grants the privileged large-PDF size cap (PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED)
   largePdfs?: boolean;
+  // POST /v2/search/:jobId/feedback returns 403 TEAM_OPTED_OUT when true.
+  searchFeedbackOptOut?: boolean;
   researchBeta?: boolean;
   menuBeta?: boolean;
   enrichBeta?: boolean;
+  labsSearch?: boolean;
+  freshFeed?: boolean;
+  freshFeedCreditsPerRecord?: number;
+  freshFeedUpstream?: FreshFeedUpstream;
+  freshFeedCollection?: string;
+  freshFeedFilters?: FreshFeedFilters;
   professionalProfileCompanyDataBeta?: boolean;
   // The org's DPA (or partner amendment) restricts how its data may be
   // handled. Informational only: the API does not change behavior on it.
@@ -1414,15 +1334,37 @@ export type TeamFlags = {
       disabledReason?: string | null;
     }
   >;
+  // routes the team's new queue work to the FoundationDB backend
+  nuqFdb?: boolean;
+  /**
+   * Per-endpoint rate-limit overrides, in requests per minute. A value here
+   * replaces the computed limit for that mode, so the Autumn multiplier is
+   * not applied.
+   */
+  rateLimitOverrides?: Partial<Record<RateLimiterMode, number>>;
 } | null;
 
-interface RequestWithMaybeACUC<
+export type AuthCreditUsageChunkFromTeam = Omit<
+  AuthCreditUsageChunk,
+  "api_key"
+>;
+
+export interface RequestWithMaybeACUC<
   ReqParams = {},
   ReqBody = undefined,
   ResBody = undefined,
 > extends Request<ReqParams, ReqBody, ResBody> {
   acuc?: AuthCreditUsageChunk;
   zdrPolicy?: ZDRPolicy;
+}
+
+export interface RequestWithMaybeAuth<
+  ReqParams = {},
+  ReqBody = undefined,
+  ResBody = undefined,
+> extends RequestWithMaybeACUC<ReqParams, ReqBody, ResBody> {
+  auth?: AuthObject;
+  account?: Account;
 }
 
 export interface RequestWithAuth<
@@ -1477,247 +1419,10 @@ export function toV2CrawlerOptions(x: any): CrawlerOptions {
   };
 }
 
-function fromV0CrawlerOptions(
-  x: any,
-  teamId: string,
-): {
-  crawlOptions: CrawlerOptions;
-  internalOptions: InternalOptions;
-} {
-  return {
-    crawlOptions: crawlerOptions.parse({
-      includePaths: x.includes,
-      excludePaths: x.excludes,
-      limit: x.maxCrawledLinks ?? x.limit,
-      crawlEntireDomain: x.allowBackwardCrawling,
-      allowExternalLinks: x.allowExternalContentLinks,
-      allowSubdomains: x.allowSubdomains,
-      ignoreRobotsTxt: x.ignoreRobotsTxt,
-      sitemap: x.sitemapOnly ? "only" : x.ignoreSitemap ? "skip" : "include",
-      deduplicateSimilarURLs: x.deduplicateSimilarURLs,
-      ignoreQueryParameters: x.ignoreQueryParameters,
-      regexOnFullURL: x.regexOnFullURL,
-      maxDiscoveryDepth: x.maxDiscoveryDepth,
-      delay: x.delay,
-    }),
-    internalOptions: {
-      v0CrawlOnlyUrls: x.returnOnlyUrls,
-      teamId,
-      orgId: null,
-    },
-  };
-}
-
 export interface MapDocument {
   url: string;
   title?: string;
   description?: string;
-}
-export function fromV0ScrapeOptions(
-  pageOptions: PageOptions,
-  extractorOptions: ExtractorOptions | undefined,
-  timeout: number | undefined,
-  teamId: string,
-): { scrapeOptions: ScrapeOptions; internalOptions: InternalOptions } {
-  return {
-    scrapeOptions: getV2RequestSchemas().scrapeOptions.parse({
-      formats: [
-        (pageOptions.includeMarkdown ?? true) ? ("markdown" as const) : null,
-        (pageOptions.includeHtml ?? false) ? ("html" as const) : null,
-        (pageOptions.includeRawHtml ?? false) ? ("rawHtml" as const) : null,
-        (pageOptions.screenshot ?? false) ? ("screenshot" as const) : null,
-        (pageOptions.fullPageScreenshot ?? false)
-          ? { type: "screenshot" as const, fullPage: true }
-          : null,
-        extractorOptions !== undefined &&
-        extractorOptions.mode.includes("llm-extraction")
-          ? {
-              type: "json" as const,
-              prompt: extractorOptions.userPrompt,
-              schema: extractorOptions.extractionSchema,
-            }
-          : null,
-        "links",
-      ].filter(x => x !== null),
-      waitFor: pageOptions.waitFor,
-      headers: pageOptions.headers,
-      includeTags:
-        typeof pageOptions.onlyIncludeTags === "string"
-          ? [pageOptions.onlyIncludeTags]
-          : pageOptions.onlyIncludeTags,
-      excludeTags:
-        typeof pageOptions.removeTags === "string"
-          ? [pageOptions.removeTags]
-          : pageOptions.removeTags,
-      onlyMainContent: pageOptions.onlyMainContent ?? false,
-      timeout: timeout,
-      parsers: pageOptions.parsePDF === false ? [] : undefined,
-      actions: pageOptions.actions,
-      location: pageOptions.geolocation,
-      skipTlsVerification: pageOptions.skipTlsVerification,
-      removeBase64Images: pageOptions.removeBase64Images,
-      mobile: pageOptions.mobile,
-      fastMode: pageOptions.useFastMode,
-    }),
-    internalOptions: {
-      atsv: pageOptions.atsv,
-      v0DisableJsDom: pageOptions.disableJsDom,
-      teamId,
-      orgId: null,
-      ...(extractorOptions !== undefined &&
-      extractorOptions.mode.includes("llm-extraction")
-        ? {
-            v1JSONSystemPrompt: extractorOptions.extractionPrompt,
-          }
-        : {}),
-    },
-    // TODO: fallback, fetchPageContent, replaceAllPathsWithAbsolutePaths, includeLinks
-  };
-}
-
-export function fromV1ScrapeOptions(
-  v1ScrapeOptions: V1ScrapeOptions,
-  timeout: number | undefined,
-  teamId: string,
-): { scrapeOptions: ScrapeOptions; internalOptions: InternalOptions } {
-  const spreadScrapeOptions = { ...v1ScrapeOptions };
-  delete (spreadScrapeOptions as any).urls;
-  delete (spreadScrapeOptions as any).ignoreInvalidURLs;
-  delete (spreadScrapeOptions as any).url;
-  delete (spreadScrapeOptions as any).origin;
-  delete (spreadScrapeOptions as any).integration;
-  delete (spreadScrapeOptions as any).webhook;
-  delete (spreadScrapeOptions as any).zeroDataRetention;
-  delete (spreadScrapeOptions as any).maxConcurrency;
-
-  delete spreadScrapeOptions.__experimental_cache;
-  delete spreadScrapeOptions.jsonOptions;
-  delete spreadScrapeOptions.changeTrackingOptions;
-  delete spreadScrapeOptions.extract;
-  delete spreadScrapeOptions.geolocation;
-  delete (spreadScrapeOptions as any).parsePDF;
-
-  // Track the original format for v1 backward compatibility
-  // Check json first since when user specifies "json", both "json" and "extract" are present
-  // When user specifies "extract", only "extract" is present
-  let v1OriginalFormat: "extract" | "json" | undefined;
-  if (includesFormat(v1ScrapeOptions.formats as any, "json")) {
-    v1OriginalFormat = "json";
-  } else if (includesFormat(v1ScrapeOptions.formats as any, "extract")) {
-    v1OriginalFormat = "extract";
-  }
-
-  const activeScrapeOptionsSchema = getV2RequestSchemas().scrapeOptions;
-  const isDefaultCoreSchema = activeScrapeOptionsSchema === scrapeOptions;
-  if (isDefaultCoreSchema) {
-    delete (spreadScrapeOptions as any).storeInCache;
-    delete (spreadScrapeOptions as any).maxAge;
-    delete (spreadScrapeOptions as any).minAge;
-    delete (spreadScrapeOptions as any).lockdown;
-    delete (spreadScrapeOptions as any).safeMode;
-    delete (spreadScrapeOptions as any).threatProtection;
-    delete (spreadScrapeOptions as any).auditMetadata;
-    delete (spreadScrapeOptions as any).profile;
-    delete (spreadScrapeOptions as any).__searchPreviewToken;
-    delete (spreadScrapeOptions as any).__experimental_omce;
-    delete (spreadScrapeOptions as any).__experimental_omceDomain;
-    delete (spreadScrapeOptions as any).__forceFirePDF;
-    if (
-      (spreadScrapeOptions as any).proxy === "stealth" ||
-      (spreadScrapeOptions as any).proxy === "enhanced"
-    ) {
-      (spreadScrapeOptions as any).proxy = "auto";
-    }
-  }
-
-  return {
-    scrapeOptions: activeScrapeOptionsSchema.parse({
-      ...spreadScrapeOptions,
-
-      ...(!isDefaultCoreSchema && v1ScrapeOptions.__experimental_cache
-        ? {
-            maxAge: v1ScrapeOptions.maxAge ?? 4 * 60 * 60 * 1000, // 4 hours
-          }
-        : {}),
-      location: v1ScrapeOptions.location ?? v1ScrapeOptions.geolocation,
-      checkPromptInjection: (
-        v1ScrapeOptions.jsonOptions || v1ScrapeOptions.extract
-      )?.checkPromptInjection,
-      formats: v1ScrapeOptions.formats
-        .map(x => {
-          // json and extract is standardized down to extract fmt in v1 -- fine to take one and dismiss the other
-          if (x === "extract") {
-            const opts = v1ScrapeOptions.jsonOptions || v1ScrapeOptions.extract;
-            const fmt: JsonFormatWithOptions = {
-              type: "json",
-              schema: opts?.schema,
-              prompt: opts?.prompt,
-            };
-            return fmt;
-          } else if (x === "json") {
-            // If jsonOptions are provided with json format, create JsonFormatWithOptions
-            const opts = v1ScrapeOptions.jsonOptions;
-            if (opts) {
-              const fmt: JsonFormatWithOptions = {
-                type: "json",
-                schema: opts.schema,
-                prompt: opts.prompt,
-              };
-              return includesFormat(v1ScrapeOptions.formats as any, "extract")
-                ? null
-                : fmt;
-            }
-            return null;
-          } else if (x === "changeTracking") {
-            const opts = v1ScrapeOptions.changeTrackingOptions;
-            return {
-              type: "changeTracking" as const,
-              modes: opts?.modes ?? [],
-              tag: opts?.tag ?? null,
-              schema: opts?.schema,
-              prompt: opts?.prompt,
-            };
-          } else if (x === "screenshot@fullPage") {
-            return { type: "screenshot" as const, fullPage: true };
-          } else if (x === "branding") {
-            return { type: "branding" as const };
-          } else if (x === "product") {
-            return { type: "product" as const };
-          } else if (x === "menu") {
-            return { type: "menu" as const };
-          } else {
-            return x;
-          }
-        })
-        .filter(x => x !== null),
-      parsers: v1ScrapeOptions.parsePDF === false ? [] : undefined,
-    }),
-    internalOptions: {
-      teamId,
-      orgId: null,
-      v1JSONSystemPrompt: (
-        v1ScrapeOptions.jsonOptions || v1ScrapeOptions.extract
-      )?.systemPrompt,
-      v1OriginalFormat,
-    },
-  };
-}
-
-export function fromV0Combo(
-  pageOptions: PageOptions,
-  extractorOptions: ExtractorOptions | undefined,
-  timeout: number | undefined,
-  crawlerOptions: any,
-  teamId: string,
-): { scrapeOptions: ScrapeOptions; internalOptions: InternalOptions } {
-  const { scrapeOptions, internalOptions: i1 } = fromV0ScrapeOptions(
-    pageOptions,
-    extractorOptions,
-    timeout,
-    teamId,
-  );
-  const { internalOptions: i2 } = fromV0CrawlerOptions(crawlerOptions, teamId);
-  return { scrapeOptions, internalOptions: Object.assign(i1, i2) };
 }
 
 // Search source type definitions

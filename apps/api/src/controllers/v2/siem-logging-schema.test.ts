@@ -1,58 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  batchScrapeRequestSchema as batchScrapeRequestSchemaV1,
-  crawlRequestSchema as crawlRequestSchemaV1,
-  extractRequestSchema as extractRequestSchemaV1,
-  mapRequestSchema as mapRequestSchemaV1,
-  scrapeRequestSchema as scrapeRequestSchemaV1,
-  searchRequestSchema as searchRequestSchemaV1,
-} from "../v1/types";
 import { siemLoggingConfigInputSchema } from "../../lib/siem-logging/types";
-
-const auditMetadata = {
-  username: "alice@example.com",
-};
-
-describe("auditMetadata request validation", () => {
-  it("accepts audit metadata on the corresponding v1 request schemas", () => {
-    expect(
-      scrapeRequestSchemaV1.parse({
-        url: "https://example.com",
-        auditMetadata,
-      }).auditMetadata,
-    ).toEqual(auditMetadata);
-    expect(
-      batchScrapeRequestSchemaV1.parse({
-        urls: ["https://example.com"],
-        auditMetadata,
-      }).auditMetadata,
-    ).toEqual(auditMetadata);
-    expect(
-      crawlRequestSchemaV1.parse({
-        url: "https://example.com",
-        scrapeOptions: { auditMetadata },
-      }).scrapeOptions.auditMetadata,
-    ).toEqual(auditMetadata);
-    expect(
-      searchRequestSchemaV1.parse({
-        query: "example",
-        scrapeOptions: { auditMetadata },
-      }).scrapeOptions.auditMetadata,
-    ).toEqual(auditMetadata);
-    expect(
-      extractRequestSchemaV1.parse({
-        urls: ["https://example.com"],
-        scrapeOptions: { auditMetadata },
-      }).scrapeOptions?.auditMetadata,
-    ).toEqual(auditMetadata);
-    expect(
-      mapRequestSchemaV1.parse({
-        url: "https://example.com",
-        auditMetadata,
-      }).auditMetadata,
-    ).toEqual(auditMetadata);
-  });
-});
 
 describe("SIEM destination validation", () => {
   const destination = {

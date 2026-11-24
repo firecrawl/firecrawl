@@ -1,6 +1,6 @@
 import { redisEvictConnection } from "../services/redis";
 import { logger } from "./logger";
-import type { AuthCreditUsageChunkFromTeam } from "../controllers/v1/types";
+import type { AuthCreditUsageChunkFromTeam } from "../controllers/v2/types";
 import { resolveJobPriority } from "./limits";
 import { requestContext } from "./request-context";
 

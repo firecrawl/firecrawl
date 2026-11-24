@@ -1,4 +1,4 @@
-import type { TeamFlags } from "../../controllers/v1/types";
+import type { TeamFlags } from "../../controllers/v2/types";
 import type { ResolvedSafeMode } from "../../lib/safe-mode";
 
 // The invariant "lockdown never fetches robots.txt" is load-bearing for the

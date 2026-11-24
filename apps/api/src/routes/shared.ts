@@ -1,11 +1,10 @@
 import { NextFunction, Request, Response } from "express";
-// import { crawlStatusController } from "../../src/controllers/v1/crawl-status";
 import {
   AuthCreditUsageChunk,
   RequestWithAuth,
   RequestWithMaybeAuth,
   RequestWithMaybeACUC,
-} from "../controllers/v1/types";
+} from "../controllers/v2/types";
 import { RateLimiterMode } from "../types";
 import { requestContext } from "../lib/request-context";
 import { logger } from "../lib/logger";

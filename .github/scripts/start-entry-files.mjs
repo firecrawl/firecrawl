@@ -40,11 +40,6 @@ const ROLE_FILES = [
     health: url(1, "/liveness"),
   },
   {
-    file: "services/extract-worker.js",
-    env: { EXTRACT_WORKER_PORT: port(2) },
-    health: url(2, "/liveness"),
-  },
-  {
     file: "services/worker/nuq-worker.js",
     env: { NUQ_WORKER_PORT: port(3) },
     health: url(3, "/health"),
@@ -75,7 +70,6 @@ const HARNESS_FILE = {
   env: {
     PORT: port(0),
     WORKER_PORT: port(1),
-    EXTRACT_WORKER_PORT: port(2),
     NUQ_WORKER_START_PORT: port(3),
   },
   health: url(0, "/health/liveness"),
