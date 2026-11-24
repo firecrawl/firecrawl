@@ -78,6 +78,13 @@ fn targets() -> Vec<Target> {
       kind: Kind::Json { key: "mcpServers" },
     },
     Target {
+      name: "antigravity",
+      label: "Antigravity",
+      config: ".gemini/config/mcp_config.json",
+      marker: ".gemini/config",
+      kind: Kind::Json { key: "mcpServers" },
+    },
+    Target {
       name: "codex",
       label: "Codex",
       config: ".codex/config.toml",
@@ -347,6 +354,69 @@ mod tests {
     // Tools that are not installed get no config file.
     assert!(!home.join(".codex/config.toml").exists());
     assert!(!home.join(".claude.json").exists());
+    assert!(!home.join(".gemini/config/mcp_config.json").exists());
+    let _ = fs::remove_dir_all(&home);
+  }
+
+  #[test]
+  fn antigravity_auto_detects_and_preserves_existing_servers() {
+    let home = std::env::temp_dir().join(format!("fc-init-agy-test-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&home);
+    fs::create_dir_all(home.join(".gemini/config")).unwrap();
+    fs::write(
+      home.join(".gemini/config/mcp_config.json"),
+      r#"{"mcpServers":{"existing":{"url":"https://example.com/mcp"}}}"#,
+    )
+    .unwrap();
+
+    let opts = InitOptions {
+      only: vec!["antigravity".to_string()],
+      dry_run: false,
+      home: home.clone(),
+      binary: bin(),
+    };
+    let report = run(&opts);
+    assert_eq!(report.configured, 1, "{:?}", report.lines);
+    let written: Value = serde_json::from_str(
+      &fs::read_to_string(home.join(".gemini/config/mcp_config.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+      written["mcpServers"]["existing"]["url"],
+      "https://example.com/mcp"
+    );
+    assert_eq!(
+      written["mcpServers"]["firecrawl"]["command"],
+      "/usr/local/bin/firecrawl-local"
+    );
+    assert_eq!(written["mcpServers"]["firecrawl"]["args"][0], "mcp");
+    assert!(home
+      .join(".gemini/config/mcp_config.json.firecrawl-bak")
+      .exists());
+
+    // Running again is a no-op.
+    let second = run(&opts);
+    assert_eq!(second.configured, 1);
+    assert!(second.lines.iter().any(|l| l.contains("already set up")));
+    let _ = fs::remove_dir_all(&home);
+  }
+
+  #[test]
+  fn gemini_only_dir_does_not_create_antigravity_config() {
+    let home = std::env::temp_dir().join(format!("fc-init-gem-only-test-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&home);
+    fs::create_dir_all(home.join(".gemini")).unwrap();
+
+    let opts = InitOptions {
+      only: Vec::new(),
+      dry_run: false,
+      home: home.clone(),
+      binary: bin(),
+    };
+    let report = run(&opts);
+    assert_eq!(report.configured, 1, "{:?}", report.lines);
+    assert!(home.join(".gemini/settings.json").exists());
+    assert!(!home.join(".gemini/config/mcp_config.json").exists());
     let _ = fs::remove_dir_all(&home);
   }
 }
