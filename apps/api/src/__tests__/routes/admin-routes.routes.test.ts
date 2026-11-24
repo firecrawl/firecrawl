@@ -9,36 +9,36 @@ const { stub } = vi.hoisted(() => ({
     res.status(200).json({ route }),
 }));
 
-vi.mock("../../controllers/v0/admin/redis-health", () => ({
+vi.mock("../../controllers/admin/redis-health", () => ({
   redisHealthController: stub("redis-health"),
 }));
-vi.mock("../../controllers/v0/admin/check-fire-engine", () => ({
+vi.mock("../../controllers/admin/check-fire-engine", () => ({
   checkFireEngine: stub("feng-check"),
 }));
-vi.mock("../../controllers/v0/admin/acuc-cache-clear", () => ({
+vi.mock("../../controllers/admin/acuc-cache-clear", () => ({
   acucCacheClearController: stub("acuc-cache-clear"),
 }));
-vi.mock("../../controllers/v0/admin/ip-restriction-cache-clear", () => ({
+vi.mock("../../controllers/admin/ip-restriction-cache-clear", () => ({
   ipRestrictionCacheClearController: stub("ip-restriction-cache-clear"),
 }));
-vi.mock("../../controllers/v0/admin/key-restriction-cache-clear", () => ({
+vi.mock("../../controllers/admin/key-restriction-cache-clear", () => ({
   keyRestrictionCacheClearController: stub("key-restriction-cache-clear"),
 }));
-vi.mock("../../controllers/v0/admin/concurrency-queue-backfill", () => ({
+vi.mock("../../controllers/admin/concurrency-queue-backfill", () => ({
   concurrencyQueueBackfillController: stub("concurrency-queue-backfill"),
 }));
-vi.mock("../../controllers/v0/admin/index-queue-prometheus", () => ({
+vi.mock("../../controllers/admin/index-queue-prometheus", () => ({
   indexQueuePrometheus: stub("index-queue-prometheus"),
 }));
-vi.mock("../../controllers/v0/admin/precrawl", () => ({
+vi.mock("../../controllers/admin/precrawl", () => ({
   triggerPrecrawl: stub("precrawl"),
 }));
-vi.mock("../../controllers/v0/admin/metrics", () => ({
+vi.mock("../../controllers/admin/metrics", () => ({
   metricsController: stub("metrics"),
   nuqMetricsController: stub("nuq-metrics"),
   nuqFdbMetricsController: stub("nuq-fdb-metrics"),
 }));
-vi.mock("../../controllers/v0/admin/crawl-monitor", () => ({
+vi.mock("../../controllers/admin/crawl-monitor", () => ({
   crawlMonitorController: stub("crawl-monitor"),
 }));
 vi.mock("../../controllers/v2/f-search", () => ({
