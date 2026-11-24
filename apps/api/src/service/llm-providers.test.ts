@@ -220,18 +220,8 @@ describe("buildLlmProviderRegistry", () => {
     ).toThrow('LLM provider "openai" model must be a function');
   });
 
-  it("lists all nine built-in LLM provider names in order", () => {
-    expect(coreLlmProviderNames).toEqual([
-      "openai",
-      "ollama",
-      "anthropic",
-      "groq",
-      "google",
-      "openrouter",
-      "fireworks",
-      "deepinfra",
-      "vertex",
-    ]);
+  it("lists the built-in LLM provider names in order", () => {
+    expect(coreLlmProviderNames).toEqual(["openai", "ollama"]);
     expect(Object.isFrozen(coreLlmProviderNames)).toBe(true);
   });
 });

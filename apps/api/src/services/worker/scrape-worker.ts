@@ -59,11 +59,17 @@ import { getACUCTeam } from "../../controllers/auth";
 import { orgIdForTeam } from "../../lib/team-org";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
-import { crawlContext, jobContext } from "../../lib/request-context";
+import {
+  crawlContext,
+  jobContext,
+  requestContext,
+} from "../../lib/request-context";
 import { CostTracking } from "../../lib/cost-tracking";
 import { chargeKeylessCredits } from "../../lib/keyless";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
-import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
+import { isLockdownZeroDataRetention } from "../../lib/safe-mode";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { service } from "../../service";
 
 import { generateURLSplits, queryIndexAtSplitLevel } from "../index";
 import { DenialReason, WebCrawler } from "../../scraper/WebScraper/crawler";
@@ -114,7 +120,6 @@ import {
   type ExchangeScrapeMetadata,
 } from "../../lib/exchange";
 import { emitScrapeActivityEvent } from "../../lib/siem-logging";
-import { service } from "../../service";
 import {
   createScrapeFinishedEmitter,
   type ScrapeFinishedOutcome,
@@ -520,16 +525,22 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         teamFlags = teamChunk?.flags ?? null;
         orgId = orgId ?? teamChunk?.org_id ?? null;
       }
+      const blockCtx = requestContext({
+        teamId: job.data.team_id,
+        zeroDataRetention:
+          ctx.zeroDataRetention === true ||
+          job.data.zeroDataRetention === true ||
+          getScrapeZDR(teamFlags ?? undefined) === "forced" ||
+          isLockdownZeroDataRetention(
+            teamFlags,
+            job.data.internalOptions?.safeModeBypassed ? false : undefined,
+          ),
+        flags: teamFlags,
+        orgId,
+      });
       if (
-        isUrlBlocked(doc.metadata.url, teamFlags, {
-          team_id: job.data.team_id,
-          org_id: orgId,
-          origin: job.data.origin,
-          zeroDataRetention:
-            ctx.zeroDataRetention === true || job.data.zeroDataRetention,
-          safeMode: job.data.internalOptions?.safeModeBypassed
-            ? false
-            : undefined,
+        service.modules.blocklist.isBlocked(doc.metadata.url, blockCtx, {
+          origin: job.data.origin ?? null,
         })
       ) {
         throw new UnsupportedSiteError();

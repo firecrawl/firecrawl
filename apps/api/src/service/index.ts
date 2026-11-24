@@ -12,6 +12,7 @@ export {
   directWebhooks,
   logsMessages,
   memoryUploads,
+  noBlocklist,
   queueJobStore,
   redisIdempotency,
 } from "./defaults";
@@ -76,6 +77,8 @@ export type {
   LlmProviders,
 } from "./llm-providers";
 export type {
+  BlocklistCheckOptions,
+  BlocklistModule,
   DirectUploadInput,
   DirectUploadResult,
   FetchProxyFileKind,

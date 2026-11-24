@@ -6,6 +6,7 @@
  */
 import type { JobKind } from "./hooks";
 import type {
+  BlocklistModule,
   FetchProxyFileKind,
   IdempotencyModule,
   JobOutcome,
@@ -20,6 +21,15 @@ import type {
   UploadsModule,
   WebhooksModule,
 } from "./modules";
+
+/** Empty blocklist that initializes as a no-op and allows every URL. */
+export function noBlocklist(): BlocklistModule {
+  return {
+    async init() {},
+    isBlocked: () => false,
+    hasScopedRules: () => false,
+  };
+}
 
 /** Default user-facing messages that direct operators to local logs and config. */
 export function logsMessages(): MessagesModule {
@@ -360,6 +370,7 @@ export function directWebhooks(
 /** Returns fresh instances of every default module slot. */
 export function defaultModules(): Modules {
   return {
+    blocklist: noBlocklist(),
     messages: logsMessages(),
     uploads: memoryUploads(),
     jobStore: queueJobStore(),

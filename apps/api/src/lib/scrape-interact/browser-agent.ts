@@ -4,6 +4,7 @@ import path from "path";
 import { tool, isStepCount, generateText as untracedGenerateText } from "ai";
 import { logger as _logger } from "../logger";
 import { getModel } from "../generic-ai";
+import { service } from "../../service";
 import { executeHangarBrowser, BrowserExecutionResult } from "../hangar";
 import { config } from "../../config";
 import type { TeamFlags } from "../../controllers/v2/types";
@@ -23,11 +24,9 @@ const MAX_STEPS = 25;
 const SNAPSHOT_TIMEOUT = 15;
 const SNAPSHOT_MAX_CHARS = 40_000;
 
-// Vertex is the preferred provider so usage is traceable via Vertex billing
-// labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
-// aren't configured (e.g. self-hosted). Mirrors services/monitoring/search/tuning.ts.
+// Prefer Vertex when registered and enabled, then Google, then core's default provider.
 function hasVertex(): boolean {
-  return Boolean(config.VERTEX_CREDENTIALS) || config.VERTEX_USE_ADC;
+  return service.llmProviders.get("vertex")?.enabled() ?? false;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,16 +250,23 @@ export function getBrowserAgentModel(
   trace?: Pick<BrowserAgentTraceContext, "zeroDataRetention" | "teamFlags">,
 ) {
   const modelOptions = { teamFlags: trace?.teamFlags, feature: "Interact" };
-  return trace?.zeroDataRetention === true
-    ? getModel("gpt-6-luna", "openai", {
-        ignoreModelOverride: true,
-        ...modelOptions,
-      })
-    : getModel(
-        "gemini-3.5-flash",
-        hasVertex() ? "vertex" : "google",
-        modelOptions,
-      );
+  if (trace?.zeroDataRetention === true) {
+    return getModel("gpt-6-luna", "openai", {
+      ignoreModelOverride: true,
+      ...modelOptions,
+    });
+  }
+  if (hasVertex()) {
+    return getModel("gemini-3.5-flash", "vertex", modelOptions);
+  }
+  if (service.llmProviders.get("google")?.enabled()) {
+    return getModel("gemini-3.5-flash", "google", modelOptions);
+  }
+  return getModel(
+    "gpt-4o-mini",
+    service.llmProviders.get("ollama")?.enabled() ? "ollama" : "openai",
+    modelOptions,
+  );
 }
 
 export async function executePromptViaBrowserAgent(

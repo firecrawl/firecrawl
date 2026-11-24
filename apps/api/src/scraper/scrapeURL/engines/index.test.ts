@@ -17,10 +17,6 @@ import {
 } from "./index";
 import { coreEngineSpecs } from "./metadata";
 
-vi.mock("../../WebScraper/utils/blocklist", () => ({
-  isUrlBlocked: vi.fn(() => false),
-}));
-
 const makeMeta = (
   overrides: {
     url?: string;
