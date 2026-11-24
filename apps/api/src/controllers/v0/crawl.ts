@@ -4,15 +4,14 @@ import { authenticateUser } from "../auth";
 import { RateLimiterMode } from "../../../src/types";
 import { addScrapeJob } from "../../../src/services/queue-jobs";
 import { isUrlBlocked } from "../../../src/scraper/WebScraper/utils/blocklist";
-import { validateIdempotencyKey } from "../../../src/services/idempotency/validate";
-import { createIdempotencyKey } from "../../../src/services/idempotency/create";
 import {
   defaultCrawlPageOptions,
   defaultCrawlerOptions,
   defaultOrigin,
 } from "../../../src/lib/default-values";
-import { v7 as uuidv7 } from "uuid";
+import { v7 as uuidv7, validate as isUuid } from "uuid";
 import { logger } from "../../../src/lib/logger";
+import { service } from "../../service";
 import {
   addCrawlJob,
   addCrawlJobs,
@@ -118,16 +117,23 @@ export async function crawlController(req: Request, res: Response) {
         }),
       );
 
-    if (req.headers["x-idempotency-key"]) {
-      const isIdempotencyValid = await validateIdempotencyKey(req);
-      if (!isIdempotencyValid) {
-        return res.status(409).json({ error: "Idempotency key already used" });
+    const rawIdempotencyKey = req.headers["x-idempotency-key"];
+    if (rawIdempotencyKey) {
+      const idempotencyKey = Array.isArray(rawIdempotencyKey)
+        ? rawIdempotencyKey[0]
+        : rawIdempotencyKey;
+      let claimed = false;
+      if (typeof idempotencyKey !== "string" || !isUuid(idempotencyKey)) {
+        logger.debug(
+          "Invalid idempotency key provided in the request headers.",
+        );
+      } else {
+        claimed = await service.modules.idempotency.claim(idempotencyKey, {
+          teamId: team_id,
+        });
       }
-      try {
-        createIdempotencyKey(req);
-      } catch (error) {
-        logger.error(error);
-        return res.status(500).json({ error: error.message });
+      if (!claimed) {
+        return res.status(409).json({ error: "Idempotency key already used" });
       }
     }
 

@@ -278,7 +278,7 @@ describe("describe", () => {
     expect(enabled).not.toHaveBeenCalled();
     expect(description).toEqual({
       extensions: ["core", "second", "third"],
-      modules: ["messages", "uploads"],
+      modules: ["idempotency", "messages", "uploads", "webhooks"],
       hooks: {
         "a.point": ["second"],
         "b.point": ["core", "second", "second", "third"],
@@ -390,7 +390,7 @@ describe("describe", () => {
     ]);
     expect(built.describe()).toEqual({
       extensions: ["core", "mine"],
-      modules: ["messages", "uploads"],
+      modules: ["idempotency", "messages", "uploads", "webhooks"],
       hooks: { "a.point": ["mine"] },
       errors: { MINE: "mine" },
       engines: { "mine-engine": "mine" },
@@ -483,7 +483,7 @@ describe("describe", () => {
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: ["messages", "uploads"],
+      modules: ["idempotency", "messages", "uploads", "webhooks"],
       hooks: {},
       errors: { TIMEOUT: "core" },
       engines: { fetch: "core" },

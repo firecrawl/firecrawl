@@ -38,6 +38,14 @@ vi.mock("../lib/zdr-queue", () => {
   loadedSideEffectModules.push("zdr-queue");
   return {};
 });
+vi.mock("../services/redis", () => {
+  loadedSideEffectModules.push("redis");
+  return {};
+});
+vi.mock("../db/connection", () => {
+  loadedSideEffectModules.push("db");
+  return {};
+});
 
 const errorClassesModule = "../lib/error-serde";
 const enginesModule = "../scraper/scrapeURL/engines";
@@ -254,7 +262,7 @@ describe("coreParts", () => {
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: ["messages", "uploads"],
+      modules: ["idempotency", "messages", "uploads", "webhooks"],
       hooks: {},
       errors: {
         AGENT_INDEX_ONLY: "core",
@@ -378,11 +386,16 @@ describe("coreParts", () => {
     expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
   });
 
-  it("loads core error classes and default modules without pulling in config, exchange, deployment, gcs, or zdr", () => {
+  it("loads core error classes and default modules without pulling in config, exchange, deployment, gcs, zdr, redis, or db", () => {
     answerRequire();
     const built = createService({ modules: defaultModules() }, coreParts());
 
-    expect(built.describe().modules).toEqual(["messages", "uploads"]);
+    expect(built.describe().modules).toEqual([
+      "idempotency",
+      "messages",
+      "uploads",
+      "webhooks",
+    ]);
     expect(loadedSideEffectModules).toEqual([]);
   });
 });
