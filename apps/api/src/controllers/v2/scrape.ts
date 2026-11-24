@@ -492,6 +492,8 @@ export async function scrapeController(
           "scrape.error_type": isTransportableError(e) ? e.code : "unknown",
         });
 
+        const jobIdField = agentRequestId ? {} : { jobId };
+
         if (isTransportableError(e)) {
           if (!timeoutErr) {
             logger.error(`Error in scrapeController`, {
@@ -508,7 +510,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
-              jobId,
+              ...jobIdField,
             });
           }
 
@@ -520,7 +522,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
-              jobId,
+              ...jobIdField,
             });
           }
 
@@ -532,7 +534,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
-              jobId,
+              ...jobIdField,
             });
           }
 
@@ -544,7 +546,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
-              jobId,
+              ...jobIdField,
               sponsor_status: "pending",
               login_url: "https://firecrawl.dev/signin",
             });
@@ -558,7 +560,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
-              jobId,
+              ...jobIdField,
             });
           }
 
@@ -574,7 +576,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
-              jobId,
+              ...jobIdField,
             });
           }
 
@@ -586,7 +588,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
-              jobId,
+              ...jobIdField,
             });
           }
 
@@ -598,7 +600,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
-              jobId,
+              ...jobIdField,
             });
           }
 
@@ -610,7 +612,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
-              jobId,
+              ...jobIdField,
             });
           }
 
@@ -622,7 +624,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
-              jobId,
+              ...jobIdField,
             });
           }
 
@@ -634,7 +636,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
-              jobId,
+              ...jobIdField,
             });
           }
 
@@ -642,7 +644,7 @@ export async function scrapeController(
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });
-            return res.status(403).json({ ...e.response(), jobId });
+            return res.status(403).json({ ...e.response(), ...jobIdField });
           }
 
           if (
@@ -656,7 +658,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
-              jobId,
+              ...jobIdField,
             });
           }
 
@@ -668,7 +670,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
-              jobId,
+              ...jobIdField,
             });
           }
 
@@ -683,7 +685,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
-              jobId,
+              ...jobIdField,
             });
           }
 
@@ -704,7 +706,7 @@ export async function scrapeController(
             success: false,
             code: e.code,
             error: e.message,
-            jobId,
+            ...jobIdField,
             ...(processing && { details: processing }),
           });
         } else {
@@ -724,7 +726,7 @@ export async function scrapeController(
             success: false,
             code: "UNKNOWN_ERROR",
             error: getErrorContactMessage(id),
-            jobId,
+            ...jobIdField,
           });
         }
       } finally {
