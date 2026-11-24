@@ -29,6 +29,18 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 
 configDotenv();
 
+// Inherited from the crawl options schema, but /map never applies them.
+const IGNORED_CRAWL_OPTIONS = [
+  "includePaths",
+  "excludePaths",
+  "regexOnFullURL",
+  "crawlEntireDomain",
+  "deduplicateSimilarURLs",
+  "delay",
+  "ignoreRobotsTxt",
+  "robotsUserAgent",
+] as const;
+
 export async function mapController(
   req: RequestWithAuth<{}, MapResponse, MapRequest>,
   res: Response<MapResponse>,
@@ -51,6 +63,15 @@ export async function mapController(
 
   const originalRequest = req.body;
   req.body = mapRequestSchema.parse(req.body);
+
+  const sentCrawlOptions = IGNORED_CRAWL_OPTIONS.filter(
+    key => originalRequest[key] !== undefined,
+  );
+  const ignoredCrawlOptions =
+    sentCrawlOptions.length > 0 ? sentCrawlOptions : undefined;
+  const ignoredCrawlOptionsWarning =
+    ignoredCrawlOptions &&
+    `These parameters only apply to /crawl and have no effect on /map, so remove them from the request: ${ignoredCrawlOptions.join(", ")}.`;
 
   // Map is link discovery, not content scraping, but it is outbound to the
   // target. Under Safe Mode: force domainControls so discovered links are
@@ -170,6 +191,7 @@ export async function mapController(
           limit: req.body.limit,
           timeout: req.body.timeout,
           location: req.body.location,
+          ignoredCrawlOptions,
         },
         results: avgrabResults,
         credits_cost: creditsCost,
@@ -184,6 +206,9 @@ export async function mapController(
         success: true,
         id: mapId,
         links: avgrabResults,
+        ...(ignoredCrawlOptionsWarning && {
+          warning: ignoredCrawlOptionsWarning,
+        }),
       });
     }
   } catch (error) {
@@ -321,6 +346,7 @@ export async function mapController(
       limit: req.body.limit,
       timeout: req.body.timeout,
       location: req.body.location,
+      ignoredCrawlOptions,
     },
     results: result.mapResults,
     credits_cost: creditsToBill,
@@ -345,8 +371,9 @@ export async function mapController(
     linksCount: result.mapResults.length,
   });
 
-  // Check if we should warn about base domain
-  let warning: string | undefined;
+  const warnings: string[] = ignoredCrawlOptionsWarning
+    ? [ignoredCrawlOptionsWarning]
+    : [];
   // Only show warning if results <= 1 AND user didn't explicitly request limit=1 AND URL is not base domain
   if (
     result.mapResults.length <= 1 &&
@@ -355,7 +382,9 @@ export async function mapController(
   ) {
     const baseDomain = extractBaseDomain(req.body.url);
     if (baseDomain) {
-      warning = `Only ${result.mapResults.length} result(s) found. For broader coverage, try mapping the base domain: ${baseDomain}`;
+      warnings.push(
+        `Only ${result.mapResults.length} result(s) found. For broader coverage, try mapping the base domain: ${baseDomain}`,
+      );
     }
   }
 
@@ -363,7 +392,7 @@ export async function mapController(
     success: true as const,
     id: result.job_id,
     links: result.mapResults,
-    ...(warning && { warning }),
+    ...(warnings.length > 0 && { warning: warnings.join(" ") }),
   };
 
   return res.status(200).json(response);
