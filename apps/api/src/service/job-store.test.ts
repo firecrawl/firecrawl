@@ -180,13 +180,26 @@ describe("queueJobStore", () => {
       data: { mode: "crawl", team_id: TEAM_ID },
     });
     expect(await store.owner(JOB_ID, "scrape")).toBeNull();
+
+    mocks.getJob.mockResolvedValueOnce({
+      id: JOB_ID,
+      status: "completed",
+      ownerId: TEAM_ID,
+      data: { team_id: TEAM_ID },
+    });
+    expect(await store.owner(JOB_ID, "scrape")).toBeNull();
   });
 
   it("reads crawl and batchScrape ownership from the stored crawl record", async () => {
     const store = queueJobStore();
-    mocks.getCrawl.mockResolvedValueOnce({ team_id: TEAM_ID });
+    mocks.getCrawl
+      .mockResolvedValueOnce({ team_id: TEAM_ID })
+      .mockResolvedValueOnce({ team_id: TEAM_ID });
 
     expect(await store.owner(JOB_ID, "crawl")).toEqual({ teamId: TEAM_ID });
+    expect(await store.owner(JOB_ID, "batchScrape")).toEqual({
+      teamId: TEAM_ID,
+    });
     expect(await store.owner(JOB_ID, "batchScrape")).toBeNull();
   });
 
@@ -219,6 +232,15 @@ describe("queueJobStore", () => {
       error: "timeout",
       completedAtMs: finishedAt.valueOf(),
     });
+
+    mocks.getJob.mockResolvedValueOnce({
+      id: JOB_ID,
+      status: "completed",
+      finishedAt,
+      data: {},
+      returnvalue: { markdown: "no-mode" },
+    });
+    expect(await store.read(JOB_ID, "scrape")).toBeNull();
 
     mocks.getJob.mockResolvedValueOnce({
       id: JOB_ID,

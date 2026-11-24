@@ -1,9 +1,7 @@
 const mocks = vi.hoisted(() => ({
   config: {
-    FIRE_ENGINE_BETA_URL: "https://fire-engine.test" as string | undefined,
     SEARXNG_ENDPOINT: undefined as string | undefined,
   },
-  fireEngineSearch: vi.fn(),
   searxngSearch: vi.fn(),
   ddgSearch: vi.fn(),
   searchV2: vi.fn(),
@@ -12,7 +10,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../config", () => ({
   config: mocks.config,
 }));
-vi.mock("./fireEngine", () => ({ fire_engine_search: mocks.fireEngineSearch }));
 vi.mock("./searxng", () => ({ searxng_search: mocks.searxngSearch }));
 vi.mock("./v2/ddgsearch", () => ({ ddgSearch: mocks.ddgSearch }));
 vi.mock("./v2", () => ({ search: mocks.searchV2 }));
@@ -47,7 +44,6 @@ function installSearchService(
 }
 
 beforeEach(() => {
-  mocks.config.FIRE_ENGINE_BETA_URL = "https://fire-engine.test";
   mocks.config.SEARXNG_ENDPOINT = undefined;
   installSearchService();
 });
@@ -80,7 +76,8 @@ describe("legacy search", () => {
         enterprise: [kind],
       });
 
-      expect(mocks.fireEngineSearch).not.toHaveBeenCalled();
+      expect(mocks.searxngSearch).not.toHaveBeenCalled();
+      expect(mocks.ddgSearch).not.toHaveBeenCalled();
       expect(mocks.searchV2).toHaveBeenCalledTimes(1);
       expect(mocks.searchV2.mock.calls[0][0]).toMatchObject({
         query: "example",
@@ -107,22 +104,35 @@ describe("legacy search", () => {
     });
 
     expect(results).toEqual([]);
-    expect(mocks.fireEngineSearch).not.toHaveBeenCalled();
-  });
-
-  it("keeps the legacy route when no kind is forced", async () => {
-    mocks.fireEngineSearch.mockResolvedValue([]);
-
-    await search({ query: "example", logger, num_results: 5 });
-
-    expect(mocks.searchV2).not.toHaveBeenCalled();
-    expect(mocks.fireEngineSearch).toHaveBeenCalledTimes(1);
-    expect(mocks.fireEngineSearch.mock.calls[0][0]).toBe("example");
+    expect(mocks.searxngSearch).not.toHaveBeenCalled();
     expect(mocks.ddgSearch).not.toHaveBeenCalled();
   });
 
+  it("uses SearXNG before DuckDuckGo when SearXNG is configured and returns results", async () => {
+    mocks.config.SEARXNG_ENDPOINT = "http://searxng.test";
+    mocks.searxngSearch.mockResolvedValue([
+      {
+        url: "https://searxng.example.com/",
+        title: "SearXNG",
+        description: "Primary",
+      },
+    ]);
+
+    const results = await search({ query: "example", logger, num_results: 5 });
+
+    expect(mocks.searchV2).not.toHaveBeenCalled();
+    expect(mocks.searxngSearch).toHaveBeenCalledTimes(1);
+    expect(mocks.ddgSearch).not.toHaveBeenCalled();
+    expect(results).toEqual([
+      {
+        url: "https://searxng.example.com/",
+        title: "SearXNG",
+        description: "Primary",
+      },
+    ]);
+  });
+
   it("falls back from SearXNG to DuckDuckGo when SearXNG returns no results", async () => {
-    mocks.config.FIRE_ENGINE_BETA_URL = undefined;
     mocks.config.SEARXNG_ENDPOINT = "http://searxng.test";
     mocks.searxngSearch.mockResolvedValue([]);
     mocks.ddgSearch.mockResolvedValue({
@@ -149,11 +159,12 @@ describe("legacy search", () => {
   });
 
   it("refuses US-only legacy search when no US-only provider is enabled", async () => {
-    mocks.config.FIRE_ENGINE_BETA_URL = undefined;
+    mocks.config.SEARXNG_ENDPOINT = "http://searxng.test";
 
     await expect(
       search({ query: "example", logger, usOnly: true }),
     ).rejects.toThrow(UsOnlyUnavailableError);
+    expect(mocks.searxngSearch).not.toHaveBeenCalled();
     expect(mocks.ddgSearch).not.toHaveBeenCalled();
   });
 
@@ -174,7 +185,8 @@ describe("legacy search", () => {
     );
   });
 
-  it("routes legacy search through custom extension providers by priority", async () => {
+  it("routes legacy search through custom extension providers by priority without falling back on a non-null response", async () => {
+    mocks.config.SEARXNG_ENDPOINT = "http://searxng.test";
     const customSearch = vi.fn(async () => ({
       web: [
         {
@@ -191,7 +203,7 @@ describe("legacy search", () => {
         searchProviders: [
           {
             name: "custom-search" as SearchProvider["name"],
-            priority: 200,
+            priority: 100,
             enabled: () => true,
             search: customSearch,
           },
@@ -208,12 +220,64 @@ describe("legacy search", () => {
         legacy: true,
       }),
     );
-    expect(mocks.fireEngineSearch).not.toHaveBeenCalled();
+    expect(mocks.searxngSearch).not.toHaveBeenCalled();
+    expect(mocks.ddgSearch).not.toHaveBeenCalled();
     expect(results).toEqual([
       {
         url: "https://custom.example.com/",
         title: "Custom",
         description: "Override",
+      },
+    ]);
+  });
+
+  it("routes US-only legacy search to an enabled extension provider with supportsUsOnly", async () => {
+    const usProvider = vi.fn(async () => ({
+      web: [
+        {
+          url: "https://us.example.com/",
+          title: "US",
+          description: "Restricted",
+        },
+      ],
+    }));
+
+    installSearchService([
+      {
+        name: "custom",
+        searchProviders: [
+          {
+            name: "us-search" as SearchProvider["name"],
+            priority: 100,
+            supportsUsOnly: true,
+            enabled: () => true,
+            search: usProvider,
+          },
+        ],
+      },
+    ]);
+
+    const results = await search({
+      query: "example",
+      logger,
+      num_results: 4,
+      usOnly: true,
+    });
+
+    expect(usProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "example",
+        numResults: 4,
+        usOnly: true,
+        legacy: true,
+      }),
+    );
+    expect(mocks.ddgSearch).not.toHaveBeenCalled();
+    expect(results).toEqual([
+      {
+        url: "https://us.example.com/",
+        title: "US",
+        description: "Restricted",
       },
     ]);
   });

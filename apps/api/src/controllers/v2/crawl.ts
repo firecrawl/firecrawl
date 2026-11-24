@@ -370,7 +370,7 @@ export async function crawlController(
       estimatedJobs: finalCrawlerOptions.limit,
     })
     .catch(error => {
-      logger.warn("Failed to register crawl job", {
+      logger.error("Failed to register crawl job", {
         error,
         estimatedJobs: finalCrawlerOptions.limit,
       });

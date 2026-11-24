@@ -99,6 +99,7 @@ describe("createService", () => {
     expect(Object.isFrozen(built.engines)).toBe(true);
     expect(Object.isFrozen(built.searchProviders)).toBe(true);
     expect(Object.isFrozen(built.llmProviders)).toBe(true);
+    expect(Object.isFrozen(built.schemas)).toBe(true);
     expect(Object.isFrozen(built.workers)).toBe(true);
   });
 
@@ -403,7 +404,7 @@ describe("describe", () => {
     expect(enabled).not.toHaveBeenCalled();
     expect(description).toEqual({
       extensions: ["core", "second", "third"],
-      modules: ["jobStore", "messages", "uploads"],
+      modules: ["idempotency", "jobStore", "messages", "uploads", "webhooks"],
       hooks: {
         "map.finished": ["second"],
         "process.stop": ["third", "second", "second", "core"],
@@ -422,6 +423,16 @@ describe("describe", () => {
         zebra: { owner: "second", priority: 80 },
       },
       llmProviders: { alpha: "core", openai: "second", zebra: "second" },
+      request: {
+        scrapeOptions: {},
+        scrape: {},
+        parse: {},
+        crawl: {},
+        map: {},
+        search: {},
+        formats: {},
+        rules: [],
+      },
       roles: { api: "second", "queue-worker": "core", zebra: "second" },
       env: {},
     });
@@ -535,13 +546,23 @@ describe("describe", () => {
     ]);
     expect(built.describe()).toEqual({
       extensions: ["core", "mine"],
-      modules: ["jobStore", "messages", "uploads"],
+      modules: ["idempotency", "jobStore", "messages", "uploads", "webhooks"],
       hooks: { "map.finished": ["mine"] },
       errors: { MINE: "mine" },
       engines: { "mine-engine": "mine" },
       engineFeatures: { mineFlag: { owner: "mine", priority: 40 } },
       searchProviders: { "mine-search": { owner: "mine", priority: 60 } },
       llmProviders: { "mine-provider": "mine" },
+      request: {
+        scrapeOptions: {},
+        scrape: {},
+        parse: {},
+        crawl: {},
+        map: {},
+        search: {},
+        formats: {},
+        rules: [],
+      },
       roles: { api: "mine" },
       env: {},
     });
@@ -623,17 +644,30 @@ describe("describe", () => {
     first.engineFeatures.waitFor.priority = 999;
     first.searchProviders.searxng.priority = 999;
     first.llmProviders.openai = "changed";
+    first.request.scrapeOptions.injected = "changed";
+    first.request.formats.injected = "changed";
+    first.request.rules.push("changed");
     first.roles.api = "changed";
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: ["jobStore", "messages", "uploads"],
+      modules: ["idempotency", "jobStore", "messages", "uploads", "webhooks"],
       hooks: { "map.finished": ["core"] },
       errors: { TIMEOUT: "core" },
       engines: { fetch: "core" },
       engineFeatures: { waitFor: { owner: "core", priority: 1 } },
       searchProviders: { searxng: { owner: "core", priority: 50 } },
       llmProviders: { openai: "core" },
+      request: {
+        scrapeOptions: {},
+        scrape: {},
+        parse: {},
+        crawl: {},
+        map: {},
+        search: {},
+        formats: {},
+        rules: [],
+      },
       roles: { api: "core" },
       env: {},
     });
@@ -648,6 +682,7 @@ describe("service", () => {
     expect(() => service.engines).toThrow("No service is installed");
     expect(() => service.searchProviders).toThrow("No service is installed");
     expect(() => service.llmProviders).toThrow("No service is installed");
+    expect(() => service.schemas).toThrow("No service is installed");
     expect(() => service.workers).toThrow("No service is installed");
     expect(() => service.describe()).toThrow("No service is installed");
   });
@@ -665,6 +700,7 @@ describe("service", () => {
     expect(service.engines).toBe(built.engines);
     expect(service.searchProviders).toBe(built.searchProviders);
     expect(service.llmProviders).toBe(built.llmProviders);
+    expect(service.schemas).toBe(built.schemas);
     expect(service.workers).toBe(built.workers);
     expect(service.describe()).toEqual(built.describe());
   });

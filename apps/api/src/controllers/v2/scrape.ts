@@ -333,7 +333,7 @@ export async function scrapeController(
               clientOrigin: req.body.origin ?? "api",
             })
             .catch(err =>
-              logger.warn("Background job registration failed", {
+              logger.error("Background job registration failed", {
                 error: err,
                 jobId,
               }),

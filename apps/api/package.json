@@ -28,6 +28,14 @@
       "types": "./src/lib/browser-options.ts",
       "default": "./dist/src/lib/browser-options.js"
     },
+    "./unstable/db": {
+      "types": "./src/db/connection.ts",
+      "default": "./dist/src/db/connection.js"
+    },
+    "./unstable/db-schema": {
+      "types": "./src/db/schema/index.ts",
+      "default": "./dist/src/db/schema/index.js"
+    },
     "./unstable/gcs-jobs": {
       "types": "./src/lib/gcs-jobs.ts",
       "default": "./dist/src/lib/gcs-jobs.js"
@@ -51,6 +59,10 @@
     "./unstable/operational-job-access": {
       "types": "./src/lib/operational-job-access.ts",
       "default": "./dist/src/lib/operational-job-access.js"
+    },
+    "./unstable/redis": {
+      "types": "./src/services/redis.ts",
+      "default": "./dist/src/services/redis.js"
     },
     "./unstable/request-credits-analytics": {
       "types": "./src/lib/request-credits-analytics.ts",

@@ -141,14 +141,28 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
   } else {
     const num_docs = await getDoneJobsOrderedLength(crawlId);
 
+    const FINALIZE_USAGE_RETRY_ATTEMPTS = 3;
+    const FINALIZE_USAGE_RETRY_MS = 500;
     let credits_billed: number | null = null;
 
-    try {
-      credits_billed = await service.modules.jobStore.usage(requestId, {
-        finalize: true,
-      });
-    } catch (error) {
-      logger.warn("Job store usage read failed", { error, requestId });
+    for (let attempt = 1; attempt <= FINALIZE_USAGE_RETRY_ATTEMPTS; attempt++) {
+      try {
+        credits_billed = await service.modules.jobStore.usage(requestId, {
+          finalize: true,
+        });
+        break;
+      } catch (error) {
+        logger.warn("Job store usage read failed", {
+          error,
+          requestId,
+          attempt,
+        });
+        if (attempt < FINALIZE_USAGE_RETRY_ATTEMPTS) {
+          await new Promise(resolve =>
+            setTimeout(resolve, FINALIZE_USAGE_RETRY_MS),
+          );
+        }
+      }
     }
 
     if (sc.crawlerOptions !== null) {

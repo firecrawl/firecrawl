@@ -873,21 +873,27 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       doc.metadata.creditsUsed = credits_billed ?? undefined;
 
       const requestId = job.data.requestId ?? job.data.crawl_id ?? job.id;
-      await service.modules.jobStore.record(
-        {
-          id: job.id,
-          kind: "scrape",
-          ctx,
-          requestId,
-          url: job.data.url,
-          options: job.data.scrapeOptions,
-          creditsBilled: credits_billed ?? 0,
-          timeTakenSeconds: timeTakenInSeconds,
-          skipNuq: job.data.skipNuq ?? false,
-          isParse: Boolean(job.data.internalOptions?.isParse),
-        },
-        { state: "completed", document: doc },
-      );
+      try {
+        await service.modules.jobStore.record(
+          {
+            id: job.id,
+            kind: "scrape",
+            ctx,
+            requestId,
+            url: job.data.url,
+            options: job.data.scrapeOptions,
+            creditsBilled: credits_billed ?? 0,
+            timeTakenSeconds: timeTakenInSeconds,
+            skipNuq: job.data.skipNuq ?? false,
+            isParse: Boolean(job.data.internalOptions?.isParse),
+          },
+          { state: "completed", document: doc },
+        );
+      } catch (error) {
+        logger.error("Failed to record completed scrape in job store", {
+          error,
+        });
+      }
 
       logger.debug("Logging job to DB...");
       await logScrape({
@@ -996,22 +1002,29 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       doc.metadata.creditsUsed = credits_billed ?? undefined;
 
       const requestId = job.data.requestId ?? job.data.crawl_id ?? job.id;
-      const recordPromise = service.modules.jobStore.record(
-        {
-          id: job.id,
-          kind: "scrape",
-          ctx,
-          requestId,
-          url: job.data.url,
-          options: job.data.scrapeOptions,
-          creditsBilled: credits_billed ?? 0,
-          timeTakenSeconds: timeTakenInSeconds,
-          skipNuq: job.data.skipNuq ?? false,
-          isParse: Boolean(job.data.internalOptions?.isParse),
-        },
-        { state: "completed", document: doc },
-      );
-      recordPromise.catch(() => {});
+      const recordOutcomePromise = service.modules.jobStore
+        .record(
+          {
+            id: job.id,
+            kind: "scrape",
+            ctx,
+            requestId,
+            url: job.data.url,
+            options: job.data.scrapeOptions,
+            creditsBilled: credits_billed ?? 0,
+            timeTakenSeconds: timeTakenInSeconds,
+            skipNuq: job.data.skipNuq ?? false,
+            isParse: Boolean(job.data.internalOptions?.isParse),
+          },
+          { state: "completed", document: doc },
+        )
+        .then(() => true)
+        .catch(error => {
+          logger.error("Failed to record completed scrape in job store", {
+            error,
+          });
+          return false;
+        });
 
       const logScrapePromise = logScrape({
         id: job.id,
@@ -1056,9 +1069,34 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         logScrapePromise.catch(err =>
           logger.warn("Background scrape log failed", { error: err }),
         );
-        await recordPromise;
+        const SCRAPE_STATE_BARRIER_MS = 2_000;
+        let barrierTimer: ReturnType<typeof setTimeout> | undefined;
+        let recorded = false;
+        try {
+          recorded = await Promise.race([
+            recordOutcomePromise,
+            new Promise<false>(resolve => {
+              barrierTimer = setTimeout(
+                () => resolve(false),
+                SCRAPE_STATE_BARRIER_MS,
+              );
+            }),
+          ]);
+        } finally {
+          if (barrierTimer !== undefined) {
+            clearTimeout(barrierTimer);
+          }
+        }
+        if (!recorded) {
+          logger.warn(
+            "Sync scrape answered without a readable terminal state",
+            {
+              scrapeId: job.id,
+            },
+          );
+        }
       } else {
-        await Promise.all([recordPromise, logScrapePromise]);
+        await Promise.all([recordOutcomePromise, logScrapePromise]);
       }
     }
 
@@ -1244,21 +1282,27 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         ? error
         : (error.message ?? "Something went wrong... Contact help@mendable.ai");
 
-    await service.modules.jobStore.record(
-      {
-        id: job.id,
-        kind: "scrape",
-        ctx,
-        requestId,
-        url: job.data.url,
-        options: job.data.scrapeOptions,
-        creditsBilled: credits_billed ?? 0,
-        timeTakenSeconds: timeTakenInSeconds,
-        skipNuq: job.data.skipNuq ?? false,
-        isParse: Boolean(job.data.internalOptions?.isParse),
-      },
-      { state: "failed", error: errorMessage },
-    );
+    try {
+      await service.modules.jobStore.record(
+        {
+          id: job.id,
+          kind: "scrape",
+          ctx,
+          requestId,
+          url: job.data.url,
+          options: job.data.scrapeOptions,
+          creditsBilled: credits_billed ?? 0,
+          timeTakenSeconds: timeTakenInSeconds,
+          skipNuq: job.data.skipNuq ?? false,
+          isParse: Boolean(job.data.internalOptions?.isParse),
+        },
+        { state: "failed", error: errorMessage },
+      );
+    } catch (recordError) {
+      logger.error("Failed to record failed scrape in job store", {
+        error: recordError,
+      });
+    }
 
     logger.debug("Logging job to DB...");
     await logScrape({

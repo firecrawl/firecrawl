@@ -470,7 +470,7 @@ export async function batchScrapeController(
         estimatedJobs: urls.length,
       })
       .catch(error => {
-        logger.warn("Failed to register batch scrape job", {
+        logger.error("Failed to register batch scrape job", {
           error,
           estimatedJobs: urls.length,
         });
@@ -503,7 +503,7 @@ export async function batchScrapeController(
           estimatedJobs: 0,
         })
         .catch(error => {
-          logger.warn("Failed to initialize request usage tracking", {
+          logger.error("Failed to initialize request usage tracking", {
             error,
             requestId: agentRequestId,
           });
@@ -518,7 +518,7 @@ export async function batchScrapeController(
         estimatedJobs: urls.length,
       })
       .catch(error => {
-        logger.warn("Failed to initialize request usage tracking", {
+        logger.error("Failed to initialize request usage tracking", {
           error,
           estimatedJobs: urls.length,
         });
