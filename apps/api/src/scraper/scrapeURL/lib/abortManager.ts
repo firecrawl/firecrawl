@@ -35,6 +35,17 @@ export class AbortManager {
   }
 
   private register(abort: AbortInstance) {
+    if (abort.signal.aborted) {
+      if (!this.mappedController || this.mappedController.signal.aborted) {
+        return;
+      }
+      const inner = this.resolveInner(abort);
+      this.mappedController.abort(
+        new AbortManagerThrownError(abort.tier, inner),
+      );
+      return;
+    }
+
     const handler = () => {
       if (!this.mappedController) return;
 
