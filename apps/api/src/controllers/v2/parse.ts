@@ -5,12 +5,12 @@ import { logger as _logger } from "../../lib/logger";
 import {
   Document,
   FormatObject,
+  getV2RequestSchemas,
   ParseRequest,
   RequestWithAuth,
   ScrapeResponse,
   UploadedParseFile,
   UploadedParseFileKind,
-  parseRequestSchema,
 } from "./types";
 import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
@@ -139,7 +139,9 @@ function getSyntheticFilename(file: UploadedParseFile): string {
   return `${file.filename}.html`;
 }
 
-function getParseForceEngine(kind: UploadedParseFileKind): EngineName {
+function getParseForceEngine(
+  kind: UploadedParseFileKind,
+): EngineName | undefined {
   if (kind === "pdf") {
     return "pdf";
   }
@@ -149,10 +151,9 @@ function getParseForceEngine(kind: UploadedParseFileKind): EngineName {
   }
 
   if (kind === "image") {
-    const imageEngine = installedService()?.engines.get("image");
-    if (imageEngine) {
-      return imageEngine.name;
-    }
+    return installedService()
+      ?.engines.enabled()
+      .find(engine => engine.features.image === true && !engine.cache)?.name;
   }
 
   return "fetch";
@@ -328,7 +329,7 @@ export async function parseController(
       });
 
       await withSpan("api.parse.validate", async validateSpan => {
-        req.body = parseRequestSchema.parse(req.body);
+        req.body = getV2RequestSchemas().parse.parse(req.body);
         setSpanAttributes(validateSpan, {
           "validation.success": true,
         });
@@ -344,6 +345,20 @@ export async function parseController(
           success: false,
           code: "PARSE_UNSUPPORTED_OPTIONS",
           error: unsupportedOptionError,
+        });
+      }
+
+      const forceEngine = getParseForceEngine(req.body.file.kind!);
+      if (!forceEngine) {
+        const unsupportedFileError = `Unsupported upload type. Supported file extensions: ${getSupportedParseFileTypes(false)}`;
+        setSpanAttributes(span, {
+          "parse.status_code": 400,
+          "parse.error": unsupportedFileError,
+        });
+        return res.status(400).json({
+          success: false,
+          code: "UNSUPPORTED_FILE_TYPE",
+          error: unsupportedFileError,
         });
       }
 
@@ -535,7 +550,6 @@ export async function parseController(
             const { file, ...parseOptions } = req.body;
             const syntheticFilename = getSyntheticFilename(file);
             const syntheticUrl = `https://parse.firecrawl.dev/uploads/${encodeURIComponent(syntheticFilename)}`;
-            const forceEngine = getParseForceEngine(file.kind!);
 
             const doc = await withSpan(
               "api.parse.wait_for_job",
@@ -622,6 +636,8 @@ export async function parseController(
           "parse.error_type": isTransportableError(e) ? e.code : "unknown",
         });
 
+        const jobIdField = agentRequestId ? {} : { jobId };
+
         if (isTransportableError(e)) {
           if (!timeoutErr) {
             logger.error("Error in parseController", {
@@ -640,6 +656,7 @@ export async function parseController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -651,6 +668,7 @@ export async function parseController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -662,6 +680,7 @@ export async function parseController(
             success: false,
             code: e.code,
             error: e.message,
+            ...jobIdField,
           });
         } else {
           const id = uuidv7();
@@ -680,6 +699,7 @@ export async function parseController(
             success: false,
             code: "UNKNOWN_ERROR",
             error: service.modules.messages.errorContact(id),
+            ...jobIdField,
           });
         }
       } finally {

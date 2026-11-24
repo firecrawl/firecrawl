@@ -645,6 +645,11 @@ export type InternalOptions = {
 
   priority?: number; // Passed along to fire-engine
   forceEngine?: Engine | Engine[];
+  /**
+   * Sitemap fetch strategy hint for `scrape.engines.select` hooks when
+   * `teamId === "sitemap"`: `"direct"` for plain HTTP fetch, `"http"` for
+   * lightweight HTTP clients, or `"full"` to allow browser fallback.
+   */
   sitemapFetch?: "direct" | "http" | "full";
   atsv?: boolean; // anti-bot solver, beta
 
@@ -1054,44 +1059,50 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               handledByFallbackHook = nextPlan.continueWaterfall === true;
             }
 
-            if (!handledByFallbackHook) {
-              if (error.error instanceof EngineError) {
-                meta.logger.warn(error.error.formatEngineLog(error.engine), {
-                  error: error.error,
-                });
-              } else if (error.error instanceof EngineUnsuccessfulError) {
-                // Deliberately silent. An engine declining the page is a normal
-                // waterfall outcome and is already recorded elsewhere: the
-                // success-factor check logs "deemed unsuccessful" with its reasoning,
-                // and engines that recognise the body as none of their business
-                // (pdf/document finding HTML) are preceded by "Scraping via X...".
-                // Logging again only duplicated that, ~48k lines/hour across all
-                // engines. Recognised here purely so it doesn't fall through to the
-                // catch-all branch and get reported as an unexpected error.
-              } else if (endsEngineLoop(error.error)) {
+            if (error.error instanceof EngineError) {
+              meta.logger.warn(error.error.formatEngineLog(error.engine), {
+                error: error.error,
+              });
+            } else if (error.error instanceof EngineUnsuccessfulError) {
+              // Deliberately silent. An engine declining the page is a normal
+              // waterfall outcome and is already recorded elsewhere: the
+              // success-factor check logs "deemed unsuccessful" with its reasoning,
+              // and engines that recognise the body as none of their business
+              // (pdf/document finding HTML) are preceded by "Scraping via X...".
+              // Logging again only duplicated that, ~48k lines/hour across all
+              // engines. Recognised here purely so it doesn't fall through to the
+              // catch-all branch and get reported as an unexpected error.
+            } else if (endsEngineLoop(error.error)) {
+              if (!handledByFallbackHook) {
                 throw error.error;
-              } else if (error.error instanceof LLMRefusalError) {
-                meta.logger.warn("LLM refusal encountered", {
-                  error: error.error,
-                });
-                throw error.error;
-              } else if (error.error instanceof AbortManagerThrownError) {
-                if (error.error.tier === "engine") {
-                  meta.logger.warn(
-                    "Engine " + error.engine + " timed out while scraping.",
-                    { error: error.error },
-                  );
-                } else {
-                  throw error.error;
-                }
-              } else {
-                meta.logger.warn(
-                  "An unexpected error happened while scraping with " +
-                    error.engine +
-                    ".",
-                  { error },
-                );
               }
+              meta.logger.warn(
+                "Engine " +
+                  error.engine +
+                  " failed with terminal error; continuing waterfall per fallback hook.",
+                { error: error.error },
+              );
+            } else if (error.error instanceof LLMRefusalError) {
+              meta.logger.warn("LLM refusal encountered", {
+                error: error.error,
+              });
+              throw error.error;
+            } else if (error.error instanceof AbortManagerThrownError) {
+              if (error.error.tier === "engine") {
+                meta.logger.warn(
+                  "Engine " + error.engine + " timed out while scraping.",
+                  { error: error.error },
+                );
+              } else {
+                throw error.error;
+              }
+            } else {
+              meta.logger.warn(
+                "An unexpected error happened while scraping with " +
+                  error.engine +
+                  ".",
+                { error },
+              );
             }
 
             // Filter out the failed engine
@@ -1294,8 +1305,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         contentType: engineResult.contentType,
         timezone: engineResult.timezone,
         proxyUsed: engineResult.proxyUsed ?? "basic",
-        ...(fallbackList.some(
-          x => service.engines.get(x.engine)?.cache === true,
+        ...(enginesAttempted.some(
+          engine => service.engines.get(engine)?.cache === true,
         )
           ? engineResult.cacheInfo
             ? {

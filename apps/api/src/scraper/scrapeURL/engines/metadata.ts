@@ -19,6 +19,7 @@ export interface CoreEngineSpec<N extends EngineName = EngineName> {
   readonly method: string;
   readonly explicitOnly?: boolean;
   readonly cache?: boolean;
+  readonly fileOnly?: boolean;
   readonly supportsProfile?: boolean;
   readonly prefetchesFiles?: boolean;
   readonly allowEmptyContent?: boolean;
@@ -81,11 +82,12 @@ const coreEngineSpecsList = [
   {
     name: "pdf",
     quality: -20,
+    fileOnly: true,
     features: {
       pdf: true,
       skipTlsVerification: true,
       useFastMode: true,
-      stealthProxy: true,
+      stealthProxy: true, // kinda...
       disableAdblock: true,
     },
     method: "scrapePDF",
@@ -93,11 +95,12 @@ const coreEngineSpecsList = [
   {
     name: "document",
     quality: -20,
+    fileOnly: true,
     features: {
       document: true,
       skipTlsVerification: true,
       useFastMode: true,
-      stealthProxy: true,
+      stealthProxy: true, // kinda...
       disableAdblock: true,
     },
     method: "scrapeDocument",

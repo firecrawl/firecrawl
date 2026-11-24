@@ -83,11 +83,13 @@ export interface Engine {
   readonly explicitOnly?: boolean;
   /** When true, serves cached scrape results (lockdown, index-only, cache state). */
   readonly cache?: boolean;
+  /** When true, parses binary files only rather than fetching general HTML pages. */
+  readonly fileOnly?: boolean;
   /** When true, supports authenticated browser profiles. */
   readonly supportsProfile?: boolean;
   /** When true, can prefetch binary files via a browser handoff. */
   readonly prefetchesFiles?: boolean;
-  /** When true, a 2xx response with empty text is accepted as a complete document. */
+  /** When true, a 2xx or 304 response with empty text and no page error is accepted as a complete document. */
   readonly allowEmptyContent?: boolean;
 }
 

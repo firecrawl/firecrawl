@@ -5,7 +5,10 @@ import {
 } from "../../../controllers/v1/types";
 import { getMapResults } from "../../../controllers/v1/map";
 import { removeDuplicateUrls } from "../../validateUrl";
-import { isUrlBlocked } from "../../../scraper/WebScraper/utils/blocklist";
+import { requestContext } from "../../request-context";
+import { isLockdownZeroDataRetention } from "../../safe-mode";
+import { getScrapeZDR } from "../../zdr-helpers";
+import { service } from "../../../service";
 import { buildPreRerankPrompt, buildRefrasedPrompt } from "../build-prompts";
 import { rerankLinksWithLLM_F0 } from "./reranker-f0";
 import { extractConfig } from "../config";
@@ -84,11 +87,20 @@ export async function processUrl_F0(
 
   if (!options.url.includes("/*") && !options.allowExternalLinks) {
     if (
-      !isUrlBlocked(options.url, teamFlags, {
-        team_id: options.teamId,
-        org_id: options.orgId ?? null,
-        origin: options.origin ?? null,
-      })
+      !service.modules.blocklist.isBlocked(
+        options.url,
+        requestContext({
+          teamId: options.teamId,
+          zeroDataRetention:
+            getScrapeZDR(teamFlags ?? undefined) === "forced" ||
+            isLockdownZeroDataRetention(teamFlags, undefined),
+          flags: teamFlags,
+          orgId: options.orgId ?? null,
+        }),
+        {
+          origin: options.origin ?? null,
+        },
+      )
     ) {
       trace.usedInCompletion = true;
       return [options.url];

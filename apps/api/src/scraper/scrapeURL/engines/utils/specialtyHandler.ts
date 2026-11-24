@@ -12,6 +12,15 @@ import {
   sniffImageContentTypeFromBase64,
 } from "../../../../lib/image-formats";
 import type { ImageOcrGate } from "../../../../lib/image-ocr-gate";
+import { installedService } from "../../../../service/service";
+
+export function hasFilePrefetchEngine(): boolean {
+  return (
+    installedService()
+      ?.engines.enabled()
+      .some(engine => engine.prefetchesFiles === true) ?? false
+  );
+}
 
 export interface SpecialtyHandoffResponse {
   url?: string;
@@ -24,7 +33,7 @@ export interface SpecialtyHandoffResponse {
     gcs_uri?: string;
     sha256?: string;
     size_bytes?: number;
-  };
+  } | null;
 }
 
 async function feResToFilePrefetch(

@@ -3,7 +3,8 @@ import { autumnService } from "../../services/autumn/autumn.service";
 import { authenticateUser } from "../auth";
 import { RateLimiterMode } from "../../../src/types";
 import { addScrapeJob } from "../../../src/services/queue-jobs";
-import { isUrlBlocked } from "../../../src/scraper/WebScraper/utils/blocklist";
+import { requestContext } from "../../lib/request-context";
+import { service } from "../../service";
 import {
   defaultCrawlPageOptions,
   defaultCrawlerOptions,
@@ -44,6 +45,7 @@ import {
 } from "../../lib/threat-protection/request";
 import {
   getSafeMode,
+  isLockdownZeroDataRetention,
   SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
@@ -201,11 +203,20 @@ export async function crawlController(req: Request, res: Response) {
     }
 
     if (
-      isUrlBlocked(url, auth.chunk?.flags ?? null, {
-        team_id: auth.chunk?.team_id ?? team_id,
-        org_id: auth.chunk?.org_id ?? null,
-        origin: req.body?.origin ?? null,
-      })
+      service.modules.blocklist.isBlocked(
+        url,
+        requestContext({
+          teamId: auth.chunk?.team_id ?? team_id,
+          zeroDataRetention:
+            getScrapeZDR(auth.chunk?.flags) === "forced" ||
+            isLockdownZeroDataRetention(auth.chunk?.flags, undefined),
+          flags: auth.chunk?.flags ?? null,
+          orgId: auth.chunk?.org_id ?? null,
+        }),
+        {
+          origin: req.body?.origin ?? null,
+        },
+      )
     ) {
       return res.status(403).json({
         error: UNSUPPORTED_SITE_MESSAGE,

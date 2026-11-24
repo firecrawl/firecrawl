@@ -18,28 +18,14 @@ import type { RequestContext } from "./request-context";
 export interface LlmProviders {
   openai: true;
   ollama: true;
-  anthropic: true;
-  groq: true;
-  google: true;
-  openrouter: true;
-  fireworks: true;
-  deepinfra: true;
-  vertex: true;
 }
 
 export type LlmProviderName = keyof LlmProviders;
 
-const builtInLlmProviders: Record<LlmProviderName, true> = {
+const builtInLlmProviders = {
   openai: true,
   ollama: true,
-  anthropic: true,
-  groq: true,
-  google: true,
-  openrouter: true,
-  fireworks: true,
-  deepinfra: true,
-  vertex: true,
-};
+} as const satisfies Partial<Record<LlmProviderName, true>>;
 
 /** Built-in LLM provider names, in registration order. */
 export const coreLlmProviderNames: readonly LlmProviderName[] = Object.freeze(

@@ -94,7 +94,6 @@ const outsideCoreSuite = [
   "src/lib/tracking.test.ts",
   "src/lib/us-only.test.ts",
   "src/lib/zdr*.test.ts",
-  "src/scraper/WebScraper/utils/blocklist*.test.ts",
   "src/scraper/scrapeURL/engines/pdf/__tests__/fireEngineHandoff.test.ts",
   "src/scraper/scrapeURL/engines/pdf/__tests__/firePDF*.test.ts",
   "src/scraper/scrapeURL/engines/pdf/__tests__/parseFirePdfRouting.test.ts",

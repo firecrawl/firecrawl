@@ -28,6 +28,7 @@ import {
   NoCachedDataError,
 } from "../error";
 import type { ExchangeScrapeMetadata } from "../../../lib/exchange";
+import { hasCustomRequestContext } from "../lib/request-context";
 import { service } from "../../../service";
 import type {
   Engine as RegisteredEngine,
@@ -142,6 +143,7 @@ export const coreEngines: readonly RegisteredEngine[] = coreEngineSpecs.map(
       features: spec.features,
       ...(spec.explicitOnly ? { explicitOnly: true } : {}),
       ...(spec.cache ? { cache: true } : {}),
+      ...(spec.fileOnly ? { fileOnly: true } : {}),
       ...(spec.supportsProfile ? { supportsProfile: true } : {}),
       ...(spec.prefetchesFiles ? { prefetchesFiles: true } : {}),
       ...(spec.allowEmptyContent ? { allowEmptyContent: true } : {}),
@@ -158,9 +160,32 @@ const hasFeature = (
 ): boolean => Object.hasOwn(features, flag) && features[flag] === true;
 
 const isFileOnlyEngine = (registered: RegisteredEngine): boolean =>
-  hasFeature(registered.features, "pdf") ||
-  hasFeature(registered.features, "document") ||
-  hasFeature(registered.features, "image");
+  registered.fileOnly === true;
+
+function shouldAllowCacheEngines(meta: Meta): boolean {
+  if (meta.internalOptions.isParse) {
+    return false;
+  }
+
+  const screenshotFormat = hasFormatOfType(meta.options.formats, "screenshot");
+  const hasCustomScreenshotSettings =
+    screenshotFormat?.viewport !== undefined ||
+    screenshotFormat?.quality !== undefined;
+
+  return (
+    !hasFormatOfType(meta.options.formats, "changeTracking") &&
+    !hasFormatOfType(meta.options.formats, "branding") &&
+    !getPDFPageMarkdown(meta.options.parsers) &&
+    !getPDFBlocks(meta.options.parsers) &&
+    !getPDFPageMarkers(meta.options.parsers) &&
+    !hasCustomScreenshotSettings &&
+    meta.options.maxAge !== 0 &&
+    !(
+      config.INDEX_SKIP_ON_PDF_REFRESH && getPDFRefresh(meta.options.parsers)
+    ) &&
+    !hasCustomRequestContext(meta.options)
+  );
+}
 
 const requireEngine = (engine: Engine): RegisteredEngine => {
   const registered = service.engines.get(engine);
@@ -286,9 +311,12 @@ export async function buildFallbackList(
   });
 
   if (meta.featureFlags.has("branding")) {
-    const hasBrandingEngine = selected.some(
-      f => !f.unsupportedFeatures.has("branding"),
-    );
+    const hasBrandingEngine = selected.some(entry => {
+      const registered = service.engines.get(entry.engine);
+      return (
+        registered !== undefined && hasFeature(registered.features, "branding")
+      );
+    });
     if (!hasBrandingEngine) {
       if (meta.featureFlags.has("pdf")) {
         throw new BrandingNotSupportedError(
@@ -304,7 +332,7 @@ export async function buildFallbackList(
         );
       }
       throw new BrandingNotSupportedError(
-        "Branding extraction requires Chrome CDP (fire-engine).",
+        "Branding extraction requires an engine that supports the branding feature.",
       );
     }
   }
@@ -353,6 +381,12 @@ async function selectFallbackList(meta: Meta): Promise<FallbackEngineEntry[]> {
     _engines.length = 0;
     _engines.push(...cacheEngines);
     meta.internalOptions.forceEngine = cacheEngines;
+  } else if (!shouldAllowCacheEngines(meta)) {
+    for (let i = _engines.length - 1; i >= 0; i--) {
+      if (service.engines.get(_engines[i])?.cache === true) {
+        _engines.splice(i, 1);
+      }
+    }
   }
 
   if (!isWikimediaUrl(meta.rewrittenUrl ?? meta.url)) {

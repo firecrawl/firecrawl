@@ -11,15 +11,13 @@ const mocks = vi.hoisted(() => ({
   exchangeRequest: vi.fn(),
 }));
 
-vi.mock("../../../scraper/WebScraper/utils/blocklist", () => ({
-  isUrlBlocked: mocks.isUrlBlocked,
-}));
 vi.mock("../../../services/alexandria/client", () => ({
   exchangeRequest: mocks.exchangeRequest,
 }));
 
 describe("Exchange routing", () => {
   let scrapeBlocklistMiddleware: typeof import("../../../routes/shared.js").scrapeBlocklistMiddleware;
+  let replaceService: typeof import("../../../service/service.js").replaceService;
   let exchange: typeof import("../../../lib/exchange.js");
   let config: typeof import("../../../config.js").config;
   let originalUseDbAuthentication: boolean | undefined;
@@ -47,6 +45,32 @@ describe("Exchange routing", () => {
 
     // Re-import so modules read the env vars set above at eval time.
     vi.resetModules();
+    const enginesModule = await import(
+      "../../../scraper/scrapeURL/engines/index.js"
+    );
+    const serviceModule = await import("../../../service/service.js");
+    const defaultsModule = await import("../../../service/defaults.js");
+    replaceService = serviceModule.replaceService;
+    replaceService(
+      serviceModule.createService(
+        {
+          modules: {
+            blocklist: {
+              ...defaultsModule.noBlocklist(),
+              isBlocked: mocks.isUrlBlocked,
+            },
+          },
+        },
+        {
+          core: {
+            name: "core",
+            engines: enginesModule.coreEngines,
+            engineFeatures: enginesModule.coreEngineFeatures,
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
     ({ scrapeBlocklistMiddleware } = await import("../../../routes/shared.js"));
     exchange = await import("../../../lib/exchange.js");
     ({ config } = await import("../../../config.js"));
@@ -73,6 +97,7 @@ describe("Exchange routing", () => {
   });
 
   afterAll(() => {
+    replaceService(undefined);
     if (originalExchangeUrl === undefined) {
       delete process.env.FIRE_EXCHANGE_URL;
     } else {

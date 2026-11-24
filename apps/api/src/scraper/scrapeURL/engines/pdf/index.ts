@@ -48,7 +48,7 @@ import {
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { isUsOnly } from "../../../../lib/us-only";
 import { isProcessingRestricted } from "../../../../lib/reserved-capacity";
-import { installedService } from "../../../../service/service";
+import { hasFilePrefetchEngine } from "../utils/specialtyHandler";
 import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
 import { shouldRetryFirePdf } from "./fire-pdf/retry";
@@ -125,12 +125,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   // self-hosted deployments (no fire-engine) the direct download stays the
   // primary path. Ordinary pages (no "pdf" flag) keep declining via
   // EngineUnsuccessfulError so the waterfall just moves on.
-  const hasFilePrefetchEngine =
-    installedService()
-      ?.engines.enabled()
-      .some(engine => engine.prefetchesFiles === true) ?? false;
   if (
-    hasFilePrefetchEngine &&
+    hasFilePrefetchEngine() &&
     meta.internalOptions.forceEngine === undefined &&
     meta.pdfPrefetch == null
   ) {

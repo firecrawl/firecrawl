@@ -13,6 +13,7 @@ export {
   directWebhooks,
   logsMessages,
   memoryUploads,
+  noBlocklist,
   redisIdempotency,
 } from "./defaults";
 export type {
@@ -76,6 +77,8 @@ export type {
   LlmProviders,
 } from "./llm-providers";
 export type {
+  BlocklistCheckOptions,
+  BlocklistModule,
   DirectUploadInput,
   DirectUploadResult,
   FetchProxyFileKind,
@@ -108,6 +111,8 @@ export {
   requestKinds,
 } from "./request";
 export type {
+  BatchScrapeRequest,
+  BatchScrapeRequestFields,
   CrawlRequest,
   CrawlRequestFields,
   DescribedRequestSchemas,

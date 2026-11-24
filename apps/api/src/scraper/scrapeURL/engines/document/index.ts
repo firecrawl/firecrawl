@@ -18,18 +18,14 @@ import {
   documentExtensionFromUrlPath,
 } from "../../../../lib/document-formats";
 import { readFile, unlink } from "node:fs/promises";
-import { installedService } from "../../../../service/service";
+import { hasFilePrefetchEngine } from "../utils/specialtyHandler";
 
 export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
   // When an enabled engine prefetches files via browser handoff, this engine
   // parses prefetched files instead of downloading directly (except under an
   // explicit forceEngine pin).
-  const hasFilePrefetchEngine =
-    installedService()
-      ?.engines.enabled()
-      .some(engine => engine.prefetchesFiles === true) ?? false;
   if (
-    hasFilePrefetchEngine &&
+    hasFilePrefetchEngine() &&
     meta.internalOptions.forceEngine === undefined &&
     meta.documentPrefetch == null
   ) {

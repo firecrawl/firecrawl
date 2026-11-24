@@ -14,7 +14,6 @@
 import type { Logger } from "winston";
 import type { Document } from "../controllers/v2/types";
 import type { ErrorCode } from "../lib/error";
-import type { Meta } from "../scraper/scrapeURL";
 import type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 import type { EngineFeatureName, EngineName } from "./engines";
 import type { RequestContext } from "./request-context";
@@ -53,8 +52,6 @@ export interface ScrapeMeta {
   state: ScrapeState;
   logger: Logger;
   abort: AbortSignal;
-  /** Live pipeline context for extensions that inspect or update scrape metadata. */
-  readonly scrapeMeta?: Meta;
 }
 
 /** Mutable options and required engine features for a scrape attempt. */
@@ -187,6 +184,12 @@ export interface HookPoints {
   "scrape.fetched": Transform<EngineScrapeResult, ScrapeMeta>;
   "scrape.html.clean": Transform<HtmlCleaning, ScrapeMeta>;
   "scrape.document.markdown": Transform<Document, ScrapeMeta>;
+  /**
+   * Runs after standard document derivation (markdown and metadata) completes.
+   * Internal sitemap fetches (`ctx.teamId === "sitemap"`) skip HTML/markdown
+   * derivation and invoke this hook with only `rawHtml` and `metadata.scrapeId`
+   * populated.
+   */
   "scrape.document.derived": Transform<Document, ScrapeMeta>;
   "scrape.document.extracted": Transform<Document, ScrapeMeta>;
   "scrape.document.final": Transform<Document, ScrapeMeta>;

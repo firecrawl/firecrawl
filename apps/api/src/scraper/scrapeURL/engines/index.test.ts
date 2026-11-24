@@ -16,16 +16,18 @@ import {
   type FeatureFlag,
 } from "./index";
 import { coreEngineSpecs } from "./metadata";
-
-vi.mock("../../WebScraper/utils/blocklist", () => ({
-  isUrlBlocked: vi.fn(() => false),
-}));
+import { getScrapeMeta } from "../metaContext";
+import { BrandingNotSupportedError } from "../error";
+import type { HookHandlers } from "../../../service/hooks";
 
 const makeMeta = (
   overrides: {
     url?: string;
     featureFlags?: FeatureFlag[];
     forceEngine?: Engine | Engine[];
+    maxAge?: number;
+    lockdown?: boolean;
+    formats?: Array<Record<string, unknown>>;
   } = {},
 ): Meta => {
   const logger = {
@@ -41,8 +43,11 @@ const makeMeta = (
     id: "test",
     url: overrides.url ?? "https://example.com",
     options: {
-      formats: [{ type: "markdown" }],
-      maxAge: 0,
+      formats: overrides.formats ?? [{ type: "markdown" }],
+      maxAge: overrides.maxAge ?? 0,
+      ...(overrides.lockdown !== undefined
+        ? { lockdown: overrides.lockdown }
+        : {}),
     },
     internalOptions: {
       teamId: "team-1",
@@ -67,6 +72,7 @@ const makeEngine = (
     maxReasonableTime?: RegisteredEngine["maxReasonableTime"];
     explicitOnly?: boolean;
     cache?: boolean;
+    fileOnly?: boolean;
     supportsProfile?: boolean;
     prefetchesFiles?: boolean;
     allowEmptyContent?: boolean;
@@ -88,6 +94,7 @@ const install = (
     name: string;
     engines?: readonly RegisteredEngine[];
     engineFeatures?: EngineFeatureMap;
+    hooks?: HookHandlers;
   }> = [],
 ) => {
   replaceService(
@@ -278,5 +285,78 @@ describe("engine registry integration", () => {
     expect(meta.logger.warn).toHaveBeenCalledWith("No MRT for engine", {
       engine: "fetch",
     });
+  });
+
+  it("gates cache-trait engines on fresh-scrape options outside lockdown", async () => {
+    install([
+      makeEngine("custom;cache", { quality: 1000, cache: true }),
+      makeEngine("fetch", { quality: 5 }),
+    ]);
+
+    const fresh = await buildFallbackList(makeMeta({ maxAge: 0 }));
+    expect(fresh.map(e => e.engine)).toEqual(["fetch"]);
+
+    const cached = await buildFallbackList(makeMeta({ maxAge: 60000 }));
+    expect(cached.map(e => e.engine)).toEqual(["custom;cache", "fetch"]);
+
+    const changeTracking = await buildFallbackList(
+      makeMeta({
+        maxAge: 60000,
+        formats: [{ type: "markdown" }, { type: "changeTracking" }],
+      }),
+    );
+    expect(changeTracking.map(e => e.engine)).toEqual(["fetch"]);
+
+    const lockedDown = await buildFallbackList(
+      makeMeta({ maxAge: 0, lockdown: true }),
+    );
+    expect(lockedDown.map(e => e.engine)).toEqual(["custom;cache"]);
+  });
+
+  it("uses fileOnly rather than pdf/document features when deciding stealth scoring", async () => {
+    install([
+      makeEngine("browser;basic", { quality: 50, features: {} }),
+      makeEngine("browser;stealth-hybrid", {
+        quality: 10,
+        features: { stealthProxy: true, pdf: true },
+      }),
+      makeEngine("pdf", {
+        quality: -20,
+        fileOnly: true,
+        features: { pdf: true, stealthProxy: true },
+      }),
+    ]);
+
+    const list = await buildFallbackList(
+      makeMeta({ featureFlags: ["stealthProxy"] }),
+    );
+    expect(list.map(e => e.engine)).toEqual(["browser;stealth-hybrid", "pdf"]);
+  });
+
+  it("keeps the branding capability gate active when suppressUnsupportedWarnings is set", async () => {
+    let seenMeta: Meta | undefined;
+    install([makeEngine("fetch", { quality: 5 })], coreEngineFeatures, [
+      {
+        name: "selector",
+        hooks: {
+          "scrape.engines.select": (plan, info) => {
+            seenMeta = getScrapeMeta(info);
+            return {
+              candidates: ["fetch"],
+              suppressUnsupportedWarnings: true,
+            };
+          },
+        },
+      },
+    ]);
+
+    const meta = makeMeta({
+      featureFlags: ["branding"],
+      formats: [{ type: "branding" }],
+    });
+    await expect(buildFallbackList(meta)).rejects.toBeInstanceOf(
+      BrandingNotSupportedError,
+    );
+    expect(seenMeta).toBe(meta);
   });
 });

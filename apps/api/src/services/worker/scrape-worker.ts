@@ -59,11 +59,19 @@ import { getACUCTeam } from "../../controllers/auth";
 import { orgIdForTeam } from "../../lib/team-org";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
-import { crawlContext, jobContext } from "../../lib/request-context";
+import {
+  crawlContext,
+  jobContext,
+  requestContext,
+} from "../../lib/request-context";
+import type { RequestContext } from "../../service/request-context";
+import { installedService } from "../../service/service";
 import { CostTracking } from "../../lib/cost-tracking";
 import { chargeKeylessCredits } from "../../lib/keyless";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
-import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
+import { isLockdownZeroDataRetention } from "../../lib/safe-mode";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { service } from "../../service";
 
 import { generateURLSplits, queryIndexAtSplitLevel } from "../index";
 import { DenialReason, WebCrawler } from "../../scraper/WebScraper/crawler";
@@ -146,6 +154,49 @@ async function orgIdForJob(
   teamId: string,
 ): Promise<string | null> {
   return orgIdFromJob ?? (await orgIdForTeam(teamId));
+}
+
+async function applyCrawlLinksHook(
+  links: string[],
+  {
+    crawlId,
+    ctx,
+    from,
+    crawler,
+    limit,
+    maxDepth,
+    fromMap = false,
+  }: {
+    crawlId: string;
+    ctx: RequestContext;
+    from: string;
+    crawler: WebCrawler;
+    limit: number;
+    maxDepth: number;
+    fromMap?: boolean;
+  },
+): Promise<string[]> {
+  const hooks = installedService()?.hooks;
+  if (!hooks?.has("crawl.links") || links.length === 0) {
+    return links;
+  }
+  const existing = new Set(links);
+  const transformed = await hooks.transform("crawl.links", links, {
+    id: crawlId,
+    ctx,
+    from,
+  });
+  if (transformed.every(url => existing.has(url))) {
+    return transformed;
+  }
+  const revalidated = await crawler.filterLinks(
+    transformed,
+    limit,
+    maxDepth,
+    fromMap,
+  );
+  await recordRobotsBlocked(crawlId, revalidated.robotsBlocked);
+  return revalidated.links;
 }
 
 async function billScrapeJob(
@@ -525,16 +576,22 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         teamFlags = teamChunk?.flags ?? null;
         orgId = orgId ?? teamChunk?.org_id ?? null;
       }
+      const blockCtx = requestContext({
+        teamId: job.data.team_id,
+        zeroDataRetention:
+          ctx.zeroDataRetention === true ||
+          job.data.zeroDataRetention === true ||
+          getScrapeZDR(teamFlags ?? undefined) === "forced" ||
+          isLockdownZeroDataRetention(
+            teamFlags,
+            job.data.internalOptions?.safeModeBypassed ? false : undefined,
+          ),
+        flags: teamFlags,
+        orgId,
+      });
       if (
-        isUrlBlocked(doc.metadata.url, teamFlags, {
-          team_id: job.data.team_id,
-          org_id: orgId,
-          origin: job.data.origin,
-          zeroDataRetention:
-            ctx.zeroDataRetention === true || job.data.zeroDataRetention,
-          safeMode: job.data.internalOptions?.safeModeBypassed
-            ? false
-            : undefined,
+        service.modules.blocklist.isBlocked(doc.metadata.url, blockCtx, {
+          origin: job.data.origin ?? null,
         })
       ) {
         throw new UnsupportedSiteError();
@@ -720,6 +777,17 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             // in-batch), so many links stay cheap on the check side; blocked
             // discoveries bill +2 per unique scanned URL.
             let discoveredLinks = links.links;
+            if (job.data.crawl_id) {
+              discoveredLinks = await applyCrawlLinksHook(discoveredLinks, {
+                crawlId: job.data.crawl_id,
+                ctx,
+                from:
+                  doc.metadata?.url ?? doc.metadata?.sourceURL ?? sc.originUrl!,
+                crawler,
+                limit: Infinity,
+                maxDepth: sc.crawlerOptions?.maxDepth ?? 10,
+              });
+            }
             const threatPolicy = job.data.internalOptions?.threatProtection;
             if (
               threatPolicy &&
@@ -1376,6 +1444,7 @@ async function kickoffGetIndexLinks(
   sc: StoredCrawl,
   crawler: WebCrawler,
   url: string,
+  ctx: RequestContext,
 ) {
   if (sc.crawlerOptions.ignoreSitemap || sc.crawlerOptions.sitemapOnly) {
     return [];
@@ -1384,12 +1453,21 @@ async function kickoffGetIndexLinks(
   const trimmedURL = new URL(url);
   trimmedURL.search = "";
 
-  const index = await queryIndexAtSplitLevel(
+  let index = await queryIndexAtSplitLevel(
     sc.crawlerOptions.allowBackwardCrawling
       ? generateURLSplits(trimmedURL.href)[0]
       : trimmedURL.href,
     sc.crawlerOptions.limit ?? 10000,
   );
+
+  const hooks = installedService()?.hooks;
+  if (hooks?.has("crawl.kickoff")) {
+    index = await hooks.transform("crawl.kickoff", index, {
+      id: crawlId,
+      ctx,
+      url,
+    });
+  }
 
   const { links, robotsBlocked } = await crawler.filterLinks(
     index,
@@ -1577,7 +1655,18 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
       sc,
       crawler,
       job.data.url,
+      ctx,
     );
+
+    indexLinks = await applyCrawlLinksHook(indexLinks, {
+      crawlId: job.data.crawl_id,
+      ctx,
+      from: job.data.url,
+      crawler,
+      limit: sc.crawlerOptions.limit ?? 10000,
+      maxDepth: sc.crawlerOptions.maxDepth ?? 10,
+      fromMap: false,
+    });
 
     // Threat protection: skip blocked index-sourced discoveries (URL-level
     // checks; first-time blocks are recorded and billed, see below).
@@ -1752,7 +1841,15 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       false,
     );
     await recordRobotsBlocked(job.data.crawl_id, sitemapLinks.robotsBlocked);
-    let passingURLs = sitemapLinks.links;
+    let passingURLs = await applyCrawlLinksHook(sitemapLinks.links, {
+      crawlId: job.data.crawl_id,
+      ctx,
+      from: job.data.sitemapUrl,
+      crawler,
+      limit: Infinity,
+      maxDepth: sc.crawlerOptions.maxDepth ?? 10,
+      fromMap: false,
+    });
 
     // Threat protection: skip blocked sitemap entries — the crawl continues;
     // skipped URLs + decisions are recorded as crawl bookkeeping (which also
