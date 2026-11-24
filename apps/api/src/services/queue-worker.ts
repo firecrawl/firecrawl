@@ -5,7 +5,7 @@ import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
 import Express from "express";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
-import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
+import { service } from "../service";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
@@ -21,6 +21,7 @@ import {
 } from "./monitoring/queue";
 import { shutdownPubSubLogging } from "./logging/log_job";
 import { startRole } from "../main";
+import { runProcessStop } from "../service/service";
 
 configDotenv();
 
@@ -200,7 +201,7 @@ export async function start() {
     isShuttingDown = true;
   });
 
-  await initializeBlocklist().catch(e => {
+  await service.modules.blocklist.init().catch(e => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);
   });
@@ -245,7 +246,11 @@ export async function start() {
   }
 
   _logger.info("All workers exited. Shutting down...");
-  await shutdownPubSubLogging();
+  try {
+    await shutdownPubSubLogging();
+  } finally {
+    await runProcessStop("queue-worker");
+  }
   await shutdownTracing();
   process.exit(0);
 }

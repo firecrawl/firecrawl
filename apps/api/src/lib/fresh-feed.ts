@@ -12,8 +12,10 @@ export const FRESH_FEED_FILTER_KEYS = [
   "host",
   "agents",
 ] as const;
-type FreshFeedFilterKey = (typeof FRESH_FEED_FILTER_KEYS)[number];
+export type FreshFeedFilterKey = (typeof FRESH_FEED_FILTER_KEYS)[number];
 export type FreshFeedFilters = Partial<Record<FreshFeedFilterKey, string>>;
+
+export const MAX_FRESH_FEED_AGENTS = 4;
 
 const FRESH_FEED_UPSTREAM_SET: ReadonlySet<string> = new Set(
   FRESH_FEED_UPSTREAMS,
@@ -24,6 +26,8 @@ const FRESH_FEED_FILTER_KEY_SET: ReadonlySet<string> = new Set(
 
 const COLLECTION_SLUG_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const FILTER_TOKEN_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,252}$/;
+const AGENT_TOKEN_RE = /^[A-Za-z_-]{1,64}$/;
+const RESERVED_AGENT_PREFIX = "not-ours-";
 const MAX_FILTER_VALUE_LENGTH = 4096;
 
 const FRESH_FEED_UPSTREAM_ENV_KEYS = {
@@ -115,8 +119,30 @@ export function isValidFreshFeedCollection(value: unknown): value is string {
   return typeof value === "string" && COLLECTION_SLUG_RE.test(value);
 }
 
-export function isValidFreshFeedFilterToken(value: string): boolean {
+function isValidFreshFeedFilterToken(value: string): boolean {
   return FILTER_TOKEN_RE.test(value);
+}
+
+export function isValidFreshFeedAgentToken(value: string): boolean {
+  return (
+    AGENT_TOKEN_RE.test(value) &&
+    !value.toLowerCase().startsWith(RESERVED_AGENT_PREFIX)
+  );
+}
+
+export function normalizeFreshFeedHostToken(value: string): string {
+  let normalized = value
+    .replace(/^ +| +$/g, "")
+    .toLowerCase()
+    .replace(/\.+$/, "");
+  const colon = normalized.lastIndexOf(":");
+  if (colon > 0) {
+    const port = normalized.slice(colon + 1);
+    if (/^\d+$/.test(port)) {
+      normalized = normalized.slice(0, colon).replace(/\.+$/, "");
+    }
+  }
+  return normalized;
 }
 
 export function parseFreshFeedFilters(
@@ -145,18 +171,23 @@ export function parseFreshFeedFilters(
       return { error: `Invalid freshFeedFilters value for ${key}` };
     }
     const tokens = raw.split(",");
-    if (tokens.some(token => !isValidFreshFeedFilterToken(token))) {
-      return { error: `Invalid freshFeedFilters token for ${key}` };
-    }
     if (key === "agents") {
+      if (tokens.length > MAX_FRESH_FEED_AGENTS) {
+        return { error: `Too many freshFeedFilters tokens for ${key}` };
+      }
       const seen = new Set<string>();
       for (const token of tokens) {
+        if (!isValidFreshFeedAgentToken(token)) {
+          return { error: `Invalid freshFeedFilters token for ${key}` };
+        }
         const folded = token.toLowerCase();
         if (seen.has(folded)) {
           return { error: `Duplicate freshFeedFilters token for ${key}` };
         }
         seen.add(folded);
       }
+    } else if (tokens.some(token => !isValidFreshFeedFilterToken(token))) {
+      return { error: `Invalid freshFeedFilters token for ${key}` };
     }
     filters[key] = raw;
   }

@@ -11,6 +11,8 @@ import { logCrawl, logBatchScrape } from "../logging/log_job";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import type { NuQJob } from "./nuq";
 import { crawlContext, jobContext } from "../../lib/request-context";
+import type { RequestContext } from "../../service/request-context";
+import { installedService } from "../../service/service";
 import { readRequestCreditsFromAnalytics } from "../../lib/request-credits-analytics";
 import {
   createInAppNotification,
@@ -55,9 +57,14 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
   const isV1 = data ? !!data.v1 : (sc.v1 ?? true);
   const teamId = data?.team_id ?? sc.team_id;
   const requestId = data?.requestId ?? sc.requestId ?? crawlId;
+  const baseCtx = crawlContext(sc);
   const zeroDataRetention =
-    crawlContext(sc).zeroDataRetention ||
+    baseCtx.zeroDataRetention ||
     (data ? jobContext(data).zeroDataRetention : false);
+  const ctx: RequestContext =
+    zeroDataRetention && !baseCtx.zeroDataRetention
+      ? { ...baseCtx, zeroDataRetention: true }
+      : baseCtx;
   const webhook = data?.webhook ?? sc.webhook;
   const monitoring = data?.monitoring;
 
@@ -113,6 +120,17 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
           0,
         ),
         zeroDataRetention,
+        cancelled: sc.cancelled ?? false,
+      });
+    }
+
+    const hooks = installedService()?.hooks;
+    if (hooks?.has("crawl.finished")) {
+      await hooks.run("crawl.finished", {
+        id: crawlId,
+        kind: sc.crawlerOptions !== null ? "crawl" : "batchScrape",
+        ctx,
+        completed: fullDocs.length,
         cancelled: sc.cancelled ?? false,
       });
     }
@@ -240,6 +258,17 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
         },
         { dedupeKey: crawlId },
       );
+    }
+
+    const hooks = installedService()?.hooks;
+    if (hooks?.has("crawl.finished")) {
+      await hooks.run("crawl.finished", {
+        id: crawlId,
+        kind: sc.crawlerOptions !== null ? "crawl" : "batchScrape",
+        ctx,
+        completed: num_docs,
+        cancelled: sc.cancelled ?? false,
+      });
     }
 
     // v1 web hooks, call when done with no data, but with event completed

@@ -13,13 +13,14 @@ import {
   map,
   browserCreateRaw,
 } from "./lib";
-import { config } from "../../../config";
-
 // Without a US OpenAI key or service account, every OpenAI-backed feature is
 // refused for US-only teams.
 const HAS_US_OPENAI =
-  !!config.OPENAI_US_API_KEY ||
-  !!(config.OPENAI_IDENTITY_PROVIDER_ID && config.OPENAI_US_SERVICE_ACCOUNT_ID);
+  !!process.env.OPENAI_US_API_KEY?.trim() ||
+  !!(
+    process.env.OPENAI_IDENTITY_PROVIDER_ID?.trim() &&
+    process.env.OPENAI_US_SERVICE_ACCOUNT_ID?.trim()
+  );
 
 describeIf(TEST_PRODUCTION)("US-only teams", () => {
   let identity: Identity;

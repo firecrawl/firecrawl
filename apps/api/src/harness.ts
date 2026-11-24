@@ -5,6 +5,7 @@ import * as net from "net";
 import { basename, join } from "path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
 import { startRole } from "./main";
+import { runProcessStop } from "./service/service";
 
 const childProcesses = new Set<ChildProcess>();
 const stopping = new WeakSet<ChildProcess>(); // processes we're intentionally stopping
@@ -14,6 +15,7 @@ let IS_DEV = false;
 let roleEntry = "";
 let restartSignal: AbortController | null = null;
 let shuttingDown = false;
+let shutdownPromise: Promise<void> | undefined;
 let nuqPostgresContainer: {
   containerName: string;
   containerRuntime: string;
@@ -1138,52 +1140,56 @@ async function waitForTermination(services: Services): Promise<void> {
   });
 }
 
-async function gracefulShutdown() {
-  if (shuttingDown) return;
+function gracefulShutdown(): Promise<void> {
+  if (shutdownPromise) return shutdownPromise;
   shuttingDown = true;
-  restartSignal?.abort();
+  shutdownPromise = (async () => {
+    restartSignal?.abort();
 
-  logger.section("Shutting down");
-  const forceTerminate = IS_DEV;
-  const terminationPromises = Array.from(childProcesses).map(proc =>
-    terminateProcess(proc, forceTerminate),
-  );
-  await Promise.allSettled(terminationPromises);
-
-  // Stop and remove NUQ PostgreSQL container if it was started by harness
-  if (nuqPostgresContainer) {
-    logger.info("Stopping NUQ PostgreSQL container");
-    await stopAndRemoveContainer(
-      nuqPostgresContainer.containerRuntime,
-      nuqPostgresContainer.containerName,
+    logger.section("Shutting down");
+    const forceTerminate = IS_DEV;
+    const terminationPromises = Array.from(childProcesses).map(proc =>
+      terminateProcess(proc, forceTerminate),
     );
-    logger.success("NUQ PostgreSQL container stopped");
-    nuqPostgresContainer = null;
-  }
+    await Promise.allSettled(terminationPromises);
 
-  // Stop and remove NUQ RabbitMQ container if it was started by harness
-  if (nuqRabbitMQContainer) {
-    logger.info("Stopping NUQ RabbitMQ container");
-    await stopAndRemoveContainer(
-      nuqRabbitMQContainer.containerRuntime,
-      nuqRabbitMQContainer.containerName,
-    );
-    logger.success("NUQ RabbitMQ container stopped");
-    nuqRabbitMQContainer = null;
-  }
+    // Stop and remove NUQ PostgreSQL container if it was started by harness
+    if (nuqPostgresContainer) {
+      logger.info("Stopping NUQ PostgreSQL container");
+      await stopAndRemoveContainer(
+        nuqPostgresContainer.containerRuntime,
+        nuqPostgresContainer.containerName,
+      );
+      logger.success("NUQ PostgreSQL container stopped");
+      nuqPostgresContainer = null;
+    }
 
-  // Stop and remove FoundationDB container if it was started by harness
-  if (fdbContainer) {
-    logger.info("Stopping FoundationDB container");
-    await stopAndRemoveContainer(
-      fdbContainer.containerRuntime,
-      fdbContainer.containerName,
-    );
-    logger.success("FoundationDB container stopped");
-    fdbContainer = null;
-  }
+    // Stop and remove NUQ RabbitMQ container if it was started by harness
+    if (nuqRabbitMQContainer) {
+      logger.info("Stopping NUQ RabbitMQ container");
+      await stopAndRemoveContainer(
+        nuqRabbitMQContainer.containerRuntime,
+        nuqRabbitMQContainer.containerName,
+      );
+      logger.success("NUQ RabbitMQ container stopped");
+      nuqRabbitMQContainer = null;
+    }
 
-  logger.success("All processes terminated");
+    // Stop and remove FoundationDB container if it was started by harness
+    if (fdbContainer) {
+      logger.info("Stopping FoundationDB container");
+      await stopAndRemoveContainer(
+        fdbContainer.containerRuntime,
+        fdbContainer.containerName,
+      );
+      logger.success("FoundationDB container stopped");
+      fdbContainer = null;
+    }
+
+    await runProcessStop("harness");
+    logger.success("All processes terminated");
+  })();
+  return shutdownPromise;
 }
 
 function printUsage() {
