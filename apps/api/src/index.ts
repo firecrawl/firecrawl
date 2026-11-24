@@ -37,7 +37,7 @@ import { exchangeInternalRouter } from "./routes/exchange-internal";
 import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
 import { nuqShutdown } from "./services/worker/nuq";
-import { getErrorContactMessage } from "./lib/deployment";
+import { service } from "./service";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
 import { warmExchangeCatalog } from "./lib/exchange";
 import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
@@ -379,7 +379,7 @@ app.use(
     res.status(500).json({
       success: false,
       code: "UNKNOWN_ERROR",
-      error: getErrorContactMessage(id),
+      error: service.modules.messages.errorContact(id),
     });
   },
 );

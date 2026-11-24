@@ -3,6 +3,7 @@
  * config and read by the rest of the code.
  */
 import type { TransportableErrorClass } from "../lib/error";
+import { defaultModules } from "./defaults";
 import {
   buildEngineRegistry,
   type DescribedEngineFeature,
@@ -17,12 +18,9 @@ import {
   type HookPoints,
   type Hooks,
 } from "./hooks";
+import { freezeModules, type Modules } from "./modules";
 
-/**
- * The module slots: one implementation for each piece of behaviour the service
- * calls by name. A slot is added here together with the code that calls it.
- */
-export interface Modules {}
+export type { Modules } from "./modules";
 
 /** A process role: what one process of the service runs. */
 export interface Worker {
@@ -65,7 +63,8 @@ export interface Extension {
 
 /** The whole config. Everything that is not a slot belongs to a named extension. */
 export interface ServiceConfig {
-  modules: Modules;
+  /** Module slots to override; omitted slots use the built-in defaults. */
+  modules?: Partial<Modules>;
   /** Applied in list order, after the service's own extension. */
   extensions?: Extension[];
 }
@@ -132,7 +131,11 @@ export function createService(
     throw new Error(`Two extensions are named "${duplicate}"`);
   }
 
-  const modules = Object.freeze({ ...config.modules });
+  const defaults = defaultModules();
+  const modules = freezeModules({
+    messages: config.modules?.messages ?? defaults.messages,
+    uploads: config.modules?.uploads ?? defaults.uploads,
+  });
   const workers: Record<string, Worker> = Object.freeze(
     Object.fromEntries(
       extensions.flatMap(extension => Object.entries(extension.workers ?? {})),
@@ -253,6 +256,11 @@ let startedRole: string | undefined;
 /** The role `run` started in this process, or undefined when it has started none. */
 export function processRole(): string | undefined {
   return startedRole;
+}
+
+/** The currently installed service, or undefined when none is installed. */
+export function installedService(): Service | undefined {
+  return installed;
 }
 
 function current(): Service {

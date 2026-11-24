@@ -5,6 +5,7 @@ export type {
 } from "../lib/error";
 export type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 export { coreParts } from "./core-parts";
+export { defaultModules, logsMessages, memoryUploads } from "./defaults";
 export type {
   DescribedEngineFeature,
   Engine,
@@ -28,6 +29,19 @@ export type {
 export { authenticate } from "./http";
 export type { RouteKind } from "./http";
 export type {
+  DirectUploadInput,
+  DirectUploadResult,
+  FetchProxyFileKind,
+  MessagesModule,
+  Modules,
+  PrepareUploadInput,
+  PrepareUploadResult,
+  StoredUploadRef,
+  UploadDriver,
+  UploadsModule,
+  UploadTarget,
+} from "./modules";
+export type {
   BaseCaller,
   BaseRequestContext,
   Caller,
@@ -38,7 +52,6 @@ export type {
   CoreParts,
   ErrorRegistry,
   Extension,
-  Modules,
   Service,
   ServiceConfig,
   ServiceDescription,

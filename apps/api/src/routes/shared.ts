@@ -20,7 +20,7 @@ import {
 } from "../lib/http-metrics";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
 import * as geoip from "geoip-country";
-import { isSelfHosted } from "../lib/deployment";
+import { service } from "../service";
 import { validate as isUuid } from "uuid";
 
 import { config } from "../config";
@@ -621,9 +621,7 @@ export function countryCheck(
     });
     return res.status(403).json({
       success: false,
-      error: isSelfHosted()
-        ? "Use of headers, actions, the agent, and browser/interact sessions is not allowed by default in your country. Please check your server configuration."
-        : "Use of headers, actions, the agent, and browser/interact sessions is not allowed by default in your country. Please contact us at help@firecrawl.com",
+      error: `Use of headers, actions, the agent, and browser/interact sessions is not allowed by default in your country. ${service.modules.messages.restrictedCountryContact()}`,
     });
   }
 

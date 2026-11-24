@@ -10,9 +10,9 @@ import {
   type Service,
 } from "./service";
 
-/** Builds a service from a full set of modules, with any of them replaced and any extension added. */
+/** Builds a service from module defaults or a base set, with any of them replaced and any extension added. */
 export function testService(
-  base: Modules,
+  base: Partial<Modules>,
   parts: CoreParts,
   overrides: Partial<Modules> = {},
   extensions: Extension[] = [],

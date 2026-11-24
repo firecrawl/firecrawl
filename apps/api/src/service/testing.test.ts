@@ -1,22 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
-import { service, type CoreParts, type Modules } from "./service";
+import { defaultModules, logsMessages } from "./defaults";
+import { service, type CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
 const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
 
-// No slot exists yet, so a module can only be listed through a cast.
-const modules = (listed: Record<string, unknown>) => listed as Modules;
-
 describe("testService", () => {
   it("replaces a module and adds extensions", () => {
-    const built = testService(
-      modules({ kept: "base", replaced: "base" }),
-      parts,
-      modules({ replaced: "override" }),
-      [{ name: "extra" }],
-    );
+    const base = defaultModules();
+    const customMessages = {
+      ...logsMessages(),
+      errorContact: () => "Custom contact.",
+    };
+    const built = testService(base, parts, { messages: customMessages }, [
+      { name: "extra" },
+    ]);
 
-    expect(built.modules).toEqual({ kept: "base", replaced: "override" });
+    expect(built.modules.messages).toBe(customMessages);
+    expect(built.modules.uploads).toBe(base.uploads);
+    expect(built.describe().modules).toEqual(["messages", "uploads"]);
     expect(built.describe().extensions).toEqual(["core", "extra"]);
   });
 });

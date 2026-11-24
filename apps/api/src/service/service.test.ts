@@ -227,7 +227,7 @@ describe("describe", () => {
     expect(enabled).not.toHaveBeenCalled();
     expect(description).toEqual({
       extensions: ["core", "second", "third"],
-      modules: [],
+      modules: ["messages", "uploads"],
       hooks: {
         "a.point": ["second"],
         "b.point": ["core", "second", "second", "third"],
@@ -307,7 +307,7 @@ describe("describe", () => {
     expect(built.engines.feature("otherFlag")).toBeUndefined();
     expect(built.describe()).toEqual({
       extensions: ["core", "mine"],
-      modules: [],
+      modules: ["messages", "uploads"],
       hooks: { "a.point": ["mine"] },
       errors: { MINE: "mine" },
       engines: { "mine-engine": "mine" },
@@ -369,6 +369,7 @@ describe("describe", () => {
 
     const first = built.describe();
     first.extensions.push("added");
+    first.modules.push("added");
     first.errors.TIMEOUT = "changed";
     first.engines.fetch = "changed";
     first.engineFeatures.waitFor.priority = 999;
@@ -376,7 +377,7 @@ describe("describe", () => {
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: [],
+      modules: ["messages", "uploads"],
       hooks: {},
       errors: { TIMEOUT: "core" },
       engines: { fetch: "core" },
