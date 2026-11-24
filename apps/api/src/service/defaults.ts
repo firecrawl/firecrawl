@@ -142,9 +142,10 @@ let idempotencyRedisPromise: Promise<import("ioredis").Redis> | undefined;
 function getIdempotencyRedis(): Promise<import("ioredis").Redis> {
   if (!idempotencyRedisPromise) {
     idempotencyRedisPromise = (async () => {
-      const [{ Redis }, { config }] = await Promise.all([
+      const [{ Redis }, { config }, { logger }] = await Promise.all([
         import("ioredis"),
         import("../config.js"),
+        import("../lib/logger.js"),
       ]);
       if (!config.REDIS_URL) {
         throw new Error("REDIS_URL is not configured");
@@ -154,7 +155,9 @@ function getIdempotencyRedis(): Promise<import("ioredis").Redis> {
         maxRetriesPerRequest: 3,
         commandTimeout: DEFAULT_IDEMPOTENCY_TIMEOUT_MS,
       });
-      client.on("error", () => {});
+      client.on("error", error => {
+        logger.warn("Idempotency Redis error", { error });
+      });
       return client;
     })().catch(error => {
       idempotencyRedisPromise = undefined;
