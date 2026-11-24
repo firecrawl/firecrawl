@@ -984,8 +984,12 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
     result = { ...result, timeout: 120000 };
   }
 
-  if (obj.lockdown && obj.maxAge === undefined) {
-    result = { ...result, maxAge: LOCKDOWN_DEFAULT_MAX_AGE_MS };
+  if (obj.lockdown) {
+    if (obj.maxAge === undefined) {
+      result = { ...result, maxAge: LOCKDOWN_DEFAULT_MAX_AGE_MS };
+    }
+  } else if (obj.maxAge !== undefined && obj.maxAge > MAX_SCRAPE_MAX_AGE_MS) {
+    result = { ...result, maxAge: MAX_SCRAPE_MAX_AGE_MS };
   }
 
   return result as T extends undefined ? undefined : T;
@@ -2033,6 +2037,7 @@ type Account = {
   remainingCredits: number;
 };
 
+export const MAX_SCRAPE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export const LOCKDOWN_DEFAULT_MAX_AGE_MS = 2 * 365 * 24 * 60 * 60 * 1000;
 
 export type TeamFlags = {

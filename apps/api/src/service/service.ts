@@ -12,18 +12,19 @@ import {
   type EngineRegistry,
 } from "./engines";
 import { assertEnv, describeEnv } from "./env";
-import {
-  buildHooks,
-  type HookHandlers,
-  type HookPoints,
-  type Hooks,
-} from "./hooks";
+import { buildHookRegistry, type HookHandlers, type Hooks } from "./hooks";
 import {
   buildLlmProviderRegistry,
   type LlmProvider,
   type LlmProviderRegistry,
 } from "./llm-providers";
 import { freezeModules, type Modules } from "./modules";
+import {
+  buildSearchProviderRegistry,
+  type DescribedSearchProvider,
+  type SearchProvider,
+  type SearchProviderRegistry,
+} from "./search-providers";
 
 export type { Modules } from "./modules";
 
@@ -63,6 +64,11 @@ export interface Extension {
    */
   engineFeatures?: EngineFeatureMap;
   /**
+   * Search providers contributed by this extension. A later provider of the
+   * same name replaces an earlier one.
+   */
+  searchProviders?: readonly SearchProvider[];
+  /**
    * LLM providers contributed by this extension. A later provider of the same
    * name replaces an earlier one.
    */
@@ -100,6 +106,8 @@ export interface ServiceDescription {
   engines: Record<string, string>;
   /** For each registered scrape engine feature, its owner and scoring priority. */
   engineFeatures: Record<string, DescribedEngineFeature>;
+  /** For each registered search provider, its owner and priority. */
+  searchProviders: Record<string, DescribedSearchProvider>;
   /** For each registered LLM provider, the extension it comes from. */
   llmProviders: Record<string, string>;
   /** For each process role, the extension it comes from. */
@@ -122,6 +130,7 @@ export interface Service {
   readonly hooks: Hooks;
   readonly errors: ErrorRegistry;
   readonly engines: EngineRegistry;
+  readonly searchProviders: SearchProviderRegistry;
   readonly llmProviders: LlmProviderRegistry;
   readonly workers: Readonly<Record<string, Worker>>;
   /** What the service was made of when it was created, plus declared env owners. Each call returns a copy. */
@@ -172,8 +181,11 @@ export function createService(
     ),
   );
 
-  const hooks = buildHooks<HookPoints>(
-    extensions.flatMap(extension => extension.hooks ?? []),
+  const { hooks, describedHooks } = buildHookRegistry(
+    extensions.map(extension => ({
+      owner: extension.name,
+      hooks: extension.hooks,
+    })),
     (hook, error) => parts.logger.error("Hook handler failed", { hook, error }),
   );
 
@@ -188,6 +200,14 @@ export function createService(
       engineFeatures: extension.engineFeatures,
     })),
   );
+
+  const { registry: searchProviders, describedSearchProviders } =
+    buildSearchProviderRegistry(
+      extensions.map(extension => ({
+        owner: extension.name,
+        searchProviders: extension.searchProviders,
+      })),
+    );
 
   const { registry: llmProviders, describedLlmProviders } =
     buildLlmProviderRegistry(
@@ -232,21 +252,12 @@ export function createService(
     return byCode;
   };
 
-  // Worked out here, from the extensions as the handlers and roles above were
-  // just read from them, so it stays true to what the service runs whatever
-  // happens to an extension object later. The two records have no prototype,
-  // so a name such as "constructor" is a key like any other.
-  const handlerOwners: Record<string, string[]> = Object.create(null);
+  // Worked out here, from the extensions as the roles above were just read
+  // from them, so it stays true to what the service runs whatever happens to
+  // an extension object later. The record has no prototype, so a name such as
+  // "constructor" is a key like any other.
   const roleOwners: Record<string, string> = Object.create(null);
   for (const extension of extensions) {
-    for (const [point, listed] of Object.entries(extension.hooks ?? {})) {
-      const count = Array.isArray(listed) ? listed.length : listed ? 1 : 0;
-      if (count === 0) continue;
-      handlerOwners[point] = [
-        ...(handlerOwners[point] ?? []),
-        ...Array<string>(count).fill(extension.name),
-      ];
-    }
     for (const role of Object.keys(extension.workers ?? {})) {
       roleOwners[role] = extension.name;
     }
@@ -254,9 +265,10 @@ export function createService(
   const baseDescription = {
     extensions: names,
     modules: Object.keys(modules).sort(),
-    hooks: sortedByKey(handlerOwners),
+    hooks: describedHooks,
     engines: describedEngines,
     engineFeatures: describedFeatures,
+    searchProviders: describedSearchProviders,
     llmProviders: describedLlmProviders,
     roles: sortedByKey(roleOwners),
   };
@@ -268,6 +280,7 @@ export function createService(
       classFor: (code: string) => registeredErrors().get(code)?.errorClass,
     }),
     engines,
+    searchProviders,
     llmProviders,
     workers,
     describe(): ServiceDescription {
@@ -283,6 +296,7 @@ export function createService(
         errors: sortedByKey(errors),
         engines: copy.engines,
         engineFeatures: copy.engineFeatures,
+        searchProviders: copy.searchProviders,
         llmProviders: copy.llmProviders,
         roles: copy.roles,
         env: sortedByKey(describeEnv()),
@@ -329,6 +343,9 @@ export const service: Service = {
   },
   get engines() {
     return current().engines;
+  },
+  get searchProviders() {
+    return current().searchProviders;
   },
   get llmProviders() {
     return current().llmProviders;

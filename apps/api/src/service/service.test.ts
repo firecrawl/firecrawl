@@ -3,6 +3,7 @@ import type { TransportableErrorClass } from "../lib/error";
 import type { Engine, EngineFeatureMap } from "./engines";
 import type { HookHandlers } from "./hooks";
 import type { LlmModel, LlmProvider } from "./llm-providers";
+import type { SearchProvider } from "./search-providers";
 import {
   createService,
   processRole,
@@ -19,10 +20,6 @@ const parts = (core: Partial<Extension> = {}): CoreParts => ({
   core: { name: "core", ...core },
   logger: { error: vi.fn() },
 });
-
-// No hook point exists yet, so a handler can only be listed through a cast.
-const handlers = (listed: Record<string, unknown>) =>
-  listed as unknown as HookHandlers;
 
 // A test's codes are not in ErrorCodes, so a class can only be built through a cast.
 const errorClass = (...codes: string[]) =>
@@ -67,6 +64,23 @@ const llmProvider = (
     ...overrides,
   }) as unknown as LlmProvider;
 
+const searchProvider = (
+  name: string,
+  overrides: {
+    priority?: number;
+    supportsUsOnly?: boolean;
+    enabled?: () => boolean;
+    search?: SearchProvider["search"];
+  } = {},
+): SearchProvider =>
+  ({
+    name,
+    priority: 10,
+    enabled: () => true,
+    search: vi.fn(async () => ({ web: [] })),
+    ...overrides,
+  }) as unknown as SearchProvider;
+
 afterEach(() => {
   replaceService(undefined);
 });
@@ -83,6 +97,7 @@ describe("createService", () => {
     expect(Object.isFrozen(built.hooks)).toBe(true);
     expect(Object.isFrozen(built.errors)).toBe(true);
     expect(Object.isFrozen(built.engines)).toBe(true);
+    expect(Object.isFrozen(built.searchProviders)).toBe(true);
     expect(Object.isFrozen(built.llmProviders)).toBe(true);
     expect(Object.isFrozen(built.workers)).toBe(true);
   });
@@ -112,21 +127,139 @@ describe("createService", () => {
   it("reports a failing observe handler to the logger and not to the caller", () => {
     const failure = new Error("failed");
     const logged = parts({
-      hooks: handlers({
-        seen: () => {
+      hooks: {
+        "map.finished": () => {
           throw failure;
         },
-      }),
+      },
     });
-    const hooks = createService({ modules: {} }, logged).hooks as unknown as {
-      observe(name: string, payload: unknown): void;
-    };
+    const built = createService({ modules: {} }, logged);
 
-    expect(() => hooks.observe("seen", {})).not.toThrow();
+    expect(built.hooks.has("map.finished")).toBe(true);
+    expect(built.hooks.has("search.finished")).toBe(false);
+    expect(() =>
+      built.hooks.observe("map.finished", {
+        id: "m1",
+        ctx: { teamId: "t1", zeroDataRetention: false },
+        urls: 3,
+      }),
+    ).not.toThrow();
     expect(logged.logger.error).toHaveBeenCalledWith("Hook handler failed", {
-      hook: "seen",
+      hook: "map.finished",
       error: failure,
     });
+  });
+
+  it("runs process.stop handlers in reverse extension order and logs isolated errors", async () => {
+    const failure = new Error("stop failed");
+    const order: string[] = [];
+    const logged = parts({
+      hooks: {
+        "process.stop": () => {
+          order.push("core");
+        },
+      },
+    });
+    const built = createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "first",
+            hooks: {
+              "process.stop": () => {
+                order.push("first");
+                throw failure;
+              },
+            },
+          },
+          {
+            name: "second",
+            hooks: {
+              "process.stop": () => {
+                order.push("second");
+              },
+            },
+          },
+        ],
+      },
+      logged,
+    );
+
+    await expect(
+      built.hooks.run("process.stop", { role: "api" }),
+    ).resolves.toBeUndefined();
+    expect(order).toEqual(["second", "first", "core"]);
+    expect(logged.logger.error).toHaveBeenCalledWith("Hook handler failed", {
+      hook: "process.stop",
+      error: failure,
+    });
+  });
+
+  it("refuses unknown hook point names, prototype keys, and non-function handlers at startup", () => {
+    expect(() =>
+      createService(
+        {
+          modules: {},
+          extensions: [
+            {
+              name: "bad-name",
+              hooks: { "unknown.point": vi.fn() } as unknown as HookHandlers,
+            },
+          ],
+        },
+        parts(),
+      ),
+    ).toThrow('Unknown hook point "unknown.point"');
+
+    expect(() =>
+      createService(
+        {
+          modules: {},
+          extensions: [
+            {
+              name: "ctor-key",
+              hooks: { constructor: vi.fn() } as unknown as HookHandlers,
+            },
+          ],
+        },
+        parts(),
+      ),
+    ).toThrow('Unknown hook point "constructor"');
+
+    const withProtoKey = Object.defineProperty({}, "__proto__", {
+      value: vi.fn(),
+      enumerable: true,
+    });
+    expect(() =>
+      createService(
+        {
+          modules: {},
+          extensions: [
+            {
+              name: "proto-key",
+              hooks: withProtoKey as unknown as HookHandlers,
+            },
+          ],
+        },
+        parts(),
+      ),
+    ).toThrow('Unknown hook point "__proto__"');
+
+    expect(() =>
+      createService(
+        {
+          modules: {},
+          extensions: [
+            {
+              name: "bad-handler",
+              hooks: { "map.finished": "not-a-fn" } as unknown as HookHandlers,
+            },
+          ],
+        },
+        parts(),
+      ),
+    ).toThrow('Hook "map.finished" handler must be a function');
   });
 });
 
@@ -202,16 +335,18 @@ describe("errors", () => {
 describe("describe", () => {
   it("lists the extensions in order, the owner of each handler, error code, engine, feature and role", () => {
     const enabled = vi.fn(() => true);
+    const noop = () => {};
     const built = createService(
       {
         modules: {},
         extensions: [
           {
             name: "second",
-            hooks: handlers({
-              "b.point": [vi.fn(), vi.fn()],
-              "a.point": vi.fn(),
-            }),
+            hooks: {
+              "scrape.document.derived": [noop, noop],
+              "map.finished": noop,
+              "process.stop": [noop, noop],
+            },
             errors: [errorClass("ZEBRA", "ALPHA")],
             engines: [
               engine("zebra", { enabled }),
@@ -221,23 +356,40 @@ describe("describe", () => {
               zebraFlag: { priority: 50 },
               waitFor: { priority: 25 },
             }),
+            searchProviders: [
+              searchProvider("zebra", { priority: 80, enabled }),
+              searchProvider("searxng", { priority: 200, enabled }),
+            ],
             llmProviders: [
               llmProvider("zebra", { enabled }),
               llmProvider("openai", { enabled }),
             ],
             workers: { zebra: worker(), api: worker() },
           },
-          { name: "third", hooks: handlers({ "b.point": vi.fn() }) },
+          {
+            name: "third",
+            hooks: {
+              "scrape.document.derived": noop,
+              "process.stop": noop,
+            },
+          },
         ],
       },
       parts({
-        hooks: handlers({ "b.point": vi.fn() }),
+        hooks: {
+          "scrape.document.derived": noop,
+          "process.stop": noop,
+        },
         errors: () => [errorClass("TIMEOUT")],
         engines: [engine("fetch", { enabled }), engine("alpha", { enabled })],
         engineFeatures: featureMap({
           waitFor: { priority: 1 },
           alphaFlag: { priority: 10 },
         }),
+        searchProviders: [
+          searchProvider("searxng", { priority: 50, enabled }),
+          searchProvider("alpha", { priority: 10, enabled }),
+        ],
         llmProviders: [
           llmProvider("openai", { enabled }),
           llmProvider("alpha", { enabled }),
@@ -253,8 +405,9 @@ describe("describe", () => {
       extensions: ["core", "second", "third"],
       modules: ["messages", "uploads"],
       hooks: {
-        "a.point": ["second"],
-        "b.point": ["core", "second", "second", "third"],
+        "map.finished": ["second"],
+        "process.stop": ["third", "second", "second", "core"],
+        "scrape.document.derived": ["core", "second", "second", "third"],
       },
       errors: { ALPHA: "second", TIMEOUT: "core", ZEBRA: "second" },
       engines: { alpha: "core", fetch: "second", zebra: "second" },
@@ -263,11 +416,20 @@ describe("describe", () => {
         waitFor: { owner: "second", priority: 25 },
         zebraFlag: { owner: "second", priority: 50 },
       },
+      searchProviders: {
+        alpha: { owner: "core", priority: 10 },
+        searxng: { owner: "second", priority: 200 },
+        zebra: { owner: "second", priority: 80 },
+      },
       llmProviders: { alpha: "core", openai: "second", zebra: "second" },
       roles: { api: "second", "queue-worker": "core", zebra: "second" },
       env: {},
     });
-    expect(Object.keys(description.hooks)).toEqual(["a.point", "b.point"]);
+    expect(Object.keys(description.hooks)).toEqual([
+      "map.finished",
+      "process.stop",
+      "scrape.document.derived",
+    ]);
     expect(Object.keys(description.errors)).toEqual([
       "ALPHA",
       "TIMEOUT",
@@ -282,6 +444,11 @@ describe("describe", () => {
       "alphaFlag",
       "waitFor",
       "zebraFlag",
+    ]);
+    expect(Object.keys(description.searchProviders)).toEqual([
+      "alpha",
+      "searxng",
+      "zebra",
     ]);
     expect(Object.keys(description.llmProviders)).toEqual([
       "alpha",
@@ -298,7 +465,7 @@ describe("describe", () => {
   it("leaves out a hook point whose list of handlers is empty", () => {
     const built = createService(
       { modules: {} },
-      parts({ hooks: handlers({ "a.point": [] }) }),
+      parts({ hooks: { "map.finished": [] } }),
     );
 
     expect(built.describe().hooks).toEqual({});
@@ -310,46 +477,70 @@ describe("describe", () => {
     const mineEngine = engine("mine-engine", { features: { waitFor: true } });
     const mineEngines = [mineEngine];
     const mineFeatures = featureMap({ mineFlag: { priority: 40 } });
+    const mineSearchProvider = searchProvider("mine-search", { priority: 60 });
+    const mineSearchProviders = [mineSearchProvider];
     const mineProvider = llmProvider("mine-provider");
     const mineProviders = [mineProvider];
+    const initialHook = vi.fn();
+    const addedHook = vi.fn();
+    const mineHookList = [initialHook];
+    const mineHooks: HookHandlers = { "map.finished": mineHookList };
     const mine: Extension = {
       name: "mine",
-      hooks: handlers({ "a.point": vi.fn() }),
+      hooks: mineHooks,
       errors: mineErrors,
       engines: mineEngines,
       engineFeatures: mineFeatures,
+      searchProviders: mineSearchProviders,
       llmProviders: mineProviders,
       workers: { api: worker() },
     };
     const built = createService({ modules: {}, extensions: [mine] }, parts());
 
     mine.name = "renamed";
-    mine.hooks = handlers({ "b.point": vi.fn() });
+    mineHookList.push(addedHook);
+    mineHooks["scrape.start"] = () => {};
+    mine.hooks = { "search.finished": () => {} };
     mineErrors.push(errorClass("ADDED"));
     mine.errors = [errorClass("OTHER")];
     mineEngines.push(engine("added-engine"));
     mine.engines = [engine("other-engine")];
     mine.engineFeatures = featureMap({ otherFlag: { priority: 99 } });
+    mineSearchProviders.push(searchProvider("added-search"));
+    mine.searchProviders = [searchProvider("other-search")];
     mineProviders.push(llmProvider("added-provider"));
     mine.llmProviders = [llmProvider("other-provider")];
     mine.workers = { other: worker() };
 
+    built.hooks.observe("map.finished", {
+      id: "m1",
+      ctx: { teamId: "t1", zeroDataRetention: false },
+      urls: 1,
+    });
+    expect(initialHook).toHaveBeenCalledTimes(1);
+    expect(addedHook).not.toHaveBeenCalled();
+    expect(built.hooks.has("scrape.start")).toBe(false);
+    expect(built.hooks.has("search.finished")).toBe(false);
     expect(built.errors.classFor("MINE")).toBe(mineError);
     expect(built.errors.classFor("ADDED")).toBeUndefined();
     expect(built.errors.classFor("OTHER")).toBeUndefined();
     expect(built.engines.all().map(e => e.name)).toEqual(["mine-engine"]);
     expect(built.engines.feature("mineFlag")).toEqual({ priority: 40 });
     expect(built.engines.feature("otherFlag")).toBeUndefined();
+    expect(built.searchProviders.all().map(p => p.name)).toEqual([
+      "mine-search",
+    ]);
     expect(built.llmProviders.all().map(p => p.name)).toEqual([
       "mine-provider",
     ]);
     expect(built.describe()).toEqual({
       extensions: ["core", "mine"],
       modules: ["messages", "uploads"],
-      hooks: { "a.point": ["mine"] },
+      hooks: { "map.finished": ["mine"] },
       errors: { MINE: "mine" },
       engines: { "mine-engine": "mine" },
       engineFeatures: { mineFlag: { owner: "mine", priority: 40 } },
+      searchProviders: { "mine-search": { owner: "mine", priority: 60 } },
       llmProviders: { "mine-provider": "mine" },
       roles: { api: "mine" },
       env: {},
@@ -361,12 +552,15 @@ describe("describe", () => {
     const built = createService(
       { modules: {} },
       parts({
-        hooks: handlers({ constructor: vi.fn() }),
         engines: [engine("__proto__"), engine("constructor")],
         engineFeatures: featureMap({
           ["__proto__"]: { priority: 5 },
           constructor: { priority: 15 },
         }),
+        searchProviders: [
+          searchProvider("__proto__", { priority: 5 }),
+          searchProvider("constructor", { priority: 15 }),
+        ],
         llmProviders: [llmProvider("__proto__"), llmProvider("constructor")],
         workers: { ["__proto__"]: inherited, constructor: worker() },
       }),
@@ -380,15 +574,19 @@ describe("describe", () => {
     expect(built.engines.get("constructor")?.name).toBe("constructor");
     expect(built.engines.feature("__proto__")).toEqual({ priority: 5 });
     expect(built.engines.feature("constructor")).toEqual({ priority: 15 });
+    expect(built.searchProviders.get("__proto__")?.name).toBe("__proto__");
+    expect(built.searchProviders.get("constructor")?.name).toBe("constructor");
     expect(built.llmProviders.get("__proto__")?.name).toBe("__proto__");
     expect(built.llmProviders.get("constructor")?.name).toBe("constructor");
-    expect(Object.keys(description.hooks)).toEqual(["constructor"]);
-    expect(description.hooks.constructor).toEqual(["core"]);
     expect(Object.entries(description.engines)).toEqual([
       ["__proto__", "core"],
       ["constructor", "core"],
     ]);
     expect(Object.entries(description.engineFeatures)).toEqual([
+      ["__proto__", { owner: "core", priority: 5 }],
+      ["constructor", { owner: "core", priority: 15 }],
+    ]);
+    expect(Object.entries(description.searchProviders)).toEqual([
       ["__proto__", { owner: "core", priority: 5 }],
       ["constructor", { owner: "core", priority: 15 }],
     ]);
@@ -406,9 +604,11 @@ describe("describe", () => {
     const built = createService(
       { modules: {} },
       parts({
+        hooks: { "map.finished": () => {} },
         errors: [errorClass("TIMEOUT")],
         engines: [engine("fetch")],
         engineFeatures: featureMap({ waitFor: { priority: 1 } }),
+        searchProviders: [searchProvider("searxng", { priority: 50 })],
         llmProviders: [llmProvider("openai")],
         workers: { api: worker() },
       }),
@@ -417,19 +617,22 @@ describe("describe", () => {
     const first = built.describe();
     first.extensions.push("added");
     first.modules.push("added");
+    first.hooks["map.finished"].push("changed");
     first.errors.TIMEOUT = "changed";
     first.engines.fetch = "changed";
     first.engineFeatures.waitFor.priority = 999;
+    first.searchProviders.searxng.priority = 999;
     first.llmProviders.openai = "changed";
     first.roles.api = "changed";
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
       modules: ["messages", "uploads"],
-      hooks: {},
+      hooks: { "map.finished": ["core"] },
       errors: { TIMEOUT: "core" },
       engines: { fetch: "core" },
       engineFeatures: { waitFor: { owner: "core", priority: 1 } },
+      searchProviders: { searxng: { owner: "core", priority: 50 } },
       llmProviders: { openai: "core" },
       roles: { api: "core" },
       env: {},
@@ -443,6 +646,7 @@ describe("service", () => {
     expect(() => service.hooks).toThrow("No service is installed");
     expect(() => service.errors).toThrow("No service is installed");
     expect(() => service.engines).toThrow("No service is installed");
+    expect(() => service.searchProviders).toThrow("No service is installed");
     expect(() => service.llmProviders).toThrow("No service is installed");
     expect(() => service.workers).toThrow("No service is installed");
     expect(() => service.describe()).toThrow("No service is installed");
@@ -459,6 +663,7 @@ describe("service", () => {
     expect(service.hooks).toBe(built.hooks);
     expect(service.errors).toBe(built.errors);
     expect(service.engines).toBe(built.engines);
+    expect(service.searchProviders).toBe(built.searchProviders);
     expect(service.llmProviders).toBe(built.llmProviders);
     expect(service.workers).toBe(built.workers);
     expect(service.describe()).toEqual(built.describe());
