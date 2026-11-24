@@ -9,7 +9,6 @@ import {
 import {
   applyScrapeOptionsDefaults,
   type Document,
-  getPDFMaxPages,
   shouldParseImages,
   scrapeOptions,
   type ScrapeOptions,
@@ -24,7 +23,6 @@ import {
   getEngineMaxReasonableTime,
   resolveCandidateEngines,
   scrapeURLWithEngine,
-  shouldUseIndex,
 } from "./engines";
 import { applyHandoffFeatureFlags } from "./lib/handoffFeatureFlags";
 import { parseMarkdown } from "../../lib/html-to-markdown";
@@ -57,17 +55,14 @@ import {
   PaywalledContentError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
-import {
-  inWaterfallExperimentArm,
-  waterfallExperimentFor,
-} from "./waterfallExperiments";
 import { executeTransformers } from "./transformers";
 import { LLMRefusalError } from "./transformers/llmExtract";
 import { shouldCheckRobots } from "./shouldCheckRobots";
 import { loadMock, MockState } from "./lib/mock";
 import { CostTracking } from "../../lib/cost-tracking";
 import { getEngineForUrl } from "../WebScraper/utils/engine-forcing";
-import { useIndex } from "../../services/index";
+import { service } from "../../service";
+import type { EnginePlan } from "../../service/hooks";
 import {
   fetchRobotsTxt,
   createRobotsChecker,
@@ -650,6 +645,12 @@ export type InternalOptions = {
 
   priority?: number; // Passed along to fire-engine
   forceEngine?: Engine | Engine[];
+  /**
+   * Sitemap fetch strategy hint for `scrape.engines.select` hooks when
+   * `teamId === "sitemap"`: `"direct"` for plain HTTP fetch, `"http"` for
+   * lightweight HTTP clients, or `"full"` to allow browser fallback.
+   */
+  sitemapFetch?: "direct" | "http" | "full";
   atsv?: boolean; // anti-bot solver, beta
 
   v0CrawlOnlyUrls?: boolean;
@@ -810,16 +811,13 @@ async function scrapeURLLoopIter(
       (engineResult.statusCode >= 200 && engineResult.statusCode < 300) ||
       engineResult.statusCode === 304;
     const hasNoPageError = engineResult.error === undefined;
-    // A parsed image is a complete result even when OCR found no text: the
-    // image engine has already verified the bytes and run them through OCR,
-    // so a blank scan or a photo legitimately comes back as an empty document.
-    // Without this it would be "deemed unsuccessful" below and, as the last
-    // engine in its waterfall, surface as an all-engines failure.
-    const isParsedImage =
-      engine === "image" && isGoodStatusCode && hasNoPageError;
+    const allowsEmptyContent =
+      service.engines.get(engine)?.allowEmptyContent === true &&
+      isGoodStatusCode &&
+      hasNoPageError;
     const hasRequiredOutput = hasRawBase64
       ? engineResult.rawBase64 !== undefined
-      : isParsedImage || isLongEnough || !isGoodStatusCode;
+      : allowsEmptyContent || isLongEnough || !isGoodStatusCode;
     const isLikelyProxyError = [401, 403, 429].includes(
       engineResult.statusCode,
     );
@@ -851,7 +849,7 @@ async function scrapeURLLoopIter(
           isLongEnough,
           isGoodStatusCode,
           hasNoPageError,
-          isParsedImage,
+          allowsEmptyContent,
         },
       });
       return engineResult;
@@ -1041,31 +1039,26 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               });
               throw new NoEnginesLeftError(enginesAttempted);
             }
-            const nextEngine = remainingEngines[0]?.engine;
-            const experiment = waterfallExperimentFor(
-              error.engine,
-              error.error,
-              nextEngine,
-            );
-            if (experiment) {
-              const testArm = inWaterfallExperimentArm(meta.id, experiment);
-              meta.logger.info("Waterfall experiment decision", {
-                experiment,
-                arm: testArm ? "test" : "control",
-                engine: error.engine,
-                nextEngine,
-                error: error.error,
-              });
-              if (testArm) {
-                enginePromises = enginePromises.filter(
-                  x => x.engine !== error.engine,
-                );
-                if (enginePromises.length === 0) {
-                  break;
-                }
-                continue;
-              }
+            const hooks = scrapeHooks();
+            let nextPlan: EnginePlan | undefined;
+            let handledByFallbackHook = false;
+
+            if (
+              endsEngineLoop(error.error) &&
+              hooks?.has("scrape.engine.fallback")
+            ) {
+              nextPlan = await hooks.transform(
+                "scrape.engine.fallback",
+                { candidates: remainingEngines.map(entry => entry.engine) },
+                {
+                  ...toScrapeMeta(meta),
+                  failed: error.engine,
+                  error: error.error,
+                },
+              );
+              handledByFallbackHook = nextPlan.continueWaterfall === true;
             }
+
             if (error.error instanceof EngineError) {
               meta.logger.warn(error.error.formatEngineLog(error.engine), {
                 error: error.error,
@@ -1080,7 +1073,15 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               // engines. Recognised here purely so it doesn't fall through to the
               // catch-all branch and get reported as an unexpected error.
             } else if (endsEngineLoop(error.error)) {
-              throw error.error;
+              if (!handledByFallbackHook) {
+                throw error.error;
+              }
+              meta.logger.warn(
+                "Engine " +
+                  error.engine +
+                  " failed with terminal error; continuing waterfall per fallback hook.",
+                { error: error.error },
+              );
             } else if (error.error instanceof LLMRefusalError) {
               meta.logger.warn("LLM refusal encountered", {
                 error: error.error,
@@ -1109,7 +1110,6 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               x => x.engine !== error.engine,
             );
 
-            const hooks = scrapeHooks();
             if (hooks?.has("scrape.engine.fallback")) {
               const existing = new Map(
                 [...fallbackList, ...remainingEngines].map(entry => [
@@ -1117,26 +1117,32 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
                   entry,
                 ]),
               );
-              const nextPlan = await hooks.transform(
-                "scrape.engine.fallback",
-                { candidates: remainingEngines.map(entry => entry.engine) },
-                {
-                  ...toScrapeMeta(meta),
-                  failed: error.engine,
-                  error: error.error,
-                },
-              );
+              const resolvedPlan =
+                nextPlan ??
+                (await hooks.transform(
+                  "scrape.engine.fallback",
+                  { candidates: remainingEngines.map(entry => entry.engine) },
+                  {
+                    ...toScrapeMeta(meta),
+                    failed: error.engine,
+                    error: error.error,
+                  },
+                ));
               const attempted = new Set<Engine>([
                 ...enginesAttempted,
                 ...enginePromises.map(x => x.engine),
               ]);
-              const eligibleCandidates = nextPlan.candidates.filter(
+              const eligibleCandidates = resolvedPlan.candidates.filter(
                 engine => !attempted.has(engine),
               );
               const resolved = resolveCandidateEngines(
                 meta,
                 eligibleCandidates,
                 existing,
+                {
+                  suppressUnsupportedWarnings:
+                    resolvedPlan.suppressUnsupportedWarnings,
+                },
               );
               remainingEngines.splice(0, remainingEngines.length, ...resolved);
               const attemptedEntries = fallbackList.filter(entry =>
@@ -1299,8 +1305,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         contentType: engineResult.contentType,
         timezone: engineResult.timezone,
         proxyUsed: engineResult.proxyUsed ?? "basic",
-        ...(fallbackList.find(x =>
-          ["index", "index;documents"].includes(x.engine),
+        ...(enginesAttempted.some(
+          engine => service.engines.get(engine)?.cache === true,
         )
           ? engineResult.cacheInfo
             ? {
@@ -1914,43 +1920,10 @@ export async function scrapeURL(
           module: "scrapeURL/metrics",
           timeTaken: Date.now() - startTime,
           maxAgeValid: (meta.options.maxAge ?? 0) > 0,
-          shouldUseIndex: shouldUseIndex(meta),
           success: result.success,
           indexHit:
             result.success && result.document.metadata.cacheState === "hit",
         });
-
-        if (useIndex) {
-          meta.logger.debug("scrapeURL index metrics", {
-            module: "scrapeURL/index-metrics",
-            timeTaken: Date.now() - startTime,
-            changeTrackingEnabled: !!hasFormatOfType(
-              meta.options.formats,
-              "changeTracking",
-            ),
-            summaryEnabled: !!hasFormatOfType(meta.options.formats, "summary"),
-            jsonEnabled: !!hasFormatOfType(meta.options.formats, "json"),
-            screenshotEnabled: !!hasFormatOfType(
-              meta.options.formats,
-              "screenshot",
-            ),
-            imagesEnabled: !!hasFormatOfType(meta.options.formats, "images"),
-            brandingEnabled: !!hasFormatOfType(
-              meta.options.formats,
-              "branding",
-            ),
-            pdfMaxPages: getPDFMaxPages(meta.options.parsers),
-            maxAge: meta.options.maxAge,
-            headers: meta.options.headers
-              ? Object.keys(meta.options.headers).length
-              : 0,
-            actions: meta.options.actions?.length ?? 0,
-            proxy: meta.options.proxy,
-            success: result.success,
-            indexHit:
-              result.success && result.document.metadata.cacheState === "hit",
-          });
-        }
 
         setSpanAttributes(span, {
           "scrape.success": true,
@@ -1995,41 +1968,9 @@ export async function scrapeURL(
           module: "scrapeURL/metrics",
           timeTaken: Date.now() - startTime,
           maxAgeValid: (meta.options.maxAge ?? 0) > 0,
-          shouldUseIndex: shouldUseIndex(meta),
           success: false,
           indexHit: false,
         });
-
-        if (useIndex) {
-          meta.logger.debug("scrapeURL index metrics", {
-            module: "scrapeURL/index-metrics",
-            timeTaken: Date.now() - startTime,
-            changeTrackingEnabled: !!hasFormatOfType(
-              meta.options.formats,
-              "changeTracking",
-            ),
-            summaryEnabled: !!hasFormatOfType(meta.options.formats, "summary"),
-            jsonEnabled: !!hasFormatOfType(meta.options.formats, "json"),
-            screenshotEnabled: !!hasFormatOfType(
-              meta.options.formats,
-              "screenshot",
-            ),
-            imagesEnabled: !!hasFormatOfType(meta.options.formats, "images"),
-            brandingEnabled: !!hasFormatOfType(
-              meta.options.formats,
-              "branding",
-            ),
-            pdfMaxPages: getPDFMaxPages(meta.options.parsers),
-            maxAge: meta.options.maxAge,
-            headers: meta.options.headers
-              ? Object.keys(meta.options.headers).length
-              : 0,
-            actions: meta.options.actions?.length ?? 0,
-            proxy: meta.options.proxy,
-            success: false,
-            indexHit: false,
-          });
-        }
 
         // Set error attributes on span
         let errorType = "unknown";

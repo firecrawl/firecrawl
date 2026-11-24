@@ -48,7 +48,7 @@ import {
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { isUsOnly } from "../../../../lib/us-only";
 import { isProcessingRestricted } from "../../../../lib/reserved-capacity";
-import { useFireEngine } from "../fire-engine/available";
+import { hasFilePrefetchEngine } from "../utils/specialtyHandler";
 import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
 import { shouldRetryFirePdf } from "./fire-pdf/retry";
@@ -126,7 +126,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   // primary path. Ordinary pages (no "pdf" flag) keep declining via
   // EngineUnsuccessfulError so the waterfall just moves on.
   if (
-    useFireEngine &&
+    hasFilePrefetchEngine() &&
     meta.internalOptions.forceEngine === undefined &&
     meta.pdfPrefetch == null
   ) {

@@ -2,7 +2,6 @@ import { config } from "../config";
 import { SearchResult } from "../../src/lib/entities";
 import { logger } from "../lib/logger";
 import { executeWithRetry, attemptRequest } from "../lib/retry-utils";
-import { useFireEngine } from "../scraper/scrapeURL/engines/fire-engine/available";
 
 function hasResults(results: unknown): results is SearchResult[] {
   return Array.isArray(results) && results.length > 0;
@@ -23,7 +22,7 @@ export async function fireEngineMap(
   },
   abort?: AbortSignal,
 ): Promise<SearchResult[]> {
-  if (!useFireEngine) {
+  if (!config.FIRE_ENGINE_BETA_URL) {
     logger.warn(
       "(v1/map Beta) Results might differ from cloud offering currently.",
     );

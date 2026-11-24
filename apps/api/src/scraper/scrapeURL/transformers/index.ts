@@ -23,8 +23,7 @@ import { fetchMenu } from "./menu";
 import { fetchVideo } from "./video";
 import { performRedactPII } from "./redactPII";
 import { performPromptInjectionGuard } from "./promptInjectionGuard";
-import { useIndex, useSearchIndex } from "../../../services/index";
-import { sendDocumentToIndex } from "../engines/index/index";
+import { useSearchIndex } from "../../../services/index";
 import { sendDocumentToSearchIndex } from "./sendToSearchIndex";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { brandingTransformer } from "../../../lib/branding/transformer";
@@ -674,7 +673,6 @@ const transformerStack: TransformerStep[] = [
   { hook: "scrape.document.derived" },
   fetchProduct,
   fetchMenu,
-  ...(useIndex ? [sendDocumentToIndex] : []),
   ...(useSearchIndex ? [sendDocumentToSearchIndex] : []), // Add to search index for real-time search
   performLLMExtract,
   performDeterministicJson,
@@ -696,7 +694,17 @@ export async function executeTransformers(
 ): Promise<Document> {
   if (meta.internalOptions.teamId === "sitemap") {
     document.metadata.scrapeId = meta.id;
-    if (useIndex) document = await sendDocumentToIndex(meta, document);
+    const hooks = scrapeHooks();
+    if (hooks?.has("scrape.document.derived")) {
+      const childLogger = meta.logger.child({
+        method: "executeTransformers/scrape.document.derived",
+      });
+      document = await hooks.transform(
+        "scrape.document.derived",
+        document,
+        toScrapeMeta(meta, childLogger),
+      );
+    }
     return coerceFieldsToFormats(meta, document);
   }
 

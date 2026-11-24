@@ -1,14 +1,24 @@
 import { config } from "../config";
+import { installedService } from "../service/service";
 
 /**
  * Raster image OCR rides on FirePDF and is switched on for the whole
  * deployment by `IMAGE_OCR_ENABLED`. Every entry point (URL-extension
  * routing, the browser handoff, parse uploads) consults this one check, so
- * with the switch off every request gets exactly the pre-existing
- * unsupported-file behaviour.
+ * with the switch off (or without a registered image engine) every request
+ * gets the standard unsupported-file behaviour.
  */
 export function isImageOcrEnabled(): boolean {
-  return !!config.FIRE_PDF_BASE_URL && config.IMAGE_OCR_ENABLED;
+  if (!config.FIRE_PDF_BASE_URL || !config.IMAGE_OCR_ENABLED) {
+    return false;
+  }
+  const svc = installedService();
+  if (!svc) {
+    return true;
+  }
+  return svc.engines
+    .enabled()
+    .some(engine => engine.features.image === true && !engine.cache);
 }
 
 /**
