@@ -27,6 +27,7 @@ import { getErrorHttpResponse, ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
 import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
+import { applySearchPlanHook } from "../../search/plan-hook";
 import type { BillingMetadata } from "../../services/billing/types";
 import {
   getSearchForcedKind,
@@ -78,6 +79,9 @@ import {
   toolFusionEnabled,
 } from "../../search/tool-intent";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
+import { isSelfHosted } from "../../lib/deployment";
+import { requestContext } from "../../lib/request-context";
+import { installedService } from "../../service/service";
 
 const IMAGE_SEARCH_US_ONLY_MESSAGE =
   "Image search is not available for teams restricted to US-only processing.";
@@ -434,6 +438,18 @@ async function searchControllerInner(
       }
     }
 
+    const ctx =
+      req.ctx ??
+      requestContext({
+        teamId: req.auth.team_id,
+        zeroDataRetention,
+        flags: req.acuc?.flags ?? null,
+        orgId: req.acuc?.org_id ?? null,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+        billing,
+      });
+    req.ctx = ctx;
+
     // Kick off the `requests` row insert without blocking: it queues on the
     // Postgres pool and can take seconds under pool pressure. We only need it
     // committed before the child-row writes (logSearch et al. below) to keep
@@ -457,28 +473,6 @@ async function searchControllerInner(
       logRequestPromise.catch(() => {});
     }
 
-    const toolsOnly = isToolsOnlySearch(req.body.sources, req.body.categories);
-    const freeCatalogue = isFreeCatalogueSearch(
-      req.body.sources,
-      req.body.categories,
-    );
-    const govSearch = wantsGovCategory(categories);
-    const projectedKeylessCredits =
-      !isSearchPreview &&
-      shouldBill &&
-      !freeCatalogue &&
-      (!govSearch || requestedFormats.length > 0)
-        ? projectSearchTotalCredits(
-            {
-              limit: req.body.limit,
-              enterprise: req.body.enterprise,
-              scrapeOptions: req.body.scrapeOptions,
-              freeSearch: govSearch,
-            },
-            req.acuc?.flags ?? null,
-            zeroDataRetention,
-          )
-        : 0;
     // The request must be on record before anything is reserved, runs, or
     // bills. A failed log fails the request here, ahead of the keyless
     // reservation and the search, so there is nothing to refund or unbill.
@@ -490,6 +484,98 @@ async function searchControllerInner(
         timeMs: waited,
       });
     if (!agentRequestId) jobIdField = { jobId };
+
+    const planHooks = installedService()?.hooks;
+    const planned = planHooks?.has("search.plan")
+      ? await applySearchPlanHook(
+          {
+            query: req.body.query,
+            limit: req.body.limit,
+            sources: req.body.sources as Array<{ type: string }>,
+          },
+          { ctx, body: req.body },
+        )
+      : {
+          query: req.body.query,
+          limit: req.body.limit,
+          sources: req.body.sources as Array<{ type: string }>,
+        };
+
+    if (planHooks?.has("search.plan")) {
+      const plannedWantsTools = planned.sources.some(
+        source => source.type === "alexandria",
+      );
+      const plannedWantsSkills = planned.sources.some(
+        source => source.type === "skills",
+      );
+      if (
+        (plannedWantsTools || plannedWantsSkills) &&
+        req.auth.team_id.startsWith("preview_keyless_")
+      ) {
+        applyAgentAuthDiscoveryHeader(res);
+        return res
+          .status(403)
+          .json(keylessProviderToolsBody(req.auth.team_id, req));
+      }
+      if ((plannedWantsTools || plannedWantsSkills) && !planned.query.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: plannedWantsTools
+            ? "A query is required for tool search."
+            : "A query is required for skill search.",
+        });
+      }
+      if (
+        (plannedWantsTools || plannedWantsSkills) &&
+        (teamForcedKind ||
+          req.body.enterprise?.some(mode => mode === "zdr" || mode === "anon"))
+      ) {
+        return res.status(403).json({
+          success: false,
+          error:
+            "Provider discovery requires access and does not support zero data retention.",
+        });
+      }
+      if (
+        isUsOnly(req.acuc?.flags) &&
+        planned.sources.some(source => source.type === "images")
+      ) {
+        planned.sources = planned.sources.filter(
+          source => source.type !== "images",
+        );
+        if (planned.sources.length === 0 && !indexCategory) {
+          return res.status(403).json({
+            success: false,
+            code: "US_ONLY_UNAVAILABLE",
+            error: IMAGE_SEARCH_US_ONLY_MESSAGE,
+          });
+        }
+        usOnlyImagesWarning = IMAGE_SEARCH_US_ONLY_MESSAGE;
+      }
+    }
+
+    const toolsOnly = isToolsOnlySearch(planned.sources, req.body.categories);
+    const freeCatalogue = isFreeCatalogueSearch(
+      planned.sources,
+      req.body.categories,
+    );
+    const govSearch = wantsGovCategory(categories);
+    const projectedKeylessCredits =
+      !isSearchPreview &&
+      shouldBill &&
+      !freeCatalogue &&
+      (!govSearch || requestedFormats.length > 0)
+        ? projectSearchTotalCredits(
+            {
+              limit: planned.limit,
+              enterprise: req.body.enterprise,
+              scrapeOptions: req.body.scrapeOptions,
+              freeSearch: govSearch,
+            },
+            req.acuc?.flags ?? null,
+            zeroDataRetention,
+          )
+        : 0;
 
     if (govSearch) {
       const perMinute = await consumeIndexRateLimit(
@@ -549,15 +635,15 @@ async function searchControllerInner(
 
     const result = await executeSearch(
       {
-        query: req.body.query,
-        limit: req.body.limit,
+        query: planned.query,
+        limit: planned.limit,
         tbs: req.body.tbs,
         filter: req.body.filter,
         lang: req.body.lang,
         country: req.body.country,
         location: req.body.location,
         safe: req.body.safe,
-        sources: req.body.sources as Array<{ type: string }>,
+        sources: planned.sources,
         categories: req.body.categories as CategoryOption[],
         includeDomains: req.body.includeDomains,
         excludeDomains: req.body.excludeDomains,
@@ -602,6 +688,9 @@ async function searchControllerInner(
         ...(req.headers["x-firecrawl-work-contact-only"] === "true"
           ? { workContactOnly: true }
           : {}),
+        ctx,
+        body: req.body,
+        planApplied: true,
       },
       logger,
     );
@@ -626,6 +715,16 @@ async function searchControllerInner(
       }).catch(error => {
         logger.error("Failed to log search", { error, jobId });
       });
+      const hooks = installedService()?.hooks;
+      if (hooks?.has("search.finished")) {
+        hooks.observe("search.finished", {
+          id: jobId,
+          ctx,
+          results: 0,
+          charged:
+            !isSelfHosted() && !isSearchPreview && shouldBill ? 0 : undefined,
+        });
+      }
       return res.status(503).json({
         success: false,
         code: "TOOL_DISCOVERY_UNAVAILABLE",
@@ -745,6 +844,18 @@ async function searchControllerInner(
         result.response.tools,
         lineage,
       );
+    }
+    const hooks = installedService()?.hooks;
+    if (hooks?.has("search.finished")) {
+      hooks.observe("search.finished", {
+        id: jobId,
+        ctx,
+        results: result.totalResultsCount,
+        charged:
+          !isSelfHosted() && !isSearchPreview && shouldBill
+            ? result.searchCredits
+            : undefined,
+      });
     }
     const warning = [
       usOnlyImagesWarning,

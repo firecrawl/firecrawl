@@ -376,6 +376,7 @@ export function createService(
 
 let installed: Service | undefined;
 let startedRole: string | undefined;
+let stopRun: Promise<void> | undefined;
 
 /** The role `run` started in this process, or undefined when it has started none. */
 export function processRole(): string | undefined {
@@ -385,6 +386,22 @@ export function processRole(): string | undefined {
 /** The currently installed service, or undefined when none is installed. */
 export function installedService(): Service | undefined {
   return installed;
+}
+
+/**
+ * Runs `process.stop` hooks at most once for the active process role.
+ * Repeated shutdown triggers share the same completion promise.
+ */
+export function runProcessStop(role?: string): Promise<void> {
+  const currentService = installed;
+  if (!currentService || !currentService.hooks.has("process.stop")) {
+    return Promise.resolve();
+  }
+  if (!stopRun) {
+    const activeRole = startedRole ?? role ?? "";
+    stopRun = currentService.hooks.run("process.stop", { role: activeRole });
+  }
+  return stopRun;
 }
 
 function current(): Service {
@@ -440,6 +457,7 @@ export function replaceService(next: Service | undefined): Service | undefined {
   const previous = installed;
   installed = next;
   startedRole = undefined;
+  stopRun = undefined;
   return previous;
 }
 
@@ -451,17 +469,17 @@ export interface RunOptions {
 
 /**
  * Starts one process role: checks the environment of every owner defined so
- * far, installs the service, then runs the role. The returned promise settles
- * when the role's own start does.
+ * far, installs the service, runs `process.start` hooks, then runs the role.
+ * The returned promise settles when the role's own start does.
  *
  * The check comes before the role runs. A role that loads its code only when
  * it runs can define an owner then, and that owner is checked where it is
  * defined.
  *
- * An unknown role, a second install, an environment with a problem and a role
- * that throws while it loads are thrown from this call and not turned into a
- * rejection, so a process that cannot start fails the way a main module that
- * throws does.
+ * An unknown role, a second install, and an environment with a problem are
+ * thrown synchronously from this call. A role that throws while it loads
+ * throws synchronously when no `process.start` hook is registered, and
+ * rejects the returned promise when `process.start` hooks run first.
  */
 export function run(
   next: Service,
@@ -481,9 +499,13 @@ export function run(
   assertEnv();
   installed = next;
   startedRole = role;
+  stopRun = undefined;
   const env: WorkerRunEnv =
     options?.signal !== undefined
       ? { entry, signal: options.signal }
       : { entry };
-  return Promise.resolve(worker.run(env));
+  if (!next.hooks.has("process.start")) {
+    return Promise.resolve(worker.run(env));
+  }
+  return next.hooks.run("process.start", { role }).then(() => worker.run(env));
 }

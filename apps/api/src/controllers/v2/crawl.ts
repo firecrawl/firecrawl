@@ -238,6 +238,24 @@ export async function crawlController(
   };
   const scrapeOptions = req.body.scrapeOptions;
 
+  const billing: BillingMetadata = {
+    endpoint: "crawl",
+    jobId: id,
+    externalRequestId: externalRequestId(req),
+    hostedMcp: req.auth.hostedMcp,
+  };
+  const ctx =
+    req.ctx ??
+    requestContext({
+      teamId: req.auth.team_id,
+      zeroDataRetention,
+      flags: req.acuc?.flags ?? null,
+      orgId: req.acuc?.org_id ?? null,
+      apiKeyId: req.acuc?.api_key_id ?? null,
+      billing,
+    });
+  req.ctx = ctx;
+
   let promptGeneratedOptions = {};
   if (req.body.prompt) {
     const basePrompt = req.body.prompt;
@@ -262,6 +280,7 @@ export async function crawlController(
               useIndex: true,
               maxFireEngineResults: 500,
               zeroDataRetention,
+              ctx,
             });
           return generateCrawlerOptionsFromPrompt(
             enhancedPrompt,
@@ -358,21 +377,6 @@ export async function crawlController(
 
   const effectiveConcurrency =
     req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
-  const billing: BillingMetadata = {
-    endpoint: "crawl",
-    jobId: id,
-    externalRequestId: externalRequestId(req),
-    hostedMcp: req.auth.hostedMcp,
-  };
-  const ctx = requestContext({
-    teamId: req.auth.team_id,
-    zeroDataRetention,
-    flags: req.acuc?.flags ?? null,
-    orgId: req.acuc?.org_id ?? null,
-    apiKeyId: req.acuc?.api_key_id ?? null,
-    billing,
-  });
-  req.ctx = ctx;
   const sc: StoredCrawl = {
     ctx,
     originUrl: req.body.url,

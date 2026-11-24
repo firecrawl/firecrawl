@@ -20,6 +20,7 @@ import {
   processFirebillTrackRetry,
 } from "../autumn/firebill";
 import { startRole } from "../../main";
+import { runProcessStop } from "../../service/service";
 
 const RECONCILER_INTERVAL_MS = 60 * 1000;
 
@@ -108,6 +109,7 @@ export async function start() {
     }
 
     server.close(async () => {
+      await runProcessStop("nuq-reconciler-worker");
       await shutdownTracing();
       _logger.info("NuQ reconciler worker shut down");
       process.exit(0);
