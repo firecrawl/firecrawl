@@ -10,7 +10,7 @@ vi.mock("../../../services/queue-service", async () => {
   return { getRedisConnection: () => client };
 });
 
-import { config } from "../../../config";
+import { threatProtectionEnv } from "../env";
 import { fetchGoogleWebRiskVerdict } from "./google-web-risk";
 import { urlExpressionHash, WebRiskMockDatabase } from "./web-risk/testing";
 
@@ -51,8 +51,8 @@ webRiskDb.addCollidingFullHash(
 let failHashesSearches = 0;
 
 const originalConfig = {
-  webRiskUrl: config.GOOGLE_WEB_RISK_API_URL,
-  webRiskKey: config.GOOGLE_WEB_RISK_API_KEY,
+  webRiskUrl: threatProtectionEnv.GOOGLE_WEB_RISK_API_URL,
+  webRiskKey: threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY,
 };
 
 beforeAll(async () => {
@@ -111,16 +111,16 @@ beforeAll(async () => {
     });
     server.listen(0, "127.0.0.1", () => {
       baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-      config.GOOGLE_WEB_RISK_API_URL = baseUrl;
-      config.GOOGLE_WEB_RISK_API_KEY = "test-web-risk-key";
+      threatProtectionEnv.GOOGLE_WEB_RISK_API_URL = baseUrl;
+      threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY = "test-web-risk-key";
       resolve();
     });
   });
 });
 
 afterAll(async () => {
-  config.GOOGLE_WEB_RISK_API_URL = originalConfig.webRiskUrl;
-  config.GOOGLE_WEB_RISK_API_KEY = originalConfig.webRiskKey;
+  threatProtectionEnv.GOOGLE_WEB_RISK_API_URL = originalConfig.webRiskUrl;
+  threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY = originalConfig.webRiskKey;
   await new Promise<void>(resolve => server.close(() => resolve()));
 });
 
@@ -244,13 +244,13 @@ describe("fetchGoogleWebRiskVerdict", () => {
   });
 
   it("throws when the API key is not configured", async () => {
-    config.GOOGLE_WEB_RISK_API_KEY = undefined;
+    threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY = undefined;
     try {
       await expect(fetchGoogleWebRiskVerdict("safe.example")).rejects.toThrow(
         /not configured/,
       );
     } finally {
-      config.GOOGLE_WEB_RISK_API_KEY = "test-web-risk-key";
+      threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY = "test-web-risk-key";
     }
     expect(seenRequests).toHaveLength(0);
   });

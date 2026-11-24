@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { config } from "../config";
+import { siemEnv } from "./siem-logging/env";
 
 // AES-256-GCM encryption for org-scoped partner credentials at rest (SIEM
 // destination secrets, Zscaler OAuth client secrets). The key lives outside
@@ -9,7 +9,7 @@ import { config } from "../config";
 const GCM_PREFIX = "gcm:";
 
 function getEncryptionKey(): Buffer {
-  const raw = config.SIEM_LOGGING_ENCRYPTION_KEY?.trim();
+  const raw = siemEnv.SIEM_LOGGING_ENCRYPTION_KEY?.trim();
   if (!raw) {
     throw new Error("SIEM_LOGGING_ENCRYPTION_KEY is not configured");
   }
