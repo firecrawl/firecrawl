@@ -80,7 +80,8 @@ type PrefetchSubscription = {
   tag: string | null;
   ready: Promise<void> | null;
   pending: amqp.ConsumeMessage | null;
-  waiter: ((msg: amqp.ConsumeMessage | false) => void) | null;
+  // false: the subscription ended (broker cancel); Error: the channel closed
+  waiter: ((msg: amqp.ConsumeMessage | false | Error) => void) | null;
   onClose: () => void;
   staleHits: number;
 };
@@ -1343,7 +1344,8 @@ class NuQ<JobData = any, JobReturnValue = any> {
   // then acks, so no second job is pushed to a worker that is now busy; the
   // next idle call subscribes again. Resolves to the delivery, or false when
   // nothing arrived within waitMs (same contract as channel.get). Throws on
-  // broker errors so the caller falls back to Postgres.
+  // broker errors and when the channel closes, so the caller falls back to
+  // Postgres.
   private async takePrefetchedJob(
     waitMs: number,
   ): Promise<amqp.ConsumeMessage | false> {
@@ -1357,10 +1359,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
         pending: null,
         waiter: null,
         staleHits: 0,
-        onClose: () => {
-          if (sender.prefetchSub === created) sender.prefetchSub = null;
-          created.waiter?.(false);
-        },
+        onClose: () => end(new Error("NuQ prefetch channel closed")),
+      };
+      const end = (result: false | Error) => {
+        if (sender.prefetchSub === created) sender.prefetchSub = null;
+        created.waiter?.(result);
       };
       sub = created;
       channel.once("close", created.onClose);
@@ -1380,7 +1383,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
                 created.pending = null;
               }
               channel.removeListener("close", created.onClose);
-              created.onClose();
+              end(false);
               return;
             }
             if (created.waiter) created.waiter(msg);
@@ -1404,17 +1407,20 @@ class NuQ<JobData = any, JobReturnValue = any> {
     sub.pending = null;
     if (!msg) {
       const waiting = sub;
-      msg = await new Promise<amqp.ConsumeMessage | false>(resolve => {
-        const timer = setTimeout(() => {
-          waiting.waiter = null;
-          resolve(false);
-        }, waitMs);
-        waiting.waiter = m => {
-          clearTimeout(timer);
-          waiting.waiter = null;
-          resolve(m);
-        };
-      });
+      msg = await new Promise<amqp.ConsumeMessage | false>(
+        (resolve, reject) => {
+          const timer = setTimeout(() => {
+            waiting.waiter = null;
+            resolve(false);
+          }, waitMs);
+          waiting.waiter = m => {
+            clearTimeout(timer);
+            waiting.waiter = null;
+            if (m instanceof Error) reject(m);
+            else resolve(m);
+          };
+        },
+      );
     }
 
     if (!msg) {
@@ -1483,9 +1489,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
             // Reset sender so it can be re-established on next call. Close the
             // abandoned connection so no subscription or unacked delivery is
             // left on it (the broker requeues unacked deliveries on close).
+            // Await it: amqplib emits "close" before the promise resolves, so
+            // its handlers cannot clear the sender of the next call.
             const abandoned = this.sender;
             this.sender = null;
-            abandoned?.connection.close().catch(() => {});
+            await abandoned?.connection.close().catch(() => {});
           }
         } else {
           logger.warn("NuQ sender not started, falling back to postgres", {

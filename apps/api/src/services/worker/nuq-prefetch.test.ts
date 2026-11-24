@@ -12,17 +12,21 @@ const { broker, connect, pgQuery } = vi.hoisted(() => {
     unackedByTag = new Map<string, any>();
     ghost = false; // consumers register but never receive (lost subscription)
     failConsume = false;
+    prefetchCount: number | null = null;
+    consumeArgs: { queue: string; options: any } | null = null;
     private nextTag = 0;
 
     async assertQueue() {
       this.calls.push("assertQueue");
       return {};
     }
-    async prefetch() {
+    async prefetch(count: number) {
       this.calls.push("prefetch");
+      this.prefetchCount = count;
     }
-    async consume(_queue: string, cb: (msg: any) => void) {
+    async consume(queue: string, cb: (msg: any) => void, options: any) {
       this.calls.push("consume");
+      this.consumeArgs = { queue, options };
       if (this.failConsume) throw new Error("consume refused");
       const tag = `ctag-${++this.nextTag}`;
       this.consumers.set(tag, cb);
@@ -72,14 +76,27 @@ const { broker, connect, pgQuery } = vi.hoisted(() => {
     }
   }
 
-  const broker = { channel: null as any, connection: null as any };
+  const broker = {
+    channel: null as any,
+    connection: null as any,
+    failNextConsume: false,
+  };
   const connect = vi.fn(async () => {
-    broker.channel = new FakeChannel();
-    broker.connection = Object.assign(new EventEmitter(), {
-      createChannel: vi.fn(async () => broker.channel),
-      close: vi.fn(async () => {}),
+    const channel = new FakeChannel();
+    channel.failConsume = broker.failNextConsume;
+    broker.failNextConsume = false;
+    // Like amqplib, close() emits "close" (after the broker's CloseOk) before
+    // its promise resolves.
+    const connection: any = Object.assign(new EventEmitter(), {
+      createChannel: vi.fn(async () => channel),
+      close: vi.fn(async () => {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        connection.emit("close");
+      }),
     });
-    return broker.connection;
+    broker.channel = channel;
+    broker.connection = connection;
+    return connection;
   });
   const pgQuery = vi.fn(async () => ({ rows: [] }));
   return { broker, connect, pgQuery };
@@ -142,6 +159,11 @@ describe("NuQ prefetch take (RabbitMQ)", () => {
     expect(calls.filter(c => c === "get")).toHaveLength(0);
     expect(calls.filter(c => c === "consume")).toHaveLength(1);
     expect(broker.channel.consumers.size).toBe(1);
+    expect(broker.channel.prefetchCount).toBe(1);
+    expect(broker.channel.consumeArgs).toEqual({
+      queue: "nuq.queue_scrape.prefetch",
+      options: expect.objectContaining({ noAck: false }),
+    });
   });
 
   test("a pushed job is taken, and the busy worker holds no subscription", async () => {
@@ -185,15 +207,37 @@ describe("NuQ prefetch take (RabbitMQ)", () => {
 
   test("falls back to postgres and closes the sender when subscribing fails", async () => {
     const queue = await freshQueue();
-    await vi.advanceTimersByTimeAsync(0);
+    broker.failNextConsume = true;
+    expect(await take(queue)).toBeNull();
+
+    expect(pgQuery).toHaveBeenCalledTimes(1);
+    expect(broker.connection.close).toHaveBeenCalled();
+  });
+
+  test("falls back to postgres when the channel closes during the wait", async () => {
+    const queue = await freshQueue();
+    expect(await take(queue)).toBeNull();
+
     const pending = queue.getJobToProcess();
-    // fail the subscription on the channel that the call is about to use
-    await vi.waitFor(() => expect(broker.channel).toBeTruthy());
-    broker.channel.failConsume = true;
+    await vi.advanceTimersByTimeAsync(100);
+    broker.channel.emit("close");
     await vi.advanceTimersByTimeAsync(5_000);
 
     expect(await pending).toBeNull();
     expect(pgQuery).toHaveBeenCalledTimes(1);
-    expect(broker.connection.close).toHaveBeenCalled();
+  });
+
+  test("the abandoned connection's close does not drop the next sender", async () => {
+    const queue = await freshQueue();
+    broker.failNextConsume = true;
+    // the next call starts right after the fallback returns
+    const first = queue.getJobToProcess();
+    const second = first.then(() => queue.getJobToProcess());
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await first).toBeNull();
+    expect(await second).toBeNull();
+
+    expect(await take(queue)).toBeNull();
+    expect(connect).toHaveBeenCalledTimes(2);
   });
 });
