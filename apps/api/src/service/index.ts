@@ -7,7 +7,17 @@ export type {
 export type { SearchResultType, SearchV2Response } from "../lib/entities";
 export type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 export { coreParts } from "./core-parts";
-export { defaultModules, logsMessages, memoryUploads } from "./defaults";
+export {
+  defaultModules,
+  directWebhooks,
+  logsMessages,
+  memoryUploads,
+  redisIdempotency,
+} from "./defaults";
+export type {
+  DirectWebhooksOptions,
+  RedisIdempotencyOptions,
+} from "./defaults";
 export type {
   DescribedEngineFeature,
   Engine,
@@ -68,6 +78,8 @@ export type {
   DirectUploadInput,
   DirectUploadResult,
   FetchProxyFileKind,
+  IdempotencyContext,
+  IdempotencyModule,
   MessagesModule,
   Modules,
   PrepareUploadInput,
@@ -76,6 +88,11 @@ export type {
   UploadDriver,
   UploadsModule,
   UploadTarget,
+  WebhookContext,
+  WebhookDelivery,
+  WebhookDeliveryResult,
+  WebhookResponse,
+  WebhooksModule,
 } from "./modules";
 export type {
   BaseCaller,

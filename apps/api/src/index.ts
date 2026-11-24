@@ -45,7 +45,6 @@ import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
 import { warmExchangeCatalog } from "./lib/exchange";
 import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
 import responseTime from "response-time";
-import { shutdownWebhookQueue } from "./services/webhook";
 import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
 import { isKeylessConfigured } from "./lib/keyless";
 import {
@@ -290,14 +289,19 @@ async function startServer(port = DEFAULT_PORT) {
       logger.info("Server closed.");
       await drainZdrRequestLogs();
       nuqShutdown().finally(() => {
-        shutdownWebhookQueue().finally(() => {
-          shutdownIndexerQueue().finally(async () => {
-            await shutdownPubSubLogging();
-            await shutdownTracing();
-            logger.info("NUQ shutdown complete");
-            process.exit(0);
+        Promise.resolve()
+          .then(() => installedService()?.modules.webhooks.shutdown?.())
+          .catch(error => {
+            logger.warn("Error shutting down webhooks module", { error });
+          })
+          .finally(() => {
+            shutdownIndexerQueue().finally(async () => {
+              await shutdownPubSubLogging();
+              await shutdownTracing();
+              logger.info("NUQ shutdown complete");
+              process.exit(0);
+            });
           });
-        });
       });
     });
   };
