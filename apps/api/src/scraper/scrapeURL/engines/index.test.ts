@@ -327,10 +327,24 @@ describe("engine registry integration", () => {
       }),
     ]);
 
-    const list = await buildFallbackList(
+    const hybrid = await buildFallbackList(
       makeMeta({ featureFlags: ["stealthProxy"] }),
     );
-    expect(list.map(e => e.engine)).toEqual(["browser;stealth-hybrid", "pdf"]);
+    expect(hybrid.map(e => e.engine)).toEqual(["browser;stealth-hybrid"]);
+
+    install([
+      makeEngine("browser;basic", { quality: 50, features: {} }),
+      makeEngine("pdf", {
+        quality: -20,
+        fileOnly: true,
+        features: { pdf: true, stealthProxy: true },
+      }),
+    ]);
+
+    const fileOnlyStealth = await buildFallbackList(
+      makeMeta({ featureFlags: ["stealthProxy"] }),
+    );
+    expect(fileOnlyStealth.map(e => e.engine)).toEqual(["browser;basic"]);
   });
 
   it("keeps the branding capability gate active when suppressUnsupportedWarnings is set", async () => {
