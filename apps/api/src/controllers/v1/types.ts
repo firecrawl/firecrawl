@@ -29,6 +29,7 @@ import { threatProtectionOverrideSchema } from "../../lib/threat-protection/conf
 import { auditMetadataSchema } from "../../lib/siem-logging/types";
 import type { RateLimiterMode } from "../../types";
 import type { TeamPlanClass } from "../../lib/team-plan-class";
+import type { FreshFeedFilters, FreshFeedUpstream } from "../../lib/fresh-feed";
 
 export const url = z
   .string()
@@ -1249,6 +1250,9 @@ export type TeamFlags = {
   labsSearch?: boolean;
   freshFeed?: boolean;
   freshFeedCreditsPerRecord?: number;
+  freshFeedUpstream?: FreshFeedUpstream;
+  freshFeedCollection?: string;
+  freshFeedFilters?: FreshFeedFilters;
   exchangeRetrieve?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
   // The org's DPA (or partner amendment) restricts how its data may be

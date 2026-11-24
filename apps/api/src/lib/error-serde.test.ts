@@ -61,7 +61,7 @@ import {
 import {
   ThirdPartyDataTermsRequiredError,
   ThirdPartyDataUnsupportedOptionError,
-} from "./exchange";
+} from "./exchange-errors";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
 import type { ThreatDecision } from "./threat-protection/types";
 

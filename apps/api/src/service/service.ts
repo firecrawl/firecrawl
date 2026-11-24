@@ -3,6 +3,13 @@
  * config and read by the rest of the code.
  */
 import type { TransportableErrorClass } from "../lib/error";
+import {
+  buildEngineRegistry,
+  type DescribedEngineFeature,
+  type Engine,
+  type EngineFeatureMap,
+  type EngineRegistry,
+} from "./engines";
 import { assertEnv, describeEnv } from "./env";
 import {
   buildHooks,
@@ -42,6 +49,16 @@ export interface Extension {
    * them when the service is built.
    */
   errors?: TransportableErrorClass[] | (() => TransportableErrorClass[]);
+  /**
+   * Scrape engines contributed by this extension. A later engine of the same
+   * name replaces an earlier one.
+   */
+  engines?: readonly Engine[];
+  /**
+   * Scrape engine feature priorities contributed by this extension. A later
+   * definition of the same feature name replaces an earlier one.
+   */
+  engineFeatures?: EngineFeatureMap;
   /** Process roles, by name. A later extension replaces a role of the same name. */
   workers?: Record<string, Worker>;
 }
@@ -70,6 +87,10 @@ export interface ServiceDescription {
   hooks: Record<string, string[]>;
   /** For each error code with a class, the extension the class comes from. */
   errors: Record<string, string>;
+  /** For each registered scrape engine, the extension it comes from. */
+  engines: Record<string, string>;
+  /** For each registered scrape engine feature, its owner and scoring priority. */
+  engineFeatures: Record<string, DescribedEngineFeature>;
   /** For each process role, the extension it comes from. */
   roles: Record<string, string>;
   /**
@@ -89,6 +110,7 @@ export interface Service {
   readonly modules: Readonly<Modules>;
   readonly hooks: Hooks;
   readonly errors: ErrorRegistry;
+  readonly engines: EngineRegistry;
   readonly workers: Readonly<Record<string, Worker>>;
   /** What the service was made of when it was created, plus declared env owners. Each call returns a copy. */
   describe(): ServiceDescription;
@@ -120,6 +142,18 @@ export function createService(
   const hooks = buildHooks<HookPoints>(
     extensions.flatMap(extension => extension.hooks ?? []),
     (hook, error) => parts.logger.error("Hook handler failed", { hook, error }),
+  );
+
+  const {
+    registry: engines,
+    describedEngines,
+    describedFeatures,
+  } = buildEngineRegistry(
+    extensions.map(extension => ({
+      owner: extension.name,
+      engines: extension.engines,
+      engineFeatures: extension.engineFeatures,
+    })),
   );
 
   // Snapshot extension names and error sources at creation so mutating an
@@ -180,6 +214,8 @@ export function createService(
     extensions: names,
     modules: Object.keys(modules).sort(),
     hooks: sortedByKey(handlerOwners),
+    engines: describedEngines,
+    engineFeatures: describedFeatures,
     roles: sortedByKey(roleOwners),
   };
 
@@ -189,6 +225,7 @@ export function createService(
     errors: Object.freeze({
       classFor: (code: string) => registeredErrors().get(code)?.errorClass,
     }),
+    engines,
     workers,
     describe(): ServiceDescription {
       // Built from entries, so that a code is listed whatever its name is.
@@ -201,6 +238,8 @@ export function createService(
         modules: copy.modules,
         hooks: copy.hooks,
         errors: sortedByKey(errors),
+        engines: copy.engines,
+        engineFeatures: copy.engineFeatures,
         roles: copy.roles,
         env: sortedByKey(describeEnv()),
       };
@@ -238,6 +277,9 @@ export const service: Service = {
   },
   get errors() {
     return current().errors;
+  },
+  get engines() {
+    return current().engines;
   },
   get workers() {
     return current().workers;

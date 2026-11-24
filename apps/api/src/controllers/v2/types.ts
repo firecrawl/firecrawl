@@ -879,7 +879,6 @@ const scrapeOptionFields = z.strictObject({
   __searchPreviewToken: z.string().optional(),
   __experimental_omce: z.boolean().prefault(false).optional(),
   __experimental_omceDomain: z.string().optional(),
-  __experimental_engpicker: z.boolean().prefault(false).optional(),
   __forceFirePDF: z.boolean().prefault(false).optional(),
 });
 
@@ -1658,6 +1657,8 @@ export type ErrorResponse = {
   replacement?: string;
   documentation_url?: string;
   retry_after_seconds?: number;
+  /** The job the failed request created, when it got far enough to have one. */
+  jobId?: string;
 };
 
 export type ScrapeResponse =
