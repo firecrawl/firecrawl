@@ -59,15 +59,6 @@ const ROLE_FILES = [
     env: { NUQ_RECONCILER_WORKER_PORT: port(5) },
     health: url(5, "/health"),
   },
-  {
-    file: "services/cclog-worker.js",
-    env: { CCLOG_WORKER_PORT: port(6) },
-    health: url(6, "/health"),
-  },
-  // These two listen on no port. They pass when they are still running after
-  // MIN_RUNNING_MS and then exit cleanly.
-  { file: "services/indexing/index-worker.js" },
-  { file: "services/zdr-worker.js" },
 ];
 
 const FDB_WORKER_FILE = {

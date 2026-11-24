@@ -417,16 +417,13 @@ describe("coreParts", () => {
       routes: [],
       roles: {
         api: "core",
-        "cclog-worker": "core",
         "extract-worker": "core",
         harness: "core",
-        "index-worker": "core",
         "nuq-fdb-worker": "core",
         "nuq-prefetch-worker": "core",
         "nuq-reconciler-worker": "core",
         "nuq-worker": "core",
         "queue-worker": "core",
-        "zdr-worker": "core",
       },
       env: {},
     });
@@ -474,7 +471,10 @@ describe("coreParts", () => {
 
     expect(built.describe().hooks).toEqual({});
     expect(built.describe().routes).toEqual([]);
-    expect(built.roles.names()).toHaveLength(11);
+    expect(built.roles.names()).toHaveLength(8);
+    expect(built.roles.has("cclog-worker")).toBe(false);
+    expect(built.roles.has("index-worker")).toBe(false);
+    expect(built.roles.has("zdr-worker")).toBe(false);
     expect(built.describe().modules).toEqual([
       "auth",
       "billing",
@@ -574,5 +574,44 @@ describe("coreParts", () => {
     ]);
     expect(customEnabled).toHaveBeenCalledTimes(1);
     expect(required).toHaveBeenCalledWith(searchProvidersModule);
+  });
+
+  it("registers extension worker roles alongside core roles without loading worker implementations", () => {
+    const required = answerRequire();
+    const customRun = vi.fn();
+    const built = createService(
+      {
+        modules: defaultModules(),
+        extensions: [
+          {
+            name: "custom-workers",
+            workers: {
+              "custom-worker": { run: customRun },
+            },
+          },
+        ],
+      },
+      coreParts(),
+    );
+
+    expect(built.roles.has("custom-worker")).toBe(true);
+    expect(built.roles.owner("custom-worker")).toBe("custom-workers");
+    expect(built.roles.has("cclog-worker")).toBe(false);
+    expect(built.roles.has("index-worker")).toBe(false);
+    expect(built.roles.has("zdr-worker")).toBe(false);
+    expect(built.describe().roles).toEqual({
+      api: "core",
+      "custom-worker": "custom-workers",
+      "extract-worker": "core",
+      harness: "core",
+      "nuq-fdb-worker": "core",
+      "nuq-prefetch-worker": "core",
+      "nuq-reconciler-worker": "core",
+      "nuq-worker": "core",
+      "queue-worker": "core",
+    });
+    expect(customRun).not.toHaveBeenCalled();
+    expect(required).not.toHaveBeenCalledWith(enginesModule);
+    expect(loadedSideEffectModules).toEqual([]);
   });
 });

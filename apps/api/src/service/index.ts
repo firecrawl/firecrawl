@@ -177,7 +177,7 @@ export type {
   SearchProviders,
   SearchQuery,
 } from "./search-providers";
-export { createService, run, service } from "./service";
+export { createService, run, runProcessStop, service } from "./service";
 export type {
   CoreParts,
   ErrorRegistry,
