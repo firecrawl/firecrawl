@@ -2,9 +2,9 @@ import { randomUUID } from "crypto";
 import type { Transaction } from "foundationdb";
 import { Logger } from "winston";
 import { logger as _logger } from "../../../lib/logger";
-import { config } from "../../../config";
 import { QueueFullError } from "../../../lib/queue-full-error";
 import { storedZeroDataRetention } from "../../../lib/request-context";
+import { installedService } from "../../../service/service";
 import { getNuqFdbDatabase } from "./client";
 import {
   NuqFdbKeyspace,
@@ -182,9 +182,14 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     return getNuqFdbDatabase();
   }
 
+  private storesResultsExternally(): boolean {
+    return Boolean(
+      installedService()?.modules.jobStore.storesResultsExternally?.(),
+    );
+  }
+
   private storeReturnvalueInline(): boolean {
-    // cloud stores results in GCS; self-host keeps them in the queue
-    return !config.GCS_BUCKET_NAME;
+    return !this.storesResultsExternally();
   }
 
   // === Enqueue
@@ -889,12 +894,10 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         );
       }
 
-      // Shed job input data early on cloud (results live in GCS) and always for
-      // ZDR. Group members are exempt on the plain cloud path: the crawl-finish
-      // job recovers crawl-scoped context (v1, webhook, team_id, ...) from a
-      // representative member via getGroupAnyJob, mirroring the PG backend which
-      // never sheds. ZDR still sheds even for members (compliance).
-      if (meta.f & F_ZDR || (config.GCS_BUCKET_NAME && !meta.g)) {
+      // Shed job input data early when results are stored externally, and
+      // always for ZDR. Group members keep input data outside ZDR so crawl
+      // completion can recover crawl-scoped context via getGroupAnyJob.
+      if (meta.f & F_ZDR || (this.storesResultsExternally() && !meta.g)) {
         const r = ks.jobDataRange(id);
         tn.clearRange(r.begin, r.end);
       }

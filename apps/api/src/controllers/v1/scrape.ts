@@ -51,7 +51,8 @@ import {
 import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
-import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
+import { currentLimits } from "../../lib/limits";
+import { requestContext } from "../../lib/request-context";
 
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
@@ -256,10 +257,21 @@ async function scrapeControllerInner(
     }
     req.on("close", () => aborter.abort());
 
+    const limitsCtx = requestContext({
+      teamId: req.auth.team_id,
+      zeroDataRetention: zeroDataRetention ?? false,
+      flags: req.acuc?.flags ?? null,
+      orgId: req.acuc?.org_id ?? null,
+      apiKeyId: req.acuc?.api_key_id ?? null,
+      concurrencyLimit: req.acuc?.concurrency_limit,
+      rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
+    });
+    const concurrency = await currentLimits().concurrency(limitsCtx);
+
     doc = await teamConcurrencySemaphore.withSemaphore(
       req.auth.team_id,
       jobId,
-      req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit,
+      concurrency,
       aborter.signal,
       timeout ?? 60_000,
       async limited => {
@@ -324,6 +336,7 @@ async function scrapeControllerInner(
         const doc = await processJobInternal(job);
         return doc ?? null;
       },
+      limitsCtx,
     );
   } catch (e) {
     if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {

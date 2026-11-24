@@ -4,20 +4,17 @@ import { config } from "../../config";
 import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import { getV2RequestSchemas, RequestWithAuth, SearchResponse } from "./types";
 import type { SearchRequest } from "../../service/request";
-import { billTeam } from "../../services/billing/credit_billing";
-import {
-  adjustKeylessCredits,
-  keylessLimitBody,
-  keylessProviderToolsBody,
-  logKeylessCreditUsage,
-  reserveKeylessCredits,
-} from "../../lib/keyless";
+import { keylessProviderToolsBody } from "../../lib/keyless";
 import { v7 as uuidv7 } from "uuid";
 import {
   logSearch,
   logRequest,
   logResearchEndpoint,
 } from "../../services/logging/log_job";
+import { trackSearchRequest } from "../../lib/tracking";
+import { requestContext } from "../../lib/request-context";
+import type {} from "../../lib/billing-state";
+import { service, type SettleOutcome } from "../../service";
 import { logger as _logger } from "../../lib/logger";
 import { getErrorHttpResponse, ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
@@ -38,7 +35,6 @@ import {
   SpanKind,
   type Span,
 } from "../../lib/otel-tracer";
-import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import {
@@ -76,7 +72,6 @@ import {
 } from "../../search/tool-intent";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 import { isSelfHosted } from "../../lib/deployment";
-import { requestContext } from "../../lib/request-context";
 import { installedService } from "../../service/service";
 
 const IMAGE_SEARCH_US_ONLY_MESSAGE =
@@ -151,9 +146,29 @@ async function searchControllerInner(
   );
 
   let zeroDataRetention = teamForcedKind !== null;
-  let reservedKeylessCredits = 0;
-  let reconciledKeylessCredits = false;
+  let billingHandle: unknown = undefined;
+  let settledBilling = false;
   let jobIdField: { jobId?: string } = {};
+
+  const settleBilling = async (outcome: SettleOutcome) => {
+    if (billingHandle === undefined || settledBilling) return;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await service.modules.billing.settle?.(billingHandle, outcome);
+        settledBilling = true;
+        return;
+      } catch (settleError) {
+        if (attempt === 1) {
+          logger.error("Failed to settle billing reservation", {
+            teamId: req.auth.team_id,
+            jobId,
+            ok: outcome.ok,
+            error: settleError,
+          });
+        }
+      }
+    }
+  };
 
   try {
     const rawOrigin =
@@ -442,6 +457,8 @@ async function searchControllerInner(
         flags: req.acuc?.flags ?? null,
         orgId: req.acuc?.org_id ?? null,
         apiKeyId: req.acuc?.api_key_id ?? null,
+        concurrencyLimit: req.acuc?.concurrency_limit,
+        rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
         billing,
       });
     req.ctx = ctx;
@@ -470,8 +487,8 @@ async function searchControllerInner(
     }
 
     // The request must be on record before anything is reserved, runs, or
-    // bills. A failed log fails the request here, ahead of the keyless
-    // reservation and the search, so there is nothing to refund or unbill.
+    // bills. A failed log fails the request here, ahead of the reservation and
+    // the search, so there is nothing to refund or unbill.
     const logStart = Date.now();
     await logRequestPromise;
     const waited = Date.now() - logStart;
@@ -556,22 +573,6 @@ async function searchControllerInner(
       req.body.categories,
     );
     const govSearch = wantsGovCategory(categories);
-    const projectedKeylessCredits =
-      !isSearchPreview &&
-      shouldBill &&
-      !freeCatalogue &&
-      (!govSearch || requestedFormats.length > 0)
-        ? projectSearchTotalCredits(
-            {
-              limit: planned.limit,
-              enterprise: req.body.enterprise,
-              scrapeOptions: req.body.scrapeOptions,
-              freeSearch: govSearch,
-            },
-            req.acuc?.flags ?? null,
-            zeroDataRetention,
-          )
-        : 0;
 
     if (govSearch) {
       const perMinute = await consumeIndexRateLimit(
@@ -592,20 +593,47 @@ async function searchControllerInner(
       }
     }
 
-    if (projectedKeylessCredits > 0) {
-      const reservation = await reserveKeylessCredits(
-        req.auth.team_id,
-        projectedKeylessCredits,
-      );
-      if (!reservation.ok) {
-        applyAgentAuthDiscoveryHeader(res);
-        return res.status(429).json({
-          ...(await keylessLimitBody(req.auth.team_id, "v2_search", req)),
-          ...jobIdField,
-        });
+    const reservation = await service.modules.billing.authorize({
+      caller: req.caller ?? { teamId: req.auth.team_id },
+      operation: "search",
+      stage: "reserve",
+      requestedUnits: planned.limit,
+      ctx,
+      state: {
+        req,
+        shouldBill,
+        isPreview: isSearchPreview,
+        freeCatalogue,
+        govSearch,
+        hasScrapeFormats: requestedFormats.length > 0,
+        limit: planned.limit,
+        enterprise: req.body.enterprise,
+        scrapeOptions: req.body.scrapeOptions,
+        endpoint: "v2_search",
+      },
+    });
+    if (!reservation.ok) {
+      if (reservation.refusal.headers) {
+        for (const [name, value] of Object.entries(
+          reservation.refusal.headers,
+        )) {
+          res.setHeader(name, value);
+        }
       }
-      reservedKeylessCredits = projectedKeylessCredits;
+      const body =
+        reservation.refusal.body &&
+        typeof reservation.refusal.body === "object" &&
+        !Array.isArray(reservation.refusal.body)
+          ? {
+              ...(reservation.refusal.body as Record<string, unknown>),
+              ...jobIdField,
+            }
+          : reservation.refusal.body;
+      return res
+        .status(reservation.refusal.status)
+        .json(body as SearchResponse);
     }
+    billingHandle = reservation.handle;
 
     if (wantsGovCategory(categories)) {
       const indexBudget = await reserveIndexCalls(
@@ -615,10 +643,7 @@ async function searchControllerInner(
         1,
       );
       if (!indexBudget.ok) {
-        if (reservedKeylessCredits > 0) {
-          await adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits);
-          reconciledKeylessCredits = true;
-        }
+        await settleBilling({ ok: false });
         res.setHeader("Retry-After", String(indexBudget.retryAfterSeconds));
         return res.status(429).json({
           success: false,
@@ -670,6 +695,8 @@ async function searchControllerInner(
         clientThread: lineage.threadId,
         apiKeyId: req.acuc?.api_key_id ?? null,
         flags: req.acuc?.flags ?? null,
+        concurrencyLimit: req.acuc?.concurrency_limit,
+        rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
         teamPlanClass: teamPlanClass(req.acuc),
         requestId: agentRequestId ?? jobId,
         jobId,
@@ -678,7 +705,7 @@ async function searchControllerInner(
         zeroDataRetention,
         billing,
         agentIndexOnly: (req as any).agentIndexOnly ?? false,
-        keylessReserved: reservedKeylessCredits > 0,
+        keylessReserved: billingHandle !== undefined,
         threatProtectionPolicy: threatProtection.policy,
         safeModeBypassed: safeMode.bypassed === true,
         ...(req.headers["x-firecrawl-work-contact-only"] === "true"
@@ -692,6 +719,7 @@ async function searchControllerInner(
     );
 
     if (toolsOnly && result.toolsUnavailable) {
+      await settleBilling({ ok: false });
       const error =
         "Tool discovery is temporarily unavailable. Retry the request.";
       setSpanAttributes(span, { "search.status_code": 503 });
@@ -729,36 +757,70 @@ async function searchControllerInner(
       });
     }
 
-    // Bill team for search credits only (scrape jobs bill themselves)
-    if (!isSearchPreview && shouldBill) {
-      billTeam(
-        req.auth.team_id,
-        req.acuc?.org_id ?? null,
-        result.searchCredits,
-        req.acuc?.api_key_id ?? null,
-        { ...billing, chargeId: jobId },
-      ).catch(error =>
-        logger.error("Failed to bill team for search credits", {
-          teamId: req.auth.team_id,
-          searchCredits: result.searchCredits,
-          error,
-        }),
-      );
-    }
+    const scrapedDocuments = result.scrapedDocuments ?? [];
+    const billableResultsCount =
+      result.billableResultsCount ?? result.totalResultsCount;
+    // Bills search results only; each scraped document is already billed via kind: "scrape".
+    const searchCredits =
+      !isSearchPreview && shouldBill
+        ? await service.modules.billing
+            .charge({
+              kind: "search",
+              ctx,
+              requestId: jobId,
+              results: billableResultsCount,
+              documents: scrapedDocuments,
+              state: {
+                enterprise: req.body.enterprise,
+                threatDecisions: result.threatDecisions,
+              },
+            })
+            .catch(error => {
+              logger.error("Failed to bill team for search credits", {
+                teamId: req.auth.team_id,
+                jobId,
+                error,
+              });
+              return undefined;
+            })
+        : undefined;
 
-    if (reservedKeylessCredits > 0) {
-      reconciledKeylessCredits = true;
-      adjustKeylessCredits(
-        req.auth.team_id,
-        result.totalCredits - reservedKeylessCredits,
-      ).catch(() => {});
-      logKeylessCreditUsage(req.auth.team_id, result.totalCredits).catch(
-        () => {},
-      );
+    let scrapeCredits: number | undefined;
+    for (const doc of scrapedDocuments) {
+      if (typeof doc.metadata?.creditsUsed === "number") {
+        scrapeCredits = (scrapeCredits ?? 0) + doc.metadata.creditsUsed;
+      }
     }
-
+    const totalCredits =
+      searchCredits !== undefined || scrapeCredits !== undefined
+        ? (searchCredits ?? 0) + (scrapeCredits ?? 0)
+        : undefined;
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
+
+    trackSearchRequest({
+      searchId: jobId,
+      requestId: agentRequestId ?? jobId,
+      teamId: req.auth.team_id,
+      query: req.body.query,
+      origin: req.body.origin,
+      kind: billing.endpoint,
+      apiVersion: "v2",
+      lang: req.body.lang,
+      country: req.body.country,
+      sources: result.searchTypes ?? [],
+      numResults: result.totalResultsCount,
+      searchCredits: searchCredits ?? 0,
+      scrapeCredits: scrapeCredits ?? 0,
+      totalCredits: totalCredits ?? 0,
+      hasScrapeFormats: result.shouldScrape,
+      scrapeFormats: result.scrapeFormats ?? [],
+      isSuccessful: true,
+      timeTaken: timeTakenInSeconds,
+      zeroDataRetention,
+    }).catch(err =>
+      logger.warn("Search request tracking failed", { error: err }),
+    );
 
     logSearch({
       id: jobId,
@@ -773,9 +835,7 @@ async function searchControllerInner(
       time_taken: timeTakenInSeconds,
       team_id: req.auth.team_id,
       options: req.body,
-      // Don't record preview tokens as billed in the ledger — only record
-      // credits when billing is actually applied.
-      credits_cost: !isSearchPreview && shouldBill ? result.searchCredits : 0,
+      credits_cost: searchCredits ?? 0,
       zeroDataRetention,
     }).catch(error => {
       logger.error("Failed to log search", { error, jobId });
@@ -798,9 +858,7 @@ async function searchControllerInner(
         response: null,
         num_results: result.indexResultsCount,
         time_taken: timeTakenInSeconds,
-        // Ensure preview-mode searches don't get a non-zero credits_cost
-        // in the research ledger when preview tokens are used.
-        credits_cost: !isSearchPreview && shouldBill ? result.searchCredits : 0,
+        credits_cost: searchCredits ?? 0,
         is_successful: true,
         zeroDataRetention,
       }).catch(ledgerError => {
@@ -822,9 +880,9 @@ async function searchControllerInner(
       middlewareTime,
       controllerTime,
       totalRequestTime,
-      searchCredits: result.searchCredits,
-      scrapeCredits: result.scrapeCredits,
-      totalCredits: result.totalCredits,
+      searchCredits,
+      scrapeCredits,
+      totalCredits,
       scrapeful: result.shouldScrape,
     });
 
@@ -847,10 +905,7 @@ async function searchControllerInner(
         id: jobId,
         ctx,
         results: result.totalResultsCount,
-        charged:
-          !isSelfHosted() && !isSearchPreview && shouldBill
-            ? result.searchCredits
-            : undefined,
+        charged: searchCredits,
       });
     }
     const warning = [
@@ -860,20 +915,16 @@ async function searchControllerInner(
     ]
       .filter(Boolean)
       .join(" ");
+    await settleBilling({ ok: true, charged: totalCredits });
     return res.status(200).json({
       success: true,
       data: result.response,
-      creditsUsed: result.totalCredits,
+      ...(totalCredits !== undefined ? { creditsUsed: totalCredits } : {}),
       id: jobId,
       ...(warning ? { warning } : {}),
     });
   } catch (error) {
-    if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
-      reconciledKeylessCredits = true;
-      adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
-        () => {},
-      );
-    }
+    await settleBilling({ ok: false });
 
     if (error instanceof z.ZodError) {
       logger.warn("Invalid request body", { error: error.issues });

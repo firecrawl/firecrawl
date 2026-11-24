@@ -14,6 +14,10 @@ const mocks = vi.hoisted(() => ({
   removeExplicitResults: vi.fn(),
   projectSearchTotalCredits: vi.fn((..._args: any[]) => 0),
   reserveKeylessCredits: vi.fn(async (..._args: any[]) => ({ ok: true })),
+  billingAuthorize: vi.fn(async (..._args: any[]) => ({ ok: true as const })),
+  billingCharge: vi.fn(
+    async (..._args: any[]): Promise<number | undefined> => undefined,
+  ),
   billTeam: vi.fn(async () => undefined),
   logRequest: vi.fn(async () => undefined),
   logSearch: vi.fn(async () => undefined),
@@ -173,7 +177,12 @@ function installHooks(hooks?: HookHandlers, report = vi.fn()) {
   replaceService(
     createService(
       {
-        modules: {},
+        modules: {
+          billing: {
+            authorize: mocks.billingAuthorize,
+            charge: mocks.billingCharge,
+          },
+        },
         extensions: hooks ? [{ name: "test-hooks", hooks }] : [],
       },
       {
@@ -213,6 +222,14 @@ describe("search lifecycle hooks", () => {
     mocks.resolveThreatProtection.mockResolvedValue({ policy: null });
     mocks.projectSearchTotalCredits.mockReturnValue(0);
     mocks.reserveKeylessCredits.mockResolvedValue({ ok: true });
+    mocks.billingAuthorize.mockResolvedValue({ ok: true });
+    mocks.billingCharge.mockImplementation(async (event: any) =>
+      mocks.isSelfHosted()
+        ? undefined
+        : event.kind === "search"
+          ? Math.ceil(event.results / 10) * 2
+          : undefined,
+    );
     mocks.searchGovIfRouted.mockResolvedValue(null);
     mocks.searchDeveloperCategory.mockResolvedValue([]);
     mocks.discoverTools.mockResolvedValue({
@@ -414,14 +431,14 @@ describe("search lifecycle hooks", () => {
     );
 
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(mocks.projectSearchTotalCredits).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 40 }),
-      expect.anything(),
-      false,
-    );
-    expect(mocks.reserveKeylessCredits).toHaveBeenCalledWith(
-      "11111111-1111-1111-1111-111111111111",
-      8,
+    expect(mocks.billingAuthorize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        caller: { teamId: "11111111-1111-1111-1111-111111111111" },
+        operation: "search",
+        stage: "reserve",
+        requestedUnits: 40,
+        state: expect.objectContaining({ limit: 40 }),
+      }),
     );
 
     const payload = res.json.mock.calls[0][0];
@@ -450,7 +467,7 @@ describe("search lifecycle hooks", () => {
     expect(keylessRes.status).toHaveBeenCalledWith(403);
     expect(mocks.discoverTools).not.toHaveBeenCalled();
     expect(mocks.search).not.toHaveBeenCalled();
-    expect(mocks.reserveKeylessCredits).not.toHaveBeenCalled();
+    expect(mocks.billingAuthorize).not.toHaveBeenCalled();
 
     const zdrReq = makeReq({
       query: "weather",

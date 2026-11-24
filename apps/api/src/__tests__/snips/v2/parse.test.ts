@@ -244,7 +244,11 @@ describe("/v2/parse", () => {
       );
 
       expect(result.markdown).toContain("Parse HTML Upload Test");
-      expect(result.metadata.creditsUsed).toBe(1);
+      if (TEST_PRODUCTION) {
+        expect(result.metadata.creditsUsed).toBe(1);
+      } else {
+        expect(result.metadata.creditsUsed).toBeUndefined();
+      }
       expect(result.metadata.sourceURL).toBe("upload.html");
     },
     scrapeTimeout,
@@ -576,7 +580,11 @@ describe("/v2/parse", () => {
       expect(markdown).toContain("Parse DOCX Upload Test Footer");
       expect(markdown.indexOf("Header")).toBeLessThan(markdown.indexOf("Body"));
       expect(markdown.indexOf("Body")).toBeLessThan(markdown.indexOf("Footer"));
-      expect(result.metadata.creditsUsed).toBe(1);
+      if (TEST_PRODUCTION) {
+        expect(result.metadata.creditsUsed).toBe(1);
+      } else {
+        expect(result.metadata.creditsUsed).toBeUndefined();
+      }
     },
     scrapeTimeout,
   );

@@ -28,7 +28,36 @@ async function loadWithFlag(flag: string | undefined) {
 async function appWithResearchGate(flag: string | undefined) {
   const { isResearchKeylessDisabled } = await loadWithFlag(flag);
   const { authMiddleware } = await import("../../routes/shared.js");
+  const { coreParts } = await import("../../service/index.js");
+  const { replaceService } = await import("../../service/service.js");
+  const { testService } = await import("../../service/testing.js");
   const { RateLimiterMode } = await import("../../types.js");
+
+  // Stub verifies route-level allowKeyless policy forwarding and refusal passthrough.
+  replaceService(
+    testService({}, coreParts(), {
+      auth: {
+        authenticate: async (_req, route) => {
+          const allowKeyless = (route as { allowKeyless?: boolean })
+            .allowKeyless;
+          if (!allowKeyless) {
+            return {
+              ok: false,
+              refusal: {
+                status: 401,
+                body: {
+                  success: false,
+                  error:
+                    "This endpoint is not supported by the keyless free tier. Sign up for a free API key.",
+                },
+              },
+            };
+          }
+          return { ok: true, caller: { teamId: "keyless" } };
+        },
+      },
+    }),
+  );
 
   const app = express();
   const router = express.Router();

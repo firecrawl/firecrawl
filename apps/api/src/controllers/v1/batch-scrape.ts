@@ -396,8 +396,25 @@ export async function batchScrapeController(
     sc.internalOptions.safeModeBypassed = safeMode.bypassed === true;
   }
 
+  const billing = {
+    endpoint: "batch_scrape" as const,
+    jobId: id,
+    externalRequestId: externalRequestId(req),
+  };
+
   if (!req.body.appendToId) {
-    sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
+    const ctx = requestContext({
+      teamId: req.auth.team_id,
+      zeroDataRetention: zeroDataRetention ?? false,
+      flags: req.acuc?.flags ?? null,
+      orgId: req.acuc?.org_id ?? null,
+      apiKeyId: req.acuc?.api_key_id ?? null,
+      billing,
+      concurrencyLimit: req.acuc?.concurrency_limit,
+      rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
+    });
+    sc.ctx = ctx;
+    sc.queueBackend = await resolveNewGroupBackend(sc.team_id, ctx);
     await crawlGroup.addGroup(
       id,
       sc.team_id,
@@ -425,11 +442,6 @@ export async function batchScrapeController(
     });
   }
   logger.debug("Using job priority " + jobPriority, { jobPriority });
-  const billing = {
-    endpoint: "batch_scrape" as const,
-    jobId: id,
-    externalRequestId: externalRequestId(req),
-  };
 
   const jobs = urls.map(x => ({
     jobId: uuidv7(),

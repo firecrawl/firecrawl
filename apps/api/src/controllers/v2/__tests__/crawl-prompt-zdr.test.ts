@@ -40,11 +40,6 @@ vi.mock("../../../services/logging/log_job", () => ({
   logRequest: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("../../../lib/request-credits-store", () => ({
-  initializeRequestCredits: vi.fn().mockResolvedValue(undefined),
-  requestCreditsShards: vi.fn().mockReturnValue(1),
-}));
-
 vi.mock("../../../lib/concurrency-limit", () => ({}));
 
 vi.mock("../../../lib/crawl-redis", () => ({
@@ -89,6 +84,7 @@ import {
 } from "../../../lib/otel-tracer";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { generateCompletions } from "../../../scraper/scrapeURL/transformers/llmExtract";
+import { createService, replaceService } from "../../../service/service";
 import { crawlController } from "../crawl";
 import { crawlParamsPreviewController } from "../crawl-params-preview";
 
@@ -156,11 +152,18 @@ describe("crawl prompt telemetry under zero data retention", () => {
   let provider: NodeTracerProvider;
 
   beforeAll(() => {
+    replaceService(
+      createService(
+        { modules: {} },
+        { core: { name: "core" }, logger: { error: vi.fn() } },
+      ),
+    );
     provider = createTracerProvider({ exporter, serviceName: "test-service" });
     provider.register();
   });
 
   afterAll(async () => {
+    replaceService(undefined);
     await provider.shutdown();
     trace.disable();
     context.disable();

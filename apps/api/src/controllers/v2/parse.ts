@@ -21,21 +21,14 @@ import { withSpan, setSpanAttributes, SpanKind } from "../../lib/otel-tracer";
 import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
-import { getJobPriority } from "../../lib/job-priority";
+import { currentLimits, resolveJobPriority } from "../../lib/limits";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
-import { service } from "../../service";
+import type {} from "../../lib/billing-state";
+import { service, type SettleOutcome } from "../../service";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
-import {
-  adjustKeylessCredits,
-  keylessLimitBody,
-  logKeylessCreditUsage,
-  reserveKeylessCredits,
-} from "../../lib/keyless";
-import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
-import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import path from "node:path";
 import {
   DOCUMENT_EXTENSIONS,
@@ -54,7 +47,6 @@ import {
   PDF_CONTENT_TYPES,
   PDF_EXTENSIONS,
 } from "../../lib/parse-formats";
-import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -385,6 +377,8 @@ export async function parseController(
         orgId: req.acuc?.org_id ?? null,
         apiKeyId: req.acuc?.api_key_id ?? null,
         billing,
+        concurrencyLimit: req.acuc?.concurrency_limit,
+        rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
       });
       req.ctx = ctx;
 
@@ -412,30 +406,33 @@ export async function parseController(
         req.body.__searchPreviewToken,
         config.SEARCH_PREVIEW_TOKEN,
       );
-      const projectedKeylessCredits =
-        shouldBill && !isDirectToBullMQ
-          ? projectScrapeCredits(
-              req.body,
-              req.acuc?.flags ?? null,
-              zeroDataRetention,
-            )
-          : 0;
-      let reservedKeylessCredits = 0;
-      let reconciledKeylessCredits = false;
-
-      if (projectedKeylessCredits > 0) {
-        const reservation = await reserveKeylessCredits(
-          req.auth.team_id,
-          projectedKeylessCredits,
-        );
-        if (!reservation.ok) {
-          applyAgentAuthDiscoveryHeader(res);
-          return res
-            .status(429)
-            .json(await keylessLimitBody(req.auth.team_id, "v2_parse", req));
+      const reservation = await service.modules.billing.authorize({
+        caller: req.caller ?? { teamId: req.auth.team_id },
+        operation: "parse",
+        stage: "reserve",
+        ctx,
+        state: {
+          req,
+          shouldBill,
+          isPreview: isDirectToBullMQ,
+          scrapeOptions: req.body,
+          endpoint: "v2_parse",
+        },
+      });
+      if (!reservation.ok) {
+        if (reservation.refusal.headers) {
+          for (const [name, value] of Object.entries(
+            reservation.refusal.headers,
+          )) {
+            res.setHeader(name, value);
+          }
         }
-        reservedKeylessCredits = projectedKeylessCredits;
+        return res
+          .status(reservation.refusal.status)
+          .json(reservation.refusal.body as ScrapeResponse);
       }
+      const billingHandle = reservation.handle;
+      let settledBilling = false;
 
       const logger = _logger.child({
         method: "parseController",
@@ -446,6 +443,26 @@ export async function parseController(
         team_id: req.auth.team_id,
         zeroDataRetention,
       });
+
+      const settleBilling = async (outcome: SettleOutcome) => {
+        if (billingHandle === undefined || settledBilling) return;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            await service.modules.billing.settle?.(billingHandle, outcome);
+            settledBilling = true;
+            return;
+          } catch (settleError) {
+            if (attempt === 1) {
+              logger.error("Failed to settle billing reservation", {
+                teamId: req.auth.team_id,
+                jobId,
+                ok: outcome.ok,
+                error: settleError,
+              });
+            }
+          }
+        }
+      };
 
       const middlewareTime = controllerStartTime - middlewareStartTime;
       logger.debug("Parse " + jobId + " starting", {
@@ -501,11 +518,13 @@ export async function parseController(
         }
         req.on("close", () => aborter.abort());
 
-        const baseConcurrency =
-          req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
-        const concurrency = boostConcurrency
-          ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST
-          : baseConcurrency;
+        const baseConcurrency = await currentLimits().concurrency(ctx);
+        const concurrency =
+          baseConcurrency === null
+            ? null
+            : boostConcurrency
+              ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST
+              : baseConcurrency;
 
         doc = await teamConcurrencySemaphore.withSemaphore(
           req.auth.team_id,
@@ -514,10 +533,8 @@ export async function parseController(
           aborter.signal,
           timeout ?? 60_000,
           async limited => {
-            const jobPriority = await getJobPriority({
-              team_id: req.auth.team_id,
-              acuc: req.acuc,
-              basePriority: 10,
+            const jobPriority = await resolveJobPriority(ctx, 10, error => {
+              logger.error("Failed to determine job priority", { error });
             });
 
             lockTime = Date.now() - lockStart;
@@ -583,7 +600,7 @@ export async function parseController(
                     zeroDataRetention,
                     apiKeyId: req.acuc?.api_key_id ?? null,
                     concurrencyLimited: limited,
-                    keylessReserved: reservedKeylessCredits > 0,
+                    keylessReserved: billingHandle !== undefined,
                     requestId: agentRequestId ?? undefined,
                   },
                 };
@@ -600,14 +617,10 @@ export async function parseController(
 
             return doc;
           },
+          ctx,
         );
       } catch (e) {
-        if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
-          reconciledKeylessCredits = true;
-          adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
-            () => {},
-          );
-        }
+        await settleBilling({ ok: false });
 
         const timeoutErr =
           isTransportableError(e) &&
@@ -697,17 +710,10 @@ export async function parseController(
         }
       }
 
-      if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
-        reconciledKeylessCredits = true;
-        const actualKeylessCredits = doc?.metadata?.creditsUsed ?? 0;
-        adjustKeylessCredits(
-          req.auth.team_id,
-          actualKeylessCredits - reservedKeylessCredits,
-        ).catch(() => {});
-        logKeylessCreditUsage(req.auth.team_id, actualKeylessCredits).catch(
-          () => {},
-        );
-      }
+      void settleBilling({
+        ok: true,
+        charged: doc?.metadata?.creditsUsed,
+      });
 
       const totalRequestTime = new Date().getTime() - middlewareStartTime;
       const controllerTime = new Date().getTime() - controllerStartTime;

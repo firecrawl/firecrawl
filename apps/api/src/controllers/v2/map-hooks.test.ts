@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => {
 
   return {
     crawler,
-    billTeam: vi.fn(async () => undefined),
+    billingCharge: vi.fn(
+      async (..._args: any[]): Promise<number | undefined> => undefined,
+    ),
     logMap: vi.fn(async () => undefined),
     logRequest: vi.fn(async () => undefined),
     resolveViaAvgrab: vi.fn(async (): Promise<any[] | null> => null),
@@ -29,10 +31,6 @@ const mocks = vi.hoisted(() => {
     redisSet: vi.fn(async () => "OK"),
   };
 });
-
-vi.mock("../../services/billing/credit_billing", () => ({
-  billTeam: mocks.billTeam,
-}));
 
 vi.mock("../../services/logging/log_job", () => ({
   logMap: mocks.logMap,
@@ -111,7 +109,12 @@ function installHooks(hooks?: HookHandlers, report = vi.fn()) {
   replaceService(
     createService(
       {
-        modules: {},
+        modules: {
+          billing: {
+            authorize: async () => ({ ok: true }),
+            charge: mocks.billingCharge,
+          },
+        },
         extensions: hooks ? [{ name: "test-hooks", hooks }] : [],
       },
       {
@@ -245,12 +248,20 @@ describe("map lifecycle hooks", () => {
     expect(res.status).toHaveBeenCalledWith(200);
     const body = res.json.mock.calls[0][0];
     expect(body.links).toEqual([{ url: "https://example.com/fast-1" }]);
-    expect(mocks.billTeam).toHaveBeenCalledWith(
-      "team-map-1",
-      "org-1",
-      1,
-      9,
-      expect.any(Object),
+    expect(mocks.billingCharge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "map",
+        urls: 1,
+        ctx: expect.objectContaining({
+          teamId: "team-map-1",
+          orgId: "org-1",
+          apiKeyId: 9,
+        }),
+        state: expect.objectContaining({
+          perUrl: true,
+          chargeId: `${body.id}:avgrab`,
+        }),
+      }),
     );
     expect(seen).toEqual([
       {
@@ -301,15 +312,23 @@ describe("map lifecycle hooks", () => {
     await mapController(makeReq({ url: "https://example.com" }), res);
 
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json.mock.calls[0][0].links).toEqual([
-      { url: "https://example.com/av-1" },
-    ]);
-    expect(mocks.billTeam).toHaveBeenCalledWith(
-      "team-map-1",
-      "org-1",
-      1,
-      9,
-      expect.any(Object),
+    const body = res.json.mock.calls[0][0];
+    expect(body.links).toEqual([{ url: "https://example.com/av-1" }]);
+    expect(mocks.billingCharge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "map",
+        urls: 1,
+        ctx: expect.objectContaining({
+          teamId: "team-map-1",
+          orgId: "org-1",
+          apiKeyId: 9,
+        }),
+        state: expect.objectContaining({
+          perUrl: true,
+          chargeId: `${body.id}:avgrab`,
+          threatDecisions: [{ allowed: true }, { allowed: false }],
+        }),
+      }),
     );
     expect(finished).toEqual([1]);
   });

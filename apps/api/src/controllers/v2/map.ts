@@ -7,9 +7,11 @@ import {
   MapResponse,
 } from "./types";
 import { configDotenv } from "dotenv";
-import { billTeam } from "../../services/billing/credit_billing";
 import { logMap, logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
+import { requestContext } from "../../lib/request-context";
+import type {} from "../../lib/billing-state";
+import { service } from "../../service";
 import { logger as _logger } from "../../lib/logger";
 import { MapTimeoutError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
@@ -30,9 +32,8 @@ import {
   checkUrlsAgainstThreatPolicy,
   resolveThreatProtection,
 } from "../../lib/threat-protection/request";
-import { calculateThreatScanCredits } from "../../lib/scrape-billing";
-import { requestContext } from "../../lib/request-context";
 import { installedService } from "../../service/service";
+import type { ThreatDecision } from "../../lib/threat-protection/types";
 
 configDotenv();
 
@@ -40,9 +41,9 @@ async function filterMapResultsByThreatPolicy(
   links: MapDocument[],
   policy: Parameters<typeof checkUrlsAgainstThreatPolicy>[1] | null,
   teamId: string,
-): Promise<{ links: MapDocument[]; threatScanCredits: number }> {
+): Promise<{ links: MapDocument[]; threatDecisions: ThreatDecision[] }> {
   if (!policy || links.length === 0) {
-    return { links, threatScanCredits: 0 };
+    return { links, threatDecisions: [] };
   }
   const { decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
     links.map(x => x.url),
@@ -52,13 +53,12 @@ async function filterMapResultsByThreatPolicy(
       localRulesOnly: policy.mode === "zscaler",
     },
   );
-  const threatScanCredits = calculateThreatScanCredits(decisionsByUrl.values());
   return {
     links: links.filter(x => {
       const decision = decisionsByUrl.get(x.url);
       return decision === undefined || decision.allowed;
     }),
-    threatScanCredits,
+    threatDecisions: [...decisionsByUrl.values()],
   };
 }
 
@@ -146,6 +146,12 @@ export async function mapController(
       flags: req.acuc?.flags ?? null,
       orgId: req.acuc?.org_id ?? null,
       apiKeyId: req.acuc?.api_key_id ?? null,
+      billing: {
+        endpoint: "map",
+        jobId: mapId,
+        externalRequestId: externalRequestId(req),
+        hostedMcp: req.auth.hostedMcp,
+      },
     });
   req.ctx = ctx;
 
@@ -201,60 +207,62 @@ export async function mapController(
       url: req.body.url,
       limit: req.body.limit,
     });
-    const { links: collectedResults, threatScanCredits } =
+    const { links: collectedResults, threatDecisions } =
       await filterMapResultsByThreatPolicy(
         collected,
         threatProtection.policy,
         req.auth.team_id,
       );
-    const creditsCost = collectedResults.length + threatScanCredits;
 
-    billTeam(
-      req.auth.team_id,
-      req.acuc?.org_id ?? null,
-      creditsCost,
-      req.acuc?.api_key_id ?? null,
-      {
-        endpoint: "map",
-        jobId: mapId,
-        // Suffixed so this early-return path can never collide with the main
-        // map charge below, even if both ever billed the same mapId.
-        chargeId: `${mapId}:avgrab`,
-        externalRequestId: externalRequestId(req),
-        hostedMcp: req.auth.hostedMcp,
-      },
-    ).catch(error => {
-      logger.error("Failed to bill team for map credits", {
-        teamId: req.auth.team_id,
-        creditsCost,
-        error,
+    void service.modules.billing
+      .charge({
+        kind: "map",
+        ctx,
+        requestId: mapId,
+        urls: collectedResults.length,
+        state: {
+          perUrl: true,
+          // Suffixed so this early-return path can never collide with the main
+          // map charge below, even if both ever billed the same mapId.
+          chargeId: `${mapId}:avgrab`,
+          threatDecisions,
+        },
+      })
+      .catch(error => {
+        logger.error("Failed to bill team for map credits", {
+          teamId: req.auth.team_id,
+          mapId,
+          error,
+        });
+        return undefined;
+      })
+      .then(creditsCost =>
+        logMap({
+          id: mapId,
+          request_id: mapId,
+          url: req.body.url,
+          team_id: req.auth.team_id,
+          options: {
+            search: req.body.search,
+            sitemap: req.body.sitemap,
+            includeSubdomains: req.body.includeSubdomains,
+            ignoreQueryParameters: req.body.ignoreQueryParameters,
+            limit: req.body.limit,
+            timeout: req.body.timeout,
+            location: req.body.location,
+          },
+          results: collectedResults,
+          credits_cost: creditsCost ?? 0,
+          zeroDataRetention,
+        }),
+      )
+      .catch(error => {
+        logger.error("Failed to log map job", {
+          teamId: req.auth.team_id,
+          mapId,
+          error,
+        });
       });
-    });
-
-    logMap({
-      id: mapId,
-      request_id: mapId,
-      url: req.body.url,
-      team_id: req.auth.team_id,
-      options: {
-        search: req.body.search,
-        sitemap: req.body.sitemap,
-        includeSubdomains: req.body.includeSubdomains,
-        ignoreQueryParameters: req.body.ignoreQueryParameters,
-        limit: req.body.limit,
-        timeout: req.body.timeout,
-        location: req.body.location,
-      },
-      results: collectedResults,
-      credits_cost: creditsCost,
-      zeroDataRetention,
-    }).catch(error => {
-      logger.error("Failed to log map job", {
-        teamId: req.auth.team_id,
-        mapId,
-        error,
-      });
-    });
 
     const hooks = installedService()?.hooks;
     if (hooks?.has("map.finished")) {
@@ -332,64 +340,61 @@ export async function mapController(
   }
 
   // Threat protection: remove blocked links from the returned URL list
-  // entirely. Checks are URL-level; scan fees bill +2 per unique scanned
-  // URL (see calculateThreatScanCredits).
-  //
-  // "zscaler" mode evaluates map results against local rules only (org
-  // lists + synced custom categories): one map can return thousands of
-  // URLs, and inline classification would burn the tenant's 400/hour
-  // urlLookup budget on links that may never be fetched. Every URL still
-  // gets the full provider check when a scrape of it starts.
+  // entirely. "zscaler" mode evaluates map results against local rules only
+  // so inline classification does not exhaust the tenant's urlLookup budget.
   const filtered = await filterMapResultsByThreatPolicy(
     result.mapResults,
     threatProtection.policy,
     req.auth.team_id,
   );
   result.mapResults = filtered.links;
-  const threatScanCredits = filtered.threatScanCredits;
+  const threatDecisions = filtered.threatDecisions;
 
-  // Bill the team
-  const creditsToBill = 1 + threatScanCredits;
-  billTeam(
-    req.auth.team_id,
-    req.acuc?.org_id ?? null,
-    creditsToBill,
-    req.acuc?.api_key_id ?? null,
-    {
-      endpoint: "map",
-      externalRequestId: externalRequestId(req),
-      jobId: mapId,
-      chargeId: mapId,
-      hostedMcp: req.auth.hostedMcp,
-    },
-  ).catch(error => {
-    logger.error("Failed to bill team for map credits", {
-      teamId: req.auth.team_id,
-      creditsToBill,
-      error,
+  void service.modules.billing
+    .charge({
+      kind: "map",
+      ctx,
+      requestId: mapId,
+      urls: result.mapResults.length,
+      state: {
+        threatDecisions,
+      },
+    })
+    .catch(error => {
+      logger.error("Failed to bill team for map credits", {
+        teamId: req.auth.team_id,
+        mapId,
+        error,
+      });
+      return undefined;
+    })
+    .then(creditsToBill =>
+      logMap({
+        id: result.job_id,
+        request_id: result.job_id,
+        url: req.body.url,
+        team_id: req.auth.team_id,
+        options: {
+          search: req.body.search,
+          sitemap: req.body.sitemap,
+          includeSubdomains: req.body.includeSubdomains,
+          ignoreQueryParameters: req.body.ignoreQueryParameters,
+          limit: req.body.limit,
+          timeout: req.body.timeout,
+          location: req.body.location,
+        },
+        results: result.mapResults,
+        credits_cost: creditsToBill ?? 0,
+        zeroDataRetention,
+      }),
+    )
+    .catch(error => {
+      logger.error("Failed to log map job", {
+        teamId: req.auth.team_id,
+        mapId: result.job_id,
+        error,
+      });
     });
-  });
-
-  logMap({
-    id: result.job_id,
-    request_id: result.job_id,
-    url: req.body.url,
-    team_id: req.auth.team_id,
-    options: {
-      search: req.body.search,
-      sitemap: req.body.sitemap,
-      includeSubdomains: req.body.includeSubdomains,
-      ignoreQueryParameters: req.body.ignoreQueryParameters,
-      limit: req.body.limit,
-      timeout: req.body.timeout,
-      location: req.body.location,
-    },
-    results: result.mapResults,
-    credits_cost: creditsToBill,
-    zeroDataRetention,
-  }).catch(error => {
-    logger.error(`Failed to log job for team ${req.auth.team_id}: ${error}`);
-  });
 
   const hooks = installedService()?.hooks;
   if (hooks?.has("map.finished")) {

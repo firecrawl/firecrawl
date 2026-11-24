@@ -30,7 +30,6 @@ import {
   browserCreditsPerHour,
   browserSecondsForCredits,
 } from "./browser-billing";
-import { HOBBY_CONCURRENCY_LIMIT } from "./concurrency-limit";
 import {
   reserveExternalSlot,
   mirrorExternalSlotRelease,
@@ -49,6 +48,7 @@ import type { TrackCreditsParams } from "../services/autumn/types";
 import { orgIdForTeam } from "./team-org";
 import { logRequest } from "../services/logging/log_job";
 import { externalRequestId } from "./external-request-id";
+import { requestContext } from "./request-context";
 import {
   updateKeylessBrowserCredits,
   logKeylessCreditUsage,
@@ -63,6 +63,13 @@ import { isUsOnly, usOnlyLocationRefusal } from "./us-only";
 import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
 
 const logger = rootLogger;
+
+/**
+ * CONCURRENCY granted by the Autumn `hobby` plan (firecrawl-web
+ * autumn.config.ts). Pairs with HOBBY_RATE_LIMIT_MULTIPLIER in
+ * services/rate-limiter.ts; change both if the hobby plan changes.
+ */
+export const HOBBY_CONCURRENCY_LIMIT = 5;
 
 export class BrowserSessionError extends Error {
   constructor(
@@ -274,6 +281,15 @@ async function createBrowserSessionInternal(
   }
   const id = uuidv7();
   let browserId: string | undefined;
+  const slotCtx = requestContext({
+    teamId: req.auth.team_id,
+    zeroDataRetention,
+    flags: req.acuc?.flags ?? null,
+    orgId: req.acuc?.org_id ?? null,
+    apiKeyId: req.acuc?.api_key_id ?? null,
+    concurrencyLimit: req.acuc?.concurrency_limit,
+    rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
+  });
   try {
     if (
       !(await reserveExternalSlot(
@@ -281,6 +297,7 @@ async function createBrowserSessionInternal(
         id,
         (ttl + 300) * 1000,
         limit,
+        slotCtx,
       ))
     )
       throw new BrowserSessionError(
@@ -354,11 +371,12 @@ async function createBrowserSessionInternal(
     };
   } catch (error) {
     if (browserId) await stopHangarBrowser(browserId).catch(() => {});
-    await mirrorExternalSlotRelease(req.auth.team_id, id).catch(error =>
-      logger.error("Failed to release browser reservation", {
-        sessionId: id,
-        error,
-      }),
+    await mirrorExternalSlotRelease(req.auth.team_id, id, slotCtx).catch(
+      error =>
+        logger.error("Failed to release browser reservation", {
+          sessionId: id,
+          error,
+        }),
     );
     await updateKeylessBrowserCredits(req.auth.team_id, id, 0, true).catch(
       error =>

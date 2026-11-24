@@ -32,12 +32,11 @@ import {
   getCategoryFromUrl,
   CategoryOption,
 } from "../lib/search-query-builder";
-import { ScrapeOptions, TeamFlags } from "../controllers/v2/types";
+import { Document, ScrapeOptions, TeamFlags } from "../controllers/v2/types";
 import {
   getItemsToScrape,
   scrapeSearchResults,
   mergeScrapedContent,
-  calculateScrapeCredits,
 } from "./scrape";
 import { searchDeveloperCategory, wantsDeveloperCategory } from "./developer";
 import {
@@ -58,11 +57,13 @@ import {
   runIndexedSearchHighlights,
   searchHighlightsMode,
 } from "./highlights";
-import { trackSearchResults, trackSearchRequest } from "../lib/tracking";
+import { trackSearchResults } from "../lib/tracking";
 import type { BillingMetadata } from "../services/billing/types";
-import type { ThreatProtectionPolicy } from "../lib/threat-protection/types";
+import type {
+  ThreatDecision,
+  ThreatProtectionPolicy,
+} from "../lib/threat-protection/types";
 import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
-import { calculateThreatScanCredits } from "../lib/scrape-billing";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
 import { isUsOnly } from "../lib/us-only";
@@ -114,6 +115,8 @@ interface SearchContext {
   clientThread?: string;
   apiKeyId: number | null;
   flags: TeamFlags;
+  concurrencyLimit?: number;
+  rateLimitMultiplier?: number;
   /**
    * The team's plan class, stated on the web search call. Required so every
    * caller decides; undefined states nothing. See teamPlanClass.
@@ -151,12 +154,14 @@ interface SearchExecuteResult {
   skillsDiscovered?: boolean;
   response: SearchV2Response;
   totalResultsCount: number;
+  billableResultsCount: number;
   resultCountsBySource: SearchResultCountsBySource;
   resultCategories: SearchResultCategoriesBySource;
   indexResultsCount: number;
-  searchCredits: number;
-  scrapeCredits: number;
-  totalCredits: number;
+  threatDecisions: ThreatDecision[];
+  scrapedDocuments: Document[];
+  searchTypes: SearchResultType[];
+  scrapeFormats: string[];
   shouldScrape: boolean;
 }
 
@@ -727,12 +732,9 @@ export async function executeSearch(
     }
   }
 
-  // Threat protection: remove blocked results entirely — before
-  // slicing/counting, before scraping, and before returning. Checks are
-  // URL-level and deduped within this request; scan fees bill +2 per unique
-  // scanned URL (see calculateThreatScanCredits), charged as part of the
-  // search credits below.
-  let threatScanCredits = 0;
+  // Threat protection: remove blocked results before slicing, counting,
+  // scraping, and returning. Decisions are returned to the caller for billing.
+  let threatDecisions: ThreatDecision[] = [];
   const threatPolicy = context.threatProtectionPolicy;
   if (threatPolicy && threatPolicy.mode !== "off") {
     const urlsToCheck = [
@@ -748,7 +750,7 @@ export async function executeSearch(
         threatPolicy,
         { teamId },
       );
-      threatScanCredits = calculateThreatScanCredits(decisionsByUrl.values());
+      threatDecisions = [...decisionsByUrl.values()];
       const isAllowed = (url: string | undefined | null): boolean => {
         if (!url) return true;
         const decision = decisionsByUrl.get(url);
@@ -977,20 +979,13 @@ export async function executeSearch(
   }
 
   const isZDR = options.enterprise?.includes("zdr");
-  const creditsPerTenResults = isZDR ? 10 : 2;
-  // Gov index results are free; developer index results bill like web results.
+  // Gov index results are excluded from billable result counts; developer index
+  // results count like web results.
   const billableResultsCount =
     indexCategorySearch === searchGovCategory
       ? totalResultsCount - indexResultsCount
       : totalResultsCount;
-  // Threat protection scan fees ride on the search credits: they are part of
-  // serving the search itself (every result domain is scanned before
-  // filtering), so they bill against the same feature and show up in the
-  // request's creditsUsed.
-  const searchCredits =
-    Math.ceil(billableResultsCount / 10) * creditsPerTenResults +
-    threatScanCredits;
-  let scrapeCredits = 0;
+  let scrapedDocuments: Document[] = [];
 
   const shouldScrape =
     scrapeOptions?.formats && scrapeOptions.formats.length > 0;
@@ -1026,6 +1021,12 @@ export async function executeSearch(
         threatProtectionPolicy: threatPolicy ?? null,
         safeModeBypassed: context.safeModeBypassed ?? false,
         ...(context.workContactOnly ? { workContactOnly: true } : {}),
+        ...(context.concurrencyLimit !== undefined
+          ? { concurrencyLimit: context.concurrencyLimit }
+          : {}),
+        ...(context.rateLimitMultiplier !== undefined
+          ? { rateLimitMultiplier: context.rateLimitMultiplier }
+          : {}),
       };
 
       const allDocsWithCostTracking = await scrapeSearchResults(
@@ -1039,7 +1040,7 @@ export async function executeSearch(
       if (scrapeTarget !== searchResponse) {
         indexResults = scrapeTarget.web ?? [];
       }
-      scrapeCredits = calculateScrapeCredits(allDocsWithCostTracking);
+      scrapedDocuments = allDocsWithCostTracking.map(item => item.document);
     }
   }
 
@@ -1114,30 +1115,6 @@ export async function executeSearch(
       )
     : [];
 
-  trackSearchRequest({
-    searchId: context.jobId,
-    requestId: context.requestId,
-    teamId,
-    query,
-    origin,
-    kind: billing?.endpoint ?? "search",
-    apiVersion: context.apiVersion,
-    lang: options.lang,
-    country: options.country,
-    sources: searchTypes,
-    numResults: totalResultsCount,
-    searchCredits,
-    scrapeCredits,
-    totalCredits: searchCredits + scrapeCredits,
-    hasScrapeFormats: shouldScrape ?? false,
-    scrapeFormats,
-    isSuccessful: true,
-    timeTaken: 0, // filled by caller if needed
-    zeroDataRetention: zeroDataRetention ?? false,
-  }).catch(err =>
-    logger.warn("Search request tracking failed", { error: err }),
-  );
-
   trackSearchResults({
     searchId: context.jobId,
     teamId,
@@ -1157,17 +1134,19 @@ export async function executeSearch(
     toolFusion: toolFusionRan,
     skillsDiscovered,
     totalResultsCount,
-    // Counted from the final response — after scraping and highlights — so it
-    // matches exactly what the client can address by position.
+    billableResultsCount,
+    // Counted from the final response, after scraping and highlights, so it
+    // matches what the client can address by position.
     resultCountsBySource: countSearchResultsBySource(searchResponse),
     // Read from the same final response, so a category is keyed by the position
     // the client sees. Index hits replace the web group above and are
     // renumbered there, so their positions here are the renumbered ones.
     resultCategories: collectSearchResultCategories(searchResponse),
     indexResultsCount,
-    searchCredits,
-    scrapeCredits,
-    totalCredits: searchCredits + scrapeCredits,
+    threatDecisions,
+    scrapedDocuments,
+    searchTypes,
+    scrapeFormats,
     shouldScrape: shouldScrape ?? false,
   };
 }
