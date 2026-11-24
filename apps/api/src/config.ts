@@ -143,8 +143,6 @@ const configSchema = z.object({
   GOV_INDEX_CALLS_PER_DAY_OVERRIDES: teamDailyLimits,
   // Per-team Research Index daily limits, in the same format.
   RESEARCH_INDEX_CALLS_PER_DAY_OVERRIDES: teamDailyLimits,
-  LABS_SEARCH_URL: z.string().url().optional(),
-  LABS_SEARCH_SECRET: z.string().optional(),
   FRESH_FEED_URL: emptyStringAsUndefined(z.string().url()),
   FRESH_FEED_CURATED_URL: emptyStringAsUndefined(z.string().url()),
   FRESH_FEED_GLOBAL_URL: emptyStringAsUndefined(z.string().url()),
@@ -424,12 +422,6 @@ const configSchema = z.object({
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),
   EXCHANGE_INTERNAL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
-  EXCHANGE_CREDIT_GRANTS_ENABLED: z.stringbool().default(false),
-  EXCHANGE_CREDIT_GRANT_MAX_CREDITS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(10000),
 
   // Fire Engine
   FIRE_ENGINE_BETA_URL: z.string().optional(),

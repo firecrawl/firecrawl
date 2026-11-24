@@ -36,6 +36,10 @@
       "types": "./src/services/redis.ts",
       "default": "./dist/src/services/redis.js"
     },
+    "./unstable/root-routes-deps": {
+      "types": "./src/service/unstable/root-routes-deps.ts",
+      "default": "./dist/src/service/unstable/root-routes-deps.js"
+    },
     "./unstable/zdr-queue": {
       "types": "./src/lib/zdr-queue.ts",
       "default": "./dist/src/lib/zdr-queue.js"

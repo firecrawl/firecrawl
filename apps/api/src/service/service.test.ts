@@ -738,8 +738,11 @@ describe("routes and roles integration", () => {
         extensions: [
           {
             name: "ext",
-            routes: ({ v2 }) => {
+            routes: ({ rootRaw, v2 }) => {
               calls.push("ext");
+              rootRaw?.post("/raw-ping", function extRawPing(_req, res) {
+                res.json({ ok: "raw" });
+              });
               v2.get("/shared", function extShared(_req, res) {
                 res.json({ from: "ext" });
               });
@@ -771,13 +774,19 @@ describe("routes and roles integration", () => {
     expect(built.roles.owner("ext-worker")).toBe("ext");
 
     const app = express();
+    const rootRaw = express.Router();
     const v2 = express.Router();
     const admin = express.Router();
-    built.mountRoutes({ root: app, v2, admin });
+    app.use(rootRaw);
+    built.mountRoutes({ rootRaw, root: app, v2, admin });
     app.use("/v2", v2);
     app.use(admin);
 
     expect(calls).toEqual(["ext", "core"]);
+
+    const rawPing = await request(app).post("/raw-ping");
+    expect(rawPing.status).toBe(200);
+    expect(rawPing.body).toEqual({ ok: "raw" });
 
     const shared = await request(app).get("/v2/shared");
     expect(shared.status).toBe(200);
@@ -792,6 +801,13 @@ describe("routes and roles integration", () => {
     expect(corePing.body).toEqual({ ok: "core" });
 
     expect(built.describe().routes).toEqual([
+      {
+        owner: "ext",
+        router: "rootRaw",
+        method: "POST",
+        path: "/raw-ping",
+        middleware: ["extRawPing"],
+      },
       {
         owner: "ext",
         router: "v2",
