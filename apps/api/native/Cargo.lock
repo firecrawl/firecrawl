@@ -654,7 +654,6 @@ dependencies = [
  "roxmltree",
  "serde",
  "serde_json",
- "strsim",
  "texting_robots",
  "tinyvec",
  "tokio",
@@ -2033,12 +2032,6 @@ dependencies = [
  "unicode-normalization",
  "unicode-properties",
 ]
-
-[[package]]
-name = "strsim"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "syn"

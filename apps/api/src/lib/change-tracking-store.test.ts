@@ -2,8 +2,8 @@ const { getRows } = vi.hoisted(() => ({
   getRows: vi.fn(),
 }));
 
-vi.mock("../config", () => ({
-  config: { BIGTABLE_CHANGE_TRACKING_TABLE: "change_tracking" },
+vi.mock("./change-tracking-env", () => ({
+  changeTrackingEnv: { BIGTABLE_CHANGE_TRACKING_TABLE: "change_tracking" },
 }));
 
 vi.mock("./bigtable-client", () => ({

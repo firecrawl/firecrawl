@@ -1,4 +1,4 @@
-import { config } from "../../../../config";
+import { threatProtectionEnv } from "../../env";
 import { getRedisConnection } from "../../../../services/queue-service";
 
 // Redis-backed store for the locally synced Google Web Risk threat lists
@@ -296,7 +296,7 @@ export class WebRiskListStore {
       if (!Number.isFinite(age)) return { status: "unavailable" };
       oldestAgeSeconds = Math.max(oldestAgeSeconds, age);
     }
-    if (oldestAgeSeconds > config.THREAT_LIST_STALENESS_SECONDS) {
+    if (oldestAgeSeconds > threatProtectionEnv.THREAT_LIST_STALENESS_SECONDS) {
       return { status: "stale", ageSeconds: Math.round(oldestAgeSeconds) };
     }
 

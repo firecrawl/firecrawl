@@ -36,8 +36,6 @@ import { _addScrapeJobToBullMQ } from "../queue-jobs";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { crawlGroup, resolveNewGroupBackend } from "../worker/nuq-router";
 import { getACUCTeam } from "../../controllers/auth";
-import { processEngpickerJob } from "../../lib/engpicker";
-import { engpickerEnv } from "../../lib/engpicker-env";
 import { logRequest, shutdownPubSubLogging } from "../logging/log_job";
 import { startSiemLoggingConsumer } from "../siem-logging/worker";
 import { closeSiemLoggingTransport } from "../../lib/siem-logging/transport";
@@ -795,22 +793,6 @@ export async function start() {
   //   });
   // }, OMCE_INSERT_INTERVAL);
 
-  const engpickerPromise = (async () => {
-    if (engpickerEnv.DISABLE_ENGPICKER) {
-      logger.info("Engpicker is disabled, skipping");
-      return;
-    }
-
-    while (!isShuttingDown) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      try {
-        await processEngpickerJob();
-      } catch (e) {
-        logger.error("Error processing engpicker job", { error: e });
-      }
-    }
-  })();
-
   // Search indexing is now handled by separate search service
   // The search service has its own worker that processes the queue
   // This worker no longer needs to process search index jobs
@@ -833,11 +815,7 @@ export async function start() {
   }
 
   // Wait for all workers to complete (which should only happen on shutdown)
-  await Promise.all([
-    billingWorkerPromise,
-    precrawlWorkerPromise,
-    engpickerPromise,
-  ]);
+  await Promise.all([billingWorkerPromise, precrawlWorkerPromise]);
 
   clearInterval(indexInserterInterval);
   clearInterval(webhookInserterInterval);

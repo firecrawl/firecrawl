@@ -6,6 +6,11 @@ import { coreEngineSpecs } from "../scraper/scrapeURL/engines/metadata";
 import { coreParts } from "./core-parts";
 import { defaultModules } from "./defaults";
 import type { Engine } from "./engines";
+import {
+  coreLlmProviderNames,
+  type LlmModel,
+  type LlmProvider,
+} from "./llm-providers";
 import { createService } from "./service";
 
 const loadedSideEffectModules = vi.hoisted(() => [] as string[]);
@@ -32,11 +37,16 @@ vi.mock("../lib/zdr-queue", () => {
 
 const errorClassesModule = "../lib/error-serde";
 const enginesModule = "../scraper/scrapeURL/engines";
+const llmProvidersModule = "../lib/generic-ai";
 
-// coreParts() loads its error classes and engine implementations with
-// require() on first use. The test runner cannot resolve a source file loaded
-// that way, so both loads are answered with stub modules.
-function answerRequire(mockEngines?: readonly Engine[]) {
+// coreParts() loads its error classes, engine implementations, and LLM
+// provider implementations with require() on first use. The test runner cannot
+// resolve a source file loaded that way, so those loads are answered with stub
+// modules.
+function answerRequire(
+  mockEngines?: readonly Engine[],
+  mockLlmProviders?: readonly LlmProvider[],
+) {
   const load = Module.prototype.require;
   const enginesStub = mockEngines
     ? { coreEngines: mockEngines }
@@ -51,12 +61,24 @@ function answerRequire(mockEngines?: readonly Engine[]) {
           maxReasonableTime: vi.fn(() => 12345),
         })),
       };
+  const llmProvidersStub = mockLlmProviders
+    ? { coreLlmProviders: mockLlmProviders }
+    : {
+        coreLlmProviders: coreLlmProviderNames.map(name => ({
+          name,
+          enabled: vi.fn(() => true),
+          model: vi.fn(
+            (id: string) => ({ modelId: id }) as unknown as LlmModel,
+          ),
+        })),
+      };
   return vi.spyOn(Module.prototype, "require").mockImplementation(function (
     this: Module,
     id: string,
   ) {
     if (id === errorClassesModule) return errorSerde;
     if (id === enginesModule) return enginesStub;
+    if (id === llmProvidersModule) return llmProvidersStub;
     return load.call(this, id);
   });
 }
@@ -119,6 +141,38 @@ describe("coreParts", () => {
     expect(maxReasonableTime).toHaveBeenCalledWith(stubMeta);
     expect(
       required.mock.calls.filter(([id]) => id === enginesModule),
+    ).toHaveLength(1);
+  });
+
+  it("loads its LLM provider implementations on the first provider call, and once", () => {
+    const enabled = vi.fn(() => true);
+    const fakeModel = { modelId: "gpt-4o-mini" } as unknown as LlmModel;
+    const model = vi.fn(() => fakeModel);
+    const mockProviders: LlmProvider[] = coreLlmProviderNames.map(name => ({
+      name,
+      enabled: name === "openai" ? enabled : () => false,
+      model: name === "openai" ? model : vi.fn(() => fakeModel),
+    }));
+
+    const required = answerRequire(undefined, mockProviders);
+    const built = createService({ modules: {} }, coreParts());
+
+    // Creating the service, inspecting registered providers, and calling
+    // describe() must not load the provider implementations.
+    expect(built.llmProviders.all()).toHaveLength(coreLlmProviderNames.length);
+    const openaiProvider = built.llmProviders.get("openai");
+    expect(openaiProvider?.name).toBe("openai");
+    built.describe();
+    expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
+
+    expect(built.llmProviders.enabled().map(p => p.name)).toEqual(["openai"]);
+    expect(enabled).toHaveBeenCalledTimes(1);
+
+    const opts = { feature: "Extract" };
+    expect(openaiProvider!.model("gpt-4o-mini", opts)).toBe(fakeModel);
+    expect(model).toHaveBeenCalledWith("gpt-4o-mini", opts);
+    expect(
+      required.mock.calls.filter(([id]) => id === llmProvidersModule),
     ).toHaveLength(1);
   });
 
@@ -224,6 +278,17 @@ describe("coreParts", () => {
         video: { owner: "core", priority: 100 },
         waitFor: { owner: "core", priority: 1 },
       },
+      llmProviders: {
+        anthropic: "core",
+        deepinfra: "core",
+        fireworks: "core",
+        google: "core",
+        groq: "core",
+        ollama: "core",
+        openai: "core",
+        openrouter: "core",
+        vertex: "core",
+      },
       roles: {
         api: "core",
         "cclog-worker": "core",
@@ -240,6 +305,7 @@ describe("coreParts", () => {
       env: {},
     });
     expect(required).not.toHaveBeenCalledWith(enginesModule);
+    expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
   });
 
   it("loads core error classes and default modules without pulling in config, exchange, deployment, gcs, or zdr", () => {
