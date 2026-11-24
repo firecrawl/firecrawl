@@ -24,7 +24,7 @@ const MAX_STEPS = 25;
 const SNAPSHOT_TIMEOUT = 15;
 const SNAPSHOT_MAX_CHARS = 40_000;
 
-// Prefer Vertex when registered and enabled; fall back to the google provider.
+// Prefer Vertex when registered and enabled, then Google, then core's default provider.
 function hasVertex(): boolean {
   return service.llmProviders.get("vertex")?.enabled() ?? false;
 }
@@ -250,16 +250,19 @@ export function getBrowserAgentModel(
   trace?: Pick<BrowserAgentTraceContext, "zeroDataRetention" | "teamFlags">,
 ) {
   const modelOptions = { teamFlags: trace?.teamFlags, feature: "Interact" };
-  return trace?.zeroDataRetention === true
-    ? getModel("gpt-6-luna", "openai", {
-        ignoreModelOverride: true,
-        ...modelOptions,
-      })
-    : getModel(
-        "gemini-3.5-flash",
-        hasVertex() ? "vertex" : "google",
-        modelOptions,
-      );
+  if (trace?.zeroDataRetention === true) {
+    return getModel("gpt-6-luna", "openai", {
+      ignoreModelOverride: true,
+      ...modelOptions,
+    });
+  }
+  if (hasVertex()) {
+    return getModel("gemini-3.5-flash", "vertex", modelOptions);
+  }
+  if (service.llmProviders.get("google")?.enabled()) {
+    return getModel("gemini-3.5-flash", "google", modelOptions);
+  }
+  return getModel("gpt-4o-mini", undefined, modelOptions);
 }
 
 export async function executePromptViaBrowserAgent(

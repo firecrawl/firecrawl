@@ -4,6 +4,8 @@ import { config } from "../config";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOllama } from "ollama-ai-provider-v2";
 import { withUsageTelemetry } from "./ai-usage-telemetry";
+import { isUsOnly } from "./us-only";
+import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
 import {
   service,
   type LlmModel,
@@ -37,12 +39,22 @@ const getOllamaClient = once(() =>
   }),
 );
 
+function usOnlyUnavailable(feature = "The model this request needs") {
+  return new UsOnlyUnavailableError(
+    `${feature} is not available for teams restricted to US-only processing.`,
+  );
+}
+
 /** Built-in LLM providers registered by `coreParts()`. */
 export const coreLlmProviders: readonly LlmProvider[] = Object.freeze([
   {
     name: "openai",
-    enabled: () => Boolean(config.OPENAI_API_KEY || config.OPENAI_BASE_URL),
-    model(modelName) {
+    enabled: () =>
+      Boolean(config.OPENAI_API_KEY?.trim() || config.OPENAI_BASE_URL?.trim()),
+    model(modelName, options) {
+      if (isUsOnly(options?.teamFlags ?? undefined)) {
+        throw usOnlyUnavailable(options?.feature);
+      }
       const client = getOpenAIClient();
       return modelName.startsWith("o3-mini")
         ? client.chat(modelName)
@@ -51,8 +63,11 @@ export const coreLlmProviders: readonly LlmProvider[] = Object.freeze([
   },
   {
     name: "ollama",
-    enabled: () => Boolean(config.OLLAMA_BASE_URL),
-    model(modelName) {
+    enabled: () => Boolean(config.OLLAMA_BASE_URL?.trim()),
+    model(modelName, options) {
+      if (isUsOnly(options?.teamFlags ?? undefined)) {
+        throw usOnlyUnavailable(options?.feature);
+      }
       return getOllamaClient()(modelName);
     },
   },

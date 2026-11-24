@@ -6,7 +6,7 @@ import type { Logger } from "winston";
 import { config } from "../config";
 import type { TeamFlags } from "../controllers/v2/types";
 import { getModel } from "../lib/generic-ai";
-import { service } from "../service";
+import { installedService } from "../service/service";
 import { getTypeSafeClient } from "../lib/typesafe";
 import type { DiscoveredTool } from "../services/alexandria/contracts";
 import { redisRateLimitClient } from "../services/rate-limiter";
@@ -30,7 +30,7 @@ export type ToolIntent = {
 };
 
 const modelsConfigured = () =>
-  (service.llmProviders.get("anthropic")?.enabled() ?? false) &&
+  (installedService()?.llmProviders.get("anthropic")?.enabled() ?? false) &&
   config.TYPESAFE_API_KEY !== undefined;
 
 export const queryInferenceEnabled = modelsConfigured;

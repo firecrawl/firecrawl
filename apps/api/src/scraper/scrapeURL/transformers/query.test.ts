@@ -22,7 +22,11 @@ import { keepWholeLines, performQuery } from "./query";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { getModel } from "../../../lib/generic-ai";
 import { modelPrices } from "../../../lib/model-prices";
-import { createService, replaceService } from "../../../service/service";
+import {
+  createService,
+  replaceService,
+  service,
+} from "../../../service/service";
 import type { LlmModel, LlmProvider } from "../../../service/llm-providers";
 
 const noopLogger = {
@@ -316,10 +320,93 @@ describe("performQuery freeform", () => {
     expect(doc.answer).toBe("from openai");
   });
 
-  it("sets a warning instead of throwing when the directQuote provider is not registered", async () => {
-    (getModel as Mock).mockImplementationOnce(() => {
-      throw new Error('LLM provider "fireworks" is not registered');
-    });
+  it("skips disabled google and vertex providers in freeform mode", async () => {
+    replaceService(
+      createService(
+        {
+          modules: {},
+          extensions: [
+            {
+              name: "extra-llm",
+              llmProviders: [
+                stubProvider("vertex", () => false),
+                stubProvider("google", () => false),
+              ],
+            },
+          ],
+        },
+        {
+          core: {
+            name: "core",
+            llmProviders: [
+              stubProvider("openai", () => true),
+              stubProvider("ollama", () => false),
+            ],
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+
+    respond("from openai");
+    const doc: any = { markdown: "hello", metadata: {} };
+    await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), doc);
+
+    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", "openai"]]);
+    expect(doc.answer).toBe("from openai");
+  });
+
+  it("falls back to the default core provider in directQuote/highlights when fireworks is unregistered", async () => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            llmProviders: [
+              stubProvider("openai", () => true),
+              stubProvider("ollama", () => false),
+            ],
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+
+    respond("[0]");
+    const doc: any = { markdown: "hello world.", metadata: {} };
+    await performQuery(
+      makeMeta([{ type: "highlights", query: "what does it say?" }]),
+      doc,
+    );
+
+    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", undefined]]);
+    expect(doc.highlights).toBe("hello world.");
+  });
+
+  it("sets a warning instead of throwing when no matching provider is registered", async () => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            llmProviders: [],
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+    (getModel as Mock).mockImplementationOnce(
+      (name: string, provider?: string) => {
+        const providerName = provider ?? "openai";
+        const registered = service.llmProviders.get(providerName);
+        if (!registered) {
+          throw new Error(`LLM provider "${providerName}" is not registered`);
+        }
+        return registered.model(name);
+      },
+    );
 
     const doc: any = { markdown: "hello world.", metadata: {} };
     await performQuery(

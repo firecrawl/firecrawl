@@ -83,6 +83,32 @@ describe("coreLlmProviders and getModel", () => {
       disabled.cleanup();
     }
 
+    vi.stubEnv("OPENAI_API_KEY", "   ");
+    const whitespaceKey = await loadFresh();
+    try {
+      expect(
+        whitespaceKey.coreLlmProviders
+          .find(p => p.name === "openai")
+          ?.enabled(),
+      ).toBe(false);
+    } finally {
+      whitespaceKey.cleanup();
+    }
+
+    vi.stubEnv("OPENAI_API_KEY", "test-openai-key");
+    const apiKeyOnly = await loadFresh();
+    try {
+      expect(
+        apiKeyOnly.coreLlmProviders.find(p => p.name === "openai")?.enabled(),
+      ).toBe(true);
+      expect(
+        apiKeyOnly.coreLlmProviders.find(p => p.name === "ollama")?.enabled(),
+      ).toBe(false);
+    } finally {
+      apiKeyOnly.cleanup();
+    }
+
+    vi.stubEnv("OPENAI_API_KEY", "");
     vi.stubEnv("OPENAI_BASE_URL", "http://localhost:8080/v1");
     vi.stubEnv("OLLAMA_BASE_URL", "http://localhost:11434/api");
     const enabled = await loadFresh();
@@ -95,6 +121,31 @@ describe("coreLlmProviders and getModel", () => {
       ).toBe(true);
     } finally {
       enabled.cleanup();
+    }
+  });
+
+  it("refuses core openai and ollama models for US-only teams", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-openai-key");
+    vi.stubEnv("OLLAMA_BASE_URL", "http://localhost:11434/api");
+    const { getModel, cleanup } = await loadFresh();
+    const { UsOnlyUnavailableError } = await import(
+      "../scraper/scrapeURL/error.js"
+    );
+    try {
+      expect(() =>
+        getModel("gpt-4o-mini", "openai", {
+          teamFlags: { usOnly: true },
+          feature: "Extract",
+        }),
+      ).toThrow(UsOnlyUnavailableError);
+      expect(() =>
+        getModel("llama3", "ollama", {
+          teamFlags: { usOnly: true },
+          feature: "Extract",
+        }),
+      ).toThrow(UsOnlyUnavailableError);
+    } finally {
+      cleanup();
     }
   });
 
