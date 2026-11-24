@@ -32,7 +32,12 @@ import {
   type SearchProvider,
   type SearchProviderRegistry,
 } from "./search-providers";
-import { buildWorkerRegistry, type RoleRegistry, type Worker } from "./workers";
+import {
+  buildWorkerRegistry,
+  type RoleRegistry,
+  type Worker,
+  type WorkerRunEnv,
+} from "./workers";
 
 export type { Modules } from "./modules";
 export type {
@@ -41,7 +46,7 @@ export type {
   RouterName,
   Routers,
 } from "./routes";
-export type { RoleRegistry, Worker } from "./workers";
+export type { RoleRegistry, Worker, WorkerRunEnv } from "./workers";
 
 /**
  * A named bundle of everything that can be added to a service without the
@@ -403,7 +408,18 @@ export function replaceService(next: Service | undefined): Service | undefined {
  * rejection, so a process that cannot start fails the way a main module that
  * throws does.
  */
-export function run(next: Service, role: string, entry: string): Promise<void> {
+/** Optional execution controls for `run()`. */
+export interface RunOptions {
+  /** Abort signal forwarded to the worker's `run()` environment. */
+  signal?: AbortSignal;
+}
+
+export function run(
+  next: Service,
+  role: string,
+  entry: string,
+  options?: RunOptions,
+): Promise<void> {
   const worker = next.roles.get(role);
   if (!worker) {
     throw new Error(
@@ -416,5 +432,9 @@ export function run(next: Service, role: string, entry: string): Promise<void> {
   assertEnv();
   installed = next;
   startedRole = role;
-  return Promise.resolve(worker.run({ entry }));
+  const env: WorkerRunEnv =
+    options?.signal !== undefined
+      ? { entry, signal: options.signal }
+      : { entry };
+  return Promise.resolve(worker.run(env));
 }

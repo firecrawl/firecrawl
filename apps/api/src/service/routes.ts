@@ -127,7 +127,7 @@ function handlerName(
 
 function createProbeRouter(
   expressModule: typeof import("express"),
-  mountPaths: WeakMap<object, string>,
+  mountPaths: WeakMap<object, string[]>,
 ): Router {
   const router = expressModule.Router();
   const originalUse = router.use.bind(router) as (...args: unknown[]) => Router;
@@ -136,13 +136,19 @@ function createProbeRouter(
     const stack = router.stack as unknown as InternalExpressLayer[] | undefined;
     const before = stack ? stack.length : 0;
     const first = args[0];
-    let mountPath = "";
+    let paths: string[] = [""];
     if (typeof first === "string") {
-      mountPath = first;
+      paths = [first];
     } else if (first instanceof RegExp) {
-      mountPath = String(first);
-    } else if (Array.isArray(first) && typeof first[0] === "string") {
-      mountPath = first[0];
+      paths = [String(first)];
+    } else if (Array.isArray(first)) {
+      const normalized = first
+        .filter(
+          (entry): entry is string | RegExp =>
+            typeof entry === "string" || entry instanceof RegExp,
+        )
+        .map(entry => (entry instanceof RegExp ? String(entry) : entry));
+      if (normalized.length > 0) paths = normalized;
     }
 
     const result = originalUse(...args);
@@ -151,7 +157,7 @@ function createProbeRouter(
       | undefined;
     if (updatedStack) {
       for (let i = before; i < updatedStack.length; i++) {
-        mountPaths.set(updatedStack[i], mountPath);
+        mountPaths.set(updatedStack[i], paths);
       }
     }
     return result;
@@ -166,7 +172,7 @@ function collectRoutesFromStack(
   routerName: RouterName,
   basePath: string,
   inheritedMiddleware: readonly string[],
-  mountPaths: WeakMap<object, string>,
+  mountPaths: WeakMap<object, string[]>,
   out: DescribedRoute[],
 ): void {
   const scopedMiddleware: Array<{ mountPath: string; name: string }> = [];
@@ -218,33 +224,38 @@ function collectRoutesFromStack(
       continue;
     }
 
-    const mountSegment = mountPaths.get(layer) ?? "";
-    const layerMountPath = joinRoutePaths(basePath, mountSegment);
+    const mountSegments = mountPaths.get(layer) ?? [""];
 
     if (
       typeof layer.handle === "function" &&
       Array.isArray(layer.handle.stack)
     ) {
-      const matchingScoped = scopedMiddleware
-        .filter(entry => prefixApplies(entry.mountPath, layerMountPath))
-        .map(entry => entry.name);
-      collectRoutesFromStack(
-        layer.handle.stack,
-        owner,
-        routerName,
-        layerMountPath,
-        [...inheritedMiddleware, ...matchingScoped],
-        mountPaths,
-        out,
-      );
+      for (const mountSegment of mountSegments) {
+        const layerMountPath = joinRoutePaths(basePath, mountSegment);
+        const matchingScoped = scopedMiddleware
+          .filter(entry => prefixApplies(entry.mountPath, layerMountPath))
+          .map(entry => entry.name);
+        collectRoutesFromStack(
+          layer.handle.stack,
+          owner,
+          routerName,
+          layerMountPath,
+          [...inheritedMiddleware, ...matchingScoped],
+          mountPaths,
+          out,
+        );
+      }
       continue;
     }
 
     if (typeof layer.handle === "function" && layer.handle.length !== 4) {
-      scopedMiddleware.push({
-        mountPath: layerMountPath,
-        name: handlerName(layer.handle, layer.name),
-      });
+      const name = handlerName(layer.handle, layer.name);
+      for (const mountSegment of mountSegments) {
+        scopedMiddleware.push({
+          mountPath: joinRoutePaths(basePath, mountSegment),
+          name,
+        });
+      }
     }
   }
 }
@@ -287,7 +298,7 @@ export function buildRouteRegistry(sources: readonly RouteRegistrySource[]): {
     const collected: DescribedRoute[] = [];
 
     for (const entry of ordered) {
-      const mountPaths = new WeakMap<object, string>();
+      const mountPaths = new WeakMap<object, string[]>();
       const probeRouters: Record<RouterName, Router> = {
         root: createProbeRouter(expressModule, mountPaths),
         v2: createProbeRouter(expressModule, mountPaths),

@@ -745,8 +745,21 @@ describe("routes and roles integration", () => {
     expect(calls).toEqual(["ext", "core"]);
   });
 
-  it("runs a worker role contributed by an extension", async () => {
-    const customRun = vi.fn();
+  it("runs a worker role contributed by an extension and forwards an optional abort signal", async () => {
+    const controller = new AbortController();
+    let aborted = false;
+    const customRun = vi.fn(
+      ({ entry, signal }: { entry: string; signal?: AbortSignal }) => {
+        expect(entry).toBe("/app/main.js");
+        expect(signal).toBe(controller.signal);
+        return new Promise<void>(resolve => {
+          signal?.addEventListener("abort", () => {
+            aborted = true;
+            resolve();
+          });
+        });
+      },
+    );
     const built = createService(
       {
         modules: {},
@@ -760,10 +773,20 @@ describe("routes and roles integration", () => {
       parts({ workers: { api: worker() } }),
     );
 
-    await run(built, "custom-worker", "/app/main.js");
-
-    expect(customRun).toHaveBeenCalledWith({ entry: "/app/main.js" });
+    const running = run(built, "custom-worker", "/app/main.js", {
+      signal: controller.signal,
+    });
     expect(processRole()).toBe("custom-worker");
+    expect(aborted).toBe(false);
+
+    controller.abort();
+    await running;
+
+    expect(aborted).toBe(true);
+    expect(customRun).toHaveBeenCalledWith({
+      entry: "/app/main.js",
+      signal: controller.signal,
+    });
   });
 });
 

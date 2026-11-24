@@ -271,6 +271,39 @@ describe("buildRouteRegistry", () => {
     expect(second[0].middleware).toEqual(["<anonymous>"]);
   });
 
+  it("describes sub-routers mounted on multiple path prefixes", () => {
+    function ping(_req: express.Request, res: express.Response) {
+      res.end();
+    }
+    const { describeRoutes } = buildRouteRegistry([
+      {
+        owner: "ext",
+        routes: ({ v2 }) => {
+          const sub = express.Router();
+          sub.get("/ping", ping);
+          v2.use(["/a", "/b"], sub);
+        },
+      },
+    ]);
+
+    expect(describeRoutes()).toEqual([
+      {
+        owner: "ext",
+        router: "v2",
+        method: "GET",
+        path: "/v2/a/ping",
+        middleware: ["ping"],
+      },
+      {
+        owner: "ext",
+        router: "v2",
+        method: "GET",
+        path: "/v2/b/ping",
+        middleware: ["ping"],
+      },
+    ]);
+  });
+
   it("returns an empty array without error when no extension registers routes", () => {
     const { describeRoutes } = buildRouteRegistry([
       { owner: "core", isCore: true },

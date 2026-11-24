@@ -8,14 +8,21 @@
  * worker implementations, configuration, or clients.
  */
 
+/** Environment passed to a worker role when it starts. */
+export interface WorkerRunEnv {
+  /**
+   * The file that starts any role as `node <entry> <role>`. A role that starts
+   * other processes starts them through it, whichever file its own process was
+   * started from.
+   */
+  entry: string;
+  /** Optional abort signal for cooperative shutdown when provided by the caller. */
+  signal?: AbortSignal;
+}
+
 /** A process role: what one process of the service runs. */
 export interface Worker {
-  /**
-   * `entry` is the file that starts any role as `node <entry> <role>`. A role
-   * that starts other processes starts them through it, whichever file its own
-   * process was started from.
-   */
-  run(env: { entry: string }): void | Promise<void>;
+  run(env: WorkerRunEnv): void | Promise<void>;
 }
 
 /** The process roles registered on a service. */

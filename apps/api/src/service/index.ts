@@ -105,8 +105,10 @@ export type {
   ErrorRegistry,
   Extension,
   RoleRegistry,
+  RunOptions,
   Service,
   ServiceConfig,
   ServiceDescription,
   Worker,
+  WorkerRunEnv,
 } from "./service";
