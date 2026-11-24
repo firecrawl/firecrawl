@@ -349,7 +349,7 @@ pub async fn extract_metadata(html: Option<String>) -> napi::Result<HashMap<Stri
   })?
 }
 
-const EXCLUDE_NON_MAIN_TAGS: [&str; 48] = [
+const EXCLUDE_NON_MAIN_TAGS: [&str; 97] = [
   "header",
   "footer",
   "nav",
@@ -365,38 +365,126 @@ const EXCLUDE_NON_MAIN_TAGS: [&str; 48] = [
   ".side",
   ".aside",
   "#sidebar",
+  "[id*=\"sidebar\" i]",
   ".modal",
   ".popup",
   "#modal",
   ".overlay",
+  ".popover",
+  ".s-popover",
+  ".tooltip",
   ".ad",
   ".ads",
   ".advert",
   "#ad",
+  "[class*=\"billboard\" i]",
+  ".crayons-bb",
   ".lang-selector",
   ".language",
   "#language-selector",
   ".social",
   ".social-media",
   ".social-links",
+  ".social-share",
+  ".share-buttons",
+  ".article-share",
+  ".post-share",
   "#social",
   ".menu",
   ".navigation",
   "#nav",
+  ".breadcrumb",
   ".breadcrumbs",
   "#breadcrumbs",
+  ".pagination",
+  ".pager",
   ".share",
   "#share",
   ".widget",
   "#widget",
-  ".cookie",
-  "#cookie",
-  "[aria-label=\"Cookie consent\" i]",
+  ".related-posts",
+  ".related-articles",
+  ".related-content",
+  ".recommended-posts",
+  ".popular-posts",
+  "#related-posts",
+  ".PopularPosts",
+  ".newsletter",
+  ".subscribe-box",
+  ".signup-prompt",
+  "[class*=\"signedOutBanner\" i]",
+  "[class*=\"copy-feedback\" i]",
+  ".js-bottom-notice",
+  ".js-post-menu",
+  ".post-menu",
+  ".js-voting-container",
+  "[data-testid=\"issue-viewer-metadata-container\"]",
+  "[data-testid=\"headerSignUpButton\"]",
+  ".comment-respond",
+  "#respond",
+  ".comments-area",
+  "#substack-comments",
+  "#add-comment-block",
+  "#wpdcom",
+  "article section#comments",
+  ".toc",
+  "#toc",
+  ".table-of-contents",
+  "[aria-label=\"Table of contents\" i]",
+  "[aria-label=\"On this page\" i]",
+  ".sr-only",
+  ".visually-hidden",
+  ".screen-reader-text",
+  ".skip-link",
+  ".skip-to-content",
+  "devsite-feedback",
+  "devsite-page-rating",
+  ".devsite-content-data",
+  "awsdocs-page-header-container",
+  "awsdocs-thumb-feedback",
   ".fc-decoration",
   ".grecaptcha-badge",
   "[data-original-tag=\"iframe\"][src*=\"google.com/recaptcha/\"]",
   "[data-original-tag=\"iframe\"][src*=\"recaptcha.net/recaptcha/\"]",
   "[data-original-tag=\"iframe\"][src*=\"hcaptcha.com\"]",
+];
+
+const EXCLUDE_ALWAYS_CHROME_SELECTORS: [&str; 36] = [
+  "dialog",
+  "tool-tip",
+  "[role=\"dialog\"]",
+  "[role=\"alertdialog\"]",
+  "[role=\"tooltip\"]",
+  "[role=\"navigation\"]",
+  "[role=\"banner\"]",
+  "[role=\"contentinfo\"]",
+  "[role=\"complementary\"]",
+  "[role=\"search\"]",
+  "[role=\"menu\"]",
+  "[role=\"menubar\"]",
+  "[role=\"toolbar\"]",
+  ".cookie",
+  "#cookie",
+  "[aria-label=\"Cookie consent\" i]",
+  "#onetrust-consent-sdk",
+  "#onetrust-banner-sdk",
+  "#CybotCookiebotDialog",
+  "#truste-consent-track",
+  "#consent_blackbar",
+  "#osano-cm-window",
+  ".cky-consent-container",
+  ".cky-modal",
+  ".cky-preference-center",
+  "[id*=\"cookie-consent\" i]",
+  "[id*=\"cookie-banner\" i]",
+  "[id*=\"cookie-notice\" i]",
+  "[id*=\"cookie-modal\" i]",
+  "[class*=\"cookie-consent\" i]",
+  "[class*=\"cookie-banner\" i]",
+  "[class*=\"cookie-notice\" i]",
+  "[class*=\"cookie-modal\" i]",
+  "[class*=\"consent-banner\" i]",
+  "[class*=\"awsccc-\"]",
   "[data-original-tag=\"iframe\"][src*=\"challenges.cloudflare.com\"]",
 ];
 
@@ -421,6 +509,22 @@ const FORCE_INCLUDE_MAIN_TAGS: [&str; 13] = [
   ".swoogo-image",
   ".swoogo-button",
   ".swoogo-agenda",
+];
+
+const PROTECTED_CONTENT_SELECTORS: [&str; 5] = [
+  "main",
+  "article",
+  "[role=\"main\"]",
+  ".entry-content",
+  ".post-body",
+];
+
+const PROTECTED_PAGE_SELECTORS: [&str; 5] = [
+  "main",
+  "[role=\"main\"]",
+  ".entry-content",
+  ".post-body",
+  "h1",
 ];
 
 fn lang_from_url(url: &Url) -> &'static str {
@@ -565,6 +669,117 @@ fn has_ancestor_tag(node: &NodeRef, tag_name: &str) -> bool {
     cur = p.parent();
   }
   false
+}
+
+fn has_math_or_diagram_ancestor(node: &NodeRef) -> bool {
+  let mut cur = node.parent();
+  while let Some(p) = cur {
+    if let Some(el) = p.as_element() {
+      let tag = el.name.local.as_ref();
+      if tag.eq_ignore_ascii_case("math")
+        || tag.eq_ignore_ascii_case("mjx-container")
+        || tag.eq_ignore_ascii_case("figure")
+      {
+        return true;
+      }
+      if el.attributes.borrow().get("class").is_some_and(|c| {
+        let l = c.to_ascii_lowercase();
+        l.contains("katex")
+          || l.contains("mathjax")
+          || l.contains("mjx")
+          || l.contains("mermaid")
+          || l.contains("diagram")
+          || l.contains("chart")
+      }) {
+        return true;
+      }
+    }
+    cur = p.parent();
+  }
+  false
+}
+
+fn is_collapsible_or_tabpanel(node: &NodeRef) -> bool {
+  if has_ancestor_tag(node, "details") {
+    return true;
+  }
+  let mut cur = Some(node.clone());
+  while let Some(n) = cur {
+    if let Some(el) = n.as_element() {
+      let tag = el.name.local.as_ref();
+      if tag.ends_with("-tabs") || tag.contains("expandable") {
+        return true;
+      }
+      let attrs = el.attributes.borrow();
+      if attrs
+        .get("role")
+        .is_some_and(|r| r.eq_ignore_ascii_case("tabpanel"))
+        || attrs.get("tab-id").is_some()
+      {
+        return true;
+      }
+      if attrs.get("class").is_some_and(|c| {
+        let l = c.to_ascii_lowercase();
+        l.contains("tab-content") || l.contains("tabpanel") || l.contains("collapsible")
+      }) {
+        return true;
+      }
+    }
+    cur = n.parent();
+  }
+  false
+}
+
+fn is_sidebar_layout_class(class_str: &str) -> bool {
+  for tok in class_str.split_whitespace() {
+    let lower = tok.to_ascii_lowercase();
+    if !lower.contains("sidebar") {
+      continue;
+    }
+    if lower.contains(':')
+      || lower.starts_with("bg-")
+      || lower.starts_with("text-")
+      || lower.starts_with("border-")
+      || lower.starts_with("ring-")
+      || lower.starts_with("fill-")
+      || lower.starts_with("stroke-")
+      || lower.starts_with("shadow-")
+      || lower.starts_with("from-")
+      || lower.starts_with("to-")
+      || lower.starts_with("via-")
+      || lower.starts_with("has-")
+      || lower.starts_with("with-")
+      || lower.contains("-with-sidebar")
+      || lower.contains("has-sidebar")
+    {
+      continue;
+    }
+    return true;
+  }
+  false
+}
+
+fn is_inline_hidden(style: &str) -> bool {
+  for decl in style.split(';') {
+    if let Some((prop, val)) = decl.split_once(':') {
+      let prop = prop.trim();
+      let val = val.trim().trim_end_matches("!important").trim();
+      if (prop.eq_ignore_ascii_case("display") && val.eq_ignore_ascii_case("none"))
+        || (prop.eq_ignore_ascii_case("visibility") && val.eq_ignore_ascii_case("hidden"))
+      {
+        return true;
+      }
+    }
+  }
+  false
+}
+
+fn non_ws_len(node: &NodeRef) -> usize {
+  node
+    .text_contents()
+    .chars()
+    .filter(|c| !c.is_whitespace())
+    .count()
 }
 
 fn normalize_code_blocks(document: &NodeRef, url: &Url) {
@@ -824,6 +1039,271 @@ fn normalize_code_blocks(document: &NodeRef, url: &Url) {
   }
 }
 
+fn is_boilerplate_section_heading(text: &str) -> bool {
+  let clean: String = text
+    .split_whitespace()
+    .collect::<Vec<_>>()
+    .join(" ")
+    .to_ascii_lowercase();
+  let trimmed = clean.trim_end_matches([':', '?', '!']);
+  matches!(
+    trimmed,
+    "related posts"
+      | "related articles"
+      | "related guides"
+      | "related courses"
+      | "related tools"
+      | "related questions"
+      | "related topics"
+      | "related reading"
+      | "recommended posts"
+      | "recommended articles"
+      | "recommended reading"
+      | "you might also like"
+      | "you may also like"
+      | "you might also like this video"
+      | "popular posts"
+      | "recent posts"
+      | "featured tool"
+      | "did this page help you"
+      | "was this page helpful"
+      | "leave a reply"
+      | "leave a comment"
+      | "top comments (0)"
+      | "explore related questions"
+      | "subscribe to our newsletter"
+      | "sign up for our newsletter"
+      | "share this article"
+      | "share this post"
+      | "recently added to this guide"
+  )
+}
+
+fn clean_inline_chrome_and_boilerplate(document: &NodeRef) {
+  // Serialized Shadow DOM places <span part="root"> beside light-DOM fallback text, doubling dates.
+  if let Ok(rts) = document.select("relative-time") {
+    let rts: Vec<_> = rts.collect();
+    for rt in rts {
+      let node = rt.as_node();
+      let has_direct_text = node
+        .children()
+        .any(|c| c.as_text().is_some_and(|t| !t.borrow().trim().is_empty()));
+      if has_direct_text {
+        if let Ok(roots) = node.select("span[part=\"root\"]") {
+          let roots: Vec<_> = roots.collect();
+          for r in roots {
+            r.as_node().detach();
+          }
+        }
+      }
+    }
+  }
+
+  // Empty fragment anchors cause html-to-markdown to emit aria-label ("Permalink: ...", "Skip link to ...").
+  if let Ok(anchors) = document.select("a[href]") {
+    let anchors: Vec<_> = anchors.collect();
+    for a in anchors {
+      let node = a.as_node();
+      if node.parent().is_none() || has_ancestor_tag(node, "pre") {
+        continue;
+      }
+      if non_ws_len(node) > 0 || node.select("img").is_ok_and(|mut it| it.next().is_some()) {
+        continue;
+      }
+      let is_fragment_or_permalink = {
+        let attrs = a.attributes.borrow();
+        let href = attrs.get("href").unwrap_or("");
+        let cls = attrs.get("class").unwrap_or("").to_ascii_lowercase();
+        let aria = attrs.get("aria-label").unwrap_or("").to_ascii_lowercase();
+        href.starts_with('#')
+          || href.contains('#')
+            && (cls.contains("anchor")
+              || cls.contains("permalink")
+              || cls.contains("hash-link")
+              || cls.contains("heading-link")
+              || aria.starts_with("permalink")
+              || aria.starts_with("skip link")
+              || aria.starts_with("direct link"))
+      };
+      if is_fragment_or_permalink {
+        node.detach();
+      }
+    }
+  }
+
+  let root_len = document
+    .select_first("body")
+    .ok()
+    .map(|b| non_ws_len(b.as_node()))
+    .unwrap_or(0);
+  if root_len < 150 {
+    return;
+  }
+
+  if let Ok(containers) = document.select("section, div") {
+    let containers: Vec<_> = containers.collect();
+    for el in containers {
+      let node = el.as_node();
+      if node.parent().is_none() {
+        continue;
+      }
+      if node
+        .select("h1, article, main, pre, table, [role=\"main\"]")
+        .is_ok_and(|mut it| it.next().is_some())
+      {
+        continue;
+      }
+      let el_len = non_ws_len(node);
+      if el_len == 0 || el_len * 100 >= root_len * 65 {
+        continue;
+      }
+      let lead_text = node
+        .children()
+        .filter_map(|c| c.into_element_ref())
+        .find(|c| non_ws_len(c.as_node()) > 0)
+        .map(|c| {
+          let tag = c.name.local.as_ref();
+          if matches!(tag, "h2" | "h3" | "h4" | "h5" | "h6" | "p" | "header") {
+            c.as_node().text_contents()
+          } else {
+            c.as_node()
+              .select_first("h2, h3, h4, h5, h6")
+              .ok()
+              .map(|h| h.as_node().text_contents())
+              .unwrap_or_default()
+          }
+        })
+        .unwrap_or_default();
+
+      if !lead_text.is_empty()
+        && lead_text.len() <= 80
+        && is_boilerplate_section_heading(&lead_text)
+      {
+        node.detach();
+      }
+    }
+  }
+}
+
+fn scope_to_main_content(document: &NodeRef) {
+  let Some(body) = document.select_first("body").ok() else {
+    return;
+  };
+  let body_node = body.as_node();
+
+  let mut scoped_to_main = false;
+  let main_candidate = document
+    .select("main")
+    .ok()
+    .into_iter()
+    .flatten()
+    .filter(|m| !has_ancestor_tag(m.as_node(), "main"))
+    .max_by_key(|m| non_ws_len(m.as_node()))
+    .filter(|m| non_ws_len(m.as_node()) >= 150)
+    .or_else(|| {
+      document
+        .select("[role=\"main\"]")
+        .ok()
+        .into_iter()
+        .flatten()
+        .max_by_key(|m| non_ws_len(m.as_node()))
+        .filter(|m| non_ws_len(m.as_node()) >= 150)
+    });
+
+  if let Some(main_el) = main_candidate {
+    let main_node = main_el.as_node().clone();
+    if main_node != *body_node {
+      main_node.detach();
+      while let Some(child) = body_node.first_child() {
+        child.detach();
+      }
+      body_node.append(main_node);
+      scoped_to_main = true;
+    }
+  }
+
+  let root_len = non_ws_len(body_node);
+  if root_len == 0 {
+    return;
+  }
+
+  if let Ok(viewer_pre) = body_node.select_first("pre[data-fc-code-viewer=\"1\"]") {
+    let pre_node = viewer_pre.as_node().clone();
+    let pre_len = non_ws_len(&pre_node);
+    if pre_len >= 300 && pre_len * 100 >= root_len * 30 {
+      let h1_node = body_node
+        .select_first("h1")
+        .ok()
+        .map(|h| h.as_node().clone())
+        .filter(|h| {
+          let l = non_ws_len(h);
+          (1..=250).contains(&l)
+        });
+      if let Some(ref h) = h1_node {
+        h.detach();
+      }
+      pre_node.detach();
+      while let Some(child) = body_node.first_child() {
+        child.detach();
+      }
+      if let Some(h) = h1_node {
+        body_node.append(h);
+      }
+      body_node.append(pre_node);
+      return;
+    }
+  }
+
+  let top_articles: Vec<_> = body_node
+    .select("article")
+    .ok()
+    .into_iter()
+    .flatten()
+    .filter(|a| !has_ancestor_tag(a.as_node(), "article"))
+    .collect();
+
+  if top_articles.len() == 1 {
+    let art_node = top_articles[0].as_node().clone();
+    let art_len = non_ws_len(&art_node);
+    let dominant = if scoped_to_main {
+      art_len >= 300 && (art_len * 100 >= root_len * 25 || art_len >= 1000)
+    } else {
+      art_len >= 300 && art_len * 100 >= root_len * 35
+    };
+    if dominant {
+      let art_has_h1 = art_node
+        .select_first("h1")
+        .is_ok_and(|h| non_ws_len(h.as_node()) >= 2);
+      let external_h1 = if !art_has_h1 {
+        body_node
+          .select("h1")
+          .ok()
+          .into_iter()
+          .flatten()
+          .map(|h| h.as_node().clone())
+          .find(|h| {
+            let l = non_ws_len(h);
+            (2..=250).contains(&l)
+          })
+      } else {
+        None
+      };
+
+      if let Some(ref h) = external_h1 {
+        h.detach();
+      }
+      art_node.detach();
+      while let Some(child) = body_node.first_child() {
+        child.detach();
+      }
+      if let Some(h) = external_h1 {
+        body_node.append(h);
+      }
+      body_node.append(art_node);
+    }
+  }
+}
+
 #[derive(Deserialize, Serialize)]
 #[napi(object)]
 pub struct TransformHtmlOptions {
@@ -895,6 +1375,9 @@ pub fn transform_document(
   while let Ok(x) = document.select_first("script") {
     x.as_node().detach();
   }
+  while let Ok(x) = document.select_first("template") {
+    x.as_node().detach();
+  }
 
   normalize_code_blocks(&document, &url);
 
@@ -949,20 +1432,253 @@ pub fn transform_document(
   }
 
   if opts.only_main_content {
-    for x in EXCLUDE_NON_MAIN_TAGS.iter() {
-      let x: Vec<_> = document
-        .select(x)
+    let has_force_include = |node: &NodeRef| -> bool {
+      FORCE_INCLUDE_MAIN_TAGS
+        .iter()
+        .any(|sel| node.select(sel).is_ok_and(|mut it| it.next().is_some()))
+    };
+    let has_protected_content = |node: &NodeRef| -> bool {
+      PROTECTED_CONTENT_SELECTORS
+        .iter()
+        .any(|sel| node.select(sel).is_ok_and(|mut it| it.next().is_some()))
+    };
+    let has_protected_page_content = |node: &NodeRef| -> bool {
+      PROTECTED_PAGE_SELECTORS
+        .iter()
+        .any(|sel| node.select(sel).is_ok_and(|mut it| it.next().is_some()))
+    };
+
+    for sel in EXCLUDE_ALWAYS_CHROME_SELECTORS.iter() {
+      let matches: Vec<_> = document
+        .select(sel)
+        .map_err(|_| "Failed to select chrome tags")?
+        .collect();
+      for tag in matches {
+        let node = tag.as_node();
+        if node.parent().is_none() || has_ancestor_tag(node, "pre") {
+          continue;
+        }
+        if !has_force_include(node) && !has_protected_content(node) {
+          node.detach();
+        }
+      }
+    }
+
+    if let Ok(svgs) = document.select("svg") {
+      let svgs: Vec<_> = svgs.collect();
+      for svg in svgs {
+        let node = svg.as_node();
+        if node.parent().is_none()
+          || has_ancestor_tag(node, "pre")
+          || has_math_or_diagram_ancestor(node)
+        {
+          continue;
+        }
+        let has_diagram_text = !has_ancestor_tag(node, "a")
+          && !has_ancestor_tag(node, "button")
+          && svg
+            .attributes
+            .borrow()
+            .get("aria-hidden")
+            .is_none_or(|v| !v.eq_ignore_ascii_case("true"))
+          && node.select("text").is_ok_and(|mut it| it.next().is_some());
+        if !has_diagram_text && !has_force_include(node) && !has_protected_content(node) {
+          node.detach();
+        }
+      }
+    }
+
+    if let Ok(hidden_els) = document.select("[hidden]") {
+      let hidden_els: Vec<_> = hidden_els.collect();
+      for el in hidden_els {
+        let node = el.as_node();
+        if node.parent().is_none()
+          || has_ancestor_tag(node, "pre")
+          || is_collapsible_or_tabpanel(node)
+        {
+          continue;
+        }
+        if !has_force_include(node) && !has_protected_content(node) {
+          node.detach();
+        }
+      }
+    }
+
+    if let Ok(styled) = document.select("[style]") {
+      let styled: Vec<_> = styled.collect();
+      for el in styled {
+        let node = el.as_node();
+        if node.parent().is_none()
+          || has_ancestor_tag(node, "pre")
+          || is_collapsible_or_tabpanel(node)
+        {
+          continue;
+        }
+        let hidden = el
+          .attributes
+          .borrow()
+          .get("style")
+          .is_some_and(is_inline_hidden);
+        if hidden && !has_force_include(node) && !has_protected_content(node) {
+          node.detach();
+        }
+      }
+    }
+
+    if let Ok(aria_hidden) = document.select("[aria-hidden=\"true\"]") {
+      let aria_hidden: Vec<_> = aria_hidden.collect();
+      for el in aria_hidden {
+        let node = el.as_node();
+        if node.parent().is_none()
+          || has_ancestor_tag(node, "pre")
+          || has_ancestor_tag(node, "code")
+          || has_ancestor_tag(node, "math")
+          || is_collapsible_or_tabpanel(node)
+        {
+          continue;
+        }
+        let is_math_or_code = el.attributes.borrow().get("class").is_some_and(|c| {
+          let l = c.to_ascii_lowercase();
+          l.contains("katex") || l.contains("mathjax") || l.contains("mjx")
+        }) || node
+          .select("pre, code, math, .katex, .MathJax")
+          .is_ok_and(|mut it| it.next().is_some());
+        if !is_math_or_code && !has_force_include(node) && !has_protected_content(node) {
+          node.detach();
+        }
+      }
+    }
+
+    for sel in ["select", "input", "textarea"] {
+      if let Ok(controls) = document.select(sel) {
+        let controls: Vec<_> = controls.collect();
+        for el in controls {
+          if !has_ancestor_tag(el.as_node(), "pre") {
+            el.as_node().detach();
+          }
+        }
+      }
+    }
+    if let Ok(buttons) = document.select("button") {
+      let buttons: Vec<_> = buttons.collect();
+      for btn in buttons {
+        let node = btn.as_node();
+        if node.parent().is_none() {
+          continue;
+        }
+        let keeps_heading = node
+          .select("h1, h2, h3, h4, h5, h6")
+          .is_ok_and(|mut it| it.next().is_some());
+        if !keeps_heading && non_ws_len(node) <= 150 && !has_force_include(node) {
+          node.detach();
+        }
+      }
+    }
+
+    let body_total_len = document
+      .select_first("body")
+      .ok()
+      .map(|b| non_ws_len(b.as_node()))
+      .unwrap_or(0);
+
+    if let Ok(forms) = document.select("form") {
+      let forms: Vec<_> = forms.collect();
+      for form in forms {
+        let node = form.as_node();
+        if node.parent().is_none() {
+          continue;
+        }
+        let wraps_main = has_force_include(node)
+          || has_protected_content(node)
+          || node.select("h1").is_ok_and(|mut it| it.next().is_some())
+          || (body_total_len > 0 && non_ws_len(node) * 100 >= body_total_len * 35);
+        if !wraps_main {
+          node.detach();
+        }
+      }
+    }
+
+    let body_len_after_forms = document
+      .select_first("body")
+      .ok()
+      .map(|b| non_ws_len(b.as_node()))
+      .unwrap_or(0);
+
+    for sel in EXCLUDE_NON_MAIN_TAGS.iter() {
+      let matches: Vec<_> = document
+        .select(sel)
         .map_err(|_| "Failed to select tags")?
         .collect();
-      for tag in x {
-        if !FORCE_INCLUDE_MAIN_TAGS.iter().any(|x| {
-          tag
-            .as_node()
-            .select(x)
-            .is_ok_and(|mut x| x.next().is_some())
-        }) {
-          tag.as_node().detach();
+      let is_structural = matches!(*sel, "footer" | "nav" | "aside");
+      let is_card_list_chrome = matches!(
+        *sel,
+        ".related-posts"
+          | ".related-articles"
+          | ".related-content"
+          | ".recommended-posts"
+          | ".popular-posts"
+          | "#related-posts"
+          | ".PopularPosts"
+          | ".comments-area"
+          | "#substack-comments"
+          | "#wpdcom"
+          | "article section#comments"
+      );
+      for tag in matches {
+        let node = tag.as_node();
+        if node.parent().is_none() || has_ancestor_tag(node, "pre") {
+          continue;
         }
+        if *sel == "header" {
+          let has_h1 = node.select("h1").is_ok_and(|mut it| it.next().is_some());
+          let inside_article = has_ancestor_tag(node, "article");
+          if has_h1 || (inside_article && node.select("h2").is_ok_and(|mut it| it.next().is_some()))
+          {
+            continue;
+          }
+        }
+        if has_force_include(node) {
+          continue;
+        }
+        if !is_structural {
+          let is_protected = if is_card_list_chrome {
+            has_protected_page_content(node)
+          } else {
+            has_protected_content(node)
+          };
+          if is_protected {
+            continue;
+          }
+          if body_len_after_forms >= 400 && non_ws_len(node) * 100 >= body_len_after_forms * 40 {
+            continue;
+          }
+        }
+        node.detach();
+      }
+    }
+
+    if let Ok(sidebar_els) = document.select("[class*=\"sidebar\" i]") {
+      let sidebar_els: Vec<_> = sidebar_els.collect();
+      for el in sidebar_els {
+        let node = el.as_node();
+        if node.parent().is_none()
+          || has_ancestor_tag(node, "pre")
+          || has_ancestor_tag(node, "code")
+        {
+          continue;
+        }
+        let is_sidebar = el
+          .attributes
+          .borrow()
+          .get("class")
+          .is_some_and(is_sidebar_layout_class);
+        if !is_sidebar || has_force_include(node) || has_protected_content(node) {
+          continue;
+        }
+        if body_len_after_forms >= 400 && non_ws_len(node) * 100 >= body_len_after_forms * 40 {
+          continue;
+        }
+        node.detach();
       }
     }
 
@@ -977,6 +1693,12 @@ pub fn transform_document(
         }
       }
     }
+
+    if opts.include_tags.is_empty() {
+      scope_to_main_content(&document);
+    }
+
+    clean_inline_chrome_and_boilerplate(&document);
   }
 
   // Resolve images, including lazy-loaded ones. Many sites ship a tiny
@@ -1769,5 +2491,59 @@ mod tests {
     );
     assert!(out_blob.contains("<pre data-fc-code-viewer=\"1\"><code class=\"language-dockerfile\">FROM alpine:3.20</code></pre>"));
     assert!(!out_blob.contains("<textarea"));
+  }
+
+  #[test]
+  fn preserves_article_header_details_and_strips_chrome_and_boilerplate() {
+    let html = r#"<html><body>
+      <div id="onetrust-consent-sdk" role="dialog">Cookie Preferences</div>
+      <div role="navigation"><a href="/home">Home</a></div>
+      <main>
+        <article>
+          <header><h1>Guide Title</h1></header>
+          <p>Main article body with enough words to exceed the minimum length threshold for scoping cleanly in tests and real pages alike. Adding more text here so the article dominates the page comfortably.</p>
+          <details><div style="display: none"><p>Hidden flag details inside collapsible section.</p></div></details>
+          <div role="tabpanel" hidden><p>Inactive tab panel documentation.</p></div>
+          <div role="tabpanel" aria-hidden="true"><p>Aria-hidden tab panel documentation.</p></div>
+          <svg><text>Request Flow</text></svg>
+          <mjx-container><svg><path d="M0 0"></path></svg></mjx-container>
+        </article>
+        <div class="related-posts"><article><h3>Recommended Card</h3></article></div>
+        <section><h2>Related Posts</h2><a href="/other">Other</a></section>
+      </main>
+    </body></html>"#;
+    let out = run_transform(html, "https://example.com/guide", true);
+    assert!(out.contains("<h1>Guide Title</h1>"));
+    assert!(out.contains("Hidden flag details inside collapsible section."));
+    assert!(out.contains("Inactive tab panel documentation."));
+    assert!(out.contains("Aria-hidden tab panel documentation."));
+    assert!(out.contains("Request Flow"));
+    assert!(out.contains("<mjx-container><svg>"));
+    assert!(!out.contains("Recommended Card"));
+    assert!(!out.contains("Cookie Preferences"));
+    assert!(!out.contains("Related Posts"));
+    assert!(!out.contains("Home"));
+  }
+
+  #[test]
+  fn protects_tailwind_sidebar_utility_and_short_form_pages() {
+    let tw = r#"<html><body><main><pre><div class="bg-token-sidebar-surface-primary">const keep = true;</div></pre></main></body></html>"#;
+    let out_tw = run_transform(tw, "https://example.com/forum", true);
+    assert!(out_tw.contains("const keep = true;"));
+
+    let form_page = r#"<html><body><h2>Contact</h2><form><p>Fill out your name, email, and company details to contact support.</p></form></body></html>"#;
+    let out_form = run_transform(form_page, "https://example.com/form.html", true);
+    assert!(out_form.contains("Fill out your name"));
+  }
+
+  #[test]
+  fn deduplicates_relative_time_shadow_span_and_drops_empty_permalink_anchors() {
+    let html = r##"<html><body><main>
+      <h1>Docs <a aria-label="Permalink: Docs" class="anchor" href="#docs"><svg><title>link</title></svg></a></h1>
+      <p>Updated <relative-time datetime="2026-01-01"><span part="root">on Jan 1, 2026</span>on Jan 1, 2026</relative-time>.</p>
+    </main></body></html>"##;
+    let out = run_transform(html, "https://example.com/docs", true);
+    assert!(!out.contains("Permalink: Docs"));
+    assert_eq!(out.matches("on Jan 1, 2026").count(), 1);
   }
 }
