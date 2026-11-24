@@ -69,9 +69,33 @@ import {
 } from "../../../lib/exchange";
 import { UnsupportedSiteError } from "../../../lib/error";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../../lib/strings";
-import { buildFallbackList } from "../../../scraper/scrapeURL/engines";
+import {
+  buildFallbackList,
+  coreEngineFeatures,
+  coreEngines,
+} from "../../../scraper/scrapeURL/engines";
+import { createService, replaceService } from "../../../service/service";
 
 describe("v2 batch scrape of blocklisted URLs", () => {
+  beforeAll(() => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            engines: coreEngines,
+            engineFeatures: coreEngineFeatures,
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+  });
+
+  afterAll(() => {
+    replaceService(undefined);
+  });
   const TERMS = { key: "acme", version: "2026-01-01" };
   const BLOCKED_URL = "https://profiles.example/person/example-person";
   const UNSERVED_URL = "https://blocked.example/person/example-person";

@@ -3,7 +3,19 @@ export type {
   ErrorCodes,
   TransportableErrorClass,
 } from "../lib/error";
+export type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 export { coreParts } from "./core-parts";
+export type {
+  DescribedEngineFeature,
+  Engine,
+  EngineFeature,
+  EngineFeatureMap,
+  EngineFeatureName,
+  EngineFeatures,
+  EngineName,
+  EngineRegistry,
+  Engines,
+} from "./engines";
 export { assertEnv, defineEnv } from "./env";
 export type {
   Await,

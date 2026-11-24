@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TransportableErrorClass } from "../lib/error";
+import type { Engine, EngineFeatureMap } from "./engines";
 import type { HookHandlers } from "./hooks";
 import {
   createService,
@@ -26,6 +27,31 @@ const handlers = (listed: Record<string, unknown>) =>
 const errorClass = (...codes: string[]) =>
   ({ codes, deserialize: vi.fn() }) as unknown as TransportableErrorClass;
 
+// A test's engine and feature names are not in Engines/EngineFeatures, so they
+// are built through casts.
+const engine = (
+  name: string,
+  overrides: {
+    quality?: number;
+    features?: Record<string, boolean | undefined>;
+    enabled?: () => boolean;
+    scrape?: Engine["scrape"];
+    maxReasonableTime?: Engine["maxReasonableTime"];
+    explicitOnly?: boolean;
+  } = {},
+): Engine =>
+  ({
+    name,
+    quality: 10,
+    features: {},
+    enabled: () => true,
+    scrape: vi.fn(),
+    ...overrides,
+  }) as unknown as Engine;
+
+const featureMap = (listed: Record<string, { priority: number }>) =>
+  listed as unknown as EngineFeatureMap;
+
 afterEach(() => {
   replaceService(undefined);
 });
@@ -41,6 +67,7 @@ describe("createService", () => {
     expect(Object.isFrozen(built.modules)).toBe(true);
     expect(Object.isFrozen(built.hooks)).toBe(true);
     expect(Object.isFrozen(built.errors)).toBe(true);
+    expect(Object.isFrozen(built.engines)).toBe(true);
     expect(Object.isFrozen(built.workers)).toBe(true);
   });
 
@@ -157,7 +184,8 @@ describe("errors", () => {
 });
 
 describe("describe", () => {
-  it("lists the extensions in order, the owner of each handler, error code and role", () => {
+  it("lists the extensions in order, the owner of each handler, error code, engine, feature and role", () => {
+    const enabled = vi.fn(() => true);
     const built = createService(
       {
         modules: {},
@@ -169,6 +197,14 @@ describe("describe", () => {
               "a.point": vi.fn(),
             }),
             errors: [errorClass("ZEBRA", "ALPHA")],
+            engines: [
+              engine("zebra", { enabled }),
+              engine("fetch", { quality: 99, enabled }),
+            ],
+            engineFeatures: featureMap({
+              zebraFlag: { priority: 50 },
+              waitFor: { priority: 25 },
+            }),
             workers: { zebra: worker(), api: worker() },
           },
           { name: "third", hooks: handlers({ "b.point": vi.fn() }) },
@@ -177,12 +213,18 @@ describe("describe", () => {
       parts({
         hooks: handlers({ "b.point": vi.fn() }),
         errors: () => [errorClass("TIMEOUT")],
+        engines: [engine("fetch", { enabled }), engine("alpha", { enabled })],
+        engineFeatures: featureMap({
+          waitFor: { priority: 1 },
+          alphaFlag: { priority: 10 },
+        }),
         workers: { api: worker(), "queue-worker": worker() },
       }),
     );
 
     const description = built.describe();
 
+    expect(enabled).not.toHaveBeenCalled();
     expect(description).toEqual({
       extensions: ["core", "second", "third"],
       modules: [],
@@ -191,6 +233,12 @@ describe("describe", () => {
         "b.point": ["core", "second", "second", "third"],
       },
       errors: { ALPHA: "second", TIMEOUT: "core", ZEBRA: "second" },
+      engines: { alpha: "core", fetch: "second", zebra: "second" },
+      engineFeatures: {
+        alphaFlag: { owner: "core", priority: 10 },
+        waitFor: { owner: "second", priority: 25 },
+        zebraFlag: { owner: "second", priority: 50 },
+      },
       roles: { api: "second", "queue-worker": "core", zebra: "second" },
       env: {},
     });
@@ -199,6 +247,16 @@ describe("describe", () => {
       "ALPHA",
       "TIMEOUT",
       "ZEBRA",
+    ]);
+    expect(Object.keys(description.engines)).toEqual([
+      "alpha",
+      "fetch",
+      "zebra",
+    ]);
+    expect(Object.keys(description.engineFeatures)).toEqual([
+      "alphaFlag",
+      "waitFor",
+      "zebraFlag",
     ]);
     expect(Object.keys(description.roles)).toEqual([
       "api",
@@ -219,10 +277,15 @@ describe("describe", () => {
   it("keeps describing the service as it was created", () => {
     const mineError = errorClass("MINE");
     const mineErrors = [mineError];
+    const mineEngine = engine("mine-engine", { features: { waitFor: true } });
+    const mineEngines = [mineEngine];
+    const mineFeatures = featureMap({ mineFlag: { priority: 40 } });
     const mine: Extension = {
       name: "mine",
       hooks: handlers({ "a.point": vi.fn() }),
       errors: mineErrors,
+      engines: mineEngines,
+      engineFeatures: mineFeatures,
       workers: { api: worker() },
     };
     const built = createService({ modules: {}, extensions: [mine] }, parts());
@@ -231,16 +294,24 @@ describe("describe", () => {
     mine.hooks = handlers({ "b.point": vi.fn() });
     mineErrors.push(errorClass("ADDED"));
     mine.errors = [errorClass("OTHER")];
+    mineEngines.push(engine("added-engine"));
+    mine.engines = [engine("other-engine")];
+    mine.engineFeatures = featureMap({ otherFlag: { priority: 99 } });
     mine.workers = { other: worker() };
 
     expect(built.errors.classFor("MINE")).toBe(mineError);
     expect(built.errors.classFor("ADDED")).toBeUndefined();
     expect(built.errors.classFor("OTHER")).toBeUndefined();
+    expect(built.engines.all().map(e => e.name)).toEqual(["mine-engine"]);
+    expect(built.engines.feature("mineFlag")).toEqual({ priority: 40 });
+    expect(built.engines.feature("otherFlag")).toBeUndefined();
     expect(built.describe()).toEqual({
       extensions: ["core", "mine"],
       modules: [],
       hooks: { "a.point": ["mine"] },
       errors: { MINE: "mine" },
+      engines: { "mine-engine": "mine" },
+      engineFeatures: { mineFlag: { owner: "mine", priority: 40 } },
       roles: { api: "mine" },
       env: {},
     });
@@ -252,6 +323,11 @@ describe("describe", () => {
       { modules: {} },
       parts({
         hooks: handlers({ constructor: vi.fn() }),
+        engines: [engine("__proto__"), engine("constructor")],
+        engineFeatures: featureMap({
+          ["__proto__"]: { priority: 5 },
+          constructor: { priority: 15 },
+        }),
         workers: { ["__proto__"]: inherited, constructor: worker() },
       }),
     );
@@ -260,8 +336,20 @@ describe("describe", () => {
 
     expect(Object.hasOwn(built.workers, "__proto__")).toBe(true);
     expect(built.workers["__proto__"]).toBe(inherited);
+    expect(built.engines.get("__proto__")?.name).toBe("__proto__");
+    expect(built.engines.get("constructor")?.name).toBe("constructor");
+    expect(built.engines.feature("__proto__")).toEqual({ priority: 5 });
+    expect(built.engines.feature("constructor")).toEqual({ priority: 15 });
     expect(Object.keys(description.hooks)).toEqual(["constructor"]);
     expect(description.hooks.constructor).toEqual(["core"]);
+    expect(Object.entries(description.engines)).toEqual([
+      ["__proto__", "core"],
+      ["constructor", "core"],
+    ]);
+    expect(Object.entries(description.engineFeatures)).toEqual([
+      ["__proto__", { owner: "core", priority: 5 }],
+      ["constructor", { owner: "core", priority: 15 }],
+    ]);
     expect(Object.entries(description.roles)).toEqual([
       ["__proto__", "core"],
       ["constructor", "core"],
@@ -271,12 +359,19 @@ describe("describe", () => {
   it("returns a copy, so a caller cannot change what the next one reads", () => {
     const built = createService(
       { modules: {} },
-      parts({ errors: [errorClass("TIMEOUT")], workers: { api: worker() } }),
+      parts({
+        errors: [errorClass("TIMEOUT")],
+        engines: [engine("fetch")],
+        engineFeatures: featureMap({ waitFor: { priority: 1 } }),
+        workers: { api: worker() },
+      }),
     );
 
     const first = built.describe();
     first.extensions.push("added");
     first.errors.TIMEOUT = "changed";
+    first.engines.fetch = "changed";
+    first.engineFeatures.waitFor.priority = 999;
     first.roles.api = "changed";
 
     expect(built.describe()).toEqual({
@@ -284,6 +379,8 @@ describe("describe", () => {
       modules: [],
       hooks: {},
       errors: { TIMEOUT: "core" },
+      engines: { fetch: "core" },
+      engineFeatures: { waitFor: { owner: "core", priority: 1 } },
       roles: { api: "core" },
       env: {},
     });
@@ -295,6 +392,7 @@ describe("service", () => {
     expect(() => service.modules).toThrow("No service is installed");
     expect(() => service.hooks).toThrow("No service is installed");
     expect(() => service.errors).toThrow("No service is installed");
+    expect(() => service.engines).toThrow("No service is installed");
     expect(() => service.workers).toThrow("No service is installed");
     expect(() => service.describe()).toThrow("No service is installed");
   });
@@ -309,6 +407,7 @@ describe("service", () => {
     expect(service.modules).toBe(built.modules);
     expect(service.hooks).toBe(built.hooks);
     expect(service.errors).toBe(built.errors);
+    expect(service.engines).toBe(built.engines);
     expect(service.workers).toBe(built.workers);
     expect(service.describe()).toEqual(built.describe());
   });

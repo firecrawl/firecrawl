@@ -2,7 +2,9 @@ import Module from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ScrapeJobTimeoutError } from "../lib/error";
 import * as errorSerde from "../lib/error-serde";
+import { coreEngineSpecs } from "../scraper/scrapeURL/engines/metadata";
 import { coreParts } from "./core-parts";
+import type { Engine } from "./engines";
 import { createService } from "./service";
 
 const loadedSideEffectModules = vi.hoisted(() => [] as string[]);
@@ -20,17 +22,33 @@ vi.mock("../lib/deployment", () => {
 });
 
 const errorClassesModule = "../lib/error-serde";
+const enginesModule = "../scraper/scrapeURL/engines";
 
-// coreParts() loads its error classes with require() on the first lookup. The
-// test runner cannot resolve a source file that is loaded that way, so the
-// load is answered with the module the runner imported.
-function answerRequire() {
+// coreParts() loads its error classes and engine implementations with
+// require() on first use. The test runner cannot resolve a source file loaded
+// that way, so both loads are answered with stub modules.
+function answerRequire(mockEngines?: readonly Engine[]) {
   const load = Module.prototype.require;
+  const enginesStub = mockEngines
+    ? { coreEngines: mockEngines }
+    : {
+        coreEngines: coreEngineSpecs.map(spec => ({
+          name: spec.name,
+          quality: spec.quality,
+          features: spec.features,
+          ...(spec.explicitOnly ? { explicitOnly: true } : {}),
+          enabled: vi.fn(() => true),
+          scrape: vi.fn(),
+          maxReasonableTime: vi.fn(() => 12345),
+        })),
+      };
   return vi.spyOn(Module.prototype, "require").mockImplementation(function (
     this: Module,
     id: string,
   ) {
-    return id === errorClassesModule ? errorSerde : load.call(this, id);
+    if (id === errorClassesModule) return errorSerde;
+    if (id === enginesModule) return enginesStub;
+    return load.call(this, id);
   });
 }
 
@@ -51,8 +69,60 @@ describe("coreParts", () => {
     ).toHaveLength(1);
   });
 
-  it("gives the service every process role and error class, and nothing else yet", () => {
-    answerRequire();
+  it("loads its engine implementations on the first engine call, and once", async () => {
+    const enabled = vi.fn(() => true);
+    const scrape = vi.fn().mockResolvedValue({
+      url: "https://example.com",
+      html: "<p>ok</p>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    });
+    const maxReasonableTime = vi.fn(() => 42000);
+    const mockEngines: Engine[] = coreEngineSpecs.map(spec => ({
+      name: spec.name,
+      quality: spec.quality,
+      features: spec.features,
+      ...(spec.explicitOnly ? { explicitOnly: true } : {}),
+      enabled: spec.name === "fetch" ? enabled : () => false,
+      scrape: spec.name === "fetch" ? scrape : vi.fn(),
+      maxReasonableTime:
+        spec.name === "fetch" ? maxReasonableTime : () => 30000,
+    }));
+
+    const required = answerRequire(mockEngines);
+    const built = createService({ modules: {} }, coreParts());
+
+    // Creating the service, inspecting registered engines, and calling
+    // describe() must not load the engine implementations.
+    expect(built.engines.all()).toHaveLength(coreEngineSpecs.length);
+    const fetchEngine = built.engines.get("fetch");
+    expect(fetchEngine?.scrape.name).toBe("scrapeURLWithFetch");
+    built.describe();
+    expect(required).not.toHaveBeenCalledWith(enginesModule);
+
+    expect(built.engines.enabled().map(e => e.name)).toEqual(["fetch"]);
+    expect(enabled).toHaveBeenCalledTimes(1);
+
+    const stubMeta = {} as Parameters<Engine["scrape"]>[0];
+    await fetchEngine!.scrape(stubMeta);
+    expect(scrape).toHaveBeenCalledWith(stubMeta);
+    expect(fetchEngine!.maxReasonableTime?.(stubMeta)).toBe(42000);
+    expect(maxReasonableTime).toHaveBeenCalledWith(stubMeta);
+    expect(
+      required.mock.calls.filter(([id]) => id === enginesModule),
+    ).toHaveLength(1);
+  });
+
+  it("preserves the handler method name on every built-in engine wrapper", () => {
+    const built = createService({ modules: {} }, coreParts());
+
+    for (const spec of coreEngineSpecs) {
+      expect(built.engines.get(spec.name)?.scrape.name).toBe(spec.method);
+    }
+  });
+
+  it("gives the service every process role, engine, feature, and error class", () => {
+    const required = answerRequire();
     const built = createService({ modules: {} }, coreParts());
 
     expect(built.describe()).toEqual({
@@ -109,6 +179,42 @@ describe("coreParts", () => {
         US_ONLY_UNAVAILABLE: "core",
         unsafe_domain_blocked: "core",
       },
+      engines: {
+        document: "core",
+        exchange: "core",
+        fetch: "core",
+        "fire-engine(retry);chrome-cdp": "core",
+        "fire-engine(retry);chrome-cdp;stealth": "core",
+        "fire-engine;chrome-cdp": "core",
+        "fire-engine;chrome-cdp;stealth": "core",
+        "fire-engine;tlsclient": "core",
+        "fire-engine;tlsclient;stealth": "core",
+        image: "core",
+        index: "core",
+        "index;documents": "core",
+        pdf: "core",
+        playwright: "core",
+        wikipedia: "core",
+      },
+      engineFeatures: {
+        actions: { owner: "core", priority: 20 },
+        atsv: { owner: "core", priority: 90 },
+        audio: { owner: "core", priority: 100 },
+        branding: { owner: "core", priority: 20 },
+        disableAdblock: { owner: "core", priority: 10 },
+        document: { owner: "core", priority: 100 },
+        image: { owner: "core", priority: 100 },
+        location: { owner: "core", priority: 10 },
+        mobile: { owner: "core", priority: 10 },
+        pdf: { owner: "core", priority: 100 },
+        screenshot: { owner: "core", priority: 10 },
+        "screenshot@fullScreen": { owner: "core", priority: 10 },
+        skipTlsVerification: { owner: "core", priority: 10 },
+        stealthProxy: { owner: "core", priority: 20 },
+        useFastMode: { owner: "core", priority: 90 },
+        video: { owner: "core", priority: 100 },
+        waitFor: { owner: "core", priority: 1 },
+      },
       roles: {
         api: "core",
         "cclog-worker": "core",
@@ -124,6 +230,7 @@ describe("coreParts", () => {
       },
       env: {},
     });
+    expect(required).not.toHaveBeenCalledWith(enginesModule);
   });
 
   it("loads core error classes without pulling in config, exchange, or deployment", () => {
