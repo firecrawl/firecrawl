@@ -85,7 +85,7 @@ export async function getJob(id: string): Promise<PseudoJob<any> | null> {
     return null;
   }
 
-  if (nuqJob && nuqJob.data.mode !== "single_urls") {
+  if (nuqJob && nuqJob.data != null && nuqJob.data.mode !== "single_urls") {
     return null;
   }
 
@@ -106,7 +106,7 @@ export async function getJob(id: string): Promise<PseudoJob<any> | null> {
     status: scrapeState?.status ?? storedJob?.state ?? nuqJob!.status,
     returnvalue: Array.isArray(data) ? data[0] : data,
     data: {
-      scrapeOptions: nuqJob ? nuqJob.data.scrapeOptions : null,
+      scrapeOptions: nuqJob?.data?.scrapeOptions ?? null,
     },
     timestamp:
       scrapeState?.completedAtMs ??
@@ -192,7 +192,7 @@ export async function getJobs(ids: string[]): Promise<PseudoJob<any>[]> {
       status: nuqJob.status,
       returnvalue: Array.isArray(data) ? data[0] : data,
       data: {
-        scrapeOptions: nuqJob.data.scrapeOptions,
+        scrapeOptions: nuqJob.data?.scrapeOptions ?? null,
       },
       timestamp: nuqJob.createdAt.valueOf(),
       failedReason: nuqJob.failedReason || undefined,

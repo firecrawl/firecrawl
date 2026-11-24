@@ -27,9 +27,14 @@ export async function crawlErrorsController(
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
   } else {
+    const jobKind = (req.path || req.originalUrl || "").includes(
+      "/batch/scrape/",
+    )
+      ? "batchScrape"
+      : "crawl";
     let owner;
     try {
-      owner = await service.modules.jobStore.owner(req.params.jobId, "crawl");
+      owner = await service.modules.jobStore.owner(req.params.jobId, jobKind);
     } catch (requestError) {
       _logger.error("Error getting request", { error: requestError });
       throw requestError;

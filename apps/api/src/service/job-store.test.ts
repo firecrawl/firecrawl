@@ -360,10 +360,34 @@ describe("crawlErrorsController with jobStore", () => {
         });
         const ok = makeRes();
         await crawlErrorsController(
-          { params: { jobId: JOB_ID }, auth: { team_id: TEAM_ID } } as any,
+          {
+            path: `/crawl/${JOB_ID}/errors`,
+            params: { jobId: JOB_ID },
+            auth: { team_id: TEAM_ID },
+          } as any,
           ok.res,
         );
+        expect(owner).toHaveBeenLastCalledWith(JOB_ID, "crawl");
         expect(ok.result()).toEqual({
+          status: 200,
+          body: { errors: [], robotsBlocked: [] },
+        });
+
+        owner.mockResolvedValueOnce({
+          teamId: TEAM_ID,
+          expiresAtMs: Date.now() + 60_000,
+        });
+        const batchOk = makeRes();
+        await crawlErrorsController(
+          {
+            path: `/batch/scrape/${JOB_ID}/errors`,
+            params: { jobId: JOB_ID },
+            auth: { team_id: TEAM_ID },
+          } as any,
+          batchOk.res,
+        );
+        expect(owner).toHaveBeenLastCalledWith(JOB_ID, "batchScrape");
+        expect(batchOk.result()).toEqual({
           status: 200,
           body: { errors: [], robotsBlocked: [] },
         });
