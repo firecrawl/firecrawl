@@ -447,6 +447,40 @@ function isHtmlUpload(filename: string, contentType?: string): boolean {
   );
 }
 
+function createScrapeAbort(
+  externalAbort: AbortInstance | undefined,
+  timeout: number | undefined,
+): { abortHandle?: NodeJS.Timeout; abort: AbortManager } {
+  const abortController = new AbortController();
+  let abortHandle: NodeJS.Timeout | undefined;
+  if (timeout !== undefined) {
+    if (timeout <= 0) {
+      abortController.abort(new ScrapeJobTimeoutError());
+    } else {
+      abortHandle = setTimeout(
+        () => abortController.abort(new ScrapeJobTimeoutError()),
+        timeout,
+      );
+    }
+  }
+  return {
+    abortHandle,
+    abort: new AbortManager(
+      externalAbort,
+      timeout !== undefined
+        ? {
+            signal: abortController.signal,
+            tier: "scrape",
+            timesOutAt: new Date(Date.now() + Math.max(0, timeout)),
+            throwable() {
+              return new ScrapeJobTimeoutError();
+            },
+          }
+        : undefined,
+    ),
+  };
+}
+
 async function buildMetaObject(
   id: string,
   url: string,
@@ -473,14 +507,10 @@ async function buildMetaObject(
     crawlId: internalOptions.crawlId,
   });
 
-  const abortController = new AbortController();
-  const abortHandle =
-    options.timeout !== undefined
-      ? setTimeout(
-          () => abortController.abort(new ScrapeJobTimeoutError()),
-          options.timeout,
-        )
-      : undefined;
+  const { abortHandle, abort } = createScrapeAbort(
+    internalOptions.externalAbort,
+    options.timeout,
+  );
 
   let pdfPrefetch: Meta["pdfPrefetch"] = undefined;
   let documentPrefetch: Meta["documentPrefetch"] = undefined;
@@ -589,19 +619,7 @@ async function buildMetaObject(
     internalOptions,
     logger,
     abortHandle,
-    abort: new AbortManager(
-      internalOptions.externalAbort,
-      options.timeout !== undefined
-        ? {
-            signal: abortController.signal,
-            tier: "scrape",
-            timesOutAt: new Date(Date.now() + options.timeout),
-            throwable() {
-              return new ScrapeJobTimeoutError();
-            },
-          }
-        : undefined,
-    ),
+    abort,
     featureFlags: buildFeatureFlags(
       url,
       effectiveOptions,
@@ -1452,11 +1470,13 @@ export async function scrapeURL(
       const hooks = scrapeHooks();
       if (hooks?.has("scrape.start")) {
         try {
+          const previousTimeout = meta.options.timeout;
           const plan = await hooks.transform(
             "scrape.start",
             { options: meta.options, features: meta.featureFlags },
             toScrapeMeta(meta),
           );
+          meta.abort.throwIfAborted();
           meta.options = {
             ...plan.options,
             skipTlsVerification: internalOptions.zeroDataRetention
@@ -1464,11 +1484,33 @@ export async function scrapeURL(
               : (plan.options.skipTlsVerification ??
                 meta.options.skipTlsVerification),
           };
+          if (meta.options.timeout !== previousTimeout) {
+            if (meta.abortHandle !== undefined) {
+              clearTimeout(meta.abortHandle);
+            }
+            meta.abort.dispose();
+            const remaining =
+              meta.options.timeout !== undefined
+                ? meta.options.timeout - (Date.now() - startTime)
+                : undefined;
+            const nextAbort = createScrapeAbort(
+              internalOptions.externalAbort,
+              remaining,
+            );
+            meta.abortHandle = nextAbort.abortHandle;
+            meta.abort = nextAbort.abort;
+            meta.abort.throwIfAborted();
+          }
           meta.featureFlags = plan.features;
           setSpanAttributes(span, {
             "scrape.features": Array.from(meta.featureFlags).join(","),
           });
         } catch (error) {
+          if (meta.abortHandle !== undefined) {
+            clearTimeout(meta.abortHandle);
+            meta.abortHandle = undefined;
+          }
+          meta.abort.dispose();
           if (error instanceof AbortManagerThrownError) {
             throw error.inner;
           }

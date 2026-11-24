@@ -278,6 +278,36 @@ export function shouldUseIndex(meta: Meta) {
   );
 }
 
+function isEngineAllowedByPolicy(meta: Meta, engine: Engine): boolean {
+  // Zero data retention scrapes never use the Wikipedia engine: they stay on
+  // the engines that fetch the page directly.
+  if (engine === "wikipedia" && meta.internalOptions.zeroDataRetention) {
+    return false;
+  }
+
+  // A profile must never fall back to fetching anonymous content. File parsers
+  // may consume bytes already fetched by the authenticated browser.
+  if (
+    meta.options.profile &&
+    !engine.includes("chrome-cdp") &&
+    !(engine === "pdf" && meta.pdfPrefetch) &&
+    !(engine === "document" && meta.documentPrefetch) &&
+    !(engine === "image" && meta.imagePrefetch)
+  ) {
+    return false;
+  }
+
+  if (
+    (meta.options.lockdown || meta.internalOptions.agentIndexOnly) &&
+    engine !== "index" &&
+    engine !== "index;documents"
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 export type FallbackEngineEntry = {
   engine: Engine;
   unsupportedFeatures: Set<FeatureFlag>;
@@ -290,6 +320,9 @@ export function resolveCandidateEngines(
 ): FallbackEngineEntry[] {
   const resolved: FallbackEngineEntry[] = [];
   for (const engine of new Set(candidates)) {
+    if (!isEngineAllowedByPolicy(meta, engine)) {
+      continue;
+    }
     const prior = existing.get(engine);
     if (prior) {
       resolved.push(prior);
@@ -670,21 +703,7 @@ async function selectFallbackList(meta: Meta): Promise<FallbackEngineEntry[]> {
       : _engines;
 
   for (const engine of currentEngines) {
-    // Zero data retention scrapes, forced engines included, never use the
-    // Wikipedia engine: they stay on the engines that fetch the page directly.
-    if (engine === "wikipedia" && meta.internalOptions.zeroDataRetention)
-      continue;
-
-    // A profile must never fall back to fetching anonymous content. File parsers
-    // may consume bytes already fetched by the authenticated browser.
-    if (
-      meta.options.profile &&
-      !engine.includes("chrome-cdp") &&
-      !(engine === "pdf" && meta.pdfPrefetch) &&
-      !(engine === "document" && meta.documentPrefetch) &&
-      !(engine === "image" && meta.imagePrefetch)
-    )
-      continue;
+    if (!isEngineAllowedByPolicy(meta, engine)) continue;
 
     const registered = service.engines.get(engine);
     if (!registered) {

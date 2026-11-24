@@ -5,6 +5,7 @@ import type { Extension } from "../../service/service";
 import { createService, replaceService } from "../../service/service";
 import { scrapeOptions } from "../../controllers/v2/types";
 import { CostTracking } from "../../lib/cost-tracking";
+import { ScrapeJobTimeoutError } from "../../lib/error";
 import { requestContext } from "../../lib/request-context";
 
 vi.mock("../../services/index", () => ({
@@ -467,7 +468,7 @@ describe("scrape pipeline hook points", () => {
     expect(observedSkipTls).toBe(false);
   });
 
-  it("produces identical output when no hook handlers are registered", async () => {
+  it("produces deterministic output with an empty hooks registry", async () => {
     const html =
       "<html><head><title>Baseline</title></head><body><h1>Hello World</h1></body></html>";
     const scrape = vi.fn(
@@ -505,9 +506,156 @@ describe("scrape pipeline hook points", () => {
     expect(first.success).toBe(true);
     expect(second.success).toBe(true);
     if (!first.success || !second.success) return;
+    expect(first.document.markdown).toContain("Hello World");
+    expect(first.document.html).toContain("<h1>Hello World</h1>");
+    expect(first.document.metadata.title).toBe("Baseline");
+    expect(first.document.metadata.statusCode).toBe(200);
+    expect(first.document.metadata.scrapeId).toBe("scrape-baseline");
     expect(second.document).toEqual(first.document);
     expect(first.state).toEqual({});
     expect(second.state).toEqual({});
+  });
+
+  it("enforces ZDR and profile engine safety policies on scrape.engines.select", async () => {
+    const wikiScrape = vi.fn(
+      async (): Promise<EngineScrapeResult> => ({
+        url: "https://en.wikipedia.org/wiki/Test",
+        html: "<html><body><p>Wiki</p></body></html>",
+        statusCode: 200,
+        proxyUsed: "basic",
+      }),
+    );
+    const fetchScrape = vi.fn(
+      async (): Promise<EngineScrapeResult> => ({
+        url: "https://en.wikipedia.org/wiki/Test",
+        html: "<html><body><p>Direct</p></body></html>",
+        statusCode: 200,
+        proxyUsed: "basic",
+      }),
+    );
+    const cdpScrape = vi.fn(
+      async (): Promise<EngineScrapeResult> => ({
+        url: "https://example.com/profile",
+        html: "<html><body><p>Authenticated</p></body></html>",
+        statusCode: 200,
+        proxyUsed: "basic",
+      }),
+    );
+
+    installTestService(
+      [
+        makeEngine("wikipedia", wikiScrape, { quality: 50 }),
+        makeEngine("fetch", fetchScrape, { quality: 20 }),
+        makeEngine("fire-engine;chrome-cdp", cdpScrape, { quality: 30 }),
+      ],
+      [
+        {
+          name: "unsafe-select-hook",
+          hooks: {
+            "scrape.engines.select": () => ({
+              candidates: ["wikipedia", "fetch", "fire-engine;chrome-cdp"],
+            }),
+          },
+        },
+      ],
+    );
+
+    const zdrResult = await scrapeURL(
+      "scrape-zdr-policy",
+      "https://en.wikipedia.org/wiki/Test",
+      scrapeOptions.parse({ formats: ["markdown"] }),
+      { teamId: "team-zdr", orgId: null, zeroDataRetention: true },
+      new CostTracking(),
+    );
+
+    expect(zdrResult.success).toBe(true);
+    expect(wikiScrape).not.toHaveBeenCalled();
+    expect(fetchScrape).toHaveBeenCalledTimes(1);
+
+    fetchScrape.mockClear();
+    const profileResult = await scrapeURL(
+      "scrape-profile-policy",
+      "https://example.com/profile",
+      scrapeOptions.parse({
+        formats: ["markdown"],
+        profile: { name: "user-profile", saveChanges: false },
+      }),
+      { teamId: "team-profile", orgId: null },
+      new CostTracking(),
+    );
+
+    expect(profileResult.success).toBe(true);
+    expect(wikiScrape).not.toHaveBeenCalled();
+    expect(fetchScrape).not.toHaveBeenCalled();
+    expect(cdpScrape).toHaveBeenCalledTimes(1);
+  });
+
+  it("rebuilds meta.abort when scrape.start updates options.timeout", async () => {
+    let observedTimeout: number | undefined;
+    const fetchScrape = vi.fn(
+      async (meta: { abort: { scrapeTimeout: () => number | undefined } }) => {
+        observedTimeout = meta.abort.scrapeTimeout();
+        return {
+          url: "https://example.com/timeout",
+          html: "<html><body><p>OK</p></body></html>",
+          statusCode: 200,
+          proxyUsed: "basic" as const,
+        };
+      },
+    );
+
+    installTestService(
+      [makeEngine("fetch", fetchScrape, { quality: 20 })],
+      [
+        {
+          name: "shorten-timeout-hook",
+          hooks: {
+            "scrape.start": plan => ({
+              ...plan,
+              options: { ...plan.options, timeout: 2_500 },
+            }),
+          },
+        },
+      ],
+    );
+
+    const shortened = await scrapeURL(
+      "scrape-timeout-shortened",
+      "https://example.com/timeout",
+      scrapeOptions.parse({ formats: ["markdown"], timeout: 60_000 }),
+      { teamId: "team-timeout", orgId: null },
+      new CostTracking(),
+    );
+
+    expect(shortened.success).toBe(true);
+    expect(observedTimeout).toBeDefined();
+    expect(observedTimeout!).toBeGreaterThan(0);
+    expect(observedTimeout!).toBeLessThanOrEqual(2_500);
+
+    installTestService(
+      [makeEngine("fetch", fetchScrape, { quality: 20 })],
+      [
+        {
+          name: "zero-timeout-hook",
+          hooks: {
+            "scrape.start": plan => ({
+              ...plan,
+              options: { ...plan.options, timeout: 0 },
+            }),
+          },
+        },
+      ],
+    );
+
+    await expect(
+      scrapeURL(
+        "scrape-timeout-expired",
+        "https://example.com/timeout",
+        scrapeOptions.parse({ formats: ["markdown"], timeout: 60_000 }),
+        { teamId: "team-timeout", orgId: null },
+        new CostTracking(),
+      ),
+    ).rejects.toBeInstanceOf(ScrapeJobTimeoutError);
   });
 
   it("short-circuits before engine selection when scrape.start throws", async () => {

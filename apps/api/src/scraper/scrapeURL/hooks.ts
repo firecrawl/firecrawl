@@ -57,8 +57,8 @@ export interface ScrapeFinishedOutcome {
 }
 
 /**
- * Returns a one-shot emitter for `scrape.finished` so a handler throwing on
- * the success path does not trigger a second emission in the error handler.
+ * Returns a one-shot emitter for `scrape.finished` so a job emits completion
+ * at most once.
  */
 export function createScrapeFinishedEmitter(job: ScrapeFinishedJobInfo) {
   let emitted = false;
