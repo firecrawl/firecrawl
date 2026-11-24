@@ -12,7 +12,7 @@ export const FRESH_FEED_FILTER_KEYS = [
   "host",
   "agents",
 ] as const;
-export type FreshFeedFilterKey = (typeof FRESH_FEED_FILTER_KEYS)[number];
+type FreshFeedFilterKey = (typeof FRESH_FEED_FILTER_KEYS)[number];
 export type FreshFeedFilters = Partial<Record<FreshFeedFilterKey, string>>;
 
 const FRESH_FEED_UPSTREAM_SET: ReadonlySet<string> = new Set(
@@ -84,18 +84,16 @@ const VERTICAL_ALIASES: ReadonlyArray<
   ["gov_hqi", "gov_hqi"],
 ];
 
-export const FRESH_FEED_VERTICALS: ReadonlyMap<
-  string,
-  FreshFeedVerticalTarget
-> = new Map(
-  VERTICAL_ALIASES.map(
-    ([
-      slug,
-      subcategory,
-      supportedUpstreams = CURATED_AND_GLOBAL_UPSTREAMS,
-    ]) => [slug, { supportedUpstreams, subcategory }],
-  ),
-);
+const FRESH_FEED_VERTICALS: ReadonlyMap<string, FreshFeedVerticalTarget> =
+  new Map(
+    VERTICAL_ALIASES.map(
+      ([
+        slug,
+        subcategory,
+        supportedUpstreams = CURATED_AND_GLOBAL_UPSTREAMS,
+      ]) => [slug, { supportedUpstreams, subcategory }],
+    ),
+  );
 
 export function isFreshFeedUpstream(
   value: unknown,
@@ -103,9 +101,7 @@ export function isFreshFeedUpstream(
   return typeof value === "string" && FRESH_FEED_UPSTREAM_SET.has(value);
 }
 
-export function isFreshFeedFilterKey(
-  value: unknown,
-): value is FreshFeedFilterKey {
+function isFreshFeedFilterKey(value: unknown): value is FreshFeedFilterKey {
   return typeof value === "string" && FRESH_FEED_FILTER_KEY_SET.has(value);
 }
 

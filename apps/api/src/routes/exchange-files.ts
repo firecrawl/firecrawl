@@ -52,7 +52,7 @@ const DOWNLOAD_RESPONSE_HEADERS = [
 ];
 
 /** The website and its Vercel previews; nothing else may upload or download from a browser. */
-export const EXCHANGE_FILE_ORIGINS: (string | RegExp)[] = [
+const EXCHANGE_FILE_ORIGINS: (string | RegExp)[] = [
   "https://www.firecrawl.dev",
   "https://firecrawl.dev",
   /^https:\/\/[a-z0-9-]+-side-guide\.vercel\.app$/,

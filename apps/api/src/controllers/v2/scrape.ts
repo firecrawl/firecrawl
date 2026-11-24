@@ -212,6 +212,12 @@ export async function scrapeController(
         });
       }
 
+      if (
+        safeMode.safeMode?.lockdown &&
+        typeof preNormalizedBody.maxAge === "number"
+      ) {
+        req.body.maxAge = preNormalizedBody.maxAge;
+      }
       applySafeMode(safeMode.safeMode, req.body);
 
       const zeroDataRetention =

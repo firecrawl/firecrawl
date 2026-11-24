@@ -71,6 +71,13 @@ export async function crawlController(
     });
   }
 
+  if (
+    safeMode.safeMode?.lockdown &&
+    typeof preNormalizedBody?.scrapeOptions?.maxAge === "number"
+  ) {
+    req.body.scrapeOptions.maxAge = preNormalizedBody.scrapeOptions.maxAge;
+  }
+
   // Safe Mode lockdown is cache-only, which implies zero data retention.
   const zeroDataRetention =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
