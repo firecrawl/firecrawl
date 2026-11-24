@@ -5,6 +5,7 @@
  * a service never loads these dependencies.
  */
 
+export { emptyStringAsUndefined } from "../../config-helpers";
 export { RateLimiterMode } from "../../types";
 export {
   authMiddleware,
@@ -58,24 +59,20 @@ export type {
   SearchFeedbackErrorCode,
   SearchFeedbackRequest,
   SearchFeedbackResponse,
+  TeamFlags,
 } from "../../controllers/v2/types";
 
-export { agentConsumeFreeRequestIfLeft } from "../../db/rpc";
+export {
+  agentConsumeFreeRequestIfLeft,
+  authCreditUsageChunkFromTeam,
+} from "../../db/rpc";
 
 export { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 export { isAgentInteropSecretValid } from "../../lib/agent-interop";
 export { ZDR_EXPIRED_ERROR, agentJobExpiry } from "../../lib/agent-job-expiry";
-export {
-  getRecentAlexandriaCalls,
-  hasRecentAlexandriaActivity,
-  type AlexandriaCall,
-} from "../../lib/alexandria-activity";
+export { aiTelemetry } from "../../lib/ai-telemetry";
 export { alexandriaFeedbackStorage } from "../../lib/alexandria-feedback-storage";
-export {
-  MAX_FEEDBACK_TOKEN_LENGTH,
-  checkFeedbackToken,
-  type FeedbackTokenRejection,
-} from "../../lib/alexandria-feedback-token";
+export { billingCountryForTeam } from "../../lib/billing-country";
 export {
   BrowserSessionError,
   browserSessionLinks,
@@ -102,7 +99,16 @@ export {
   updateBrowserSessionScrapeId,
 } from "../../lib/browser-sessions";
 export { clickhouseClient } from "../../lib/clickhouse-client";
-export type { SearchResultType } from "../../lib/entities";
+export { removedEndpointHandler } from "../../lib/deprecations";
+export {
+  developerCategoryAliases,
+  isDeveloperCategoryAlias,
+} from "../../lib/developer-category";
+export type {
+  SearchResultType,
+  SkillCard,
+  WebSearchResult,
+} from "../../lib/entities";
 export type { ErrorCode } from "../../lib/error";
 export { forwardExchangeToolFeedback } from "../../lib/exchange";
 export { externalRequestId } from "../../lib/external-request-id";
@@ -116,8 +122,34 @@ export {
   readFeedbackJob,
   type RefundClass,
 } from "../../lib/feedback-job-store";
-export { feedbackTrace, type FeedbackTrace } from "../../lib/feedback-trace";
+export {
+  feedbackTrace,
+  lineageIds,
+  type FeedbackTrace,
+} from "../../lib/feedback-trace";
+export {
+  FRESH_FEED_COLLECTION_HEADER,
+  FRESH_FEED_FILTER_KEYS,
+  FRESH_FEED_UPSTREAMS,
+  FRESH_FEED_UPSTREAM_ROUTES,
+  freshFeedUpstreamPath,
+  getFreshFeedUpstreams,
+  hasFreshFeedUpstreams,
+  isFreshFeedUpstream,
+  isValidFreshFeedCollection,
+  isValidFreshFeedFilterToken,
+  normalizeFreshFeedUpstreams,
+  parseFreshFeedFilters,
+  resolveFreshFeedVertical,
+  type FreshFeedFilters,
+  type FreshFeedUpstream,
+  type FreshFeedUpstreamEnv,
+  type FreshFeedUpstreamRouteDefinition,
+  type FreshFeedUpstreamUrls,
+  type FreshFeedVerticalTarget,
+} from "../../lib/fresh-feed";
 export { getMonitorDiffArtifact } from "../../lib/gcs-monitoring";
+export { getModel } from "../../lib/generic-ai";
 export {
   HangarError,
   deleteHangarProfile,
@@ -126,13 +158,25 @@ export {
   getHangarRecording,
   type BrowserExecutionResult,
 } from "../../lib/hangar";
+export {
+  getRoutePattern,
+  httpRequestDurationSeconds,
+} from "../../lib/http-metrics";
+export {
+  indexDailyLimitRefusal,
+  reserveIndexCalls,
+  type IndexName,
+} from "../../lib/index-daily-limit";
 export { readScrapeJobState } from "../../lib/job-state-store";
+export { checkKeyFormatRestriction } from "../../lib/key-restriction";
 export {
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
+  chargeKeylessCredits,
   checkKeylessEligibility,
   isKeylessIpEligible,
   keylessLimitBody,
   keylessLimitPromptForTeam,
+  keylessProviderToolsBody,
   keylessSignupUrlForIp,
   keylessTeamUuid,
   keylessWorldIdIdentity,
@@ -144,6 +188,16 @@ export {
   keylessSignupSurface,
   type KeylessPromptReason,
 } from "../../lib/keyless-signup-link";
+export {
+  LINEAGE_ID_PATTERN,
+  LINEAGE_ID_SECRET_PATTERN,
+  OBJECTIVE_MAX_LENGTH,
+  SECRET_PATTERN,
+  SECRET_PATTERN_ALL,
+  SESSION_SOURCES,
+  THREAD_SOURCES,
+  redactText,
+} from "../../lib/mcp-lineage";
 export {
   getAgentJobAccess,
   getScrapeJobAccess,
@@ -157,8 +211,10 @@ export {
 } from "../../lib/otel-tracer";
 export { storedZeroDataRetention } from "../../lib/request-context";
 export { AGENT_REQUEST_CREDITS_SHARDS } from "../../lib/request-credits-store";
+export { requestOrigin } from "../../lib/request-origin";
 export {
   SAFE_MODE_BROWSER_UNSUPPORTED_MESSAGE,
+  getEffectiveSearchForcedKind,
   getSafeMode,
 } from "../../lib/safe-mode";
 export { calculateThreatScanCredits } from "../../lib/scrape-billing";
@@ -175,7 +231,14 @@ export {
   buildReplayScript,
   estimateReplayTimeoutSeconds,
 } from "../../lib/scrape-interact/scrape-replay";
-export { timingSafeSecretEqual } from "../../lib/secret-compare";
+export {
+  hasCategory,
+  type CategoryOption,
+} from "../../lib/search-query-builder";
+export {
+  hasHostedMcpProxySecret,
+  timingSafeSecretEqual,
+} from "../../lib/secret-compare";
 export { sendAzureSentinelEvents } from "../../lib/siem-logging/azure-sentinel";
 export { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging/index";
 export {
@@ -188,6 +251,7 @@ export {
   type OrgSiemLoggingConfig,
   type ScrapeActivityEvent,
 } from "../../lib/siem-logging/types";
+export { orgIdFromAcuc } from "../../lib/team-org";
 export {
   threatProtectionConfigSchema,
   zscalerConfigSchema,
@@ -216,6 +280,7 @@ export {
   upsertOrgThreatProtectionConfig,
   type OrgThreatProtectionConfig,
 } from "../../lib/threat-protection/store";
+export { getTypeSafeClient } from "../../lib/typesafe";
 export { isUsOnly } from "../../lib/us-only";
 export {
   isWorldIdConfigured,
@@ -229,9 +294,29 @@ export {
   getScrapeZDR,
   getSearchZDR,
   getThreatProtection,
+  isAlexandriaZDRForced,
 } from "../../lib/zdr-helpers";
 
 export { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+
+export { usesSearchSyntax } from "../../search/operators";
+
+export { exchangeRequest } from "../../services/alexandria/client";
+export {
+  answerSchema,
+  callSchema,
+  callsSchema,
+  toolSchema,
+  toolSummarySchema,
+  type DetailedDiscoveredTool,
+  type DiscoveredTool,
+} from "../../services/alexandria/contracts";
+export { capabilityOptionTypes } from "../../services/alexandria/option-types";
+export {
+  REQUEST_ID_PATTERN,
+  exchangeRequestId,
+  retrieveProviders,
+} from "../../services/alexandria/retrieve";
 
 export {
   CREDITS_FEATURE_ID,
@@ -272,7 +357,14 @@ export {
   getSlackInstallationByTeam,
 } from "../../services/integrations/slack/store";
 export type { SlackConnectionStatus } from "../../services/integrations/slack/types";
-export { logRequest } from "../../services/logging/log_job";
+export {
+  logMcpActionLog,
+  logProviderScrape,
+  logRequest,
+  logResearchEndpoint,
+  type ResearchRequestKind,
+  type ResearchTableName,
+} from "../../services/logging/log_job";
 export {
   estimateRunsPerMonth,
   validateMonitorCron,
@@ -326,4 +418,4 @@ export {
 } from "../../services/webhook/logs";
 export { scrapeQueue } from "../../services/worker/nuq-router";
 
-export { integrationSchema } from "../../utils/integration";
+export { integrationSchema, resolveIntegration } from "../../utils/integration";

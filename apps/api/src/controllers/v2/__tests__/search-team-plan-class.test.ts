@@ -41,10 +41,6 @@ vi.mock("../../../lib/key-restriction", () => ({
   checkKeyEndpointRestriction: vi.fn().mockResolvedValue({ allowed: true }),
 }));
 
-vi.mock("../../../lib/alexandria-activity", () => ({
-  markAlexandriaActivity: vi.fn(),
-}));
-
 vi.mock("../../../lib/logger", () => ({
   logger: {
     info: vi.fn(),

@@ -1,6 +1,4 @@
 import { Response } from "express";
-import { providerScrapeController } from "./scrape-alexandria";
-import { discoverTools, usOnlyToolsWarning } from "../../search/alexandria";
 import { config } from "../../config";
 import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import { logger as _logger } from "../../lib/logger";
@@ -47,7 +45,6 @@ import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
-import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 import { isUsOnly } from "../../lib/us-only";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
@@ -56,8 +53,6 @@ export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
   res: Response<ScrapeResponse>,
 ) {
-  if (req.body && "alexandria" in req.body)
-    return providerScrapeController(req, res);
   // Resolved before the root span starts so the whole request trace stays
   // unrecorded for zero-data-retention requests (see otel-tracer). Safe Mode
   // lockdown implies ZDR, so fold it in here too — otherwise the rejection
@@ -718,41 +713,6 @@ export async function scrapeController(
         concurrencyLimited,
         concurrencyQueueDurationMs: lockTime || undefined,
       });
-      const tools =
-        req.body.domainTools && config.FIRE_EXCHANGE_URL
-          ? await discoverTools(
-              {
-                teamId: req.auth.team_id,
-                connectors: req.acuc?.flags?.exchangeRetrieve === true,
-                usOnly: isUsOnly(req.acuc?.flags),
-                toolDetail: req.body.toolDetail,
-                urls: [
-                  ...new Set(
-                    [
-                      req.body.url,
-                      doc!.metadata?.sourceURL,
-                      doc!.metadata?.url,
-                    ].filter((u): u is string => typeof u === "string"),
-                  ),
-                ],
-                limit: 24,
-                timeoutMs: 10000,
-              },
-              logger,
-            ).catch(error => {
-              logger.warn("Domain tool discovery failed", { error });
-              return undefined;
-            })
-          : undefined;
-      if (tools) markAlexandriaActivity(req.auth.team_id);
-      const toolsWarning = [
-        tools?.warning,
-        tools?.usOnlyExcluded
-          ? usOnlyToolsWarning(tools.usOnlyExcluded)
-          : undefined,
-      ]
-        .filter(Boolean)
-        .join(" ");
 
       return res.status(200).json({
         success: true,
@@ -765,9 +725,7 @@ export async function scrapeController(
               ? lockTime || 0
               : undefined,
           },
-          ...(tools ? { tools: tools.items } : {}),
         },
-        ...(toolsWarning ? { warning: toolsWarning } : {}),
         scrape_id: origin?.includes("website") ? jobId : undefined,
       });
     },

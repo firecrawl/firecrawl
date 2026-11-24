@@ -2,13 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   search: vi.fn(),
-  discoverTools: vi.fn(),
-  discoverSkills: vi.fn(),
-  verifyTools: vi.fn(),
-  inferToolIntent: vi.fn(),
-  searchDeveloperCategory: vi.fn(),
-  searchGovCategory: vi.fn(),
-  searchGovIfRouted: vi.fn(),
   checkUrlsAgainstThreatPolicy: vi.fn(),
   resolveThreatProtection: vi.fn(async (): Promise<any> => ({ policy: null })),
   removeExplicitResults: vi.fn(),
@@ -64,20 +57,6 @@ vi.mock("../../lib/key-restriction", () => ({
   checkKeyEndpointRestriction: vi.fn(async () => ({ allowed: true })),
 }));
 
-vi.mock("../../lib/alexandria-activity", () => ({
-  markAlexandriaActivity: vi.fn(),
-}));
-
-vi.mock("../../lib/alexandria-discovery", () => ({
-  recordDiscoveredTools: vi.fn(),
-}));
-
-vi.mock("../../lib/index-daily-limit", () => ({
-  consumeIndexRateLimit: vi.fn(async () => ({ ok: true })),
-  indexDailyLimitRefusal: vi.fn(() => ({ error: "limit" })),
-  reserveIndexCalls: vi.fn(async () => ({ ok: true })),
-}));
-
 vi.mock("../../lib/deployment", () => ({
   isSelfHosted: mocks.isSelfHosted,
 }));
@@ -106,48 +85,6 @@ vi.mock("../../lib/logger", () => ({
 
 vi.mock("../../search/v2", () => ({
   search: mocks.search,
-}));
-
-vi.mock("../../search/alexandria", async importOriginal => {
-  const actual =
-    await importOriginal<typeof import("../../search/alexandria")>();
-  return {
-    ...actual,
-    discoverTools: mocks.discoverTools,
-  };
-});
-
-vi.mock("../../search/skill-cards", () => ({
-  discoverSkills: mocks.discoverSkills,
-  isSkillsSource: (source: { type: string }) => source.type === "skills",
-  SKILLS_DISCOVERY_TIMEOUT_MS: 3000,
-}));
-
-vi.mock("../../search/tool-intent", () => ({
-  AUTO_TOOLS_WAIT_MS: 300,
-  FUSED_FIT_THRESHOLD: 0.2,
-  inferToolIntent: mocks.inferToolIntent,
-  verifyTools: mocks.verifyTools,
-  autoToolsEnabled: () => false,
-  queryInferenceEnabled: () => false,
-  toolFusionEnabled: () => false,
-}));
-
-vi.mock("../../search/developer", () => ({
-  wantsDeveloperCategory: (categories?: Array<{ type: string } | string>) =>
-    Boolean(
-      categories?.some(c =>
-        typeof c === "string" ? c === "developer" : c.type === "developer",
-      ),
-    ),
-  searchDeveloperCategory: mocks.searchDeveloperCategory,
-}));
-
-vi.mock("../../search/gov", () => ({
-  wantsGovCategory: () => false,
-  searchGovCategory: mocks.searchGovCategory,
-  searchGovIfRouted: mocks.searchGovIfRouted,
-  MAX_ROUTED_LIMIT: 10,
 }));
 
 vi.mock("../../search/scrape", () => ({
@@ -229,16 +166,6 @@ describe("search lifecycle hooks", () => {
         : event.kind === "search"
           ? Math.ceil(event.results / 10) * 2
           : undefined,
-    );
-    mocks.searchGovIfRouted.mockResolvedValue(null);
-    mocks.searchDeveloperCategory.mockResolvedValue([]);
-    mocks.discoverTools.mockResolvedValue({
-      items: [],
-      semanticMatches: 0,
-    });
-    mocks.discoverSkills.mockResolvedValue({ skills: [], succeeded: false });
-    mocks.verifyTools.mockImplementation(
-      async (_q: string, items: any[]) => items,
     );
     mocks.search.mockResolvedValue({
       web: [
@@ -452,35 +379,7 @@ describe("search lifecycle hooks", () => {
     ]);
   });
 
-  it("revalidates planned sources against preview-keyless, ZDR, and US-only policies before billing and execution", async () => {
-    installHooks({
-      "search.plan": plan => ({
-        ...plan,
-        sources: [...plan.sources, "alexandria"],
-      }),
-    });
-
-    const keylessReq = makeReq({ query: "weather", sources: ["web"] });
-    keylessReq.auth.team_id = "preview_keyless_abc";
-    const keylessRes = makeRes();
-    await searchController(keylessReq, keylessRes);
-    expect(keylessRes.status).toHaveBeenCalledWith(403);
-    expect(mocks.discoverTools).not.toHaveBeenCalled();
-    expect(mocks.search).not.toHaveBeenCalled();
-    expect(mocks.billingAuthorize).not.toHaveBeenCalled();
-
-    const zdrReq = makeReq({
-      query: "weather",
-      sources: ["web"],
-      enterprise: ["zdr"],
-    });
-    zdrReq.acuc.flags = { searchZDR: "allowed" };
-    const zdrRes = makeRes();
-    await searchController(zdrReq, zdrRes);
-    expect(zdrRes.status).toHaveBeenCalledWith(403);
-    expect(mocks.discoverTools).not.toHaveBeenCalled();
-    expect(mocks.search).not.toHaveBeenCalled();
-
+  it("revalidates planned sources against US-only policies before billing and execution", async () => {
     installHooks({
       "search.plan": plan => ({
         ...plan,
@@ -557,55 +456,6 @@ describe("search lifecycle hooks", () => {
     );
     expect(noHandlerRes.json.mock.calls[0][0].warning).toBeUndefined();
 
-    // Keyless 403 when search.plan adds alexandria
-    mocks.search.mockClear();
-    installHooks({
-      "search.plan": plan => ({
-        ...plan,
-        sources: [...plan.sources, "alexandria"],
-      }),
-    });
-    const keylessReq = makeReq({ query: "weather", limit: 5 });
-    keylessReq.auth.team_id = "preview_keyless_v1";
-    const keylessRes = makeRes();
-    await v1SearchController(keylessReq, keylessRes);
-    expect(keylessRes.status).toHaveBeenCalledWith(403);
-    expect(mocks.discoverTools).not.toHaveBeenCalled();
-    expect(mocks.search).not.toHaveBeenCalled();
-    expect(mocks.reserveKeylessCredits).not.toHaveBeenCalled();
-
-    // Empty-query 400 when search.plan adds alexandria and blanks query
-    installHooks({
-      "search.plan": plan => ({
-        ...plan,
-        query: "   ",
-        sources: [...plan.sources, "alexandria"],
-      }),
-    });
-    const emptyQueryRes = makeRes();
-    await v1SearchController(
-      makeReq({ query: "weather", limit: 5 }),
-      emptyQueryRes,
-    );
-    expect(emptyQueryRes.status).toHaveBeenCalledWith(400);
-    expect(mocks.discoverTools).not.toHaveBeenCalled();
-    expect(mocks.search).not.toHaveBeenCalled();
-
-    // ZDR 403 when search.plan adds skills
-    installHooks({
-      "search.plan": plan => ({
-        ...plan,
-        sources: [...plan.sources, "skills"],
-      }),
-    });
-    const zdrReq = makeReq({ query: "weather", limit: 5 });
-    zdrReq.acuc.flags = { searchZDR: "forced-zdr" };
-    const zdrRes = makeRes();
-    await v1SearchController(zdrReq, zdrRes);
-    expect(zdrRes.status).toHaveBeenCalledWith(403);
-    expect(mocks.discoverSkills).not.toHaveBeenCalled();
-    expect(mocks.search).not.toHaveBeenCalled();
-
     // US-only strips images and sets responseData.warning
     installHooks({
       "search.plan": plan => ({
@@ -639,31 +489,9 @@ describe("search lifecycle hooks", () => {
       "US_ONLY_UNAVAILABLE",
     );
     expect(mocks.search).not.toHaveBeenCalled();
-
-    // Carries result.toolsWarning into responseData.warning
-    mocks.discoverTools.mockResolvedValue({
-      items: [],
-      warning: "Tool discovery degraded.",
-      semanticMatches: 0,
-    });
-    installHooks({
-      "search.plan": plan => ({
-        ...plan,
-        sources: [...plan.sources, "alexandria"],
-      }),
-    });
-    const toolsWarnRes = makeRes();
-    await v1SearchController(
-      makeReq({ query: "weather", limit: 5 }),
-      toolsWarnRes,
-    );
-    expect(toolsWarnRes.status).toHaveBeenCalledWith(200);
-    expect(toolsWarnRes.json.mock.calls[0][0].warning).toContain(
-      "Tool discovery degraded.",
-    );
   });
 
-  it("omits charged when self-hosted and emits search.finished with 0 on tools-unavailable 503", async () => {
+  it("omits charged when self-hosted and isolates search.finished observer errors", async () => {
     const events: any[] = [];
     const report = installHooks({
       "search.finished": event => {
@@ -683,28 +511,7 @@ describe("search lifecycle hooks", () => {
         charged: undefined,
       }),
     );
-
-    // Non-self-hosted 503 toolsUnavailable path
-    mocks.isSelfHosted.mockReturnValue(false);
-    mocks.discoverTools.mockResolvedValue({
-      items: [],
-      warning: "unavailable",
-      unavailable: true,
-      semanticMatches: 0,
-    });
-    const res2 = makeRes();
-    await searchController(
-      makeReq({ query: "weather", sources: ["alexandria"] }),
-      res2,
-    );
-    expect(res2.status).toHaveBeenCalledWith(503);
-    expect(events[1]).toEqual(
-      expect.objectContaining({
-        results: 0,
-        charged: 0,
-      }),
-    );
-    expect(report).toHaveBeenCalledTimes(2);
+    expect(report).toHaveBeenCalledTimes(1);
   });
 
   it("propagates search.plan and search.results vetoes and preserves output when unregistered", async () => {
@@ -805,17 +612,14 @@ describe("search lifecycle hooks", () => {
     );
 
     mocks.isSelfHosted.mockReturnValue(false);
-    mocks.searchDeveloperCategory.mockResolvedValue([
-      {
-        url: "https://docs.example.com/1",
-        title: "Dev 1",
-        description: "One",
-        position: 1,
-      },
-    ]);
     installHooks({
+      "search.plan": plan => ({
+        ...plan,
+        sources: [],
+      }),
       "search.results": hits => [
         ...hits,
+        { url: "https://docs.example.com/1", title: "Dev 1" },
         { url: "https://docs.example.com/2", title: "Dev 2" },
         { url: "https://docs.example.com/3", title: "Dev 3" },
         { url: "https://docs.example.com/4", title: "Dev 4" },
@@ -849,7 +653,6 @@ describe("search lifecycle hooks", () => {
       logger,
     );
 
-    expect(devResult.indexResultsCount).toBe(2);
     expect(devResult.totalResultsCount).toBe(2);
     expect(devResult.response.web?.map(item => item.url)).toEqual([
       "https://docs.example.com/1",
