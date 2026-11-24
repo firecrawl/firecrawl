@@ -69,7 +69,7 @@ const logger = rootLogger;
  * autumn.config.ts). Pairs with HOBBY_RATE_LIMIT_MULTIPLIER in
  * services/rate-limiter.ts; change both if the hobby plan changes.
  */
-export const HOBBY_CONCURRENCY_LIMIT = 5;
+const HOBBY_CONCURRENCY_LIMIT = 5;
 
 export class BrowserSessionError extends Error {
   constructor(

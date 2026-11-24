@@ -1,8 +1,8 @@
 import { browserEnv } from "../../../lib/browser-env";
-import { itIf } from "../lib";
+import { describeIf, itIf, TEST_PRODUCTION } from "../lib";
 import { browserCreateRaw, idmux, Identity } from "./lib";
 
-describe("POST /v2/interact location", () => {
+describeIf(TEST_PRODUCTION)("POST /v2/interact location", () => {
   let identity: Identity;
 
   beforeAll(async () => {
