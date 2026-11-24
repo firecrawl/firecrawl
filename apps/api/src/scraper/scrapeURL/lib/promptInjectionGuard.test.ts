@@ -236,4 +236,21 @@ describe("checkForPromptInjection", () => {
     await expect(run(costTracking, "   ")).resolves.toBe(true);
     expect(generateObject).not.toHaveBeenCalled();
   });
+
+  it("instructs the classifier that chatbot handoff links are not injections", async () => {
+    vi.mocked(generateObject).mockResolvedValue(verdict(false) as any);
+
+    await run(new CostTracking(), "short page");
+
+    const [[args]] = vi.mocked(generateObject).mock.calls;
+    const system = args.system as string;
+    // A pre-filled prompt handed to a third-party chatbot (e.g. cal.com's
+    // "Continue with Claude" links) is addressed to that chatbot, not to the
+    // model reading the page.
+    expect(system).toContain("third-party AI chatbot");
+    expect(system).toContain("a human visitor clicks");
+    // The rule must keep text that directly targets the reading model
+    // flaggable.
+    expect(system).toContain("only when the text itself targets you");
+  });
 });
