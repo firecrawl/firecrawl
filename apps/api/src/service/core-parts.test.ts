@@ -56,6 +56,7 @@ const errorClassesModule = "../lib/error-serde";
 const enginesModule = "../scraper/scrapeURL/engines";
 const searchProvidersModule = "../search/providers";
 const llmProvidersModule = "../lib/generic-ai";
+const v2TypesModule = "../controllers/v2/types";
 
 // coreParts() loads its error classes, engine implementations, search provider
 // implementations, and LLM provider implementations with require() on first
@@ -102,6 +103,18 @@ function answerRequire(
           ),
         })),
       };
+  const v2TypesStub = {
+    buildV2RequestSchemas: vi.fn(() => {
+      const fakeSchema = { _zod: {}, safeParse: vi.fn() };
+      return {
+        scrape: fakeSchema,
+        parse: fakeSchema,
+        crawl: fakeSchema,
+        map: fakeSchema,
+        search: fakeSchema,
+      };
+    }),
+  };
   return vi.spyOn(Module.prototype, "require").mockImplementation(function (
     this: Module,
     id: string,
@@ -110,6 +123,7 @@ function answerRequire(
     if (id === enginesModule) return enginesStub;
     if (id === searchProvidersModule) return searchProvidersStub;
     if (id === llmProvidersModule) return llmProvidersStub;
+    if (id === v2TypesModule) return v2TypesStub;
     return load.call(this, id);
   });
 }
@@ -371,6 +385,16 @@ describe("coreParts", () => {
         openrouter: "core",
         vertex: "core",
       },
+      request: {
+        scrapeOptions: {},
+        scrape: {},
+        parse: {},
+        crawl: {},
+        map: {},
+        search: {},
+        formats: {},
+        rules: [],
+      },
       roles: {
         api: "core",
         "cclog-worker": "core",
@@ -389,6 +413,24 @@ describe("coreParts", () => {
     expect(required).not.toHaveBeenCalledWith(enginesModule);
     expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
     expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
+    expect(required).not.toHaveBeenCalledWith(v2TypesModule);
+  });
+
+  it("loads v2 request schemas lazily on the first schemas access, and once", () => {
+    const required = answerRequire();
+    const built = createService({ modules: {} }, coreParts());
+
+    built.describe();
+    expect(required).not.toHaveBeenCalledWith(v2TypesModule);
+
+    expect(built.schemas.scrape).toBeDefined();
+    expect(built.schemas.parse).toBeDefined();
+    expect(built.schemas.crawl).toBeDefined();
+    expect(built.schemas.map).toBeDefined();
+    expect(built.schemas.search).toBeDefined();
+    expect(
+      required.mock.calls.filter(([id]) => id === v2TypesModule),
+    ).toHaveLength(1);
   });
 
   it("loads core error classes and default modules without pulling in config, exchange, deployment, gcs, zdr, redis, or db", () => {
@@ -417,6 +459,7 @@ describe("coreParts", () => {
     expect(required).not.toHaveBeenCalledWith(enginesModule);
     expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
     expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
+    expect(required).not.toHaveBeenCalledWith(v2TypesModule);
     expect(loadedSideEffectModules).toEqual([]);
   });
 });
