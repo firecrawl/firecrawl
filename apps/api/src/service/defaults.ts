@@ -165,8 +165,7 @@ export function redisIdempotency(
   const setIfAbsent =
     options.setIfAbsent ??
     (async (key: string, ttl: number): Promise<boolean> => {
-      const { redisEvictConnection } =
-        require("../services/redis") as typeof import("../services/redis");
+      const { redisEvictConnection } = await import("../services/redis.js");
       const result = await redisEvictConnection.set(key, "1", "EX", ttl, "NX");
       return result === "OK";
     });
@@ -201,13 +200,13 @@ export function directWebhooks(
     throw new Error("Invalid webhooks secret");
   }
   const hasExplicitSecret = Object.hasOwn(options, "secret");
-  const resolveSecret =
+  const resolveSecret: () => Promise<string | undefined> | string | undefined =
     typeof options.secret === "function"
       ? options.secret
       : hasExplicitSecret
         ? () => options.secret as string | undefined
-        : () =>
-            (require("../config") as typeof import("../config")).config
+        : async () =>
+            (await import("../config.js")).config
               .SELF_HOSTED_WEBHOOK_HMAC_SECRET;
 
   return {
