@@ -87,17 +87,25 @@ other variables in the API container's environment.
 | `ADMIN_INTERNAL_HOST` | `localhost` | Address the internal listener binds to. Bind a wider address only behind a network policy that limits who can reach the port. |
 
 Header-authenticated routes: `GET /admin/ops/redis-health`,
+`GET /admin/ops/feng-check`,
 `POST /admin/ops/acuc-cache-clear`,
 `POST /admin/ops/ip-restriction-cache-clear`,
 `POST /admin/ops/key-restriction-cache-clear`,
-`POST /admin/ops/concurrency-queue-backfill` and
-`POST /admin/ops/change-tracking-purge` (schedules the deletion of a deleted
-team's change tracking rows).
+`POST /admin/ops/concurrency-queue-backfill`, `GET /admin/ops/metrics`,
+`GET /admin/ops/nuq-metrics`, `GET /admin/ops/nuq-fdb-metrics`,
+`GET /admin/ops/index-queue-prometheus`, `GET /admin/ops/precrawl`,
+`POST /admin/ops/fsearch`, `POST /admin/ops/change-tracking-purge` and the
+queue UI at `/admin/ops/queues`.
+`POST /admin/ops/crawl-monitor` takes the admin key in the
+`x-firecrawl-admin-key` header, because its `Authorization` header carries a
+team API key. Each `/admin/<key>/...` route serves the same handler through the
+same key check.
 
-`POST /admin/ops/change-tracking-purge` has no `/admin/<key>/` form. Only a
-`202` answer with `queued: true` means the purge was scheduled. Without
-database authentication and Bigtable no change tracking rows exist, so the route
-answers `200` with `queued: false` and schedules nothing.
+`POST /admin/ops/change-tracking-purge` schedules the deletion of a deleted
+team's change tracking rows and has no `/admin/<key>/` form. Only a `202`
+answer with `queued: true` means the purge was scheduled. Without database
+authentication and Bigtable no change tracking rows exist, so the route answers
+`200` with `queued: false` and schedules nothing.
 
 Internal listener routes, none of which need a key: the queue UI at
 `/admin/queues`; metrics at `GET /admin/metrics`, `GET /admin/nuq-metrics`,
@@ -108,8 +116,8 @@ search) and `POST /admin/crawl-monitor` (still requires an API key and credits).
 Anyone who can reach the port can use them.
 
 The `firecrawl_admin_path_route_requests_total` metric counts requests to the
-`/admin/<key>/...` routes, so you can confirm nothing still uses them before
-turning them off.
+`/admin/<key>/...` routes by `route` and `caller` (never the key), so you can
+confirm nothing still uses them before turning them off.
 
 Stuck? Open a
 [self-host issue template](https://github.com/firecrawl/firecrawl/issues/new?template=self_host_issue.md)

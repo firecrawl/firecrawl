@@ -1,6 +1,9 @@
 const mocks = vi.hoisted(() => ({ request: vi.fn(), team: vi.fn() }));
 vi.mock("../../config", () => ({
-  config: { USE_DB_AUTHENTICATION: true, FIRECRAWL_DASHBOARD_URL: "https://d" },
+  config: { USE_DB_AUTHENTICATION: true },
+}));
+vi.mock("../notification/env", () => ({
+  notificationsEnv: { FIRECRAWL_DASHBOARD_URL: "https://d" },
 }));
 vi.mock("./client", () => ({ exchangeRequest: mocks.request }));
 vi.mock("../../controllers/auth", () => ({ getACUCTeam: mocks.team }));

@@ -10,6 +10,7 @@ import { getJobs } from "../../controllers/v1/crawl-status";
 import { logCrawl, logBatchScrape } from "../logging/log_job";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import type { NuQJob } from "./nuq";
+import { crawlContext, jobContext } from "../../lib/request-context";
 import { readRequestCreditsFromAnalytics } from "../../lib/request-credits-analytics";
 import {
   createInAppNotification,
@@ -54,7 +55,9 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
   const isV1 = data ? !!data.v1 : (sc.v1 ?? true);
   const teamId = data?.team_id ?? sc.team_id;
   const requestId = data?.requestId ?? sc.requestId ?? crawlId;
-  const zeroDataRetention = sc.zeroDataRetention || data?.zeroDataRetention;
+  const zeroDataRetention =
+    crawlContext(sc).zeroDataRetention ||
+    (data ? jobContext(data).zeroDataRetention : false);
   const webhook = data?.webhook ?? sc.webhook;
   const monitoring = data?.monitoring;
 

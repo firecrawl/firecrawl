@@ -4,6 +4,10 @@ import { config } from "../config";
 import { RateLimiterMode } from "../types";
 import { registerMcpActionLogReadRoute } from "./mcp-action-logs";
 import { createFreshFeedRouter } from "./fresh-feed";
+import {
+  getFreshFeedUpstreams,
+  hasFreshFeedUpstreams,
+} from "../lib/fresh-feed";
 import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
 import { searchController } from "../controllers/v2/search";
@@ -130,6 +134,7 @@ import {
   slackStatusController,
 } from "../controllers/v2/slack";
 import { agentListController } from "../controllers/v2/agent-list";
+import { internalJwtMiddleware } from "../lib/internal-jwt";
 
 // Every v2 route opts in to the hosted MCP minimums (see AuthenticateOptions
 // in controllers/auth.ts); /v1 routes do not.
@@ -480,6 +485,7 @@ v2Router.get(
 v2Router.get(
   "/agent",
   authMiddleware(RateLimiterMode.ExtractStatus),
+  internalJwtMiddleware(),
   wrap(agentListController),
 );
 
@@ -818,9 +824,7 @@ if (config.RESEARCH_PROXY_URL) {
     authMiddleware(RateLimiterMode.DeveloperSearch),
     createDeveloperRouter(),
   );
-}
 
-if (config.SEARCH_PLATFORM_URL) {
   v2Router.use(
     "/search/gov",
     authMiddleware(RateLimiterMode.GovSearch, {
@@ -830,10 +834,11 @@ if (config.SEARCH_PLATFORM_URL) {
   );
 }
 
-if (config.FRESH_FEED_URL) {
+const freshFeedUpstreams = getFreshFeedUpstreams(config);
+if (hasFreshFeedUpstreams(freshFeedUpstreams)) {
   v2Router.use(
     "/fresh-vertical-feed",
     authMiddleware(RateLimiterMode.FreshFeed),
-    createFreshFeedRouter(config.FRESH_FEED_URL),
+    createFreshFeedRouter(freshFeedUpstreams),
   );
 }

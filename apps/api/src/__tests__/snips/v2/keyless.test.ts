@@ -1,4 +1,5 @@
 import { config } from "../../../config";
+import { browserEnv } from "../../../lib/browser-env";
 import {
   describeIf,
   itIf,
@@ -738,7 +739,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
     scrapeTimeout,
   );
 
-  itIf(!!config.HANGAR_URL)(
+  itIf(!!browserEnv.HANGAR_URL)(
     "rejects projected keyless interact session creation before browser work (429)",
     async () => {
       const scrapeResponse = await request(TEST_API_URL)

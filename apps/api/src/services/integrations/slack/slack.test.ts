@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { describe, it, expect, afterEach } from "vitest";
-import { config } from "../../../config";
+import { notificationsEnv } from "../../notification/env";
 import { encryptSlackToken, decryptSlackToken } from "./crypto";
 import { verifySlackSignature } from "./signature";
 import {
@@ -10,17 +10,19 @@ import {
 } from "./messages";
 import { sanitizeRedirectPath } from "./redirect";
 
-const ORIGINAL_ENCRYPTION_KEY = config.SLACK_TOKEN_ENCRYPTION_KEY;
-const ORIGINAL_SIGNING_SECRET = config.SLACK_SIGNING_SECRET;
+const ORIGINAL_ENCRYPTION_KEY = notificationsEnv.SLACK_TOKEN_ENCRYPTION_KEY;
+const ORIGINAL_SIGNING_SECRET = notificationsEnv.SLACK_SIGNING_SECRET;
 
 afterEach(() => {
-  config.SLACK_TOKEN_ENCRYPTION_KEY = ORIGINAL_ENCRYPTION_KEY;
-  config.SLACK_SIGNING_SECRET = ORIGINAL_SIGNING_SECRET;
+  notificationsEnv.SLACK_TOKEN_ENCRYPTION_KEY = ORIGINAL_ENCRYPTION_KEY;
+  notificationsEnv.SLACK_SIGNING_SECRET = ORIGINAL_SIGNING_SECRET;
 });
 
 describe("slack token crypto", () => {
   it("round-trips a token with AES-256-GCM when a key is configured", () => {
-    config.SLACK_TOKEN_ENCRYPTION_KEY = crypto.randomBytes(32).toString("hex");
+    notificationsEnv.SLACK_TOKEN_ENCRYPTION_KEY = crypto
+      .randomBytes(32)
+      .toString("hex");
     // Opaque placeholder — the crypto layer treats the token as bytes, and we
     // avoid real Slack bot-token shapes so secret scanners don't flag it.
     const token = "slack-bot-token-placeholder";
@@ -31,7 +33,7 @@ describe("slack token crypto", () => {
   });
 
   it("falls back to a plaintext marker when no key is set", () => {
-    config.SLACK_TOKEN_ENCRYPTION_KEY = undefined;
+    notificationsEnv.SLACK_TOKEN_ENCRYPTION_KEY = undefined;
     const token = "self-hosted-token-placeholder";
     const stored = encryptSlackToken(token);
     expect(stored).toBe(`plain:${token}`);
@@ -39,14 +41,16 @@ describe("slack token crypto", () => {
   });
 
   it("throws when a GCM token is read without its key", () => {
-    config.SLACK_TOKEN_ENCRYPTION_KEY = crypto.randomBytes(32).toString("hex");
+    notificationsEnv.SLACK_TOKEN_ENCRYPTION_KEY = crypto
+      .randomBytes(32)
+      .toString("hex");
     const stored = encryptSlackToken("bot-token-placeholder");
-    config.SLACK_TOKEN_ENCRYPTION_KEY = undefined;
+    notificationsEnv.SLACK_TOKEN_ENCRYPTION_KEY = undefined;
     expect(() => decryptSlackToken(stored)).toThrow();
   });
 
   it("throws on a configured-but-invalid key instead of storing plaintext", () => {
-    config.SLACK_TOKEN_ENCRYPTION_KEY = "invalid-key";
+    notificationsEnv.SLACK_TOKEN_ENCRYPTION_KEY = "invalid-key";
     expect(() => encryptSlackToken("bot-token-placeholder")).toThrow();
   });
 });
@@ -105,7 +109,7 @@ describe("slack signature verification", () => {
   });
 
   it("rejects when no signing secret is available", () => {
-    config.SLACK_SIGNING_SECRET = undefined;
+    notificationsEnv.SLACK_SIGNING_SECRET = undefined;
     const timestamp = String(Math.floor(Date.now() / 1000));
     expect(
       verifySlackSignature({

@@ -1,6 +1,6 @@
 import { v7 as uuidv7 } from "uuid";
 import { DrizzleQueryError } from "drizzle-orm/errors";
-import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 import {
@@ -13,6 +13,7 @@ import {
 } from "../../../lib/alexandria-feedback-token";
 import { alexandriaFeedbackStorage } from "../../../lib/alexandria-feedback-storage";
 import { forwardExchangeToolFeedback } from "../../../lib/exchange";
+import { feedbackTrace } from "../../../lib/feedback-trace";
 import { logger } from "../../../lib/logger";
 import type { RequestWithAuth, EndpointFeedbackErrorCode } from "../types";
 import type { FeedbackRecordResult } from "./internal-types";
@@ -74,7 +75,7 @@ export async function recordAlexandriaFeedback(
           "Feedback accepted. No refund: feedback is not stored under zero data retention.",
         creditsRefunded: 0,
         creditsRefundedToday: 0,
-        dailyRefundCap: config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS,
+        dailyRefundCap: feedbackEnv.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS,
       },
     };
   }
@@ -137,10 +138,10 @@ export async function recordAlexandriaFeedback(
       return failure(
         409,
         "FEEDBACK_WINDOW_EXPIRED",
-        `Alexandria feedback must be submitted within ${config.ALEXANDRIA_FEEDBACK_WINDOW_SEC} seconds of an Alexandria search, discovery, or execution, or name its calls with valid feedback tokens.`,
+        `Alexandria feedback must be submitted within ${feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC} seconds of an Alexandria search, discovery, or execution, or name its calls with valid feedback tokens.`,
       );
     }
-    const windowStart = now - config.ALEXANDRIA_FEEDBACK_WINDOW_SEC * 1000;
+    const windowStart = now - feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC * 1000;
     for (const call of await getRecentAlexandriaCalls(teamId)) {
       if (call.at < windowStart) continue;
       const { requestId, provider, capability } = call;
@@ -175,6 +176,8 @@ export async function recordAlexandriaFeedback(
       requested_functionality: entry.requestedFunctionality ?? null,
     }),
   );
+  // The objective of an Alexandria row comes from the body.
+  const { objective: _objective, ...trace } = feedbackTrace(req);
   try {
     await db.transaction(async tx => {
       await tx.insert(schema.alexandria_feedback).values({
@@ -190,6 +193,7 @@ export async function recordAlexandriaFeedback(
         origin: body.origin,
         integration: body.integration ?? null,
         schema_version: 2,
+        ...trace,
       });
       if (providerRows.length > 0) {
         await tx

@@ -1,8 +1,6 @@
 export type SlackIncomingWebhook = {
-  url: string;
   channel?: string;
   channel_id?: string;
-  configuration_url?: string;
 };
 
 export type SlackInstallationRow = {
@@ -34,7 +32,10 @@ export type SlackOAuthResult = {
   team?: { id: string; name?: string };
   enterprise?: { id: string; name?: string } | null;
   authed_user?: { id: string };
-  incoming_webhook?: SlackIncomingWebhook;
+  incoming_webhook?: SlackIncomingWebhook & {
+    url?: string;
+    configuration_url?: string;
+  };
 };
 
 export type SlackChannel = {

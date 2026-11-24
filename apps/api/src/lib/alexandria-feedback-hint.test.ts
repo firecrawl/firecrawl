@@ -1,13 +1,13 @@
-import { config } from "../config";
+import { feedbackEnv } from "./feedback-env";
 import { alexandriaFeedbackNextStep } from "./alexandria-feedback-hint";
 import { alexandriaFeedbackSchema } from "../controllers/v2/feedback/alexandria-schema";
 
-const original = config.FEEDBACK_REFUND_ENABLED;
+const original = feedbackEnv.FEEDBACK_REFUND_ENABLED;
 beforeEach(() => {
-  config.FEEDBACK_REFUND_ENABLED = true;
+  feedbackEnv.FEEDBACK_REFUND_ENABLED = true;
 });
 afterAll(() => {
-  config.FEEDBACK_REFUND_ENABLED = original;
+  feedbackEnv.FEEDBACK_REFUND_ENABLED = original;
 });
 
 it("points an MCP client at firecrawl_feedback with the arguments it takes", () => {
@@ -74,7 +74,7 @@ it("names only fields the feedback endpoint accepts", () => {
 });
 
 it("does not promise a refund when refunds are off", () => {
-  config.FEEDBACK_REFUND_ENABLED = false;
+  feedbackEnv.FEEDBACK_REFUND_ENABLED = false;
   expect(alexandriaFeedbackNextStep("mcp-cursor").instruction).toBe(
     "Next step: before you answer the user, rate this result with firecrawl_feedback (good, partial or bad, and what was missing). Skip only if you don't have that tool.",
   );

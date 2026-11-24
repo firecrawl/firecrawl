@@ -199,12 +199,33 @@ export async function checkUrlsAgainstThreatPolicy(
     dedup: ctx.dedup ?? new Map(),
   };
 
+  // Ensure policy lists are frozen for multi-URL batches so verdict.ts reuses
+  // its compiled WeakMap index across all URLs even for per-request overrides.
+  const effectivePolicy: ThreatProtectionPolicy =
+    uniqueUrls.length > 1 &&
+    (!Object.isFrozen(policy.blacklist) ||
+      !Object.isFrozen(policy.whitelist) ||
+      !Object.isFrozen(policy.blockedTlds))
+      ? {
+          ...policy,
+          blacklist: Object.isFrozen(policy.blacklist)
+            ? policy.blacklist
+            : (Object.freeze([...policy.blacklist]) as string[]),
+          whitelist: Object.isFrozen(policy.whitelist)
+            ? policy.whitelist
+            : (Object.freeze([...policy.whitelist]) as string[]),
+          blockedTlds: Object.isFrozen(policy.blockedTlds)
+            ? policy.blockedTlds
+            : (Object.freeze([...policy.blockedTlds]) as string[]),
+        }
+      : policy;
+
   // "zscaler" mode checks resolve through a shared per-org lookup queue
   // whose budget is spent per CALL (≤100 URLs each) — checking only 16 at a
   // time would cap batch fill at ~16 URLs per budgeted call. Run a full
   // batch's worth concurrently so the queue drainer can pack real batches.
   const concurrency =
-    policy.mode === "zscaler" && !ctx.localRulesOnly
+    effectivePolicy.mode === "zscaler" && !ctx.localRulesOnly
       ? 100
       : URL_CHECK_CONCURRENCY;
 
@@ -212,7 +233,7 @@ export async function checkUrlsAgainstThreatPolicy(
   for (let i = 0; i < uniqueUrls.length; i += concurrency) {
     const batch = uniqueUrls.slice(i, i + concurrency);
     const decisions = await Promise.all(
-      batch.map(url => checkUrl(url, policy, dedupCtx)),
+      batch.map(url => checkUrl(url, effectivePolicy, dedupCtx)),
     );
     batch.forEach((url, index) => decisionsByUrl.set(url, decisions[index]));
   }

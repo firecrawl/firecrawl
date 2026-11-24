@@ -44,9 +44,9 @@ import {
   sendMonitoringEmailSummary,
   type MonitoringEmailPayload,
 } from "./monitoring_email";
-import { config } from "../../config";
+import { notificationsEnv } from "./env";
 
-const ORIGINAL_RESEND_API_KEY = config.RESEND_API_KEY;
+const ORIGINAL_RESEND_API_KEY = notificationsEnv.RESEND_API_KEY;
 
 beforeEach(() => {
   mockEnsureRecipient.mockReset();
@@ -57,14 +57,14 @@ beforeEach(() => {
   mockResendSend.mockResolvedValue({ data: { id: "msg-1" }, error: null });
   mockTouchNotified.mockResolvedValue(undefined);
   mockMarkConfirmationSent.mockResolvedValue(undefined);
-  // getResendClient() reads config.RESEND_API_KEY (a snapshot of process.env at
-  // import time), so set it on the config object directly to make the suite
-  // hermetic regardless of the runner's environment.
-  config.RESEND_API_KEY = "test-key";
+  // getResendClient() reads notificationsEnv.RESEND_API_KEY (a snapshot of
+  // process.env at import time), so set it on notificationsEnv directly to
+  // make the suite hermetic regardless of the runner's environment.
+  notificationsEnv.RESEND_API_KEY = "test-key";
 });
 
 afterAll(() => {
-  config.RESEND_API_KEY = ORIGINAL_RESEND_API_KEY;
+  notificationsEnv.RESEND_API_KEY = ORIGINAL_RESEND_API_KEY;
 });
 
 function fakeRecipient(

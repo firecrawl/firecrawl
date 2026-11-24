@@ -1,11 +1,8 @@
-import { SearchResult } from "../../src/lib/entities";
-import { config } from "../config";
-import { searxng_search } from "./searxng";
-import { fire_engine_search } from "./fireEngine";
+import { SearchResult } from "../lib/entities";
 import { Logger } from "winston";
-import { ddgSearch } from "./v2/ddgsearch";
 import { search as searchV2 } from "./v2";
 import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
+import { service, type SearchQuery } from "../service";
 
 export async function search({
   query,
@@ -38,12 +35,6 @@ export async function search({
   usOnly?: boolean;
   enterprise?: ("anon" | "zdr")[];
 }): Promise<SearchResult[]> {
-  // The fallback backends below take no US-only routing.
-  if (usOnly && !config.FIRE_ENGINE_BETA_URL) {
-    throw new UsOnlyUnavailableError(
-      "Search is not available for teams restricted to US-only processing on this deployment.",
-    );
-  }
   // The legacy search route has no zero data retention or anonymous routing,
   // so a search that requires either goes through the v2 search.
   if (enterprise && enterprise.length > 0) {
@@ -65,46 +56,47 @@ export async function search({
       result => new SearchResult(result.url, result.title, result.description),
     );
   }
-  try {
-    if (config.FIRE_ENGINE_BETA_URL) {
-      logger.info("Using fire engine search");
-      const results = await fire_engine_search(query, {
-        numResults: num_results,
-        tbs,
-        filter,
-        lang,
-        country,
-        location,
-        usOnly,
-      });
-      return results;
-    }
-    if (config.SEARXNG_ENDPOINT) {
-      logger.info("Using searxng search");
-      const results = await searxng_search(query, {
-        num_results,
-        tbs,
-        filter,
-        lang,
-        country,
-        location,
-      });
-      if (results.length > 0) return results;
-    }
-    logger.info("Using DuckDuckGo search");
-    const ddg = await ddgSearch(query, num_results, {
-      tbs,
-      lang,
-      country,
-      proxy,
-      timeout,
-    });
-    return (
-      ddg.web?.map(
-        result =>
-          new SearchResult(result.url, result.title, result.description),
-      ) || []
+
+  const enabledProviders = service.searchProviders.enabled();
+  const providers = usOnly
+    ? enabledProviders.filter(provider => provider.supportsUsOnly === true)
+    : enabledProviders;
+
+  if (usOnly && providers.length === 0) {
+    throw new UsOnlyUnavailableError(
+      "Search is not available for teams restricted to US-only processing on this deployment.",
     );
+  }
+
+  const searchQuery: SearchQuery = {
+    query,
+    logger,
+    advanced,
+    numResults: num_results,
+    tbs,
+    filter,
+    lang,
+    country,
+    location,
+    proxy,
+    sleepInterval: sleep_interval,
+    timeout,
+    usOnly,
+    legacy: true,
+  };
+
+  try {
+    for (const provider of providers) {
+      const response = await provider.search(searchQuery);
+      if (response != null) {
+        return (response.web ?? []).map(
+          result =>
+            new SearchResult(result.url, result.title, result.description),
+        );
+      }
+    }
+
+    return [];
   } catch (error) {
     logger.error(`Error in search function`, { error });
     return [];

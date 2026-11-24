@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "crypto";
-import { config } from "../../../../config";
+import { threatProtectionEnv } from "../../env";
 import { getRedisConnection } from "../../../../services/queue-service";
 import { logger as _logger } from "../../../logger";
 import {
@@ -49,8 +49,8 @@ interface ComputeDiffResponse {
 
 function isConfigured(): boolean {
   return (
-    typeof config.GOOGLE_WEB_RISK_API_KEY === "string" &&
-    config.GOOGLE_WEB_RISK_API_KEY.trim().length > 0
+    typeof threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY === "string" &&
+    threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY.trim().length > 0
   );
 }
 
@@ -62,10 +62,10 @@ async function computeDiff(
   params.append("threatType", type);
   if (versionToken) params.append("versionToken", versionToken);
   params.append("constraints.supportedCompressions", "RAW");
-  params.append("key", config.GOOGLE_WEB_RISK_API_KEY!);
+  params.append("key", threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY!);
 
   const response = await fetch(
-    `${config.GOOGLE_WEB_RISK_API_URL}/v1/threatLists:computeDiff?${params.toString()}`,
+    `${threatProtectionEnv.GOOGLE_WEB_RISK_API_URL}/v1/threatLists:computeDiff?${params.toString()}`,
     { method: "GET", signal: AbortSignal.timeout(SYNC_FETCH_TIMEOUT_MS) },
   );
   if (!response.ok) {
@@ -110,7 +110,8 @@ function listChecksum(sortedEntries: Buffer[]): string {
 
 function nextDiffAt(recommendedNextDiff: string | undefined): string {
   const floorMs =
-    Date.now() + config.THREAT_LIST_SYNC_MIN_INTERVAL_SECONDS * 1000;
+    Date.now() +
+    threatProtectionEnv.THREAT_LIST_SYNC_MIN_INTERVAL_SECONDS * 1000;
   const recommendedMs = recommendedNextDiff
     ? Date.parse(recommendedNextDiff)
     : NaN;
@@ -252,7 +253,7 @@ async function logListAges(store: WebRiskListStore): Promise<void> {
     ages[type] = ageSeconds;
     if (
       ageSeconds === null ||
-      ageSeconds > config.THREAT_LIST_STALENESS_SECONDS
+      ageSeconds > threatProtectionEnv.THREAT_LIST_STALENESS_SECONDS
     ) {
       stale = true;
     }
@@ -262,7 +263,8 @@ async function logListAges(store: WebRiskListStore): Promise<void> {
     canonicalLog: "threat-protection/list-age",
     ageSeconds: ages,
     stale,
-    stalenessThresholdSeconds: config.THREAT_LIST_STALENESS_SECONDS,
+    stalenessThresholdSeconds:
+      threatProtectionEnv.THREAT_LIST_STALENESS_SECONDS,
   });
 }
 

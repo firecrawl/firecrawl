@@ -7,6 +7,9 @@
 
 describe("Stealth proxy routing without fire-engine (buildFallbackList)", () => {
   let buildFallbackList: typeof import("../../../scraper/scrapeURL/engines/index.js").buildFallbackList;
+  let replaceService:
+    | typeof import("../../../service/service.js").replaceService
+    | undefined;
 
   const overrides: Record<string, string | undefined> = {
     FIRE_ENGINE_BETA_URL: undefined,
@@ -34,12 +37,29 @@ describe("Stealth proxy routing without fire-engine (buildFallbackList)", () => 
 
     // Re-import engines fresh so it reads the env vars set above at eval time.
     vi.resetModules();
-    ({ buildFallbackList } = await import(
+    const enginesModule = await import(
       "../../../scraper/scrapeURL/engines/index.js"
-    ));
+    );
+    const serviceModule = await import("../../../service/service.js");
+    buildFallbackList = enginesModule.buildFallbackList;
+    replaceService = serviceModule.replaceService;
+    replaceService(
+      serviceModule.createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            engines: enginesModule.coreEngines,
+            engineFeatures: enginesModule.coreEngineFeatures,
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
   });
 
   afterAll(() => {
+    replaceService?.(undefined);
     setEnv(original);
   });
 

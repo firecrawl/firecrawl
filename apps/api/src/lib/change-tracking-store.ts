@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { config } from "../config";
+import { changeTrackingEnv } from "./change-tracking-env";
 import { getBigtableTable } from "./bigtable-client";
 import { setSpanAttributes, withSpan } from "./otel-tracer";
 
@@ -25,7 +25,8 @@ import { setSpanAttributes, withSpan } from "./otel-tracer";
 
 const FAMILY = "m";
 const QUALIFIER = "job";
-const TABLE_ID = config.BIGTABLE_CHANGE_TRACKING_TABLE || "change_tracking";
+const TABLE_ID =
+  changeTrackingEnv.BIGTABLE_CHANGE_TRACKING_TABLE || "change_tracking";
 const TEAM_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DELETE_BATCH_ROWS = 1000;

@@ -74,5 +74,6 @@ export { setValue, getValue, deleteKey };
 
 const redisEvictURL = config.REDIS_EVICT_URL ?? config.REDIS_RATE_LIMIT_URL;
 export const redisEvictConnection = new IORedis(redisEvictURL!, {
+  lazyConnect: true,
   enableAutoPipelining: true,
 });

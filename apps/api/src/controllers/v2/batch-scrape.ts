@@ -38,6 +38,7 @@ import {
 } from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
+import { requestContext } from "../../lib/request-context";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
@@ -81,6 +82,13 @@ export async function batchScrapeController(
       code: safeMode.code,
       error: safeMode.error,
     });
+  }
+
+  if (
+    safeMode.safeMode?.lockdown &&
+    typeof preNormalizedBody.maxAge === "number"
+  ) {
+    req.body.maxAge = preNormalizedBody.maxAge;
   }
 
   const threatProtection = await resolveThreatProtection({
@@ -186,6 +194,9 @@ export async function batchScrapeController(
         team_id: req.auth.team_id,
         org_id: req.acuc?.org_id ?? null,
         origin: req.body.origin ?? null,
+        zeroDataRetention:
+          zeroDataRetention || appendTarget?.zeroDataRetention === true,
+        safeMode: req.body.safeMode,
       })
     ) {
       return null;
@@ -442,6 +453,8 @@ export async function batchScrapeController(
     });
   }
 
+  const workContactOnly =
+    req.headers["x-firecrawl-work-contact-only"] === "true";
   const sc: StoredCrawl = appendTarget
     ? appendTarget
     : {
@@ -455,6 +468,7 @@ export async function batchScrapeController(
             ? true
             : false,
           zeroDataRetention,
+          ...(workContactOnly ? { workContactOnly } : {}),
           bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
           agentIndexOnly: (req as any).agentIndexOnly ?? false,
           threatProtection: threatProtection.policy ?? undefined,
@@ -483,9 +497,21 @@ export async function batchScrapeController(
     sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
     sc.internalOptions.safeModeBypassed = safeMode.bypassed === true;
     sc.internalOptions.threatProtection = threatProtection.policy ?? undefined;
+    if (workContactOnly) sc.internalOptions.workContactOnly = true;
   }
 
+  const ctx = requestContext({
+    teamId: req.auth.team_id,
+    zeroDataRetention,
+    flags: sc.internalOptions.teamFlags,
+    orgId: sc.internalOptions.orgId,
+    apiKeyId: req.acuc?.api_key_id ?? null,
+    billing,
+  });
+  req.ctx = ctx;
+
   if (!req.body.appendToId) {
+    sc.ctx = ctx;
     sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
     await crawlGroup.addGroup(
       id,
@@ -524,6 +550,7 @@ export async function batchScrapeController(
     data: {
       url: x,
       mode: "single_urls" as const,
+      ctx,
       team_id: req.auth.team_id,
       crawlerOptions: null,
       scrapeOptions,
