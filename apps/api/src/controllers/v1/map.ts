@@ -18,6 +18,7 @@ import {
   removeDuplicateUrls,
 } from "../../lib/validateUrl";
 import { fireEngineMap } from "../../search/fireEngine";
+import { isUsOnly } from "../../lib/us-only";
 import { billTeam } from "../../services/billing/credit_billing";
 import { logMap, logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
@@ -28,7 +29,7 @@ import { queryIndex } from "../../lib/map-utils";
 import { MapTimeoutError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
 import { resolveSafeMode } from "../../lib/safe-mode";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { getScrapeZDR, getSearchForcedKind } from "../../lib/zdr-helpers";
 import {
   checkUrlsAgainstThreatPolicy,
   resolveThreatProtection,
@@ -107,7 +108,12 @@ export async function getMapResults({
     resolveSafeMode(flags, undefined, url).safeMode?.lockdown === true;
 
   // Lockdown (index-only) is cache-only, which implies zero data retention.
-  const zeroDataRetention = getScrapeZDR(flags) === "forced" || indexOnly;
+  // The site search is a query sent to a search provider, so it also follows
+  // the team's search zero data retention.
+  const zeroDataRetention =
+    getScrapeZDR(flags) === "forced" ||
+    getSearchForcedKind(flags) === "zdr" ||
+    indexOnly;
 
   const sc: StoredCrawl = {
     originUrl: url,
@@ -175,7 +181,8 @@ export async function getMapResults({
       Math.min(MAX_FIRE_ENGINE_RESULTS, limit) / resultsPerPage,
     );
 
-    const cacheKey = `fireEngineMap:${mapUrl}`;
+    const usOnly = isUsOnly(flags);
+    const cacheKey = `fireEngineMap:${usOnly ? "us-only:" : ""}${mapUrl}`;
     const cachedResult = ignoreCache ? null : await redis.get(cacheKey);
 
     let allResults: any[] = [];
@@ -193,6 +200,8 @@ export async function getMapResults({
           {
             numResults: resultsPerPage,
             page: page,
+            usOnly,
+            zeroDataRetention,
           },
           abort,
         );

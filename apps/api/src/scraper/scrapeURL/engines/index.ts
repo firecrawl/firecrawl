@@ -21,12 +21,7 @@ import {
   wikipediaMaxReasonableTime,
   isWikimediaUrl,
 } from "./wikipedia";
-import {
-  scrapeURLWithXTwitter,
-  xTwitterMaxReasonableTime,
-  isXTwitterUrl,
-} from "./x-twitter";
-import { queryEngpickerVerdict, useIndex } from "../../../services";
+import { useIndex } from "../../../services";
 import { useFireEngine } from "./fire-engine/available";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import {
@@ -41,8 +36,11 @@ import {
   AgentIndexOnlyError,
   BrandingNotSupportedError,
   NoCachedDataError,
+  UsOnlyUnavailableError,
 } from "../error";
 import { isUrlBlocked } from "../../WebScraper/utils/blocklist";
+import { isUsOnly } from "../../../lib/us-only";
+import { isXTwitterUrl } from "../../../lib/x-twitter-url";
 import { hasCustomRequestContext } from "../lib/request-context";
 import {
   getExchangeAccessForRequest,
@@ -50,108 +48,25 @@ import {
   ThirdPartyDataUnsupportedOptionError,
   type ExchangeScrapeMetadata,
 } from "../../../lib/exchange";
+import { service } from "../../../service";
+import type {
+  Engine as RegisteredEngine,
+  EngineFeatureName,
+  EngineName,
+} from "../../../service/engines";
+import {
+  coreEngineFeatures,
+  coreEngineSpecs,
+  type CoreEngineName,
+} from "./metadata";
 
-export type Engine =
-  | "exchange"
-  | "fire-engine;chrome-cdp"
-  | "fire-engine(retry);chrome-cdp"
-  | "fire-engine;chrome-cdp;stealth"
-  | "fire-engine(retry);chrome-cdp;stealth"
-  | "fire-engine;tlsclient"
-  | "fire-engine;tlsclient;stealth"
-  | "playwright"
-  | "fetch"
-  | "pdf"
-  | "document"
-  | "image"
-  | "index"
-  | "index;documents"
-  | "wikipedia"
-  | "x-twitter";
+export { coreEngineFeatures };
 
-const usePlaywright =
-  config.PLAYWRIGHT_MICROSERVICE_URL !== "" &&
-  config.PLAYWRIGHT_MICROSERVICE_URL !== undefined;
-const useWikipedia =
-  config.WIKIPEDIA_ENTERPRISE_USERNAME !== undefined &&
-  config.WIKIPEDIA_ENTERPRISE_USERNAME !== "" &&
-  config.WIKIPEDIA_ENTERPRISE_PASSWORD !== undefined &&
-  config.WIKIPEDIA_ENTERPRISE_PASSWORD !== "";
-const useXTwitter =
-  (config.XAI_API_KEY !== undefined && config.XAI_API_KEY !== "") ||
-  config.USE_DB_AUTHENTICATION === true;
+export type Engine = EngineName;
 
-const engines: Engine[] = [
-  ...(useXTwitter ? ["x-twitter" as const] : []),
-  ...(useWikipedia ? ["wikipedia" as const] : []),
-  ...(useIndex ? ["index" as const, "index;documents" as const] : []),
-  ...(useFireEngine
-    ? [
-        "fire-engine;chrome-cdp" as const,
-        "fire-engine;chrome-cdp;stealth" as const,
-        "fire-engine(retry);chrome-cdp" as const,
-        "fire-engine(retry);chrome-cdp;stealth" as const,
-        "fire-engine;tlsclient" as const,
-        "fire-engine;tlsclient;stealth" as const,
-      ]
-    : []),
-  ...(usePlaywright ? ["playwright" as const] : []),
-  "fetch",
-  "pdf",
-  "document",
-  // Image OCR needs FirePDF; without it the engine would only be a wasted
-  // tail download on every failed scrape. Whether images are actually OCR'd
-  // is decided where they are routed (lib/image-ocr-gate.ts), not here.
-  ...(config.FIRE_PDF_BASE_URL ? ["image" as const] : []),
-];
+export type FeatureFlag = EngineFeatureName;
 
-const featureFlags = [
-  "actions",
-  "waitFor",
-  "screenshot",
-  "screenshot@fullScreen",
-  "pdf",
-  "document",
-  "image",
-  "audio",
-  "video",
-  "atsv",
-  "location",
-  "mobile",
-  "skipTlsVerification",
-  "useFastMode",
-  "stealthProxy",
-  "branding",
-  "disableAdblock",
-] as const;
-
-export type FeatureFlag = (typeof featureFlags)[number];
-
-const featureFlagOptions: {
-  [F in FeatureFlag]: {
-    priority: number;
-  };
-} = {
-  actions: { priority: 20 },
-  waitFor: { priority: 1 },
-  screenshot: { priority: 10 },
-  "screenshot@fullScreen": { priority: 10 },
-  pdf: { priority: 100 },
-  document: { priority: 100 },
-  image: { priority: 100 },
-  audio: { priority: 100 },
-  video: { priority: 100 },
-  atsv: { priority: 90 }, // NOTE: should atsv force to tlsclient? adjust priority if not
-  useFastMode: { priority: 90 },
-  location: { priority: 10 },
-  mobile: { priority: 10 },
-  skipTlsVerification: { priority: 10 },
-  stealthProxy: { priority: 20 },
-  branding: { priority: 20 }, // Requires CDP executeJavascript
-  disableAdblock: { priority: 10 },
-} as const;
-
-export type EngineScrapeResult = {
+export interface EngineScrapeResult {
   url: string;
 
   html: string;
@@ -189,428 +104,145 @@ export type EngineScrapeResult = {
 
   youtubeTranscriptContent?: any;
   postprocessorsUsed?: string[];
+  warning?: string;
   audioCookies?: BrowserCookie[];
 
   proxyUsed: "basic" | "stealth";
   timezone?: string;
   exchange?: ExchangeScrapeMetadata;
-};
+}
 
-const engineHandlers: {
-  [E in Engine]: (meta: Meta) => Promise<EngineScrapeResult>;
-} = {
-  exchange: scrapeURLWithExchange,
-  index: scrapeURLWithIndex,
-  "index;documents": scrapeURLWithIndex,
-  "fire-engine;chrome-cdp": scrapeURLWithFireEngineChromeCDP,
-  "fire-engine(retry);chrome-cdp": scrapeURLWithFireEngineChromeCDP,
-  "fire-engine;chrome-cdp;stealth": scrapeURLWithFireEngineChromeCDP,
-  "fire-engine(retry);chrome-cdp;stealth": scrapeURLWithFireEngineChromeCDP,
-  "fire-engine;tlsclient": scrapeURLWithFireEngineTLSClient,
-  "fire-engine;tlsclient;stealth": scrapeURLWithFireEngineTLSClient,
-  playwright: scrapeURLWithPlaywright,
-  fetch: scrapeURLWithFetch,
-  pdf: scrapePDF,
-  document: scrapeDocument,
-  image: scrapeImage,
-  wikipedia: scrapeURLWithWikipedia,
-  "x-twitter": scrapeURLWithXTwitter,
-};
-
-const engineMRTs: {
-  [E in Engine]: (meta: Meta) => number;
-} = {
-  exchange: exchangeMaxReasonableTime,
-  index: indexMaxReasonableTime,
-  "index;documents": indexMaxReasonableTime,
-  "fire-engine;chrome-cdp": meta =>
-    fireEngineMaxReasonableTime(meta, "chrome-cdp"),
-  "fire-engine(retry);chrome-cdp": meta =>
-    fireEngineMaxReasonableTime(meta, "chrome-cdp"),
-  "fire-engine;chrome-cdp;stealth": meta =>
-    fireEngineMaxReasonableTime(meta, "chrome-cdp"),
-  "fire-engine(retry);chrome-cdp;stealth": meta =>
-    fireEngineMaxReasonableTime(meta, "chrome-cdp"),
-  "fire-engine;tlsclient": meta =>
-    fireEngineMaxReasonableTime(meta, "tlsclient"),
-  "fire-engine;tlsclient;stealth": meta =>
-    fireEngineMaxReasonableTime(meta, "tlsclient"),
-  playwright: playwrightMaxReasonableTime,
-  fetch: fetchMaxReasonableTime,
-  pdf: pdfMaxReasonableTime,
-  document: documentMaxReasonableTime,
-  image: imageMaxReasonableTime,
-  wikipedia: wikipediaMaxReasonableTime,
-  "x-twitter": xTwitterMaxReasonableTime,
-};
-
-const engineOptions: {
-  [E in Engine]: {
-    // A list of feature flags the engine supports.
-    features: { [F in FeatureFlag]: boolean };
-
-    // This defines the order of engines in general. The engine with the highest quality will be used the most.
-    // Negative quality numbers are reserved for specialty engines, e.g. PDF, DOCX, stealth proxies
-    quality: number;
-  };
-} = {
-  exchange: {
-    features: {
-      actions: false,
-      waitFor: false,
-      screenshot: false,
-      "screenshot@fullScreen": false,
-      pdf: false,
-      document: false,
-      image: false,
-      audio: false,
-      video: false,
-      atsv: false,
-      location: false,
-      mobile: false,
-      skipTlsVerification: true,
-      useFastMode: true,
-      stealthProxy: false,
-      branding: false,
-      disableAdblock: false,
-    },
-    quality: 2000,
+const coreEngineRuntime: Record<
+  CoreEngineName,
+  {
+    enabled: () => boolean;
+    scrape: (meta: Meta) => Promise<EngineScrapeResult>;
+    maxReasonableTime: (meta: Meta) => number;
+  }
+> = {
+  wikipedia: {
+    enabled: () =>
+      config.WIKIPEDIA_ENTERPRISE_USERNAME !== undefined &&
+      config.WIKIPEDIA_ENTERPRISE_USERNAME !== "" &&
+      config.WIKIPEDIA_ENTERPRISE_PASSWORD !== undefined &&
+      config.WIKIPEDIA_ENTERPRISE_PASSWORD !== "",
+    scrape: scrapeURLWithWikipedia,
+    maxReasonableTime: wikipediaMaxReasonableTime,
   },
   index: {
-    features: {
-      actions: false,
-      waitFor: true,
-      screenshot: true,
-      "screenshot@fullScreen": true,
-      pdf: false,
-      document: false,
-      image: false,
-      audio: false,
-      video: false,
-      atsv: false,
-      mobile: true,
-      location: true,
-      skipTlsVerification: true,
-      useFastMode: true,
-      stealthProxy: true,
-      branding: false,
-      disableAdblock: true,
-    },
-    quality: 1000, // index should always be tried first
-  },
-  "fire-engine;chrome-cdp": {
-    features: {
-      actions: true,
-      waitFor: true, // through actions transform
-      screenshot: true, // through actions transform
-      "screenshot@fullScreen": true, // through actions transform
-      pdf: false,
-      document: false,
-      image: false,
-      audio: true,
-      video: true,
-      atsv: false,
-      location: true,
-      mobile: true,
-      skipTlsVerification: true,
-      useFastMode: false,
-      stealthProxy: false,
-      branding: true,
-      disableAdblock: false,
-    },
-    quality: 50,
-  },
-  "fire-engine(retry);chrome-cdp": {
-    features: {
-      actions: true,
-      waitFor: true, // through actions transform
-      screenshot: true, // through actions transform
-      "screenshot@fullScreen": true, // through actions transform
-      pdf: false,
-      document: false,
-      image: false,
-      audio: true,
-      video: true,
-      atsv: false,
-      location: true,
-      mobile: true,
-      skipTlsVerification: true,
-      useFastMode: false,
-      stealthProxy: false,
-      branding: true,
-      disableAdblock: false,
-    },
-    quality: 45,
+    enabled: () => useIndex,
+    scrape: scrapeURLWithIndex,
+    maxReasonableTime: indexMaxReasonableTime,
   },
   "index;documents": {
-    features: {
-      actions: false,
-      waitFor: true,
-      screenshot: true,
-      "screenshot@fullScreen": true,
-      pdf: true,
-      document: true,
-      image: true,
-      audio: false,
-      video: false,
-      atsv: false,
-      location: true,
-      mobile: true,
-      skipTlsVerification: true,
-      useFastMode: true,
-      stealthProxy: true,
-      branding: false,
-      disableAdblock: false,
-    },
-    quality: -1,
+    enabled: () => useIndex,
+    scrape: scrapeURLWithIndex,
+    maxReasonableTime: indexMaxReasonableTime,
+  },
+  "fire-engine;chrome-cdp": {
+    enabled: () => useFireEngine,
+    scrape: scrapeURLWithFireEngineChromeCDP,
+    maxReasonableTime: meta => fireEngineMaxReasonableTime(meta, "chrome-cdp"),
   },
   "fire-engine;chrome-cdp;stealth": {
-    features: {
-      actions: true,
-      waitFor: true, // through actions transform
-      screenshot: true, // through actions transform
-      "screenshot@fullScreen": true, // through actions transform
-      pdf: false,
-      document: false,
-      image: false,
-      audio: true,
-      video: true,
-      atsv: false,
-      location: true,
-      mobile: true,
-      skipTlsVerification: true,
-      useFastMode: false,
-      stealthProxy: true,
-      branding: true,
-      disableAdblock: false,
-    },
-    quality: -2,
+    enabled: () => useFireEngine,
+    scrape: scrapeURLWithFireEngineChromeCDP,
+    maxReasonableTime: meta => fireEngineMaxReasonableTime(meta, "chrome-cdp"),
+  },
+  "fire-engine(retry);chrome-cdp": {
+    enabled: () => useFireEngine,
+    scrape: scrapeURLWithFireEngineChromeCDP,
+    maxReasonableTime: meta => fireEngineMaxReasonableTime(meta, "chrome-cdp"),
   },
   "fire-engine(retry);chrome-cdp;stealth": {
-    features: {
-      actions: true,
-      waitFor: true, // through actions transform
-      screenshot: true, // through actions transform
-      "screenshot@fullScreen": true, // through actions transform
-      pdf: false,
-      document: false,
-      image: false,
-      audio: true,
-      video: true,
-      atsv: false,
-      location: true,
-      mobile: true,
-      skipTlsVerification: true,
-      useFastMode: false,
-      stealthProxy: true,
-      branding: true,
-      disableAdblock: false,
-    },
-    quality: -5,
-  },
-  playwright: {
-    features: {
-      actions: false,
-      waitFor: true,
-      screenshot: false,
-      "screenshot@fullScreen": false,
-      pdf: false,
-      document: false,
-      image: false,
-      audio: false,
-      video: false,
-      atsv: false,
-      location: false,
-      mobile: false,
-      skipTlsVerification: true,
-      useFastMode: false,
-      stealthProxy: false,
-      branding: false,
-      disableAdblock: false,
-    },
-    quality: 20,
+    enabled: () => useFireEngine,
+    scrape: scrapeURLWithFireEngineChromeCDP,
+    maxReasonableTime: meta => fireEngineMaxReasonableTime(meta, "chrome-cdp"),
   },
   "fire-engine;tlsclient": {
-    features: {
-      actions: false,
-      waitFor: false,
-      screenshot: false,
-      "screenshot@fullScreen": false,
-      pdf: false,
-      document: false,
-      image: false,
-      audio: true,
-      video: true,
-      atsv: true,
-      location: true,
-      mobile: false,
-      skipTlsVerification: true,
-      useFastMode: true,
-      stealthProxy: false,
-      branding: false,
-      disableAdblock: false,
-    },
-    quality: 10,
+    enabled: () => useFireEngine,
+    scrape: scrapeURLWithFireEngineTLSClient,
+    maxReasonableTime: meta => fireEngineMaxReasonableTime(meta, "tlsclient"),
   },
   "fire-engine;tlsclient;stealth": {
-    features: {
-      actions: false,
-      waitFor: false,
-      screenshot: false,
-      "screenshot@fullScreen": false,
-      pdf: false,
-      document: false,
-      image: false,
-      audio: true,
-      video: true,
-      atsv: true,
-      location: true,
-      mobile: false,
-      skipTlsVerification: true,
-      useFastMode: true,
-      stealthProxy: true,
-      branding: false,
-      disableAdblock: false,
-    },
-    quality: -15,
+    enabled: () => useFireEngine,
+    scrape: scrapeURLWithFireEngineTLSClient,
+    maxReasonableTime: meta => fireEngineMaxReasonableTime(meta, "tlsclient"),
+  },
+  playwright: {
+    enabled: () =>
+      config.PLAYWRIGHT_MICROSERVICE_URL !== "" &&
+      config.PLAYWRIGHT_MICROSERVICE_URL !== undefined,
+    scrape: scrapeURLWithPlaywright,
+    maxReasonableTime: playwrightMaxReasonableTime,
   },
   fetch: {
-    features: {
-      actions: false,
-      waitFor: false,
-      screenshot: false,
-      "screenshot@fullScreen": false,
-      pdf: false,
-      document: false,
-      image: false,
-      audio: false,
-      video: false,
-      atsv: false,
-      location: false,
-      mobile: false,
-      skipTlsVerification: true,
-      useFastMode: true,
-      stealthProxy: false,
-      branding: false,
-      disableAdblock: false,
-    },
-    quality: 5,
+    enabled: () => true,
+    scrape: scrapeURLWithFetch,
+    maxReasonableTime: fetchMaxReasonableTime,
   },
-  // The file engines (pdf, document, image) pass skipTlsVerification through
-  // to their direct downloads, and a browser handoff already applied it
-  // upstream, so they declare it supported: otherwise every cache-miss file
-  // scrape carries a misleading "may be partial" warning, since v2 defaults
-  // the option to true.
   pdf: {
-    features: {
-      actions: false,
-      waitFor: false,
-      screenshot: false,
-      "screenshot@fullScreen": false,
-      pdf: true,
-      document: false,
-      image: false,
-      audio: false,
-      video: false,
-      atsv: false,
-      location: false,
-      mobile: false,
-      skipTlsVerification: true,
-      useFastMode: true,
-      stealthProxy: true, // kinda...
-      branding: false,
-      disableAdblock: true,
-    },
-    quality: -20,
+    enabled: () => true,
+    scrape: scrapePDF,
+    maxReasonableTime: pdfMaxReasonableTime,
   },
   document: {
-    features: {
-      actions: false,
-      waitFor: false,
-      screenshot: false,
-      "screenshot@fullScreen": false,
-      pdf: false,
-      document: true,
-      image: false,
-      audio: false,
-      video: false,
-      atsv: false,
-      location: false,
-      mobile: false,
-      skipTlsVerification: true,
-      useFastMode: true,
-      stealthProxy: true, // kinda...
-      branding: false,
-      disableAdblock: true,
-    },
-    quality: -20,
+    enabled: () => true,
+    scrape: scrapeDocument,
+    maxReasonableTime: documentMaxReasonableTime,
   },
+  // Image OCR needs FirePDF; without it the engine would only be a wasted
+  // tail download on every failed scrape. Whether images are actually OCR'd
+  // is decided where they are routed (lib/image-ocr-gate.ts), not here.
   image: {
-    features: {
-      actions: false,
-      waitFor: false,
-      screenshot: false,
-      "screenshot@fullScreen": false,
-      pdf: false,
-      document: false,
-      image: true,
-      audio: false,
-      video: false,
-      atsv: false,
-      location: false,
-      mobile: false,
-      skipTlsVerification: true,
-      useFastMode: true,
-      stealthProxy: true, // kinda...
-      branding: false,
-      disableAdblock: true,
-    },
-    quality: -20,
+    enabled: () => Boolean(config.FIRE_PDF_BASE_URL),
+    scrape: scrapeImage,
+    maxReasonableTime: imageMaxReasonableTime,
   },
-  wikipedia: {
-    features: {
-      actions: false,
-      waitFor: false,
-      screenshot: false,
-      "screenshot@fullScreen": false,
-      pdf: false,
-      document: false,
-      image: false,
-      audio: false,
-      video: false,
-      atsv: false,
-      location: false,
-      mobile: false,
-      skipTlsVerification: true,
-      useFastMode: true,
-      stealthProxy: false,
-      branding: false,
-      disableAdblock: true,
-    },
-    quality: 500, // below index (1000) so cache is tried first, above fire-engine (50)
+  exchange: {
+    enabled: () => Boolean(config.FIRE_EXCHANGE_URL),
+    scrape: scrapeURLWithExchange,
+    maxReasonableTime: exchangeMaxReasonableTime,
   },
-  "x-twitter": {
-    features: {
-      actions: false,
-      waitFor: false,
-      screenshot: false,
-      "screenshot@fullScreen": false,
-      pdf: false,
-      document: false,
-      image: false,
-      audio: false,
-      video: false,
-      atsv: false,
-      location: false,
-      mobile: false,
-      skipTlsVerification: true,
-      useFastMode: true,
-      stealthProxy: false,
-      branding: false,
-      disableAdblock: true,
-    },
-    quality: 1500,
+};
+
+/** Built-in scrape engine registrations, in default fallback tie-break order. */
+export const coreEngines: readonly RegisteredEngine[] = coreEngineSpecs.map(
+  spec => {
+    const runtime = coreEngineRuntime[spec.name];
+    return {
+      name: spec.name,
+      quality: spec.quality,
+      features: spec.features,
+      ...(spec.explicitOnly ? { explicitOnly: true } : {}),
+      enabled: runtime.enabled,
+      scrape: runtime.scrape,
+      maxReasonableTime: runtime.maxReasonableTime,
+    };
   },
+);
+
+const hasFeature = (
+  features: RegisteredEngine["features"],
+  flag: FeatureFlag,
+): boolean => Object.hasOwn(features, flag) && features[flag] === true;
+
+const requireEngine = (engine: Engine): RegisteredEngine => {
+  const registered = service.engines.get(engine);
+  if (!registered) {
+    throw new Error(`Engine "${engine}" is not registered on the service`);
+  }
+  return registered;
+};
+
+const getFeaturePriority = (flag: FeatureFlag): number => {
+  const feature = service.engines.feature(flag);
+  if (feature === undefined) {
+    throw new Error(
+      `Engine feature "${flag}" is not registered on the service`,
+    );
+  }
+  return feature.priority;
 };
 
 export function shouldUseIndex(meta: Meta) {
@@ -700,11 +332,27 @@ export async function buildFallbackList(meta: Meta): Promise<
       }
     }
 
+    // X posts and profiles only the Exchange serves, as blocked URLs (LinkedIn
+    // profiles) are: a normal engine gets X's login wall. A profile or lockdown
+    // scrape keeps the normal engines, as it did with Firecrawl's own X engine.
+    const xTwitterPage =
+      isXTwitterUrl(url) &&
+      meta.options.profile === undefined &&
+      !meta.options.lockdown;
+
+    // They are answered by xAI, which is outside the US-only guarantee.
+    if (xTwitterPage && isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+      throw new UsOnlyUnavailableError(
+        "X/Twitter scraping is not available for teams restricted to US-only processing.",
+      );
+    }
+
     const exchangeAccess = await getExchangeAccessForRequest({
       url,
       teamId: meta.internalOptions.teamId ?? null,
       orgId: meta.internalOptions.orgId ?? null,
-      blocked,
+      blocked: blocked || xTwitterPage,
+      origin: meta.internalOptions.origin ?? null,
       formats: meta.options.formats,
       actions: meta.options.actions,
       headers: meta.options.headers,
@@ -736,9 +384,10 @@ export async function buildFallbackList(meta: Meta): Promise<
     // A blocked URL can only have been admitted (by scrapeBlocklistMiddleware
     // or batch scrape) for the Exchange; if it can no longer serve it (catalog
     // changed, service down), fail closed rather than letting normal engines
-    // scrape a blocklisted site. Unblocked URLs whose provider wants
-    // unaccepted terms or rejects an option fall through and scrape normally.
-    if (blocked) {
+    // scrape a blocklisted site. X posts and profiles fail the same way.
+    // Other URLs whose provider wants unaccepted terms or rejects an option
+    // fall through and scrape normally.
+    if (blocked || xTwitterPage) {
       if (exchangeAccess.termsRequired) {
         throw new ThirdPartyDataTermsRequiredError(exchangeAccess.terms);
       }
@@ -751,25 +400,29 @@ export async function buildFallbackList(meta: Meta): Promise<
     }
   }
 
-  const shouldPrioritizeTlsClient = meta.options.__experimental_engpicker
-    ? (await queryEngpickerVerdict(
-        meta.options.__experimental_omceDomain ?? new URL(meta.url).hostname,
-      )) === "TlsClientOk"
-    : false;
-
+  const enabledEngines = service.engines
+    .enabled()
+    .filter(engine => !engine.explicitOnly)
+    .map(engine => engine.name);
   const _engines: Engine[] = [
-    ...engines,
+    ...enabledEngines,
 
     // enable fire-engine in self-hosted testing environment when mocks are supplied
     ...(!useFireEngine && meta.mock !== null
-      ? ([
-          "fire-engine;chrome-cdp",
-          "fire-engine(retry);chrome-cdp",
-          "fire-engine;chrome-cdp;stealth",
-          "fire-engine(retry);chrome-cdp;stealth",
-          // "fire-engine;tlsclient",
-          // "fire-engine;tlsclient;stealth",
-        ] as Engine[])
+      ? (
+          [
+            "fire-engine;chrome-cdp",
+            "fire-engine(retry);chrome-cdp",
+            "fire-engine;chrome-cdp;stealth",
+            "fire-engine(retry);chrome-cdp;stealth",
+            // "fire-engine;tlsclient",
+            // "fire-engine;tlsclient;stealth",
+          ] as Engine[]
+        ).filter(
+          name =>
+            !enabledEngines.includes(name) &&
+            service.engines.get(name) !== undefined,
+        )
       : []),
   ];
 
@@ -888,17 +541,11 @@ export async function buildFallbackList(meta: Meta): Promise<
       ...(shouldUseIndex(meta) ? (["index;documents"] as Engine[]) : []),
       ...browserEngines,
     ].map(engine => {
-      const supportedFlags = new Set([
-        ...Object.entries(engineOptions[engine].features)
-          .filter(
-            ([k, v]) => meta.featureFlags.has(k as FeatureFlag) && v === true,
-          )
-          .map(([k, _]) => k),
-      ]);
-      const unsupportedFeatures = new Set([...meta.featureFlags]);
+      const features = requireEngine(engine).features;
+      const unsupportedFeatures = new Set<FeatureFlag>();
       for (const flag of meta.featureFlags) {
-        if (supportedFlags.has(flag)) {
-          unsupportedFeatures.delete(flag);
+        if (!hasFeature(features, flag)) {
+          unsupportedFeatures.add(flag);
         }
       }
       return { engine, unsupportedFeatures };
@@ -927,21 +574,11 @@ export async function buildFallbackList(meta: Meta): Promise<
     !meta.featureFlags.has("audio") &&
     !meta.featureFlags.has("video")
   ) {
-    // The sort-time quality boost below cannot resurrect an engine that was
-    // spliced out here, so dropping tlsclient unconditionally would silently
-    // neuter the engpicker opt-in on exactly the TlsClientOk domains where
-    // engpicker measured its output to match chrome-cdp's. Keep both variants
-    // when that verdict is in hand; regular scrapes never set the flag, so they
-    // drop tlsclient as intended.
-    const enginesToDrop: Engine[] = ["fetch"];
-    if (!shouldPrioritizeTlsClient) {
-      enginesToDrop.push(
-        "fire-engine;tlsclient",
-        "fire-engine;tlsclient;stealth",
-      );
-    }
-
-    for (const engine of enginesToDrop) {
+    for (const engine of [
+      "fetch",
+      "fire-engine;tlsclient",
+      "fire-engine;tlsclient;stealth",
+    ] as Engine[]) {
       const index = _engines.indexOf(engine);
       if (index !== -1) {
         _engines.splice(index, 1);
@@ -956,24 +593,18 @@ export async function buildFallbackList(meta: Meta): Promise<
     }
   }
 
-  if (
-    !meta.options.profile &&
-    isXTwitterUrl(meta.url) &&
-    _engines.includes("x-twitter")
-  ) {
-    _engines.length = 0;
-    _engines.push("x-twitter");
-  } else if (!isXTwitterUrl(meta.url)) {
-    const xTwitterIndex = _engines.indexOf("x-twitter");
-    if (xTwitterIndex !== -1) {
-      _engines.splice(xTwitterIndex, 1);
-    }
-  }
+  // Without fire-engine (or its test mocks), no engine fetches a page through
+  // a stealth proxy: only index lookups and the file parsers declare
+  // stealthProxy support. Counting the flag would leave only the file parsers
+  // above the threshold and in the stealth-only narrowing below, so an HTML
+  // page that escalated to stealthProxy would fail on every engine.
+  const scoresStealthProxy = useFireEngine || meta.mock !== null;
+  const isScoredFlag = (flag: FeatureFlag) =>
+    scoresStealthProxy || flag !== "stealthProxy";
 
-  const prioritySum = [...meta.featureFlags].reduce(
-    (a, x) => a + featureFlagOptions[x].priority,
-    0,
-  );
+  const prioritySum = [...meta.featureFlags]
+    .filter(isScoredFlag)
+    .reduce((a, x) => a + getFeaturePriority(x), 0);
   const priorityThreshold = Math.floor(prioritySum / 2);
   let selectedEngines: {
     engine: Engine;
@@ -989,6 +620,11 @@ export async function buildFallbackList(meta: Meta): Promise<
       : _engines;
 
   for (const engine of currentEngines) {
+    // Zero data retention scrapes, forced engines included, never use the
+    // Wikipedia engine: they stay on the engines that fetch the page directly.
+    if (engine === "wikipedia" && meta.internalOptions.zeroDataRetention)
+      continue;
+
     // A profile must never fall back to fetching anonymous content. File parsers
     // may consume bytes already fetched by the authenticated browser.
     if (
@@ -1000,24 +636,25 @@ export async function buildFallbackList(meta: Meta): Promise<
     )
       continue;
 
-    const supportedFlags = new Set([
-      ...Object.entries(engineOptions[engine].features)
-        .filter(
-          ([k, v]) => meta.featureFlags.has(k as FeatureFlag) && v === true,
-        )
-        .map(([k, _]) => k),
-    ]);
-    const supportScore = [...supportedFlags].reduce(
-      (a, x) => a + featureFlagOptions[x].priority,
-      0,
-    );
+    const registered = service.engines.get(engine);
+    if (!registered) {
+      meta.logger.warn("Skipping unregistered engine", { engine });
+      continue;
+    }
 
-    const unsupportedFeatures = new Set([...meta.featureFlags]);
+    const supportedFlags: FeatureFlag[] = [];
+    const unsupportedFeatures = new Set<FeatureFlag>();
     for (const flag of meta.featureFlags) {
-      if (supportedFlags.has(flag)) {
-        unsupportedFeatures.delete(flag);
+      if (hasFeature(registered.features, flag)) {
+        supportedFlags.push(flag);
+      } else {
+        unsupportedFeatures.add(flag);
       }
     }
+
+    const supportScore = supportedFlags
+      .filter(isScoredFlag)
+      .reduce((a, x) => a + getFeaturePriority(x), 0);
 
     if (supportScore >= priorityThreshold) {
       selectedEngines.push({ engine, supportScore, unsupportedFeatures });
@@ -1031,7 +668,7 @@ export async function buildFallbackList(meta: Meta): Promise<
   // silently ignoring the user's request and never attempting stealth.
   // The guard keeps the original list if no stealth-capable engine qualified
   // (e.g. self-hosted without fire-engine) so scrapes don't break entirely.
-  if (meta.featureFlags.has("stealthProxy")) {
+  if (scoresStealthProxy && meta.featureFlags.has("stealthProxy")) {
     const stealthCapable = selectedEngines.filter(
       x => !x.unsupportedFeatures.has("stealthProxy"),
     );
@@ -1042,34 +679,21 @@ export async function buildFallbackList(meta: Meta): Promise<
 
   if (
     selectedEngines.some(
-      x => engineOptions[x.engine].quality > 0 && !x.engine.startsWith("index"),
+      x => requireEngine(x.engine).quality > 0 && !x.engine.startsWith("index"),
     )
   ) {
     selectedEngines = selectedEngines.filter(
-      x => engineOptions[x.engine].quality > 0,
+      x => requireEngine(x.engine).quality > 0,
     );
   }
 
   if (meta.internalOptions.forceEngine === undefined) {
     // retain force engine order
     // THIS SUCKS BUT IT WORKS
-    const getEffectiveQuality = (engine: Engine) => {
-      let quality = engineOptions[engine].quality;
-      // When engpicker says TlsClientOk, prioritize tlsclient over CDP/CDPRetry
-      if (shouldPrioritizeTlsClient) {
-        if (engine === "fire-engine;tlsclient") {
-          quality += 50; // Boost to 60, above CDP (50) but below index (1000)
-        } else if (engine === "fire-engine;tlsclient;stealth") {
-          quality += 14; // Boost to -1, stays negative but above chrome-cdp;stealth (-2)
-        }
-      }
-      return quality;
-    };
-
     selectedEngines.sort(
       (a, b) =>
         b.supportScore - a.supportScore ||
-        getEffectiveQuality(b.engine) - getEffectiveQuality(a.engine),
+        requireEngine(b.engine).quality - requireEngine(a.engine).quality,
     );
   }
 
@@ -1104,15 +728,16 @@ export async function scrapeURLWithEngine(
   meta: Meta,
   engine: Engine,
 ): Promise<EngineScrapeResult> {
-  const fn = engineHandlers[engine];
+  const registered = requireEngine(engine);
+  const fn = registered.scrape;
   const logger = meta.logger.child({
-    method: fn.name ?? "scrapeURLWithEngine",
+    method: fn.name || "scrapeURLWithEngine",
     engine,
   });
 
   const featureFlags = new Set(meta.featureFlags);
   if (
-    engineOptions[engine].features.stealthProxy &&
+    hasFeature(registered.features, "stealthProxy") &&
     !engine.startsWith("index") // don't force stealth proxy for index
   ) {
     featureFlags.add("stealthProxy");
@@ -1128,7 +753,7 @@ export async function scrapeURLWithEngine(
 }
 
 export function getEngineMaxReasonableTime(meta: Meta, engine: Engine): number {
-  const mrt = engineMRTs[engine];
+  const mrt = service.engines.get(engine)?.maxReasonableTime;
   // shan't happen - mogery
   if (mrt === undefined) {
     meta.logger.warn("No MRT for engine", { engine });

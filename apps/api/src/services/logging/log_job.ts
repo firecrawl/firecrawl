@@ -21,6 +21,7 @@ import type {
   SearchResultCategoriesBySource,
 } from "../../lib/entities";
 import type { CostTracking } from "../../lib/cost-tracking";
+import type { ErrorCode } from "../../lib/error";
 import type { Logger } from "winston";
 import { saveExtractResult } from "../../lib/extract/extract-redis";
 import { trackFirstSurfaceUse } from "../posthog";
@@ -169,7 +170,11 @@ let lastDropWarningAt = 0;
 
 function getPubSubClient(logger: Logger): PubSub | null {
   if (pubSubClient !== undefined) return pubSubClient;
-  if (!config.PUBSUB_CREDENTIALS) return (pubSubClient = null);
+  if (!config.PUBSUB_CREDENTIALS?.trim()) {
+    return (pubSubClient = config.PUBSUB_PROJECT_ID
+      ? new PubSub({ projectId: config.PUBSUB_PROJECT_ID })
+      : null);
+  }
 
   try {
     const credentials = JSON.parse(
@@ -227,7 +232,7 @@ async function publishLog(table: string, data: any, logger: Logger) {
       }
       const client = getPubSubClient(logger);
       if (!client) {
-        if (config.PUBSUB_CREDENTIALS) {
+        if (config.PUBSUB_CREDENTIALS?.trim() || config.PUBSUB_PROJECT_ID) {
           throw new Error("Pub/Sub log publisher initialization failed");
         }
         setSpanAttributes(span, {
@@ -426,9 +431,9 @@ type LoggedRequest = {
     | "research_paper_inspect"
     | "research_paper_read"
     | "research_related_papers"
-    | "research_github_search"
     | "code_search"
-    | "gov_search";
+    | "gov_search"
+    | "fresh_feed";
   api_version: string;
   team_id: string;
   origin?: string;
@@ -476,8 +481,10 @@ function boundedExternalRequestId(
   return null;
 }
 
+const inFlightZdrRequestLogs = new Set<Promise<void>>();
+
 export async function logRequest(request: LoggedRequest) {
-  return withLogSpan(
+  const log = withLogSpan(
     {
       operation: "request",
       table: "requests",
@@ -486,6 +493,18 @@ export async function logRequest(request: LoggedRequest) {
     },
     () => logRequestInternal(request),
   );
+  if (!request.zeroDataRetention) return log;
+  inFlightZdrRequestLogs.add(log);
+  try {
+    return await log;
+  } finally {
+    inFlightZdrRequestLogs.delete(log);
+  }
+}
+
+/** Waits for in-flight ZDR request logs, which enqueue their cleanup job. */
+export async function drainZdrRequestLogs(): Promise<void> {
+  await Promise.allSettled([...inFlightZdrRequestLogs]);
 }
 
 async function logRequestInternal(request: LoggedRequest) {
@@ -556,7 +575,7 @@ async function logRequestInternal(request: LoggedRequest) {
   }
 
   if (request.zeroDataRetention && config.USE_DB_AUTHENTICATION === true) {
-    await enqueueZdrCleanupJob(request.id);
+    await enqueueZdrCleanupJob({ requestId: request.id });
   }
 
   await robustInsert(
@@ -588,6 +607,8 @@ export type LoggedScrape = {
   url: string;
   is_successful: boolean;
   error?: string;
+  /** Code of a failed scrape's error; the only error detail kept under zero data retention. */
+  error_code?: ErrorCode;
   doc?: Document;
   time_taken: number;
   team_id: string;
@@ -716,7 +737,11 @@ async function logScrapeInternal(scrape: LoggedScrape, hooks?: LogScrapeHooks) {
         ? "<redacted due to zero data retention>"
         : scrape.url,
       is_successful: scrape.is_successful,
-      error: scrape.error ?? null,
+      error: scrape.zeroDataRetention
+        ? scrape.is_successful
+          ? null
+          : (scrape.error_code ?? "<redacted due to zero data retention>")
+        : (scrape.error ?? null),
       time_taken: scrape.time_taken,
       team_id: storedTeamId,
       options: scrape.zeroDataRetention ? null : scrape.options,
@@ -801,7 +826,7 @@ async function logScrapeInternal(scrape: LoggedScrape, hooks?: LogScrapeHooks) {
         });
         _logger.debug("Change tracking record inserted successfully");
       } catch (error) {
-        _logger.warn("Error inserting into change_tracking_scrapes", {
+        _logger.warn("Error writing change tracking record", {
           error,
           scrapeId: scrape.id,
           teamId: scrape.team_id,
@@ -1118,7 +1143,6 @@ export type ResearchRequestKind =
   | "research_paper_inspect"
   | "research_paper_read"
   | "research_related_papers"
-  | "research_github_search"
   | "code_search"
   | "gov_search";
 
@@ -1127,7 +1151,6 @@ export type ResearchTableName =
   | "research_paper_inspects"
   | "research_paper_reads"
   | "research_related_papers"
-  | "research_github_searches"
   | "code_searches"
   | "gov_searches";
 

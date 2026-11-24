@@ -3,7 +3,6 @@ import type { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { Request, Response } from "express";
 import { hasCategory } from "../../lib/search-query-builder";
 import { config } from "../../config";
-import { isRequestedModelSupported } from "../../lib/extraction-provider";
 import { z } from "zod";
 import { browserProfileNameSchema } from "../../lib/browser-profiles";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
@@ -11,6 +10,7 @@ import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
 import { includesFormat } from "../../lib/format-utils";
 import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
+import { isDeveloperCategoryAlias } from "../../lib/developer-category";
 import { addStrictSchemaIssue } from "../../lib/openai-strict-schema";
 import {
   ExtractorOptions,
@@ -21,12 +21,14 @@ import {
 } from "../../lib/entities";
 import {
   agentOptionsExtract,
+  agentRemovedRefineOpts,
   AuthCreditUsageChunk,
+  isAgentExtractModelValid,
   ScrapeOptions as V1ScrapeOptions,
 } from "../v1/types";
 import type { InternalOptions } from "../../scraper/scrapeURL";
 import type { PdfPageBlocks } from "../../scraper/scrapeURL/engines/pdf/types";
-import { ErrorCodes } from "../../lib/error";
+import { ErrorCode } from "../../lib/error";
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import { integrationSchema } from "../../utils/integration";
@@ -366,14 +368,6 @@ const jsonFormatWithOptions = z.strictObject({
     })
     .superRefine(addStrictSchemaIssue),
   prompt: z.string().max(10000).optional(),
-  // Optional: name a configured extraction model for this request.
-  model: z
-    .string()
-    .max(100)
-    .optional()
-    .refine(val => val === undefined || isRequestedModelSupported(val), {
-      message: "Unsupported extraction model.",
-    }),
   // Deprecated: lifted into the top-level checkPromptInjection at parse time.
   checkPromptInjection: z.boolean().optional(),
 });
@@ -885,7 +879,6 @@ const scrapeOptionFields = z.strictObject({
   __searchPreviewToken: z.string().optional(),
   __experimental_omce: z.boolean().prefault(false).optional(),
   __experimental_omceDomain: z.string().optional(),
-  __experimental_engpicker: z.boolean().prefault(false).optional(),
   __forceFirePDF: z.boolean().prefault(false).optional(),
 });
 
@@ -927,12 +920,7 @@ export const applyScrapeOptionsDefaults = <T extends ScrapeOptionsBase>(
   obj: T,
 ): T & { skipTlsVerification: boolean } => ({
   ...obj,
-  skipTlsVerification:
-    obj.skipTlsVerification ??
-    ((obj.headers && Object.keys(obj.headers).length > 0) ||
-    (obj.actions && obj.actions.length > 0)
-      ? false
-      : true),
+  skipTlsVerification: obj.skipTlsVerification ?? false,
 });
 
 /**
@@ -1111,6 +1099,10 @@ const extractOptions = z
   .refine(obj => obj.urls || obj.prompt, {
     error: "Either 'urls' or 'prompt' must be provided.",
   })
+  .refine(
+    obj => !isAgentExtractModelValid(obj.agent?.model),
+    agentRemovedRefineOpts,
+  )
   .transform(obj => ({
     ...obj,
     allowExternalLinks: obj.allowExternalLinks || obj.enableWebSearch,
@@ -1657,11 +1649,16 @@ export type VideoItem = {
 
 export type ErrorResponse = {
   success: false;
-  code?: ErrorCodes;
+  code?: ErrorCode;
   error: string;
   details?: any;
   sponsor_status?: string;
   login_url?: string;
+  replacement?: string;
+  documentation_url?: string;
+  retry_after_seconds?: number;
+  /** The job the failed request created, when it got far enough to have one. */
+  jobId?: string;
 };
 
 export type ScrapeResponse =
@@ -1697,7 +1694,7 @@ export interface URLTrace {
 
 export interface ExtractResponse {
   success: boolean;
-  code?: ErrorCodes;
+  code?: ErrorCode;
   error?: string;
   data?: any;
   scrape_id?: string;
@@ -2111,7 +2108,7 @@ export type CrawlErrorsResponse =
         id: string;
         timestamp?: string;
         url: string;
-        code?: ErrorCodes;
+        code?: ErrorCode;
         error: string;
         requiresAction?: ThirdPartyDataTermsRequiredError["requiresAction"];
       }[];
@@ -2139,6 +2136,9 @@ export const LOCKDOWN_DEFAULT_MAX_AGE_MS = 2 * 365 * 24 * 60 * 60 * 1000;
 export type TeamFlags = {
   exchangeRetrieve?: boolean;
   alexandriaAutoTools?: boolean;
+  alexandriaToolFusion?: boolean;
+  // Search skips highlights entirely, including their index lookups.
+  skipSearchHighlights?: boolean;
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
@@ -2156,6 +2156,7 @@ export type TeamFlags = {
     disablePlatformSelection?: boolean;
     disableCountrySelection?: boolean;
     disableAutomaticReferrer?: boolean;
+    respectPaywalls?: boolean;
     allowlist?: string[];
   };
   siemLogging?: boolean;
@@ -2163,6 +2164,9 @@ export type TeamFlags = {
   forceZDR?: boolean;
   allowZDR?: boolean;
   scrapeZDR?: "disabled" | "allowed" | "forced";
+  // Zero data retention for Alexandria provider tools and the Exchange proxy.
+  // Forced scrape ZDR implies it. Exchange is told per call by header.
+  alexandriaZDR?: "disabled" | "allowed" | "forced";
   searchZDR?: "disabled" | "allowed" | "forced" | "forced-zdr" | "forced-anon";
   zdrCost?: number;
   /** How long an agent run's ZDR result is kept, in minutes. Unset is the default (24 hours). */
@@ -2189,6 +2193,23 @@ export type TeamFlags = {
   // The org's contract bars training on its data: FirePDF never captures its
   // documents (buildFirePdfTrainingCapture).
   trainingRestricted?: boolean;
+  // Every request is processed by US-based vendors only. A route with no US
+  // vendor is refused or skipped with a warning.
+  usOnly?: boolean;
+  // Staff-set: the org has a signed contract on file.
+  signedContract?: boolean;
+  // Staff-set: the date range of the org's enterprise pilot, as ISO 8601
+  // strings. No endDate means the pilot has no end.
+  enterprisePilot?: { startDate?: string; endDate?: string } | null;
+  // Alexandria Verified: the dashboard's Verified pages open, and Exchange
+  // providers marked verifiedOnly (Yelp) execute. Org flag, overridable per team.
+  alexandriaVerified?: boolean;
+  // PDF and image parsing runs only on reserved processing capacity. A parse
+  // that cannot be kept there is refused.
+  reservedCapacity?: boolean;
+  // Per-team extensions past a deprecation's sunset (lib/deprecations.ts):
+  // surface or entry key to the YYYY-MM-DD or UTC timestamp it runs until.
+  deprecationExtensions?: Record<string, string>;
   organizationDataSourceAccess?: Record<
     string,
     {
@@ -2380,8 +2401,6 @@ export function fromV1ScrapeOptions(
   delete (spreadScrapeOptions as any).webhook;
   delete (spreadScrapeOptions as any).zeroDataRetention;
   delete (spreadScrapeOptions as any).maxConcurrency;
-  // v2 scrapeOptions schema is strict and does not include `agent`. We carry it via internalOptions below.
-  delete (spreadScrapeOptions as any).agent;
 
   delete spreadScrapeOptions.__experimental_cache;
   delete spreadScrapeOptions.jsonOptions;
@@ -2471,12 +2490,9 @@ export function fromV1ScrapeOptions(
     internalOptions: {
       teamId,
       orgId: null,
-      v1Agent: v1ScrapeOptions.agent,
       v1JSONSystemPrompt: (
         v1ScrapeOptions.jsonOptions || v1ScrapeOptions.extract
       )?.systemPrompt,
-      v1JSONAgent: (v1ScrapeOptions.jsonOptions || v1ScrapeOptions.extract)
-        ?.agent,
       v1OriginalFormat,
     },
   };
@@ -2521,10 +2537,6 @@ const newsSearchSourceOptions = z.strictObject({
 });
 
 // Category source type definitions
-const githubCategoryOptions = z.strictObject({
-  type: z.literal("github"),
-});
-
 const researchCategoryOptions = z.strictObject({
   type: z.literal("research"),
 });
@@ -2540,20 +2552,6 @@ const developerCategoryOptions = z.strictObject({
 const govCategoryOptions = z.strictObject({
   type: z.literal("gov"),
 });
-
-const developerCategoryAliases = new Set([
-  "repo",
-  "code",
-  "developer",
-  "docs",
-  "devdex",
-  "repo_search",
-  "developer_index",
-]);
-
-function isDeveloperCategoryAlias(value: unknown): value is string {
-  return typeof value === "string" && developerCategoryAliases.has(value);
-}
 
 function normalizeDeveloperCategoryAliases(value: unknown): unknown {
   if (!Array.isArray(value)) return value;
@@ -2605,7 +2603,7 @@ export const searchRequestSchema = z
     sources: z
       .union([
         // Array of strings (simple format)
-        z.array(z.enum(["web", "images", "news", "alexandria"])),
+        z.array(z.enum(["web", "images", "news", "alexandria", "skills"])),
         // Array of objects (advanced format)
         z.array(
           z.union([
@@ -2615,6 +2613,9 @@ export const searchRequestSchema = z
             z.strictObject({
               type: z.literal("alexandria"),
             }),
+            z.strictObject({
+              type: z.literal("skills"),
+            }),
           ]),
         ),
       ])
@@ -2623,10 +2624,9 @@ export const searchRequestSchema = z
       .preprocess(
         normalizeDeveloperCategoryAliases,
         z.union([
-          z.array(z.enum(["github", "research", "pdf", "developer", "gov"])),
+          z.array(z.enum(["research", "pdf", "developer", "gov"])),
           z.array(
             z.union([
-              githubCategoryOptions,
               researchCategoryOptions,
               pdfCategoryOptions,
               developerCategoryOptions,
@@ -2781,10 +2781,6 @@ export const searchRequestSchema = z
         // It's a string array, transform to object array
         categories = (categories as string[]).map(c => {
           switch (c) {
-            case "github":
-              return {
-                type: "github" as const,
-              };
             case "research":
               return {
                 type: "research" as const,
@@ -2972,11 +2968,15 @@ export type SearchFeedbackResponse =
 // Generic Endpoint Feedback
 // =============================================
 
+// "interact" takes the scrape job id the session was opened on, "browser" the
+// browser session id.
 const endpointFeedbackEndpointSchema = z.enum([
   "search",
   "scrape",
   "parse",
   "map",
+  "interact",
+  "browser",
 ]);
 
 export type EndpointFeedbackEndpoint = z.infer<
@@ -3083,6 +3083,8 @@ export type EndpointFeedbackResponse =
       success: true;
       feedbackId: string;
       creditsRefunded: number;
+      /** Alexandria only: states the refund, or why there was none. */
+      message?: string;
       alreadySubmitted?: boolean;
       dailyCapReached?: boolean;
       websiteCapReached?: boolean;

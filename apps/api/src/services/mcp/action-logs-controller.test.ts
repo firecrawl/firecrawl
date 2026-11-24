@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { config } from "../../config";
+import { mcpLogsEnv } from "../../lib/mcp-action-log-env";
 
 const mocks = vi.hoisted(() => ({
   primaryDb: { name: "primary" },
@@ -51,26 +51,36 @@ describe("MCP action log controllers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.policy.mockResolvedValue({ flags: null });
-    config.MCP_ACTION_LOG_STORAGE_ENABLED = true;
+    mcpLogsEnv.MCP_ACTION_LOG_STORAGE_ENABLED = true;
     mocks.record.mockResolvedValue({ disposition: "accepted", id: "log-id" });
     mocks.list.mockResolvedValue({ data: [], nextCursor: null });
   });
 
-  it("skips persistence for teams with forced zero-data retention", async () => {
-    mocks.policy.mockResolvedValue({ flags: { scrapeZDR: "forced" } });
-    const res = response();
-    await ingestMcpActionLogController(
-      { body: { team_id: "team" } } as any,
-      res,
-    );
-    expect(mocks.validate).toHaveBeenCalledTimes(1);
-    expect(mocks.policy).toHaveBeenCalledWith(mocks.primaryDb, "team");
-    expect(mocks.record).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(202);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ disposition: "zero-data-retention", id: null }),
-    );
-  });
+  it.each([
+    { scrapeZDR: "forced" },
+    { forceZDR: true },
+    { alexandriaZDR: "forced" },
+  ])(
+    "skips persistence for teams with forced zero-data retention (%o)",
+    async flags => {
+      mocks.policy.mockResolvedValue({ flags });
+      const res = response();
+      await ingestMcpActionLogController(
+        { body: { team_id: "team" } } as any,
+        res,
+      );
+      expect(mocks.validate).toHaveBeenCalledTimes(1);
+      expect(mocks.policy).toHaveBeenCalledWith(mocks.primaryDb, "team");
+      expect(mocks.record).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(202);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          disposition: "zero-data-retention",
+          id: null,
+        }),
+      );
+    },
+  );
 
   it("persists no session or thread ids for teams with forced zero-data retention", async () => {
     mocks.policy.mockResolvedValue({ flags: { scrapeZDR: "forced" } });
@@ -197,7 +207,7 @@ describe("MCP action log controllers", () => {
   });
 
   it("does not query storage when activity logging is disabled", async () => {
-    config.MCP_ACTION_LOG_STORAGE_ENABLED = false;
+    mcpLogsEnv.MCP_ACTION_LOG_STORAGE_ENABLED = false;
     const res = response();
     await listMcpActionLogsController(
       { auth: { team_id: "team" }, acuc: { api_key_id: 42 }, query: {} } as any,

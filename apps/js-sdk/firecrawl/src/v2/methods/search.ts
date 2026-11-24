@@ -110,6 +110,7 @@ export async function search(
     if (data.images)
       out.images = transformArray<SearchResultImages>(data.images);
     if (data.tools) out.tools = data.tools;
+    if (data.skills) out.skills = data.skills;
     Object.defineProperty(out, "data", {
       get() {
         const parts: string[] = [];
@@ -119,9 +120,11 @@ export async function search(
           parts.push(`.images (${out.images.length} results)`);
         if (out.tools?.length)
           parts.push(`.tools (${out.tools.length} results)`);
+        if (out.skills?.length)
+          parts.push(`.skills (${out.skills.length} results)`);
         const available = parts.length
           ? parts.join(", ")
-          : ".web, .news, .images, or .tools";
+          : ".web, .news, .images, .tools, or .skills";
         throw new Error(
           `SearchData has no '.data'. Results are grouped by source: ${available}`,
         );

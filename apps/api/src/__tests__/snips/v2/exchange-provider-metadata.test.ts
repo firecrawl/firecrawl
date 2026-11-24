@@ -3,7 +3,12 @@ import { config } from "../../../config";
 import { scrapeOptions } from "../../../controllers/v2/types";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { scrapeURL } from "../../../scraper/scrapeURL";
+import {
+  coreEngineFeatures,
+  coreEngines,
+} from "../../../scraper/scrapeURL/engines";
 import { scrapeURLWithExchange } from "../../../scraper/scrapeURL/engines/exchange";
+import { createService, replaceService } from "../../../service/service";
 import { ALLOW_TEST_SUITE_WEBSITE, itIf, TEST_SUITE_WEBSITE } from "../lib";
 import { scrapeTimeout } from "./lib";
 
@@ -100,7 +105,7 @@ const stubMeta = () =>
     internalOptions: { teamId: "team-1", orgId: "org-1" },
     featureFlags: new Set(),
     mock: null,
-    abort: { asSignal: () => undefined },
+    abort: { asSignal: () => undefined, scrapeTimeout: () => undefined },
     logger: {
       info: vi.fn(),
       warn: vi.fn(),
@@ -115,9 +120,23 @@ describe("Exchange provider metadata", () => {
 
   beforeAll(() => {
     config.FIRE_EXCHANGE_URL = "http://test-exchange";
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            engines: coreEngines,
+            engineFeatures: coreEngineFeatures,
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
   });
 
   afterAll(() => {
+    replaceService(undefined);
     config.FIRE_EXCHANGE_URL = originalExchangeUrl;
   });
 

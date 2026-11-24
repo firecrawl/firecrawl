@@ -12,6 +12,7 @@ import {
   getFirebillTrackRetryQueue,
 } from "./services/queue-service";
 import { v0Router } from "./routes/v0";
+import { livenessController, readinessController } from "./controllers/health";
 import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
 import os from "os";
 import { logger } from "./lib/logger";
@@ -33,10 +34,12 @@ import { v7 as uuidv7 } from "uuid";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
 import { exchangeRouter } from "./routes/exchange";
+import { registerExchangeFileRoutes } from "./routes/exchange-files";
+import { exchangeInternalRouter } from "./routes/exchange-internal";
 import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
 import { nuqShutdown } from "./services/worker/nuq";
-import { getErrorContactMessage } from "./lib/deployment";
+import { service } from "./service";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
 import { warmExchangeCatalog } from "./lib/exchange";
 import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
@@ -44,8 +47,12 @@ import responseTime from "response-time";
 import { shutdownWebhookQueue } from "./services/webhook";
 import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
 import { isKeylessConfigured } from "./lib/keyless";
-import { shutdownPubSubLogging } from "./services/logging/log_job";
+import {
+  drainZdrRequestLogs,
+  shutdownPubSubLogging,
+} from "./services/logging/log_job";
 import { notFoundHandler } from "./lib/not-found";
+import { startRole } from "./main";
 
 const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
@@ -89,13 +96,15 @@ const captureRawBody = (
 };
 
 registerMcpActionLogIngestRoute(app);
+// Marketplace file bytes stream through to Exchange untouched, so these come before the body
+// parsers, and carry their own CORS (the website only) before the catch-all one.
+app.use(responseTime());
+registerExchangeFileRoutes(app);
 
 app.use(bodyParser.urlencoded({ extended: true, verify: captureRawBody }));
 app.use(bodyParser.json({ limit: "10mb", verify: captureRawBody }));
 
 app.use(cors()); // Add this line to enable CORS
-
-app.use(responseTime());
 
 app.disable("x-powered-by");
 
@@ -155,12 +164,16 @@ app.get("/e2e-test", (_, res) => {
   res.status(200).send("OK");
 });
 
+app.get("/health/liveness", livenessController);
+app.get("/health/readiness", readinessController);
+
 // register router
 app.use(v0Router);
 app.use("/v1", v1Router);
 app.use("/v2", v2Router);
 app.use("/labs", labsRouter);
 app.use("/exchange", exchangeRouter);
+app.use(exchangeInternalRouter);
 app.use(adminRouter);
 
 const DEFAULT_PORT = config.PORT;
@@ -253,6 +266,7 @@ async function startServer(port = DEFAULT_PORT) {
     server.close(async () => {
       await adminInternalClosed;
       logger.info("Server closed.");
+      await drainZdrRequestLogs();
       nuqShutdown().finally(() => {
         shutdownWebhookQueue().finally(() => {
           shutdownIndexerQueue().finally(async () => {
@@ -266,15 +280,13 @@ async function startServer(port = DEFAULT_PORT) {
     });
   };
 
-  if (require.main === module) {
-    process.on("SIGTERM", exitHandler);
-    process.on("SIGINT", exitHandler);
-  }
+  process.on("SIGTERM", exitHandler);
+  process.on("SIGINT", exitHandler);
   return server;
 }
 
-if (require.main === module) {
-  startServer().catch(error => {
+export async function start() {
+  await startServer().catch(error => {
     logger.error("Failed to start server", { error });
     process.exit(1);
   });
@@ -383,9 +395,13 @@ app.use(
     res.status(500).json({
       success: false,
       code: "UNKNOWN_ERROR",
-      error: getErrorContactMessage(id),
+      error: service.modules.messages.errorContact(id),
     });
   },
 );
 
 logger.info(`Worker ${process.pid} started`);
+
+if (require.main === module) {
+  void startRole("api");
+}

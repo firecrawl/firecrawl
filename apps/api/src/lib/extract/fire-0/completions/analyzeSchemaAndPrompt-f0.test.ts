@@ -4,6 +4,9 @@ vi.mock("ai", async importOriginal => {
   const actual = await importOriginal<typeof import("ai")>();
   return { ...actual, generateObject: vi.fn() };
 });
+vi.mock("../../../ai-telemetry", () => ({
+  aiTelemetry: (options: unknown) => options,
+}));
 vi.mock("../../../generic-ai", () => ({
   getModel: vi.fn((name: string) => ({ modelId: name })),
 }));
@@ -56,7 +59,7 @@ describe("analyzeSchemaAndPrompt_F0 telemetry", () => {
     expect(calls()).toHaveLength(1);
     const [args] = calls();
     expect(args.model.modelId).toBe("gpt-4.1");
-    expect(args.experimental_telemetry).toEqual({
+    expect(args.telemetry).toEqual({
       isEnabled: true,
       functionId: "performExtraction_F0/analyzeSchemaAndPrompt_F0",
       metadata: {
@@ -85,10 +88,8 @@ describe("analyzeSchemaAndPrompt_F0 telemetry", () => {
     });
 
     const [args] = calls();
-    expect(args.experimental_telemetry.functionId).toBe(
-      "analyzeSchemaAndPrompt_F0",
-    );
-    expect(args.experimental_telemetry.metadata).toEqual({ teamId: "team-1" });
+    expect(args.telemetry.functionId).toBe("analyzeSchemaAndPrompt_F0");
+    expect(args.telemetry.metadata).toEqual({ teamId: "team-1" });
   });
 
   it("names the schema generation call it makes when no schema is given", async () => {
@@ -111,12 +112,10 @@ describe("analyzeSchemaAndPrompt_F0 telemetry", () => {
       },
     );
 
-    expect(calls().map(args => args.experimental_telemetry.functionId)).toEqual(
-      [
-        "performExtraction_F0/generateSchemaFromPrompt_F0",
-        "performExtraction_F0/analyzeSchemaAndPrompt_F0",
-      ],
-    );
+    expect(calls().map(args => args.telemetry.functionId)).toEqual([
+      "performExtraction_F0/generateSchemaFromPrompt_F0",
+      "performExtraction_F0/analyzeSchemaAndPrompt_F0",
+    ]);
   });
 
   it("keeps the telemetry settings when the model call fails", async () => {
@@ -135,7 +134,7 @@ describe("analyzeSchemaAndPrompt_F0 telemetry", () => {
 
     expect(result).toMatchObject({ isMultiEntity: false, multiEntityKeys: [] });
     const [args] = calls();
-    expect(args.experimental_telemetry.functionId).toBe(
+    expect(args.telemetry.functionId).toBe(
       "performExtraction_F0/analyzeSchemaAndPrompt_F0",
     );
   });

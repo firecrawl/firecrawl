@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Logger } from "winston";
+import { developerCategoryAliases } from "../lib/developer-category";
 import { exchangeRequest } from "../services/alexandria/client";
 import {
   toolSchema,
@@ -13,8 +14,12 @@ export const isAlexandriaSource = (source: { type: string }) =>
 type ToolDiscovery = {
   items: DiscoveredTool[];
   warning?: string;
+  /** Tools the Exchange hid from a US-only team; set only when it hid some. */
+  usOnlyExcluded?: number;
   /** Every discovery leg failed and nothing was found. */
   unavailable?: true;
+  /** How many leading items the semantic lookup found; the rest matched by domain only. */
+  semanticMatches: number;
 };
 
 type SourceLike = string | { type: string };
@@ -23,21 +28,49 @@ type CategoryLike = string | { type: string };
 const typeOf = (value: SourceLike | CategoryLike) =>
   typeof value === "string" ? value : value?.type;
 
+const CATALOGUE_SOURCES = new Set(["alexandria", "skills"]);
+
+function excludesIndexCategory(categories: unknown): boolean {
+  return (
+    Array.isArray(categories) &&
+    categories.some(category => {
+      const type = typeOf(category);
+      return (
+        type === "gov" ||
+        (type !== undefined && developerCategoryAliases.has(type))
+      );
+    })
+  );
+}
+
 export function isToolsOnlySearch(
   sources: unknown,
   categories: unknown,
 ): boolean {
   if (!Array.isArray(sources) || sources.length === 0) return false;
   if (!sources.every(source => typeOf(source) === "alexandria")) return false;
-  if (
-    Array.isArray(categories) &&
-    categories.some(category => {
-      const type = typeOf(category);
-      return type === "developer" || type === "gov";
-    })
-  )
-    return false;
+  if (excludesIndexCategory(categories)) return false;
   return true;
+}
+
+/**
+ * Search that only asks the Alexandria catalogue for tools and/or skill cards.
+ * Both are free, so the credit check is skipped the same way as a tools-only
+ * search. An index category still has its own billable path.
+ */
+export function isFreeCatalogueSearch(
+  sources: unknown,
+  categories: unknown,
+): boolean {
+  if (!Array.isArray(sources) || sources.length === 0) return false;
+  if (!sources.every(source => CATALOGUE_SOURCES.has(typeOf(source) ?? "")))
+    return false;
+  if (excludesIndexCategory(categories)) return false;
+  return true;
+}
+
+export function usOnlyToolsWarning(excluded: number): string {
+  return `${excluded} ${excluded === 1 ? "tool is" : "tools are"} not available for teams restricted to US-only processing.`;
 }
 
 export async function discoverTools(
@@ -52,6 +85,25 @@ export async function discoverTools(
     timeoutMs: number;
     /** The team may use its own MCP connectors: their listed tools join its discovery. */
     connectors?: boolean;
+    /** The team may only be served by US-based providers. */
+    usOnly?: boolean;
+    /** The team is held to zero data retention: only providers that support it are returned. */
+    zeroDataRetention?: boolean;
+    /** Names each find-tools lookup `<prefix>:<n>` and appends the id to `sent` as it goes out. */
+    exchangeRequestIds?: { prefix: string; sent: string[] };
+    /** Who is searching and how, sent with each find-tools lookup. */
+    exchangeCaller?: Pick<
+      Parameters<typeof exchangeRequest>[0],
+      | "feedbackStorage"
+      | "clientOrigin"
+      | "clientIntegration"
+      | "searchRoute"
+      | "clientSession"
+      | "clientThread"
+    > & {
+      /** The caller's own query: any other semantic query was written by the platform. */
+      query: string;
+    };
   },
   logger: Logger,
 ): Promise<ToolDiscovery> {
@@ -60,17 +112,33 @@ export async function discoverTools(
   const selected = { semantic: new Set<string>(), domain: new Set<string>() };
   let attempted = 0;
   let answered = 0;
+  // Lookups can hide the same tools, so the largest count is reported.
+  let usOnlyExcluded = 0;
   const remaining = (deadline: number) => {
     if (Date.now() >= deadline) throw new Error("Tool discovery timed out");
     return deadline - Date.now();
   };
   const lookup = async (options: Record<string, unknown>, deadline: number) => {
+    const timeoutMs = remaining(deadline);
+    const ids = input.exchangeRequestIds;
+    const requestId = ids ? `${ids.prefix}:${ids.sent.length + 1}` : undefined;
+    if (requestId) ids?.sent.push(requestId);
+    const { query: ownQuery, ...caller } = input.exchangeCaller ?? {};
     const result = await exchangeRequest({
+      ...caller,
+      ...(input.exchangeCaller &&
+      typeof options.query === "string" &&
+      options.query !== ownQuery
+        ? { searchRewritten: true }
+        : {}),
       teamId: input.teamId,
       path: "/v1/retrieve",
-      timeoutMs: remaining(deadline),
+      requestId,
+      timeoutMs,
       maximumCredits: 0,
       connectors: input.connectors === true,
+      usOnly: input.usOnly === true,
+      zeroDataRetention: input.zeroDataRetention === true,
       body: {
         provider: "firecrawl",
         capability: "find-tools",
@@ -87,7 +155,7 @@ export async function discoverTools(
     });
     if (result.status !== 200)
       throw new Error("Tool contract lookup unavailable");
-    return z
+    const data = z
       .object({
         success: z.literal(true),
         creditsCost: z.literal(0),
@@ -95,9 +163,17 @@ export async function discoverTools(
           items: z.array(
             input.toolDetail === "full" ? toolSchema : toolSummarySchema,
           ),
+          usOnlyExcluded: z
+            .number()
+            .int()
+            .nonnegative()
+            .optional()
+            .catch(undefined),
         }),
       })
-      .parse(result.body).data.items;
+      .parse(result.body).data;
+    usOnlyExcluded = Math.max(usOnlyExcluded, data.usOnlyExcluded ?? 0);
+    return data.items;
   };
   const merge = (
     tool: z.infer<typeof toolSchema> | z.infer<typeof toolSummarySchema>,
@@ -191,6 +267,8 @@ export async function discoverTools(
           body: { urls: batch },
           timeoutMs: remaining(deadline),
           connectors: input.connectors === true,
+          usOnly: input.usOnly === true,
+          zeroDataRetention: input.zeroDataRetention === true,
         });
         if (result.status !== 200)
           throw new Error("Domain discovery unavailable");
@@ -266,6 +344,7 @@ export async function discoverTools(
   })();
   const [semanticTools, domainTools] = await Promise.all([semantic, domain]);
   for (const tool of semanticTools ?? []) merge(tool, "semantic");
+  const semanticMatches = items.size;
   for (const { tool, urls } of domainTools ?? []) merge(tool, "domain", urls);
   return {
     items: [...items.values()].map(tool =>
@@ -277,9 +356,11 @@ export async function discoverTools(
           }
         : tool,
     ),
+    semanticMatches,
     ...(answered < attempted
       ? { warning: "Some tool discovery results are unavailable." }
       : {}),
+    ...(input.usOnly && usOnlyExcluded > 0 ? { usOnlyExcluded } : {}),
     ...(attempted && !answered && !items.size
       ? { unavailable: true as const }
       : {}),

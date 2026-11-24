@@ -86,6 +86,42 @@ export const api_keys = pgTable(
   ],
 );
 
+// Vercel Marketplace installations (icfg_...) and the resources provisioned
+// under them. Written by the integration webhooks outside this service; the
+// API only reads them, to resolve a Vercel OIDC resource token to the key
+// issued for that resource.
+const vercel_marketplace_installations = pgTable(
+  "vercel_marketplace_installations",
+  {
+    installation_id: text("installation_id").primaryKey(),
+    team_id: uuid("team_id"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+);
+
+export const vercel_marketplace_resources = pgTable(
+  "vercel_marketplace_resources",
+  {
+    installation_id: text("installation_id")
+      .notNull()
+      .references(() => vercel_marketplace_installations.installation_id, {
+        onDelete: "cascade",
+      }),
+    resource_id: text("resource_id").notNull(),
+    api_key_id: bigintNum("api_key_id").references(() => api_keys.id, {
+      onDelete: "set null",
+    }),
+    team_id: uuid("team_id"),
+    resource_name: text("resource_name"),
+    created_at: ts("created_at").notNull().defaultNow(),
+    updated_at: ts("updated_at").notNull().defaultNow(),
+  },
+  table => [
+    primaryKey({ columns: [table.installation_id, table.resource_id] }),
+  ],
+);
+
 export const blocklist = pgTable("blocklist", {
   id: bigintNum("id").notNull().generatedByDefaultAsIdentity(),
   data: jsonb("data").notNull(),
@@ -140,6 +176,26 @@ export const browser_sessions = pgTable("browser_sessions", {
   // The persistent profile the session was created with, if any.
   profile_name: text("profile_name"),
 });
+
+// Sessions of the hosted MCP shell (see computer_sessions migration). The
+// files live in object storage; a session is live until expires_at.
+export const computer_sessions = pgTable(
+  "computer_sessions",
+  {
+    id: uuid("id").primaryKey(),
+    team_id: uuid("team_id").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+    // Null until the session's workspace is first saved.
+    last_saved_at: ts("last_saved_at"),
+    expires_at: ts("expires_at").notNull(),
+  },
+  table => [
+    index("computer_sessions_team_id_expires_at_idx").on(
+      table.team_id,
+      table.expires_at,
+    ),
+  ],
+);
 
 // Index of saved persistent browser profiles (see browser_profiles migration).
 // Contents live in Hangar; reconciliation upserts a row after a confirmed save.
@@ -467,6 +523,14 @@ export const search_feedback = pgTable("search_feedback", {
   origin: text("origin"),
   credits_refunded: integer("credits_refunded").notNull().default(0),
   refund_policy: jsonb("refund_policy"),
+  // The caller's own id for the feedback request, and for hosted MCP calls
+  // the session and conversation ids, as in the MCP action log.
+  external_request_id: text("external_request_id"),
+  session_id: text("session_id"),
+  session_source: text("session_source"),
+  thread_id: text("thread_id"),
+  thread_source: text("thread_source"),
+  objective: text("objective"),
   created_at: ts("created_at").notNull().defaultNow(),
   updated_at: ts("updated_at").notNull().defaultNow(),
 });
@@ -493,6 +557,11 @@ export const alexandria_feedback = pgTable(
     schema_version: integer("schema_version").notNull().default(2),
     credits_refunded: integer("credits_refunded").notNull().default(0),
     refund_policy: jsonb("refund_policy"),
+    external_request_id: text("external_request_id"),
+    session_id: text("session_id"),
+    session_source: text("session_source"),
+    thread_id: text("thread_id"),
+    thread_source: text("thread_source"),
     created_at: ts("created_at").notNull().defaultNow(),
     updated_at: ts("updated_at").notNull().defaultNow(),
   },
@@ -566,6 +635,35 @@ export const alexandria_feedback_capabilities = pgTable(
     check(
       "alexandria_feedback_capabilities_requested_functionality_check",
       sql`${table.issue} <> 'new_capability_request' OR ${table.requested_functionality} IS NOT NULL`,
+    ),
+  ],
+);
+
+export const alexandria_feedback_calls = pgTable(
+  "alexandria_feedback_calls",
+  {
+    feedback_id: uuid("feedback_id")
+      .notNull()
+      .references(() => alexandria_feedback.id, { onDelete: "cascade" }),
+    team_id: uuid("team_id").notNull(),
+    position: smallint("position").notNull(),
+    request_id: text("request_id").notNull(),
+    provider: text("provider"),
+    capability: text("capability"),
+    rating: text("rating"),
+    attribution: text("attribution").notNull(),
+    created_at: ts("created_at").notNull().defaultNow(),
+  },
+  table => [
+    primaryKey({ columns: [table.feedback_id, table.position] }),
+    index("alexandria_feedback_calls_request_id_idx").on(table.request_id),
+    check(
+      "alexandria_feedback_calls_attribution_check",
+      sql`${table.attribution} IN ('token', 'window')`,
+    ),
+    check(
+      "alexandria_feedback_calls_rating_check",
+      sql`${table.rating} IN ('good', 'partial', 'bad')`,
     ),
   ],
 );

@@ -1,22 +1,26 @@
 import crypto from "crypto";
 import { describe, it, expect, afterEach } from "vitest";
-import { config } from "../../../config";
+import { notificationsEnv } from "../../notification/env";
 import { encryptSlackToken, decryptSlackToken } from "./crypto";
 import { verifySlackSignature } from "./signature";
-import { buildMonitorAlertMessage, escapeSlackText, slackLink } from "./messages";
+import {
+  buildMonitorAlertMessage,
+  escapeSlackText,
+  slackLink,
+} from "./messages";
 import { sanitizeRedirectPath } from "./redirect";
 
-const ORIGINAL_ENCRYPTION_KEY = config.SLACK_TOKEN_ENCRYPTION_KEY;
-const ORIGINAL_SIGNING_SECRET = config.SLACK_SIGNING_SECRET;
+const ORIGINAL_ENCRYPTION_KEY = notificationsEnv.SLACK_TOKEN_ENCRYPTION_KEY;
+const ORIGINAL_SIGNING_SECRET = notificationsEnv.SLACK_SIGNING_SECRET;
 
 afterEach(() => {
-  config.SLACK_TOKEN_ENCRYPTION_KEY = ORIGINAL_ENCRYPTION_KEY;
-  config.SLACK_SIGNING_SECRET = ORIGINAL_SIGNING_SECRET;
+  notificationsEnv.SLACK_TOKEN_ENCRYPTION_KEY = ORIGINAL_ENCRYPTION_KEY;
+  notificationsEnv.SLACK_SIGNING_SECRET = ORIGINAL_SIGNING_SECRET;
 });
 
 describe("slack token crypto", () => {
   it("round-trips a token with AES-256-GCM when a key is configured", () => {
-    config.SLACK_TOKEN_ENCRYPTION_KEY = crypto
+    notificationsEnv.SLACK_TOKEN_ENCRYPTION_KEY = crypto
       .randomBytes(32)
       .toString("hex");
     // Opaque placeholder — the crypto layer treats the token as bytes, and we
@@ -29,7 +33,7 @@ describe("slack token crypto", () => {
   });
 
   it("falls back to a plaintext marker when no key is set", () => {
-    config.SLACK_TOKEN_ENCRYPTION_KEY = undefined;
+    notificationsEnv.SLACK_TOKEN_ENCRYPTION_KEY = undefined;
     const token = "self-hosted-token-placeholder";
     const stored = encryptSlackToken(token);
     expect(stored).toBe(`plain:${token}`);
@@ -37,16 +41,16 @@ describe("slack token crypto", () => {
   });
 
   it("throws when a GCM token is read without its key", () => {
-    config.SLACK_TOKEN_ENCRYPTION_KEY = crypto
+    notificationsEnv.SLACK_TOKEN_ENCRYPTION_KEY = crypto
       .randomBytes(32)
       .toString("hex");
     const stored = encryptSlackToken("bot-token-placeholder");
-    config.SLACK_TOKEN_ENCRYPTION_KEY = undefined;
+    notificationsEnv.SLACK_TOKEN_ENCRYPTION_KEY = undefined;
     expect(() => decryptSlackToken(stored)).toThrow();
   });
 
   it("throws on a configured-but-invalid key instead of storing plaintext", () => {
-    config.SLACK_TOKEN_ENCRYPTION_KEY = "invalid-key";
+    notificationsEnv.SLACK_TOKEN_ENCRYPTION_KEY = "invalid-key";
     expect(() => encryptSlackToken("bot-token-placeholder")).toThrow();
   });
 });
@@ -105,7 +109,7 @@ describe("slack signature verification", () => {
   });
 
   it("rejects when no signing secret is available", () => {
-    config.SLACK_SIGNING_SECRET = undefined;
+    notificationsEnv.SLACK_SIGNING_SECRET = undefined;
     const timestamp = String(Math.floor(Date.now() / 1000));
     expect(
       verifySlackSignature({
@@ -166,6 +170,33 @@ describe("slack message builder", () => {
     // Header text is plain_text; the monitor name is not escaped there but the
     // fallback text keeps it readable.
     expect(serialized).toContain("meaningful");
+    expect(serialized).toContain("2 changed (1 meaningful)");
+    expect(serialized).not.toContain("noise omitted");
+  });
+
+  it("labels noise rows left out of the page list without changing the changed total", () => {
+    const { blocks } = buildMonitorAlertMessage({
+      monitorName: "Docs",
+      dashboardUrl: "https://www.firecrawl.dev/app/monitoring/m1?checkId=c1",
+      checkId: "c1",
+      summary: { changed: 3, new: 1, removed: 0, error: 0, totalPages: 4 },
+      pages: [
+        {
+          url: "https://example.com/price",
+          status: "changed",
+          judgment: { meaningful: true, reason: "Pro price changed" },
+        },
+        { url: "https://example.com/new-page", status: "new", judgment: null },
+      ],
+      creditsUsed: 1,
+      noiseOmitted: 1,
+    });
+
+    const serialized = JSON.stringify(blocks);
+    expect(serialized).toContain("https://example.com/price");
+    expect(serialized).toContain("https://example.com/new-page");
+    expect(serialized).toContain("3 changed (1 meaningful, 1 noise omitted)");
+    expect(serialized).toContain("1 new");
   });
 
   it("bounds long page URLs so section blocks stay within Slack's 3000-char limit", () => {

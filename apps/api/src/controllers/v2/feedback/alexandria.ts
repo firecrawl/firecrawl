@@ -1,11 +1,20 @@
 import { v7 as uuidv7 } from "uuid";
 import { DrizzleQueryError } from "drizzle-orm/errors";
-import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
-import { hasRecentAlexandriaActivity } from "../../../lib/alexandria-activity";
+import {
+  getRecentAlexandriaCalls,
+  hasRecentAlexandriaActivity,
+} from "../../../lib/alexandria-activity";
+import {
+  checkFeedbackToken,
+  type FeedbackTokenRejection,
+} from "../../../lib/alexandria-feedback-token";
+import { alexandriaFeedbackStorage } from "../../../lib/alexandria-feedback-storage";
+import { forwardExchangeToolFeedback } from "../../../lib/exchange";
+import { feedbackTrace } from "../../../lib/feedback-trace";
 import { logger } from "../../../lib/logger";
-import { getScrapeZDR, getSearchZDR } from "../../../lib/zdr-helpers";
 import type { RequestWithAuth, EndpointFeedbackErrorCode } from "../types";
 import type { FeedbackRecordResult } from "./internal-types";
 import type { AlexandriaFeedbackRequest } from "./alexandria-schema";
@@ -20,26 +29,34 @@ const failure = (
   body: { success: false, feedbackErrorCode, error },
 });
 
+type FeedbackCall = {
+  requestId: string;
+  provider: string;
+  capability: string;
+  rating: AlexandriaFeedbackRequest["rating"] | null;
+};
+
 export async function recordAlexandriaFeedback(
   req: RequestWithAuth<any, any, any>,
   body: AlexandriaFeedbackRequest,
 ): Promise<FeedbackRecordResult> {
-  if (!config.USE_DB_AUTHENTICATION) {
+  const teamId = req.auth.team_id;
+  const storage = alexandriaFeedbackStorage(teamId, req.acuc?.flags);
+  if (storage === "unavailable") {
     return failure(
       503,
       "DB_DISABLED",
       "Feedback requires database authentication.",
     );
   }
-  const teamId = req.auth.team_id;
-  if (teamId === "preview" || teamId.startsWith("preview_")) {
+  if (storage === "preview_team") {
     return failure(
       403,
       "PREVIEW_TEAM_NOT_ALLOWED",
       "Feedback is not available for preview teams.",
     );
   }
-  if (req.acuc?.flags?.searchFeedbackOptOut === true) {
+  if (storage === "opted_out") {
     return failure(
       403,
       "TEAM_OPTED_OUT",
@@ -47,45 +64,98 @@ export async function recordAlexandriaFeedback(
     );
   }
 
-  // A session can contain both search and scrape data. Honor either forced
-  // retention policy without looking up or recording individual jobs.
-  const searchZdr = getSearchZDR(req.acuc?.flags);
-  if (
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
-    searchZdr === "forced-zdr" ||
-    searchZdr === "forced-anon"
-  ) {
+  // Accepted without looking up or recording individual jobs.
+  if (storage === "zero_data_retention") {
     return {
       status: 200,
       body: {
         success: true,
         feedbackId: "00000000-0000-0000-0000-000000000000",
+        message:
+          "Feedback accepted. No refund: feedback is not stored under zero data retention.",
         creditsRefunded: 0,
         creditsRefundedToday: 0,
-        dailyRefundCap: config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS,
+        dailyRefundCap: feedbackEnv.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS,
       },
     };
   }
 
-  let withinWindow: boolean;
-  try {
-    withinWindow = await hasRecentAlexandriaActivity(teamId);
-  } catch (error) {
-    logger.error("Failed to check the Alexandria feedback window", {
-      error,
-      teamId,
+  const now = Date.now();
+  const callRatings = new Map(
+    (body.callRatings ?? []).map(entry => [entry.token, entry.rating]),
+  );
+  const submittedTokens = [
+    ...new Set([...(body.tokens ?? []), ...callRatings.keys()]),
+  ];
+  const calls = new Map<string, FeedbackCall>();
+  let rejectedTokens = 0;
+  const rejectionReasons: Partial<Record<FeedbackTokenRejection, number>> = {};
+  for (const token of submittedTokens) {
+    const checked = checkFeedbackToken(token, teamId, now);
+    if (!checked.claims) {
+      rejectedTokens++;
+      rejectionReasons[checked.reason] =
+        (rejectionReasons[checked.reason] ?? 0) + 1;
+      continue;
+    }
+    const { claims } = checked;
+    const key = JSON.stringify([
+      claims.requestId,
+      claims.provider,
+      claims.capability,
+    ]);
+    const rating = callRatings.get(token) ?? calls.get(key)?.rating ?? null;
+    calls.set(key, {
+      requestId: claims.requestId,
+      provider: claims.provider,
+      capability: claims.capability,
+      rating,
     });
-    return failure(500, "INTERNAL", "Failed to check the feedback window.");
   }
-  if (!withinWindow) {
-    return failure(
-      409,
-      "FEEDBACK_WINDOW_EXPIRED",
-      `Alexandria feedback must be submitted within ${config.ALEXANDRIA_FEEDBACK_WINDOW_SEC} seconds of an Alexandria search, discovery, or execution.`,
-    );
+  const attribution = calls.size > 0 ? "token" : "window";
+  if (rejectedTokens > 0) {
+    logger.warn("Alexandria feedback tokens rejected", {
+      teamId,
+      submittedTokens: submittedTokens.length,
+      rejectedTokens,
+      reasons: rejectionReasons,
+      attribution,
+    });
+  }
+
+  if (attribution === "window") {
+    let withinWindow: boolean;
+    try {
+      withinWindow = await hasRecentAlexandriaActivity(teamId);
+    } catch (error) {
+      logger.error("Failed to check the Alexandria feedback window", {
+        error,
+        teamId,
+      });
+      return failure(500, "INTERNAL", "Failed to check the feedback window.");
+    }
+    if (!withinWindow) {
+      return failure(
+        409,
+        "FEEDBACK_WINDOW_EXPIRED",
+        `Alexandria feedback must be submitted within ${feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC} seconds of an Alexandria search, discovery, or execution, or name its calls with valid feedback tokens.`,
+      );
+    }
+    const windowStart = now - feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC * 1000;
+    for (const call of await getRecentAlexandriaCalls(teamId)) {
+      if (call.at < windowStart) continue;
+      const { requestId, provider, capability } = call;
+      calls.set(JSON.stringify([requestId, provider, capability]), {
+        requestId,
+        provider,
+        capability,
+        rating: null,
+      });
+    }
   }
 
   const feedbackId = uuidv7();
+  const occurredAt = new Date(now).toISOString();
   const providerRows = (body.providerFeedback ?? []).map((entry, position) => ({
     feedback_id: feedbackId,
     team_id: teamId,
@@ -106,6 +176,8 @@ export async function recordAlexandriaFeedback(
       requested_functionality: entry.requestedFunctionality ?? null,
     }),
   );
+  // The objective of an Alexandria row comes from the body.
+  const { objective: _objective, ...trace } = feedbackTrace(req);
   try {
     await db.transaction(async tx => {
       await tx.insert(schema.alexandria_feedback).values({
@@ -121,6 +193,7 @@ export async function recordAlexandriaFeedback(
         origin: body.origin,
         integration: body.integration ?? null,
         schema_version: 2,
+        ...trace,
       });
       if (providerRows.length > 0) {
         await tx
@@ -131,6 +204,20 @@ export async function recordAlexandriaFeedback(
         await tx
           .insert(schema.alexandria_feedback_capabilities)
           .values(capabilityRows);
+      }
+      if (calls.size > 0) {
+        await tx.insert(schema.alexandria_feedback_calls).values(
+          [...calls.values()].map((call, position) => ({
+            feedback_id: feedbackId,
+            team_id: teamId,
+            position,
+            request_id: call.requestId,
+            provider: call.provider,
+            capability: call.capability,
+            rating: call.rating,
+            attribution,
+          })),
+        );
       }
     });
   } catch (error) {
@@ -154,9 +241,24 @@ export async function recordAlexandriaFeedback(
     orgId: req.acuc?.org_id ?? null,
     rating: body.rating,
     requestedUrl: body.requestedWebsite.url,
+    calls: [...calls.values()],
+  });
+  void forwardExchangeToolFeedback({
+    teamId,
+    feedbackId,
+    occurredAt,
+    rating: body.rating,
+    origin: body.origin,
+    attribution,
+    calls: [...calls.values()],
   });
   return {
     status: 200,
-    body: { success: true, feedbackId, ...refund },
+    body: {
+      success: true,
+      feedbackId,
+      ...refund,
+      ...(rejectedTokens > 0 ? { rejectedTokens } : {}),
+    },
   };
 }

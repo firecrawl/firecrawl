@@ -7,7 +7,7 @@ import {
   MAX_MAP_LIMIT,
 } from "../controllers/v2/types";
 import { crawlToCrawler, StoredCrawl } from "./crawl-redis";
-import { getScrapeZDR } from "./zdr-helpers";
+import { getScrapeZDR, getSearchForcedKind } from "./zdr-helpers";
 import { resolveSafeMode } from "./safe-mode";
 import {
   checkAndUpdateURLForMap,
@@ -16,8 +16,10 @@ import {
   resolveRedirects,
 } from "./validateUrl";
 import { fireEngineMap } from "../search/fireEngine";
+import { isUsOnly } from "./us-only";
 import { redisEvictConnection } from "../services/redis";
 import {
+  generateDomainSplits,
   generateURLSplits,
   queryIndexAtDomainSplitLevelWithMeta,
   queryIndexAtSplitLevelWithMeta,
@@ -62,22 +64,18 @@ export async function queryIndex(
   }
 
   const urlSplits = generateURLSplits(url);
-  if (urlSplits.length === 1) {
-    const urlObj = new URL(url);
-    const hostname = urlObj.hostname;
-
-    // TEMP: this should be altered on June 15th 2025 7AM PT - mogery
-    const [domainLinks, splitLinks] = await Promise.all([
-      includeSubdomains
-        ? queryIndexAtDomainSplitLevelWithMeta(hostname, limit)
-        : [],
-      queryIndexAtSplitLevelWithMeta(url, limit),
-    ]);
-
-    return dedupeMapDocumentArray([...domainLinks, ...splitLinks]);
-  } else {
-    return await queryIndexAtSplitLevelWithMeta(url, limit);
+  if (urlSplits.length === 1 && includeSubdomains) {
+    const hostname = new URL(urlSplits[0]).hostname;
+    const domainSplits = generateDomainSplits(hostname);
+    // domain_splits_0..4_hash cover hosts with a registrable domain up to 5
+    // levels (excluding experimental __experimental_omceDomain overrides);
+    // IP literals, localhost, and deeper subdomains fall back to url_split_0_hash.
+    if (domainSplits.length > 0 && domainSplits.length <= 5) {
+      return await queryIndexAtDomainSplitLevelWithMeta(hostname, limit);
+    }
   }
+
+  return await queryIndexAtSplitLevelWithMeta(url, limit);
 }
 
 export async function getMapResults({
@@ -90,6 +88,7 @@ export async function getMapResults({
   orgId,
   allowExternalLinks,
   abort = new AbortController().signal,
+  mock,
   filterByPath = true,
   flags,
   useIndex = true,
@@ -98,6 +97,7 @@ export async function getMapResults({
   headers,
   maxFireEngineResults = MAX_FIRE_ENGINE_RESULTS,
   id: providedId,
+  zeroDataRetention: requestZeroDataRetention = false,
 }: {
   url: string;
   search?: string;
@@ -119,6 +119,8 @@ export async function getMapResults({
   headers?: Record<string, string>;
   maxFireEngineResults?: number;
   id?: string;
+  /** The calling request's own zero data retention, on top of the team's. */
+  zeroDataRetention?: boolean;
 }): Promise<MapResult> {
   const functionStartTime = Date.now();
 
@@ -130,7 +132,9 @@ export async function getMapResults({
 
   // Under lockdown (index-only) resolving redirects would HEAD/GET the target,
   // which the zero-outbound guarantee forbids — use the URL as given.
-  const resolvedUrl = indexOnly ? url : await resolveRedirects(url, abort);
+  const resolvedUrl = indexOnly
+    ? url
+    : await resolveRedirects(url, abort, mock);
 
   // If the resolved URL is on a different domain, replace the hostname
   if (!isSameDomain(url, resolvedUrl)) {
@@ -144,7 +148,12 @@ export async function getMapResults({
   let mapResults: MapDocument[] = [];
   // Lockdown (index-only) is cache-only, which implies zero data retention —
   // and must never write its empty live-search result into the shared cache.
-  const zeroDataRetention = getScrapeZDR(flags) === "forced" || indexOnly;
+  const zeroDataRetention =
+    requestZeroDataRetention || getScrapeZDR(flags) === "forced" || indexOnly;
+  // The site search is a query sent to a search provider, so it also follows
+  // the team's search zero data retention.
+  const searchZeroDataRetention =
+    zeroDataRetention || getSearchForcedKind(flags) === "zdr";
 
   const sc: StoredCrawl = {
     originUrl: url,
@@ -218,7 +227,8 @@ export async function getMapResults({
       Math.min(maxFireEngineResults, limit) / resultsPerPage,
     );
 
-    const cacheKey = `fireEngineMap:${mapUrl}`;
+    const usOnly = isUsOnly(flags);
+    const cacheKey = `fireEngineMap:${usOnly ? "us-only:" : ""}${mapUrl}`;
     const cachedResult = ignoreCache
       ? null
       : await redisEvictConnection.get(cacheKey);
@@ -229,6 +239,8 @@ export async function getMapResults({
         {
           numResults: resultsPerPage,
           page,
+          usOnly,
+          zeroDataRetention: searchZeroDataRetention,
         },
         abort,
       );
@@ -258,7 +270,7 @@ export async function getMapResults({
       fetchAllPages(),
     ]);
 
-    if (!zeroDataRetention) {
+    if (!searchZeroDataRetention) {
       await redisEvictConnection.set(
         cacheKey,
         JSON.stringify(searchResults),
@@ -394,6 +406,7 @@ export async function buildPromptWithWebsiteStructure({
   allowExternalLinks = false,
   useIndex = true,
   maxFireEngineResults = 500,
+  zeroDataRetention = false,
 }: {
   basePrompt: string;
   url: string;
@@ -406,6 +419,7 @@ export async function buildPromptWithWebsiteStructure({
   allowExternalLinks?: boolean;
   useIndex?: boolean;
   maxFireEngineResults?: number;
+  zeroDataRetention?: boolean;
 }): Promise<{ prompt: string; websiteUrls: string[] }> {
   try {
     logger.debug("Getting website structure for prompt enhancement");
@@ -421,6 +435,7 @@ export async function buildPromptWithWebsiteStructure({
       filterByPath: false,
       useIndex,
       maxFireEngineResults,
+      zeroDataRetention,
     });
 
     const websiteUrls = mapResult.mapResults.map(doc => doc.url);

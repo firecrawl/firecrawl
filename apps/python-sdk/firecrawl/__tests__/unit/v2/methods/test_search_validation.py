@@ -67,6 +67,11 @@ class TestSearchValidation:
         with pytest.raises(ValueError, match="Invalid source type"):
             _validate_search_request(request)
 
+        request = SearchRequest(
+            query="test", sources=["web", "skills"]
+        )
+        assert _validate_search_request(request) == request
+
     def test_validate_categories(self):
         """Test validation of search categories."""
         for category in ["github", "research", "pdf", "developer"]:

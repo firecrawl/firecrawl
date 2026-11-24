@@ -33,11 +33,14 @@ import {
 } from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
+import { requestContext } from "../../lib/request-context";
+import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { checkUrl } from "../../lib/threat-protection";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
@@ -251,6 +254,7 @@ export async function crawlController(
               allowExternalLinks: false,
               useIndex: true,
               maxFireEngineResults: 500,
+              zeroDataRetention,
             });
           return generateCrawlerOptionsFromPrompt(
             enhancedPrompt,
@@ -258,6 +262,7 @@ export async function crawlController(
             new CostTracking(),
             { teamId: req.auth.team_id, crawlId: id },
             zeroDataRetention,
+            req.acuc?.flags,
           );
         },
       );
@@ -272,10 +277,19 @@ export async function crawlController(
         error: error.message,
         prompt: req.body.prompt,
       });
+      if (error instanceof UsOnlyUnavailableError) {
+        return res.status(403).json({
+          success: false,
+          code: error.code,
+          error: error.message,
+          jobId: id,
+        });
+      }
       return res.status(400).json({
         success: false,
         error:
           "Failed to process natural language prompt. Please try rephrasing or use explicit crawler options.",
+        jobId: id,
       });
     }
   }
@@ -306,9 +320,11 @@ export async function crawlController(
   if (req.body.prompt) {
     const pathPatternIssues = collectPathPatternIssues(finalCrawlerOptions);
     if (pathPatternIssues.length > 0) {
-      return res
-        .status(400)
-        .json({ success: false, error: pathPatternIssues[0].message });
+      return res.status(400).json({
+        success: false,
+        error: pathPatternIssues[0].message,
+        jobId: id,
+      });
     }
   }
 
@@ -333,7 +349,23 @@ export async function crawlController(
 
   const effectiveConcurrency =
     req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
+  const billing: BillingMetadata = {
+    endpoint: "crawl",
+    jobId: id,
+    externalRequestId: externalRequestId(req),
+    hostedMcp: req.auth.hostedMcp,
+  };
+  const ctx = requestContext({
+    teamId: req.auth.team_id,
+    zeroDataRetention,
+    flags: req.acuc?.flags ?? null,
+    orgId: req.acuc?.org_id ?? null,
+    apiKeyId: req.acuc?.api_key_id ?? null,
+    billing,
+  });
+  req.ctx = ctx;
   const sc: StoredCrawl = {
+    ctx,
     originUrl: req.body.url,
     crawlerOptions: toV0CrawlerOptions(finalCrawlerOptions),
     scrapeOptions,
@@ -396,18 +428,14 @@ export async function crawlController(
     {
       url: req.body.url,
       mode: "kickoff" as const,
+      ctx,
       team_id: req.auth.team_id,
       crawlerOptions: finalCrawlerOptions,
       scrapeOptions: sc.scrapeOptions,
       internalOptions: sc.internalOptions,
       origin: req.body.origin,
       integration: req.body.integration,
-      billing: {
-        endpoint: "crawl",
-        jobId: id,
-        externalRequestId: externalRequestId(req),
-        hostedMcp: req.auth.hostedMcp,
-      },
+      billing,
       crawl_id: id,
       webhook: req.body.webhook,
       v1: true,

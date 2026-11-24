@@ -1,5 +1,7 @@
 import { v7 as uuidv7 } from "uuid";
 import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
+import { feedbackTrace } from "../../../lib/feedback-trace";
 import { logger as _logger } from "../../../lib/logger";
 import {
   withSpan,
@@ -18,9 +20,12 @@ import {
   SearchFeedbackErrorCode,
 } from "../types";
 import {
+  type FeedbackWrite,
   findExistingFeedback,
   insertFeedback,
   lookupFeedbackJob,
+  lookupSessionFeedbackJob,
+  overwriteFeedback,
   updateFeedbackRefundDetails,
 } from "./feedback-store";
 import {
@@ -29,6 +34,7 @@ import {
   FeedbackRecordOptions,
   FeedbackRecordResult,
   RefundPolicySnapshot,
+  isSessionEndpoint,
 } from "./internal-types";
 import { computeRefundPolicy } from "./refund-policy";
 import { sumCreditsRefundedToday } from "./refund-totals";
@@ -51,7 +57,7 @@ function normalizeFeedbackTeamId(teamId: string): string {
 }
 
 function dailyCapFor(options: FeedbackRecordOptions): number {
-  return options.dailyCapCredits ?? config.FEEDBACK_DAILY_CAP_CREDITS;
+  return options.dailyCapCredits ?? feedbackEnv.FEEDBACK_DAILY_CAP_CREDITS;
 }
 
 function feedbackFailure(
@@ -124,12 +130,14 @@ async function lookupJobWithRetry(
   logger: FeedbackLogger,
 ): Promise<FeedbackJobRow | FeedbackRecordResult> {
   try {
-    let job = await lookupFeedbackJob(
-      options.endpoint,
-      options.jobId,
-      dbTeamId,
-    );
-    if (!job) {
+    let job = isSessionEndpoint(options.endpoint)
+      ? await lookupSessionFeedbackJob(
+          options.endpoint,
+          options.jobId,
+          dbTeamId,
+        )
+      : await lookupFeedbackJob(options.endpoint, options.jobId, dbTeamId);
+    if (!job && !isSessionEndpoint(options.endpoint)) {
       await new Promise(resolve => setTimeout(resolve, LOOKUP_RACE_RETRY_MS));
       job = await lookupFeedbackJob(options.endpoint, options.jobId, dbTeamId);
     }
@@ -164,7 +172,7 @@ function validateJob(
 
   if (job.feedback_deadline_ms !== undefined) {
     if (job.feedback_deadline_ms > Date.now()) return null;
-    const maxAgeSec = options.maxAgeSec ?? config.FEEDBACK_MAX_AGE_SEC;
+    const maxAgeSec = options.maxAgeSec ?? feedbackEnv.FEEDBACK_MAX_AGE_SEC;
     return feedbackFailure(
       409,
       "FEEDBACK_WINDOW_EXPIRED",
@@ -173,7 +181,7 @@ function validateJob(
     );
   }
 
-  const maxAgeSec = options.maxAgeSec ?? config.FEEDBACK_MAX_AGE_SEC;
+  const maxAgeSec = options.maxAgeSec ?? feedbackEnv.FEEDBACK_MAX_AGE_SEC;
   const createdAtMs = new Date(job.created_at).getTime();
   if (Number.isNaN(createdAtMs)) {
     logger.warn("Job row had unparseable created_at", {
@@ -214,6 +222,39 @@ async function duplicateEndpointResponse(
       dailyRefundCap: dailyCapFor(options),
       warning:
         "Feedback was already submitted for this job; no additional refund issued.",
+    },
+  };
+}
+
+/** A session can be rated again: the latest rating replaces the stored one. */
+async function overwriteSessionFeedback(
+  write: FeedbackWrite,
+  logger: FeedbackLogger,
+): Promise<FeedbackRecordResult> {
+  const { id, error } = await overwriteFeedback(write);
+  if (!id) {
+    logger.error("Failed to overwrite session feedback", {
+      errorCode: error?.code,
+    });
+    return feedbackFailure(500, "INTERNAL", "Failed to record feedback.");
+  }
+
+  logger.info("Session feedback overwritten", {
+    feedbackId: id,
+    endpoint: write.options.endpoint,
+    rating: write.options.feedback.rating,
+  });
+  return {
+    status: 200,
+    body: {
+      success: true,
+      feedbackId: id,
+      creditsRefunded: 0,
+      creditsRefundedToday: await sumCreditsRefundedToday(
+        write.dbTeamId,
+        logger,
+      ),
+      dailyRefundCap: dailyCapFor(write.options),
     },
   };
 }
@@ -278,7 +319,11 @@ function isForcedZdrTeam(
     return searchZDR === "forced-zdr" || searchZDR === "forced-anon";
   }
 
-  if (options.endpoint === "scrape" || options.endpoint === "parse") {
+  if (
+    options.endpoint === "scrape" ||
+    options.endpoint === "parse" ||
+    isSessionEndpoint(options.endpoint)
+  ) {
     return getScrapeZDR(req.acuc?.flags) === "forced";
   }
 
@@ -342,17 +387,23 @@ async function recordEndpointFeedbackInner(
     if (jobFailure) return jobFailure;
 
     const feedbackId = uuidv7();
-    const insertErr = await insertFeedback({
-      feedbackId,
+    const write = {
       options,
       job: jobOrFailure,
       dbTeamId,
+      trace: feedbackTrace(req),
+    };
+    const insertErr = await insertFeedback({
+      ...write,
+      feedbackId,
       apiKeyId: req.acuc?.api_key_id ?? null,
     });
 
     if (insertErr) {
       if (insertErr.code === POSTGRES_UNIQUE_VIOLATION) {
-        return await duplicateEndpointResponse(options, dbTeamId, logger);
+        return isSessionEndpoint(options.endpoint)
+          ? await overwriteSessionFeedback(write, logger)
+          : await duplicateEndpointResponse(options, dbTeamId, logger);
       }
 
       logger.error("Failed to insert endpoint feedback", { error: insertErr });

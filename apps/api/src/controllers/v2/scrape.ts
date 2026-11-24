@@ -1,6 +1,6 @@
 import { Response } from "express";
 import { providerScrapeController } from "./scrape-alexandria";
-import { discoverTools } from "../../search/alexandria";
+import { discoverTools, usOnlyToolsWarning } from "../../search/alexandria";
 import { config } from "../../config";
 import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import { logger as _logger } from "../../lib/logger";
@@ -16,6 +16,7 @@ import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
 import {
   getTimeoutProcessingDetails,
+  isTransportableError,
   TransportableError,
 } from "../../lib/error";
 import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
@@ -38,7 +39,8 @@ import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { getJobPriority } from "../../lib/job-priority";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
-import { getErrorContactMessage } from "../../lib/deployment";
+import { requestContext } from "../../lib/request-context";
+import { service } from "../../service";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
@@ -54,6 +56,7 @@ import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
+import { isUsOnly } from "../../lib/us-only";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -227,6 +230,15 @@ export async function scrapeController(
         externalRequestId: externalRequestId(req),
         hostedMcp: req.auth.hostedMcp,
       };
+      const ctx = requestContext({
+        teamId: req.auth.team_id,
+        zeroDataRetention,
+        flags: req.acuc?.flags ?? null,
+        orgId: req.acuc?.org_id ?? null,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+        billing,
+      });
+      req.ctx = ctx;
 
       if (
         req.body.__agentInterop &&
@@ -402,6 +414,7 @@ export async function scrapeController(
                   data: {
                     url: req.body.url,
                     mode: "single_urls",
+                    ctx,
                     team_id: req.auth.team_id,
                     scrapeOptions: {
                       ...req.body,
@@ -420,6 +433,10 @@ export async function scrapeController(
                       unnormalizedSourceURL: preNormalizedBody.url,
                       bypassBilling: isDirectToBullMQ || !shouldBill,
                       zeroDataRetention,
+                      ...(req.headers["x-firecrawl-work-contact-only"] ===
+                      "true"
+                        ? { workContactOnly: true }
+                        : {}),
                       teamFlags: req.acuc?.flags ?? null,
                       orgId: req.acuc?.org_id ?? null,
                       teamConcurrency: baseConcurrency,
@@ -466,17 +483,18 @@ export async function scrapeController(
         }
 
         const timeoutErr =
-          e instanceof TransportableError &&
+          isTransportableError(e) &&
           (e.code === "SCRAPE_TIMEOUT" ||
             e.code === "CONCURRENCY_QUEUE_TIMEOUT");
 
         setSpanAttributes(span, {
           "scrape.error": e instanceof Error ? e.message : String(e),
-          "scrape.error_type":
-            e instanceof TransportableError ? e.code : "unknown",
+          "scrape.error_type": isTransportableError(e) ? e.code : "unknown",
         });
 
-        if (e instanceof TransportableError) {
+        const jobIdField = agentRequestId ? {} : { jobId };
+
+        if (isTransportableError(e)) {
           if (!timeoutErr) {
             logger.error(`Error in scrapeController`, {
               version: "v2",
@@ -492,6 +510,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -503,6 +522,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -514,6 +534,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -525,6 +546,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
               sponsor_status: "pending",
               login_url: "https://firecrawl.dev/signin",
             });
@@ -538,10 +560,15 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
-          if (e.code === "unsafe_domain_blocked") {
+          if (
+            e.code === "unsafe_domain_blocked" ||
+            e.code === "US_ONLY_UNAVAILABLE" ||
+            e.code === "RESERVED_CAPACITY_UNAVAILABLE"
+          ) {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });
@@ -549,6 +576,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -560,6 +588,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -571,6 +600,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -582,6 +612,19 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
+            });
+          }
+
+          if (e.code === "SCRAPE_PAYWALLED_CONTENT") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -593,6 +636,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -600,7 +644,7 @@ export async function scrapeController(
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });
-            return res.status(403).json(e.response());
+            return res.status(403).json({ ...e.response(), ...jobIdField });
           }
 
           if (
@@ -614,6 +658,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -625,6 +670,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -639,6 +685,7 @@ export async function scrapeController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -659,6 +706,7 @@ export async function scrapeController(
             success: false,
             code: e.code,
             error: e.message,
+            ...jobIdField,
             ...(processing && { details: processing }),
           });
         } else {
@@ -677,7 +725,8 @@ export async function scrapeController(
           return res.status(500).json({
             success: false,
             code: "UNKNOWN_ERROR",
-            error: getErrorContactMessage(id),
+            error: service.modules.messages.errorContact(id),
+            ...jobIdField,
           });
         }
       } finally {
@@ -760,6 +809,7 @@ export async function scrapeController(
               {
                 teamId: req.auth.team_id,
                 connectors: req.acuc?.flags?.exchangeRetrieve === true,
+                usOnly: isUsOnly(req.acuc?.flags),
                 toolDetail: req.body.toolDetail,
                 urls: [
                   ...new Set(
@@ -780,6 +830,14 @@ export async function scrapeController(
             })
           : undefined;
       if (tools) markAlexandriaActivity(req.auth.team_id);
+      const toolsWarning = [
+        tools?.warning,
+        tools?.usOnlyExcluded
+          ? usOnlyToolsWarning(tools.usOnlyExcluded)
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join(" ");
 
       return res.status(200).json({
         success: true,
@@ -794,7 +852,7 @@ export async function scrapeController(
           },
           ...(tools ? { tools: tools.items } : {}),
         },
-        ...(tools?.warning ? { warning: tools.warning } : {}),
+        ...(toolsWarning ? { warning: toolsWarning } : {}),
         scrape_id: origin?.includes("website") ? jobId : undefined,
       });
     },

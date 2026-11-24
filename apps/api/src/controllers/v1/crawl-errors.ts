@@ -9,6 +9,7 @@ import { getCrawl } from "../../lib/crawl-redis";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { configDotenv } from "dotenv";
 import { getCrawlJobAccess } from "../../lib/operational-job-access";
+import { storedZeroDataRetention } from "../../lib/request-context";
 import { logger as _logger } from "../../lib/logger";
 import { deserializeTransportableError } from "../../lib/error-serde";
 import { TransportableError } from "../../lib/error";
@@ -53,7 +54,7 @@ export async function crawlErrorsController(
 
   const logger = _logger.child({
     crawlId: req.params.jobId,
-    zeroDataRetention: sc?.zeroDataRetention ?? false,
+    zeroDataRetention: storedZeroDataRetention(sc) ?? false,
   });
   const failedJobs = (
     await scrapeQueue.getGroupJobs(

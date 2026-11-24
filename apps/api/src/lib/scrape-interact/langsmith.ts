@@ -1,5 +1,5 @@
 import * as ai from "ai";
-import { config } from "../../config";
+import { browserEnv } from "../browser-env";
 import { logger as _logger } from "../logger";
 
 const logger = _logger.child({ module: "scrape-interact/langsmith" });
@@ -7,14 +7,14 @@ const logger = _logger.child({ module: "scrape-interact/langsmith" });
 // Trim once at module load — a whitespace-only LANGSMITH_API_KEY would be
 // truthy in JS, flip the gate on, and then every trace POST would silently
 // 401 against LangSmith with no other signal that something's wrong.
-const LANGSMITH_API_KEY = config.LANGSMITH_API_KEY?.trim() || undefined;
+const LANGSMITH_API_KEY = browserEnv.LANGSMITH_API_KEY?.trim() || undefined;
 
 // Opt-in: require both a key AND explicit LANGSMITH_TRACING=true. Having a
 // key alone shouldn't start shipping traces, since operators may set the key
 // for local experimentation and be surprised when prod starts tracing too.
 /** @public — consumed via dynamic require() in langsmith.test.ts */
 export const isLangSmithEnabled = Boolean(
-  LANGSMITH_API_KEY && config.LANGSMITH_TRACING === true,
+  LANGSMITH_API_KEY && browserEnv.LANGSMITH_TRACING === true,
 );
 
 export type InteractTraceMetadata = {
@@ -110,15 +110,15 @@ if (isLangSmithEnabled) {
     // key so whitespace padding in .env can't reach the langsmith SDK.
     process.env.LANGSMITH_TRACING = "true";
     process.env.LANGSMITH_API_KEY = LANGSMITH_API_KEY!;
-    if (config.LANGSMITH_PROJECT) {
-      process.env.LANGSMITH_PROJECT = config.LANGSMITH_PROJECT;
+    if (browserEnv.LANGSMITH_PROJECT) {
+      process.env.LANGSMITH_PROJECT = browserEnv.LANGSMITH_PROJECT;
     }
-    if (config.LANGSMITH_ENDPOINT) {
-      process.env.LANGSMITH_ENDPOINT = config.LANGSMITH_ENDPOINT;
+    if (browserEnv.LANGSMITH_ENDPOINT) {
+      process.env.LANGSMITH_ENDPOINT = browserEnv.LANGSMITH_ENDPOINT;
     }
 
     logger.info("LangSmith tracing enabled for interact agent", {
-      project: config.LANGSMITH_PROJECT ?? "(default)",
+      project: browserEnv.LANGSMITH_PROJECT ?? "(default)",
     });
   } catch (err) {
     logger.error(

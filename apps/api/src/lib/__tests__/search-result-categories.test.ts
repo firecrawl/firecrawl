@@ -111,6 +111,24 @@ describe("collectSearchResultCategories", () => {
         ],
       }),
     ).toEqual({ web: 0, images: 0, news: 0, tools: 1 });
+    expect(
+      countSearchResultsBySource({
+        skills: [
+          {
+            id: "official/search",
+            name: "Search",
+            description: "Find records",
+            source: "official",
+          },
+        ],
+      }),
+    ).toEqual({ web: 0, images: 0, news: 0, skills: 1 });
+    expect(countSearchResultsBySource({ skills: [] })).toEqual({
+      web: 0,
+      images: 0,
+      news: 0,
+      skills: 0,
+    });
   });
 
   it("positions line up with the counts feedback bounds against", () => {

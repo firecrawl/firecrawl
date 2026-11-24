@@ -1,5 +1,8 @@
 import { vi } from "vitest";
 
+vi.mock("../../../lib/ai-telemetry", () => ({
+  aiTelemetry: (options: unknown) => options,
+}));
 vi.mock("ai", async importOriginal => {
   const actual = await importOriginal<typeof import("ai")>();
   return {
@@ -19,7 +22,9 @@ import {
   generateCrawlerOptionsFromPrompt,
 } from "./llmExtract";
 import { CostTracking } from "../../../lib/cost-tracking";
+import { coreLlmProviders } from "../../../lib/generic-ai";
 import { modelPrices } from "../../../lib/extract/usage/model-prices";
+import { createService, replaceService } from "../../../service/service";
 
 const noopLogger = {
   warn: () => {},
@@ -55,6 +60,22 @@ function countTokens(text: string): number {
     encoder.free();
   }
 }
+
+beforeAll(() => {
+  replaceService(
+    createService(
+      { modules: {} },
+      {
+        core: { name: "core", llmProviders: coreLlmProviders },
+        logger: { error: vi.fn() },
+      },
+    ),
+  );
+});
+
+afterAll(() => {
+  replaceService(undefined);
+});
 
 beforeEach(() => {
   (generateObject as Mock).mockClear();
@@ -176,7 +197,7 @@ describe("generateCompletions telemetry metadata", () => {
       { teamId: "test-team", crawlId: "test-crawl" },
     );
 
-    const telemetry = lastCall().experimental_telemetry;
+    const telemetry = lastCall().telemetry;
     expect(telemetry.functionId).toBe("generateCrawlerOptionsFromPrompt");
     expect(telemetry.metadata).toMatchObject({
       teamId: "test-team",
@@ -192,7 +213,7 @@ describe("generateCompletions telemetry metadata", () => {
       { teamId: "test-team" },
     );
 
-    expect(lastCall().experimental_telemetry.metadata).toEqual({
+    expect(lastCall().telemetry.metadata).toEqual({
       teamId: "test-team",
     });
   });
@@ -206,7 +227,7 @@ describe("generateCompletions telemetry metadata", () => {
       metadata: { teamId: "test-team", scrapeId: "test-scrape" },
     });
 
-    expect(lastCall().experimental_telemetry.metadata).toMatchObject({
+    expect(lastCall().telemetry.metadata).toMatchObject({
       teamId: "test-team",
       scrapeId: "test-scrape",
     });
@@ -231,7 +252,7 @@ describe("generateCompletions telemetry metadata", () => {
       },
     });
 
-    const telemetry = lastCall().experimental_telemetry;
+    const telemetry = lastCall().telemetry;
     expect(telemetry.functionId).toBe("monitor/searchJudge");
     expect(telemetry.metadata).toMatchObject({
       teamId: "test-team",

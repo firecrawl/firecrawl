@@ -3,6 +3,8 @@ import { fetch as undiciFetch } from "undici";
 import type { Meta } from "../../..";
 import type { PDFMode } from "../../../../../controllers/v2/types";
 import { config } from "../../../../../config";
+import { isUsOnly } from "../../../../../lib/us-only";
+import { isReservedCapacity } from "../../../../../lib/reserved-capacity";
 import type { PdfCacheKeyInput } from "../../../../../lib/gcs-pdf-cache";
 import {
   type BackgroundRefreshResult,
@@ -107,6 +109,14 @@ async function submit(
   fetchImpl: typeof undiciFetch,
 ): Promise<BackgroundRefreshResult> {
   if (meta.internalOptions.zeroDataRetention === true) return "skipped_zdr";
+  // A refresh carries no team and nobody checks its region echo.
+  if (isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+    return "skipped_us_only";
+  }
+  // Nor its reserved capacity echo.
+  if (isReservedCapacity(meta.internalOptions.teamFlags ?? undefined)) {
+    return "skipped_reserved_capacity";
+  }
   // A by-reference document's bytes are in fire-pdf's input bucket, not here.
   if (typeof input !== "string") return "skipped_by_reference";
   // Raster images are only ever parsed through the sync endpoint.
@@ -139,6 +149,9 @@ async function submit(
           tableFormat: undefined,
           // Internal work under no team: never offered for training capture.
           trainingCapture: undefined,
+          // Restricted teams never reach here: their refreshes are skipped above.
+          dataRegion: undefined,
+          reserved: undefined,
         }),
         refresh: true,
       },

@@ -2,10 +2,26 @@ import { fetch } from "undici";
 import { z } from "zod";
 
 import { config } from "../config";
+import { notificationsEnv } from "../services/notification/env";
 import type { DocumentProvider, FormatObject } from "../controllers/v2/types";
 import { hasLedgerAcceptance } from "../services/alexandria/terms";
-import { type ErrorCodes, TransportableError } from "./error";
+import {
+  type ExchangeTerms,
+  getEnrichmentSettingsUrl,
+  setDashboardUrlReader,
+  ThirdPartyDataTermsRequiredError,
+  ThirdPartyDataUnsupportedOptionError,
+} from "./exchange-errors";
 import { logger as rootLogger } from "./logger";
+import { isXTwitterUrl } from "./x-twitter-url";
+
+setDashboardUrlReader(() => notificationsEnv.FIRECRAWL_DASHBOARD_URL);
+
+export {
+  getEnrichmentSettingsUrl,
+  ThirdPartyDataTermsRequiredError,
+  ThirdPartyDataUnsupportedOptionError,
+};
 
 type OrganizationDataSourceAccessRecord = {
   status?: string | null;
@@ -28,6 +44,7 @@ type RouteInput = {
   orgId?: string | null;
   /** The URL is on the team's blocklist, so the Exchange is the only way to serve it. */
   blocked?: boolean;
+  origin?: string | null;
   formats?: FormatObject[] | unknown[];
   actions?: unknown[];
   headers?: Record<string, unknown>;
@@ -53,11 +70,6 @@ type RouteInput = {
 export type ExchangeScrapeMetadata = {
   accessEventId?: string;
   provider: DocumentProvider;
-};
-
-type ExchangeTerms = {
-  key: string;
-  version: string;
 };
 
 type ExchangeProvider = {
@@ -541,9 +553,20 @@ async function getProviderAccessDecision(
 }
 
 function isExchangeEligibleRequest(input: RouteInput): boolean {
+  // The Exchange scrapes through Firecrawl; routing those back would loop.
+  if (input.origin === "exchange") {
+    return false;
+  }
+
   // Blocked URLs go to the Exchange for every team, since nothing else may
-  // serve them; elsewhere it replaces a normal scrape only for the beta.
-  if (input.flags?.[EXCHANGE_BETA_FLAG] !== true && input.blocked !== true) {
+  // serve them; elsewhere it replaces a normal scrape only for the beta. X
+  // posts and profiles also go to it for every team: the Exchange's X
+  // provider is what serves them, in place of a Firecrawl X engine.
+  if (
+    input.flags?.[EXCHANGE_BETA_FLAG] !== true &&
+    input.blocked !== true &&
+    !isXTwitterUrl(input.url)
+  ) {
     return false;
   }
 
@@ -672,118 +695,6 @@ export async function canUseExchangeForRequest(
   return (await getExchangeAccessForRequest(input)).allowed;
 }
 
-// Terms are keyed by provider id, so the key doubles as the provider page to accept them on.
-function getThirdPartyDataTermsUrl(terms: ExchangeTerms): string {
-  return `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/alexandria/${encodeURIComponent(terms.key)}`;
-}
-
-export function getEnrichmentSettingsUrl(): string {
-  return `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/alexandria?enrichment=true`;
-}
-
-/**
- * An organization admin has to accept a provider's terms before the request
- * can run. Transportable, so it crosses the worker queue intact; every
- * surface that reports it sends `response()`, or `requiresAction` alone where
- * the error is one entry of a list.
- */
-export class ThirdPartyDataTermsRequiredError extends TransportableError {
-  public readonly terms: ExchangeTerms;
-  /** Set when the provider is a step in the team's enrichment order, which can drop it instead. */
-  public readonly enrichment: boolean;
-
-  constructor(terms: ExchangeTerms, options: { enrichment?: boolean } = {}) {
-    const accept = `An organization admin must accept the ${terms.key} provider's terms (version ${terms.version}) before this request can run. Accept them at ${getThirdPartyDataTermsUrl(terms)}`;
-    super(
-      "THIRD_PARTY_DATA_TERMS_REQUIRED",
-      options.enrichment
-        ? `${accept}, or turn off ${terms.key} in ${getEnrichmentSettingsUrl()}.`
-        : accept,
-    );
-    this.name = "ThirdPartyDataTermsRequiredError";
-    this.terms = { key: terms.key, version: terms.version };
-    this.enrichment = options.enrichment === true;
-  }
-
-  get requiresAction() {
-    return {
-      type: "accept_terms" as const,
-      terms: this.terms.key,
-      version: this.terms.version,
-      url: getThirdPartyDataTermsUrl(this.terms),
-    };
-  }
-
-  response() {
-    return {
-      success: false as const,
-      code: "THIRD_PARTY_DATA_TERMS_REQUIRED" as const,
-      error: this.message,
-      requiresAction: this.requiresAction,
-    };
-  }
-
-  serialize() {
-    return {
-      ...super.serialize(),
-      terms: this.terms,
-      enrichment: this.enrichment,
-    };
-  }
-
-  static deserialize(
-    _code: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new ThirdPartyDataTermsRequiredError(data.terms, {
-      enrichment: data.enrichment,
-    });
-    x.stack = data.stack;
-    return x;
-  }
-}
-
-/**
- * A provider serves the URL and nothing else may, but the request uses an
- * option the provider's data can't honor.
- */
-export class ThirdPartyDataUnsupportedOptionError extends TransportableError {
-  public readonly option: string;
-
-  constructor(option: string) {
-    super(
-      "THIRD_PARTY_DATA_UNSUPPORTED_OPTION",
-      `A third-party data provider serves this URL, but not to requests that use ${option}.`,
-    );
-    this.name = "ThirdPartyDataUnsupportedOptionError";
-    this.option = option;
-  }
-
-  response() {
-    return {
-      success: false as const,
-      code: "THIRD_PARTY_DATA_UNSUPPORTED_OPTION" as const,
-      error: this.message,
-    };
-  }
-
-  serialize() {
-    return {
-      ...super.serialize(),
-      option: this.option,
-    };
-  }
-
-  static deserialize(
-    _code: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new ThirdPartyDataUnsupportedOptionError(data.option);
-    x.stack = data.stack;
-    return x;
-  }
-}
-
 export function getExchangeSuccessCredits(input: {
   exchange?: ExchangeScrapeMetadata;
   statusCode?: number | null;
@@ -805,6 +716,7 @@ export function getExchangeSuccessCredits(input: {
 }
 
 const EXCHANGE_BILLING_TIMEOUT_MS = 5_000;
+const EXCHANGE_TOOL_FEEDBACK_TIMEOUT_MS = 3_000;
 const EXCHANGE_BILLING_ATTEMPTS = 3;
 const EXCHANGE_BILLING_RETRY_DELAY_MS = 2_000;
 const EXCHANGE_BILLING_RETRY_MAX_DELAY_MS = 15_000;
@@ -897,6 +809,75 @@ export async function reportExchangeUsageBilling(input: {
     retryNotFound: true,
     context: { requestId: input.requestId, status: input.status },
   });
+}
+
+export type ExchangeToolFeedback = {
+  teamId: string;
+  feedbackId: string;
+  occurredAt: string;
+  rating: "good" | "partial" | "bad";
+  origin: string;
+  attribution: "token" | "window";
+  calls: {
+    requestId: string;
+    provider: string;
+    capability: string;
+    rating: "good" | "partial" | "bad" | null;
+  }[];
+};
+
+const toolFeedbackResponseSchema = z.object({
+  outcome: z.enum([
+    "duplicate",
+    "counted",
+    "window",
+    "unattributed",
+    "publisher",
+  ]),
+});
+
+/** Forwards an Alexandria feedback rating to the Exchange and logs its outcome. Never throws. */
+export async function forwardExchangeToolFeedback(
+  input: ExchangeToolFeedback,
+): Promise<void> {
+  const baseUrl = getExchangeBaseUrl();
+  if (!baseUrl || !config.EXCHANGE_INTERNAL_SECRET) return;
+  const { teamId, ...body } = input;
+  const context = { feedbackId: input.feedbackId, teamId };
+  try {
+    const response = await fetch(`${baseUrl}/v1/tool-feedback`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-exchange-secret": config.EXCHANGE_INTERNAL_SECRET,
+        "x-exchange-team-id": teamId,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(EXCHANGE_TOOL_FEEDBACK_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      rootLogger.warn("Exchange tool feedback rejected", {
+        ...context,
+        statusCode: response.status,
+      });
+      return;
+    }
+    const text = await response.text();
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch {}
+    const outcome = toolFeedbackResponseSchema.safeParse(parsed);
+    rootLogger.info("Exchange tool feedback recorded", {
+      ...context,
+      attribution: input.attribution,
+      calls: input.calls.length,
+      outcome: outcome.success ? outcome.data.outcome : "unknown",
+    });
+  } catch (error) {
+    rootLogger.warn("Exchange tool feedback errored", { ...context, error });
+  }
 }
 
 async function deliverBillingReport(input: {

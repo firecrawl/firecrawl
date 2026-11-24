@@ -15,7 +15,6 @@ import {
   type ScrapeOptions,
   type TeamFlags,
 } from "../../controllers/v2/types";
-import { ScrapeOptions as ScrapeOptionsV1 } from "../../controllers/v1/types";
 import { logger as _logger } from "../../lib/logger";
 import {
   buildFallbackList,
@@ -42,6 +41,7 @@ import {
   RemoveFeatureError,
   SiteError,
   SiteRestrictionError,
+  SiteBlockNoRetryError,
   UnsupportedFileError,
   SSLError,
   PDFInsufficientTimeError,
@@ -59,8 +59,10 @@ import {
   ProxySelectionError,
   ScrapeRetryLimitError,
   BrandingNotSupportedError,
-  XTwitterConfigurationError,
+  UsOnlyUnavailableError,
+  ReservedCapacityUnavailableError,
   ExchangeRefusedError,
+  PaywalledContentError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
 import {
@@ -130,7 +132,9 @@ import {
   SAFE_MODE_LOGIN_ACTIONS,
 } from "../../lib/safe-mode";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
+import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 import { loadFirstScreen } from "../../lib/branding/jev";
+import { isPaywalledByJsonLd } from "./lib/accessibleForFree";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
 
@@ -197,6 +201,10 @@ export type Meta = {
         status: number;
         proxyUsed: "basic" | "stealth";
         contentType?: string;
+        /** Set when the file came from a browser handoff (inline bytes), with
+         * the body length the response declared, so the pdf engine can tell
+         * a capture that stopped short and download the file again. */
+        handoff?: { contentLength?: number };
         /** Set when fire-engine handed the file off by GCS reference (large
          * PDFs): the object it uploaded, so the FirePDF by-reference path
          * can server-side copy it instead of re-uploading the bytes. The
@@ -606,6 +614,7 @@ async function buildMetaObject(
 export type InternalOptions = {
   teamId: string;
   crawlId?: string;
+  origin?: string;
 
   priority?: number; // Passed along to fire-engine
   forceEngine?: Engine | Engine[];
@@ -614,7 +623,6 @@ export type InternalOptions = {
   v0CrawlOnlyUrls?: boolean;
   v0DisableJsDom?: boolean;
   disableSmartWaitCache?: boolean; // Passed along to fire-engine
-  isBackgroundIndex?: boolean;
   externalAbort?: AbortInstance;
   urlInvisibleInCurrentCrawl?: boolean;
   unnormalizedSourceURL?: string;
@@ -622,6 +630,9 @@ export type InternalOptions = {
   saveScrapeResultToGCS?: boolean; // Passed along to fire-engine
   bypassBilling?: boolean;
   zeroDataRetention?: boolean;
+  /** Asks third-party data providers to leave personal email addresses and
+   * personal phone numbers out of their records; work emails are unaffected. */
+  workContactOnly?: boolean;
   /** null: the team has no flags. Absent: not snapshotted, so a check that
    * must fail closed treats the org as unresolved. */
   teamFlags?: TeamFlags | null;
@@ -650,8 +661,6 @@ export type InternalOptions = {
    * re-resolve safe mode from teamFlags — otherwise the bypass would be undone. */
   safeModeBypassed?: boolean;
 
-  v1Agent?: ScrapeOptionsV1["agent"];
-  v1JSONAgent?: Exclude<ScrapeOptionsV1["jsonOptions"], undefined>["agent"];
   v1JSONSystemPrompt?: string;
   v1OriginalFormat?: "extract" | "json"; // Track original v1 format for backward compatibility
 
@@ -798,9 +807,7 @@ async function scrapeURLLoopIter(
           length: engineResult.html?.trim().length ?? 0,
         },
       );
-      throw Object.assign(new AddFeatureError(["stealthProxy"]), {
-        statusCode: engineResult.statusCode,
-      });
+      throw new AddFeatureError(["stealthProxy"]);
     }
 
     // NOTE: TODO: what to do when status code is bad is tough...
@@ -903,7 +910,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     const remainingEngines = [...fallbackList];
     let enginePromises: EngineBundlePromise[] = [];
-    const enginesAttempted: string[] = [];
+    const enginesAttempted: Engine[] = [];
 
     meta.abort.throwIfAborted();
 
@@ -991,6 +998,17 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
           break;
         } catch (error) {
           if (error instanceof WrappedEngineError) {
+            if (error.error instanceof SiteBlockNoRetryError) {
+              // Another engine or exit doesn't get past it either (the engine
+              // has logged the block); end the scrape the usual way instead of
+              // trying them, and stop the engines still racing.
+              snipeAbortController.abort();
+              setSpanAttributes(span, {
+                "engine.no_engines_left": true,
+                "engine.engines_attempted": enginesAttempted.join(","),
+              });
+              throw new NoEnginesLeftError(enginesAttempted);
+            }
             const nextEngine = remainingEngines[0]?.engine;
             const experiment = waterfallExperimentFor(
               error.engine,
@@ -1007,11 +1025,6 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
                 error: error.error,
               });
               if (testArm) {
-                if (
-                  experiment === "skip-enhanced-retry-after-site-protection"
-                ) {
-                  remainingEngines.shift();
-                }
                 enginePromises = enginePromises.filter(
                   x => x.engine !== error.engine,
                 );
@@ -1021,12 +1034,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
                 continue;
               }
             }
-            if (error.engine === "x-twitter") {
-              meta.logger.warn("X/Twitter scrape failed fatally.", {
-                error: error.error,
-              });
-              throw error.error;
-            } else if (error.error instanceof EngineError) {
+            if (error.error instanceof EngineError) {
               meta.logger.warn(
                 "Engine " + error.engine + " could not scrape the page.",
                 {
@@ -1069,7 +1077,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof ProxySelectionError ||
               error.error instanceof NoCachedDataError ||
               error.error instanceof AgentIndexOnlyError ||
-              error.error instanceof XTwitterConfigurationError ||
+              error.error instanceof UsOnlyUnavailableError ||
+              error.error instanceof ReservedCapacityUnavailableError ||
               error.error instanceof ExchangeRefusedError ||
               error.error instanceof ThirdPartyDataTermsRequiredError
             ) {
@@ -1214,8 +1223,17 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       }
     }
 
+    // Throws before the transformers, so a blocked page is never indexed.
+    if (
+      meta.internalOptions.safeMode?.respectPaywalls &&
+      isPaywalledByJsonLd(engineResult.html)
+    ) {
+      throw new PaywalledContentError();
+    }
+
     let document: Document = {
       markdown: engineResult.markdown,
+      warning: engineResult.warning,
       pages: engineResult.pages,
       blocks: engineResult.blocks,
       rawHtml: engineResult.html,
@@ -1364,10 +1382,21 @@ export async function scrapeURL(
         }
       }
 
-      // ZDR always verifies TLS, for every engine. Explicit false also wins over
-      // the skip-by-default in applyScrapeOptionsDefaults.
+      // ZDR always verifies TLS, for every engine, even when the request asks
+      // to skip verification.
       if (internalOptions.zeroDataRetention) {
         options.skipTlsVerification = false;
+      }
+
+      const usOnlyLocationError = usOnlyLocationRefusal(
+        internalOptions.teamFlags ?? undefined,
+        options.location?.country,
+      );
+      if (usOnlyLocationError) {
+        return {
+          success: false,
+          error: new UsOnlyUnavailableError(usOnlyLocationError),
+        };
       }
 
       const meta = await buildMetaObject(
@@ -1470,7 +1499,9 @@ export async function scrapeURL(
                       url: urlToCheck,
                       zeroDataRetention:
                         internalOptions.zeroDataRetention || false,
+                      usOnly: isUsOnly(internalOptions.teamFlags ?? undefined),
                       location: options.location,
+                      skipTlsVerification: options.skipTlsVerification,
                     },
                     id,
                     meta.logger,
@@ -2000,6 +2031,9 @@ export async function scrapeURL(
               rule: error.decision.rule,
             },
           );
+        } else if (error instanceof PaywalledContentError) {
+          errorType = "PaywalledContentError";
+          meta.logger.warn("scrapeURL: Paywalled page refused by Safe Mode");
         } else if (error instanceof AbortManagerThrownError) {
           errorType = "AbortManagerThrownError";
           throw error.inner;

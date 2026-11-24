@@ -31,6 +31,7 @@ vi.mock("./refund-totals", () => ({
 }));
 vi.mock("../../../lib/alexandria-activity", () => ({
   hasRecentAlexandriaActivity: fixture.alexandriaActivity,
+  getRecentAlexandriaCalls: async () => [],
 }));
 vi.mock("./alexandria-refund", () => ({
   refundAlexandriaFeedback: async () => ({
@@ -47,10 +48,12 @@ vi.mock("../../../services/autumn/autumn.service", () => ({
 }));
 
 import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
 import { feedbackController } from "./controller";
 import { searchFeedbackController } from "../search-feedback";
 
 const original = { ...config };
+const originalFeedbackEnv = { ...feedbackEnv };
 const jobId = "01933161-0000-7000-8000-000000000001";
 const teamId = "01933161-0000-7000-8000-000000000002";
 const now = Date.now();
@@ -88,8 +91,8 @@ function job(route: Route, store: (typeof stores)[number], ageSec: number) {
   const endpoint = route === "legacy-search" ? "search" : route;
   const window =
     endpoint === "search"
-      ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
-      : config.FEEDBACK_MAX_AGE_SEC;
+      ? feedbackEnv.SEARCH_FEEDBACK_MAX_AGE_SEC
+      : feedbackEnv.FEEDBACK_MAX_AGE_SEC;
   fixture.job = {
     id: jobId,
     request_id: jobId,
@@ -113,6 +116,8 @@ beforeEach(() => {
   vi.spyOn(Date, "now").mockReturnValue(now);
   Object.assign(config, original, {
     USE_DB_AUTHENTICATION: true,
+  });
+  Object.assign(feedbackEnv, originalFeedbackEnv, {
     FEEDBACK_REFUND_ENABLED: true,
     SEARCH_FEEDBACK_MAX_AGE_SEC: 120,
     FEEDBACK_MAX_AGE_SEC: 120,
@@ -134,6 +139,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   Object.assign(config, original);
+  Object.assign(feedbackEnv, originalFeedbackEnv);
 });
 
 describe.each(routes)("%s job feedback keeps its submission window", route => {

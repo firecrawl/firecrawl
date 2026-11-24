@@ -12,7 +12,7 @@ import {
 import { v7 as uuidv7 } from "uuid";
 import { getJobPriority } from "../../lib/job-priority";
 import { fromV1ScrapeOptions } from "../v2/types";
-import { TransportableError } from "../../lib/error";
+import { isTransportableError } from "../../lib/error";
 import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
@@ -333,10 +333,10 @@ async function scrapeControllerInner(
     }
 
     const timeoutErr =
-      e instanceof TransportableError &&
+      isTransportableError(e) &&
       (e.code === "SCRAPE_TIMEOUT" || e.code === "CONCURRENCY_QUEUE_TIMEOUT");
 
-    if (e instanceof TransportableError) {
+    if (isTransportableError(e)) {
       if (!timeoutErr) {
         logger.error(`Error in scrapeController`, {
           version: "v1",
@@ -370,7 +370,11 @@ async function scrapeControllerInner(
         });
       }
 
-      if (e.code === "unsafe_domain_blocked") {
+      if (
+        e.code === "unsafe_domain_blocked" ||
+        e.code === "US_ONLY_UNAVAILABLE" ||
+        e.code === "RESERVED_CAPACITY_UNAVAILABLE"
+      ) {
         return res.status(403).json({
           success: false,
           code: e.code,
@@ -395,6 +399,14 @@ async function scrapeControllerInner(
       }
 
       if (e.code === "SCRAPE_PROMPT_INJECTION_DETECTED") {
+        return res.status(403).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
+      if (e.code === "SCRAPE_PAYWALLED_CONTENT") {
         return res.status(403).json({
           success: false,
           code: e.code,

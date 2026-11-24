@@ -4,6 +4,8 @@ import { searxng_search } from "./searxng";
 import { fire_engine_search } from "./fireEngine";
 import { Logger } from "winston";
 import { ddgSearch } from "./v2/ddgsearch";
+import { search as searchV2 } from "./v2";
+import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
 
 export async function search({
   query,
@@ -18,6 +20,8 @@ export async function search({
   proxy = undefined,
   sleep_interval = 0,
   timeout = 5000,
+  usOnly = false,
+  enterprise = undefined,
 }: {
   query: string;
   logger: Logger;
@@ -31,7 +35,36 @@ export async function search({
   proxy?: string;
   sleep_interval?: number;
   timeout?: number;
+  usOnly?: boolean;
+  enterprise?: ("anon" | "zdr")[];
 }): Promise<SearchResult[]> {
+  // The fallback backends below take no US-only routing.
+  if (usOnly && !config.FIRE_ENGINE_BETA_URL) {
+    throw new UsOnlyUnavailableError(
+      "Search is not available for teams restricted to US-only processing on this deployment.",
+    );
+  }
+  // The legacy search route has no zero data retention or anonymous routing,
+  // so a search that requires either goes through the v2 search.
+  if (enterprise && enterprise.length > 0) {
+    const response = await searchV2({
+      query,
+      logger,
+      num_results,
+      tbs,
+      filter,
+      lang,
+      country,
+      location,
+      proxy,
+      timeout,
+      usOnly,
+      enterprise,
+    });
+    return (response.web ?? []).map(
+      result => new SearchResult(result.url, result.title, result.description),
+    );
+  }
   try {
     if (config.FIRE_ENGINE_BETA_URL) {
       logger.info("Using fire engine search");
@@ -42,6 +75,7 @@ export async function search({
         lang,
         country,
         location,
+        usOnly,
       });
       return results;
     }

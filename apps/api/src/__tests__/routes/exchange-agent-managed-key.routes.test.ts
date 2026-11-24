@@ -77,6 +77,7 @@ vi.mock("undici", async importOriginal => ({
 }));
 
 import { config } from "../../config";
+import { feedbackEnv } from "../../lib/feedback-env";
 import { exchangeRouter } from "../../routes/exchange";
 import { redisRateLimitClient } from "../../services/rate-limiter";
 
@@ -255,6 +256,26 @@ describe("hosted MCP keys on the Exchange routes the agent calls", () => {
     expect(mocks.upstreamFetch).toHaveBeenCalledTimes(2);
   });
 
+  it.each([{ searchZDR: "forced-zdr" }, { searchZDR: "forced-anon" }])(
+    "refuses discover before any upstream call for a team with %o",
+    async flags => {
+      keyResolvesAs(flags);
+      const response = await send("get", "/exchange/discover?q=gdp", "header");
+      expect(response.status).toBe(403);
+      expect(response.body.error).toBe(
+        "Provider discovery does not support zero data retention.",
+      );
+      expect(mocks.upstreamFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("proxies discover for a team that forces scrape ZDR only", async () => {
+    keyResolvesAs({ scrapeZDR: "forced" });
+    const response = await send("get", "/exchange/discover?q=gdp", "header");
+    expect(response.status).not.toBe(403);
+    expect(mocks.upstreamFetch).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     [200, true],
     [502, false],
@@ -276,7 +297,7 @@ describe("hosted MCP keys on the Exchange routes the agent calls", () => {
                 "alexandria:activity:team-mcp",
                 "1",
                 "EX",
-                config.ALEXANDRIA_FEEDBACK_WINDOW_SEC,
+                feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC,
               ],
             ]
           : [],

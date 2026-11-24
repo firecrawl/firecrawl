@@ -54,6 +54,19 @@ function hasUnsupportedOr(query: string): boolean {
   return ors > siteOrs;
 }
 
+/**
+ * True when the query uses search syntax: a quoted phrase, a `name:value`
+ * token such as `site:` or `filetype:`, or an OR or `|` between terms. A
+ * routed search sends the query text alone, so it carries none of these.
+ */
+export function usesSearchSyntax(query: string): boolean {
+  if (query.includes('"')) return true;
+  return (
+    /(?:^|[\s(-])[a-z]+:\S/i.test(query) ||
+    /(?:^|[\s(])(?:OR|\|)(?=[\s)(]|$)/.test(query)
+  );
+}
+
 export function parseQueryOperators(query: string): QueryOperators {
   const operators = emptyOperators();
   for (const match of query.matchAll(OPERATOR_TOKEN)) {
@@ -124,6 +137,26 @@ function matchesSite(url: URL, site: string): boolean {
   const hostname = url.hostname.toLowerCase();
   if (hostname !== host && !hostname.endsWith("." + host)) return false;
   return !path || url.pathname.toLowerCase().startsWith(path);
+}
+
+/** True when the URL's host is, or is under, an included domain and no excluded one. */
+export function matchesDomains(
+  url: string | undefined,
+  includeDomains: string[] = [],
+  excludeDomains: string[] = [],
+): boolean {
+  if (includeDomains.length === 0 && excludeDomains.length === 0) return true;
+  let parsed: URL;
+  try {
+    parsed = new URL(url ?? "");
+  } catch {
+    return false;
+  }
+  return (
+    !excludeDomains.some(domain => matchesSite(parsed, domain)) &&
+    (includeDomains.length === 0 ||
+      includeDomains.some(domain => matchesSite(parsed, domain)))
+  );
 }
 
 function decodedUrl(url: string): string {

@@ -42,6 +42,40 @@ describe("govSearch", () => {
     expect(result).toEqual(response);
   });
 
+  test("sends sources and returns gov results with labels", async () => {
+    const labeled = {
+      success: true,
+      data: {
+        gov: [
+          {
+            ...response.data.web[0],
+            jurisdiction: "us",
+            courtType: "federal-appellate",
+            cites: ["us:usc:21:343"],
+            citedAs: ["us:cfr:21:101"],
+            updatedAt: 1700000000000,
+          },
+        ],
+      },
+    };
+    const http = {
+      post: vi.fn(async () => ({ status: 200, data: labeled })),
+    } as any;
+
+    const result = await clientWith(http).govSearch("food labeling", {
+      sources: ["gov"],
+      cites: ["21 U.S.C. § 343", "us:cfr:21:101"],
+    });
+
+    expect(http.post).toHaveBeenCalledWith("/v2/search/gov", {
+      query: "food labeling",
+      cites: ["21 U.S.C. § 343", "us:cfr:21:101"],
+      sources: ["gov"],
+    });
+    expect(result.data.gov?.[0].citedAs).toEqual(["us:cfr:21:101"]);
+    expect(result.data.web).toBeUndefined();
+  });
+
   test("rejects an empty query", async () => {
     const http = { post: vi.fn() } as any;
 

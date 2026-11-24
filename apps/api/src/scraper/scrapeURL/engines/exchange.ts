@@ -13,6 +13,7 @@ import { setSpanAttributes, withSpan } from "../../../lib/otel-tracer";
 import { robustFetch } from "../lib/fetch";
 import { safeMarkdownToHtml } from "./pdf/markdownToHtml";
 import { EngineError, ExchangeRefusedError } from "../error";
+import { isUsOnly } from "../../../lib/us-only";
 
 // The enrichment waterfall's record of which provider matched and every
 // provider it tried, in order.
@@ -192,9 +193,31 @@ export async function scrapeURLWithExchange(
     });
 
     try {
+      const remainingMs = meta.abort.scrapeTimeout();
       const response = await robustFetch({
         url: `${config.FIRE_EXCHANGE_URL!.replace(/\/+$/, "")}/v1/scrape`,
         method: "POST",
+        headers: {
+          ...(isUsOnly(meta.internalOptions.teamFlags ?? undefined)
+            ? { "x-exchange-us-only": "true" }
+            : {}),
+          ...(meta.internalOptions.workContactOnly
+            ? { "x-exchange-work-contact-only": "true" }
+            : {}),
+          // Epoch ms the Exchange must answer by, with a margin to answer
+          // before this scrape times out.
+          ...(remainingMs === undefined
+            ? {}
+            : {
+                "x-exchange-deadline": String(
+                  Math.floor(
+                    Date.now() +
+                      remainingMs -
+                      Math.min(2000, Math.max(0, remainingMs) / 10),
+                  ),
+                ),
+              }),
+        },
         body: {
           requestId: meta.id,
           teamId: meta.internalOptions.teamId,

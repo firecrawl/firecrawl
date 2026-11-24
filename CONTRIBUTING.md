@@ -52,6 +52,16 @@ pnpm harness pnpm exec vitest run path/to/test.ts
 
 The harness starts the API, workers, PostgreSQL, and RabbitMQ for the command, then cleans up the processes and containers it started.
 
+## Run the core unit tests
+
+Unit tests that need no credentials and no running services form the core suite. From `apps/api`:
+
+```bash
+pnpm test:core
+```
+
+The suite runs every `src/**/*.test.ts` file that [`vitest.core.config.ts`](./apps/api/vitest.core.config.ts) does not exclude, so a new unit test joins it without being registered. CI runs it on every pull request.
+
 Do not bypass failing checks. Fix failures caused by your change and call out unrelated repository failures with enough detail for a reviewer to reproduce them.
 
 ## Open the pull request

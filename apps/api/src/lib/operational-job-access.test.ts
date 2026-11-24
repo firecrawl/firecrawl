@@ -7,6 +7,7 @@ vi.mock("./logger", () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
 }));
 
+import { logger } from "./logger";
 import {
   getAgentJobAccess,
   getCrawlJobAccess,
@@ -100,6 +101,20 @@ describe("operational job access", () => {
     readApiJobAccess.mockRejectedValue(new Error("Bigtable unavailable"));
     await expect(getScrapeJobAccess(JOB_ID)).rejects.toThrow(
       "Bigtable unavailable",
+    );
+  });
+
+  it("logs the caller's team once when an agent job access read fails", async () => {
+    readApiJobAccess.mockRejectedValue(new Error("Bigtable unavailable"));
+
+    await expect(getAgentJobAccess(JOB_ID, "team-123")).rejects.toThrow(
+      "Bigtable unavailable",
+    );
+
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      "Bigtable job access read failed",
+      expect.objectContaining({ jobId: JOB_ID, teamId: "team-123" }),
     );
   });
 });
