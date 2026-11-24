@@ -63,18 +63,6 @@ const workers: Record<string, Worker> = {
     () =>
       require("../services/worker/nuq-reconciler-worker") as typeof import("../services/worker/nuq-reconciler-worker"),
   ),
-  "index-worker": role(
-    () =>
-      require("../services/indexing/index-worker") as typeof import("../services/indexing/index-worker"),
-  ),
-  "cclog-worker": role(
-    () =>
-      require("../services/cclog-worker") as typeof import("../services/cclog-worker"),
-  ),
-  "zdr-worker": role(
-    () =>
-      require("../services/zdr-worker") as typeof import("../services/zdr-worker"),
-  ),
   harness: role(() => require("../harness") as typeof import("../harness")),
 };
 

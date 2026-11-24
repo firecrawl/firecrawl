@@ -436,7 +436,6 @@ jobs:
         run: >-
           pnpm exec vitest run
           src/lib/zdr-queue.test.ts
-          src/lib/zdrcleaner.test.ts
           src/lib/gcs-jobs.test.ts
           src/services/logging/log_job.test.ts
           --reporter=default

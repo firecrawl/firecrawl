@@ -69,7 +69,6 @@ const outsideCoreSuite = [
   "src/lib/billing-country.test.ts",
   "src/lib/browser-options.test.ts",
   "src/lib/browser-profiles.test.ts",
-  "src/lib/cclog.test.ts",
   "src/lib/exchange.test.ts",
   "src/lib/fire-privacy-*.test.ts",
   "src/lib/gcs-jobs.test.ts",
