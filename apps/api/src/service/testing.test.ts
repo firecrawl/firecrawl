@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { defaultModules, logsMessages } from "./defaults";
+import { logsMessages, memoryUploads } from "./defaults";
 import { service, type CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
@@ -7,7 +7,13 @@ const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
 
 describe("testService", () => {
   it("replaces a module and adds extensions", () => {
-    const base = defaultModules();
+    const baseUploads = {
+      driver: () => ({
+        ...memoryUploads().driver(),
+        name: "base-uploads",
+      }),
+    };
+    const base = { messages: logsMessages(), uploads: baseUploads };
     const customMessages = {
       ...logsMessages(),
       errorContact: () => "Custom contact.",
@@ -17,9 +23,7 @@ describe("testService", () => {
     ]);
 
     expect(built.modules.messages.errorContact()).toBe("Custom contact.");
-    expect(built.modules.uploads.driver().name).toBe(
-      base.uploads.driver().name,
-    );
+    expect(built.modules.uploads.driver().name).toBe("base-uploads");
     expect(built.describe().modules).toEqual(["messages", "uploads"]);
     expect(built.describe().extensions).toEqual(["core", "extra"]);
   });
