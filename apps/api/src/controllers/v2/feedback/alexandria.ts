@@ -1,6 +1,6 @@
 import { v7 as uuidv7 } from "uuid";
 import { DrizzleQueryError } from "drizzle-orm/errors";
-import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 import {
@@ -75,7 +75,7 @@ export async function recordAlexandriaFeedback(
           "Feedback accepted. No refund: feedback is not stored under zero data retention.",
         creditsRefunded: 0,
         creditsRefundedToday: 0,
-        dailyRefundCap: config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS,
+        dailyRefundCap: feedbackEnv.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS,
       },
     };
   }
@@ -138,10 +138,10 @@ export async function recordAlexandriaFeedback(
       return failure(
         409,
         "FEEDBACK_WINDOW_EXPIRED",
-        `Alexandria feedback must be submitted within ${config.ALEXANDRIA_FEEDBACK_WINDOW_SEC} seconds of an Alexandria search, discovery, or execution, or name its calls with valid feedback tokens.`,
+        `Alexandria feedback must be submitted within ${feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC} seconds of an Alexandria search, discovery, or execution, or name its calls with valid feedback tokens.`,
       );
     }
-    const windowStart = now - config.ALEXANDRIA_FEEDBACK_WINDOW_SEC * 1000;
+    const windowStart = now - feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC * 1000;
     for (const call of await getRecentAlexandriaCalls(teamId)) {
       if (call.at < windowStart) continue;
       const { requestId, provider, capability } = call;

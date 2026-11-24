@@ -21,7 +21,7 @@ import type {
   SearchResultCategoriesBySource,
 } from "../../lib/entities";
 import type { CostTracking } from "../../lib/cost-tracking";
-import type { ErrorCodes } from "../../lib/error";
+import type { ErrorCode } from "../../lib/error";
 import type { Logger } from "winston";
 import { saveExtractResult } from "../../lib/extract/extract-redis";
 import { trackFirstSurfaceUse } from "../posthog";
@@ -608,7 +608,7 @@ export type LoggedScrape = {
   is_successful: boolean;
   error?: string;
   /** Code of a failed scrape's error; the only error detail kept under zero data retention. */
-  error_code?: ErrorCodes;
+  error_code?: ErrorCode;
   doc?: Document;
   time_taken: number;
   team_id: string;

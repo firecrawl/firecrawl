@@ -7,6 +7,7 @@ import {
   collectPathPatternIssues,
 } from "../../../lib/crawl-regex";
 import {
+  MAX_SCRAPE_MAX_AGE_MS,
   scrapeRequestSchema,
   parseRequestSchema,
   scrapeOptions,
@@ -771,6 +772,18 @@ describe("V2 Types Validation", () => {
 
         const result = scrapeRequestSchema.parse(input);
         expect(result.maxAge).toBe(60000);
+      });
+
+      it("should not cap maxAge above 7 days when lockdown is true", () => {
+        const oneYearMs = 365 * 24 * 60 * 60 * 1000;
+        const input: ScrapeRequestInput = {
+          url: "https://example.com",
+          lockdown: true,
+          maxAge: oneYearMs,
+        };
+
+        const result = scrapeRequestSchema.parse(input);
+        expect(result.maxAge).toBe(oneYearMs);
       });
 
       it("should not set maxAge default when lockdown is false", () => {
@@ -2196,6 +2209,16 @@ describe("V2 Types Validation", () => {
       const result = scrapeRequestSchema.parse(input);
       expect(result.minAge).toBe(1000);
       expect(result.maxAge).toBe(5000);
+    });
+
+    it("should silently cap maxAge at 7 days when not in lockdown", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        maxAge: 365 * 24 * 60 * 60 * 1000,
+      };
+
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.maxAge).toBe(MAX_SCRAPE_MAX_AGE_MS);
     });
 
     it("should reject negative minAge", () => {

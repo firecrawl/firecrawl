@@ -1,4 +1,5 @@
 import { config } from "../config";
+import { feedbackEnv } from "./feedback-env";
 import type { TeamFlags } from "../controllers/v2/types";
 import { getSearchZDR } from "./zdr-helpers";
 
@@ -14,7 +15,7 @@ export function alexandriaFeedbackHintApplies(
   flags: (TeamFlags & { searchFeedbackOptOut?: boolean }) | null | undefined,
 ): boolean {
   return (
-    config.ALEXANDRIA_FEEDBACK_HINT_ENABLED &&
+    feedbackEnv.ALEXANDRIA_FEEDBACK_HINT_ENABLED &&
     config.USE_DB_AUTHENTICATION === true &&
     flags?.searchFeedbackOptOut !== true &&
     !/^preview(_|$)/.test(teamId) &&
@@ -31,7 +32,7 @@ export function alexandriaFeedbackNextStep(
   origin: string,
   integration?: string | null,
 ) {
-  const refund = config.FEEDBACK_REFUND_ENABLED
+  const refund = feedbackEnv.FEEDBACK_REFUND_ENABLED
     ? " It refunds 1 credit, once per call, up to a daily limit."
     : "";
   const fields = {

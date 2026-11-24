@@ -20,7 +20,7 @@ import {
 import { getJobs, PseudoJob } from "./crawl-status";
 import { getConcurrencyLimitedJobs } from "../../lib/concurrency-limit";
 import { scrapeQueue, NuQJobStatus } from "../../services/worker/nuq-router";
-import { getErrorContactMessage } from "../../lib/deployment";
+import { service } from "../../service";
 
 type ErrorMessage = {
   type: "error";
@@ -238,7 +238,7 @@ export async function crawlStatusWSController(
     );
     return close(ws, 1011, {
       type: "error",
-      error: getErrorContactMessage(id),
+      error: service.modules.messages.errorContact(id),
     });
   }
 }

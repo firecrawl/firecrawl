@@ -1,5 +1,5 @@
 import { TeamFlags } from "../controllers/v2/types";
-import type { ErrorCodes } from "./error";
+import type { ErrorCode } from "./error";
 import {
   type ResolvedSafeMode,
   SAFE_MODE_CREDENTIAL_HEADERS,
@@ -73,7 +73,7 @@ export function checkPermissions(
   request: APIRequest,
   flags?: TeamFlags,
   options?: PermissionOptions,
-): { error?: string; code?: ErrorCodes } {
+): { error?: string; code?: ErrorCode } {
   // zdr perms — scrapeZDR must be 'allowed' or 'forced' for request-scoped ZDR
   const scrapeMode = getScrapeZDR(flags);
   if (

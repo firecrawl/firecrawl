@@ -1,4 +1,4 @@
-import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
 import { SEARCH_CREDITS_FEATURE_ID } from "../../../services/autumn/autumn.service";
 import type { EndpointFeedbackEndpoint } from "../types";
 import {
@@ -31,9 +31,9 @@ export function searchFeedbackRecordOptions({
     failedJobCode: "SEARCH_FAILED",
     dbDisabledMessage:
       "Search feedback requires database authentication and is unavailable on this deployment.",
-    windowExpiredMessage: `Search feedback must be submitted within ${config.SEARCH_FEEDBACK_MAX_AGE_SEC} seconds of the search.`,
-    maxAgeSec: config.SEARCH_FEEDBACK_MAX_AGE_SEC,
-    dailyCapCredits: config.SEARCH_FEEDBACK_DAILY_CAP_CREDITS,
+    windowExpiredMessage: `Search feedback must be submitted within ${feedbackEnv.SEARCH_FEEDBACK_MAX_AGE_SEC} seconds of the search.`,
+    maxAgeSec: feedbackEnv.SEARCH_FEEDBACK_MAX_AGE_SEC,
+    dailyCapCredits: feedbackEnv.SEARCH_FEEDBACK_DAILY_CAP_CREDITS,
     refundFeatureId: SEARCH_CREDITS_FEATURE_ID,
     source: "search_feedback",
   };
@@ -53,8 +53,8 @@ export function endpointFeedbackRecordOptions({
       endpoint,
       jobId,
       feedback,
-      windowExpiredMessage: `Feedback must be submitted within ${config.BROWSER_FEEDBACK_MAX_AGE_SEC} seconds of the session's last activity.`,
-      maxAgeSec: config.BROWSER_FEEDBACK_MAX_AGE_SEC,
+      windowExpiredMessage: `Feedback must be submitted within ${feedbackEnv.BROWSER_FEEDBACK_MAX_AGE_SEC} seconds of the session's last activity.`,
+      maxAgeSec: feedbackEnv.BROWSER_FEEDBACK_MAX_AGE_SEC,
       source: "feedback",
     };
   }

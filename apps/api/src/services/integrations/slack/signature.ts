@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { config } from "../../../config";
+import { notificationsEnv } from "../../notification/env";
 
 const FIVE_MINUTES_SECONDS = 60 * 5;
 
@@ -12,7 +12,8 @@ export function verifySlackSignature(params: {
   rawBody: string | Buffer;
   signingSecret?: string;
 }): boolean {
-  const signingSecret = params.signingSecret ?? config.SLACK_SIGNING_SECRET;
+  const signingSecret =
+    params.signingSecret ?? notificationsEnv.SLACK_SIGNING_SECRET;
   if (!signingSecret) return false;
   if (!params.signature || !params.timestamp) return false;
 

@@ -1,4 +1,4 @@
-import { config } from "../config";
+import { feedbackEnv } from "./feedback-env";
 import type { ScrapeOptions } from "../controllers/v2/types";
 import { includesFormat } from "./format-utils";
 import { getBigtableTable } from "./bigtable-client";
@@ -87,7 +87,7 @@ function parseFeedbackJob(value: Buffer | string): FeedbackJob {
 export async function readFeedbackJob(
   jobId: string,
 ): Promise<FeedbackJob | null> {
-  const tableId = config.BIGTABLE_FEEDBACK_JOBS_TABLE;
+  const tableId = feedbackEnv.BIGTABLE_FEEDBACK_JOBS_TABLE;
   if (!tableId) return null;
 
   return withSpan("bigtable.feedback_job.read", async span => {
@@ -162,7 +162,7 @@ type FeedbackJobWrite = FeedbackJobBase &
 export async function writeFeedbackJob(
   params: FeedbackJobWrite,
 ): Promise<boolean> {
-  const tableId = config.BIGTABLE_FEEDBACK_JOBS_TABLE;
+  const tableId = feedbackEnv.BIGTABLE_FEEDBACK_JOBS_TABLE;
   if (!tableId) return false;
 
   return withSpan(
@@ -177,8 +177,8 @@ export async function writeFeedbackJob(
       const completedAt = params.completedAt ?? new Date();
       const feedbackWindowSec =
         params.endpoint === "search"
-          ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
-          : config.FEEDBACK_MAX_AGE_SEC;
+          ? feedbackEnv.SEARCH_FEEDBACK_MAX_AGE_SEC
+          : feedbackEnv.FEEDBACK_MAX_AGE_SEC;
       const feedbackDeadline = new Date(
         completedAt.getTime() + feedbackWindowSec * 1000,
       );

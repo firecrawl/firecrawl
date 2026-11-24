@@ -54,6 +54,7 @@ import { integrationSchema } from "../../utils/integration";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { getScrapeJobAccess } from "../../lib/operational-job-access";
 import { readScrapeJobState } from "../../lib/job-state-store";
+import { storedZeroDataRetention } from "../../lib/request-context";
 import {
   type BrowserOptions,
   browserOptionsFromScrape,
@@ -215,7 +216,7 @@ async function scrapeInteractInternal(
 
   zeroDataRetention ||=
     state?.zeroDataRetention === true ||
-    nuqJob?.data.zeroDataRetention === true ||
+    storedZeroDataRetention(nuqJob?.data) === true ||
     storedSession?.zero_data_retention === true;
   logger = logger.child({ zeroDataRetention });
 

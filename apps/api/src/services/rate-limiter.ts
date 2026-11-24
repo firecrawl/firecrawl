@@ -5,6 +5,7 @@ import type { TeamFlags } from "../controllers/v1/types";
 import Redis from "ioredis";
 
 export const redisRateLimitClient = new Redis(config.REDIS_RATE_LIMIT_URL!, {
+  lazyConnect: true,
   enableAutoPipelining: true,
 });
 
@@ -27,7 +28,6 @@ const fallbackRateLimits: Record<RateLimiterMode, number> = {
   preview: 25,
   extractStatus: 25000,
   crawlStatus: 25000,
-  extractAgentPreview: 10,
   browser: 2,
   browserExecute: 1000,
   browserReplay: 500,

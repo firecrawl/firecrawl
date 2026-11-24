@@ -181,9 +181,23 @@ describe("usage telemetry middleware", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
+    let resetService: (() => void) | undefined;
     try {
       vi.resetModules();
-      const { getModel } = await import("./generic-ai.js");
+      const { createService, replaceService } = await import(
+        "../service/service.js"
+      );
+      const { coreLlmProviders, getModel } = await import("./generic-ai.js");
+      replaceService(
+        createService(
+          { modules: {} },
+          {
+            core: { name: "core", llmProviders: coreLlmProviders },
+            logger: { error: vi.fn() },
+          },
+        ),
+      );
+      resetService = () => replaceService(undefined);
       expect(getModel("gpt-4o-mini", "openai").modelId).toBe(
         "global-model-override",
       );
@@ -195,6 +209,7 @@ describe("usage telemetry middleware", () => {
         telemetry,
       });
     } finally {
+      resetService?.();
       vi.unstubAllGlobals();
       for (const [key, value] of Object.entries(savedEnv)) {
         if (value === undefined) delete process.env[key];

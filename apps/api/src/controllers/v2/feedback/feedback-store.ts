@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { DrizzleQueryError } from "drizzle-orm/errors";
-import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
 import { db, dbRr } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 import {
@@ -276,8 +276,8 @@ export async function lookupFeedbackJob(
 
   const feedbackWindowSec =
     endpoint === "search"
-      ? config.SEARCH_FEEDBACK_MAX_AGE_SEC
-      : config.FEEDBACK_MAX_AGE_SEC;
+      ? feedbackEnv.SEARCH_FEEDBACK_MAX_AGE_SEC
+      : feedbackEnv.FEEDBACK_MAX_AGE_SEC;
   return {
     endpoint,
     id: jobId,

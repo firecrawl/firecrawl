@@ -3,7 +3,6 @@ vi.mock("../../../../../services", async importOriginal => ({
   getIndexFromGCS: vi.fn(),
 }));
 vi.mock("../../../../../db/rpc", () => ({
-  queryMaxAge: vi.fn(),
   indexGetRecent5: vi.fn(),
 }));
 vi.mock("../../../../../services/index-cache", async importOriginal => ({
@@ -15,8 +14,6 @@ vi.mock("../../../../../services/index-cache", async importOriginal => ({
   getCachedIndexEntries: vi.fn(async () => ({ status: "miss" })),
   upsertCachedIndexEntries: vi.fn(async () => {}),
   deleteCachedIndexEntry: vi.fn(async () => {}),
-  getCachedMaxAge: vi.fn(async () => null),
-  setCachedMaxAge: vi.fn(async () => {}),
 }));
 vi.mock("../fire-pdf/cache-service", () => ({
   cacheServiceConfigured: vi.fn(() => true),

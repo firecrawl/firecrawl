@@ -5,6 +5,9 @@
 
 describe("Wikipedia engine routing under zero data retention (buildFallbackList)", () => {
   let buildFallbackList: typeof import("../../../scraper/scrapeURL/engines/index.js").buildFallbackList;
+  let replaceService:
+    | typeof import("../../../service/service.js").replaceService
+    | undefined;
 
   const env = {
     FIRE_ENGINE_BETA_URL: process.env.FIRE_ENGINE_BETA_URL,
@@ -19,9 +22,25 @@ describe("Wikipedia engine routing under zero data retention (buildFallbackList)
 
     // Re-import engines fresh so it reads the env vars set above at eval time.
     vi.resetModules();
-    ({ buildFallbackList } = await import(
+    const enginesModule = await import(
       "../../../scraper/scrapeURL/engines/index.js"
-    ));
+    );
+    const serviceModule = await import("../../../service/service.js");
+    buildFallbackList = enginesModule.buildFallbackList;
+    replaceService = serviceModule.replaceService;
+    replaceService(
+      serviceModule.createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            engines: enginesModule.coreEngines,
+            engineFeatures: enginesModule.coreEngineFeatures,
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
   });
 
   beforeEach(() => {
@@ -34,6 +53,7 @@ describe("Wikipedia engine routing under zero data retention (buildFallbackList)
   });
 
   afterAll(() => {
+    replaceService?.(undefined);
     for (const [name, value] of Object.entries(env)) {
       if (value === undefined) {
         delete process.env[name];

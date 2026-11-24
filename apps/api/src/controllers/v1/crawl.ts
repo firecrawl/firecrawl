@@ -221,13 +221,11 @@ export async function crawlController(
     bodyScrapeOptions.timeout,
     req.auth.team_id,
   );
-  // v1 prefaults maxAge (1 day), which would shadow the lockdown default the
-  // scrape backstop applies — keep only a maxAge the request actually sent.
-  if (
-    safeMode.safeMode?.lockdown &&
-    preNormalizedBody.scrapeOptions?.maxAge === undefined
-  ) {
-    scrapeOptions.maxAge = undefined;
+  if (safeMode.safeMode?.lockdown) {
+    scrapeOptions.maxAge =
+      typeof preNormalizedBody?.scrapeOptions?.maxAge === "number"
+        ? preNormalizedBody.scrapeOptions.maxAge
+        : undefined;
   }
 
   // TODO: @rafa, is this right? copied from v0

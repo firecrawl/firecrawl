@@ -1,6 +1,7 @@
 import type { ScrapeJobSingleUrls } from "../../types";
 import { getACUCTeam } from "../../controllers/auth";
 import { logger as _logger } from "../logger";
+import { jobContext } from "../request-context";
 import {
   buildRejectedScrapeActivityEvent,
   buildScrapeActivityEvent,
@@ -28,12 +29,13 @@ async function emitScrapeActivityEventAsync(
   try {
     const team = await getACUCTeam(job.team_id);
     if (team?.flags?.siemLogging !== true) return;
-    const orgId = job.internalOptions?.orgId ?? team.org_id;
+    const ctx = jobContext(job);
+    const orgId = ctx.orgId ?? team.org_id;
     if (!orgId) return;
 
     if (!(await isOrgSiemLoggingEnabled(orgId))) return;
 
-    const apiKeyName = await getApiKeyName(job.team_id, job.apiKeyId);
+    const apiKeyName = await getApiKeyName(job.team_id, ctx.apiKeyId);
     const event = buildScrapeActivityEvent(
       jobId,
       job,

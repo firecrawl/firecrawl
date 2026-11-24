@@ -9,10 +9,17 @@ import { AuthCreditUsageChunk } from "./controllers/v1/types";
 import { InternalOptions } from "./scraper/scrapeURL";
 import type { CostTracking } from "./lib/cost-tracking";
 import type { BillingMetadata } from "./services/billing/types";
+import type { RequestContext } from "./service/request-context";
 import { webhookSchema } from "./services/webhook/schema";
 import type { SerializedTraceContext } from "./lib/otel-tracer";
 
 type ScrapeJobCommon = {
+  /**
+   * The context of the request this job belongs to. A job created from
+   * another job has its parent's, copied whole. Absent on a payload written
+   * before the context existed; read it with `jobContext`.
+   */
+  ctx?: RequestContext;
   concurrencyLimited?: boolean;
   team_id: string;
   zeroDataRetention: boolean;
@@ -121,7 +128,6 @@ export enum RateLimiterMode {
   Map = "map",
   Extract = "extract",
   ExtractStatus = "extractStatus",
-  ExtractAgentPreview = "extractAgentPreview",
   Browser = "browser",
   BrowserExecute = "browserExecute",
   BrowserReplay = "browserReplay",
