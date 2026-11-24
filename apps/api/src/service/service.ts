@@ -158,7 +158,12 @@ export function createService(
       throw new Error("Invalid modules config");
     }
     for (const key of Object.keys(config.modules)) {
-      if (key !== "messages" && key !== "uploads") {
+      if (
+        key !== "messages" &&
+        key !== "uploads" &&
+        key !== "idempotency" &&
+        key !== "webhooks"
+      ) {
         throw new Error(`Unknown module slot "${key}"`);
       }
     }
@@ -174,6 +179,14 @@ export function createService(
       config.modules?.uploads === undefined
         ? defaults.uploads
         : config.modules.uploads,
+    idempotency:
+      config.modules?.idempotency === undefined
+        ? defaults.idempotency
+        : config.modules.idempotency,
+    webhooks:
+      config.modules?.webhooks === undefined
+        ? defaults.webhooks
+        : config.modules.webhooks,
   });
   const workers: Record<string, Worker> = Object.freeze(
     Object.fromEntries(
