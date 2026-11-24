@@ -36,5 +36,6 @@ export const threatProtectionEnv = defineEnv(
     // real endpoints derived from the org's vanity domain and cloud name.
     ZSCALER_TOKEN_URL_OVERRIDE: z.string().url().optional(),
     ZSCALER_API_URL_OVERRIDE: z.string().url().optional(),
+    PARTNER_EGRESS_PROXY_URL: z.string().url().optional(),
   }),
 );

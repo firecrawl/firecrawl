@@ -1,6 +1,5 @@
 import { createHash } from "crypto";
 import { ProxyAgent, type Dispatcher } from "undici";
-import { siemEnv } from "../../../siem-logging/env";
 import { threatProtectionEnv } from "../../env";
 
 // Minimal Zscaler OneAPI client for the ZIA endpoints the "zscaler" threat
@@ -87,13 +86,15 @@ let proxyDispatcher: ProxyAgent | undefined;
 let proxyDispatcherUrl: string | undefined;
 
 function getDispatcher(): Dispatcher | undefined {
-  if (!siemEnv.PARTNER_EGRESS_PROXY_URL) return undefined;
+  if (!threatProtectionEnv.PARTNER_EGRESS_PROXY_URL) return undefined;
   if (
     !proxyDispatcher ||
-    proxyDispatcherUrl !== siemEnv.PARTNER_EGRESS_PROXY_URL
+    proxyDispatcherUrl !== threatProtectionEnv.PARTNER_EGRESS_PROXY_URL
   ) {
-    proxyDispatcher = new ProxyAgent(siemEnv.PARTNER_EGRESS_PROXY_URL);
-    proxyDispatcherUrl = siemEnv.PARTNER_EGRESS_PROXY_URL;
+    proxyDispatcher = new ProxyAgent(
+      threatProtectionEnv.PARTNER_EGRESS_PROXY_URL,
+    );
+    proxyDispatcherUrl = threatProtectionEnv.PARTNER_EGRESS_PROXY_URL;
   }
   return proxyDispatcher;
 }
