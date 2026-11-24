@@ -1,9 +1,20 @@
-import { config } from "../../config";
+import { z } from "zod";
+import { defineEnv } from "../../service/env";
 
-export const CODEGEN_MODEL = config.EXTRACT_CODEGEN_MODEL;
-export const ANCHOR_MODEL = config.EXTRACT_ANCHOR_MODEL;
-export const LIGHT_MODEL = config.EXTRACT_LIGHT_MODEL;
-export const CODE_SANDBOX_URL = config.CODE_SANDBOX_URL;
+const deterministicJsonEnv = defineEnv(
+  "deterministic-json",
+  z.object({
+    EXTRACT_CODEGEN_MODEL: z.string().default("gemini-3.1-flash-lite"),
+    EXTRACT_ANCHOR_MODEL: z.string().default("openai/gpt-oss-120b"),
+    EXTRACT_LIGHT_MODEL: z.string().default("openai/gpt-oss-20b"),
+    CODE_SANDBOX_URL: z.string().default("ws://code-sandbox:3001"),
+  }),
+);
+
+export const CODEGEN_MODEL = deterministicJsonEnv.EXTRACT_CODEGEN_MODEL;
+export const ANCHOR_MODEL = deterministicJsonEnv.EXTRACT_ANCHOR_MODEL;
+export const LIGHT_MODEL = deterministicJsonEnv.EXTRACT_LIGHT_MODEL;
+export const CODE_SANDBOX_URL = deterministicJsonEnv.CODE_SANDBOX_URL;
 
 // Bump to invalidate every cached extractor at once.
 export const CACHE_VERSION = 2;
