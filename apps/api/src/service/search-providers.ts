@@ -17,7 +17,6 @@ import type { RequestContext } from "./request-context";
  * built on this one can add its own by declaration merging.
  */
 export interface SearchProviders {
-  "fire-engine": true;
   searxng: true;
   duckduckgo: true;
 }
@@ -31,14 +30,13 @@ export interface CoreSearchProviderSpec {
   readonly supportsUsOnly?: boolean;
 }
 
-const builtInSearchProviders = {
-  "fire-engine": { priority: 100, supportsUsOnly: true },
-  searxng: { priority: 50 },
-  duckduckgo: { priority: 0 },
-} satisfies Record<
+const builtInSearchProviders: Record<
   SearchProviderName,
   { readonly priority: number; readonly supportsUsOnly?: boolean }
->;
+> = {
+  searxng: { priority: 50 },
+  duckduckgo: { priority: 0 },
+};
 
 /** Built-in search provider names, in default priority order. */
 export const coreSearchProviderNames: readonly SearchProviderName[] =
@@ -56,9 +54,7 @@ export const coreSearchProviderSpecs: readonly CoreSearchProviderSpec[] =
       return Object.freeze({
         name,
         priority: spec.priority,
-        ...("supportsUsOnly" in spec && spec.supportsUsOnly
-          ? { supportsUsOnly: true }
-          : {}),
+        ...(spec.supportsUsOnly ? { supportsUsOnly: true } : {}),
       });
     }),
   );

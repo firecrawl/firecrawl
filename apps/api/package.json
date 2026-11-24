@@ -36,6 +36,10 @@
       "types": "./src/db/connection.ts",
       "default": "./dist/src/db/connection.js"
     },
+    "./unstable/db-schema": {
+      "types": "./src/db/schema/index.ts",
+      "default": "./dist/src/db/schema/index.js"
+    },
     "./unstable/job-priority": {
       "types": "./src/lib/job-priority.ts",
       "default": "./dist/src/lib/job-priority.js"

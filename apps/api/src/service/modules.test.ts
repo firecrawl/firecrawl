@@ -8,16 +8,20 @@ import {
 } from "../scraper/scrapeURL/error";
 import {
   defaultModules,
+  directWebhooks,
   logsMessages,
   memoryUploads,
   noLimits,
+  redisIdempotency,
 } from "./defaults";
 import { currentLimits } from "../lib/limits";
 import type {
+  IdempotencyModule,
   LimitsModule,
   MessagesModule,
   Modules,
   UploadsModule,
+  WebhooksModule,
 } from "./modules";
 import { createService, replaceService, type CoreParts } from "./service";
 import { testService, withService } from "./testing";
@@ -198,6 +202,123 @@ describe("memoryUploads", () => {
   });
 });
 
+describe("redisIdempotency", () => {
+  it("claims team-scoped keys with the default 24h TTL and rejects duplicates", async () => {
+    const seen = new Map<string, number>();
+    const idempotency = redisIdempotency({
+      setIfAbsent: async (key, ttlSeconds) => {
+        if (seen.has(key)) return false;
+        seen.set(key, ttlSeconds);
+        return true;
+      },
+    });
+
+    await expect(idempotency.claim("k1", { teamId: "team-a" })).resolves.toBe(
+      true,
+    );
+    await expect(idempotency.claim("k1", { teamId: "team-a" })).resolves.toBe(
+      false,
+    );
+    await expect(idempotency.claim("k1", { teamId: "team-b" })).resolves.toBe(
+      true,
+    );
+    expect(seen.get("idempotency:team-a:k1")).toBe(86_400);
+    expect(seen.get("idempotency:team-b:k1")).toBe(86_400);
+  });
+
+  it("supports a custom TTL and rejects invalid options", async () => {
+    const calls: Array<{ key: string; ttlSeconds: number }> = [];
+    const idempotency = redisIdempotency({
+      ttlSeconds: 120,
+      setIfAbsent: async (key, ttlSeconds) => {
+        calls.push({ key, ttlSeconds });
+        return true;
+      },
+    });
+
+    await expect(idempotency.claim("k2", { teamId: "team-a" })).resolves.toBe(
+      true,
+    );
+    expect(calls).toEqual([{ key: "idempotency:team-a:k2", ttlSeconds: 120 }]);
+
+    expect(() => redisIdempotency({ ttlSeconds: 0 })).toThrow(
+      "Invalid idempotency ttlSeconds",
+    );
+    expect(() => redisIdempotency({ ttlSeconds: -5 })).toThrow(
+      "Invalid idempotency ttlSeconds",
+    );
+    expect(() => redisIdempotency({ ttlSeconds: 1.5 })).toThrow(
+      "Invalid idempotency ttlSeconds",
+    );
+    expect(() =>
+      redisIdempotency({
+        setIfAbsent: "not-a-function" as unknown as () => Promise<boolean>,
+      }),
+    ).toThrow("Invalid idempotency setIfAbsent");
+  });
+});
+
+describe("directWebhooks", () => {
+  it("resolves static, undefined, and lazy secrets and delivers in-process", async () => {
+    const withStatic = directWebhooks({ secret: "hmac-1" });
+    const withUndefined = directWebhooks({ secret: undefined });
+    let dynamicSecret: string | undefined = "hmac-2";
+    const withFn = directWebhooks({ secret: () => dynamicSecret });
+    const ctx = { teamId: "team-1", zeroDataRetention: false };
+
+    await expect(withStatic.signingSecret(ctx)).resolves.toBe("hmac-1");
+    await expect(withUndefined.signingSecret(ctx)).resolves.toBeUndefined();
+    await expect(withFn.signingSecret(ctx)).resolves.toBe("hmac-2");
+    dynamicSecret = "hmac-3";
+    await expect(withFn.signingSecret(ctx)).resolves.toBe("hmac-3");
+
+    const send = vi.fn(async () => ({ ok: true, status: 202 }));
+    const result = await withStatic.deliver(
+      ctx,
+      {
+        url: "https://example.com/hook",
+        event: "crawl.completed",
+        payload: { success: true },
+        headers: {},
+        jobId: "job-1",
+        timeoutMs: 10_000,
+      },
+      send,
+    );
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      delivered: true,
+      queued: false,
+      statusCode: 202,
+    });
+
+    expect(() => directWebhooks({ secret: 123 as unknown as string })).toThrow(
+      "Invalid webhooks secret",
+    );
+  });
+
+  it("propagates send errors from direct delivery", async () => {
+    const webhooks = directWebhooks({ secret: undefined });
+    await expect(
+      webhooks.deliver(
+        { teamId: "team-1", zeroDataRetention: false },
+        {
+          url: "https://example.com/hook",
+          event: "crawl.completed",
+          payload: {},
+          headers: {},
+          jobId: "job-1",
+          timeoutMs: 10_000,
+        },
+        async () => {
+          throw new Error("network error");
+        },
+      ),
+    ).rejects.toThrow("network error");
+  });
+});
+
 describe("service module slots", () => {
   it("fills omitted module slots with built-in defaults", async () => {
     const built = createService({}, parts);
@@ -208,7 +329,15 @@ describe("service module slots", () => {
     expect(Object.isFrozen(built.modules.messages)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads.driver())).toBe(true);
-    expect(built.describe().modules).toEqual(["limits", "messages", "uploads"]);
+    expect(Object.isFrozen(built.modules.idempotency)).toBe(true);
+    expect(Object.isFrozen(built.modules.webhooks)).toBe(true);
+    expect(built.describe().modules).toEqual([
+      "idempotency",
+      "limits",
+      "messages",
+      "uploads",
+      "webhooks",
+    ]);
     await expect(built.modules.limits.concurrency(ctx)).resolves.toBeNull();
     await expect(
       built.modules.limits.teamConcurrency("team-1"),
@@ -247,12 +376,23 @@ describe("service module slots", () => {
       delete: async () => {},
     };
     const customUploads: UploadsModule = { driver: () => customDriver };
+    const customIdempotency: IdempotencyModule = {
+      claim: async key => key === "allow",
+    };
+    const shutdownSpy = vi.fn(async () => {});
+    const customWebhooks: WebhooksModule = {
+      signingSecret: async () => "original-secret",
+      deliver: async () => ({ delivered: false, queued: true }),
+      shutdown: shutdownSpy,
+    };
     const built = createService(
       {
         modules: {
           limits: customLimits,
           messages: customMessages,
           uploads: customUploads,
+          idempotency: customIdempotency,
+          webhooks: customWebhooks,
         },
       },
       parts,
@@ -266,6 +406,12 @@ describe("service module slots", () => {
       ...customDriver,
       name: "mutated",
     });
+    customIdempotency.claim = async () => false;
+    customWebhooks.signingSecret = async () => "mutated-secret";
+    customWebhooks.deliver = async () => ({ delivered: true, queued: false });
+    customWebhooks.shutdown = async () => {
+      throw new Error("mutated shutdown");
+    };
 
     const ctx = { teamId: "team-1", zeroDataRetention: false };
     await expect(built.modules.limits.concurrency(ctx)).resolves.toBe(25);
@@ -289,6 +435,31 @@ describe("service module slots", () => {
       maxBytes: 100,
     });
     expect(data.toString("utf8")).toBe("original");
+    await expect(
+      built.modules.idempotency.claim("allow", { teamId: "t1" }),
+    ).resolves.toBe(true);
+    await expect(
+      built.modules.webhooks.signingSecret({
+        teamId: "t1",
+        zeroDataRetention: false,
+      }),
+    ).resolves.toBe("original-secret");
+    await expect(
+      built.modules.webhooks.deliver(
+        { teamId: "t1", zeroDataRetention: false },
+        {
+          url: "https://example.com/hook",
+          event: "crawl.completed",
+          payload: {},
+          headers: {},
+          jobId: "j1",
+          timeoutMs: 10_000,
+        },
+        async () => ({ ok: true, status: 200 }),
+      ),
+    ).resolves.toEqual({ delivered: false, queued: true });
+    await built.modules.webhooks.shutdown?.();
+    expect(shutdownSpy).toHaveBeenCalledTimes(1);
   });
 
   it("rejects invalid, null, or unknown module slots and malformed upload drivers at service creation", () => {
@@ -341,6 +512,44 @@ describe("service module slots", () => {
         parts,
       ),
     ).toThrow("Invalid uploads module");
+    expect(() =>
+      createService(
+        { modules: { idempotency: {} as unknown as IdempotencyModule } },
+        parts,
+      ),
+    ).toThrow("Invalid idempotency module");
+    expect(() =>
+      createService(
+        { modules: { idempotency: null as unknown as IdempotencyModule } },
+        parts,
+      ),
+    ).toThrow("Invalid idempotency module");
+    expect(() =>
+      createService(
+        { modules: { webhooks: {} as unknown as WebhooksModule } },
+        parts,
+      ),
+    ).toThrow("Invalid webhooks module");
+    expect(() =>
+      createService(
+        { modules: { webhooks: null as unknown as WebhooksModule } },
+        parts,
+      ),
+    ).toThrow("Invalid webhooks module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            webhooks: {
+              signingSecret: async () => undefined,
+              deliver: async () => ({ delivered: true }),
+              shutdown: "not-a-function",
+            } as unknown as WebhooksModule,
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid webhooks module");
     expect(() =>
       createService(
         {
