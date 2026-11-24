@@ -85,14 +85,20 @@ export const htmlTransform = async (
   scrapeOptions: ScrapeOptions,
   dropSignatures?: string[],
 ) => {
-  let omceSignatures: string[] | undefined = dropSignatures;
+  let omceSignatures: string[] | undefined =
+    dropSignatures && dropSignatures.length > 0
+      ? [...dropSignatures]
+      : undefined;
 
-  if (omceSignatures === undefined && scrapeOptions.__experimental_omce) {
+  if (scrapeOptions.__experimental_omce) {
     try {
       const hostname =
         scrapeOptions.__experimental_omceDomain || new URL(url).hostname;
-      omceSignatures = await queryOMCESignatures(hostname);
-      logger.info("Got OMCE signatures", { signatures: omceSignatures.length });
+      const queried = await queryOMCESignatures(hostname);
+      logger.info("Got OMCE signatures", { signatures: queried.length });
+      omceSignatures = omceSignatures
+        ? [...new Set([...omceSignatures, ...queried])]
+        : queried;
     } catch (error) {
       logger.warn("Failed to get omce signatures.", {
         error,

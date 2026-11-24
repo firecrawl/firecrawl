@@ -289,7 +289,7 @@ export function resolveCandidateEngines(
   existing: ReadonlyMap<Engine, FallbackEngineEntry>,
 ): FallbackEngineEntry[] {
   const resolved: FallbackEngineEntry[] = [];
-  for (const engine of candidates) {
+  for (const engine of new Set(candidates)) {
     const prior = existing.get(engine);
     if (prior) {
       resolved.push(prior);
@@ -298,6 +298,9 @@ export function resolveCandidateEngines(
     const registered = service.engines.get(engine);
     if (!registered) {
       meta.logger.warn("Skipping unregistered engine", { engine });
+      continue;
+    }
+    if (!registered.enabled()) {
       continue;
     }
     const unsupportedFeatures = new Set<FeatureFlag>();

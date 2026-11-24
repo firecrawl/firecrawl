@@ -1108,12 +1108,28 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
                   error: error.error,
                 },
               );
+              const attempted = new Set<Engine>([
+                ...enginesAttempted,
+                ...enginePromises.map(x => x.engine),
+              ]);
+              const eligibleCandidates = nextPlan.candidates.filter(
+                engine => !attempted.has(engine),
+              );
               const resolved = resolveCandidateEngines(
                 meta,
-                nextPlan.candidates,
+                eligibleCandidates,
                 existing,
               );
               remainingEngines.splice(0, remainingEngines.length, ...resolved);
+              const attemptedEntries = fallbackList.filter(entry =>
+                attempted.has(entry.engine),
+              );
+              fallbackList.splice(
+                0,
+                fallbackList.length,
+                ...attemptedEntries,
+                ...resolved,
+              );
             }
 
             // If we don't have any engines waterfalled, let's waterfall the next engine
@@ -1443,9 +1459,10 @@ export async function scrapeURL(
           );
           meta.options = {
             ...plan.options,
-            skipTlsVerification:
-              plan.options.skipTlsVerification ??
-              meta.options.skipTlsVerification,
+            skipTlsVerification: internalOptions.zeroDataRetention
+              ? false
+              : (plan.options.skipTlsVerification ??
+                meta.options.skipTlsVerification),
           };
           meta.featureFlags = plan.features;
           setSpanAttributes(span, {

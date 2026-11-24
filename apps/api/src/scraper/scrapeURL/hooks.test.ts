@@ -33,7 +33,7 @@ vi.mock("./lib/removeUnwantedElements", async importOriginal => {
 
 import { scrapeURL } from ".";
 import { coreEngineFeatures, type EngineScrapeResult } from "./engines";
-import { EngineError } from "./error";
+import { EngineError, NoEnginesLeftError } from "./error";
 import { createScrapeFinishedEmitter } from "./hooks";
 import { htmlTransform } from "./lib/removeUnwantedElements";
 import { executeTransformers } from "./transformers";
@@ -44,13 +44,14 @@ const makeEngine = (
   options: {
     quality?: number;
     features?: Record<string, boolean>;
+    enabled?: () => boolean;
   } = {},
 ): RegisteredEngine =>
   ({
     name,
     quality: options.quality ?? 10,
     features: options.features ?? {},
-    enabled: () => true,
+    enabled: options.enabled ?? (() => true),
     maxReasonableTime: () => 5_000,
     scrape,
   }) as unknown as RegisteredEngine;
@@ -337,24 +338,26 @@ describe("scrape pipeline hook points", () => {
     expect(result.document.markdown).toContain("From playwright");
   });
 
-  it("skips unregistered engines returned by scrape.engines.select", async () => {
-    const playwrightScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://example.com/reordered",
-        html: "<html><body><p>Reordered</p></body></html>",
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
+  it("skips unregistered, disabled, and duplicate engines from scrape.engines.select", async () => {
+    const disabledScrape = vi.fn();
+    const playwrightScrape = vi.fn(async (): Promise<EngineScrapeResult> => {
+      throw new EngineError("playwright failed");
+    });
 
     installTestService(
-      [makeEngine("playwright", playwrightScrape, { quality: 10 })],
+      [
+        makeEngine("fetch", disabledScrape, {
+          quality: 20,
+          enabled: () => false,
+        }),
+        makeEngine("playwright", playwrightScrape, { quality: 10 }),
+      ],
       [
         {
           name: "select-hook",
           hooks: {
             "scrape.engines.select": () => ({
-              candidates: ["fetch", "playwright"],
+              candidates: ["pdf", "fetch", "playwright", "playwright"],
             }),
           },
         },
@@ -369,10 +372,99 @@ describe("scrape pipeline hook points", () => {
       new CostTracking(),
     );
 
-    expect(result.success).toBe(true);
-    if (!result.success) return;
+    expect(result.success).toBe(false);
+    expect(disabledScrape).not.toHaveBeenCalled();
     expect(playwrightScrape).toHaveBeenCalledTimes(1);
-    expect(result.document.markdown).toContain("Reordered");
+  });
+
+  it("prevents scrape.engine.fallback from re-queuing attempted engines and tracks added engines", async () => {
+    const fetchScrape = vi.fn(async (): Promise<EngineScrapeResult> => {
+      throw new EngineError("fetch failed");
+    });
+    const playwrightScrape = vi.fn(async (): Promise<EngineScrapeResult> => {
+      throw new EngineError("playwright failed");
+    });
+
+    installTestService(
+      [
+        makeEngine("fetch", fetchScrape, { quality: 20 }),
+        makeEngine("playwright", playwrightScrape, { quality: 10 }),
+      ],
+      [
+        {
+          name: "static-fallback-hook",
+          hooks: {
+            "scrape.engines.select": () => ({ candidates: ["fetch"] }),
+            // Returns a static list including the already-failed engine.
+            "scrape.engine.fallback": () => ({
+              candidates: ["fetch", "playwright"],
+            }),
+          },
+        },
+      ],
+    );
+
+    const result = await scrapeURL(
+      "scrape-fallback-dedup",
+      "https://example.com/fallback",
+      scrapeOptions.parse({ formats: ["markdown"] }),
+      { teamId: "team-fallback", orgId: null },
+      new CostTracking(),
+    );
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(fetchScrape).toHaveBeenCalledTimes(1);
+    expect(playwrightScrape).toHaveBeenCalledTimes(1);
+    expect(result.error).toBeInstanceOf(NoEnginesLeftError);
+    expect((result.error as NoEnginesLeftError).fallbackList).toEqual([
+      "fetch",
+      "playwright",
+    ]);
+  });
+
+  it("preserves skipTlsVerification=false for zero data retention scrapes after scrape.start", async () => {
+    let observedSkipTls: boolean | undefined;
+    const fetchScrape = vi.fn(
+      async (meta: { options: { skipTlsVerification: boolean } }) => {
+        observedSkipTls = meta.options.skipTlsVerification;
+        return {
+          url: "https://example.com/zdr",
+          html: "<html><body><p>ZDR</p></body></html>",
+          statusCode: 200,
+          proxyUsed: "basic" as const,
+        };
+      },
+    );
+
+    installTestService(
+      [makeEngine("fetch", fetchScrape, { quality: 20 })],
+      [
+        {
+          name: "zdr-tls-hook",
+          hooks: {
+            "scrape.start": plan => ({
+              ...plan,
+              options: { ...plan.options, skipTlsVerification: true },
+            }),
+          },
+        },
+      ],
+    );
+
+    const result = await scrapeURL(
+      "scrape-zdr-tls",
+      "https://example.com/zdr",
+      scrapeOptions.parse({
+        formats: ["markdown"],
+        skipTlsVerification: true,
+      }),
+      { teamId: "team-zdr", orgId: null, zeroDataRetention: true },
+      new CostTracking(),
+    );
+
+    expect(result.success).toBe(true);
+    expect(observedSkipTls).toBe(false);
   });
 
   it("produces identical output when no hook handlers are registered", async () => {
@@ -390,7 +482,7 @@ describe("scrape pipeline hook points", () => {
     installTestService([makeEngine("fetch", scrape, { quality: 20 })]);
 
     const first = await scrapeURL(
-      "scrape-baseline-1",
+      "scrape-baseline",
       "https://example.com/baseline",
       scrapeOptions.parse({ formats: ["markdown", "html"] }),
       { teamId: "team-baseline", orgId: null },
@@ -403,7 +495,7 @@ describe("scrape pipeline hook points", () => {
     );
 
     const second = await scrapeURL(
-      "scrape-baseline-2",
+      "scrape-baseline",
       "https://example.com/baseline",
       scrapeOptions.parse({ formats: ["markdown", "html"] }),
       { teamId: "team-baseline", orgId: null },
