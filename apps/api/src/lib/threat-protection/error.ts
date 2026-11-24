@@ -29,6 +29,10 @@ export class UnsafeDomainBlockedError extends TransportableError {
     this.domain = decision.domain;
   }
 
+  get httpStatus(): number {
+    return 403;
+  }
+
   serialize() {
     return {
       ...super.serialize(),

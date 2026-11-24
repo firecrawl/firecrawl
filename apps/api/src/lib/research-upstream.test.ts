@@ -14,7 +14,11 @@ vi.mock("../config", () => ({
   config: { RESEARCH_PROXY_URL: "https://research.test/" },
 }));
 
-import { fetchResearchUpstream } from "./research-upstream";
+import { getErrorHttpResponse } from "./error";
+import {
+  fetchResearchUpstream,
+  UsOnlyUpstreamRefusalError,
+} from "./research-upstream";
 
 beforeEach(() => {
   mocks.fetch.mockReset();
@@ -65,5 +69,24 @@ describe("fetchResearchUpstream", () => {
 
   it("limits connection setup without dispatcher headers or body timeouts", () => {
     expect(mocks.agent).toHaveBeenCalledWith({ connectTimeout: 10_000 });
+  });
+});
+
+describe("UsOnlyUpstreamRefusalError", () => {
+  it("exposes status and US_ONLY_UNAVAILABLE code for 403 responses", () => {
+    const error = new UsOnlyUpstreamRefusalError(403, "Blocked by region");
+    expect(getErrorHttpResponse(error)).toEqual({
+      status: 403,
+      code: "US_ONLY_UNAVAILABLE",
+      message: "Blocked by region",
+    });
+  });
+
+  it("exposes status without a code for non-403 responses", () => {
+    const error = new UsOnlyUpstreamRefusalError(502, "Upstream unavailable");
+    expect(getErrorHttpResponse(error)).toEqual({
+      status: 502,
+      message: "Upstream unavailable",
+    });
   });
 });

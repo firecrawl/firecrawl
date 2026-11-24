@@ -1,4 +1,8 @@
-import { ErrorCode, TransportableError } from "../../lib/error";
+import {
+  ErrorCode,
+  FormatUnavailableError,
+  TransportableError,
+} from "../../lib/error";
 import { logsMessages } from "../../service/defaults";
 import { installedService } from "../../service/service";
 import type { Meta } from ".";
@@ -11,6 +15,10 @@ export class EngineError extends Error {
   constructor(message?: string, options?: ErrorOptions) {
     super(message, options);
   }
+
+  formatEngineLog(engine: string): string {
+    return `Engine ${engine} could not scrape the page.`;
+  }
 }
 
 /** A route the team's US-only restriction rules out, because no US-based vendor serves it. */
@@ -19,6 +27,18 @@ export class UsOnlyUnavailableError extends TransportableError {
 
   constructor(message: string) {
     super("US_ONLY_UNAVAILABLE", message);
+  }
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
+  get propagateFromExtraction(): boolean {
+    return true;
+  }
+
+  get httpStatus(): number {
+    return 403;
   }
 
   static deserialize(
@@ -41,6 +61,14 @@ export class ReservedCapacityUnavailableError extends TransportableError {
     message = "PDF processing is unavailable for this team's configuration. Please retry later.",
   ) {
     super("RESERVED_CAPACITY_UNAVAILABLE", message);
+  }
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
+  get httpStatus(): number {
+    return 403;
   }
 
   static deserialize(
@@ -101,6 +129,10 @@ export class AddFeatureError extends Error {
     this.documentPrefetch = documentPrefetch;
     this.imagePrefetch = imagePrefetch;
   }
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 }
 
 export class RemoveFeatureError extends Error {
@@ -113,10 +145,18 @@ export class RemoveFeatureError extends Error {
     );
     this.featureFlags = featureFlags;
   }
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 }
 
 export class SSLError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_SSL_ERROR"];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 
   constructor(
     public skipTlsVerification: boolean,
@@ -173,6 +213,22 @@ export class ExchangeRefusedError extends TransportableError {
     super(code, message);
   }
 
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
+  get httpStatus(): number {
+    switch (this.code as ExchangeRefusalCode) {
+      case "THIRD_PARTY_DATA_NOT_FOUND":
+        return 404;
+      case "THIRD_PARTY_DATA_UNSUPPORTED_URL":
+        return 400;
+      case "THIRD_PARTY_DATA_NOT_ENABLED":
+      case "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED":
+        return 403;
+    }
+  }
+
   static deserialize(
     code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
@@ -188,6 +244,10 @@ export class ExchangeRefusedError extends TransportableError {
 
 export class SiteError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_SITE_ERROR"];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 
   constructor(public errorCode: string) {
     const errorExplanations: Record<string, string> = {
@@ -251,6 +311,10 @@ export class ProxySelectionError extends TransportableError {
     "SCRAPE_PROXY_SELECTION_ERROR",
   ];
 
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
   constructor() {
     super(
       "SCRAPE_PROXY_SELECTION_ERROR",
@@ -278,6 +342,10 @@ export class SiteRestrictionError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = [
     "SCRAPE_SITE_RESTRICTION_BLOCKED",
   ];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 
   constructor() {
     super(
@@ -314,6 +382,10 @@ export class SiteBlockNoRetryError extends Error {
       `Fire Engine reported a site block that a retry does not get past: ${fireEngineError}`,
     );
   }
+
+  get abortsEngineRace(): boolean {
+    return true;
+  }
 }
 
 // Whether a failed Fire Engine job is such a block. Fire Engine sends
@@ -335,6 +407,10 @@ export function isNoRetrySiteBlock(
 
 export class ActionError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_ACTION_ERROR"];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 
   constructor(public errorCode: string) {
     super(
@@ -365,6 +441,10 @@ export class UnsupportedFileError extends TransportableError {
     "SCRAPE_UNSUPPORTED_FILE_ERROR",
   ];
 
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
   constructor(public reason: string) {
     super(
       "SCRAPE_UNSUPPORTED_FILE_ERROR",
@@ -392,6 +472,10 @@ export class UnsupportedFileError extends TransportableError {
 export class PDFAntibotError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_PDF_ANTIBOT_ERROR"];
 
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
   constructor() {
     super("SCRAPE_PDF_ANTIBOT_ERROR", "PDF scrape was prevented by anti-bot");
   }
@@ -414,6 +498,10 @@ export class PDFFetchProxyError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = [
     "SCRAPE_PDF_FETCH_PROXY_ERROR",
   ];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 
   constructor() {
     super(
@@ -440,6 +528,10 @@ export class PDFInsufficientTimeError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = [
     "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR",
   ];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 
   constructor(
     public pageCount: number,
@@ -472,6 +564,10 @@ export class PDFInsufficientTimeError extends TransportableError {
 export class DNSResolutionError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_DNS_RESOLUTION_ERROR"];
 
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
   constructor(public hostname: string) {
     super(
       "SCRAPE_DNS_RESOLUTION_ERROR",
@@ -496,14 +592,26 @@ export class DNSResolutionError extends TransportableError {
   }
 }
 
-export class IndexMissError extends Error {
+export class IndexMissError extends EngineError {
   constructor() {
     super("Index doesn't have the page we're looking for");
+  }
+
+  override formatEngineLog(engine: string): string {
+    return `Engine ${engine} could not find the page in the index.`;
   }
 }
 
 export class NoCachedDataError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_NO_CACHED_DATA"];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
+  get httpStatus(): number {
+    return 404;
+  }
 
   constructor() {
     super(
@@ -528,6 +636,10 @@ export class NoCachedDataError extends TransportableError {
 
 export class LockdownMissError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_LOCKDOWN_CACHE_MISS"];
+
+  get httpStatus(): number {
+    return 404;
+  }
 
   constructor() {
     super(
@@ -579,6 +691,10 @@ export class ZDRViolationError extends TransportableError {
 
 export class PDFOCRRequiredError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_PDF_OCR_REQUIRED"];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 
   constructor(public pdfType: string) {
     super(
@@ -632,6 +748,10 @@ export class DocumentAntibotError extends TransportableError {
     "SCRAPE_DOCUMENT_ANTIBOT_ERROR",
   ];
 
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
   constructor() {
     super(
       "SCRAPE_DOCUMENT_ANTIBOT_ERROR",
@@ -657,6 +777,10 @@ export class DocumentFetchProxyError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = [
     "SCRAPE_DOCUMENT_FETCH_PROXY_ERROR",
   ];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 
   constructor() {
     super(
@@ -707,6 +831,21 @@ export class DocumentPrefetchFailed extends TransportableError {
 export class AgentIndexOnlyError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["AGENT_INDEX_ONLY"];
 
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
+  get httpStatus(): number {
+    return 403;
+  }
+
+  get httpResponseFields(): Record<string, unknown> {
+    return {
+      sponsor_status: "pending",
+      login_url: "https://firecrawl.dev/signin",
+    };
+  }
+
   constructor() {
     super(
       "AGENT_INDEX_ONLY",
@@ -756,6 +895,10 @@ export class AudioUnsupportedUrlError extends TransportableError {
 
 export class MediaAccessDeniedError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_MEDIA_ACCESS_DENIED"];
+
+  get httpStatus(): number {
+    return 403;
+  }
 
   constructor(message?: string) {
     super(
@@ -808,6 +951,14 @@ export class PromptInjectionDetectedError extends TransportableError {
 
 export class PaywalledContentError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_PAYWALLED_CONTENT"];
+
+  get stopsCrawlRetry(): boolean {
+    return true;
+  }
+
+  get httpStatus(): number {
+    return 403;
+  }
 
   constructor(message?: string) {
     super(
@@ -907,13 +1058,18 @@ export class VideoUnsupportedUrlError extends TransportableError {
   }
 }
 
-export class BrandingNotSupportedError extends TransportableError {
+export class BrandingNotSupportedError extends FormatUnavailableError {
   static readonly codes: readonly ErrorCode[] = [
     "SCRAPE_BRANDING_NOT_SUPPORTED",
   ];
 
   constructor(message: string) {
-    super("SCRAPE_BRANDING_NOT_SUPPORTED", message);
+    super(
+      "branding",
+      "SCRAPE_BRANDING_NOT_SUPPORTED",
+      message,
+      `Branding was skipped: ${message}`,
+    );
   }
 
   serialize() {
@@ -930,11 +1086,15 @@ export class BrandingNotSupportedError extends TransportableError {
   }
 }
 
-export class FEPageLoadFailed extends Error {
+export class FEPageLoadFailed extends EngineError {
   constructor() {
     super(
       "The page failed to load with the specified timeout. Please increase the timeout parameter in your request.",
     );
+  }
+
+  override formatEngineLog(_engine: string): string {
+    return "FEPageLoadFailed encountered";
   }
 }
 

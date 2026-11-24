@@ -31,7 +31,6 @@ import { hasFormatOfType } from "../../lib/format-utils";
 import {
   ActionError,
   AddFeatureError,
-  AgentIndexOnlyError,
   EngineError,
   NoEnginesLeftError,
   PDFAntibotError,
@@ -40,28 +39,20 @@ import {
   DocumentFetchProxyError,
   RemoveFeatureError,
   SiteError,
-  SiteRestrictionError,
-  SiteBlockNoRetryError,
   UnsupportedFileError,
   SSLError,
   PDFInsufficientTimeError,
   PDFOCRRequiredError,
-  IndexMissError,
-  NoCachedDataError,
   LockdownMissError,
   DNSResolutionError,
   PDFPrefetchFailed,
   DocumentPrefetchFailed,
-  FEPageLoadFailed,
   EngineSnipedError,
   WaterfallNextEngineSignal,
   EngineUnsuccessfulError,
   ProxySelectionError,
   ScrapeRetryLimitError,
-  BrandingNotSupportedError,
   UsOnlyUnavailableError,
-  ReservedCapacityUnavailableError,
-  ExchangeRefusedError,
   PaywalledContentError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
@@ -88,10 +79,14 @@ import {
   AbortManagerThrownError,
 } from "./lib/abortManager";
 import {
-  ScrapeJobTimeoutError,
+  abortsEngineRace,
+  ActionsNotSupportedError,
   composeTimeoutProcessing,
   CrawlDenialError,
-  ActionsNotSupportedError,
+  endsEngineLoop,
+  isFormatUnavailable,
+  isTransportableError,
+  ScrapeJobTimeoutError,
 } from "../../lib/error";
 import { htmlTransform } from "./lib/removeUnwantedElements";
 import { postprocessors } from "./postprocessors";
@@ -113,10 +108,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import {
-  type ExchangeScrapeMetadata,
-  ThirdPartyDataTermsRequiredError,
-} from "../../lib/exchange";
+import { type ExchangeScrapeMetadata } from "../../lib/exchange";
 import {
   checkUrl,
   type ThreatCheckDedup,
@@ -998,7 +990,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
           break;
         } catch (error) {
           if (error instanceof WrappedEngineError) {
-            if (error.error instanceof SiteBlockNoRetryError) {
+            if (abortsEngineRace(error.error)) {
               // Another engine or exit doesn't get past it either (the engine
               // has logged the block); end the scrape the usual way instead of
               // trying them, and stop the engines still racing.
@@ -1035,21 +1027,9 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               }
             }
             if (error.error instanceof EngineError) {
-              meta.logger.warn(
-                "Engine " + error.engine + " could not scrape the page.",
-                {
-                  error: error.error,
-                },
-              );
-            } else if (error.error instanceof IndexMissError) {
-              meta.logger.warn(
-                "Engine " +
-                  error.engine +
-                  " could not find the page in the index.",
-                {
-                  error: error.error,
-                },
-              );
+              meta.logger.warn(error.error.formatEngineLog(error.engine), {
+                error: error.error,
+              });
             } else if (error.error instanceof EngineUnsuccessfulError) {
               // Deliberately silent. An engine declining the page is a normal
               // waterfall outcome and is already recorded elsewhere: the
@@ -1059,40 +1039,13 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               // Logging again only duplicated that, ~48k lines/hour across all
               // engines. Recognised here purely so it doesn't fall through to the
               // catch-all branch and get reported as an unexpected error.
-            } else if (
-              error.error instanceof AddFeatureError ||
-              error.error instanceof RemoveFeatureError ||
-              error.error instanceof SiteError ||
-              error.error instanceof SiteRestrictionError ||
-              error.error instanceof SSLError ||
-              error.error instanceof DNSResolutionError ||
-              error.error instanceof ActionError ||
-              error.error instanceof UnsupportedFileError ||
-              error.error instanceof PDFAntibotError ||
-              error.error instanceof PDFFetchProxyError ||
-              error.error instanceof PDFOCRRequiredError ||
-              error.error instanceof DocumentAntibotError ||
-              error.error instanceof DocumentFetchProxyError ||
-              error.error instanceof PDFInsufficientTimeError ||
-              error.error instanceof ProxySelectionError ||
-              error.error instanceof NoCachedDataError ||
-              error.error instanceof AgentIndexOnlyError ||
-              error.error instanceof UsOnlyUnavailableError ||
-              error.error instanceof ReservedCapacityUnavailableError ||
-              error.error instanceof ExchangeRefusedError ||
-              error.error instanceof ThirdPartyDataTermsRequiredError
-            ) {
+            } else if (endsEngineLoop(error.error)) {
               throw error.error;
             } else if (error.error instanceof LLMRefusalError) {
               meta.logger.warn("LLM refusal encountered", {
                 error: error.error,
               });
               throw error.error;
-            } else if (error.error instanceof FEPageLoadFailed) {
-              // This is the internal timeout bug on f-e and should be treated as an EngineError.
-              meta.logger.warn("FEPageLoadFailed encountered", {
-                error: error.error,
-              });
             } else if (error.error instanceof AbortManagerThrownError) {
               if (error.error.tier === "engine") {
                 meta.logger.warn(
@@ -1579,7 +1532,7 @@ export async function scrapeURL(
 
       try {
         let result: ScrapeUrlResponse;
-        let brandingSkippedReason: string | undefined;
+        const skippedFormatWarnings: string[] = [];
         while (true) {
           try {
             result = await scrapeURLLoop(meta);
@@ -1729,25 +1682,29 @@ export async function scrapeURL(
                 );
               }
             } else if (
-              error instanceof BrandingNotSupportedError &&
-              meta.options.formats.some(f => f.type !== "branding")
+              isFormatUnavailable(error) &&
+              meta.options.formats.some(f => f.type === error.format) &&
+              meta.options.formats.some(f => f.type !== error.format)
             ) {
-              // The page turned out to be a PDF, document or image. Keep the
-              // other requested formats instead of failing the whole scrape;
-              // branding is dropped with a warning. Branding-only requests
-              // still fail with the error.
+              // The page cannot serve this format (for example branding on a
+              // PDF, document, or image). Keep the other requested formats
+              // instead of failing the whole scrape; drop the format with a
+              // warning. Requests for only that format still fail with the error.
               retryTracker.record("feature_removal", error);
-              meta.logger.info("Skipping branding for a non-HTML page", {
+              meta.logger.info("Skipping unavailable format for page", {
+                format: error.format,
                 reason: error.message,
               });
-              brandingSkippedReason = error.message;
+              if (error.warning) {
+                skippedFormatWarnings.push(error.warning);
+              }
               meta.featureFlags = new Set(
-                [...meta.featureFlags].filter(x => x !== "branding"),
+                [...meta.featureFlags].filter(x => x !== error.format),
               );
               meta.options = {
                 ...meta.options,
                 formats: meta.options.formats.filter(
-                  f => f.type !== "branding",
+                  f => f.type !== error.format,
                 ),
               };
             } else {
@@ -1756,8 +1713,8 @@ export async function scrapeURL(
           }
         }
 
-        if (brandingSkippedReason && result.success) {
-          const warning = `Branding was skipped: ${brandingSkippedReason}`;
+        if (skippedFormatWarnings.length > 0 && result.success) {
+          const warning = skippedFormatWarnings.join(" ");
           result.document.warning = result.document.warning
             ? `${result.document.warning} ${warning}`
             : warning;
@@ -1939,11 +1896,6 @@ export async function scrapeURL(
           meta.logger.warn("scrapeURL: Site failed to load in browser", {
             error,
           });
-        } else if (error instanceof SiteRestrictionError) {
-          errorType = "SiteRestrictionError";
-          meta.logger.warn("scrapeURL: Site restriction returned (Safe Mode)", {
-            error,
-          });
         } else if (error instanceof SSLError) {
           errorType = "SSLError";
           // Engines don't know about ZDR; swap in the message that doesn't
@@ -2001,14 +1953,6 @@ export async function scrapeURL(
             "scrapeURL: Document download failed at the proxy and could not be recovered via browser prefetch",
             { error },
           );
-        } else if (error instanceof BrandingNotSupportedError) {
-          errorType = "BrandingNotSupportedError";
-          meta.logger.warn(
-            "scrapeURL: Branding not supported for this content",
-            {
-              error,
-            },
-          );
         } else if (error instanceof ProxySelectionError) {
           errorType = "ProxySelectionError";
           meta.logger.warn("scrapeURL: Proxy selection error", { error });
@@ -2021,22 +1965,18 @@ export async function scrapeURL(
             error,
             retryStats: error.stats,
           });
-        } else if (error instanceof UnsafeDomainBlockedError) {
-          errorType = "UnsafeDomainBlockedError";
-          meta.logger.warn(
-            "scrapeURL: Domain blocked by threat protection policy",
-            {
-              error,
-              domain: error.domain,
-              rule: error.decision.rule,
-            },
-          );
-        } else if (error instanceof PaywalledContentError) {
-          errorType = "PaywalledContentError";
-          meta.logger.warn("scrapeURL: Paywalled page refused by Safe Mode");
         } else if (error instanceof AbortManagerThrownError) {
           errorType = "AbortManagerThrownError";
           throw error.inner;
+        } else if (
+          isTransportableError(error) &&
+          error.code !== "UNKNOWN_ERROR"
+        ) {
+          errorType = error.code;
+          meta.logger.warn(`scrapeURL: Scrape failed with ${error.code}`, {
+            code: error.code,
+            error,
+          });
         } else {
           meta.logger.error("scrapeURL: Unexpected error happened", { error });
           recordSpanException(span, error);
