@@ -12,12 +12,7 @@ import {
   type EngineRegistry,
 } from "./engines";
 import { assertEnv, describeEnv } from "./env";
-import {
-  buildHooks,
-  type HookHandlers,
-  type HookPoints,
-  type Hooks,
-} from "./hooks";
+import { buildHookRegistry, type HookHandlers, type Hooks } from "./hooks";
 import {
   buildLlmProviderRegistry,
   type LlmProvider,
@@ -186,8 +181,11 @@ export function createService(
     ),
   );
 
-  const hooks = buildHooks<HookPoints>(
-    extensions.flatMap(extension => extension.hooks ?? []),
+  const { hooks, describedHooks } = buildHookRegistry(
+    extensions.map(extension => ({
+      owner: extension.name,
+      hooks: extension.hooks,
+    })),
     (hook, error) => parts.logger.error("Hook handler failed", { hook, error }),
   );
 
@@ -254,21 +252,12 @@ export function createService(
     return byCode;
   };
 
-  // Worked out here, from the extensions as the handlers and roles above were
-  // just read from them, so it stays true to what the service runs whatever
-  // happens to an extension object later. The two records have no prototype,
-  // so a name such as "constructor" is a key like any other.
-  const handlerOwners: Record<string, string[]> = Object.create(null);
+  // Worked out here, from the extensions as the roles above were just read
+  // from them, so it stays true to what the service runs whatever happens to
+  // an extension object later. The record has no prototype, so a name such as
+  // "constructor" is a key like any other.
   const roleOwners: Record<string, string> = Object.create(null);
   for (const extension of extensions) {
-    for (const [point, listed] of Object.entries(extension.hooks ?? {})) {
-      const count = Array.isArray(listed) ? listed.length : listed ? 1 : 0;
-      if (count === 0) continue;
-      handlerOwners[point] = [
-        ...(handlerOwners[point] ?? []),
-        ...Array<string>(count).fill(extension.name),
-      ];
-    }
     for (const role of Object.keys(extension.workers ?? {})) {
       roleOwners[role] = extension.name;
     }
@@ -276,7 +265,7 @@ export function createService(
   const baseDescription = {
     extensions: names,
     modules: Object.keys(modules).sort(),
-    hooks: sortedByKey(handlerOwners),
+    hooks: describedHooks,
     engines: describedEngines,
     engineFeatures: describedFeatures,
     searchProviders: describedSearchProviders,
