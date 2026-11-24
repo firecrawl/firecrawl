@@ -1,0 +1,57 @@
+apps/api/src/services/webhook/delivery.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 2,4,9-15,125-144,147-157,159-164,166-175,177,182-183,187
+apps/api/src/lib/idempotency.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 1-19
+apps/api/src/service/testing.test.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 27-32
+apps/api/src/services/webhook/delivery.test.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 1-53,55-57,60-79,105-369
+apps/api/src/services/webhook/logs.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 2,5-47
+apps/api/src/service/modules.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 107-169,177-178,214,233-248,262-271,276-277
+apps/api/src/services/webhook/config.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 2-4,9,15-21,36-39
+apps/api/package.json
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 27-38
+apps/api/src/service/modules.test.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 9-22,188-304,313-320,344-352,354-361,371-376,387-411,439-476
+apps/api/src/service/core-parts.test.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 42-53,270,394,411-416
+apps/api/src/service/service.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 161-166,182-189
+apps/api/src/controllers/v0/crawl.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 14,120-123
+apps/api/src/service/defaults.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 9,14,137-253,259-260
+apps/api/src/services/webhook/index.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 16,30
+apps/api/src/index.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 37,265-276
+apps/api/src/service/service.test.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 406,538,630
+apps/api/src/__tests__/routes/idempotency.routes.test.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 1-168
+apps/api/src/service/index.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 10-20,81-82,91-95
+apps/api/src/controllers/__tests__/crawl.test.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 5-6,17-18,24,36-37,41-46,48-55
+apps/api/src/routes/shared.ts
+  s_6a7201d5c4fd9c::t_a3852b5e5933fb 21,479-487,493
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5b0da55b6f049c7a0c30924b156b676082aac466",
+  "prompts": {},
+  "sessions": {
+    "s_6a7201d5c4fd9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc25e5bc-9ab3-420e-8413-1c98a5787305",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
