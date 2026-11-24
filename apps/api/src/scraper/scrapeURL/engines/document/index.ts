@@ -11,14 +11,19 @@ import {
   DocumentAntibotError,
   DocumentFetchProxyError,
   EngineUnsuccessfulError,
+  UnsupportedFileError,
 } from "../../error";
 import {
   documentContentTypeFromExtension,
   documentExtensionFromContentType,
   documentExtensionFromUrlPath,
 } from "../../../../lib/document-formats";
-import { readFile, unlink } from "node:fs/promises";
+import { readFile, stat, unlink } from "node:fs/promises";
 import { useFireEngine } from "../fire-engine/available";
+
+// The file is buffered whole in memory before conversion; same cap as the
+// PDF engine's download.
+const DOCUMENT_DOWNLOAD_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
   // With fire-engine available this engine never downloads files itself:
@@ -56,8 +61,12 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
 
   try {
     if (meta.documentPrefetch !== undefined && meta.documentPrefetch !== null) {
-      // Use prefetched document
+      // Use prefetched document; it sits on disk, so check the size before
+      // loading it into memory.
       tempFilePath = meta.documentPrefetch.filePath;
+      if ((await stat(tempFilePath)).size > DOCUMENT_DOWNLOAD_MAX_FILE_SIZE) {
+        throw new UnsupportedFileError("File exceeds size limit");
+      }
       buffer = await readFile(tempFilePath);
 
       // Create a mock response object with content-type from prefetch
@@ -83,6 +92,7 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
             headers: meta.options.headers,
             signal: meta.abort.asSignal(),
           },
+          DOCUMENT_DOWNLOAD_MAX_FILE_SIZE,
         ),
       );
       response = result.response;
