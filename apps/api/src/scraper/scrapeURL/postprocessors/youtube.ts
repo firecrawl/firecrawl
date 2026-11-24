@@ -171,6 +171,14 @@ export const youtubePostprocessor: Postprocessor = {
       return engineResult;
     }
 
+    if (meta.internalOptions?.zeroDataRetention) {
+      return {
+        ...engineResult,
+        warning:
+          "YouTube metadata and transcripts are not available with zero data retention.",
+      };
+    }
+
     // Uses the same media service as the audio and video formats.
     if (isUsOnly(meta.internalOptions?.teamFlags ?? undefined)) {
       return {

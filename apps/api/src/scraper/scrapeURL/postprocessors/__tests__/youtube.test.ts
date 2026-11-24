@@ -63,6 +63,41 @@ describe("youtubePostprocessor /metadata fetch timeout", () => {
   });
 });
 
+describe("youtubePostprocessor with zero data retention", () => {
+  const originalFetch = global.fetch;
+  const originalUrl = config.AVGRAB_SERVICE_URL;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    config.AVGRAB_SERVICE_URL = originalUrl;
+    vi.clearAllMocks();
+  });
+
+  it("returns the page with a warning and never calls /metadata", async () => {
+    const spy = vi.fn();
+    global.fetch = spy as any;
+    config.AVGRAB_SERVICE_URL = "https://avgrab.example";
+
+    const engineResult: any = {
+      url: "https://www.youtube.com/watch?v=H4fUJQCIV5E",
+      markdown: "original page",
+    };
+    const meta: any = {
+      url: engineResult.url,
+      options: { lockdown: false, location: undefined },
+      internalOptions: { zeroDataRetention: true },
+    };
+
+    const result = await youtubePostprocessor.run(meta, engineResult);
+
+    expect(spy).not.toHaveBeenCalled();
+    expect(result.markdown).toBe("original page");
+    expect(result.warning).toBe(
+      "YouTube metadata and transcripts are not available with zero data retention.",
+    );
+  });
+});
+
 describe("youtubePostprocessor.shouldRun", () => {
   const meta = {} as any;
 
