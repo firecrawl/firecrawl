@@ -1,14 +1,6 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  resolve: {
-    alias: [
-      // pdf-parse's package entry runs a debug self-test (reading a sample PDF)
-      // when `module.parent` is falsy, which it is under Vitest's runner. Point
-      // at the real implementation entry to skip that wrapper. Test-only.
-      { find: /^pdf-parse$/, replacement: "pdf-parse/lib/pdf-parse.js" },
-    ],
-  },
   test: {
     environment: "node",
     // describe/it/expect/vi available without imports (most test files rely on this).

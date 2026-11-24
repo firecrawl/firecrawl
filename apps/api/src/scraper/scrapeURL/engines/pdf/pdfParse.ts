@@ -1,6 +1,6 @@
 import { Meta } from "../..";
 import escapeHtml from "escape-html";
-import PdfParse from "pdf-parse";
+import { PDFParse } from "pdf-parse";
 import { readFile } from "node:fs/promises";
 import type { PDFProcessorResult } from "./types";
 
@@ -22,34 +22,62 @@ export async function scrapePDFWithParsePDF(
   try {
     const startedAt = Date.now();
     const file = await readFile(tempFilePath);
-    // pdf-parse's bundled pdf.js (1.10) clones its input with
-    // `new value.constructor(value)`. For a Buffer that is `new Buffer(...)`,
-    // which Node serves from its shared 8 KiB pool for anything under 4 KiB,
-    // so the clone is a slice with a non-zero byteOffset — and pdf.js then
-    // reads `bytes.buffer` at absolute offsets (Stream.makeSubStream). Every
-    // PDF under ~4 KiB therefore failed with "bad XRef entry" unless the slice
-    // happened to land at the start of a fresh pool. A Uint8Array view over
-    // the same memory (no copy) turns that clone into `new Uint8Array(...)`,
-    // which owns its ArrayBuffer. (@types/pdf-parse declares Buffer, but
-    // pdf.js accepts any Uint8Array.)
     const bytes = new Uint8Array(file.buffer, file.byteOffset, file.byteLength);
-    const result = await PdfParse(bytes as Buffer, { max });
-    const durationMs = Date.now() - startedAt;
-    const escaped = escapeHtml(result.text);
+    const parser = new PDFParse({ data: bytes });
+    try {
+      // `first` caps extraction at the first `max` pages, and an empty
+      // pageJoiner keeps the concatenated text free of the per-page markers
+      // pdf-parse 2.x adds by default.
+      let total: number;
+      let pages: { text: string }[];
+      try {
+        const result = await parser.getText({ first: max, pageJoiner: "" });
+        total = result.total;
+        pages = result.pages;
+      } catch (firstError) {
+        // pdf-parse 1.x skipped a page that failed to render and kept the
+        // rest; 2.x rejects the whole extraction. Retry page by page to
+        // keep that tolerance.
+        try {
+          total = (await parser.getInfo()).total;
+        } catch {
+          throw firstError;
+        }
+        pages = [];
+        for (let i = 1; i <= Math.min(total, max); i++) {
+          try {
+            const page = await parser.getText({
+              partial: [i],
+              pageJoiner: "",
+            });
+            pages.push({ text: page.pages[0]?.text ?? "" });
+          } catch {
+            pages.push({ text: "" });
+          }
+        }
+      }
+      const durationMs = Date.now() - startedAt;
+      // pdf-parse 1.x prefixed every page's text with a blank line.
+      const escaped = escapeHtml(
+        pages.map(page => `\n\n${page.text}`).join(""),
+      );
 
-    meta.logger.info("pdfParse succeeded", {
-      durationMs,
-      markdownLength: escaped.length,
-      numPages: result.numpages,
-      ...(result.numpages > max ? { truncatedToPages: max } : {}),
-    });
+      meta.logger.info("pdfParse succeeded", {
+        durationMs,
+        markdownLength: escaped.length,
+        numPages: total,
+        ...(total > max ? { truncatedToPages: max } : {}),
+      });
 
-    return {
-      markdown: escaped,
-      html: escaped,
-      pagesProcessed: Math.min(result.numpages, max),
-      pageCount: result.numpages,
-    };
+      return {
+        markdown: escaped,
+        html: escaped,
+        pagesProcessed: Math.min(total, max),
+        pageCount: total,
+      };
+    } finally {
+      await parser.destroy();
+    }
   } catch (error) {
     meta.logger.error("pdfParse failed", { error });
     throw error;

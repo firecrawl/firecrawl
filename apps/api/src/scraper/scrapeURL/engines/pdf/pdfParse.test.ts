@@ -3,10 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const mocks = vi.hoisted(() => ({
-  pdfParse: vi.fn(),
+  getText: vi.fn(),
+  getInfo: vi.fn(),
+  destroy: vi.fn(),
+  PDFParse: vi.fn(),
 }));
 
-vi.mock("pdf-parse", () => ({ default: mocks.pdfParse }));
+vi.mock("pdf-parse", () => ({ PDFParse: mocks.PDFParse }));
 
 import { PDF_PARSE_MAX_PAGES, scrapePDFWithParsePDF } from "./pdfParse";
 
@@ -30,31 +33,56 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
-  mocks.pdfParse.mockReset();
-  mocks.pdfParse.mockResolvedValue({ text: "hello", numpages: 3 });
+  mocks.getText.mockReset();
+  mocks.getText.mockResolvedValue({
+    text: "hello",
+    total: 3,
+    pages: [{ num: 1, text: "hello" }],
+  });
+  mocks.getInfo.mockReset();
+  mocks.getInfo.mockResolvedValue({ total: 3 });
+  mocks.destroy.mockReset();
+  mocks.destroy.mockResolvedValue(undefined);
+  mocks.PDFParse.mockReset();
+  mocks.PDFParse.mockImplementation(function () {
+    return {
+      getText: mocks.getText,
+      getInfo: mocks.getInfo,
+      destroy: mocks.destroy,
+    };
+  });
 });
 
 describe("scrapePDFWithParsePDF", () => {
   it("passes the request's maxPages to pdf-parse", async () => {
     const result = await scrapePDFWithParsePDF(meta(), filePath, 7);
 
-    expect(result.markdown).toBe("hello");
+    expect(result.markdown).toBe("\n\nhello");
     expect(result.pagesProcessed).toBe(3);
     expect(result.pageCount).toBe(3);
-    expect(mocks.pdfParse).toHaveBeenCalledTimes(1);
-    expect(mocks.pdfParse.mock.calls[0][1]).toEqual({ max: 7 });
+    expect(mocks.PDFParse).toHaveBeenCalledTimes(1);
+    expect(mocks.PDFParse.mock.calls[0][0]).toEqual({
+      data: expect.any(Uint8Array),
+    });
+    expect(mocks.getText).toHaveBeenCalledWith({ first: 7, pageJoiner: "" });
+    expect(mocks.destroy).toHaveBeenCalledTimes(1);
   });
 
   it("caps the page walk when the request sets no maxPages", async () => {
     await scrapePDFWithParsePDF(meta(), filePath);
 
-    expect(mocks.pdfParse.mock.calls[0][1]).toEqual({
-      max: PDF_PARSE_MAX_PAGES,
+    expect(mocks.getText).toHaveBeenCalledWith({
+      first: PDF_PARSE_MAX_PAGES,
+      pageJoiner: "",
     });
   });
 
   it("logs when the declared page count exceeds the cap", async () => {
-    mocks.pdfParse.mockResolvedValue({ text: "x", numpages: 5_000_000 });
+    mocks.getText.mockResolvedValue({
+      text: "x",
+      total: 5_000_000,
+      pages: [{ num: 1, text: "x" }],
+    });
     const m = meta();
 
     const result = await scrapePDFWithParsePDF(m, filePath, 10);
@@ -68,7 +96,11 @@ describe("scrapePDFWithParsePDF", () => {
   });
 
   it("does not report a truncation when the declared count fits the cap", async () => {
-    mocks.pdfParse.mockResolvedValue({ text: "x", numpages: 3 });
+    mocks.getText.mockResolvedValue({
+      text: "x",
+      total: 3,
+      pages: [{ num: 1, text: "x" }],
+    });
     const m = meta();
 
     const result = await scrapePDFWithParsePDF(m, filePath, 10);
@@ -78,6 +110,43 @@ describe("scrapePDFWithParsePDF", () => {
     expect(m.logger.info).toHaveBeenCalledWith(
       "pdfParse succeeded",
       expect.not.objectContaining({ truncatedToPages: expect.anything() }),
+    );
+  });
+
+  it("keeps the readable pages when one page fails to extract", async () => {
+    mocks.getInfo.mockResolvedValue({ total: 2 });
+    mocks.getText.mockImplementation(async (params: any) => {
+      if (params.first !== undefined) {
+        throw new Error("page 2 is corrupt");
+      }
+      if (params.partial?.[0] === 1) {
+        return { text: "one", total: 2, pages: [{ num: 1, text: "one" }] };
+      }
+      throw new Error("page 2 is corrupt");
+    });
+    const m = meta();
+
+    const result = await scrapePDFWithParsePDF(m, filePath, 10);
+
+    expect(result.markdown).toBe("\n\none\n\n");
+    expect(result.pagesProcessed).toBe(2);
+    expect(result.pageCount).toBe(2);
+    expect(m.logger.error).not.toHaveBeenCalled();
+    expect(mocks.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("destroys the parser when extraction fails outright", async () => {
+    mocks.getText.mockRejectedValue(new Error("bad pdf"));
+    mocks.getInfo.mockRejectedValue(new Error("no info"));
+    const m = meta();
+
+    await expect(scrapePDFWithParsePDF(m, filePath, 10)).rejects.toThrow(
+      "bad pdf",
+    );
+    expect(mocks.destroy).toHaveBeenCalledTimes(1);
+    expect(m.logger.error).toHaveBeenCalledWith(
+      "pdfParse failed",
+      expect.objectContaining({ error: expect.anything() }),
     );
   });
 });
