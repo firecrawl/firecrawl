@@ -1,15 +1,20 @@
 const mocks = vi.hoisted(() => {
-  const store = new Map<string, string>();
+  const store = new Map<string, string | Buffer>();
   return {
     store,
     config: { USE_DB_AUTHENTICATION: true, FIRE_EXCHANGE_URL: "https://x" },
     redis: {
-      set: vi.fn(async (key: string, value: string, ...args: unknown[]) => {
-        if (args.includes("NX") && store.has(key)) return null;
-        store.set(key, value);
-        return "OK";
-      }),
-      get: vi.fn(async (key: string) => store.get(key) ?? null),
+      set: vi.fn(
+        async (key: string, value: string | Buffer, ...args: unknown[]) => {
+          if (args.includes("NX") && store.has(key)) return null;
+          store.set(key, value);
+          return "OK";
+        },
+      ),
+      get: vi.fn(async (key: string) => store.get(key)?.toString() ?? null),
+      getBuffer: vi.fn(async (key: string) =>
+        store.has(key) ? Buffer.from(store.get(key)!) : null,
+      ),
       del: vi.fn(async (key: string) => (store.delete(key) ? 1 : 0)),
     },
     request: vi.fn(),
@@ -48,6 +53,7 @@ vi.mock("../autumn/autumn.service", () => ({
   featureIdForBillingEndpoint: () => "credits",
 }));
 import { createHash } from "node:crypto";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { answerSchema } from "./contracts";
 import { retrieveProviders } from "./retrieve";
 
@@ -74,6 +80,26 @@ const run = (overrides: Record<string, unknown> = {}) =>
     rateLimitMultiplier: 1,
     ...overrides,
   });
+const RECORD = "alexandria:retrieve:";
+const RESPONSE = "alexandria:response:";
+const storedUnder = (prefix: string) =>
+  [...mocks.store].filter(([key]) => key.startsWith(prefix));
+/** Every replay record in the store. */
+const records = () =>
+  storedUnder(RECORD).map(([, raw]) => JSON.parse(raw.toString()));
+/** Every cached response in the store. */
+const cachedResponses = () =>
+  storedUnder(RESPONSE).map(([, raw]) =>
+    JSON.parse(gunzipSync(Buffer.from(raw)).toString()),
+  );
+const everythingStored = () => JSON.stringify([records(), cachedResponses()]);
+/** Rewrites the one stored record as a completed record that does not carry its response. */
+const dropStoredResponse = () => {
+  const [[key]] = storedUnder(RECORD);
+  const { response, ...record } = records()[0];
+  mocks.store.set(key, JSON.stringify(record));
+  return { id: key.slice(RECORD.length), response };
+};
 const executions = () =>
   mocks.request.mock.calls.filter(([arg]) => arg.path === "/v1/retrieve");
 const exchangeAnswers = (
@@ -391,7 +417,7 @@ it("allows standalone Bash source loading and forwards credentials only to execu
       .filter(([arg]) => arg.path !== "/v1/retrieve")
       .every(([arg]) => arg.resultAuthorization === undefined),
   ).toBe(true);
-  expect([...mocks.store.values()].join("")).not.toContain("Bearer caller");
+  expect(everythingStored()).not.toContain("Bearer caller");
 });
 
 it.each([
@@ -736,7 +762,7 @@ it("forwards standalone SQL credentials only to execution without retaining them
       .filter(([arg]) => arg.path !== "/v1/retrieve")
       .every(([arg]) => arg.resultAuthorization === undefined),
   ).toBe(true);
-  expect([...mocks.store.values()].join("")).not.toContain("Bearer caller");
+  expect(everythingStored()).not.toContain("Bearer caller");
 });
 it.each([
   { name: "SQL first", calls: [sqlCall, call] },
@@ -794,7 +820,7 @@ it("forwards standalone enrichment credentials only to execution without retaini
       .filter(([arg]) => arg.path !== "/v1/retrieve")
       .every(([arg]) => arg.resultAuthorization === undefined),
   ).toBe(true);
-  expect([...mocks.store.values()].join("")).not.toContain("Bearer caller");
+  expect(everythingStored()).not.toContain("Bearer caller");
 });
 it.each([
   { name: "enrichment first", calls: [enrichmentCall, call] },
@@ -846,7 +872,7 @@ it("forwards credentials with execution for any provider, never to quote or auth
       .filter(([arg]) => arg.path !== "/v1/retrieve")
       .every(([arg]) => arg.resultAuthorization === undefined),
   ).toBe(true);
-  expect([...mocks.store.values()].join("")).not.toContain("Bearer caller");
+  expect(everythingStored()).not.toContain("Bearer caller");
 });
 
 it("sends no credentials when the caller supplied none", async () => {
@@ -875,7 +901,7 @@ it("forwards zero data retention to quote and execution and keeps no response", 
   expect(forwarded).toHaveLength(2);
   for (const [request] of forwarded)
     expect(request.zeroDataRetention).toBe(true);
-  const [stored] = [...mocks.store.values()].map(raw => JSON.parse(raw));
+  const [stored] = records();
   expect(stored).toMatchObject({ phase: "done", responseWithheld: true });
   expect(stored).not.toHaveProperty("response");
 
@@ -892,7 +918,7 @@ it("keeps and replays the response without zero data retention", async () => {
   expect(
     mocks.request.mock.calls.every(([r]) => r.zeroDataRetention === undefined),
   ).toBe(true);
-  const [stored] = [...mocks.store.values()].map(raw => JSON.parse(raw));
+  const [stored] = records();
   expect(stored.response).toEqual({ status: 200, body: answer });
   expect(stored).not.toHaveProperty("responseWithheld");
   expect(await run()).toMatchObject({
@@ -900,6 +926,71 @@ it("keeps and replays the response without zero data retention", async () => {
     body: answer,
     executed: false,
   });
+});
+
+it("records when the request completed", async () => {
+  const before = Date.now();
+  await run();
+  expect(records()[0].doneAt).toBeGreaterThanOrEqual(before);
+});
+
+it("replays a response from the cache when the record does not carry it", async () => {
+  const unicode = {
+    ...answer,
+    results: [{ ...call, creditsCost: 3, data: { note: "café ☃ 日本語" } }],
+  };
+  exchangeAnswers(unicode);
+  await run();
+  const { id, response } = dropStoredResponse();
+  mocks.store.set(RESPONSE + id, gzipSync(JSON.stringify(response)));
+
+  expect(await run({ scrapeId: "scrape-2" })).toEqual({
+    status: 200,
+    body: unicode,
+    executed: false,
+    scrapeId: "scrape-1",
+  });
+  expect(executions()).toHaveLength(1);
+});
+
+it("treats a cached response it cannot read as one it does not have", async () => {
+  await run();
+  const { id } = dropStoredResponse();
+  mocks.store.set(RESPONSE + id, Buffer.from("not gzip"));
+
+  const repeat = await run({ scrapeId: "scrape-2" });
+  expect(repeat).toMatchObject({ status: 409, executed: false });
+  expect(repeat.body).toEqual(
+    expect.objectContaining({ code: "response_not_retained" }),
+  );
+  expect(executions()).toHaveLength(1);
+});
+
+it("fails a repeat whose cached response cannot be read, so the same id can be retried", async () => {
+  await run();
+  const { id, response } = dropStoredResponse();
+  mocks.store.set(RESPONSE + id, gzipSync(JSON.stringify(response)));
+  mocks.redis.getBuffer.mockRejectedValueOnce(new Error("Redis unavailable"));
+
+  await expect(run()).rejects.toThrow("Redis unavailable");
+  expect(await run()).toMatchObject({
+    status: 200,
+    body: answer,
+    executed: false,
+  });
+  expect(executions()).toHaveLength(1);
+});
+
+it("refuses a repeat whose response is no longer kept, without running it again", async () => {
+  await run();
+  dropStoredResponse();
+
+  const repeat = await run({ scrapeId: "scrape-2" });
+  expect(repeat).toMatchObject({ status: 409, executed: false });
+  expect(repeat.body).toEqual(
+    expect.objectContaining({ code: "response_not_retained" }),
+  );
+  expect(executions()).toHaveLength(1);
 });
 
 describe("providers whose responses are not kept", () => {
@@ -921,7 +1012,7 @@ describe("providers whose responses are not kept", () => {
       status: 409,
     }),
   });
-  const stored = () => [...mocks.store.values()].map(raw => JSON.parse(raw))[0];
+  const stored = () => records()[0];
   const charges = () => ({
     executions: executions().length,
     confirms: mocks.finalize.mock.calls.length,
@@ -1141,8 +1232,7 @@ describe("work contact details only", () => {
     mocks.request.mock.calls.filter(
       ([r]) => r.path.endsWith("/quote") || r.path === "/v1/retrieve",
     );
-  const storedFingerprint = () =>
-    JSON.parse([...mocks.store.values()][0]).fingerprint;
+  const storedFingerprint = () => records()[0].fingerprint;
 
   it("forwards the option to quote and execution", async () => {
     await run({ workContactOnly: true });

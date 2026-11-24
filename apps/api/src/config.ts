@@ -148,6 +148,8 @@ const configSchema = z.object({
   LABS_SEARCH_URL: z.string().url().optional(),
   LABS_SEARCH_SECRET: z.string().optional(),
   FRESH_FEED_URL: emptyStringAsUndefined(z.string().url()),
+  FRESH_FEED_CURATED_URL: emptyStringAsUndefined(z.string().url()),
+  FRESH_FEED_GLOBAL_URL: emptyStringAsUndefined(z.string().url()),
 
   // Express
   EXPRESS_TRUST_PROXY: z.coerce.number().optional(),
@@ -854,6 +856,10 @@ const configSchema = z.object({
       error: "AGENT_INTEROP_SECRET must not contain lone surrogates",
     })
     .optional(),
+
+  // Per-request internal JWTs; replaces AGENT_INTEROP_SECRET once rolled out.
+  INTERNAL_JWT_ENABLED: z.stringbool().default(false),
+  INTERNAL_JWT_PUBLIC_KEYS: z.string().optional(),
 
   // Wikipedia Enterprise API
   WIKIPEDIA_ENTERPRISE_USERNAME: z.string().optional(),

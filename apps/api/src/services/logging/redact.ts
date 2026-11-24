@@ -17,6 +17,9 @@
 
 export const REDACTED = "<redacted>";
 
+// Compact JWTs, such as the internal per-request tokens.
+const JWT_PATTERN = /eyJ[\w-]+\.[\w-]+\.[\w-]+/g;
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return false;
@@ -54,6 +57,9 @@ function redactAction(action: unknown): unknown {
  * and other class instances are returned by reference.
  */
 export function redactLogData<T>(value: T): T {
+  if (typeof value === "string") {
+    return value.replace(JWT_PATTERN, REDACTED) as T;
+  }
   if (Array.isArray(value)) {
     return value.map(item => redactLogData(item)) as T;
   }

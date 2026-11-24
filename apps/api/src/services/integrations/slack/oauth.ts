@@ -7,7 +7,7 @@ import { encryptSlackToken } from "./crypto";
 import { sanitizeRedirectPath } from "./redirect";
 import { upsertSlackInstallation } from "./store";
 import { getMonitorForUpdate, updateMonitor } from "../../monitoring/store";
-import type { SlackInstallationRow } from "./types";
+import type { SlackIncomingWebhook, SlackInstallationRow } from "./types";
 
 const logger = _logger.child({ module: "slack-oauth" });
 
@@ -171,6 +171,21 @@ export async function handleOAuthCallback(params: {
   }
 
   try {
+    const rawWebhook = result.incoming_webhook;
+    const incomingWebhook: SlackIncomingWebhook | null =
+      rawWebhook &&
+      (typeof rawWebhook.channel === "string" ||
+        typeof rawWebhook.channel_id === "string")
+        ? {
+            ...(typeof rawWebhook.channel === "string"
+              ? { channel: rawWebhook.channel }
+              : {}),
+            ...(typeof rawWebhook.channel_id === "string"
+              ? { channel_id: rawWebhook.channel_id }
+              : {}),
+          }
+        : null;
+
     const installation = await upsertSlackInstallation({
       teamId: statePayload.teamId,
       slackTeamId: result.team.id,
@@ -181,7 +196,7 @@ export async function handleOAuthCallback(params: {
       scope: result.scope ?? null,
       authedUserId: result.authed_user?.id ?? null,
       appId: result.app_id ?? null,
-      incomingWebhook: result.incoming_webhook ?? null,
+      incomingWebhook,
     });
 
     logger.info("Slack installation stored", {
