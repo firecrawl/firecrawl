@@ -1,4 +1,4 @@
-import { ErrorCode, TransportableError } from "../error";
+import { ErrorCode, ErrorScrapeLog, TransportableError } from "../error";
 import type { ThreatDecision } from "./types";
 
 // Error surfaced when threat protection blocks a URL. Wired into the shared
@@ -31,6 +31,18 @@ export class UnsafeDomainBlockedError extends TransportableError {
 
   get httpStatus(): number {
     return 403;
+  }
+
+  get scrapeLog(): ErrorScrapeLog {
+    return {
+      errorType: "UnsafeDomainBlockedError",
+      message: "scrapeURL: Domain blocked by threat protection policy",
+      context: {
+        error: this,
+        domain: this.domain,
+        rule: this.decision.rule,
+      },
+    };
   }
 
   serialize() {

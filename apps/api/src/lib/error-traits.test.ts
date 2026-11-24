@@ -37,6 +37,7 @@ import {
   endsEngineLoop,
   FormatUnavailableError,
   getErrorHttpResponse,
+  getErrorScrapeLog,
   isFormatUnavailable,
   ScrapeJobTimeoutError,
   shouldPropagateFromExtraction,
@@ -424,7 +425,7 @@ describe("wire format stability", () => {
     ];
 
     const traitKeyPattern =
-      /endsEngineLoop|abortsEngineRace|stopsCrawlRetry|propagateFromExtraction|httpStatus|httpResponseFields/;
+      /endsEngineLoop|abortsEngineRace|stopsCrawlRetry|propagateFromExtraction|httpStatus|httpResponseFields|scrapeLog/;
 
     for (const error of modifiedErrors) {
       error.stack = "fixed";
@@ -473,19 +474,21 @@ describe("EngineError inheritance", () => {
 });
 
 describe("FormatUnavailableError and isFormatUnavailable", () => {
-  it("matches FormatUnavailableError and BrandingNotSupportedError with preserved warning text", () => {
-    const generic = new FormatUnavailableError(
-      "custom",
-      "SCRAPE_BRANDING_NOT_SUPPORTED",
-      "Custom format unavailable",
-    );
+  it("matches concrete FormatUnavailableError subclasses with preserved warning text", () => {
+    class StubFormatUnavailableError extends FormatUnavailableError {
+      constructor(message: string) {
+        super("custom", "SCRAPE_BRANDING_NOT_SUPPORTED", message);
+      }
+    }
+
+    const custom = new StubFormatUnavailableError("Custom format unavailable");
     const branding = new BrandingNotSupportedError(
       "Branding extraction is only supported for HTML web pages. PDFs are not supported.",
     );
 
-    expect(isFormatUnavailable(generic)).toBe(true);
-    expect(generic.format).toBe("custom");
-    expect(generic.warning).toBe("Custom format unavailable");
+    expect(isFormatUnavailable(custom)).toBe(true);
+    expect(custom.format).toBe("custom");
+    expect(custom.warning).toBe("Custom format unavailable");
 
     expect(branding).toBeInstanceOf(FormatUnavailableError);
     expect(isFormatUnavailable(branding)).toBe(true);
@@ -521,12 +524,18 @@ describe("FormatUnavailableError and isFormatUnavailable", () => {
     vi.resetModules();
     const second = await import("./error.js");
 
-    const foreignFormat = new second.FormatUnavailableError(
-      "branding",
-      "SCRAPE_BRANDING_NOT_SUPPORTED",
-      "Not supported",
-      "Branding was skipped: Not supported",
-    );
+    class ForeignFormatUnavailableError extends second.FormatUnavailableError {
+      constructor(message: string) {
+        super(
+          "branding",
+          "SCRAPE_BRANDING_NOT_SUPPORTED",
+          message,
+          `Branding was skipped: ${message}`,
+        );
+      }
+    }
+
+    const foreignFormat = new ForeignFormatUnavailableError("Not supported");
     expect(second.FormatUnavailableError).not.toBe(FormatUnavailableError);
     expect(foreignFormat instanceof FormatUnavailableError).toBe(false);
     expect(isFormatUnavailable(foreignFormat)).toBe(true);
@@ -551,6 +560,14 @@ describe("FormatUnavailableError and isFormatUnavailable", () => {
       get httpStatus(): number {
         return 403;
       }
+
+      get scrapeLog() {
+        return {
+          errorType: "ForeignRefusal",
+          message: "scrapeURL: Foreign refusal",
+          context: { error: this, reason: "policy" },
+        };
+      }
     }
 
     const foreign = new ForeignRefusal();
@@ -564,5 +581,85 @@ describe("FormatUnavailableError and isFormatUnavailable", () => {
       code: "US_ONLY_UNAVAILABLE",
       message: "blocked",
     });
+    expect(getErrorScrapeLog(foreign)).toEqual({
+      errorType: "ForeignRefusal",
+      message: "scrapeURL: Foreign refusal",
+      context: { error: foreign, reason: "policy" },
+    });
+  });
+});
+
+describe("scrapeLog diagnostics metadata", () => {
+  it("preserves established errorType, warning text, and structured context across round-trips", () => {
+    const siteRestriction = new SiteRestrictionError();
+    const branding = new BrandingNotSupportedError("PDFs are not supported.");
+    const threatBlocked = new UnsafeDomainBlockedError(
+      "https://bad.example/path",
+      sampleThreatDecision,
+    );
+    const paywalled = new PaywalledContentError();
+
+    expect(getErrorScrapeLog(siteRestriction)).toEqual({
+      errorType: "SiteRestrictionError",
+      message: "scrapeURL: Site restriction returned (Safe Mode)",
+      context: { error: siteRestriction },
+    });
+    expect(getErrorScrapeLog(branding)).toEqual({
+      errorType: "BrandingNotSupportedError",
+      message: "scrapeURL: Branding not supported for this content",
+      context: { error: branding },
+    });
+    expect(getErrorScrapeLog(threatBlocked)).toEqual({
+      errorType: "UnsafeDomainBlockedError",
+      message: "scrapeURL: Domain blocked by threat protection policy",
+      context: {
+        error: threatBlocked,
+        domain: "bad.example",
+        rule: "blacklist",
+      },
+    });
+    expect(getErrorScrapeLog(paywalled)).toEqual({
+      errorType: "PaywalledContentError",
+      message: "scrapeURL: Paywalled page refused by Safe Mode",
+    });
+
+    for (const error of [siteRestriction, branding, threatBlocked, paywalled]) {
+      const revived = deserializeTransportableError(
+        serializeTransportableError(error),
+      )!;
+      const log = getErrorScrapeLog(revived);
+      expect(log, error.constructor.name).toBeDefined();
+      expect(log!.errorType).toBe(getErrorScrapeLog(error)!.errorType);
+      expect(log!.message).toBe(getErrorScrapeLog(error)!.message);
+      if (error === threatBlocked) {
+        expect(log!.context).toEqual({
+          error: revived,
+          domain: "bad.example",
+          rule: "blacklist",
+        });
+      } else if (error === paywalled) {
+        expect(log!.context).toBeUndefined();
+      } else {
+        expect(log!.context).toEqual({ error: revived });
+      }
+    }
+
+    expect(getErrorScrapeLog(new NoCachedDataError())).toBeUndefined();
+    expect(
+      getErrorScrapeLog(new TransportableError("UNKNOWN_ERROR", "plain")),
+    ).toBeUndefined();
+    expect(getErrorScrapeLog(new Error("plain"))).toBeUndefined();
+    expect(
+      getErrorScrapeLog({
+        scrapeLog: { errorType: "Fake", message: "not an error" },
+      }),
+    ).toBeUndefined();
+    expect(
+      getErrorScrapeLog(
+        Object.assign(new Error("bad"), {
+          scrapeLog: { errorType: "", message: "empty type" },
+        }),
+      ),
+    ).toBeUndefined();
   });
 });

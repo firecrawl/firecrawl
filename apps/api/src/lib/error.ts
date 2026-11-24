@@ -127,6 +127,11 @@ export class TransportableError extends Error {
     return undefined;
   }
 
+  /** Optional scrapeURL warning log message, telemetry errorType, and structured context. */
+  get scrapeLog(): ErrorScrapeLog | undefined {
+    return undefined;
+  }
+
   serialize() {
     return {
       cause: this.cause,
@@ -163,15 +168,17 @@ export function isTransportableError(
 }
 
 /**
- * Thrown when a requested scrape format cannot be served for a page.
- * The scrape loop drops the format, keeps the remaining formats, and adds
- * `warning` to the document; a request for only this format fails with this error.
+ * Base class for errors thrown when a requested scrape format cannot be served
+ * for a page. Concrete subclasses must register their own deserializer so the
+ * error retains its `format` and `warning` across the job queue; the scrape
+ * loop drops the format, keeps the remaining formats, and adds `warning` to the
+ * document while requests for only that format fail with this error.
  */
-export class FormatUnavailableError extends TransportableError {
+export abstract class FormatUnavailableError extends TransportableError {
   public readonly format: string;
   public readonly warning: string;
 
-  constructor(
+  protected constructor(
     format: string,
     code: ErrorCode,
     message: string,
@@ -273,6 +280,49 @@ export function getErrorHttpResponse(
       : {}),
     message: error.message,
     ...(extraFields ? { extraFields } : {}),
+  };
+}
+
+export interface ErrorScrapeLog {
+  errorType: string;
+  message: string;
+  context?: Record<string, unknown>;
+}
+
+/**
+ * Reads custom scrapeURL warning log metadata from an error, when declared.
+ */
+export function getErrorScrapeLog(error: unknown): ErrorScrapeLog | undefined {
+  if (!(error instanceof Error)) {
+    return undefined;
+  }
+  const raw = (error as { scrapeLog?: unknown }).scrapeLog;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return undefined;
+  }
+  const candidate = raw as {
+    errorType?: unknown;
+    message?: unknown;
+    context?: unknown;
+  };
+  if (
+    typeof candidate.errorType !== "string" ||
+    candidate.errorType.length === 0 ||
+    typeof candidate.message !== "string" ||
+    candidate.message.length === 0
+  ) {
+    return undefined;
+  }
+  const context =
+    candidate.context &&
+    typeof candidate.context === "object" &&
+    !Array.isArray(candidate.context)
+      ? (candidate.context as Record<string, unknown>)
+      : undefined;
+  return {
+    errorType: candidate.errorType,
+    message: candidate.message,
+    ...(context ? { context } : {}),
   };
 }
 

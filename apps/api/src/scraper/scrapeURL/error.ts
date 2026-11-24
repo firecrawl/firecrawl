@@ -1,5 +1,6 @@
 import {
   ErrorCode,
+  ErrorScrapeLog,
   FormatUnavailableError,
   TransportableError,
 } from "../../lib/error";
@@ -345,6 +346,14 @@ export class SiteRestrictionError extends TransportableError {
 
   get endsEngineLoop(): boolean {
     return true;
+  }
+
+  get scrapeLog(): ErrorScrapeLog {
+    return {
+      errorType: "SiteRestrictionError",
+      message: "scrapeURL: Site restriction returned (Safe Mode)",
+      context: { error: this },
+    };
   }
 
   constructor() {
@@ -960,6 +969,13 @@ export class PaywalledContentError extends TransportableError {
     return 403;
   }
 
+  get scrapeLog(): ErrorScrapeLog {
+    return {
+      errorType: "PaywalledContentError",
+      message: "scrapeURL: Paywalled page refused by Safe Mode",
+    };
+  }
+
   constructor(message?: string) {
     super(
       "SCRAPE_PAYWALLED_CONTENT",
@@ -1070,6 +1086,14 @@ export class BrandingNotSupportedError extends FormatUnavailableError {
       message,
       `Branding was skipped: ${message}`,
     );
+  }
+
+  get scrapeLog(): ErrorScrapeLog {
+    return {
+      errorType: "BrandingNotSupportedError",
+      message: "scrapeURL: Branding not supported for this content",
+      context: { error: this },
+    };
   }
 
   serialize() {

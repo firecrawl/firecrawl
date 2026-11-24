@@ -84,6 +84,7 @@ import {
   composeTimeoutProcessing,
   CrawlDenialError,
   endsEngineLoop,
+  getErrorScrapeLog,
   isFormatUnavailable,
   isTransportableError,
   ScrapeJobTimeoutError,
@@ -1968,19 +1969,31 @@ export async function scrapeURL(
         } else if (error instanceof AbortManagerThrownError) {
           errorType = "AbortManagerThrownError";
           throw error.inner;
-        } else if (
-          isTransportableError(error) &&
-          error.code !== "UNKNOWN_ERROR"
-        ) {
-          errorType = error.code;
-          meta.logger.warn(`scrapeURL: Scrape failed with ${error.code}`, {
-            code: error.code,
-            error,
-          });
         } else {
-          meta.logger.error("scrapeURL: Unexpected error happened", { error });
-          recordSpanException(span, error);
-          // TODO: results?
+          const scrapeLog = getErrorScrapeLog(error);
+          if (scrapeLog) {
+            errorType = scrapeLog.errorType;
+            if (scrapeLog.context) {
+              meta.logger.warn(scrapeLog.message, scrapeLog.context);
+            } else {
+              meta.logger.warn(scrapeLog.message);
+            }
+          } else if (
+            isTransportableError(error) &&
+            error.code !== "UNKNOWN_ERROR"
+          ) {
+            errorType = error.code;
+            meta.logger.warn("scrapeURL: Scrape failed", {
+              code: error.code,
+              error,
+            });
+          } else {
+            meta.logger.error("scrapeURL: Unexpected error happened", {
+              error,
+            });
+            recordSpanException(span, error);
+            // TODO: results?
+          }
         }
 
         setSpanAttributes(span, {
