@@ -1,7 +1,6 @@
 /*
  * Helpers for tests that need a service.
  */
-import type { BaseCaller, Caller } from "./request-context";
 import {
   createService,
   replaceService,
@@ -14,7 +13,7 @@ import {
 
 /** Builds a service from module defaults or a base set, with any of them replaced and any extension added. */
 export function testService(
-  base: BaseCaller extends Caller ? Partial<Modules> : Modules,
+  base: ModulesConfig,
   parts: CoreParts,
   overrides: Partial<Modules> = {},
   extensions: Extension[] = [],
