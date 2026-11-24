@@ -165,43 +165,47 @@ afterEach(() => {
 });
 
 describe("parse-upload with default memoryUploads", () => {
-  it("allows local uploads unconditionally regardless of ENV", async () => {
-    const app = buildApp();
+  it.each(["production", "staging", "development", "test", "local", undefined])(
+    "allows local uploads unconditionally when ENV=%s",
+    async envValue => {
+      mocks.config.ENV = envValue;
+      const app = buildApp();
 
-    const init = await request(app)
-      .post("/v2/parse/upload-url")
-      .send({ filename: "sample.html", contentType: "text/html" });
+      const init = await request(app)
+        .post("/v2/parse/upload-url")
+        .send({ filename: "sample.html", contentType: "text/html" });
 
-    expect(init.status).toBe(200);
-    expect(init.body.success).toBe(true);
-    expect(init.body.data.method).toBe("PUT");
-    expect(init.body.data.fields).toBeUndefined();
+      expect(init.status).toBe(200);
+      expect(init.body.success).toBe(true);
+      expect(init.body.data.method).toBe("PUT");
+      expect(init.body.data.fields).toBeUndefined();
 
-    const uploadUrl = new URL(init.body.data.uploadUrl);
-    const put = await request(app)
-      .put(`${uploadUrl.pathname}${uploadUrl.search}`)
-      .set("Content-Type", "text/html")
-      .send("<h1>ok</h1>");
-    expect(put.status).toBe(200);
+      const uploadUrl = new URL(init.body.data.uploadUrl);
+      const put = await request(app)
+        .put(`${uploadUrl.pathname}${uploadUrl.search}`)
+        .set("Content-Type", "text/html")
+        .send("<h1>ok</h1>");
+      expect(put.status).toBe(200);
 
-    const parsed = await request(app)
-      .post("/v2/parse")
-      .send({ uploadRef: init.body.data.uploadRef });
-    expect(parsed.status).toBe(200);
-    expect(parsed.body).toEqual({
-      success: true,
-      filename: "sample.html",
-      kind: "html",
-      content: "<h1>ok</h1>",
-    });
+      const parsed = await request(app)
+        .post("/v2/parse")
+        .send({ uploadRef: init.body.data.uploadRef });
+      expect(parsed.status).toBe(200);
+      expect(parsed.body).toEqual({
+        success: true,
+        filename: "sample.html",
+        kind: "html",
+        content: "<h1>ok</h1>",
+      });
 
-    // Second parse fails because finish cleaned up the staged upload.
-    const second = await request(app)
-      .post("/v2/parse")
-      .send({ uploadRef: init.body.data.uploadRef });
-    expect(second.status).toBe(400);
-    expect(second.body.error).toContain("not available");
-  });
+      // Second parse fails because finish cleaned up the staged upload.
+      const second = await request(app)
+        .post("/v2/parse")
+        .send({ uploadRef: init.body.data.uploadRef });
+      expect(second.status).toBe(400);
+      expect(second.body.error).toContain("not available");
+    },
+  );
 });
 
 describe("parse-upload with custom external driver", () => {
@@ -305,6 +309,9 @@ describe("parse-upload with custom external driver", () => {
         });
         expect(mocks.redisEval).toHaveBeenCalledTimes(1);
         expect(commit).toHaveBeenCalledTimes(1);
+        expect(mocks.redisEval.mock.invocationCallOrder[0]).toBeLessThan(
+          commit.mock.invocationCallOrder[0],
+        );
 
         const parsed = await request(app)
           .post("/v2/parse")
@@ -328,6 +335,37 @@ describe("parse-upload with custom external driver", () => {
           .send({ filename: "doc.pdf", contentType: "application/pdf" });
         expect(failed.status).toBe(500);
         expect(mocks.pipelineExec).toHaveBeenCalledTimes(1);
+
+        // Per-command Redis pipeline error during rollback is reported and handled.
+        mocks.pipelineExec.mockClear();
+        mocks.loggerError.mockClear();
+        mocks.loggerWarn.mockClear();
+        const pipelineError = new Error("redis pipeline failed");
+        mocks.pipelineExec.mockResolvedValueOnce([
+          [pipelineError, null],
+          [null, 0],
+          [null, 0],
+        ]);
+        commit.mockRejectedValueOnce(new Error("cleanup queue unavailable"));
+        const rollbackFailed = await request(app)
+          .post("/v2/parse/upload-url")
+          .send({ filename: "doc.pdf", contentType: "application/pdf" });
+        expect(rollbackFailed.status).toBe(500);
+        expect(rollbackFailed.body.error).toBe("cleanup queue unavailable");
+        expect(mocks.loggerError).toHaveBeenCalledWith(
+          "Redis pipeline command failed",
+          expect.objectContaining({
+            module: "parse-upload",
+            method: "releaseUnparsedUploadRef",
+            error: pipelineError,
+          }),
+        );
+        expect(mocks.loggerWarn).toHaveBeenCalledWith(
+          "Failed to release rejected parse upload",
+          expect.objectContaining({
+            error: expect.any(Error),
+          }),
+        );
       },
     );
   });

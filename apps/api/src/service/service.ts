@@ -133,8 +133,14 @@ export function createService(
 
   const defaults = defaultModules();
   const modules = freezeModules({
-    messages: config.modules?.messages ?? defaults.messages,
-    uploads: config.modules?.uploads ?? defaults.uploads,
+    messages:
+      config.modules?.messages === undefined
+        ? defaults.messages
+        : config.modules.messages,
+    uploads:
+      config.modules?.uploads === undefined
+        ? defaults.uploads
+        : config.modules.uploads,
   });
   const workers: Record<string, Worker> = Object.freeze(
     Object.fromEntries(

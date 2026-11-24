@@ -45,8 +45,9 @@ type LocalUploadRecord = {
 };
 
 /**
- * In-memory upload storage for staged parse uploads.
- * Uploads expire after their TTL and are deleted after consumption.
+ * In-memory upload storage for single-instance deployments.
+ * Multi-instance or restart-durable deployments should supply a shared
+ * `UploadsModule` implementation to `createService`.
  */
 export function memoryUploads(): UploadsModule {
   const localUploads = new Map<string, LocalUploadRecord>();

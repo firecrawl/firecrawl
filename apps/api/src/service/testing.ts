@@ -17,10 +17,14 @@ export function testService(
   overrides: Partial<Modules> = {},
   extensions: Extension[] = [],
 ): Service {
-  return createService(
-    { modules: { ...base, ...overrides }, extensions },
-    parts,
-  );
+  const modules: Partial<Modules> = { ...base };
+  if (overrides.messages !== undefined) {
+    modules.messages = overrides.messages;
+  }
+  if (overrides.uploads !== undefined) {
+    modules.uploads = overrides.uploads;
+  }
+  return createService({ modules, extensions }, parts);
 }
 
 /**

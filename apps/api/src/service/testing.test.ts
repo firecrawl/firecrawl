@@ -16,10 +16,22 @@ describe("testService", () => {
       { name: "extra" },
     ]);
 
-    expect(built.modules.messages).toBe(customMessages);
-    expect(built.modules.uploads).toBe(base.uploads);
+    expect(built.modules.messages.errorContact()).toBe("Custom contact.");
+    expect(built.modules.uploads.driver()).toBe(base.uploads.driver());
     expect(built.describe().modules).toEqual(["messages", "uploads"]);
     expect(built.describe().extensions).toEqual(["core", "extra"]);
+  });
+
+  it("keeps base modules when an override slot is explicitly undefined", () => {
+    const baseMessages = {
+      ...logsMessages(),
+      errorContact: () => "Base contact.",
+    };
+    const built = testService({ messages: baseMessages }, parts, {
+      messages: undefined,
+    });
+
+    expect(built.modules.messages.errorContact()).toBe("Base contact.");
   });
 });
 

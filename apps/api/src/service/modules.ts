@@ -113,7 +113,10 @@ export interface Modules {
   uploads: UploadsModule;
 }
 
-/** Validates and freezes a resolved module slot table. */
+/**
+ * Validates and freezes a resolved module slot table along with each slot's
+ * bound methods, so mutating the input objects later cannot alter the service.
+ */
 export function freezeModules(modules: Modules): Readonly<Modules> {
   const { messages, uploads } = modules;
   if (
@@ -134,5 +137,21 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
   ) {
     throw new Error("Invalid uploads module");
   }
-  return Object.freeze({ messages, uploads });
+
+  const frozenMessages: MessagesModule = Object.freeze({
+    errorContact: messages.errorContact.bind(messages),
+    restrictedCountryContact: messages.restrictedCountryContact.bind(messages),
+    allEnginesFailedContact: messages.allEnginesFailedContact.bind(messages),
+    fileFetchProxyError: messages.fileFetchProxyError.bind(messages),
+    filePrefetchFailedContact:
+      messages.filePrefetchFailedContact.bind(messages),
+  });
+  const frozenUploads: UploadsModule = Object.freeze({
+    driver: uploads.driver.bind(uploads),
+  });
+
+  return Object.freeze({
+    messages: frozenMessages,
+    uploads: frozenUploads,
+  });
 }

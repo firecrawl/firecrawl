@@ -178,6 +178,8 @@ describe("service module slots", () => {
     const built = createService({}, parts);
 
     expect(Object.isFrozen(built.modules)).toBe(true);
+    expect(Object.isFrozen(built.modules.messages)).toBe(true);
+    expect(Object.isFrozen(built.modules.uploads)).toBe(true);
     expect(built.describe().modules).toEqual(["messages", "uploads"]);
     expect(built.modules.messages.errorContact()).toBe(
       logsMessages().errorContact(),
@@ -185,7 +187,7 @@ describe("service module slots", () => {
     expect(built.modules.uploads.driver().name).toBe("local");
   });
 
-  it("keeps defaults for unspecified slots when only one slot is overridden", () => {
+  it("keeps defaults for unspecified slots and snapshots provided modules", () => {
     const customMessages: MessagesModule = {
       ...logsMessages(),
       errorContact: id => `custom:${id ?? "none"}`,
@@ -195,12 +197,13 @@ describe("service module slots", () => {
       parts,
     );
 
-    expect(built.modules.messages).toBe(customMessages);
+    customMessages.errorContact = () => "mutated";
+
     expect(built.modules.messages.errorContact("42")).toBe("custom:42");
     expect(built.modules.uploads.driver().name).toBe("local");
   });
 
-  it("rejects invalid module implementations at service creation", () => {
+  it("rejects invalid or null module implementations at service creation", () => {
     expect(() =>
       createService(
         { modules: { messages: {} as unknown as MessagesModule } },
@@ -209,7 +212,19 @@ describe("service module slots", () => {
     ).toThrow("Invalid messages module");
     expect(() =>
       createService(
+        { modules: { messages: null as unknown as MessagesModule } },
+        parts,
+      ),
+    ).toThrow("Invalid messages module");
+    expect(() =>
+      createService(
         { modules: { uploads: {} as unknown as UploadsModule } },
+        parts,
+      ),
+    ).toThrow("Invalid uploads module");
+    expect(() =>
+      createService(
+        { modules: { uploads: null as unknown as UploadsModule } },
         parts,
       ),
     ).toThrow("Invalid uploads module");
