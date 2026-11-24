@@ -9,7 +9,7 @@ import {
 import { RateLimiterMode } from "../types";
 import { authenticateUser } from "../controllers/auth";
 import { applyAgentAuthDiscoveryHeader } from "../lib/agent-auth-discovery";
-import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
+import { requestContext } from "../lib/request-context";
 import { logger } from "../lib/logger";
 import { logAuthDenied } from "../lib/auth-denied-log";
 import {
@@ -531,15 +531,28 @@ function blocklistGate(
   options: { exchange: boolean },
 ) {
   (async () => {
+    if (typeof req.body.url !== "string") {
+      return next();
+    }
+    const flags = req.acuc?.flags ?? null;
+    const blockCtx = requestContext({
+      teamId: req.acuc?.team_id ?? "",
+      zeroDataRetention:
+        getScrapeZDR(flags ?? undefined) === "forced" ||
+        req.body.zeroDataRetention === true ||
+        req.body.lockdown === true ||
+        isLockdownZeroDataRetention(
+          flags,
+          typeof req.body.safeMode === "boolean"
+            ? req.body.safeMode
+            : undefined,
+        ),
+      flags,
+      orgId: req.acuc?.org_id ?? null,
+    });
     if (
-      typeof req.body.url !== "string" ||
-      !isUrlBlocked(req.body.url, req.acuc?.flags ?? null, {
-        team_id: req.acuc?.team_id ?? null,
-        org_id: req.acuc?.org_id ?? null,
+      !service.modules.blocklist.isBlocked(req.body.url, blockCtx, {
         origin: typeof req.body.origin === "string" ? req.body.origin : null,
-        zeroDataRetention:
-          req.body.zeroDataRetention === true || req.body.lockdown === true,
-        safeMode: req.body.safeMode,
       })
     ) {
       return next();

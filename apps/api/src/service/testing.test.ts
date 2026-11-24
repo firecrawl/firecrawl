@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { logsMessages, memoryUploads } from "./defaults";
+import { logsMessages, memoryUploads, noBlocklist } from "./defaults";
 import { service, type CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
@@ -13,7 +13,15 @@ describe("testService", () => {
         name: "base-uploads",
       }),
     };
-    const base = { messages: logsMessages(), uploads: baseUploads };
+    const baseBlocklist = {
+      ...noBlocklist(),
+      isBlocked: (url: string) => url.includes("base-blocked.example"),
+    };
+    const base = {
+      blocklist: baseBlocklist,
+      messages: logsMessages(),
+      uploads: baseUploads,
+    };
     const customMessages = {
       ...logsMessages(),
       errorContact: () => "Custom contact.",
@@ -22,9 +30,16 @@ describe("testService", () => {
       { name: "extra" },
     ]);
 
+    expect(
+      built.modules.blocklist.isBlocked("https://base-blocked.example/x", {
+        teamId: "t1",
+        zeroDataRetention: false,
+      }),
+    ).toBe(true);
     expect(built.modules.messages.errorContact()).toBe("Custom contact.");
     expect(built.modules.uploads.driver().name).toBe("base-uploads");
     expect(built.describe().modules).toEqual([
+      "blocklist",
       "idempotency",
       "messages",
       "uploads",

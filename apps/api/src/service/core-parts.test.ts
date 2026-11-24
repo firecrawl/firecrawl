@@ -282,7 +282,7 @@ describe("coreParts", () => {
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: ["idempotency", "messages", "uploads", "webhooks"],
+      modules: ["blocklist", "idempotency", "messages", "uploads", "webhooks"],
       hooks: {},
       errors: {
         AGENT_INDEX_ONLY: "core",
@@ -447,6 +447,7 @@ describe("coreParts", () => {
     expect(built.describe().routes).toEqual([]);
     expect(built.roles.names()).toHaveLength(11);
     expect(built.describe().modules).toEqual([
+      "blocklist",
       "idempotency",
       "messages",
       "uploads",

@@ -9,7 +9,7 @@ import { NuQJob } from "./nuq";
 import { register } from "prom-client";
 import Express from "express";
 import { startNodeRuntimeMetrics } from "../../lib/node-runtime-metrics";
-import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
+import { service } from "../../service";
 import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-forcing";
 import { shutdownPubSubLogging } from "../logging/log_job";
 
@@ -61,7 +61,7 @@ export async function runNuqWorker(options: {
   shutdown?: () => void | Promise<void>;
 }) {
   try {
-    await initializeBlocklist();
+    await service.modules.blocklist.init();
     initializeEngineForcing();
     await options.beforeStart?.();
   } catch (error) {

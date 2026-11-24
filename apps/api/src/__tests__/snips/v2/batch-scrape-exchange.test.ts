@@ -14,15 +14,6 @@ const mocks = vi.hoisted(() => ({
   emitRejectedScrapeActivityEvents: vi.fn(),
 }));
 
-vi.mock(
-  "../../../scraper/WebScraper/utils/blocklist",
-  async importOriginal => ({
-    ...(await importOriginal<
-      typeof import("../../../scraper/WebScraper/utils/blocklist")
-    >()),
-    isUrlBlocked: mocks.isUrlBlocked,
-  }),
-);
 vi.mock("../../../services/alexandria/client", async importOriginal => ({
   ...(await importOriginal<
     typeof import("../../../services/alexandria/client")
@@ -74,13 +65,21 @@ import {
   coreEngineFeatures,
   coreEngines,
 } from "../../../scraper/scrapeURL/engines";
+import { noBlocklist } from "../../../service/defaults";
 import { createService, replaceService } from "../../../service/service";
 
 describe("v2 batch scrape of blocklisted URLs", () => {
   beforeAll(() => {
     replaceService(
       createService(
-        { modules: {} },
+        {
+          modules: {
+            blocklist: {
+              ...noBlocklist(),
+              isBlocked: mocks.isUrlBlocked,
+            },
+          },
+        },
         {
           core: {
             name: "core",

@@ -32,6 +32,14 @@
       "types": "./src/db/schema/index.ts",
       "default": "./dist/src/db/schema/index.js"
     },
+    "./unstable/exchange": {
+      "types": "./src/lib/exchange.ts",
+      "default": "./dist/src/lib/exchange.js"
+    },
+    "./unstable/keyless-team": {
+      "types": "./src/lib/keyless-team.ts",
+      "default": "./dist/src/lib/keyless-team.js"
+    },
     "./unstable/redis": {
       "types": "./src/services/redis.ts",
       "default": "./dist/src/services/redis.js"

@@ -7,7 +7,8 @@ import { logSearch, logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { PageOptions, SearchOptions } from "../../lib/entities";
 import { search } from "../../search";
-import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
+import { requestContext } from "../../lib/request-context";
+import { service } from "../../service";
 import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../lib/logger";
 import { redisEvictConnection } from "../../../src/services/redis";
@@ -22,13 +23,14 @@ import { fromV0Combo } from "../v2/types";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq-router";
 import { defaultOrigin } from "../../lib/default-values";
-import { getSearchZDR } from "../../lib/zdr-helpers";
+import { getScrapeZDR, getSearchZDR } from "../../lib/zdr-helpers";
 import {
   isThreatProtectionForced,
   THREAT_PROTECTION_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/threat-protection/request";
 import {
   getSafeMode,
+  isLockdownZeroDataRetention,
   SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
@@ -119,11 +121,17 @@ async function searchHelper(
     return { success: true, data: res, returnCode: 200 };
   }
 
+  const blockCtx = requestContext({
+    teamId: team_id,
+    zeroDataRetention:
+      getScrapeZDR(flags ?? undefined) === "forced" ||
+      isLockdownZeroDataRetention(flags, undefined),
+    flags,
+    orgId: org_id,
+  });
   res = res.filter(
     r =>
-      !isUrlBlocked(r.url, flags, {
-        team_id,
-        org_id,
+      !service.modules.blocklist.isBlocked(r.url, blockCtx, {
         origin: req.body?.origin ?? null,
       }),
   );

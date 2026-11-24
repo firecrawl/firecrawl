@@ -11,9 +11,11 @@ import {
   directWebhooks,
   logsMessages,
   memoryUploads,
+  noBlocklist,
   redisIdempotency,
 } from "./defaults";
 import type {
+  BlocklistModule,
   IdempotencyModule,
   MessagesModule,
   Modules,
@@ -185,6 +187,23 @@ describe("memoryUploads", () => {
   });
 });
 
+describe("noBlocklist", () => {
+  it("initializes as a no-op, allows every URL, and reports no scoped rules", async () => {
+    const blocklist = noBlocklist();
+    const ctx = { teamId: "team-1", zeroDataRetention: false };
+
+    await expect(blocklist.init()).resolves.toBeUndefined();
+    expect(blocklist.isBlocked("https://example.com/page", ctx)).toBe(false);
+    expect(
+      blocklist.isBlocked("https://example.com/page", ctx, {
+        origin: "api",
+        record: true,
+      }),
+    ).toBe(false);
+    expect(blocklist.hasScopedRules(ctx)).toBe(false);
+  });
+});
+
 describe("redisIdempotency", () => {
   it("claims team-scoped keys with the default 24h TTL and rejects duplicates", async () => {
     const seen = new Map<string, number>();
@@ -307,17 +326,25 @@ describe("service module slots", () => {
     const built = createService({}, parts);
 
     expect(Object.isFrozen(built.modules)).toBe(true);
+    expect(Object.isFrozen(built.modules.blocklist)).toBe(true);
     expect(Object.isFrozen(built.modules.messages)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads.driver())).toBe(true);
     expect(Object.isFrozen(built.modules.idempotency)).toBe(true);
     expect(Object.isFrozen(built.modules.webhooks)).toBe(true);
     expect(built.describe().modules).toEqual([
+      "blocklist",
       "idempotency",
       "messages",
       "uploads",
       "webhooks",
     ]);
+    expect(
+      built.modules.blocklist.isBlocked("https://example.com", {
+        teamId: "team-1",
+        zeroDataRetention: false,
+      }),
+    ).toBe(false);
     expect(built.modules.messages.errorContact()).toBe(
       logsMessages().errorContact(),
     );
@@ -325,6 +352,12 @@ describe("service module slots", () => {
   });
 
   it("keeps defaults for unspecified slots and snapshots provided modules and drivers", async () => {
+    const initSpy = vi.fn(async () => {});
+    const customBlocklist: BlocklistModule = {
+      init: initSpy,
+      isBlocked: url => url.includes("blocked.example"),
+      hasScopedRules: ctx => ctx.teamId === "scoped-team",
+    };
     const customMessages: MessagesModule = {
       ...logsMessages(),
       errorContact: id => `custom:${id ?? "none"}`,
@@ -353,6 +386,7 @@ describe("service module slots", () => {
     const built = createService(
       {
         modules: {
+          blocklist: customBlocklist,
           messages: customMessages,
           uploads: customUploads,
           idempotency: customIdempotency,
@@ -362,6 +396,11 @@ describe("service module slots", () => {
       parts,
     );
 
+    customBlocklist.init = async () => {
+      throw new Error("mutated");
+    };
+    customBlocklist.isBlocked = () => false;
+    customBlocklist.hasScopedRules = () => false;
     customMessages.errorContact = () => "mutated";
     customDriver.read = async () => Buffer.from("mutated");
     customUploads.driver = () => ({
@@ -375,6 +414,20 @@ describe("service module slots", () => {
       throw new Error("mutated shutdown");
     };
 
+    await expect(built.modules.blocklist.init()).resolves.toBeUndefined();
+    expect(initSpy).toHaveBeenCalledTimes(1);
+    expect(
+      built.modules.blocklist.isBlocked("https://blocked.example/path", {
+        teamId: "team-1",
+        zeroDataRetention: false,
+      }),
+    ).toBe(true);
+    expect(
+      built.modules.blocklist.hasScopedRules({
+        teamId: "scoped-team",
+        zeroDataRetention: false,
+      }),
+    ).toBe(true);
     expect(built.modules.messages.errorContact("42")).toBe("custom:42");
     expect(built.modules.uploads.driver().name).toBe("custom");
     const data = await built.modules.uploads.driver().read({
@@ -412,6 +465,31 @@ describe("service module slots", () => {
   });
 
   it("rejects invalid, null, or unknown module slots and malformed upload drivers at service creation", () => {
+    expect(() =>
+      createService(
+        { modules: { blocklist: {} as unknown as BlocklistModule } },
+        parts,
+      ),
+    ).toThrow("Invalid blocklist module");
+    expect(() =>
+      createService(
+        { modules: { blocklist: null as unknown as BlocklistModule } },
+        parts,
+      ),
+    ).toThrow("Invalid blocklist module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            blocklist: {
+              init: async () => {},
+              isBlocked: () => false,
+            } as unknown as BlocklistModule,
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid blocklist module");
     expect(() =>
       createService(
         { modules: { messages: {} as unknown as MessagesModule } },

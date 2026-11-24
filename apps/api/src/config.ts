@@ -589,7 +589,6 @@ const configSchema = z.object({
   FIRECRAWL_LOG_TO_FILE: z.stringbool().optional(),
   FIRECRAWL_SAVE_MOCKS: z.stringbool().optional(),
   FIRECRAWL_INDEX_WRITE_ONLY: z.stringbool().optional(),
-  DISABLE_BLOCKLIST: z.stringbool().optional(),
   FORCED_ENGINE_DOMAINS: z.string().optional(),
   DEBUG_BRANDING: z.stringbool().optional(),
   // TypeSafe Jev answers branding decisions whenever TYPESAFE_API_KEY is set

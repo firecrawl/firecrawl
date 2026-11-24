@@ -84,7 +84,6 @@ vi.mock("./search/run", () => ({ runSearchTarget: vi.fn() }));
 vi.mock("./search/judge", () => ({}));
 vi.mock("./search/dedupe", () => ({}));
 vi.mock("./search/persist", () => ({}));
-vi.mock("../../scraper/WebScraper/utils/blocklist", () => ({}));
 vi.mock("../../controllers/auth", () => ({ getACUCTeam: vi.fn() }));
 vi.mock("./store", () => ({
   getMonitorCheckForUpdate: vi.fn(),
