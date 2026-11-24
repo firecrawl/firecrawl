@@ -30,6 +30,7 @@ import {
 } from "../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
 import { getScrapeZDR } from "../lib/zdr-helpers";
+import { resolveZDRPolicy } from "../lib/zdr-policy";
 import { isLockdownZeroDataRetention } from "../lib/safe-mode";
 import { agentInteropStatus } from "../lib/agent-interop";
 import { inferIntegration } from "../lib/infer-integration";
@@ -170,6 +171,7 @@ export function authMiddleware(
       };
       req.acuc = chunk ?? undefined;
       req.caller = { teamId: team_id };
+      req.zdrPolicy = resolveZDRPolicy(chunk?.flags ?? undefined);
       next();
     })().catch(err => next(err));
   };
