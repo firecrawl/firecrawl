@@ -92,8 +92,15 @@ export async function getJob(id: string): Promise<PseudoJob<any> | null> {
   let data = gcsJob ?? nuqJob?.returnvalue;
   let storedJob: StoredJob | null = null;
   if (!data && externalStore && jobStore) {
-    storedJob = await jobStore.read(id, "scrape");
-    data = storedJob?.document;
+    try {
+      storedJob = await jobStore.read(id, "scrape");
+      data = storedJob?.document;
+    } catch (error) {
+      logger.warn("Job store read failed", { error, scrapeId: id });
+      if ((scrapeState?.status ?? nuqJob?.status) === "completed") {
+        throw error;
+      }
+    }
   }
   if (gcsJob === null && data && !storedJob) {
     logger.warn("GCS Job not found", {
@@ -149,7 +156,12 @@ export async function getJobs(ids: string[]): Promise<PseudoJob<any>[]> {
   if (externalStore && jobStore) {
     const missingIds = ids.filter(id => {
       const nuqJob = nuqJobMap.get(id);
-      return nuqJob && !gcsJobMap.has(id) && !nuqJob.returnvalue;
+      return (
+        nuqJob &&
+        nuqJob.status === "completed" &&
+        !gcsJobMap.has(id) &&
+        !nuqJob.returnvalue
+      );
     });
     if (missingIds.length > 0) {
       if (jobStore.readMany) {
