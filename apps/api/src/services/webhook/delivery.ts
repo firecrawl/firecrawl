@@ -20,6 +20,7 @@ import { randomUUID } from "crypto";
 
 const WEBHOOK_INSERT_QUEUE_KEY = "webhook-insert-queue";
 const WEBHOOK_INSERT_BATCH_SIZE = 1000;
+const WEBHOOK_INSERT_MAX_QUEUE_LENGTH = 100_000;
 
 type WebhookSendResult = {
   attempted: boolean;
@@ -250,28 +251,123 @@ export async function getWebhookInsertQueueLength(): Promise<number> {
   return (await redisEvictConnection.llen(WEBHOOK_INSERT_QUEUE_KEY)) ?? 0;
 }
 
+type WebhookLogRow = typeof schema.webhook_logs.$inferInsert;
+
+// A row that Postgres rejects for its own contents (SQLSTATE class 22 data
+// exception, 23 integrity constraint) will never succeed on retry. Anything
+// else (connection errors, timeouts, shutdowns) is treated as transient.
+// drizzle wraps the driver error, so the code lives on `cause`.
+function isPermanentRowError(error: unknown): boolean {
+  const e = error as { code?: unknown; cause?: { code?: unknown } } | null;
+  const code = e?.code ?? e?.cause?.code;
+  return typeof code === "string" && /^(22|23)/.test(code);
+}
+
+// Soft bound on how much a failing insert can push back onto the queue. The
+// producers in logWebhook are not bounded, so this only stops requeues from
+// piling onto an already long backlog.
+async function requeueWebhookInsertJobs(rawJobs: string[]): Promise<void> {
+  if (rawJobs.length === 0) return;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const queueLength =
+        (await redisEvictConnection.llen(WEBHOOK_INSERT_QUEUE_KEY)) ?? 0;
+      if (queueLength + rawJobs.length > WEBHOOK_INSERT_MAX_QUEUE_LENGTH) {
+        _logger.error("Webhook insert queue is full, dropping webhook logs", {
+          droppedCount: rawJobs.length,
+          queueLength,
+        });
+        return;
+      }
+      // lpush adds each value to the head in turn, so reverse to keep the
+      // original order at the front of the queue.
+      await redisEvictConnection.lpush(
+        WEBHOOK_INSERT_QUEUE_KEY,
+        ...[...rawJobs].reverse(),
+      );
+      return;
+    } catch (error) {
+      if (attempt === 2) {
+        _logger.error("Webhook inserter failed to requeue jobs", {
+          error,
+          jobCount: rawJobs.length,
+        });
+      }
+    }
+  }
+}
+
 export async function processWebhookInsertJobs() {
-  const jobs =
+  const rawJobs =
     (await redisEvictConnection.lpop(
       WEBHOOK_INSERT_QUEUE_KEY,
       WEBHOOK_INSERT_BATCH_SIZE,
     )) ?? [];
-  if (jobs.length === 0) return;
+  if (rawJobs.length === 0) return;
 
-  const parsedJobs = jobs.map(x => JSON.parse(x));
+  // Parse each entry on its own so one malformed entry can't take the rest of
+  // the batch down with it.
+  const validRaw: string[] = [];
+  const rows: WebhookLogRow[] = [];
+  let malformedCount = 0;
+  for (const raw of rawJobs) {
+    try {
+      rows.push(JSON.parse(raw));
+      validRaw.push(raw);
+    } catch {
+      malformedCount++;
+    }
+  }
+  if (malformedCount > 0) {
+    _logger.error("Webhook inserter dropped malformed jobs", {
+      malformedCount,
+    });
+  }
+  if (rows.length === 0) return;
+
   _logger.info("Webhook inserter found jobs to insert", {
-    jobCount: parsedJobs.length,
+    jobCount: rows.length,
   });
 
   try {
-    await db.insert(schema.webhook_logs).values(parsedJobs);
-    _logger.info("Webhook inserter inserted jobs", {
-      jobCount: parsedJobs.length,
-    });
+    await db.insert(schema.webhook_logs).values(rows);
+    _logger.info("Webhook inserter inserted jobs", { jobCount: rows.length });
+    return;
   } catch (error) {
     _logger.error("Webhook inserter failed to insert jobs", {
       error,
-      jobCount: parsedJobs.length,
+      jobCount: rows.length,
+    });
+    if (!isPermanentRowError(error)) {
+      // Most likely the database being unavailable, so try again next tick.
+      await requeueWebhookInsertJobs(validRaw);
+      return;
+    }
+  }
+
+  // The database rejected something in the batch itself. Insert row by row so
+  // one bad row can't keep failing the rest.
+  let insertedCount = 0;
+  let droppedCount = 0;
+  for (let i = 0; i < rows.length; i++) {
+    try {
+      await db.insert(schema.webhook_logs).values(rows[i]);
+      insertedCount++;
+    } catch (error) {
+      if (isPermanentRowError(error)) {
+        droppedCount++;
+      } else {
+        // The database went away part way through: keep this row and
+        // everything after it.
+        await requeueWebhookInsertJobs(validRaw.slice(i));
+        break;
+      }
+    }
+  }
+  if (droppedCount > 0) {
+    _logger.error("Webhook inserter dropped rows the database rejected", {
+      droppedCount,
+      insertedCount,
     });
   }
 }

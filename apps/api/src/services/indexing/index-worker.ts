@@ -767,7 +767,11 @@ export async function start() {
     if (isShuttingDown) {
       return;
     }
-    await processWebhookInsertJobs();
+    try {
+      await processWebhookInsertJobs();
+    } catch (error) {
+      logger.error("Failed to process webhook insert jobs", { error });
+    }
   }, WEBHOOK_INSERT_INTERVAL);
 
   const browserReconcileInterval = setInterval(() => {
