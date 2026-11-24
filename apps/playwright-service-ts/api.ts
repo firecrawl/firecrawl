@@ -6,7 +6,9 @@ import {
   Route,
   Request as PlaywrightRequest,
   Page,
+  Response as PlaywrightResponse,
 } from 'playwright';
+import { Script } from 'vm';
 import dotenv from 'dotenv';
 import UserAgent from 'user-agents';
 import { getError } from './helpers/get_error';
@@ -156,7 +158,126 @@ interface UrlModel {
   headers?: { [key: string]: string };
   check_selector?: string;
   skip_tls_verification?: boolean;
+  screenshot?: ScreenshotOptions;
+  actions?: Action[];
 }
+
+type ScreenshotOptions = {
+  fullPage?: boolean;
+  viewport?: { width: number; height: number };
+};
+type Action = ScreenshotOptions & { type: string; [key: string]: any };
+type ActionResults = {
+  screenshots: string[];
+  scrapes: { url: string; html: string }[];
+  javascriptReturns: { type: string; value: unknown }[];
+};
+
+class ActionFailedError extends Error {}
+
+const takeScreenshot = async (
+  page: Page,
+  { fullPage, viewport }: ScreenshotOptions,
+): Promise<string> => {
+  if (viewport) await page.setViewportSize(viewport);
+  return (await page.screenshot({ fullPage: !!fullPage })).toString('base64');
+};
+
+// "return document.title" is a function body, not a script. Compiling it
+// here, without running it, picks the form, so the page runs it once.
+const parsesAsScript = (script: string) => {
+  try {
+    new Script(script);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// All actions share the scrape's deadline. Element waits also stop at 10s,
+// so a missing selector fails its action, not the whole scrape later.
+const runActions = async (
+  page: Page,
+  actions: Action[],
+  deadline: number,
+): Promise<ActionResults> => {
+  const results: ActionResults = {
+    screenshots: [],
+    scrapes: [],
+    javascriptReturns: [],
+  };
+  const timeLeft = () => {
+    const ms = deadline - Date.now();
+    if (ms <= 0) throw new Error('past the scrape timeout');
+    return ms;
+  };
+  for (const [i, action] of actions.entries()) {
+    try {
+      const timeout = Math.min(timeLeft(), 10000);
+      switch (action.type) {
+        case 'wait': {
+          const ms = action.milliseconds ?? 0;
+          if (action.selector) {
+            await page.waitForSelector(action.selector, { timeout });
+          } else if (ms > timeLeft()) {
+            throw new Error(`${ms} ms is past the scrape timeout`);
+          } else {
+            await page.waitForTimeout(ms);
+          }
+          break;
+        }
+        case 'click': {
+          const target = page.locator(action.selector);
+          for (const el of action.all ? await target.all() : [target.first()]) {
+            await el.click({ timeout });
+          }
+          await page.waitForLoadState('load', { timeout });
+          break;
+        }
+        case 'write':
+          await page.keyboard.type(action.text);
+          break;
+        case 'press':
+          await page.keyboard.press(action.key);
+          break;
+        case 'scroll': {
+          const dy = action.direction === 'up' ? -1 : 1;
+          if (action.selector) {
+            await page
+              .locator(action.selector)
+              .first()
+              .evaluate((el, d) => el.scrollBy(0, d * el.clientHeight), dy, {
+                timeout,
+              });
+          } else {
+            await page.evaluate((d) => window.scrollBy(0, d * innerHeight), dy);
+          }
+          break;
+        }
+        case 'screenshot':
+          results.screenshots.push(await takeScreenshot(page, action));
+          break;
+        case 'scrape':
+          results.scrapes.push({ url: page.url(), html: await page.content() });
+          break;
+        case 'executeJavascript': {
+          const { script } = action;
+          const value = await page.evaluate(
+            parsesAsScript(script) ? script : `(async () => { ${script} })()`,
+          );
+          results.javascriptReturns.push({ type: typeof value, value });
+          break;
+        }
+        default:
+          throw new Error('unsupported action type');
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new ActionFailedError(`action ${i} (${action.type}): ${reason}`);
+    }
+  }
+  return results;
+};
 
 let browser: Browser;
 
@@ -264,11 +385,14 @@ const scrapePage = async (
   timeout: number,
   checkSelector: string | undefined,
   securityState: ContextSecurityState,
+  actions: Action[] | undefined,
+  screenshot: ScreenshotOptions | undefined,
 ) => {
   console.log(
     `Navigating to ${url} with waitUntil: ${waitUntil} and timeout: ${timeout}ms`,
   );
-  let response;
+  const deadline = Date.now() + timeout;
+  let response: PlaywrightResponse | null;
   try {
     response = await page.goto(url, { waitUntil, timeout });
   } catch (error) {
@@ -292,6 +416,27 @@ const scrapePage = async (
       throw new Error('Required selector not found');
     }
   }
+
+  // Actions run before the content is read, so it shows the page they left.
+  // A click that navigates replaces the response, so the status and headers
+  // are the landed page's too.
+  const onResponse = (r: PlaywrightResponse) => {
+    if (r.request().isNavigationRequest() && r.frame() === page.mainFrame()) {
+      response = r;
+    }
+  };
+  let actionResults: ActionResults | undefined;
+  if (actions?.length) {
+    page.on('response', onResponse);
+    try {
+      actionResults = await runActions(page, actions, deadline);
+    } finally {
+      page.off('response', onResponse);
+    }
+  }
+  const screenshotData = screenshot
+    ? await takeScreenshot(page, screenshot)
+    : undefined;
 
   let headers = null,
     content = await page.content(),
@@ -321,6 +466,8 @@ const scrapePage = async (
     status: response ? response.status() : null,
     headers,
     contentType: ct,
+    screenshot: screenshotData,
+    actions: actionResults,
   };
 };
 
@@ -357,6 +504,8 @@ app.post('/scrape', async (req: Request, res: Response) => {
     headers,
     check_selector,
     skip_tls_verification = false,
+    screenshot,
+    actions,
   }: UrlModel = req.body;
 
   console.log(`================= Scrape Request =================`);
@@ -422,6 +571,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
     requestContext = contextBundle.context;
     securityState = contextBundle.securityState;
     page = await requestContext.newPage();
+    if (screenshot?.viewport) await page.setViewportSize(screenshot.viewport);
 
     if (headers) {
       // A Cookie header passed through setExtraHTTPHeaders is sent on the first
@@ -501,6 +651,8 @@ app.post('/scrape', async (req: Request, res: Response) => {
       timeout,
       check_selector,
       securityState,
+      actions,
+      screenshot,
     );
     const pageError =
       result.status !== 200 ? getError(result.status) : undefined;
@@ -519,6 +671,8 @@ app.post('/scrape', async (req: Request, res: Response) => {
       contentType: result.contentType,
       url: result.url,
       ...(pageError && { pageError }),
+      ...(result.screenshot && { screenshot: result.screenshot }),
+      ...(result.actions && { actions: result.actions }),
     });
   } catch (error) {
     if (error instanceof InsecureConnectionError) {
@@ -527,6 +681,9 @@ app.post('/scrape', async (req: Request, res: Response) => {
         pageStatusCode: 403,
         pageError: error.message,
       });
+    }
+    if (error instanceof ActionFailedError) {
+      return res.json({ content: '', pageStatusCode: 200, actionError: error.message });
     }
     console.error('Scrape error:', error);
     res
