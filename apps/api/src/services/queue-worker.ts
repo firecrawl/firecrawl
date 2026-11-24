@@ -22,16 +22,6 @@ import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forc
 import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
 import { getCrawl } from "../lib/crawl-redis";
-import {
-  processMonitorCheckJob,
-  reconcileRunningMonitorChecks,
-} from "./monitoring/runner";
-import { enqueueDueMonitorChecks } from "./monitoring/scheduler";
-import {
-  consumeMonitorCheckJobs,
-  consumeMonitorSearchCheckJobs,
-} from "./monitoring/queue";
-import { shutdownPubSubLogging } from "./logging/log_job";
 import { startRole } from "../main";
 import { runProcessStop } from "../service/service";
 
@@ -47,7 +37,6 @@ const connectionMonitorInterval = config.CONNECTION_MONITOR_INTERVAL;
 const gotJobInterval = config.CONNECTION_MONITOR_INTERVAL;
 
 const runningJobs: Set<string> = new Set();
-let monitorSchedulerInterval: NodeJS.Timeout | null = null;
 
 const processDeepResearchJobInternal = async (
   token: string,
@@ -444,46 +433,11 @@ export async function start() {
 
   initializeEngineForcing();
 
-  if (config.USE_DB_AUTHENTICATION && !config.DISABLE_MONITORING) {
-    monitorSchedulerInterval = setInterval(() => {
-      enqueueDueMonitorChecks().catch(error => {
-        _logger.error("Failed to enqueue due monitor checks", { error });
-      });
-      reconcileRunningMonitorChecks().catch(error => {
-        _logger.error("Failed to reconcile running monitor checks", { error });
-      });
-    }, 60_000);
-    enqueueDueMonitorChecks().catch(error => {
-      _logger.error("Failed to enqueue due monitor checks", { error });
-    });
-    reconcileRunningMonitorChecks().catch(error => {
-      _logger.error("Failed to reconcile running monitor checks", { error });
-    });
-
-    // Search checks drain on their own consumer so they can't starve the rest.
-    await Promise.all([
-      consumeMonitorCheckJobs(processMonitorCheckJob),
-      consumeMonitorSearchCheckJobs(processMonitorCheckJob),
-    ]);
-  } else if (!config.USE_DB_AUTHENTICATION) {
-    _logger.info(
-      "Skipping monitor worker startup because database authentication is disabled",
-    );
-  } else {
-    _logger.info(
-      "Skipping monitor worker startup because NUQ_RABBITMQ_URL is not configured",
-    );
-  }
-
   await Promise.all([
     workerFun(getDeepResearchQueue(), processDeepResearchJobInternal),
     workerFun(getGenerateLlmsTxtQueue(), processGenerateLlmsTxtJobInternal),
     crawlFinishWorker(),
   ]);
-
-  if (monitorSchedulerInterval) {
-    clearInterval(monitorSchedulerInterval);
-  }
 
   _logger.info("All workers exited. Waiting for all jobs to finish...");
 
@@ -492,11 +446,7 @@ export async function start() {
   }
 
   _logger.info("All jobs finished. Shutting down...");
-  try {
-    await shutdownPubSubLogging();
-  } finally {
-    await runProcessStop("queue-worker");
-  }
+  await runProcessStop("queue-worker");
   await shutdownTracing();
   process.exit(0);
 }

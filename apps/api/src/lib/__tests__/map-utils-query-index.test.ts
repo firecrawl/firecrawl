@@ -4,7 +4,7 @@ vi.mock("../../services/index", async importOriginal => ({
   queryIndexAtSplitLevelWithMeta: vi.fn(),
 }));
 
-import { queryIndex } from "../map-utils";
+import { queryIndex } from "../map-query-index";
 import {
   queryIndexAtDomainSplitLevelWithMeta,
   queryIndexAtSplitLevelWithMeta,

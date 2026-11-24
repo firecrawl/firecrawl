@@ -46,10 +46,9 @@ const BASE_CALLS_PER_DAY = 1000;
 
 // Thresholds are the Autumn `rate_limits` grants: 500 is Growth, 1000 is
 // Scale, and Enterprise grants more. A wrong threshold refuses or unlimits real
-// teams, not just their queue order. `PLAN_PRIORITY_TIERS` in
-// services/rate-limiter.ts keys on the same grants, and the Alexandria catalogue
-// in firecrawl/exchange (`usageLimits` on the index providers) and the public
-// rate-limits docs repeat these numbers; change them together.
+// teams, not just their queue order. Plan priority tiers, the Alexandria
+// catalogue (`usageLimits` on the index providers), and the public rate-limits
+// docs repeat these numbers; change them together.
 const PLAN_TIERS: { minMultiplier: number; callsPerDay: number | null }[] = [
   { minMultiplier: 1000, callsPerDay: null },
   { minMultiplier: 500, callsPerDay: 2000 },

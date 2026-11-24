@@ -29,6 +29,7 @@ type ScrapeJobCommon = {
   traceContext?: SerializedTraceContext;
   skipNuq?: boolean;
   requestId?: string;
+  backlogTimeoutMs?: number;
   monitoring?: {
     monitorId: string;
     checkId: string;

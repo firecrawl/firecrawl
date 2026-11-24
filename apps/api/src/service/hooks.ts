@@ -199,7 +199,12 @@ export interface HookPoints {
     options?: ScrapeOptions;
     jobData?: unknown;
   }>;
-  "concurrency.limited": Observe<{ ctx: RequestContext; limit: number }>;
+  "concurrency.limited": Observe<{
+    ctx: RequestContext;
+    limit: number;
+    exceededBacklog?: boolean;
+    isCrawlOrBatch?: boolean;
+  }>;
   // scrape, in pipeline order
   "scrape.start": Transform<ScrapePlan, ScrapeMeta>;
   "scrape.engines.select": Transform<EnginePlan, ScrapeMeta>;
@@ -263,12 +268,14 @@ export interface HookPoints {
   >;
   "map.finished": Observe<{
     id: string;
+    requestId?: string;
     ctx: RequestContext;
     urls: number;
     url?: string;
     options?: Record<string, unknown>;
     links?: MapDocument[];
     charged?: number;
+    timeTakenMs?: number;
     state?: Record<string, unknown>;
   }>;
   "search.plan": Transform<
@@ -292,14 +299,17 @@ export interface HookPoints {
   >;
   "search.finished": Observe<{
     id: string;
+    requestId?: string;
     ctx: RequestContext;
     results: number;
     charged: number | undefined;
+    scrapeCredits?: number;
+    totalCredits?: number;
     body?: RequestBodies["search"];
     response?: SearchV2Response;
     timeTakenMs?: number;
     resultCountsBySource?: Record<string, number>;
-    resultCategories?: Record<string, string[]>;
+    resultCategories?: Record<string, unknown>;
     searchTypes?: string[];
     scrapeFormats?: string[];
     shouldScrape?: boolean;

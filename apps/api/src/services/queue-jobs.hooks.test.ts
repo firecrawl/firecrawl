@@ -80,10 +80,6 @@ vi.mock("../lib/logger", () => ({
   },
 }));
 
-vi.mock("./ab-test", () => ({
-  abTestJob: mocks.abTestJob,
-}));
-
 vi.mock("./worker/nuq", () => ({
   scrapeQueue: {
     addJob: mocks.addJob,

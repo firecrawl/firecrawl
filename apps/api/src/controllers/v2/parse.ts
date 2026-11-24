@@ -21,8 +21,6 @@ import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { currentLimits, resolveJobPriority } from "../../lib/limits";
-import { logRequest } from "../../services/logging/log_job";
-import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
 import {
@@ -361,7 +359,6 @@ export async function parseController(
         ...(req.body.__agentInterop
           ? { endpoint: "agent" as const, jobId }
           : { endpoint: "parse" as const, jobId }),
-        externalRequestId: externalRequestId(req),
         hostedMcp: req.auth.hostedMcp,
       };
       const ctx: RequestContext = req.ctx
@@ -454,23 +451,6 @@ export async function parseController(
         originalRequest: preNormalizedBody,
         account: req.account,
       });
-
-      if (!agentRequestId) {
-        logRequest({
-          id: jobId,
-          kind: "parse",
-          api_version: "v2",
-          external_request_id: externalRequestId(req),
-          team_id: req.auth.team_id,
-          origin: req.body.origin ?? "api",
-          integration: req.body.integration,
-          target_hint: req.body.file.filename,
-          zeroDataRetention: zeroDataRetention || false,
-          api_key_id: req.acuc?.api_key_id ?? null,
-        }).catch(err =>
-          logger.warn("Background request log failed", { error: err, jobId }),
-        );
-      }
 
       setSpanAttributes(span, {
         "parse.zero_data_retention": zeroDataRetention,

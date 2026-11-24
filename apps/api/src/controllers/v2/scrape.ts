@@ -24,8 +24,6 @@ import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { currentLimits, resolveJobPriority } from "../../lib/limits";
-import { logRequest } from "../../services/logging/log_job";
-import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
 import {
@@ -87,7 +85,6 @@ export async function scrapeController(
         ...(req.body.__agentInterop
           ? { endpoint: "agent" as const, jobId }
           : { endpoint: "scrape" as const, jobId }),
-        externalRequestId: externalRequestId(req),
         hostedMcp: req.auth.hostedMcp,
       };
       const ctx: RequestContext = req.ctx
@@ -185,36 +182,19 @@ export async function scrapeController(
       let logRequestPromise: Promise<any> | undefined = undefined;
 
       if (!agentRequestId) {
-        logRequestPromise = Promise.all([
-          service.modules.jobStore
-            .register({
-              id: jobId,
-              kind: "scrape",
-              ctx,
-              clientOrigin: req.body.origin ?? "api",
-            })
-            .catch(err =>
-              logger.error("Background job registration failed", {
-                error: err,
-                jobId,
-              }),
-            ),
-          logRequest({
+        logRequestPromise = service.modules.jobStore
+          .register({
             id: jobId,
             kind: "scrape",
-            api_version: "v2",
-            external_request_id: externalRequestId(req),
-            team_id: req.auth.team_id,
-            origin: req.body.origin ?? "api",
-            integration: req.body.integration,
-            target_hint: req.body.url,
-            zeroDataRetention: zeroDataRetention || false,
-            api_key_id: req.acuc?.api_key_id ?? null,
-            skipJobStore: true,
-          }).catch(err =>
-            logger.warn("Background request log failed", { error: err, jobId }),
-          ),
-        ]);
+            ctx,
+            clientOrigin: req.body.origin ?? "api",
+          })
+          .catch(err =>
+            logger.error("Background job registration failed", {
+              error: err,
+              jobId,
+            }),
+          );
       }
 
       setSpanAttributes(span, {

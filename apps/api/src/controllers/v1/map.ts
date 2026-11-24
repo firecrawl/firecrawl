@@ -25,7 +25,7 @@ import { externalRequestId } from "../../lib/external-request-id";
 import { performCosineSimilarity } from "../../lib/map-cosine";
 import { logger } from "../../lib/logger";
 import Redis from "ioredis";
-import { queryIndex } from "../../lib/map-utils";
+import { queryIndex } from "../../lib/map-query-index";
 import { MapTimeoutError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
 import { resolveSafeMode } from "../../lib/safe-mode";
