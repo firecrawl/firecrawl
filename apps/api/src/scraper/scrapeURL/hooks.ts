@@ -36,6 +36,7 @@ export function toScrapeMeta(
     state,
     logger,
     abort: meta.abort ? meta.abort.asSignal() : new AbortController().signal,
+    scrapeMeta: meta,
   };
 }
 

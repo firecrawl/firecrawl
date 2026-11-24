@@ -194,9 +194,6 @@ importers:
       drizzle-orm:
         specifier: 1.0.0-rc.3
         version: 1.0.0-rc.3(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(pg@8.16.3)(zod@4.6.7)
-      esbuild:
-        specifier: ^0.28.1
-        version: 0.28.1
       escape-html:
         specifier: ^1.0.3
         version: 1.0.3

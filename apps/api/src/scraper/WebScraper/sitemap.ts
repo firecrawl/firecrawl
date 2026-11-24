@@ -7,7 +7,6 @@ import { CostTracking } from "../../lib/cost-tracking";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import type { ScrapeOptions } from "../../controllers/v2/types";
 import { Engine } from "../scrapeURL/engines";
-import { useFireEngine } from "../scrapeURL/engines/fire-engine/available";
 import {
   ParsedSitemap,
   parseSitemapXml,
@@ -19,7 +18,6 @@ import {
   gunzipBounded,
   MAX_GUNZIPPED_FILE_SIZE,
 } from "../scrapeURL/engines/utils/gunzip";
-import { useIndex } from "../../services";
 
 export async function getLinksFromSitemap(
   {
@@ -81,27 +79,7 @@ export async function getLinksFromSitemap(
       }
     } else {
       try {
-        const shouldPrioritizeFireEngine =
-          location && mode === "fire-engine" && useFireEngine;
-
-        const forceEngine: Engine[] = [
-          ...(maxAge > 0 && useIndex ? ["index" as const] : []),
-          ...(shouldPrioritizeFireEngine
-            ? [
-                "fire-engine;tlsclient" as const,
-                "fire-engine;tlsclient;stealth" as const,
-              ]
-            : []),
-          "fetch",
-          ...(!shouldPrioritizeFireEngine &&
-          mode === "fire-engine" &&
-          useFireEngine
-            ? [
-                "fire-engine;tlsclient" as const,
-                "fire-engine;tlsclient;stealth" as const,
-              ]
-            : []),
-        ];
+        const forceEngine: Engine[] = ["fetch"];
 
         const response = await scrapeURL(
           "sitemap;" + crawlId,
@@ -115,6 +93,7 @@ export async function getLinksFromSitemap(
           }),
           {
             forceEngine,
+            sitemapFetch: mode === "fire-engine" ? "http" : "direct",
             v0DisableJsDom: true,
             orgId: null,
             externalAbort: abort

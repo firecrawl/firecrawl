@@ -425,7 +425,6 @@ jobs:
           src/scraper/scrapeURL/engines/pdf/__tests__/firePDFReservedCapacity.test.ts
           src/scraper/scrapeURL/engines/pdf/__tests__/reservedCapacityPdfRouting.test.ts
           src/scraper/scrapeURL/engines/pdf/__tests__/firePDFCache.test.ts
-          src/scraper/scrapeURL/engines/pdf/__tests__/indexPdfSupersede.test.ts
           --reporter=default
         working-directory: apps/api
 
@@ -434,7 +433,6 @@ jobs:
         run: >-
           pnpm exec vitest run
           src/lib/us-only.test.ts
-          src/scraper/scrapeURL/engines/fire-engine/__tests__/usOnly.test.ts
           src/scraper/scrapeURL/__tests__/usOnly.test.ts
           src/scraper/WebScraper/__tests__/usOnlyDiscovery.test.ts
           --reporter=default

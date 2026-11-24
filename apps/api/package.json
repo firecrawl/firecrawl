@@ -28,13 +28,161 @@
       "types": "./src/db/connection.ts",
       "default": "./dist/src/db/connection.js"
     },
+    "./unstable/db-rpc": {
+      "types": "./src/db/rpc.ts",
+      "default": "./dist/src/db/rpc.js"
+    },
     "./unstable/db-schema": {
       "types": "./src/db/schema/index.ts",
       "default": "./dist/src/db/schema/index.js"
     },
+    "./unstable/blocklist": {
+      "types": "./src/scraper/WebScraper/utils/blocklist.ts",
+      "default": "./dist/src/scraper/WebScraper/utils/blocklist.js"
+    },
+    "./unstable/branding-jev": {
+      "types": "./src/lib/branding/jev.ts",
+      "default": "./dist/src/lib/branding/jev.js"
+    },
+    "./unstable/branding-metrics": {
+      "types": "./src/lib/branding/metrics.ts",
+      "default": "./dist/src/lib/branding/metrics.js"
+    },
+    "./unstable/cost-tracking": {
+      "types": "./src/lib/cost-tracking.ts",
+      "default": "./dist/src/lib/cost-tracking.js"
+    },
+    "./unstable/exchange": {
+      "types": "./src/lib/exchange.ts",
+      "default": "./dist/src/lib/exchange.js"
+    },
+    "./unstable/gcs-jobs": {
+      "types": "./src/lib/gcs-jobs.ts",
+      "default": "./dist/src/lib/gcs-jobs.js"
+    },
+    "./unstable/html-to-markdown": {
+      "types": "./src/lib/html-to-markdown.ts",
+      "default": "./dist/src/lib/html-to-markdown.js"
+    },
+    "./unstable/image-formats": {
+      "types": "./src/lib/image-formats.ts",
+      "default": "./dist/src/lib/image-formats.js"
+    },
+    "./unstable/index-cache": {
+      "types": "./src/services/index-cache.ts",
+      "default": "./dist/src/services/index-cache.js"
+    },
+    "./unstable/index-cache-metrics": {
+      "types": "./src/lib/index-cache-metrics.ts",
+      "default": "./dist/src/lib/index-cache-metrics.js"
+    },
+    "./unstable/index-service": {
+      "types": "./src/services/index.ts",
+      "default": "./dist/src/services/index.js"
+    },
+    "./unstable/otel-tracer": {
+      "types": "./src/lib/otel-tracer.ts",
+      "default": "./dist/src/lib/otel-tracer.js"
+    },
     "./unstable/redis": {
       "types": "./src/services/redis.ts",
       "default": "./dist/src/services/redis.js"
+    },
+    "./unstable/reserved-capacity": {
+      "types": "./src/lib/reserved-capacity.ts",
+      "default": "./dist/src/lib/reserved-capacity.js"
+    },
+    "./unstable/safe-mode": {
+      "types": "./src/lib/safe-mode.ts",
+      "default": "./dist/src/lib/safe-mode.js"
+    },
+    "./unstable/scrape-abort": {
+      "types": "./src/scraper/scrapeURL/lib/abortManager.ts",
+      "default": "./dist/src/scraper/scrapeURL/lib/abortManager.js"
+    },
+    "./unstable/scrape-download": {
+      "types": "./src/scraper/scrapeURL/engines/utils/downloadFile.ts",
+      "default": "./dist/src/scraper/scrapeURL/engines/utils/downloadFile.js"
+    },
+    "./unstable/scrape-engines": {
+      "types": "./src/scraper/scrapeURL/engines/index.ts",
+      "default": "./dist/src/scraper/scrapeURL/engines/index.js"
+    },
+    "./unstable/scrape-error": {
+      "types": "./src/scraper/scrapeURL/error.ts",
+      "default": "./dist/src/scraper/scrapeURL/error.js"
+    },
+    "./unstable/scrape-fetch": {
+      "types": "./src/scraper/scrapeURL/lib/fetch.ts",
+      "default": "./dist/src/scraper/scrapeURL/lib/fetch.js"
+    },
+    "./unstable/scrape-gunzip": {
+      "types": "./src/scraper/scrapeURL/engines/utils/gunzip.ts",
+      "default": "./dist/src/scraper/scrapeURL/engines/utils/gunzip.js"
+    },
+    "./unstable/scrape-mock": {
+      "types": "./src/scraper/scrapeURL/lib/mock.ts",
+      "default": "./dist/src/scraper/scrapeURL/lib/mock.js"
+    },
+    "./unstable/scrape-pdf-by-reference": {
+      "types": "./src/scraper/scrapeURL/engines/pdf/fire-pdf/by-reference.ts",
+      "default": "./dist/src/scraper/scrapeURL/engines/pdf/fire-pdf/by-reference.js"
+    },
+    "./unstable/scrape-pdf-cache": {
+      "types": "./src/scraper/scrapeURL/engines/pdf/fire-pdf/cache-service.ts",
+      "default": "./dist/src/scraper/scrapeURL/engines/pdf/fire-pdf/cache-service.js"
+    },
+    "./unstable/scrape-pdf-fire-pdf": {
+      "types": "./src/scraper/scrapeURL/engines/pdf/firePDF.ts",
+      "default": "./dist/src/scraper/scrapeURL/engines/pdf/firePDF.js"
+    },
+    "./unstable/scrape-pdf-markdown": {
+      "types": "./src/scraper/scrapeURL/engines/pdf/markdownToHtml.ts",
+      "default": "./dist/src/scraper/scrapeURL/engines/pdf/markdownToHtml.js"
+    },
+    "./unstable/scrape-pdf-routing": {
+      "types": "./src/scraper/scrapeURL/engines/pdf/fire-pdf/routing.ts",
+      "default": "./dist/src/scraper/scrapeURL/engines/pdf/fire-pdf/routing.js"
+    },
+    "./unstable/scrape-pdf-types": {
+      "types": "./src/scraper/scrapeURL/engines/pdf/types.ts",
+      "default": "./dist/src/scraper/scrapeURL/engines/pdf/types.js"
+    },
+    "./unstable/scrape-request-context": {
+      "types": "./src/scraper/scrapeURL/lib/request-context.ts",
+      "default": "./dist/src/scraper/scrapeURL/lib/request-context.js"
+    },
+    "./unstable/scrape-specialty": {
+      "types": "./src/scraper/scrapeURL/engines/utils/specialtyHandler.ts",
+      "default": "./dist/src/scraper/scrapeURL/engines/utils/specialtyHandler.js"
+    },
+    "./unstable/scrape-url": {
+      "types": "./src/scraper/scrapeURL/index.ts",
+      "default": "./dist/src/scraper/scrapeURL/index.js"
+    },
+    "./unstable/scrape-wikipedia": {
+      "types": "./src/scraper/scrapeURL/engines/wikipedia/index.ts",
+      "default": "./dist/src/scraper/scrapeURL/engines/wikipedia/index.js"
+    },
+    "./unstable/scrape-youtube": {
+      "types": "./src/scraper/scrapeURL/postprocessors/youtube.ts",
+      "default": "./dist/src/scraper/scrapeURL/postprocessors/youtube.js"
+    },
+    "./unstable/us-only": {
+      "types": "./src/lib/us-only.ts",
+      "default": "./dist/src/lib/us-only.js"
+    },
+    "./unstable/v1-types": {
+      "types": "./src/controllers/v1/types.ts",
+      "default": "./dist/src/controllers/v1/types.js"
+    },
+    "./unstable/v2-types": {
+      "types": "./src/controllers/v2/types.ts",
+      "default": "./dist/src/controllers/v2/types.js"
+    },
+    "./unstable/x-twitter-url": {
+      "types": "./src/lib/x-twitter-url.ts",
+      "default": "./dist/src/lib/x-twitter-url.js"
     },
     "./unstable/zdr-queue": {
       "types": "./src/lib/zdr-queue.ts",
@@ -51,7 +199,6 @@
     "flyio": "node dist/src/main.js api",
     "start:dev": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js api\"",
     "build": "tsc",
-    "branding:print": "node src/scraper/scrapeURL/engines/fire-engine/branding-script/print-script.js",
     "test": "vitest run",
     "test:prod": "vitest run --exclude='**/scraper/scrapeURL/**'",
     "test:snips": "vitest run src/__tests__/snips/v1 src/__tests__/snips/v2",
@@ -150,7 +297,6 @@
     "diff": "^8.0.3",
     "dotenv": "^16.3.1",
     "drizzle-orm": "1.0.0-rc.3",
-    "esbuild": "^0.28.1",
     "escape-html": "^1.0.3",
     "express": "5.2.1",
     "express-ws": "^5.0.2",

@@ -70,7 +70,6 @@ import {
 import { UnsupportedSiteError } from "../../../lib/error";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../../lib/strings";
 import {
-  buildFallbackList,
   coreEngineFeatures,
   coreEngines,
 } from "../../../scraper/scrapeURL/engines";
@@ -177,7 +176,7 @@ describe("v2 batch scrape of blocklisted URLs", () => {
     mocks.emitRejectedScrapeActivityEvents.mock.calls.flat(2);
 
   describe("without ignoreInvalidURLs", () => {
-    it("admits a blocked URL the Exchange can serve and routes its job to the Exchange", async () => {
+    it("admits a blocked URL the Exchange can serve and enqueues its job with team flags", async () => {
       const result = await batchScrape(
         { urls: [BLOCKED_URL, OPEN_URL], ignoreInvalidURLs: false },
         ACCEPTED_FLAGS,
@@ -189,25 +188,7 @@ describe("v2 batch scrape of blocklisted URLs", () => {
 
       const jobs = enqueuedJobs();
       expect(jobs.map(job => job.data.url)).toEqual([BLOCKED_URL, OPEN_URL]);
-
-      const blockedJob = jobs[0];
-      const fallback = await buildFallbackList({
-        id: blockedJob.jobId,
-        url: blockedJob.data.url,
-        options: blockedJob.data.scrapeOptions,
-        internalOptions: blockedJob.data.internalOptions,
-        featureFlags: new Set(),
-        mock: null,
-        abort: { asSignal: () => undefined },
-        logger: {
-          info: vi.fn(),
-          warn: vi.fn(),
-          debug: vi.fn(),
-          error: vi.fn(),
-          child: vi.fn().mockReturnThis(),
-        },
-      } as any);
-      expect(fallback.map(f => f.engine)).toEqual(["exchange"]);
+      expect(jobs[0].data.internalOptions.teamFlags).toEqual(ACCEPTED_FLAGS);
     });
 
     it("asks for the terms when they keep a blocked URL out", async () => {

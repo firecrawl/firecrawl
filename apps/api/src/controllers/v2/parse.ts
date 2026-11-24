@@ -26,6 +26,8 @@ import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
 import { service } from "../../service";
+import type { EngineName } from "../../service/engines";
+import { installedService } from "../../service/service";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
@@ -137,9 +139,7 @@ function getSyntheticFilename(file: UploadedParseFile): string {
   return `${file.filename}.html`;
 }
 
-function getParseForceEngine(
-  kind: UploadedParseFileKind,
-): "fetch" | "pdf" | "document" | "image" {
+function getParseForceEngine(kind: UploadedParseFileKind): EngineName {
   if (kind === "pdf") {
     return "pdf";
   }
@@ -149,7 +149,10 @@ function getParseForceEngine(
   }
 
   if (kind === "image") {
-    return "image";
+    const imageEngine = installedService()?.engines.get("image");
+    if (imageEngine) {
+      return imageEngine.name;
+    }
   }
 
   return "fetch";

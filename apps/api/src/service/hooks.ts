@@ -14,6 +14,7 @@
 import type { Logger } from "winston";
 import type { Document } from "../controllers/v2/types";
 import type { ErrorCode } from "../lib/error";
+import type { Meta } from "../scraper/scrapeURL";
 import type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 import type { EngineFeatureName, EngineName } from "./engines";
 import type { RequestContext } from "./request-context";
@@ -52,6 +53,8 @@ export interface ScrapeMeta {
   state: ScrapeState;
   logger: Logger;
   abort: AbortSignal;
+  /** Live pipeline context for extensions that inspect or update scrape metadata. */
+  readonly scrapeMeta?: Meta;
 }
 
 /** Mutable options and required engine features for a scrape attempt. */
@@ -77,6 +80,13 @@ export interface HtmlCleaning {
 export interface EnginePlan {
   /** Candidate engines to try, best first. */
   candidates: EngineName[];
+  /** When true, resolved candidates carry no unsupported-feature warnings. */
+  suppressUnsupportedWarnings?: boolean;
+  /**
+   * On `scrape.engine.fallback`: when true, continue waterfalling to remaining
+   * candidates even when the failed engine's error would otherwise stop the loop.
+   */
+  continueWaterfall?: boolean;
 }
 
 /** HTTP refusal payload returned when a request is rejected. */

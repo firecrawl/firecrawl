@@ -1,6 +1,5 @@
 import { Logger } from "winston";
 import { AddFeatureError, UnsupportedFileError } from "../../error";
-import { FireEngineCheckStatusSuccess } from "../fire-engine/checkStatus";
 import path from "path";
 import os from "os";
 import { writeFile } from "fs/promises";
@@ -14,9 +13,23 @@ import {
 } from "../../../../lib/image-formats";
 import type { ImageOcrGate } from "../../../../lib/image-ocr-gate";
 
+export interface SpecialtyHandoffResponse {
+  url?: string;
+  content: string;
+  pageStatusCode: number;
+  usedMobileProxy?: boolean;
+  responseHeaders?: Record<string, string>;
+  file?: {
+    content?: string;
+    gcs_uri?: string;
+    sha256?: string;
+    size_bytes?: number;
+  };
+}
+
 async function feResToFilePrefetch(
   logger: Logger,
-  feRes: FireEngineCheckStatusSuccess | undefined,
+  feRes: SpecialtyHandoffResponse | undefined,
   fileExtension: string,
   fileType: string,
   contentType?: string,
@@ -82,7 +95,7 @@ async function feResToFilePrefetch(
 
 async function feResToPdfPrefetch(
   logger: Logger,
-  feRes: FireEngineCheckStatusSuccess | undefined,
+  feRes: SpecialtyHandoffResponse | undefined,
   signal?: AbortSignal,
   maxFileBytes?: number,
 ): Promise<Meta["pdfPrefetch"]> {
@@ -99,7 +112,7 @@ async function feResToPdfPrefetch(
 
 async function feResToDocumentPrefetch(
   logger: Logger,
-  feRes: FireEngineCheckStatusSuccess | undefined,
+  feRes: SpecialtyHandoffResponse | undefined,
   contentType: string | undefined,
 ): Promise<Meta["documentPrefetch"]> {
   // Determine file extension from content type
@@ -111,7 +124,7 @@ async function feResToDocumentPrefetch(
 
 async function feResToImagePrefetch(
   logger: Logger,
-  feRes: FireEngineCheckStatusSuccess | undefined,
+  feRes: SpecialtyHandoffResponse | undefined,
   contentType: string,
 ): Promise<Meta["imagePrefetch"]> {
   const extension =
@@ -128,7 +141,7 @@ async function feResToImagePrefetch(
  * caller falls through to the historical unsupported-file rejection.
  */
 async function sniffImageHandoff(
-  feRes: FireEngineCheckStatusSuccess | undefined,
+  feRes: SpecialtyHandoffResponse | undefined,
   imageOcrEnabled: ImageOcrGate,
 ): Promise<string | null> {
   const content = feRes?.file?.content;
@@ -203,7 +216,7 @@ function matchHandoffSignature(
  * compared character by character.
  */
 function sniffHandoffFileKind(
-  feRes: FireEngineCheckStatusSuccess | undefined,
+  feRes: SpecialtyHandoffResponse | undefined,
 ): HandoffFileKind | null {
   if (!feRes) return null;
   if (feRes.file?.content !== undefined) {
@@ -229,7 +242,7 @@ function sniffHandoffFileKind(
 async function handoffSniffedFile(
   kind: HandoffFileKind,
   logger: Logger,
-  feRes: FireEngineCheckStatusSuccess | undefined,
+  feRes: SpecialtyHandoffResponse | undefined,
   contentType: string | undefined,
   signal?: AbortSignal,
   maxFileBytes?: number,
@@ -256,7 +269,7 @@ async function handoffSniffedFile(
 export async function specialtyScrapeCheck(
   logger: Logger,
   headers: Record<string, string> | undefined,
-  feRes?: FireEngineCheckStatusSuccess,
+  feRes?: SpecialtyHandoffResponse,
   /** Scrape abort signal — stops a large-PDF handoff download when the
    * request has been cancelled or timed out. */
   signal?: AbortSignal,

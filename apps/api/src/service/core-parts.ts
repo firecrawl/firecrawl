@@ -100,6 +100,10 @@ export function coreParts(): CoreParts {
       quality: spec.quality,
       features: spec.features,
       ...(spec.explicitOnly ? { explicitOnly: true } : {}),
+      ...(spec.cache ? { cache: true } : {}),
+      ...(spec.supportsProfile ? { supportsProfile: true } : {}),
+      ...(spec.prefetchesFiles ? { prefetchesFiles: true } : {}),
+      ...(spec.allowEmptyContent ? { allowEmptyContent: true } : {}),
       enabled: () => loadCoreEngine(spec.name).enabled(),
       scrape,
       maxReasonableTime: meta => {

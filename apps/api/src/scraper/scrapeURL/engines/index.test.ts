@@ -66,6 +66,10 @@ const makeEngine = (
     scrape?: RegisteredEngine["scrape"];
     maxReasonableTime?: RegisteredEngine["maxReasonableTime"];
     explicitOnly?: boolean;
+    cache?: boolean;
+    supportsProfile?: boolean;
+    prefetchesFiles?: boolean;
+    allowEmptyContent?: boolean;
   } = {},
 ): RegisteredEngine =>
   ({
@@ -152,16 +156,16 @@ describe("engine registry integration", () => {
   it("keeps explicitOnly engines out of the default waterfall but honors forceEngine", async () => {
     install([
       makeEngine("fetch", { quality: 5 }),
-      makeEngine("exchange", { quality: 2000, explicitOnly: true }),
+      makeEngine("custom;explicit", { quality: 2000, explicitOnly: true }),
     ]);
 
     const normal = await buildFallbackList(makeMeta());
     expect(normal.map(e => e.engine)).toEqual(["fetch"]);
 
     const forced = await buildFallbackList(
-      makeMeta({ forceEngine: "exchange" }),
+      makeMeta({ forceEngine: "custom;explicit" as Engine }),
     );
-    expect(forced.map(e => e.engine)).toEqual(["exchange"]);
+    expect(forced.map(e => e.engine)).toEqual(["custom;explicit"]);
   });
 
   it("honors last-wins engine replacement during selection and dispatch", async () => {
@@ -206,7 +210,7 @@ describe("engine registry integration", () => {
     expect(getEngineMaxReasonableTime(meta, "fetch")).toBe(9000);
   });
 
-  it("adds stealthProxy to meta.featureFlags when the engine supports it and is not an index engine", async () => {
+  it("adds stealthProxy to meta.featureFlags when the engine supports it and is not a cache engine", async () => {
     const receivedFlags: FeatureFlag[][] = [];
     install([
       makeEngine("custom;stealth", {
@@ -221,7 +225,8 @@ describe("engine registry integration", () => {
           };
         },
       }),
-      makeEngine("index", {
+      makeEngine("custom;cache", {
+        cache: true,
         features: { stealthProxy: true },
         scrape: async meta => {
           receivedFlags.push([...meta.featureFlags]);
@@ -236,7 +241,7 @@ describe("engine registry integration", () => {
     ]);
 
     await scrapeURLWithEngine(makeMeta(), "custom;stealth" as Engine);
-    await scrapeURLWithEngine(makeMeta(), "index");
+    await scrapeURLWithEngine(makeMeta(), "custom;cache" as Engine);
 
     expect(receivedFlags).toEqual([["stealthProxy"], []]);
   });
