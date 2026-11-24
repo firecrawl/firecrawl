@@ -11,17 +11,9 @@ import {
   performSummary,
   performCleanContent,
 } from "./llmExtract";
-import { performDeterministicJson } from "./deterministicJson";
 import { performQuery } from "./query";
 import { removeBase64Images } from "./removeBase64Images";
 import { performAttributes } from "./performAttributes";
-
-import { deriveDiff } from "./diff";
-import { fetchAudio } from "./audio";
-import { fetchProduct } from "./product";
-import { fetchMenu } from "./menu";
-import { fetchVideo } from "./video";
-import { performRedactPII } from "./redactPII";
 import { performPromptInjectionGuard } from "./promptInjectionGuard";
 import { useSearchIndex } from "../../../services/index";
 import { sendDocumentToSearchIndex } from "./sendToSearchIndex";
@@ -125,38 +117,18 @@ async function deriveMarkdownFromHTML(
     );
   }
 
-  // Only derive markdown if markdown format is requested or if formats that require markdown are requested:
-  // - changeTracking requires markdown
-  // - json format requires markdown (for LLM extraction)
-  // - summary format requires markdown (for summarization)
-  // - question/highlights/query formats require markdown (for page-level answers)
-  // - redactPII needs markdown as its source text (spans are markdown char offsets)
-  // - checkPromptInjection scans markdown
   const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
-  const hasChangeTracking = hasFormatOfType(
-    meta.options.formats,
-    "changeTracking",
-  );
-  // deterministicJson populates document.json just like json, so treat it the
-  // same here (derive markdown for it; keep the field it produced).
-  const hasJson =
-    hasFormatOfType(meta.options.formats, "json") ||
-    hasFormatOfType(meta.options.formats, "deterministicJson");
+  const hasJson = hasFormatOfType(meta.options.formats, "json");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
   const hasQuestion = hasFormatOfType(meta.options.formats, "question");
-  const hasHighlights = hasFormatOfType(meta.options.formats, "highlights");
   const hasQuery = hasFormatOfType(meta.options.formats, "query");
-  const hasRedactPII = !!meta.options.redactPII;
   if (
     !meta.needsMarkdown &&
     !hasMarkdown &&
-    !hasChangeTracking &&
     !hasJson &&
     !hasSummary &&
     !hasQuestion &&
-    !hasHighlights &&
     !hasQuery &&
-    !hasRedactPII &&
     !meta.options.checkPromptInjection &&
     !meta.options.onlyCleanContent
   ) {
@@ -341,24 +313,10 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasHtml = hasFormatOfType(meta.options.formats, "html");
   const hasLinks = hasFormatOfType(meta.options.formats, "links");
   const hasImages = hasFormatOfType(meta.options.formats, "images");
-  const hasChangeTracking = hasFormatOfType(
-    meta.options.formats,
-    "changeTracking",
-  );
-  // deterministicJson populates document.json just like json, so treat it the
-  // same here (derive markdown for it; keep the field it produced).
-  const hasJson =
-    hasFormatOfType(meta.options.formats, "json") ||
-    hasFormatOfType(meta.options.formats, "deterministicJson");
+  const hasJson = hasFormatOfType(meta.options.formats, "json");
   const hasScreenshot = hasFormatOfType(meta.options.formats, "screenshot");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
-  const hasProduct = hasFormatOfType(meta.options.formats, "product");
-  const hasMenu = hasFormatOfType(meta.options.formats, "menu");
   const hasQuestionFormat = hasFormatOfType(meta.options.formats, "question");
-  const hasHighlightsFormat = hasFormatOfType(
-    meta.options.formats,
-    "highlights",
-  );
   const hasLegacyQueryFormat = hasFormatOfType(meta.options.formats, "query");
   const hasAnswerFormat = hasQuestionFormat || hasLegacyQueryFormat;
 
@@ -495,89 +453,6 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     );
   }
 
-  if (!hasHighlightsFormat && document.highlights !== undefined) {
-    meta.logger.warn(
-      "Removed highlights from Document because highlights wasn't in formats -- this is wasteful and indicates a bug.",
-    );
-    delete document.highlights;
-  } else if (hasHighlightsFormat && document.highlights === undefined) {
-    meta.logger.warn(
-      "Request had format highlights, but there was no highlights field in the result.",
-    );
-  }
-
-  if (!hasProduct && document.product !== undefined) {
-    meta.logger.warn(
-      "Removed product from Document because it wasn't in formats -- this indicates the engine returned unexpected data.",
-    );
-    delete document.product;
-  }
-
-  if (!hasMenu && document.menu !== undefined) {
-    meta.logger.warn(
-      "Removed menu from Document because it wasn't in formats -- this indicates the engine returned unexpected data.",
-    );
-    delete document.menu;
-  }
-
-  const hasAudio = hasFormatOfType(meta.options.formats, "audio");
-  if (!hasAudio && document.audio !== undefined) {
-    delete document.audio;
-  } else if (hasAudio && document.audio === undefined) {
-    meta.logger.warn(
-      "Request had format: audio, but there was no audio field in the result.",
-    );
-  }
-
-  const hasVideo = hasFormatOfType(meta.options.formats, "video");
-  if (!hasVideo && document.video !== undefined) {
-    delete document.video;
-  }
-  if (!hasVideo && document.videos !== undefined) {
-    delete document.videos;
-  } else if (
-    hasVideo &&
-    document.video === undefined &&
-    document.videos === undefined
-  ) {
-    meta.logger.warn(
-      "Request had format: video, but there was no video field in the result.",
-    );
-  }
-
-  if (!hasChangeTracking && document.changeTracking !== undefined) {
-    meta.logger.warn(
-      "Removed changeTracking from Document because it wasn't in formats -- this is extremely wasteful and indicates a bug.",
-    );
-    delete document.changeTracking;
-  } else if (hasChangeTracking && document.changeTracking === undefined) {
-    meta.logger.warn(
-      "Request had format changeTracking, but there was no changeTracking field in the result.",
-    );
-  }
-
-  if (
-    document.changeTracking &&
-    !hasChangeTracking?.modes?.includes("git-diff") &&
-    document.changeTracking.diff !== undefined
-  ) {
-    meta.logger.warn(
-      "Removed diff from changeTracking because git-diff mode wasn't specified in changeTrackingOptions.modes.",
-    );
-    delete document.changeTracking.diff;
-  }
-
-  if (
-    document.changeTracking &&
-    !hasChangeTracking?.modes?.includes("json") &&
-    document.changeTracking.json !== undefined
-  ) {
-    meta.logger.warn(
-      "Removed structured from changeTracking because structured mode wasn't specified in changeTrackingOptions.modes.",
-    );
-    delete document.changeTracking.json;
-  }
-
   if (meta.options.actions === undefined || meta.options.actions.length === 0) {
     delete document.actions;
   } else if (document.actions) {
@@ -613,26 +488,19 @@ const transformerStack: TransformerStep[] = [
   deriveMarkdownFromHTML,
   performCleanContent,
   { hook: "scrape.document.markdown" },
-  performRedactPII,
   performPromptInjectionGuard,
   deriveLinksFromHTML,
   deriveImagesFromHTML,
   deriveMetadataFromRawHTML,
   { hook: "scrape.document.derived" },
-  fetchProduct,
-  fetchMenu,
   ...(useSearchIndex ? [sendDocumentToSearchIndex] : []), // Add to search index for real-time search
   performLLMExtract,
-  performDeterministicJson,
   performSummary,
   performQuery,
   performAttributes,
   { hook: "scrape.document.extracted" },
   removeBase64Images,
   { hook: "scrape.document.final" },
-  deriveDiff,
-  fetchAudio,
-  fetchVideo,
   coerceFieldsToFormats,
 ];
 

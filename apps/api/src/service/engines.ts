@@ -36,8 +36,6 @@ export interface EngineFeatures {
   pdf: true;
   document: true;
   image: true;
-  audio: true;
-  video: true;
   atsv: true;
   location: true;
   mobile: true;

@@ -183,10 +183,6 @@ function getUnsupportedParseOptionError(reqBody: ParseRequest): string | null {
     return "Parse uploads do not support screenshot output.";
   }
 
-  if (hasFormatOfType(reqBody.formats, "changeTracking")) {
-    return "Parse uploads do not support change tracking.";
-  }
-
   if (reqBody.waitFor !== undefined && reqBody.waitFor > 0) {
     return "Parse uploads do not support waitFor.";
   }
@@ -742,16 +738,22 @@ export async function parseController(
         "parse.document.error": doc?.metadata?.error,
       });
 
+      const rawFormats = (req.body.formats ?? []) as Array<{
+        type: string;
+        modes?: string[];
+      }>;
       let usedLlm =
-        !!hasFormatOfType(req.body.formats, "json") ||
-        !!hasFormatOfType(req.body.formats, "summary") ||
-        !!hasFormatOfType(req.body.formats, "question") ||
-        !!hasFormatOfType(req.body.formats, "highlights") ||
-        !!hasFormatOfType(req.body.formats, "query") ||
-        req.body.checkPromptInjection;
+        rawFormats.some(
+          f =>
+            f.type === "json" ||
+            f.type === "summary" ||
+            f.type === "question" ||
+            f.type === "highlights" ||
+            f.type === "query",
+        ) || req.body.checkPromptInjection;
 
       if (!usedLlm) {
-        const ct = hasFormatOfType(req.body.formats, "changeTracking");
+        const ct = rawFormats.find(f => f.type === "changeTracking");
         if (ct && ct.modes?.includes("json")) {
           usedLlm = true;
         }

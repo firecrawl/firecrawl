@@ -91,10 +91,6 @@ vi.mock("../../lib/logger", () => ({
   logger,
 }));
 
-vi.mock("../../lib/change-tracking-store", () => ({
-  changeTrackingInsertScrape: vi.fn(),
-}));
-
 vi.mock("../../lib/job-access-store", async () => {
   const actual = await vi.importActual<
     typeof import("../../lib/job-access-store")

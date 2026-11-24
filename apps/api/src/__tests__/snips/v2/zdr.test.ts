@@ -327,7 +327,7 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
         );
 
         expect(response.markdown).toBeDefined();
-        expect(response.audio).toBeUndefined();
+        expect((response as any).audio).toBeUndefined();
         expect(response.warning).toContain(
           "Audio format is not supported with zero data retention.",
         );
@@ -348,8 +348,8 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
         );
 
         expect(response.markdown).toBeDefined();
-        expect(response.video).toBeUndefined();
-        expect(response.videos).toBeUndefined();
+        expect((response as any).video).toBeUndefined();
+        expect((response as any).videos).toBeUndefined();
         expect(response.warning).toContain(
           "Video format is not supported with zero data retention.",
         );
@@ -370,7 +370,7 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
         );
 
         expect(response.markdown).toBeDefined();
-        expect(response.product).toBeUndefined();
+        expect((response as any).product).toBeUndefined();
         expect(response.warning).toContain(
           "Product format is not supported with zero data retention.",
         );
@@ -401,7 +401,7 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
           identity,
         );
 
-        expect(response.audio).toMatch(/^https:\/\//);
+        expect((response as any).audio).toMatch(/^https:\/\//);
       },
       scrapeTimeout,
     );
@@ -417,7 +417,7 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
           identity,
         );
 
-        expect(response.video).toMatch(/^https:\/\//);
+        expect((response as any).video).toMatch(/^https:\/\//);
       },
       scrapeTimeout * 2,
     );
@@ -433,7 +433,7 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
           identity,
         );
 
-        expect(response.product?.title).toBe("Firecrawl Test Widget");
+        expect((response as any).product?.title).toBe("Firecrawl Test Widget");
       },
       scrapeTimeout,
     );

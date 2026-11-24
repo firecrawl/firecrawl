@@ -157,9 +157,12 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled += 4;
   }
 
-  const changeTrackingFormat = hasFormatOfType(
-    options.formats,
-    "changeTracking",
+  const rawFormats = (options.formats ?? []) as Array<{
+    type: string;
+    modes?: string[];
+  }>;
+  const changeTrackingFormat = rawFormats.find(
+    f => f.type === "changeTracking",
   );
   if (
     hasFormatOfType(options.formats, "json") ||
@@ -170,7 +173,7 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled += jsonCostBonus;
   }
 
-  if (hasFormatOfType(options.formats, "deterministicJson")) {
+  if (rawFormats.some(f => f.type === "deterministicJson")) {
     // 10 when this run generated the extractor script, 3 when it reused a
     // cached one. The codegen call is tagged in deterministicJson/llm/client.ts.
     const generatedScript = costTrackingJSON.calls?.some(
@@ -195,20 +198,18 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled += 4;
   }
 
-  if (hasFormatOfType(options.formats, "highlights")) {
+  if (rawFormats.some(f => f.type === "highlights")) {
     creditsToBeBilled += 4;
   }
 
-  // Not billed when zero data retention refuses them (transformers/audio.ts,
-  // video.ts). Lockdown skips the fetch before that check and keeps the surcharge.
   const mediaFormatsRefused =
     !!internalOptions.zeroDataRetention && !options.lockdown;
 
-  if (hasFormatOfType(options.formats, "audio") && !mediaFormatsRefused) {
+  if (rawFormats.some(f => f.type === "audio") && !mediaFormatsRefused) {
     creditsToBeBilled += 4;
   }
 
-  if (hasFormatOfType(options.formats, "video") && !mediaFormatsRefused) {
+  if (rawFormats.some(f => f.type === "video") && !mediaFormatsRefused) {
     creditsToBeBilled += 4;
   }
 
@@ -227,7 +228,7 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled += creditsPerPDFPage * extraPdfPages;
   }
 
-  if (options.redactPII) {
+  if ((options as Record<string, unknown>).redactPII) {
     // Flat +4 to match lockdown / audio / video — fire-privacy
     // is a peer premium feature, not a cost-based one. PDF pages all
     // pass through redaction too, so each additional page picks up

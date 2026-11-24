@@ -12,7 +12,6 @@ import {
   FEPageLoadFailed,
   IndexMissError,
   LockdownMissError,
-  MediaAccessDeniedError,
   NoCachedDataError,
   NoEnginesLeftError,
   PaywalledContentError,
@@ -168,7 +167,6 @@ describe("behavioral error traits", () => {
       new NoEnginesLeftError(["fetch"]),
       new LockdownMissError(),
       new PaywalledContentError(),
-      new MediaAccessDeniedError(),
       new UnsafeDomainBlockedError("https://bad.example", sampleThreatDecision),
       new ThirdPartyDataUnsupportedOptionError("actions"),
       new ScrapeJobTimeoutError(),
@@ -293,11 +291,6 @@ describe("HTTP response metadata", () => {
         expected: { status: 403, code: "SCRAPE_PAYWALLED_CONTENT" },
       },
       {
-        label: "MediaAccessDeniedError",
-        error: new MediaAccessDeniedError("denied"),
-        expected: { status: 403, code: "SCRAPE_MEDIA_ACCESS_DENIED" },
-      },
-      {
         label: "ThirdPartyDataUnsupportedOptionError",
         error: new ThirdPartyDataUnsupportedOptionError("actions"),
         expected: { status: 400, code: "THIRD_PARTY_DATA_UNSUPPORTED_OPTION" },
@@ -408,7 +401,6 @@ describe("wire format stability", () => {
         "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED",
         "enrichment disabled",
       ),
-      new MediaAccessDeniedError("denied"),
       new PaywalledContentError(),
       new UnsafeDomainBlockedError(
         "https://bad.example/path",

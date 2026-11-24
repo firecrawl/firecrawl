@@ -33,8 +33,6 @@ export const coreEngineFeatures = {
   pdf: { priority: 100 },
   document: { priority: 100 },
   image: { priority: 100 },
-  audio: { priority: 100 },
-  video: { priority: 100 },
   atsv: { priority: 90 },
   useFastMode: { priority: 90 },
   location: { priority: 10 },

@@ -1,4 +1,3 @@
-import { changeTrackingInsertScrape } from "../../lib/change-tracking-store";
 import { config } from "../../config";
 import { enqueueZdrCleanupJob } from "../../lib/zdr-queue";
 import "dotenv/config";
@@ -811,39 +810,6 @@ async function logScrapeInternal(scrape: LoggedScrape, hooks?: LogScrapeHooks) {
     !(scrape.skipNuq && scrape.zeroDataRetention)
   ) {
     await saveScrapeToGCS(scrape, logger);
-  }
-
-  if (
-    !scrape.is_parse &&
-    scrape.is_successful &&
-    !scrape.zeroDataRetention &&
-    config.USE_DB_AUTHENTICATION &&
-    !scrape.team_id.startsWith("preview_")
-  ) {
-    const hasMarkdown = hasFormatOfType(scrape.options.formats, "markdown");
-    const hasChangeTracking = hasFormatOfType(
-      scrape.options.formats,
-      "changeTracking",
-    );
-
-    if (hasMarkdown || hasChangeTracking) {
-      try {
-        await changeTrackingInsertScrape({
-          team_id: scrape.team_id,
-          url: scrape.url,
-          job_id: scrape.id,
-          tag: hasChangeTracking ? hasChangeTracking.tag : null,
-          date_added: new Date(),
-        });
-        _logger.debug("Change tracking record inserted successfully");
-      } catch (error) {
-        _logger.warn("Error writing change tracking record", {
-          error,
-          scrapeId: scrape.id,
-          teamId: scrape.team_id,
-        });
-      }
-    }
   }
 }
 

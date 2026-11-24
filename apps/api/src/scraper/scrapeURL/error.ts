@@ -871,61 +871,6 @@ export class AgentIndexOnlyError extends TransportableError {
   }
 }
 
-export class AudioUnsupportedUrlError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = [
-    "SCRAPE_AUDIO_UNSUPPORTED_URL",
-  ];
-
-  constructor(message?: string) {
-    super(
-      "SCRAPE_AUDIO_UNSUPPORTED_URL",
-      message ?? "The audio format does not support the provided URL",
-    );
-  }
-
-  serialize() {
-    return super.serialize();
-  }
-
-  static deserialize(
-    _: ErrorCode,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new AudioUnsupportedUrlError(data.message);
-    x.stack = data.stack;
-    return x;
-  }
-}
-
-export class MediaAccessDeniedError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_MEDIA_ACCESS_DENIED"];
-
-  get httpStatus(): number {
-    return 403;
-  }
-
-  constructor(message?: string) {
-    super(
-      "SCRAPE_MEDIA_ACCESS_DENIED",
-      message ??
-        "Access to the requested content was denied, so it cannot be retrieved.",
-    );
-  }
-
-  serialize() {
-    return super.serialize();
-  }
-
-  static deserialize(
-    _: ErrorCode,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new MediaAccessDeniedError(data.message);
-    x.stack = data.stack;
-    return x;
-  }
-}
-
 export class PromptInjectionDetectedError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = [
     "SCRAPE_PROMPT_INJECTION_DETECTED",
@@ -1015,55 +960,6 @@ export class JsonExtractionContentTooLargeError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new JsonExtractionContentTooLargeError(data.message);
-    x.stack = data.stack;
-    return x;
-  }
-}
-
-const MAX_MEDIA_SERVICE_MESSAGE_LENGTH = 500;
-
-// The media service reports terminal, user-facing failures as a structured
-// error body ({ detail: { code, message } }, in contrast to its string detail
-// for internal failures); relay the curated message to the user.
-export function throwIfMediaAccessDenied(errorBody: unknown): void {
-  if (
-    typeof errorBody === "object" &&
-    errorBody !== null &&
-    "detail" in errorBody &&
-    typeof errorBody.detail === "object" &&
-    errorBody.detail !== null &&
-    "code" in errorBody.detail &&
-    typeof errorBody.detail.code === "string" &&
-    "message" in errorBody.detail &&
-    typeof errorBody.detail.message === "string"
-  ) {
-    throw new MediaAccessDeniedError(
-      errorBody.detail.message.slice(0, MAX_MEDIA_SERVICE_MESSAGE_LENGTH),
-    );
-  }
-}
-
-export class VideoUnsupportedUrlError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = [
-    "SCRAPE_VIDEO_UNSUPPORTED_URL",
-  ];
-
-  constructor(message?: string) {
-    super(
-      "SCRAPE_VIDEO_UNSUPPORTED_URL",
-      message ?? "The video format does not support the provided URL",
-    );
-  }
-
-  serialize() {
-    return super.serialize();
-  }
-
-  static deserialize(
-    _: ErrorCode,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new VideoUnsupportedUrlError(data.message);
     x.stack = data.stack;
     return x;
   }

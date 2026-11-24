@@ -1,7 +1,7 @@
 import { existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createMarkdownChangeDiff } from "../../lib/change-tracking-diff";
+import { createMarkdownChangeDiff } from "./diff";
 import { diffMonitorJson, diffMonitorMarkdown } from "./diff";
 
 describe("markdown change tracking diff", () => {

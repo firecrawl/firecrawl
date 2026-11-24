@@ -228,6 +228,10 @@
       "types": "./src/scraper/scrapeURL/engines/pdf/types.ts",
       "default": "./dist/src/scraper/scrapeURL/engines/pdf/types.js"
     },
+    "./unstable/scrape-query": {
+      "types": "./src/scraper/scrapeURL/transformers/query.ts",
+      "default": "./dist/src/scraper/scrapeURL/transformers/query.js"
+    },
     "./unstable/scrape-replay": {
       "types": "./src/lib/scrape-interact/scrape-replay.ts",
       "default": "./dist/src/lib/scrape-interact/scrape-replay.js"
@@ -247,10 +251,6 @@
     "./unstable/scrape-wikipedia": {
       "types": "./src/scraper/scrapeURL/engines/wikipedia/index.ts",
       "default": "./dist/src/scraper/scrapeURL/engines/wikipedia/index.js"
-    },
-    "./unstable/scrape-youtube": {
-      "types": "./src/scraper/scrapeURL/postprocessors/youtube.ts",
-      "default": "./dist/src/scraper/scrapeURL/postprocessors/youtube.js"
     },
     "./unstable/us-only": {
       "types": "./src/lib/us-only.ts",
@@ -381,7 +381,6 @@
     "joplin-turndown-plugin-gfm": "^1.0.12",
     "jose": "^6.2.12",
     "jsdom": "^29.1.1",
-    "jsonrepair": "^3.14.0",
     "koffi": "^2.9.0",
     "langsmith": "^0.6.0",
     "lodash": "^4.18.0",

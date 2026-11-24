@@ -73,10 +73,8 @@ export interface EngineScrapeResult {
 
   contentType?: string;
 
-  youtubeTranscriptContent?: any;
   postprocessorsUsed?: string[];
   warning?: string;
-  audioCookies?: BrowserCookie[];
 
   proxyUsed: "basic" | "stealth";
   timezone?: string;
@@ -164,7 +162,6 @@ function shouldAllowCacheEngines(meta: Meta): boolean {
     screenshotFormat?.quality !== undefined;
 
   return (
-    !hasFormatOfType(meta.options.formats, "changeTracking") &&
     !getPDFPageMarkdown(meta.options.parsers) &&
     !getPDFBlocks(meta.options.parsers) &&
     !getPDFPageMarkers(meta.options.parsers) &&

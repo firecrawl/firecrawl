@@ -126,8 +126,8 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Lockdown Mode", () => {
 
       expect(data).toBeDefined();
       expect(data.metadata.cacheState).toBe("hit");
-      expect(data.audio).toBeUndefined();
-      expect(data.video).toBeUndefined();
+      expect((data as any).audio).toBeUndefined();
+      expect((data as any).video).toBeUndefined();
     },
     scrapeTimeout * 2 + 20000,
   );

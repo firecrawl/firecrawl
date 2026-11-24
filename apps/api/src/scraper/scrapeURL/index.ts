@@ -86,7 +86,6 @@ import {
   ScrapeJobTimeoutError,
 } from "../../lib/error";
 import { htmlTransform } from "./lib/removeUnwantedElements";
-import { postprocessors } from "./postprocessors";
 import { rewriteUrl } from "./lib/rewriteUrl";
 import {
   DOCUMENT_EXTENSIONS,
@@ -284,7 +283,6 @@ export type Meta = {
    * by reference, because engines run on a copy of meta. */
   firePdfCacheKey?: { current?: string };
   abortHandle?: NodeJS.Timeout;
-  audioCookies?: BrowserCookie[];
   /** Threat protection decisions made during this scrape, in order (mutable, like logs). */
   threatDecisions: ThreatDecision[];
 };
@@ -313,14 +311,6 @@ function buildFeatureFlags(
     } else {
       flags.add("screenshot");
     }
-  }
-
-  if (hasFormatOfType(options.formats, "audio")) {
-    flags.add("audio");
-  }
-
-  if (hasFormatOfType(options.formats, "video")) {
-    flags.add("video");
   }
 
   if (options.waitFor !== 0) {
@@ -728,24 +718,17 @@ async function scrapeURLLoopIter(
     );
 
     const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
-    const hasChangeTracking = hasFormatOfType(
-      meta.options.formats,
-      "changeTracking",
-    );
     const hasJson = hasFormatOfType(meta.options.formats, "json");
     const hasSummary = hasFormatOfType(meta.options.formats, "summary");
     const hasQuestion = hasFormatOfType(meta.options.formats, "question");
-    const hasHighlights = hasFormatOfType(meta.options.formats, "highlights");
     const hasQuery = hasFormatOfType(meta.options.formats, "query");
     const hasRawBase64 = hasFormatOfType(meta.options.formats, "rawBase64");
     const needsMarkdown =
       meta.needsMarkdown ||
       hasMarkdown ||
-      hasChangeTracking ||
       hasJson ||
       hasSummary ||
       hasQuestion ||
-      hasHighlights ||
       hasQuery;
 
     let checkMarkdown: string;
@@ -1220,40 +1203,6 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     meta.winnerEngine = result.engine;
     let engineResult: EngineScrapeResult = result.result;
-    meta.audioCookies = (
-      engineResult as { audioCookies?: BrowserCookie[] }
-    ).audioCookies;
-
-    for (const postprocessor of postprocessors) {
-      if (
-        !hasFormatOfType(meta.options.formats, "rawBase64") &&
-        postprocessor.shouldRun(
-          meta,
-          new URL(engineResult.url),
-          engineResult.postprocessorsUsed,
-        )
-      ) {
-        meta.logger.info("Running postprocessor " + postprocessor.name);
-        try {
-          engineResult = await postprocessor.run(
-            {
-              ...meta,
-              logger: meta.logger.child({
-                method: "postprocessors/" + postprocessor.name,
-              }),
-            },
-            engineResult,
-          );
-        } catch (error) {
-          meta.logger.warn(
-            "Failed to run postprocessor " + postprocessor.name,
-            {
-              error,
-            },
-          );
-        }
-      }
-    }
 
     // Throws before the transformers, so a blocked page is never indexed.
     if (

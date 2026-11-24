@@ -2193,7 +2193,7 @@ describe("V2 Types Validation", () => {
       };
 
       const result = scrapeRequestSchema.parse(input);
-      const changeTracking = result.formats.find(
+      const changeTracking = (result.formats as any[]).find(
         f => typeof f === "object" && f.type === "changeTracking",
       );
       expect((changeTracking as any).tag).toBeNull();
