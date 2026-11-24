@@ -15,6 +15,7 @@ import {
   coreSearchProviderSpecs,
   type SearchProvider,
 } from "./search-providers";
+import { hookPointNames } from "./hooks";
 import { createService } from "./service";
 
 const loadedSideEffectModules = vi.hoisted(() => [] as string[]);
@@ -379,10 +380,26 @@ describe("coreParts", () => {
   });
 
   it("loads core error classes and default modules without pulling in config, exchange, deployment, gcs, or zdr", () => {
-    answerRequire();
+    const required = answerRequire();
     const built = createService({ modules: defaultModules() }, coreParts());
 
+    for (const name of hookPointNames) {
+      expect(built.hooks.has(name)).toBe(false);
+    }
+    const links = ["https://example.com/a"];
+    const transformed = built.hooks.transform("crawl.links", links, {
+      id: "crawl-1",
+      ctx: { teamId: "team-1", zeroDataRetention: false },
+      from: "https://example.com",
+    });
+    expect(transformed).toBe(links);
+    expect(transformed instanceof Promise).toBe(false);
+
+    expect(built.describe().hooks).toEqual({});
     expect(built.describe().modules).toEqual(["messages", "uploads"]);
+    expect(required).not.toHaveBeenCalledWith(enginesModule);
+    expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
+    expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
     expect(loadedSideEffectModules).toEqual([]);
   });
 });
