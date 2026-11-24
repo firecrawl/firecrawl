@@ -10,7 +10,7 @@ import {
   type DbPoolName,
 } from "./pool-profiles";
 
-type DB = NodePgDatabase & { $client: Pool };
+type DB = NodePgDatabase;
 
 // Registry of every pool we create, for /metrics exposure.
 const dbPools: { name: string; pool: Pool }[] = [];

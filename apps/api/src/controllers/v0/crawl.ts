@@ -293,12 +293,18 @@ export async function crawlController(req: Request, res: Response) {
       sc.robots = await crawler.getRobotsTxt();
     } catch (_) {}
 
+    const crawlBilling = {
+      endpoint: "crawl" as const,
+      jobId: id,
+      externalRequestId: externalRequestId(req),
+    };
     const ctx = requestContext({
       teamId: sc.team_id,
       zeroDataRetention: false,
       flags: chunk?.flags ?? null,
       orgId: chunk?.org_id ?? null,
       apiKeyId: chunk?.api_key_id ?? null,
+      billing: crawlBilling,
       concurrencyLimit: chunk?.concurrency_limit,
       rateLimitMultiplier: chunk?.rate_limit_multiplier,
     });

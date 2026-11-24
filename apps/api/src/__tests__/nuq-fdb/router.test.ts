@@ -2,6 +2,9 @@ import { randomUUID } from "crypto";
 import { vi } from "vitest";
 import { config } from "../../config";
 import { redisEvictConnection } from "../../services/redis";
+import { requestContext } from "../../lib/request-context";
+import { noLimits } from "../../service/defaults";
+import { testService, withService } from "../../service/testing";
 import {
   fdbQueueEnabled,
   isFdbTeam,
@@ -318,5 +321,44 @@ describeIf("NuQ router (forced FDB mode)", () => {
     // double release is a no-op
     await mirrorExternalSlotRelease(teamId, holder);
     expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(0);
+  });
+
+  test("external slot release follows recorded FDB backend when settlement omits context", async () => {
+    const forcedBackend = config.NUQ_BACKEND;
+    config.NUQ_BACKEND = "pg";
+    try {
+      const limits = {
+        ...noLimits(),
+        queueBackend: (ctx: { apiKeyId?: number | null }) =>
+          ctx.apiKeyId === 999 ? ("fdb" as const) : undefined,
+      };
+      await withService(
+        testService(
+          {},
+          { core: { name: "core" }, logger: { error: () => {} } },
+          { limits },
+        ),
+        async () => {
+          const teamId = randomUUID();
+          const holder = randomUUID();
+          const ctx = requestContext({
+            teamId,
+            zeroDataRetention: false,
+            apiKeyId: 999,
+          });
+          expect(
+            await reserveExternalSlot(teamId, holder, 30_000, 10, ctx),
+          ).toBe(true);
+          expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(1);
+
+          // Settlement runs without the original request context; the recorded
+          // backend marker still routes the release to FDB.
+          await mirrorExternalSlotRelease(teamId, holder);
+          expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(0);
+        },
+      );
+    } finally {
+      config.NUQ_BACKEND = forcedBackend;
+    }
   });
 });

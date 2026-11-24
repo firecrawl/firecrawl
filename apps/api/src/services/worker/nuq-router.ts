@@ -3,6 +3,7 @@ import { logger as _logger } from "../../lib/logger";
 import { config } from "../../config";
 import { ScrapeJobData } from "../../types";
 import { redisEvictConnection } from "../../services/redis";
+import { getRedisConnection } from "../../services/queue-service";
 import { currentLimits } from "../../lib/limits";
 import { jobContext, requestContext } from "../../lib/request-context";
 import type { RequestContext } from "../../service/request-context";
@@ -198,9 +199,67 @@ function tagFdbJob<T extends object>(job: T): T & { backend: "fdb" } {
 // === External capacity holders (browser sessions, sync scrapes)
 //
 // Non-queue work that occupies team capacity mirrors itself into whichever
-// ledger the team runs on. Mismatched acquire/release pairs (flag flipped
-// mid-hold) self-heal: Redis entries expire by score, FDB external slots are
-// reaped by the sweeper.
+// ledger the team runs on. When FDB is selected dynamically, record the holder's
+// backend so context-free settlement releases the same ledger; Redis entries
+// expire by score and FDB external slots are reaped by the sweeper as a backstop.
+
+const externalSlotBackendKey = (holderId: string) =>
+  `nuq:external_slot_backend:${holderId}`;
+
+async function markExternalSlotBackend(
+  holderId: string,
+  backend: QueueBackend,
+  ttlMs: number,
+): Promise<void> {
+  if (fdbForced()) return;
+  try {
+    await getRedisConnection().set(
+      externalSlotBackendKey(holderId),
+      backend,
+      "PX",
+      Math.max(ttlMs, 0) + 60_000,
+    );
+  } catch (error) {
+    _logger.warn("Failed to record external slot backend marker", {
+      module: "nuq-router",
+      holderId,
+      backend,
+      error,
+    });
+  }
+}
+
+async function getExternalSlotBackend(
+  holderId: string,
+): Promise<QueueBackend | null> {
+  if (!fdbQueueEnabled() || fdbForced()) return null;
+  try {
+    const raw = await getRedisConnection().get(
+      externalSlotBackendKey(holderId),
+    );
+    return raw === "fdb" ? "fdb" : null;
+  } catch (error) {
+    _logger.warn("Failed to read external slot backend marker", {
+      module: "nuq-router",
+      holderId,
+      error,
+    });
+    return null;
+  }
+}
+
+async function clearExternalSlotBackend(holderId: string): Promise<void> {
+  if (!fdbQueueEnabled() || fdbForced()) return;
+  try {
+    await getRedisConnection().del(externalSlotBackendKey(holderId));
+  } catch (error) {
+    _logger.warn("Failed to clear external slot backend marker", {
+      module: "nuq-router",
+      holderId,
+      error,
+    });
+  }
+}
 
 export async function reserveExternalSlot(
   teamId: string,
@@ -211,11 +270,16 @@ export async function reserveExternalSlot(
 ): Promise<boolean> {
   if (await isFdbTeam(teamId, ctx)) {
     const legacyActive = await getConcurrencyLimitActiveJobsCount(teamId);
-    // A timed-out write may have committed. Fail closed; the caller releases
-    // this holder from both ledgers instead of admitting it a second time.
-    return optionalFdb(() =>
+    // Record before acquiring so a timed-out write that committed remotely
+    // still routes later context-free settlement releases to FDB.
+    await markExternalSlotBackend(holderId, "fdb", ttlMs);
+    const acquired = await optionalFdb(() =>
       externalSlotsFdb.acquire(teamId, holderId, ttlMs, limit - legacyActive),
     );
+    if (!acquired) {
+      await clearExternalSlotBackend(holderId);
+    }
+    return acquired;
   }
   return reserveConcurrencyLimitSlot(teamId, holderId, ttlMs, limit);
 }
@@ -225,9 +289,13 @@ export async function mirrorExternalSlotRelease(
   holderId: string,
   ctx?: RequestContext,
 ): Promise<void> {
-  if (await isFdbTeam(teamId, ctx)) {
+  const recordedFdb = (await getExternalSlotBackend(holderId)) === "fdb";
+  if (recordedFdb || (await isFdbTeam(teamId, ctx))) {
     try {
       await optionalFdb(() => externalSlotsFdb.release(teamId, holderId));
+      if (recordedFdb) {
+        await clearExternalSlotBackend(holderId);
+      }
       return;
     } catch (error) {
       if (fdbForced()) throw error;

@@ -305,12 +305,18 @@ export async function crawlController(
     });
   }
 
+  const billing = {
+    endpoint: "crawl" as const,
+    jobId: id,
+    externalRequestId: externalRequestId(req),
+  };
   const ctx = requestContext({
     teamId: req.auth.team_id,
     zeroDataRetention: zeroDataRetention ?? false,
     flags: req.acuc?.flags ?? null,
     orgId: req.acuc?.org_id ?? null,
     apiKeyId: req.acuc?.api_key_id ?? null,
+    billing,
     concurrencyLimit: req.acuc?.concurrency_limit,
     rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
   });
@@ -342,11 +348,7 @@ export async function crawlController(
       internalOptions: sc.internalOptions,
       origin: req.body.origin,
       integration: req.body.integration,
-      billing: {
-        endpoint: "crawl",
-        jobId: id,
-        externalRequestId: externalRequestId(req),
-      },
+      billing,
       crawl_id: id,
       webhook: req.body.webhook,
       v1: true,
