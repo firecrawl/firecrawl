@@ -33,6 +33,7 @@ import {
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { isUsOnly } from "../../lib/us-only";
+import { ipWhitelistRefusal } from "../../lib/permissions";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 async function searchHelper(
@@ -91,6 +92,9 @@ async function searchHelper(
     team_id,
   );
   internalOptions.orgId = org_id;
+  if (isUsOnly(flags)) {
+    internalOptions.teamFlags = flags;
+  }
 
   if (justSearch) {
     const searchCredits = Math.ceil(res.length / 10) * 2;
@@ -271,6 +275,14 @@ export async function searchController(req: Request, res: Response) {
       fallback: req.body.pageOptions?.fallback ?? false,
     };
     const origin = req.body.origin ?? "api";
+
+    const ipWhitelistError =
+      pageOptions.fetchPageContent !== false
+        ? ipWhitelistRefusal(chunk?.flags, pageOptions?.geolocation?.country)
+        : undefined;
+    if (ipWhitelistError) {
+      return res.status(403).json({ error: ipWhitelistError });
+    }
 
     const searchOptions = req.body.searchOptions ?? { limit: 5 };
 

@@ -22,7 +22,7 @@ import { getModel } from "../../../lib/generic-ai";
 import { z } from "zod";
 import fs from "fs/promises";
 import Ajv from "ajv";
-import { extractData } from "../lib/extractSmartScrape";
+import { extractData } from "../lib/jsonExtract";
 import {
   findStrictSchemaViolation,
   toRootSchema,
@@ -30,16 +30,8 @@ import {
 } from "../../../lib/openai-strict-schema";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { isZeroDataRetentionActive } from "../../../lib/otel-tracer";
-import { isAgentExtractModelValid } from "../../../controllers/v1/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
-import {
-  EMPTY_LIST_FALLBACK_MIN_CHARS,
-  extractionProviderCost,
-  isEmptyListAnswer,
-  selectExtractionRoute,
-} from "../../../lib/extraction-provider";
-import { config } from "../../../config";
-import { isUsOnly } from "../../../lib/us-only";
+import { aiTelemetry } from "../../../lib/ai-telemetry";
 
 // Smart model selection based on schema
 function detectRecursiveSchema(schema: any): boolean {
@@ -316,10 +308,6 @@ function lookupModelCost(
   const slash = model.indexOf("/");
   if (slash !== -1) candidates.push(model.slice(slash + 1));
 
-  // The configured extraction provider is priced from config even if its
-  // name collides with a static entry.
-  const providerCost = extractionProviderCost(model);
-  if (providerCost) return providerCost;
   for (const id of candidates) {
     if (modelCosts[id]) return modelCosts[id];
   }
@@ -393,8 +381,6 @@ export type GenerateCompletionsOptions = {
   isExtractEndpoint?: boolean;
   mode?: "object" | "no-object";
   providerOptions?: LanguageModelV1ProviderMetadata;
-  /** AI SDK retry count for the primary model call (default: the SDK's). */
-  maxRetries?: number;
   retryModel?: LanguageModel;
   costTrackingOptions: {
     costTracking: CostTracking;
@@ -464,7 +450,6 @@ export async function generateCompletions({
   model = getModel("gpt-4o-mini", "openai", { teamFlags }),
   mode = "object",
   providerOptions,
-  maxRetries,
   retryModel = getModel("gpt-4.1-mini", "openai", { teamFlags }),
   costTrackingOptions,
   metadata,
@@ -534,13 +519,13 @@ export async function generateCompletions({
               strictJsonSchema: true,
             },
           },
-          experimental_telemetry: {
+          telemetry: aiTelemetry({
             isEnabled: !zeroDataRetention,
             functionId: metadata.functionId
               ? metadata.functionId + "/generateText"
               : "generateText",
             metadata: telemetryMetadata(metadata),
-          },
+          }),
         });
 
         costTrackingOptions.costTracking.addCall({
@@ -614,13 +599,13 @@ export async function generateCompletions({
                   strictJsonSchema: true,
                 },
               },
-              experimental_telemetry: {
+              telemetry: aiTelemetry({
                 isEnabled: !zeroDataRetention,
                 functionId: metadata.functionId
                   ? metadata.functionId + "/generateText"
                   : "generateText",
                 metadata: telemetryMetadata(metadata),
-              },
+              }),
             });
 
             extract = result.text;
@@ -755,13 +740,13 @@ export async function generateCompletions({
                 strictJsonSchema: true,
               },
             },
-            experimental_telemetry: {
+            telemetry: aiTelemetry({
               isEnabled: !zeroDataRetention,
               functionId: metadata.functionId
                 ? metadata.functionId + "/repairText"
                 : "repairText",
               metadata: telemetryMetadata(metadata),
-            },
+            }),
           });
 
           costTrackingOptions.costTracking.addCall({
@@ -794,7 +779,6 @@ export async function generateCompletions({
     const generateObjectConfig = {
       model: currentModel,
       prompt: prompt,
-      ...(maxRetries !== undefined && { maxRetries }),
       providerOptions: {
         ...(providerOptions || {}),
         google: {
@@ -825,11 +809,11 @@ export async function generateCompletions({
           logger.error("LLM extraction failed without schema", { error });
         },
       }),
-      experimental_telemetry: {
+      telemetry: aiTelemetry({
         isEnabled: !zeroDataRetention,
         functionId: metadata.functionId,
         metadata: telemetryMetadata(metadata),
-      },
+      }),
       ...(modelId.startsWith("gpt-5")
         ? {
             temperature: 1,
@@ -902,7 +886,6 @@ export async function generateCompletions({
           const retryConfig = {
             ...generateObjectConfig,
             model: currentModel,
-            maxRetries: undefined, // the fallback model keeps the SDK default
           };
           result = await generateObject(retryConfig);
           costTrackingOptions.costTracking.addCall({
@@ -1030,29 +1013,7 @@ export async function performLLMExtract(
   }
 
   if (jsonFormat) {
-    const useAgent = isAgentExtractModelValid(
-      meta.internalOptions.v1JSONAgent?.model,
-    );
     const teamFlags = meta.internalOptions.teamFlags;
-    const usOnly = isUsOnly(teamFlags ?? undefined);
-
-    // NOTE: ZDR deny policy on JSON mode has been lightened to only
-    // disallow agent/smart scrape (deprecated). This now binds us to
-    // only use model providers in JSON mode that we have ZDR agreements
-    // with. (openai certified yes.) WE MUST OBEY THIS! - Mogery
-    if (useAgent && meta.internalOptions.zeroDataRetention) {
-      document.warning =
-        "JSON mode with agent is not supported with zero data retention." +
-        (document.warning ? " " + document.warning : "");
-      return document;
-    }
-
-    if (useAgent && usOnly) {
-      document.warning =
-        "JSON mode with agent is not supported for teams restricted to US-only processing." +
-        (document.warning ? " " + document.warning : "");
-      return document;
-    }
 
     // const originalOptions = meta.options.extract!;
 
@@ -1094,106 +1055,14 @@ export async function performLLMExtract(
       teamFlags,
     };
 
-    // Optional extraction provider: routed by team cohort, with the default
-    // model as a per-request fallback; or mirrored (shadow) without using
-    // the result. The agent path and US-only teams are never routed.
-    const route =
-      useAgent || usOnly
-        ? "default"
-        : selectExtractionRoute({
-            teamId: meta.internalOptions.teamId,
-            zeroDataRetention:
-              !!meta.internalOptions.zeroDataRetention ||
-              isZeroDataRetentionActive(),
-            inputBytes: Buffer.byteLength(document.markdown ?? "", "utf8"),
-            requestedModel: jsonFormat.model,
-            refSchema: modelSelection.reason === "recursive_schema_detected",
-          });
-    if (jsonFormat.model !== undefined && route !== "provider") {
-      document.warning =
-        "The requested extraction model is not available for this request; the default model was used." +
-        (document.warning ? " " + document.warning : "");
-    }
-    const extractWith = (options: GenerateCompletionsOptions) =>
-      extractData({
-        extractOptions: options,
-        urls: [meta.rewrittenUrl ?? meta.url],
-        useAgent,
-        checkPromptInjection: meta.options.checkPromptInjection,
-        scrapeId: meta.id,
-        metadata: {
-          teamId: meta.internalOptions.teamId,
-          functionId: llmFunctionId,
-        },
-      });
-    const providerOptions = (): GenerateCompletionsOptions => ({
-      ...generationOptions,
-      model: getModel(config.EXTRACTION_PROVIDER_MODEL, "extraction"),
-      retryModel: getModel(modelSelection.modelName, "openai"),
-      // An unreachable provider should fall back at once, not after the
-      // SDK's retries (~6 s of connection attempts per request).
-      maxRetries: 0,
+    const { extractedDataArray, warning } = await extractData({
+      extractOptions: generationOptions,
+      scrapeId: meta.id,
+      metadata: {
+        teamId: meta.internalOptions.teamId,
+        functionId: llmFunctionId,
+      },
     });
-
-    // extractData reports generation failures as a warning rather than
-    // throwing, so both paths count as a provider failure.
-    const PROVIDER_FAILURE = "JSON extraction failed:";
-    let extraction: Awaited<ReturnType<typeof extractWith>>;
-    if (route === "provider") {
-      let attempt: Awaited<ReturnType<typeof extractWith>> | undefined;
-      let failure: string | undefined;
-      try {
-        attempt = await extractWith(providerOptions());
-        if (attempt.warning?.includes(PROVIDER_FAILURE)) {
-          failure = attempt.warning;
-        } else if (
-          config.EXTRACTION_PROVIDER_FALLBACK_ON_EMPTY_LISTS &&
-          (document.markdown?.length ?? 0) >= EMPTY_LIST_FALLBACK_MIN_CHARS &&
-          isEmptyListAnswer(
-            attempt.extractedDataArray[attempt.extractedDataArray.length - 1],
-          )
-        ) {
-          failure = "provider returned only empty lists";
-        }
-      } catch (error) {
-        failure = (error as Error).message;
-      }
-      if (attempt !== undefined && failure === undefined) {
-        extraction = attempt;
-      } else {
-        meta.logger.warn(
-          "Extraction provider failed, falling back to the default model",
-          { error: failure },
-        );
-        extraction = await extractWith(generationOptions);
-      }
-    } else {
-      extraction = await extractWith(generationOptions);
-      if (route === "shadow") {
-        // Fire and forget: the provider's own telemetry records the outcome;
-        // nothing is billed to the team and nothing changes in the response.
-        void extractWith({
-          ...providerOptions(),
-          costTrackingOptions: {
-            costTracking: new CostTracking(),
-            metadata: {
-              module: "scrapeURL",
-              method: "performLLMExtract/shadow",
-            },
-          },
-          metadata: {
-            ...generationOptions.metadata,
-            functionId: "performLLMExtract/shadow",
-          },
-        }).catch(error => {
-          meta.logger.debug("Extraction provider shadow call failed", {
-            error: (error as Error).message,
-          });
-        });
-      }
-    }
-    const { extractedDataArray, warning, costLimitExceededTokenUsage } =
-      extraction;
 
     if (warning) {
       document.warning =
@@ -1213,77 +1082,6 @@ export async function performLLMExtract(
         "JSON extraction did not produce a result." +
         (document.warning ? " " + document.warning : "");
     }
-
-    // // Prepare the schema, potentially wrapping it
-    // const { schemaToUse, schemaWasWrapped } = prepareSmartScrapeSchema(
-    //   originalOptions.schema,
-    //   meta.logger,
-    // );
-
-    // // Update generationOptions with the potentially wrapped schema
-    // generationOptions.schema = schemaToUse;
-
-    // meta.internalOptions.abort?.throwIfAborted();
-    // const {
-    //   extract: rawExtract,
-    //   warning,
-    //   totalUsage,
-    //   model,
-    // } = await generateCompletions({
-    //   logger: meta.logger.child({
-    //     method: "performLLMExtract/generateCompletions",
-    //   }),
-    //   options: generationOptions, // Use the potentially modified options
-    //   markdown: document.markdown,
-    //   previousWarning: document.warning,
-    //   // ... existing model and provider options ...
-    //   model: getModel("o3-mini", "openai"), // Keeping existing model selection
-    //   providerOptions: {
-    //     anthropic: {
-    //       thinking: { type: "enabled", budgetTokens: 12000 },
-    //     },
-    //   },
-    // });
-
-    // // Log token usage
-    // meta.logger.info("LLM extraction token usage", {
-    //   model: model,
-    //   promptTokens: totalUsage.inputTokens,
-    //   completionTokens: totalUsage.completionTokens,
-    //   totalTokens: totalUsage.totalTokens,
-    // });
-
-    // // Process the result to extract data and SmartScrape decision
-    // const {
-    //   extractedData,
-    //   shouldUseSmartscrape,
-    //   smartscrape_reasoning,
-    //   smartscrape_prompt,
-    // } = processSmartScrapeResult(rawExtract, schemaWasWrapped, meta.logger);
-
-    // // Log the SmartScrape decision if applicable
-    // if (schemaWasWrapped) {
-    //   meta.logger.info("SmartScrape decision processing result", {
-    //     shouldUseSmartscrape,
-    //     smartscrape_reasoning,
-    //     // Don't log the full prompt potentially
-    //     smartscrape_prompt_present: !!smartscrape_prompt,
-    //     extractedDataIsPresent:
-    //       extractedData !== undefined && extractedData !== null,
-    //   });
-
-    //   // TODO: Implement logic to ACTUALLY trigger SmartScrape based on the result
-    //   // For example:
-    //   // if (shouldUseSmartscrape && smartscrape_prompt) {
-    //   //   meta.logger.info("Triggering SmartScrape refinement...", { reason: smartscrape_reasoning, prompt: smartscrape_prompt });
-    //   //   // Call the smartScrape function (which needs to be implemented/imported)
-    //   //   // const smartScrapedDocs = await smartScrape(meta.rewrittenUrl ?? meta.url, smartscrape_prompt);
-    //   //   // Process/merge smartScrapedDocs with extractedData
-    //   //   // ... potentially update finalExtract ...
-    //   // } else {
-    //   //   meta.logger.info("SmartScrape not required based on LLM output.");
-    //   // }
-    // }
 
     // Assign the final extracted data
     // For v1 API backward compatibility, check the original format

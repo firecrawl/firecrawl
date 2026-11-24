@@ -46,16 +46,23 @@ export function webhookEventMatchesFilter(
   );
 }
 
+type WebhookSenderContext = {
+  teamId: string;
+  jobId: string;
+  v0: boolean;
+  zeroDataRetention?: boolean;
+};
+
 export class WebhookSender {
   private config: WebhookConfig;
   private secret?: string;
-  private context: { teamId: string; jobId: string; v0: boolean };
+  private context: WebhookSenderContext;
   private logger: any;
 
   constructor(
     config: WebhookConfig,
     secret: string | undefined,
-    context: { teamId: string; jobId: string; v0: boolean },
+    context: WebhookSenderContext,
   ) {
     this.config = config;
     this.secret = secret;
@@ -140,7 +147,9 @@ export class WebhookSender {
       };
 
       try {
-        await webhookQueue.publish(queueMessage);
+        await webhookQueue.publish(queueMessage, {
+          zeroDataRetention: this.context.zeroDataRetention,
+        });
         this.logger.info("Webhook queued for delivery", {
           webhookUrl: this.config.url,
           event: payload.type,

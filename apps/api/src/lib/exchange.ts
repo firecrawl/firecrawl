@@ -4,8 +4,9 @@ import { z } from "zod";
 import { config } from "../config";
 import type { DocumentProvider, FormatObject } from "../controllers/v2/types";
 import { hasLedgerAcceptance } from "../services/alexandria/terms";
-import { type ErrorCodes, TransportableError } from "./error";
+import { type ErrorCode, TransportableError } from "./error";
 import { logger as rootLogger } from "./logger";
+import { isXTwitterUrl } from "./x-twitter-url";
 
 type OrganizationDataSourceAccessRecord = {
   status?: string | null;
@@ -548,8 +549,14 @@ function isExchangeEligibleRequest(input: RouteInput): boolean {
   }
 
   // Blocked URLs go to the Exchange for every team, since nothing else may
-  // serve them; elsewhere it replaces a normal scrape only for the beta.
-  if (input.flags?.[EXCHANGE_BETA_FLAG] !== true && input.blocked !== true) {
+  // serve them; elsewhere it replaces a normal scrape only for the beta. X
+  // posts and profiles also go to it for every team: the Exchange's X
+  // provider is what serves them, in place of a Firecrawl X engine.
+  if (
+    input.flags?.[EXCHANGE_BETA_FLAG] !== true &&
+    input.blocked !== true &&
+    !isXTwitterUrl(input.url)
+  ) {
     return false;
   }
 
@@ -694,6 +701,10 @@ export function getEnrichmentSettingsUrl(): string {
  * the error is one entry of a list.
  */
 export class ThirdPartyDataTermsRequiredError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "THIRD_PARTY_DATA_TERMS_REQUIRED",
+  ];
+
   public readonly terms: ExchangeTerms;
   /** Set when the provider is a step in the team's enrichment order, which can drop it instead. */
   public readonly enrichment: boolean;
@@ -738,7 +749,7 @@ export class ThirdPartyDataTermsRequiredError extends TransportableError {
   }
 
   static deserialize(
-    _code: ErrorCodes,
+    _code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ThirdPartyDataTermsRequiredError(data.terms, {
@@ -754,6 +765,10 @@ export class ThirdPartyDataTermsRequiredError extends TransportableError {
  * option the provider's data can't honor.
  */
 export class ThirdPartyDataUnsupportedOptionError extends TransportableError {
+  static readonly codes: readonly ErrorCode[] = [
+    "THIRD_PARTY_DATA_UNSUPPORTED_OPTION",
+  ];
+
   public readonly option: string;
 
   constructor(option: string) {
@@ -781,7 +796,7 @@ export class ThirdPartyDataUnsupportedOptionError extends TransportableError {
   }
 
   static deserialize(
-    _code: ErrorCodes,
+    _code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ThirdPartyDataUnsupportedOptionError(data.option);
@@ -811,6 +826,7 @@ export function getExchangeSuccessCredits(input: {
 }
 
 const EXCHANGE_BILLING_TIMEOUT_MS = 5_000;
+const EXCHANGE_TOOL_FEEDBACK_TIMEOUT_MS = 3_000;
 const EXCHANGE_BILLING_ATTEMPTS = 3;
 const EXCHANGE_BILLING_RETRY_DELAY_MS = 2_000;
 const EXCHANGE_BILLING_RETRY_MAX_DELAY_MS = 15_000;
@@ -903,6 +919,75 @@ export async function reportExchangeUsageBilling(input: {
     retryNotFound: true,
     context: { requestId: input.requestId, status: input.status },
   });
+}
+
+export type ExchangeToolFeedback = {
+  teamId: string;
+  feedbackId: string;
+  occurredAt: string;
+  rating: "good" | "partial" | "bad";
+  origin: string;
+  attribution: "token" | "window";
+  calls: {
+    requestId: string;
+    provider: string;
+    capability: string;
+    rating: "good" | "partial" | "bad" | null;
+  }[];
+};
+
+const toolFeedbackResponseSchema = z.object({
+  outcome: z.enum([
+    "duplicate",
+    "counted",
+    "window",
+    "unattributed",
+    "publisher",
+  ]),
+});
+
+/** Forwards an Alexandria feedback rating to the Exchange and logs its outcome. Never throws. */
+export async function forwardExchangeToolFeedback(
+  input: ExchangeToolFeedback,
+): Promise<void> {
+  const baseUrl = getExchangeBaseUrl();
+  if (!baseUrl || !config.EXCHANGE_INTERNAL_SECRET) return;
+  const { teamId, ...body } = input;
+  const context = { feedbackId: input.feedbackId, teamId };
+  try {
+    const response = await fetch(`${baseUrl}/v1/tool-feedback`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-exchange-secret": config.EXCHANGE_INTERNAL_SECRET,
+        "x-exchange-team-id": teamId,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(EXCHANGE_TOOL_FEEDBACK_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      rootLogger.warn("Exchange tool feedback rejected", {
+        ...context,
+        statusCode: response.status,
+      });
+      return;
+    }
+    const text = await response.text();
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch {}
+    const outcome = toolFeedbackResponseSchema.safeParse(parsed);
+    rootLogger.info("Exchange tool feedback recorded", {
+      ...context,
+      attribution: input.attribution,
+      calls: input.calls.length,
+      outcome: outcome.success ? outcome.data.outcome : "unknown",
+    });
+  } catch (error) {
+    rootLogger.warn("Exchange tool feedback errored", { ...context, error });
+  }
 }
 
 async function deliverBillingReport(input: {

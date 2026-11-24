@@ -54,6 +54,7 @@ import { integrationSchema } from "../../utils/integration";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { getScrapeJobAccess } from "../../lib/operational-job-access";
 import { readScrapeJobState } from "../../lib/job-state-store";
+import { storedZeroDataRetention } from "../../lib/request-context";
 import {
   type BrowserOptions,
   browserOptionsFromScrape,
@@ -215,7 +216,7 @@ async function scrapeInteractInternal(
 
   zeroDataRetention ||=
     state?.zeroDataRetention === true ||
-    nuqJob?.data.zeroDataRetention === true ||
+    storedZeroDataRetention(nuqJob?.data) === true ||
     storedSession?.zero_data_retention === true;
   logger = logger.child({ zeroDataRetention });
 
@@ -300,6 +301,7 @@ async function scrapeInteractInternal(
       logger,
       browserOptions,
       zeroDataRetention,
+      Boolean(prompt && !rawCode),
     );
     if (created.error === true) {
       // A keyless limit body carries the caller's own link, so match on it
@@ -498,6 +500,7 @@ async function createSessionForScrape(
   logger: typeof _logger,
   browserOptions: BrowserOptions,
   zeroDataRetention: boolean,
+  prompt: boolean,
 ) {
   try {
     const { session } = await createBrowserSession(req, {
@@ -505,6 +508,7 @@ async function createSessionForScrape(
       ...browserOptions,
       scrapeId,
       zeroDataRetention,
+      prompt,
       initialize: async browserId => {
         const replay = await executeHangarBrowser(browserId, {
           code: buildReplayScript(replayContext),
@@ -521,6 +525,17 @@ async function createSessionForScrape(
     });
     return { session };
   } catch (error) {
+    if (error instanceof UsOnlyUnavailableError) {
+      return {
+        error: true as const,
+        status: 403,
+        body: {
+          success: false as const,
+          code: error.code,
+          error: error.message,
+        },
+      };
+    }
     logger.error("Failed to initialize scrape browser session", { error });
     const knownError =
       error instanceof BrowserSessionError || error instanceof HangarError;
@@ -531,7 +546,13 @@ async function createSessionForScrape(
     const body =
       message === KEYLESS_FREE_TIER_LIMIT_MESSAGE
         ? await keylessLimitBody(req.auth.team_id, "v2_browser", req)
-        : { success: false as const, error: message };
+        : {
+            success: false as const,
+            ...(error instanceof BrowserSessionError && error.code
+              ? { code: error.code }
+              : {}),
+            error: message,
+          };
     return { error: true as const, status, body };
   }
 }

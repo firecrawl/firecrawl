@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, gt, like, lte, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lte, ne, sql } from "drizzle-orm";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { redisRateLimitClient } from "../services/rate-limiter";
 import { db } from "../db/connection";
@@ -37,10 +37,7 @@ export async function listUnsettledHangarSessions(cursor: {
   after?: string;
   through?: string;
 }): Promise<{ sessions: BrowserSessionRow[]; through: string | null }> {
-  const unsettled = and(
-    eq(schema.browser_sessions.status, "active"),
-    like(schema.browser_sessions.browser_id, "br\\_%"),
-  );
+  const unsettled = eq(schema.browser_sessions.status, "active");
   let through = cursor.through;
   const after = through ? cursor.after : undefined;
   if (!through) {

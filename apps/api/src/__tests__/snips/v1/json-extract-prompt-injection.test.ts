@@ -1,12 +1,12 @@
 import {
   ALLOW_TEST_SUITE_WEBSITE,
-  describeIf,
   HAS_AI,
   concurrentIf,
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import {
+  describeV1,
   scrape,
   scrapeRaw,
   creditUsage,
@@ -36,7 +36,7 @@ const schema = {
   required: ["title"],
 };
 
-describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+describeV1(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
   "V1 JSON prompt-injection check",
   () => {
     it.concurrent(

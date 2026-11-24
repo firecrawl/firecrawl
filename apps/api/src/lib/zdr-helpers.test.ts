@@ -1,4 +1,9 @@
-import { getAgentZdrRetentionMinutes, isDpaRestricted } from "./zdr-helpers";
+import {
+  getAgentZdrRetentionMinutes,
+  getAlexandriaZDR,
+  isAlexandriaZDRForced,
+  isDpaRestricted,
+} from "./zdr-helpers";
 
 describe("getAgentZdrRetentionMinutes", () => {
   it("is null when unset", () => {
@@ -39,5 +44,27 @@ describe("isDpaRestricted", () => {
 
   it("is true when the flag is set", () => {
     expect(isDpaRestricted({ dpaRestricted: true })).toBe(true);
+  });
+});
+
+describe("getAlexandriaZDR", () => {
+  it("is forced by the Alexandria flag alone", () => {
+    expect(getAlexandriaZDR({ alexandriaZDR: "forced" })).toBe("forced");
+    expect(
+      isAlexandriaZDRForced({ alexandriaZDR: "forced", scrapeZDR: "allowed" }),
+    ).toBe(true);
+  });
+
+  it("is forced when scrape ZDR is forced, legacy flag included", () => {
+    expect(isAlexandriaZDRForced({ scrapeZDR: "forced" })).toBe(true);
+    expect(isAlexandriaZDRForced({ forceZDR: true })).toBe(true);
+  });
+
+  it("is not forced for allowed or unset flags", () => {
+    expect(getAlexandriaZDR({ alexandriaZDR: "allowed" })).toBe("allowed");
+    expect(getAlexandriaZDR({ scrapeZDR: "allowed" })).toBe("allowed");
+    expect(isAlexandriaZDRForced({ alexandriaZDR: "allowed" })).toBe(false);
+    expect(isAlexandriaZDRForced(undefined)).toBe(false);
+    expect(getAlexandriaZDR({ alexandriaZDR: "disabled" })).toBe("disabled");
   });
 });

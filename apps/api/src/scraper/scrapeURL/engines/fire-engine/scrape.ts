@@ -17,10 +17,13 @@ import {
   SSLError,
   SiteError,
   SiteRestrictionError,
+  SiteBlockNoRetryError,
+  isNoRetrySiteBlock,
   UnsupportedFileError,
 } from "../../error";
 import { Meta } from "../..";
 import type { ResolvedSafeMode } from "../../../../lib/safe-mode";
+import { isUsOnly } from "../../../../lib/us-only";
 
 import { config } from "../../../../config";
 
@@ -48,7 +51,7 @@ export type FireEngineScrapeRequestCommon = {
   // skipDnsCheck?: boolean; // unused, default: false
 
   priority?: number; // default: 1
-  // team_id?: string; // unused
+  team_id?: string;
   logRequest?: boolean; // default: true
   instantReturn?: boolean; // default: false
   geolocation?: { country?: string; languages?: string[] };
@@ -83,6 +86,24 @@ export function safeModeParams(
       disablePlatformSelection: safeMode.disablePlatformSelection,
       disableCountrySelection: safeMode.disableCountrySelection,
       disableAutomaticReferrer: safeMode.disableAutomaticReferrer,
+    },
+  };
+}
+
+/**
+ * Safe Mode's overrides, plus a pin for US-only teams: their fetches use the
+ * country "us" with fire-engine's own country selection turned off.
+ */
+export function requestOverrides(
+  meta: Meta,
+): Pick<FireEngineScrapeRequestCommon, "geolocation" | "behaviorOverrides"> {
+  const params = safeModeParams(meta.internalOptions.safeMode);
+  if (!isUsOnly(meta.internalOptions.teamFlags ?? undefined)) return params;
+  return {
+    geolocation: { ...meta.options.location, country: "us" },
+    behaviorOverrides: {
+      ...params.behaviorOverrides,
+      disableCountrySelection: true,
     },
   };
 }
@@ -279,6 +300,15 @@ export async function fireEngineScrape<
       meta.internalOptions.safeMode?.disableSiteHandling
     ) {
       throw new SiteRestrictionError();
+    }
+    if (isNoRetrySiteBlock(failedParse.data, status.error)) {
+      logger.info(
+        "Fire Engine reported a site block that a retry does not get past.",
+        {
+          error: status.error,
+        },
+      );
+      throw new SiteBlockNoRetryError(status.error);
     }
     if (
       failedParse.data.retryWithStealth &&

@@ -2,6 +2,7 @@ const mocks = vi.hoisted(() => ({
   search: vi.fn(),
   searchDeveloperCategory: vi.fn(),
   searchGovCategory: vi.fn(),
+  searchGovIfRouted: vi.fn(),
   checkUrlsAgainstThreatPolicy: vi.fn(),
   discoverTools: vi.fn(),
   discoverSkills: vi.fn(),
@@ -12,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./tool-intent", () => ({
   AUTO_TOOLS_WAIT_MS: 300,
+  FUSED_FIT_THRESHOLD: 0.2,
   inferToolIntent: mocks.inferToolIntent,
   verifyTools: mocks.verifyTools,
 }));
@@ -47,6 +49,8 @@ vi.mock("./gov", () => ({
         : category.type === "gov",
     ),
   searchGovCategory: mocks.searchGovCategory,
+  searchGovIfRouted: mocks.searchGovIfRouted,
+  MAX_ROUTED_LIMIT: 10,
 }));
 vi.mock("./scrape", () => ({
   getItemsToScrape: vi.fn(() => []),
@@ -75,6 +79,12 @@ vi.mock("./safe-search", () => ({
 
 import { executeSearch } from "./execute";
 import { searchRequestSchema } from "../controllers/v2/types";
+import { logger as rootLogger } from "../lib/logger";
+import { config } from "../config";
+
+const impressions = vi
+  .spyOn(rootLogger, "info")
+  .mockImplementation(() => rootLogger);
 
 const logger = {
   info: vi.fn(),
@@ -88,6 +98,7 @@ const context = {
   origin: "api",
   apiKeyId: 1,
   flags: {},
+  teamPlanClass: undefined,
   requestId: "request-1",
   jobId: "job-1",
   apiVersion: "v2",
@@ -115,6 +126,7 @@ function options(categories: Array<{ type: string }>) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.searchDeveloperCategory.mockResolvedValue([developerResult]);
+  mocks.searchGovIfRouted.mockResolvedValue(null);
   mocks.discoverTools.mockResolvedValue({
     status: "available",
     items: [{ id: "fred/series/observations" }],
@@ -282,6 +294,41 @@ describe("executeSearch tool intent", () => {
     expect(result.toolsWarning).toBe("2 tools hidden");
   });
 
+  it.each([
+    [{ scrapeZDR: "forced" }, true],
+    [{ forceZDR: true }, true],
+    [{ alexandriaZDR: "forced" }, true],
+    [{ scrapeZDR: "allowed" }, false],
+    [{ alexandriaZDR: "allowed" }, false],
+    [{}, false],
+  ])(
+    "asks tool and skill discovery for zero-data-retention providers by team flags (%o)",
+    async (flags, zeroDataRetention) => {
+      mocks.search.mockResolvedValue({ web: [webResult] });
+      mocks.discoverTools.mockResolvedValue({ items: [] });
+      await executeSearch(
+        {
+          ...options([]),
+          sources: [
+            { type: "web" },
+            { type: "alexandria" },
+            { type: "skills" },
+          ],
+        },
+        { ...context, flags } as any,
+        logger,
+      );
+      expect(mocks.discoverTools).toHaveBeenCalledWith(
+        expect.objectContaining({ zeroDataRetention }),
+        logger,
+      );
+      expect(mocks.discoverSkills).toHaveBeenCalledWith(
+        expect.objectContaining({ zeroDataRetention }),
+        logger,
+      );
+    },
+  );
+
   it("leaves a default search alone when the query does not need tools", async () => {
     mocks.search.mockResolvedValue({ web: [webResult] });
     mocks.inferToolIntent.mockResolvedValue({
@@ -355,6 +402,237 @@ describe("executeSearch tool intent", () => {
     }
   });
 
+  describe("with tool fusion", () => {
+    const tool = (provider: string) => ({ provider, capability: "data/get" });
+    const intent = {
+      toolQueries: ["institutional holders of a public company"],
+      domains: [],
+      needsTools: true,
+    };
+    const fused = (query: string) =>
+      executeSearch(
+        {
+          ...options([]),
+          query,
+          sources: [{ type: "alexandria" }],
+          inferToolQuery: true,
+          toolFusion: true,
+        },
+        context,
+        logger,
+      );
+
+    it("ranks rewrite tools among raw-query tools by reciprocal rank", async () => {
+      mocks.inferToolIntent.mockResolvedValue(intent);
+      mocks.discoverTools.mockImplementation(
+        async (input: { queries?: string[] }) =>
+          input.queries?.[0] === "who owns apple stock"
+            ? {
+                items: [tool("a"), tool("b"), tool("c"), tool("domain")],
+                semanticMatches: 3,
+              }
+            : {
+                items: [tool("x"), tool("c"), tool("y"), tool("site")],
+                semanticMatches: 3,
+              },
+      );
+      const result = await fused("who owns apple stock");
+      expect(result.response.tools?.map(found => found.provider)).toEqual([
+        "c",
+        "a",
+        "x",
+        "b",
+        "y",
+        "domain",
+        "site",
+      ]);
+      expect(mocks.verifyTools).toHaveBeenCalledWith(
+        "who owns apple stock",
+        [tool("x"), tool("c"), tool("y")],
+        logger,
+        0.2,
+      );
+      expect(mocks.verifyTools).toHaveBeenCalledWith(
+        "who owns apple stock",
+        [tool("site")],
+        logger,
+      );
+    });
+
+    it("logs the served tools with their rank, source and fit rejections", async () => {
+      mocks.inferToolIntent.mockResolvedValue(intent);
+      mocks.discoverTools.mockImplementation(
+        async (input: {
+          queries?: string[];
+          exchangeRequestIds?: { prefix: string; sent: string[] };
+        }) => {
+          input.exchangeRequestIds?.sent.push(
+            `${input.exchangeRequestIds.prefix}:1`,
+          );
+          return input.queries?.[0] === "who owns apple stock"
+            ? {
+                items: [tool("a"), tool("b"), tool("c"), tool("domain")],
+                semanticMatches: 3,
+              }
+            : {
+                items: [tool("x"), tool("c"), tool("y"), tool("site")],
+                semanticMatches: 3,
+              };
+        },
+      );
+      mocks.verifyTools.mockImplementation(async (_query, items) =>
+        items.filter(
+          (item: { provider: string }) =>
+            item.provider !== "y" && item.provider !== "site",
+        ),
+      );
+      const result = await fused("who owns apple stock");
+      expect(result.toolFusion).toBe(true);
+      expect(mocks.discoverTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exchangeRequestIds: expect.objectContaining({
+            prefix: "job-1:tools:raw",
+          }),
+        }),
+        logger,
+      );
+      expect(mocks.discoverTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exchangeRequestIds: expect.objectContaining({
+            prefix: "job-1:tools:rewrite",
+          }),
+        }),
+        logger,
+      );
+      expect(impressions).toHaveBeenCalledWith("Search tool impression", {
+        event: "search_tool_impression",
+        searchId: "job-1",
+        teamId: "team-1",
+        servedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        auto: false,
+        fusion: { enabled: true, ran: true },
+        rewrite: "arrived",
+        tools: [
+          { id: "c/data/get", rank: 1, source: "both" },
+          { id: "a/data/get", rank: 2, source: "raw" },
+          { id: "x/data/get", rank: 3, source: "rewrite" },
+          { id: "b/data/get", rank: 4, source: "raw" },
+          { id: "domain/data/get", rank: 5, source: "raw" },
+        ],
+        fitRejected: { semantic: 1, domain: 1 },
+        exchangeRequestIds: {
+          raw: ["job-1:tools:raw:1"],
+          rewrite: ["job-1:tools:rewrite:1"],
+        },
+      });
+      expect(JSON.stringify(impressions.mock.calls)).not.toContain(
+        "who owns apple stock",
+      );
+      expect(logger.info).not.toHaveBeenCalledWith(
+        "Search tool impression",
+        expect.anything(),
+      );
+    });
+
+    it("reports no fusion when the rewrite found no tools", async () => {
+      mocks.inferToolIntent.mockResolvedValue(intent);
+      mocks.discoverTools.mockImplementation(
+        async (input: { queries?: string[] }) =>
+          input.queries?.[0] === "who owns apple stock"
+            ? { items: [tool("a")], semanticMatches: 1 }
+            : { items: [], semanticMatches: 0 },
+      );
+      const result = await fused("who owns apple stock");
+      expect(result.toolFusion).toBe(false);
+      expect(impressions).toHaveBeenCalledWith(
+        "Search tool impression",
+        expect.objectContaining({
+          fusion: { enabled: true, ran: false },
+          rewrite: "empty",
+        }),
+      );
+    });
+
+    it("drops rewrite-only tools the fit check rejects", async () => {
+      mocks.inferToolIntent.mockResolvedValue(intent);
+      mocks.discoverTools.mockImplementation(
+        async (input: { queries?: string[] }) =>
+          input.queries?.[0] === "who owns apple stock"
+            ? { items: [tool("a"), tool("b")], semanticMatches: 2 }
+            : { items: [tool("x"), tool("b")], semanticMatches: 2 },
+      );
+      mocks.verifyTools.mockResolvedValue([]);
+      const result = await fused("who owns apple stock");
+      expect(result.response.tools?.map(found => found.provider)).toEqual([
+        "b",
+        "a",
+      ]);
+    });
+
+    it("scores rewrite tools by their original rank when earlier ones are rejected", async () => {
+      mocks.inferToolIntent.mockResolvedValue(intent);
+      mocks.discoverTools.mockImplementation(
+        async (input: { queries?: string[] }) =>
+          input.queries?.[0] === "who owns apple stock"
+            ? { items: [tool("a"), tool("b")], semanticMatches: 2 }
+            : { items: [tool("x"), tool("y")], semanticMatches: 2 },
+      );
+      mocks.verifyTools.mockImplementation(async (_query, items) =>
+        items.filter((item: { provider: string }) => item.provider !== "x"),
+      );
+      const result = await fused("who owns apple stock");
+      expect(result.response.tools?.map(found => found.provider)).toEqual([
+        "a",
+        "b",
+        "y",
+      ]);
+    });
+
+    it("waits up to the configured cap past the raw lookup for rewrite tools", async () => {
+      mocks.inferToolIntent.mockResolvedValue(intent);
+      mocks.discoverTools.mockImplementation(
+        (input: {
+          queries?: string[];
+          exchangeRequestIds?: { prefix: string; sent: string[] };
+        }) => {
+          input.exchangeRequestIds?.sent.push(
+            `${input.exchangeRequestIds.prefix}:1`,
+          );
+          if (input.queries?.[0] === "who owns apple stock")
+            return Promise.resolve({ items: [tool("a")], semanticMatches: 1 });
+          return new Promise(() => {});
+        },
+      );
+      vi.useFakeTimers();
+      try {
+        let done = false;
+        const pending = fused("who owns apple stock").finally(() => {
+          done = true;
+        });
+        await vi.advanceTimersByTimeAsync(999);
+        expect(done).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        const result = await pending;
+        expect(result.response.tools).toEqual([tool("a")]);
+        expect(result.toolFusion).toBe(false);
+        expect(impressions).toHaveBeenCalledWith(
+          "Search tool impression",
+          expect.objectContaining({
+            fusion: { enabled: true, ran: false },
+            rewrite: "late",
+            tools: [{ id: "a/data/get", rank: 1, source: "raw" }],
+            exchangeRequestIds: {
+              raw: ["job-1:tools:raw:1"],
+              rewrite: ["job-1:tools:rewrite:1"],
+            },
+          }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it("never adds tools under zero data retention", async () => {
     mocks.search.mockResolvedValue({ web: [webResult] });
     await executeSearch(
@@ -364,6 +642,10 @@ describe("executeSearch tool intent", () => {
     );
     expect(mocks.inferToolIntent).not.toHaveBeenCalled();
     expect(mocks.discoverTools).not.toHaveBeenCalled();
+    expect(impressions).not.toHaveBeenCalledWith(
+      "Search tool impression",
+      expect.anything(),
+    );
   });
 });
 
@@ -649,6 +931,116 @@ describe("executeSearch gov category", () => {
     expect(result.response).toEqual({ web: [govResult] });
     expect(result.indexResultsCount).toBe(1);
     expect(result.searchCredits).toBe(0);
+  });
+});
+
+describe("executeSearch gov routing", () => {
+  const govResult = {
+    url: "https://www.dol.gov/agencies/whd/fmla",
+    title: "FMLA",
+    description: "Family and Medical Leave Act",
+    position: 1,
+  };
+  const webResult = {
+    url: "https://example.com/",
+    title: "Example",
+    description: "",
+  };
+
+  it("serves a routed plain web search from the Government Index, skips the regular web search, and bills it as a web search", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    mocks.searchGovIfRouted.mockResolvedValue([govResult]);
+
+    const result = await executeSearch(options([]), context, logger);
+
+    expect(mocks.searchGovIfRouted).toHaveBeenCalledWith(
+      {
+        query: "retries",
+        limit: 10,
+        teamId: "team-1",
+        timeout: 1_000,
+        zeroDataRetention: false,
+      },
+      "job-1",
+      logger,
+    );
+    expect(mocks.searchGovCategory).not.toHaveBeenCalled();
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(result.response).toEqual({ web: [govResult] });
+    expect(result.searchCredits).toBe(2);
+  });
+
+  it("starts the regular web search only after the routing decision and serves it when the search is not routed", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+    let webSearchCallsWhenRouting = -1;
+    mocks.searchGovIfRouted.mockImplementation(async () => {
+      webSearchCallsWhenRouting = mocks.search.mock.calls.length;
+      return null;
+    });
+
+    const result = await executeSearch(options([]), context, logger);
+
+    expect(webSearchCallsWhenRouting).toBe(0);
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(result.response.web?.map(item => item.url)).toEqual([
+      "https://example.com/",
+    ]);
+  });
+
+  it.each([
+    ["a category", { categories: [{ type: "pdf" }] }],
+    ["another source", { sources: [{ type: "web" }, { type: "news" }] }],
+    ["included domains", { includeDomains: ["example.com"] }],
+    ["excluded domains", { excludeDomains: ["example.com"] }],
+    ["a time range", { tbs: "qdr:d" }],
+    ["a result filter", { filter: "0" }],
+    ["a country other than the US", { country: "gb" }],
+    ["a site: operator", { query: "leave site:dol.gov" }],
+    [
+      "an operator the parser leaves in the text",
+      { query: "fmla filetype:pdf" },
+    ],
+    ["an OR between terms", { query: "fmla OR overtime" }],
+    ["a quoted phrase", { query: '"family leave" eligibility' }],
+    ["a language other than English", { lang: "es" }],
+    ["a location", { location: "Toronto, Ontario" }],
+    ["a page larger than 10 results", { limit: 11 }],
+    ["a blank query", { query: "   " }],
+  ])("never routes a search with %s", async (_case, overrides) => {
+    mocks.search.mockResolvedValue({ web: [] });
+
+    await executeSearch({ ...options([]), ...overrides }, context, logger);
+
+    expect(mocks.searchGovIfRouted).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a zero data retention team", {}, { zeroDataRetention: true }],
+    ["an enterprise zdr search", { enterprise: ["zdr"] }, {}],
+    ["an enterprise anon search", { enterprise: ["anon"] }, {}],
+  ])("never routes %s", async (_case, optionOverrides, contextOverrides) => {
+    mocks.search.mockResolvedValue({ web: [] });
+
+    await executeSearch(
+      { ...options([]), ...optionOverrides },
+      { ...context, ...contextOverrides } as any,
+      logger,
+    );
+
+    expect(mocks.searchGovIfRouted).not.toHaveBeenCalled();
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+  });
+
+  it("never routes a US-only team", async () => {
+    mocks.search.mockResolvedValue({ web: [] });
+
+    await executeSearch(
+      options([]),
+      { ...context, flags: { usOnly: true } } as any,
+      logger,
+    );
+
+    expect(mocks.searchGovIfRouted).not.toHaveBeenCalled();
   });
 });
 
@@ -1022,5 +1414,130 @@ describe("executeSearch skill cards", () => {
       expect.objectContaining({ usOnly: true }),
       logger,
     );
+  });
+});
+
+describe("executeSearch team plan class", () => {
+  const webResult = {
+    url: "https://example.com/",
+    title: "Example",
+    description: "An example page.",
+  };
+
+  it("states the caller's plan class on the web search call", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+
+    await executeSearch(
+      options([]),
+      { ...context, teamPlanClass: "self_serve" },
+      logger,
+    );
+
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(mocks.search).toHaveBeenCalledWith(
+      expect.objectContaining({ teamPlanClass: "self_serve" }),
+    );
+  });
+
+  it("states nothing when the caller knows no plan class", async () => {
+    mocks.search.mockResolvedValue({ web: [webResult] });
+
+    await executeSearch(options([]), context, logger);
+
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(mocks.search.mock.calls[0][0].teamPlanClass).toBeUndefined();
+  });
+});
+
+describe("executeSearch search context for Exchange", () => {
+  const original = {
+    enabled: config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED,
+    dbAuthentication: config.USE_DB_AUTHENTICATION,
+  };
+  const caller = {
+    ...context,
+    integration: "n8n",
+    clientOrigin: "mcp-cursor",
+    clientSession: "sess_01A",
+    clientThread: "thread:42.a-b",
+  };
+  const callers = () =>
+    mocks.discoverTools.mock.calls.map(([input]) => input.exchangeCaller);
+
+  beforeEach(() => {
+    config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED = true;
+    config.USE_DB_AUTHENTICATION = true;
+    mocks.search.mockResolvedValue({ web: [] });
+    mocks.inferToolIntent.mockResolvedValue({
+      toolQueries: ["city weather forecast"],
+      domains: [],
+      needsTools: true,
+    });
+  });
+
+  afterEach(() => {
+    config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED = original.enabled;
+    config.USE_DB_AUTHENTICATION = original.dbAuthentication;
+  });
+
+  it("labels both lookups of a search that named the source", async () => {
+    await executeSearch(
+      {
+        ...options([]),
+        query: "weather in Lisbon",
+        sources: [{ type: "alexandria" }],
+        inferToolQuery: true,
+      },
+      caller,
+      logger,
+    );
+    expect(callers()).toHaveLength(2);
+    for (const sent of callers())
+      expect(sent).toEqual({
+        feedbackStorage: "allowed",
+        clientOrigin: "mcp-cursor",
+        clientIntegration: "n8n",
+        searchRoute: "search_source",
+        clientSession: "sess_01A",
+        clientThread: "thread:42.a-b",
+        query: "weather in Lisbon",
+      });
+  });
+
+  it("labels the platform's own lookup on an ordinary search", async () => {
+    await executeSearch(
+      { ...options([]), query: "weather in Lisbon", autoTools: true },
+      { ...context, flags: { searchFeedbackOptOut: true } as any },
+      logger,
+    );
+    expect(mocks.discoverTools).toHaveBeenCalledTimes(1);
+    expect(mocks.discoverTools.mock.calls[0][0].queries).toEqual([
+      "weather in Lisbon",
+      "city weather forecast",
+    ]);
+    expect(callers()[0]).toEqual({
+      feedbackStorage: "opted_out",
+      clientOrigin: undefined,
+      clientIntegration: undefined,
+      searchRoute: "search_auto",
+      clientSession: undefined,
+      clientThread: undefined,
+      query: "weather in Lisbon",
+    });
+  });
+
+  it("sends the lookups unlabelled when the switch is off", async () => {
+    config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED = false;
+    await executeSearch(
+      {
+        ...options([]),
+        query: "weather in Lisbon",
+        sources: [{ type: "alexandria" }],
+        inferToolQuery: true,
+      },
+      caller,
+      logger,
+    );
+    expect(callers()).toEqual([undefined, undefined]);
   });
 });

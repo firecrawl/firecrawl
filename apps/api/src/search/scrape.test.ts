@@ -52,4 +52,51 @@ describe("scrapeSearchResults", () => {
       }),
     );
   });
+
+  it("puts the request context on spawned scrape jobs", async () => {
+    await scrapeSearchResults(
+      [
+        {
+          url: "https://example.com",
+          title: "Example",
+          description: "Desc",
+        },
+      ],
+      {
+        teamId: "team-1",
+        orgId: "org-1",
+        origin: "api",
+        timeout: 60_000,
+        scrapeOptions: {} as any,
+        apiKeyId: 123,
+        zeroDataRetention: true,
+        billing: { endpoint: "search" },
+      },
+      { debug: vi.fn(), info: vi.fn(), error: vi.fn() } as any,
+      { checkRobotsOnScrape: true },
+    );
+
+    expect(processJobInternal).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          ctx: {
+            teamId: "team-1",
+            zeroDataRetention: true,
+            flags: { checkRobotsOnScrape: true },
+            orgId: "org-1",
+            apiKeyId: 123,
+            billing: { endpoint: "search" },
+          },
+          team_id: "team-1",
+          zeroDataRetention: true,
+          apiKeyId: 123,
+          billing: { endpoint: "search" },
+          internalOptions: expect.objectContaining({
+            orgId: "org-1",
+            teamFlags: { checkRobotsOnScrape: true },
+          }),
+        }),
+      }),
+    );
+  });
 });
