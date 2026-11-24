@@ -153,6 +153,7 @@ async function searchControllerInner(
   let zeroDataRetention = teamForcedKind !== null;
   let reservedKeylessCredits = 0;
   let reconciledKeylessCredits = false;
+  let jobIdField: { jobId?: string } = {};
 
   try {
     const rawOrigin =
@@ -488,6 +489,7 @@ async function searchControllerInner(
       logger.warn("Had to wait for log request promise to complete", {
         timeMs: waited,
       });
+    if (!agentRequestId) jobIdField = { jobId };
 
     if (govSearch) {
       const perMinute = await consumeIndexRateLimit(
@@ -503,6 +505,7 @@ async function searchControllerInner(
           success: false,
           error: perMinute.error,
           retry_after_seconds: perMinute.retryAfterSeconds,
+          ...jobIdField,
         });
       }
     }
@@ -514,9 +517,10 @@ async function searchControllerInner(
       );
       if (!reservation.ok) {
         applyAgentAuthDiscoveryHeader(res);
-        return res
-          .status(429)
-          .json(await keylessLimitBody(req.auth.team_id, "v2_search", req));
+        return res.status(429).json({
+          ...(await keylessLimitBody(req.auth.team_id, "v2_search", req)),
+          ...jobIdField,
+        });
       }
       reservedKeylessCredits = projectedKeylessCredits;
     }
@@ -538,6 +542,7 @@ async function searchControllerInner(
           success: false,
           code: "INDEX_DAILY_LIMIT",
           ...indexDailyLimitRefusal("gov", req.auth.team_id, indexBudget),
+          ...jobIdField,
         });
       }
     }
@@ -625,6 +630,7 @@ async function searchControllerInner(
         success: false,
         code: "TOOL_DISCOVERY_UNAVAILABLE",
         error,
+        ...jobIdField,
       });
     }
 
@@ -776,6 +782,7 @@ async function searchControllerInner(
         success: false,
         code: error.code,
         error: error.message,
+        ...jobIdField,
       });
     }
 
@@ -787,6 +794,7 @@ async function searchControllerInner(
         success: false,
         ...(httpResponse.code ? { code: httpResponse.code } : {}),
         error: httpResponse.message,
+        ...jobIdField,
       });
     }
 
@@ -799,6 +807,7 @@ async function searchControllerInner(
     return res.status(500).json({
       success: false,
       error: error.message,
+      ...jobIdField,
     });
   }
 }
