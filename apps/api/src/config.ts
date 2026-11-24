@@ -229,9 +229,6 @@ const configSchema = z.object({
     z.coerce.number().int().positive().max(65535),
   ),
   ADMIN_INTERNAL_HOST: emptyStringAsDefault(z.string().default("localhost")),
-  S2S_FIRECRAWL_INTEGRATIONS_TO_FIRECRAWL_API_KEY: emptyStringAsUndefined(
-    z.string().trim().min(1),
-  ),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
