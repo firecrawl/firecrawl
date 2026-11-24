@@ -40,7 +40,7 @@ import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
 import { nuqShutdown } from "./services/worker/nuq";
 import { service } from "./service";
-import { installedService } from "./service/service";
+import { installedService, runProcessStop } from "./service/service";
 import { initializeApiStartupDependencies } from "./lib/api-startup";
 import responseTime from "response-time";
 import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
@@ -285,8 +285,12 @@ async function startServer(port = DEFAULT_PORT) {
           })
           .finally(() => {
             shutdownIndexerQueue().finally(async () => {
-              await shutdownPubSubLogging();
-              await shutdownTracing();
+              try {
+                await shutdownPubSubLogging();
+              } finally {
+                await runProcessStop("api");
+                await shutdownTracing();
+              }
               logger.info("NUQ shutdown complete");
               process.exit(0);
             });

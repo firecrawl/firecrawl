@@ -12,6 +12,7 @@ import { startNodeRuntimeMetrics } from "../../lib/node-runtime-metrics";
 import { service } from "../../service";
 import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-forcing";
 import { shutdownPubSubLogging } from "../logging/log_job";
+import { runProcessStop } from "../../service/service";
 
 export type WorkerQueue = {
   getJobToProcess(logger?: any): Promise<NuQJob<any, any> | null>;
@@ -223,9 +224,13 @@ export async function runNuqWorker(options: {
   });
 
   server.close(async () => {
-    await options.beforeShutdown?.();
-    await options.shutdown?.();
-    await shutdownPubSubLogging();
+    try {
+      await options.beforeShutdown?.();
+      await options.shutdown?.();
+      await shutdownPubSubLogging();
+    } finally {
+      await runProcessStop(options.serviceName);
+    }
     await shutdownTracing();
     _logger.info("NuQ worker shut down", { module: options.serviceName });
     process.exit(0);

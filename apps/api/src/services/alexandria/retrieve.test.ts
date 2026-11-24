@@ -54,6 +54,8 @@ vi.mock("../autumn/autumn.service", () => ({
 }));
 import { createHash } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
+import { register } from "prom-client";
+import { logger } from "../../lib/logger";
 import { answerSchema } from "./contracts";
 import { retrieveProviders } from "./retrieve";
 
@@ -991,6 +993,87 @@ it("refuses a repeat whose response is no longer kept, without running it again"
     expect.objectContaining({ code: "response_not_retained" }),
   );
   expect(executions()).toHaveLength(1);
+});
+
+describe("who repeats a request id", () => {
+  const counted = async (outcome: string, client: string) => {
+    const metric = await register
+      .getSingleMetric("firecrawl_alexandria_repeat_total")!
+      .get();
+    return (
+      metric.values.find(
+        ({ labels }) => labels.outcome === outcome && labels.client === client,
+      )?.value ?? 0
+    );
+  };
+  const logged = (info: { mock: { calls: unknown[][] } }) =>
+    info.mock.calls
+      .filter(([message]) => message === "Alexandria request repeated")
+      .map(([, fields]) => fields as Record<string, unknown>);
+
+  it("logs a repeat with its team, client and age", async () => {
+    const info = vi.spyOn(logger, "info");
+    try {
+      await run();
+      expect(logged(info)).toEqual([]);
+
+      await run({
+        scrapeId: "scrape-2",
+        clientOrigin: "mcp-claude-code@3.41.0",
+        clientIntegration: "cursor",
+      });
+      const [repeat, ...rest] = logged(info);
+      expect(rest).toEqual([]);
+      expect(repeat).toMatchObject({
+        teamId: "team",
+        outcome: "replayed",
+        client: "mcp",
+        catalogueOnly: false,
+        clientOrigin: "mcp-claude-code@3.41.0",
+        clientIntegration: "cursor",
+        calls: ["fred/series/observations"],
+        zeroDataRetention: false,
+      });
+      expect(repeat.chargeId).toEqual(expect.any(String));
+      expect(repeat.ageSeconds).toBeGreaterThanOrEqual(0);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it("marks the log line of a zero data retention request, which the logger drops", async () => {
+    const info = vi.spyOn(logger, "info");
+    try {
+      await run({ zeroDataRetention: true });
+      await run({ zeroDataRetention: true, scrapeId: "scrape-2" });
+      expect(logged(info)).toEqual([
+        expect.objectContaining({
+          outcome: "response_withheld",
+          zeroDataRetention: true,
+        }),
+      ]);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it.each([
+    [{}, "api"],
+    [{ clientOrigin: "api" }, "api"],
+    [{ clientOrigin: "mcp-ua-claude-user@3.41.0" }, "mcp"],
+    [{ hostedMcp: true }, "mcp"],
+    [{ clientOrigin: "js-sdk@4.52.0" }, "sdk"],
+    [{ clientIntegration: "cli" }, "cli"],
+    [{ clientOrigin: "cli@1.30.0" }, "cli"],
+    [{ clientOrigin: "cli.codex@1.30.0" }, "cli"],
+    [{ clientOrigin: "client-app" }, "other"],
+    [{ clientOrigin: "website" }, "other"],
+  ])("counts a repeat sent as %o under client %s", async (named, client) => {
+    await run();
+    const before = await counted("replayed", client);
+    await run({ scrapeId: "scrape-2", ...named });
+    expect(await counted("replayed", client)).toBe(before + 1);
+  });
 });
 
 describe("providers whose responses are not kept", () => {
