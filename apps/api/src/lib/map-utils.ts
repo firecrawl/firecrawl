@@ -67,9 +67,9 @@ export async function queryIndex(
   if (urlSplits.length === 1 && includeSubdomains) {
     const hostname = new URL(urlSplits[0]).hostname;
     const domainSplits = generateDomainSplits(hostname);
-    // domain_splits_0..4_hash only cover hosts with a registrable domain
-    // within 5 levels; IP literals, localhost, and deeper subdomains fall back
-    // to url_split_0_hash.
+    // domain_splits_0..4_hash cover hosts with a registrable domain up to 5
+    // levels (excluding experimental __experimental_omceDomain overrides);
+    // IP literals, localhost, and deeper subdomains fall back to url_split_0_hash.
     if (domainSplits.length > 0 && domainSplits.length <= 5) {
       return await queryIndexAtDomainSplitLevelWithMeta(hostname, limit);
     }

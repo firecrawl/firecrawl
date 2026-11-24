@@ -61,6 +61,28 @@ describe("queryIndex", () => {
     expect(queryIndexAtSplitLevelWithMeta).not.toHaveBeenCalled();
   });
 
+  it("uses domain splits at the inclusive 5-level boundary", async () => {
+    const domainDocs = [{ url: "https://b.c.d.e.example.com/page" }];
+    vi.mocked(queryIndexAtDomainSplitLevelWithMeta).mockResolvedValue(
+      domainDocs,
+    );
+
+    const res = await queryIndex(
+      "https://b.c.d.e.example.com/",
+      50,
+      true,
+      true,
+    );
+
+    expect(res).toEqual(domainDocs);
+    expect(queryIndexAtDomainSplitLevelWithMeta).toHaveBeenCalledTimes(1);
+    expect(queryIndexAtDomainSplitLevelWithMeta).toHaveBeenCalledWith(
+      "b.c.d.e.example.com",
+      50,
+    );
+    expect(queryIndexAtSplitLevelWithMeta).not.toHaveBeenCalled();
+  });
+
   it("queries only URL splits for a root URL when includeSubdomains is false", async () => {
     const splitDocs = [{ url: "https://example.com/about" }];
     vi.mocked(queryIndexAtSplitLevelWithMeta).mockResolvedValue(splitDocs);
