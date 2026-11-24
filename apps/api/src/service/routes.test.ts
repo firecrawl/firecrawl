@@ -362,6 +362,171 @@ describe("buildRouteRegistry", () => {
     expect(second[0].middleware).toEqual(["<anonymous>"]);
   });
 
+  it("matches parameterized middleware scopes using Express compiled matcher semantics", async () => {
+    const { default: expressRuntime } = await import("express");
+
+    function teamGuard(
+      _req: express.Request,
+      res: express.Response,
+      next: express.NextFunction,
+    ) {
+      res.locals.ran = [...(res.locals.ran ?? []), "teamGuard"];
+      next();
+    }
+    function memberGuard(
+      _req: express.Request,
+      res: express.Response,
+      next: express.NextFunction,
+    ) {
+      res.locals.ran = [...(res.locals.ran ?? []), "memberGuard"];
+      next();
+    }
+    function multiScopeGuard(
+      _req: express.Request,
+      res: express.Response,
+      next: express.NextFunction,
+    ) {
+      res.locals.ran = [...(res.locals.ran ?? []), "multiScopeGuard"];
+      next();
+    }
+    function stickyGuard(
+      _req: express.Request,
+      res: express.Response,
+      next: express.NextFunction,
+    ) {
+      res.locals.ran = [...(res.locals.ran ?? []), "stickyGuard"];
+      next();
+    }
+    function teamUsage(_req: express.Request, res: express.Response) {
+      res.json({ ran: [...(res.locals.ran ?? []), "teamUsage"] });
+    }
+    function staticUsage(_req: express.Request, res: express.Response) {
+      res.json({ ran: [...(res.locals.ran ?? []), "staticUsage"] });
+    }
+    function listTeams(_req: express.Request, res: express.Response) {
+      res.json({ ran: [...(res.locals.ran ?? []), "listTeams"] });
+    }
+    function getRoles(_req: express.Request, res: express.Response) {
+      res.json({ ran: [...(res.locals.ran ?? []), "getRoles"] });
+    }
+    function orgInfo(_req: express.Request, res: express.Response) {
+      res.json({ ran: [...(res.locals.ran ?? []), "orgInfo"] });
+    }
+    function stickyA(_req: express.Request, res: express.Response) {
+      res.json({ ran: [...(res.locals.ran ?? []), "stickyA"] });
+    }
+    function stickyB(_req: express.Request, res: express.Response) {
+      res.json({ ran: [...(res.locals.ran ?? []), "stickyB"] });
+    }
+
+    const { mountRoutes, describeRoutes } = buildRouteRegistry([
+      { owner: "core", isCore: true },
+      {
+        owner: "ext",
+        routes: ({ v2 }) => {
+          v2.use("/teams/:id", teamGuard);
+          v2.use(["/orgs/:orgId", "/workspaces/:wsId"], multiScopeGuard);
+          v2.use(/^\/sticky/g, stickyGuard);
+
+          v2.get("/teams", listTeams);
+          v2.get("/teams/default/usage", staticUsage);
+          v2.get("/teams/:teamId/usage", teamUsage);
+
+          const teamSub = expressRuntime.Router();
+          teamSub.use("/members/:m", memberGuard);
+          teamSub.get("/members/:memberId/roles", getRoles);
+          v2.use("/teams/:teamId", teamSub);
+
+          v2.get("/orgs/:oid/info", orgInfo);
+          v2.get("/sticky/a", stickyA);
+          v2.get("/sticky/b", stickyB);
+        },
+      },
+    ]);
+
+    const app = expressRuntime();
+    const v2 = expressRuntime.Router();
+    mountRoutes({
+      root: app,
+      v2,
+      admin: expressRuntime.Router(),
+    });
+    app.use("/v2", v2);
+
+    expect(describeRoutes()).toEqual([
+      {
+        owner: "ext",
+        router: "v2",
+        method: "GET",
+        path: "/v2/teams",
+        middleware: ["listTeams"],
+      },
+      {
+        owner: "ext",
+        router: "v2",
+        method: "GET",
+        path: "/v2/teams/default/usage",
+        middleware: ["teamGuard", "staticUsage"],
+      },
+      {
+        owner: "ext",
+        router: "v2",
+        method: "GET",
+        path: "/v2/teams/:teamId/usage",
+        middleware: ["teamGuard", "teamUsage"],
+      },
+      {
+        owner: "ext",
+        router: "v2",
+        method: "GET",
+        path: "/v2/teams/:teamId/members/:memberId/roles",
+        middleware: ["teamGuard", "memberGuard", "getRoles"],
+      },
+      {
+        owner: "ext",
+        router: "v2",
+        method: "GET",
+        path: "/v2/orgs/:oid/info",
+        middleware: ["multiScopeGuard", "orgInfo"],
+      },
+      {
+        owner: "ext",
+        router: "v2",
+        method: "GET",
+        path: "/v2/sticky/a",
+        middleware: ["stickyGuard", "stickyA"],
+      },
+      {
+        owner: "ext",
+        router: "v2",
+        method: "GET",
+        path: "/v2/sticky/b",
+        middleware: ["stickyGuard", "stickyB"],
+      },
+    ]);
+
+    expect((await request(app).get("/v2/teams")).body).toEqual({
+      ran: ["listTeams"],
+    });
+    expect((await request(app).get("/v2/teams/default/usage")).body).toEqual({
+      ran: ["teamGuard", "staticUsage"],
+    });
+    expect((await request(app).get("/v2/teams/42/usage")).body).toEqual({
+      ran: ["teamGuard", "teamUsage"],
+    });
+    expect(
+      (await request(app).get("/v2/teams/42/members/7/roles")).body,
+    ).toEqual({
+      ran: ["teamGuard", "memberGuard", "getRoles"],
+    });
+    expect((await request(app).get("/v2/orgs/9/info")).body).toEqual({
+      ran: ["multiScopeGuard", "orgInfo"],
+    });
+    expect((await request(app).get("/v2/sticky/a")).body).toEqual({
+      ran: ["stickyGuard", "stickyA"],
+    });
+  });
+
   it("validates route registrars and router bags", async () => {
     const { default: expressRuntime } = await import("express");
     expect(() =>

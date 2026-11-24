@@ -54,6 +54,9 @@ export interface RouteRegistrySource {
 
 interface InternalExpressLayer {
   name?: string;
+  slash?: boolean;
+  matchers?: ReadonlyArray<(path: string) => unknown>;
+  regexp?: RegExp;
   handle?: ((...args: unknown[]) => unknown) & {
     stack?: InternalExpressLayer[];
   };
@@ -73,8 +76,9 @@ type MountMatcher =
   | { kind: "regex"; regex: RegExp; display: string };
 
 interface ScopedMiddleware {
-  matchers: readonly MountMatcher[];
-  scopeBase: string;
+  layer: InternalExpressLayer;
+  mountMatchers: readonly MountMatcher[] | undefined;
+  depth: number;
   name: string;
 }
 
@@ -162,18 +166,6 @@ function prefixApplies(mountPath: string, fullPath: string): boolean {
   );
 }
 
-function relativeToScope(scopeBase: string, fullPath: string): string | null {
-  if (scopeBase === "" || scopeBase === "/") return fullPath;
-  const normalizedBase = scopeBase.endsWith("/")
-    ? scopeBase.slice(0, -1)
-    : scopeBase;
-  if (fullPath === normalizedBase) return "/";
-  if (fullPath.startsWith(`${normalizedBase}/`)) {
-    return fullPath.slice(normalizedBase.length);
-  }
-  return null;
-}
-
 function testStatelessRegex(regex: RegExp, input: string): boolean {
   if (!regex.global && !regex.sticky) {
     return regex.test(input);
@@ -182,16 +174,49 @@ function testStatelessRegex(regex: RegExp, input: string): boolean {
   return stateless.test(input);
 }
 
-function middlewareApplies(entry: ScopedMiddleware, fullPath: string): boolean {
-  return entry.matchers.some(matcher => {
-    if (matcher.kind === "string") {
-      return prefixApplies(
-        joinRoutePaths(entry.scopeBase, matcher.path),
-        fullPath,
-      );
+function middlewareApplies(
+  entry: ScopedMiddleware,
+  ancestors: readonly MountMatcher[],
+  rawPath: string | RegExp,
+): boolean {
+  const { layer, mountMatchers } = entry;
+  if (layer.slash) return true;
+
+  let candidatePath = "";
+  for (let i = entry.depth; i < ancestors.length; i++) {
+    candidatePath = joinMatcher(candidatePath, ancestors[i]);
+  }
+  candidatePath = joinRoutePaths(candidatePath, rawPath);
+
+  if (Array.isArray(layer.matchers)) {
+    const alignedMountMatchers =
+      mountMatchers && mountMatchers.length === layer.matchers.length
+        ? mountMatchers
+        : undefined;
+
+    return layer.matchers.some((matcher, index) => {
+      const recorded = alignedMountMatchers?.[index];
+      if (recorded?.kind === "regex") {
+        return testStatelessRegex(recorded.regex, candidatePath);
+      }
+      try {
+        return Boolean(matcher(candidatePath));
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  if (layer.regexp instanceof RegExp) {
+    return testStatelessRegex(layer.regexp, candidatePath);
+  }
+
+  if (!mountMatchers) return true;
+  return mountMatchers.some(matcher => {
+    if (matcher.kind === "regex") {
+      return testStatelessRegex(matcher.regex, candidatePath);
     }
-    const rel = relativeToScope(entry.scopeBase, fullPath);
-    return rel !== null && testStatelessRegex(matcher.regex, rel);
+    return prefixApplies(matcher.path, candidatePath);
   });
 }
 
@@ -265,6 +290,7 @@ function collectRoutesFromStack(
   owner: string,
   routerName: RouterName,
   basePath: string,
+  ancestors: readonly MountMatcher[],
   inheritedMiddleware: readonly ScopedMiddleware[],
   mountPaths: WeakMap<object, MountMatcher[]>,
   out: DescribedRoute[],
@@ -289,7 +315,7 @@ function collectRoutesFromStack(
       for (const rawPath of paths) {
         const fullPath = joinRoutePaths(basePath, rawPath);
         const matchingScoped = scopedMiddleware
-          .filter(entry => middlewareApplies(entry, fullPath))
+          .filter(entry => middlewareApplies(entry, ancestors, rawPath))
           .map(entry => entry.name);
 
         for (const method of methodsToEmit) {
@@ -314,7 +340,8 @@ function collectRoutesFromStack(
       continue;
     }
 
-    const mountMatchers = mountPaths.get(layer) ?? [
+    const recordedMountMatchers = mountPaths.get(layer);
+    const mountMatchers = recordedMountMatchers ?? [
       { kind: "string" as const, path: "" },
     ];
 
@@ -329,6 +356,7 @@ function collectRoutesFromStack(
           owner,
           routerName,
           layerMountPath,
+          [...ancestors, matcher],
           scopedMiddleware,
           mountPaths,
           out,
@@ -339,8 +367,9 @@ function collectRoutesFromStack(
 
     if (typeof layer.handle === "function" && layer.handle.length !== 4) {
       scopedMiddleware.push({
-        matchers: mountMatchers,
-        scopeBase: basePath,
+        layer,
+        mountMatchers: recordedMountMatchers,
+        depth: ancestors.length,
         name: handlerName(layer.handle, layer.name),
       });
     }
@@ -406,6 +435,7 @@ export function buildRouteRegistry(sources: readonly RouteRegistrySource[]): {
           routerName,
           basePath,
           [],
+          [],
           mountPaths,
           collected,
         );
@@ -456,6 +486,7 @@ export function buildRouteRegistry(sources: readonly RouteRegistrySource[]): {
             entry.owner,
             routerName,
             basePath,
+            [],
             [],
             mountPaths,
             collected,
