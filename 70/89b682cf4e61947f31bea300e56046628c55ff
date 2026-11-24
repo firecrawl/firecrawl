@@ -1,0 +1,43 @@
+apps/api/src/lib/otel-tracer.test.ts
+  s_6a7201d5c4fd9c::t_c83d9fa9a21bd1 24-28
+apps/api/src/lib/otel-tracer.ts
+  s_6a7201d5c4fd9c::t_61f2bc680edeae 34
+apps/api/src/lib/error.test.ts
+  s_6a7201d5c4fd9c::t_61f2bc680edeae 18
+apps/api/src/scraper/scrapeURL/engines/exchange.ts
+  s_6a7201d5c4fd9c::t_61f2bc680edeae 12-13
+apps/api/src/lib/expected-error.ts
+  s_6a7201d5c4fd9c::t_61f2bc680edeae 1-38
+apps/api/src/scraper/scrapeURL/engines/fire-engine/checkStatus.ts
+  s_6a7201d5c4fd9c::t_61f2bc680edeae 23
+apps/api/src/scraper/scrapeURL/engines/fire-engine/scrape.ts
+  s_6a7201d5c4fd9c::t_61f2bc680edeae 8-9
+apps/api/src/scraper/scrapeURL/lib/abortManager.ts
+  s_6a7201d5c4fd9c::t_61f2bc680edeae 1
+apps/api/src/lib/queue-full-error.ts
+  s_6a7201d5c4fd9c::t_61f2bc680edeae 1
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.ts
+  s_6a7201d5c4fd9c::t_61f2bc680edeae 32-33
+apps/api/src/services/worker/scrape-worker.ts
+  s_6a7201d5c4fd9c::t_c83d9fa9a21bd1 113
+apps/api/src/lib/error.ts
+  s_6a7201d5c4fd9c::t_61f2bc680edeae 1
+apps/api/src/scraper/scrapeURL/error.ts
+  s_6a7201d5c4fd9c::t_61f2bc680edeae 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7089b682cf4e61947f31bea300e56046628c55ff",
+  "prompts": {},
+  "sessions": {
+    "s_6a7201d5c4fd9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc25e5bc-9ab3-420e-8413-1c98a5787305",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
