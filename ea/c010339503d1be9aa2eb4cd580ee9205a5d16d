@@ -1,0 +1,244 @@
+apps/api/src/services/worker/nuq-fdb/queue.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 98-99,445,457,516,525,535,555,573
+apps/api/src/config.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 387-388
+apps/api/package.json
+  s_6a7201d5c4fd9c::t_564c32f3b842be 35-42,47-50
+apps/api/src/controllers/v2/scrape.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 10,101
+apps/api/src/controllers/v2/__tests__/search-caller-context.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 64-77
+apps/api/src/scraper/scrapeURL/hooks.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-84
+apps/api/src/services/monitoring/search/tuning.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 2,33-36,39-40,44-49,56-66,73-75,78-81
+apps/api/src/services/worker/crawl-hooks.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-705
+apps/api/src/service/defaults.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 8,18-26,267
+apps/api/src/service/service.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 22-35,42-47,50-56,93-103,121-122,143-146,169-170,172-173,200,213-216,234-246,285-292,336-337,349-350,352,368-369,379,391-406,439-444,448,460,464-469,472-473,479-482,484-491,493,502-510
+apps/api/src/scraper/scrapeURL/lib/removeUnwantedElements.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 86,88-91,97-101
+apps/api/src/services/queue-worker.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 20,36,440,495-499
+apps/api/src/service/hooks.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 15,20-22
+apps/api/src/controllers/v2/crawl.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 7,58,241-258,283
+apps/api/src/lib/concurrency-queue-reconciler.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 10,186,285
+apps/api/src/controllers/v1/extract.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 18-20,157-164,167
+apps/api/src/service/routes.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-501
+apps/api/src/lib/threat-protection/verdict.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 41-43
+apps/api/src/service/request.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-933
+apps/api/src/services/indexing/index-worker.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 44,684-688
+apps/api/src/services/worker/nuq-worker-runner.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 12,15,65,227-233
+apps/api/src/search/plan-hook.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-43
+apps/api/src/scraper/scrapeURL/engines/index.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 41,62,281-368,400-412,713
+apps/api/src/service/core-parts.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 59,106-120,129,248-251,255-257,288,384-395,414-434,454-455,457,463,467-541,543-550
+apps/api/src/scraper/scrapeURL/transformers/index.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 33,67-102,105,654-661,663,667,674,684,686,709-726,730,734-735
+apps/api/src/controllers/v0/search.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 10-11,26,33,124-131,134
+apps/api/src/services/alexandria/retrieve.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 57-58,998-1076
+  s_6a7201d5c4fd9c::t_af96df3e979e12 1077-1078
+apps/api/src/service/llm-providers.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 223-224
+apps/api/src/service/modules.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 14,18,190-206,329,336,342-347,355-360,389,399-403,417-430,468-492
+apps/api/src/scraper/scrapeURL/transformers/query.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 25-30,90-96,103-115,120-121,297-446
+apps/api/src/lib/generic-ai.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 19-20,61,64,73-161,198-231,283,285-297
+apps/api/src/__tests__/snips/v2/us-only.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 19-23
+apps/api/src/controllers/v2/map.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 3,5,20-24,34-35,39-64,86,141-150,175,177,198-274,303,343-349,394-401
+  s_6a7201d5c4fd9c::t_168185c993dd17 402
+apps/api/src/lib/deterministicJson/llm/client.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 3-4,68-91,97,99,101,109-115,124,126,128,136-142,236-244,246,273,275,282-288
+apps/api/src/search/execute.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 24,35-39,76-80,139-141,217-246,252-253,266-293,559-731
+  s_6a7201d5c4fd9c::t_404936d644c4d3 732
+apps/api/src/routes/exchange-blocklist.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 3,6,46-62
+apps/api/src/__tests__/snips/v2/batch-scrape-exchange.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 68,75-82
+apps/api/src/scraper/scrapeURL/transformers/query.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 5,23-24,47,162-176,181-184,211,214,241,321-323,325-328,330-344,346,349-350
+apps/api/src/controllers/v1/search.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 26-29,48,55,59-61,294-389,393,419-420,426,448-450,480-490,546-557
+  s_6a7201d5c4fd9c::t_4bab2a92c35fc3 558
+apps/api/src/scraper/scrapeURL/hooks.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-886
+apps/api/src/controllers/v2/request-schemas.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-394
+apps/api/src/services/worker/nuq-prefetch-worker.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 14,47-51
+apps/api/src/services/monitoring/judgeChange.telemetry.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 41-42,45-73
+  s_6a7201d5c4fd9c::t_31765ae5fe26e1 74
+apps/api/src/lib/api-startup.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-20
+apps/api/src/services/queue-jobs.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 10,42-43,69-77,190,231,237-238,274,286-289,303-320,323-326,512-519,604-609,619-623,625-638,855-874
+apps/api/src/search/scrape.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 6-7,175-190,194-196,212-215,231-234
+apps/api/src/service/testing.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 2,16-24,33-38,42
+apps/api/src/service/blocklist.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-335
+apps/api/src/search/providers.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 45-49,126-137
+  s_6a7201d5c4fd9c::t_9c8c4d9833a1ec 138
+apps/api/src/controllers/v1/batch-scrape.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 26-27,150-156,168,185
+apps/api/src/__tests__/snips/v2/exchange-routing.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 65,70-77
+apps/api/src/controllers/v2/batch-scrape.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 6,26,69,186-192,195
+apps/api/src/controllers/v2/__tests__/search-team-plan-class.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 59-72
+apps/api/src/controllers/v0/scrape.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 11-12,40,83-96
+apps/api/src/controllers/v2/extract.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 12-14,96-103,106
+apps/api/src/index.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 37-38,148-155,173,178,198,232-239,241,282-287
+apps/api/src/lib/generic-ai.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 30-33,53,56,66,82,87-89
+apps/api/src/controllers/v2/__tests__/search-developer-ledger.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 80-93
+apps/api/src/search/scrape.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 5-7,105-181
+  s_6a7201d5c4fd9c::t_275c7832d05e7d 182
+apps/api/src/search/v2/index.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 23,44-45,51,180-235,237-238,242
+apps/api/src/service/modules.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 7-35,204,244-253,289-293,318
+apps/api/src/services/alexandria/retrieve.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 46-47,54-55,58-73,361-385,390-396
+apps/api/src/lib/zdr-policy.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-118
+apps/api/src/service/workers.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-127
+apps/api/src/lib/generate-llmstxt/generate-llmstxt-service.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 6-8,116-123
+apps/api/src/lib/extract/fire-0/url-processor-f0.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 8-11,90-103
+apps/api/src/service/request.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-546
+apps/api/src/controllers/v0/crawl.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 6-7,48,206-219
+apps/api/src/controllers/v1/types.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 3,1464
+apps/api/src/controllers/v2/search-hooks.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-842
+apps/api/src/controllers/v2/types.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 3,45-53,2248,2346,2439,2613-2642,2645-2648,2651-2825,2839,3147-3677
+apps/api/src/service/routes.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-561
+apps/api/src/lib/map-utils.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 29-31,84-202,223,247,465-490,516,530,547
+apps/api/src/lib/scrape-billing.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 12-13,245-271
+apps/api/src/scraper/scrapeURL/lib/abortManager.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 40-50
+apps/api/src/services/cclog-worker.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 12,82
+apps/api/src/controllers/v2/map-hooks.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-413
+apps/api/src/scraper/scrapeURL/index.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 25,134-137,152,158,183-184,450-483,510-513,603-611,616-617,622,649,1112-1152,1268-1276,1470-1533,1563,1581,1611-1612,1672,1962-1968,2172
+apps/api/src/controllers/v2/parse.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 8,328,622-623,642,654,666,685
+apps/api/src/controllers/v2/crawl-params-preview.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 8,80-90,111
+apps/api/src/search/index.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 79-80,107-108,111-119,121,124,126-132,162,167,188-189,206,223-224,233-282
+  s_6a7201d5c4fd9c::t_2ab9dd57894313 283
+apps/api/src/service/index.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1,15,79-80,106-146,162-163,168
+apps/api/src/lib/zdr-policy.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-58
+apps/api/src/lib/concurrency-limit.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 24-27,36-56,409
+apps/api/src/lib/scrape-interact/browser-agent.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 7,27,29,253-269
+apps/api/src/routes/shared.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 12,45,440,534-552,554
+apps/api/src/search/tool-intent.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1,26-27,39-40,42-65,71-74,147-148,152
+apps/api/src/service/llm-providers.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 25,28
+apps/api/src/service/search-providers.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 33,36-39,57
+apps/api/src/lib/extract/fire-0/document-scraper-f0.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 13-16,47-60
+apps/api/src/main/runWebScraper.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 36
+apps/api/src/service/service.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-2,14,105-106,411,430-441,555,562-573,655-657,662,669-680,695-696,698-704,709,712,722-723,725-731,736-876,956-1164
+apps/api/src/harness.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 8,18,1143-1144,1146-1147,1149-1152,1154-1165,1167-1176,1178-1187,1189-1192
+apps/api/src/services/extract-worker.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 13,25,210-215,232
+apps/api/src/services/queue-jobs.hooks.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-443
+apps/api/src/service/core-parts.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 33,184
+apps/api/src/services/worker/nuq-reconciler-worker.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 23,112
+apps/api/src/controllers/v2/search.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 5-6,26,78-80,156,166-168,183-184,437-448,472-553,555,566,590,602-605,627,634-635,642,687-689,714-723,728,844-855,892,904,917
+apps/api/src/service/workers.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-135
+apps/api/src/service/search-providers.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 36,52,57,63,68,78,163,175,181,346
+apps/api/src/services/worker/nuq-worker-runner.test.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 1-164
+apps/api/src/services/worker/scrape-worker.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 62-68,72-74,128-132,162-204,471-497,582-594,596-597,783-793,1067-1072,1176-1181,1193,1195-1196,1198-1204,1206,1208-1217,1219,1222-1246,1248-1252,1254-1264,1266-1269,1272-1281,1283-1296,1298,1300-1307,1309-1312,1314-1337,1341-1343,1345-1355,1357-1369,1371-1393,1395-1406,1408,1410-1421,1425-1442,1450,1459,1466-1474,1661,1664-1673,1847-1855
+apps/api/src/services/worker/crawl-logic.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 14-15,60,62,64-67,127-137,263-272
+  s_6a7201d5c4fd9c::t_bede13b4a927a6 273
+apps/api/src/services/worker/nuq-router.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 265,268,316-318,333,336,338
+apps/api/src/services/zdr-worker.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 7,31-35
+apps/api/src/search/tool-intent.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 9,33
+apps/api/src/lib/extract/document-scraper.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 14-17,45-58
+apps/api/src/services/monitoring/runner.ts
+  s_6a7201d5c4fd9c::t_564c32f3b842be 77-79,917-924,958
+apps/api/pnpm-lock.yaml
+  s_6a7201d5c4fd9c::t_48b6f640449b74 220,7211
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eac010339503d1be9aa2eb4cd580ee9205a5d16d",
+  "prompts": {},
+  "sessions": {
+    "s_6a7201d5c4fd9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc25e5bc-9ab3-420e-8413-1c98a5787305",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
