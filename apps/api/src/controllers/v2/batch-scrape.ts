@@ -315,6 +315,12 @@ export async function batchScrapeController(
       { teamId: req.auth.team_id },
     );
     if (blocked.length > 0) {
+      const blockedSet = new Set(blocked.map(x => x.url));
+      const batchWillPersist = Boolean(
+        req.body.ignoreInvalidURLs &&
+          !req.body.appendToId &&
+          urls.some(u => !blockedSet.has(u)),
+      );
       if (req.body.__agentInterop?.shouldBill ?? true) {
         const threatDecisions = req.body.ignoreInvalidURLs
           ? blocked.map(x => x.decision)
@@ -335,13 +341,14 @@ export async function batchScrapeController(
             urls: threatDecisions.length,
             state: {
               threatDecisions,
-              ...(req.body.appendToId ? {} : { chargeId: `${id}:threat` }),
+              ...(batchWillPersist ? { chargeId: `${id}:threat` } : {}),
             },
           })
           .catch(error => {
-            logger.error(
-              `Failed to bill team ${req.auth.team_id} for rejected batch URLs: ${error}`,
-            );
+            logger.error("Failed to bill team for rejected batch URLs", {
+              teamId: req.auth.team_id,
+              error,
+            });
           });
       }
       emitRejectedScrapeActivityEvents(
@@ -364,7 +371,6 @@ export async function batchScrapeController(
         })),
       );
       if (req.body.ignoreInvalidURLs) {
-        const blockedSet = new Set(blocked.map(x => x.url));
         const keptUnnormalized: string[] = [];
         const keptUrls: string[] = [];
         urls.forEach((u, i) => {

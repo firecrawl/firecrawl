@@ -41,7 +41,7 @@ import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import { service } from "../../service";
+import { service, type SettleOutcome } from "../../service";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
@@ -301,6 +301,26 @@ export async function scrapeController(
         zeroDataRetention,
       });
 
+      const settleBilling = async (outcome: SettleOutcome) => {
+        if (billingHandle === undefined || settledBilling) return;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            await service.modules.billing.settle?.(billingHandle, outcome);
+            settledBilling = true;
+            return;
+          } catch (settleError) {
+            if (attempt === 1) {
+              logger.error("Failed to settle billing reservation", {
+                teamId: req.auth.team_id,
+                jobId,
+                ok: outcome.ok,
+                error: settleError,
+              });
+            }
+          }
+        }
+      };
+
       const middlewareTime = controllerStartTime - middlewareStartTime;
 
       if (safeMode.bypassed) {
@@ -477,12 +497,7 @@ export async function scrapeController(
           },
         );
       } catch (e) {
-        if (billingHandle !== undefined && !settledBilling) {
-          settledBilling = true;
-          void service.modules.billing
-            .settle?.(billingHandle, { ok: false })
-            ?.catch(() => {});
-        }
+        await settleBilling({ ok: false });
 
         const timeoutErr =
           isTransportableError(e) &&
@@ -630,15 +645,10 @@ export async function scrapeController(
         }
       }
 
-      if (billingHandle !== undefined && !settledBilling) {
-        settledBilling = true;
-        void service.modules.billing
-          .settle?.(billingHandle, {
-            ok: true,
-            charged: doc?.metadata?.creditsUsed,
-          })
-          ?.catch(() => {});
-      }
+      await settleBilling({
+        ok: true,
+        charged: doc?.metadata?.creditsUsed,
+      });
 
       const totalRequestTime = new Date().getTime() - middlewareStartTime;
       const controllerTime = new Date().getTime() - controllerStartTime;

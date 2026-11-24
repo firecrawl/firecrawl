@@ -18,7 +18,7 @@ import {
 import { trackSearchRequest } from "../../lib/tracking";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import { service } from "../../service";
+import { service, type SettleOutcome } from "../../service";
 import { logger as _logger } from "../../lib/logger";
 import { getErrorHttpResponse, ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
@@ -149,6 +149,26 @@ async function searchControllerInner(
   let zeroDataRetention = teamForcedKind !== null;
   let billingHandle: unknown = undefined;
   let settledBilling = false;
+
+  const settleBilling = async (outcome: SettleOutcome) => {
+    if (billingHandle === undefined || settledBilling) return;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await service.modules.billing.settle?.(billingHandle, outcome);
+        settledBilling = true;
+        return;
+      } catch (settleError) {
+        if (attempt === 1) {
+          logger.error("Failed to settle billing reservation", {
+            teamId: req.auth.team_id,
+            jobId,
+            ok: outcome.ok,
+            error: settleError,
+          });
+        }
+      }
+    }
+  };
 
   try {
     const rawOrigin =
@@ -538,10 +558,7 @@ async function searchControllerInner(
         1,
       );
       if (!indexBudget.ok) {
-        if (billingHandle !== undefined && !settledBilling) {
-          settledBilling = true;
-          await service.modules.billing.settle?.(billingHandle, { ok: false });
-        }
+        await settleBilling({ ok: false });
         res.setHeader("Retry-After", String(indexBudget.retryAfterSeconds));
         return res.status(429).json({
           success: false,
@@ -611,12 +628,7 @@ async function searchControllerInner(
     );
 
     if (toolsOnly && result.toolsUnavailable) {
-      if (billingHandle !== undefined && !settledBilling) {
-        settledBilling = true;
-        void service.modules.billing
-          .settle?.(billingHandle, { ok: false })
-          ?.catch(() => {});
-      }
+      await settleBilling({ ok: false });
       const error =
         "Tool discovery is temporarily unavailable. Retry the request.";
       setSpanAttributes(span, { "search.status_code": 503 });
@@ -646,6 +658,7 @@ async function searchControllerInner(
     const scrapedDocuments = result.scrapedDocuments ?? [];
     const billableResultsCount =
       result.billableResultsCount ?? result.totalResultsCount;
+    // Bills search results only; each scraped document is already billed via kind: "scrape".
     const searchCredits =
       !isSearchPreview && shouldBill
         ? await service.modules.billing.charge({
@@ -671,13 +684,6 @@ async function searchControllerInner(
       searchCredits !== undefined || scrapeCredits !== undefined
         ? (searchCredits ?? 0) + (scrapeCredits ?? 0)
         : undefined;
-
-    if (billingHandle !== undefined && !settledBilling) {
-      settledBilling = true;
-      void service.modules.billing
-        .settle?.(billingHandle, { ok: true, charged: totalCredits })
-        ?.catch(() => {});
-    }
 
     trackSearchRequest({
       searchId: jobId,
@@ -790,6 +796,7 @@ async function searchControllerInner(
     ]
       .filter(Boolean)
       .join(" ");
+    await settleBilling({ ok: true, charged: totalCredits });
     return res.status(200).json({
       success: true,
       data: result.response,
@@ -798,12 +805,7 @@ async function searchControllerInner(
       ...(warning ? { warning } : {}),
     });
   } catch (error) {
-    if (billingHandle !== undefined && !settledBilling) {
-      settledBilling = true;
-      void service.modules.billing
-        .settle?.(billingHandle, { ok: false })
-        ?.catch(() => {});
-    }
+    await settleBilling({ ok: false });
 
     if (error instanceof z.ZodError) {
       logger.warn("Invalid request body", { error: error.issues });

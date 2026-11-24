@@ -145,52 +145,11 @@ export async function mapController(
   // Short-circuit: if the URL matches avgrab's resolve pattern, delegate
   // entirely. Skipped under Safe Mode so results still flow through the
   // standard path (domain-controls filtering + lockdown index-only).
+  let avgrabResults: Awaited<ReturnType<typeof resolveViaAvgrab>> = null;
   try {
-    const avgrabResults = safeMode.safeMode
+    avgrabResults = safeMode.safeMode
       ? null
       : await resolveViaAvgrab(req.body.url, req.body.limit, logger);
-
-    if (avgrabResults !== null) {
-      const creditsCost = await service.modules.billing.charge({
-        kind: "map",
-        ctx,
-        requestId: mapId,
-        urls: avgrabResults.length,
-        state: {
-          perUrl: true,
-          chargeId: `${mapId}:avgrab`,
-        },
-      });
-
-      logMap({
-        id: mapId,
-        request_id: mapId,
-        url: req.body.url,
-        team_id: req.auth.team_id,
-        options: {
-          search: req.body.search,
-          sitemap: req.body.sitemap,
-          includeSubdomains: req.body.includeSubdomains,
-          ignoreQueryParameters: req.body.ignoreQueryParameters,
-          limit: req.body.limit,
-          timeout: req.body.timeout,
-          location: req.body.location,
-        },
-        results: avgrabResults,
-        credits_cost: creditsCost ?? 0,
-        zeroDataRetention,
-      }).catch(error => {
-        logger.error(
-          `Failed to log job for team ${req.auth.team_id}: ${error}`,
-        );
-      });
-
-      return res.status(200).json({
-        success: true,
-        id: mapId,
-        links: avgrabResults,
-      });
-    }
   } catch (error) {
     if (error instanceof AvgrabResolveError) {
       const status = [403, 404, 503].includes(error.upstreamStatus)
@@ -206,6 +165,59 @@ export async function mapController(
     }
     logger.warn("avgrab resolve failed, falling back to standard map", {
       error,
+    });
+  }
+
+  if (avgrabResults !== null) {
+    const creditsCost = await service.modules.billing
+      .charge({
+        kind: "map",
+        ctx,
+        requestId: mapId,
+        urls: avgrabResults.length,
+        state: {
+          perUrl: true,
+          chargeId: `${mapId}:avgrab`,
+        },
+      })
+      .catch(error => {
+        logger.error("Failed to bill team for map credits", {
+          teamId: req.auth.team_id,
+          mapId,
+          error,
+        });
+        return undefined;
+      });
+
+    logMap({
+      id: mapId,
+      request_id: mapId,
+      url: req.body.url,
+      team_id: req.auth.team_id,
+      options: {
+        search: req.body.search,
+        sitemap: req.body.sitemap,
+        includeSubdomains: req.body.includeSubdomains,
+        ignoreQueryParameters: req.body.ignoreQueryParameters,
+        limit: req.body.limit,
+        timeout: req.body.timeout,
+        location: req.body.location,
+      },
+      results: avgrabResults,
+      credits_cost: creditsCost ?? 0,
+      zeroDataRetention,
+    }).catch(error => {
+      logger.error("Failed to log map job", {
+        teamId: req.auth.team_id,
+        mapId,
+        error,
+      });
+    });
+
+    return res.status(200).json({
+      success: true,
+      id: mapId,
+      links: avgrabResults,
     });
   }
 
@@ -284,15 +296,24 @@ export async function mapController(
     });
   }
 
-  const creditsToBill = await service.modules.billing.charge({
-    kind: "map",
-    ctx,
-    requestId: mapId,
-    urls: result.mapResults.length,
-    state: {
-      threatDecisions,
-    },
-  });
+  const creditsToBill = await service.modules.billing
+    .charge({
+      kind: "map",
+      ctx,
+      requestId: mapId,
+      urls: result.mapResults.length,
+      state: {
+        threatDecisions,
+      },
+    })
+    .catch(error => {
+      logger.error("Failed to bill team for map credits", {
+        teamId: req.auth.team_id,
+        mapId,
+        error,
+      });
+      return undefined;
+    });
 
   logMap({
     id: result.job_id,

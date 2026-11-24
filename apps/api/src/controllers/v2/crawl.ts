@@ -147,13 +147,15 @@ export async function crawlController(
         .charge({
           kind: "crawl",
           ctx: blockedCtx,
+          requestId: id,
           urls: 1,
           state: { threatDecisions: [decision] },
         })
         .catch(error => {
-          _logger.error(
-            `Failed to bill team ${req.auth.team_id} for rejected crawl seed: ${error}`,
-          );
+          _logger.error("Failed to bill team for rejected crawl seed", {
+            teamId: req.auth.team_id,
+            error,
+          });
         });
       const error = new UnsafeDomainBlockedError(req.body.url, decision);
       emitRejectedScrapeActivityEvent({

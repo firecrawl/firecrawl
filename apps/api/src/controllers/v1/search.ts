@@ -382,12 +382,14 @@ export async function searchController(
       billing: {
         endpoint: "search",
         jobId,
+        chargeId: jobId,
         externalRequestId: externalRequestId(req),
       },
     });
     const scrapedDocuments = result.scrapedDocuments ?? [];
     const billableResultsCount =
       result.billableResultsCount ?? result.totalResultsCount;
+    // Bills search results only; each scraped document is already billed via kind: "scrape".
     const searchCredits = !isSearchPreview
       ? await service.modules.billing.charge({
           kind: "search",

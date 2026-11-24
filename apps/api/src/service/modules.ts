@@ -90,7 +90,14 @@ export type ChargeEvent =
       kind: "search";
       ctx: RequestContext;
       requestId: string;
+      /** Billable search result count for this query. */
       results: number;
+      /**
+       * Scraped result documents for context. Each document is already charged
+       * through a `{ kind: "scrape" }` event during search execution, so
+       * `charge()` prices only the search itself and does not re-bill these
+       * documents.
+       */
       documents: Document[];
       state?: SearchChargeState;
     }

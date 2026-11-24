@@ -100,10 +100,11 @@ const developerResults = [
 ];
 
 function executeResult(overrides: Record<string, any> = {}) {
+  const totalResultsCount = overrides.totalResultsCount ?? 2;
   return {
     response: { web: developerResults },
-    totalResultsCount: 2,
-    billableResultsCount: 2,
+    totalResultsCount,
+    billableResultsCount: overrides.billableResultsCount ?? totalResultsCount,
     indexResultsCount: 2,
     threatDecisions: [],
     scrapedDocuments: [],
@@ -462,6 +463,7 @@ describe("tool discovery availability", () => {
       ...unavailable,
       response: { web: developerResults, tools: [] },
       totalResultsCount: 2,
+      billableResultsCount: 2,
     });
     const res = makeRes();
 
