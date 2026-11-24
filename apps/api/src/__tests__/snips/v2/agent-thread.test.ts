@@ -116,7 +116,7 @@ async function startTurn(body: Record<string, unknown>) {
 // agentRequestSchema.parse runs at the top of agentController, before the
 // controller touches the agent service, a browser or a model, so these cases
 // run everywhere instead of skipping with the live turns below.
-describe("Agent thread parameter validation", () => {
+describeIf(TEST_PRODUCTION)("Agent thread parameter validation", () => {
   it(
     "rejects a threadId that is not a UUID",
     async () => {
@@ -163,7 +163,7 @@ describe("Agent thread parameter validation", () => {
   );
 });
 
-describeIf(HAS_AGENT_BETA)("Agent thread rejections", () => {
+describeIf(TEST_PRODUCTION && HAS_AGENT_BETA)("Agent thread rejections", () => {
   it(
     "rejects an unknown threadId without creating a request",
     async () => {

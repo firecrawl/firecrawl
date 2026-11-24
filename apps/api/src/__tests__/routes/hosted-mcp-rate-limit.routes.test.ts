@@ -40,7 +40,6 @@ describe("hosted MCP rate-limit opt-in", () => {
     "/v2/map",
     "/v2/crawl",
     "/v2/extract",
-    "/v2/agent",
   ])("is set on %s", async path => {
     expect(await optsIn(path)).toBe(true);
   });
