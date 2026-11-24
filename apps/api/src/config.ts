@@ -234,17 +234,6 @@ const configSchema = z.object({
   ),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
-  // Workload identity federation, used when OPENAI_API_KEY is unset: the
-  // pod's Google identity is exchanged for short-lived OpenAI tokens.
-  OPENAI_IDENTITY_PROVIDER_ID: emptyStringAsUndefined(z.string().trim().min(1)),
-  OPENAI_SERVICE_ACCOUNT_ID: emptyStringAsUndefined(z.string().trim().min(1)),
-  // Key for US-only teams; OPENAI_API_KEY is never used for them.
-  OPENAI_US_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
-  // Service account for US-only teams, used when OPENAI_US_API_KEY is unset.
-  OPENAI_US_SERVICE_ACCOUNT_ID: emptyStringAsUndefined(
-    z.string().trim().min(1),
-  ),
-  OPENROUTER_API_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
   PREVIEW_TOKEN: z.string().optional(),
   SEARCH_PREVIEW_TOKEN: z.string().optional(),
@@ -395,19 +384,8 @@ const configSchema = z.object({
   // TypeSafe (Jev): judges search results for the `safe: true` filter.
   TYPESAFE_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
 
-  // Alexandria tool discovery: rewrite search queries with Anthropic before
-  // tool lookup, and add tools to default searches (also the alexandriaAutoTools
-  // team flag).
-  ANTHROPIC_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
-  // Workload identity federation, used when ANTHROPIC_API_KEY is unset: the
-  // pod's Google identity is exchanged for short-lived Anthropic tokens.
-  ANTHROPIC_FEDERATION_RULE_ID: emptyStringAsUndefined(
-    z.string().trim().min(1),
-  ),
-  ANTHROPIC_ORGANIZATION_ID: emptyStringAsUndefined(z.string().trim().min(1)),
-  ANTHROPIC_SERVICE_ACCOUNT_ID: emptyStringAsUndefined(
-    z.string().trim().min(1),
-  ),
+  // Alexandria tool discovery: add tools to default searches (also the
+  // alexandriaAutoTools team flag).
   ALEXANDRIA_AUTO_TOOLS: z.stringbool().default(false),
   // Rank rewrite-found tools together with raw-query tools by reciprocal rank
   // fusion (also the alexandriaToolFusion team flag), waiting up to
@@ -641,9 +619,6 @@ const configSchema = z.object({
   // AI/ML
   MODEL_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
-  VERTEX_CREDENTIALS: z.string().optional(),
-  // Uses Vertex with ambient credentials when VERTEX_CREDENTIALS is unset.
-  VERTEX_USE_ADC: z.stringbool().default(false),
 
   // Testing
   TEST_API_KEY: z.string().optional(),

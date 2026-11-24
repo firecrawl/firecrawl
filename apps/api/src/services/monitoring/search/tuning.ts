@@ -1,6 +1,5 @@
-import type { GoogleLanguageModelOptions } from "@ai-sdk/google";
 import { getModel } from "../../../lib/generic-ai";
-import { config } from "../../../config";
+import { service } from "../../../service";
 import type { TeamFlags } from "../../../controllers/v2/types";
 
 // Vertex billing labels so every LLM call is traceable at the billing level by
@@ -35,11 +34,10 @@ function geminiApiKey(): string | undefined {
   return process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GEMINI_API_KEY;
 }
 
-// Vertex is the preferred provider so usage is traceable via Vertex billing
-// labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
-// aren't configured (e.g. self-hosted).
+// Prefer Vertex when registered and enabled so usage is traceable via Vertex
+// billing labels; fall back to the google provider otherwise.
 function hasVertex(): boolean {
-  return Boolean(config.VERTEX_CREDENTIALS) || config.VERTEX_USE_ADC;
+  return service.llmProviders.get("vertex")?.enabled() ?? false;
 }
 
 export function hasLlmProvider(): boolean {
@@ -59,7 +57,10 @@ export function googleProviderOptions(
 ) {
   const provider = hasVertex() ? "vertex" : "google";
 
-  const options: GoogleLanguageModelOptions = {
+  const options: {
+    thinkingConfig: { thinkingLevel: "minimal" };
+    labels?: Record<string, string>;
+  } = {
     thinkingConfig: { thinkingLevel: "minimal" },
   };
   // Billing labels are Vertex-only; the GenAI provider ignores them.

@@ -1,5 +1,4 @@
 import { generateText } from "ai";
-import type { GoogleLanguageModelOptions } from "@ai-sdk/google";
 import { encoding_for_model } from "@dqbd/tiktoken";
 import { Document, FormatObject } from "../../../controllers/v2/types";
 import { Meta } from "..";
@@ -20,9 +19,8 @@ function escapePromptTags(text: string): string {
   return text.replace(PROMPT_TAGS, "$1\u200B$2$3");
 }
 
-// Vertex is the preferred provider so usage is traceable via Vertex billing
-// labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
-// aren't configured (e.g. self-hosted). Mirrors services/monitoring/search/tuning.ts.
+// Prefer Vertex when registered and enabled; fall back to the google provider
+// when registered, or to OpenAI otherwise.
 function hasVertex(): boolean {
   return service.llmProviders.get("vertex")?.enabled() ?? false;
 }
@@ -45,7 +43,7 @@ const FREEFORM_GEMINI_MODEL = "gemini-3.5-flash-lite";
 const FREEFORM_PROVIDER_OPTIONS = {
   google: {
     thinkingConfig: { thinkingLevel: "minimal" },
-  } satisfies GoogleLanguageModelOptions,
+  },
 };
 
 // o200k_base, which gpt-4o-mini uses and gpt-oss's o200k_harmony extends; a
@@ -192,10 +190,9 @@ ${escapePromptTags(indexedLines)}
 </lines>`;
 
   const modelName = DIRECT_QUOTE_MODEL.id;
-  const model = getModel(modelName, DIRECT_QUOTE_MODEL.provider);
-
   const start = Date.now();
   try {
+    const model = getModel(modelName, DIRECT_QUOTE_MODEL.provider);
     const result = await generateText({
       model,
       system: querySystemPrompt,
@@ -306,25 +303,34 @@ ${escapePromptTags(fitted.text)}
     return cached;
   };
 
-  const modelChain = [
-    {
+  const modelChain: Array<{ name: string; provider: string }> = [];
+  if (hasVertex()) {
+    modelChain.push({
       name: FREEFORM_GEMINI_MODEL,
-      model: getModel(FREEFORM_GEMINI_MODEL, hasVertex() ? "vertex" : "google"),
-    },
-    {
-      name: "gpt-4o-mini",
-      model: getModel("gpt-4o-mini", "openai"),
-    },
-    {
+      provider: "vertex",
+    });
+  } else if (service.llmProviders.get("google")) {
+    modelChain.push({
       name: FREEFORM_GEMINI_MODEL,
-      model: getModel(FREEFORM_GEMINI_MODEL, "vertex"),
-    },
-  ];
+      provider: "google",
+    });
+  }
+  modelChain.push({
+    name: "gpt-4o-mini",
+    provider: "openai",
+  });
+  if (service.llmProviders.get("vertex")) {
+    modelChain.push({
+      name: FREEFORM_GEMINI_MODEL,
+      provider: "vertex",
+    });
+  }
 
-  for (const { name, model } of modelChain) {
+  for (const { name, provider } of modelChain) {
     const start = Date.now();
-    const { prompt: queryPrompt, trimmed } = await promptFor(name);
     try {
+      const model = getModel(name, provider);
+      const { prompt: queryPrompt, trimmed } = await promptFor(name);
       const result = await generateText({
         model,
         system: querySystemPrompt,

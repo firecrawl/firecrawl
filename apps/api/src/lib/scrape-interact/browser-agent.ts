@@ -4,6 +4,7 @@ import path from "path";
 import { tool, isStepCount, generateText as untracedGenerateText } from "ai";
 import { logger as _logger } from "../logger";
 import { getModel } from "../generic-ai";
+import { service } from "../../service";
 import { executeHangarBrowser, BrowserExecutionResult } from "../hangar";
 import { config } from "../../config";
 import type { TeamFlags } from "../../controllers/v2/types";
@@ -23,11 +24,9 @@ const MAX_STEPS = 25;
 const SNAPSHOT_TIMEOUT = 15;
 const SNAPSHOT_MAX_CHARS = 40_000;
 
-// Vertex is the preferred provider so usage is traceable via Vertex billing
-// labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
-// aren't configured (e.g. self-hosted). Mirrors services/monitoring/search/tuning.ts.
+// Prefer Vertex when registered and enabled; fall back to the google provider.
 function hasVertex(): boolean {
-  return Boolean(config.VERTEX_CREDENTIALS) || config.VERTEX_USE_ADC;
+  return service.llmProviders.get("vertex")?.enabled() ?? false;
 }
 
 // ---------------------------------------------------------------------------
