@@ -1,5 +1,8 @@
 import "dotenv/config";
 import { z } from "zod";
+import { emptyStringAsUndefined } from "./config-helpers";
+
+export { emptyStringAsUndefined };
 
 /* Codecs */
 const delimitedList = (separator = ",") => {
@@ -8,9 +11,6 @@ const delimitedList = (separator = ",") => {
     encode: arr => arr.join(separator),
   });
 };
-
-export const emptyStringAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
-  z.preprocess(value => (value === "" ? undefined : value), schema.optional());
 
 const emptyStringAsDefault = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess(value => (value === "" ? undefined : value), schema);

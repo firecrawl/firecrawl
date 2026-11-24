@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { emptyStringAsUndefined } from "../config";
+import { emptyStringAsUndefined } from "../config-helpers";
 import { defineEnv } from "../service/env";
 
 export const dbEnv = defineEnv(
