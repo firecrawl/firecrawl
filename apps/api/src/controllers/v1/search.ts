@@ -14,7 +14,6 @@ import { trackSearchRequest } from "../../lib/tracking";
 import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import { service } from "../../service";
 import { search } from "../../search";
 import { logger as _logger } from "../../lib/logger";
 import {
@@ -510,19 +509,21 @@ export async function searchController(
     const billableResultsCount =
       result.billableResultsCount ?? result.totalResultsCount;
     // Bills search results only; each scraped document is already billed via kind: "scrape".
-    const searchCredits = !isSearchPreview
-      ? await service.modules.billing.charge({
-          kind: "search",
-          ctx: searchCtx,
-          requestId: jobId,
-          results: billableResultsCount,
-          documents: scrapedDocuments,
-          state: {
-            enterprise: teamEnterprise,
-            threatDecisions: result.threatDecisions,
-          },
-        })
-      : undefined;
+    const billingModule = installedService()?.modules.billing;
+    const searchCredits =
+      !isSearchPreview && billingModule
+        ? await billingModule.charge({
+            kind: "search",
+            ctx: searchCtx,
+            requestId: jobId,
+            results: billableResultsCount,
+            documents: scrapedDocuments,
+            state: {
+              enterprise: teamEnterprise,
+              threatDecisions: result.threatDecisions,
+            },
+          })
+        : undefined;
     let scrapeCredits = 0;
     for (const doc of scrapedDocuments) {
       if (typeof doc.metadata?.creditsUsed === "number") {

@@ -236,6 +236,7 @@ describe("custom BillingModule in v2 searchController", () => {
       success: false,
       code: "RATE_LIMIT",
       error: "Daily allowance exhausted.",
+      jobId: expect.any(String),
     });
     expect(mocks.executeSearch).not.toHaveBeenCalled();
     expect(charge).not.toHaveBeenCalled();
