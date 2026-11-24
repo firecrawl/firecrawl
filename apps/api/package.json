@@ -24,6 +24,10 @@
       "types": "./src/service/testing.ts",
       "default": "./dist/src/service/testing.js"
     },
+    "./unstable/admin-deps": {
+      "types": "./src/service/unstable/admin-deps.ts",
+      "default": "./dist/src/service/unstable/admin-deps.js"
+    },
     "./unstable/db": {
       "types": "./src/db/connection.ts",
       "default": "./dist/src/db/connection.js"
