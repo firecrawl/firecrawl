@@ -619,6 +619,8 @@ export async function parseController(
           "parse.error_type": isTransportableError(e) ? e.code : "unknown",
         });
 
+        const jobIdField = agentRequestId ? {} : { jobId };
+
         if (isTransportableError(e)) {
           if (!timeoutErr) {
             logger.error("Error in parseController", {
@@ -637,6 +639,7 @@ export async function parseController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -648,6 +651,7 @@ export async function parseController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -659,6 +663,7 @@ export async function parseController(
             success: false,
             code: e.code,
             error: e.message,
+            ...jobIdField,
           });
         } else {
           const id = uuidv7();
@@ -677,6 +682,7 @@ export async function parseController(
             success: false,
             code: "UNKNOWN_ERROR",
             error: service.modules.messages.errorContact(id),
+            ...jobIdField,
           });
         }
       } finally {
