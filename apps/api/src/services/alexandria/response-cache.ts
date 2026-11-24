@@ -39,7 +39,14 @@ export async function cacheResponse(
     });
   }
   // Whatever an earlier run of this charge id left must not answer for this one.
-  await redisRateLimitClient.del(key(id)).catch(() => {});
+  try {
+    await redisRateLimitClient.del(key(id));
+  } catch (error) {
+    logger.warn("Alexandria stale cached response could not be removed", {
+      chargeId: id,
+      error,
+    });
+  }
   return false;
 }
 

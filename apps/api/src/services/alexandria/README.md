@@ -75,7 +75,9 @@ seven days:
 
 - completed, within the hour: replays the response and its `scrape_id`, no
   second execution. The response is kept apart from the record, gzipped, in a
-  Redis cache entry that lives one hour; one over 1 MiB gzipped is not kept
+  Redis cache entry that lives one hour. This is best effort: a response over
+  1 MiB gzipped is not kept, and one whose cache write failed or whose entry
+  was evicted gets the 409 below
 - completed, response no longer kept: 409 `response_not_retained`, no second
   execution
 - same id, different payload: 409 `duplicate_request`

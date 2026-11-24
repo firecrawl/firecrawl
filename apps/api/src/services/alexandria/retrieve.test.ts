@@ -1144,6 +1144,29 @@ it("completes the request when the response cannot be cached", async () => {
   }
 });
 
+it("completes the request when neither the cache write nor its cleanup lands", async () => {
+  const set = mocks.redis.set.getMockImplementation()!;
+  mocks.redis.set.mockImplementation(async (key, ...rest) => {
+    if (String(key).startsWith(RESPONSE)) throw new Error("Redis unavailable");
+    return set(key, ...rest);
+  });
+  const del = mocks.redis.del.getMockImplementation()!;
+  const cleanup = vi.fn();
+  mocks.redis.del.mockImplementation(async key => {
+    if (!String(key).startsWith(RESPONSE)) return del(key);
+    cleanup();
+    throw new Error("Redis unavailable");
+  });
+  try {
+    expect(await run()).toMatchObject({ status: 200, executed: true });
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(records()[0]).toMatchObject({ phase: "done", responseKept: false });
+  } finally {
+    mocks.redis.set.mockImplementation(set);
+    mocks.redis.del.mockImplementation(del);
+  }
+});
+
 describe("providers whose responses are not kept", () => {
   const particle = {
     provider: "particle",
