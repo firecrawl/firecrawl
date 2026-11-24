@@ -90,9 +90,10 @@ export async function mapController(
   // filtered, and under lockdown serve from the index only (no sitemap/robots
   // fetch to the target).
   const safeMode = resolveSafeMode(req.acuc?.flags, undefined, req.body.url);
+  const extBody = req.body as Record<string, any>;
   const lockdownIndexOnly = safeMode.safeMode?.lockdown === true;
   if (lockdownIndexOnly) {
-    req.body.useIndex = true;
+    extBody.useIndex = true;
   }
   // Map's ignoreRobotsTxt is top-level, so checkPermissions (which reads it
   // under crawlerOptions) can't see it — enforce robots here for Safe Mode.
@@ -113,7 +114,7 @@ export async function mapController(
     teamId: req.auth.team_id,
     orgId: req.acuc?.org_id ?? null,
     flags: req.acuc?.flags ?? null,
-    override: req.body.threatProtection,
+    override: extBody.threatProtection,
     force: safeMode.safeMode?.domainControls === true,
   });
   if (threatProtection.error) {
@@ -303,8 +304,8 @@ export async function mapController(
         mock: req.body.useMock,
         filterByPath: req.body.filterByPath !== false,
         flags: req.acuc?.flags ?? null,
-        useIndex: req.body.useIndex,
-        ignoreCache: req.body.ignoreCache,
+        useIndex: extBody.useIndex,
+        ignoreCache: extBody.ignoreCache,
         location: req.body.location,
         headers: req.body.headers,
         id: mapId,

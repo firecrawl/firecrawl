@@ -11,16 +11,19 @@ import { FormatObject } from "../controllers/v2/types";
  * @param type - The format type to search for
  * @returns The format object if found, undefined otherwise
  */
-export function hasFormatOfType<T extends FormatObject["type"]>(
-  formats: FormatObject[] | undefined,
+export function hasFormatOfType<
+  F extends { type: string } = FormatObject,
+  T extends F["type"] = F["type"],
+>(
+  formats: readonly F[] | undefined,
   type: T,
-): Extract<FormatObject, { type: T }> | undefined {
+): Extract<F, { type: T }> | undefined {
   if (!formats) {
     return undefined;
   }
 
   const found = formats.find(f => f.type === type);
-  return found as Extract<FormatObject, { type: T }> | undefined;
+  return found as Extract<F, { type: T }> | undefined;
 }
 
 /**

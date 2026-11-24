@@ -1005,7 +1005,9 @@ describe("scrape pipeline hook points", () => {
     if (!result.success) return;
     expect(result.document.metadata.cacheState).toBe("miss");
     expect(result.document.warning).toBeUndefined();
-    expect(result.document.metadata.provider).toEqual({
+    expect(
+      (result.document.metadata as unknown as Record<string, unknown>).provider,
+    ).toEqual({
       id: "acme",
       creditsCost: 5,
       steps: [{ provider: "acme", status: "matched", creditsCost: 5 }],

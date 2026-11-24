@@ -352,7 +352,7 @@ export async function batchScrapeController(
     req.auth.team_id,
   );
   if (safeMode.safeMode?.lockdown) {
-    scrapeOptions.maxAge =
+    (scrapeOptions as { maxAge?: number }).maxAge =
       typeof preNormalizedBody.maxAge === "number"
         ? preNormalizedBody.maxAge
         : undefined;

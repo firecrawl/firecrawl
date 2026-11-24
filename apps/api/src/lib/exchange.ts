@@ -3,7 +3,13 @@ import { z } from "zod";
 
 import { config } from "../config";
 import { notificationsEnv } from "../services/notification/env";
-import type { DocumentProvider, FormatObject } from "../controllers/v2/types";
+import type { FormatObject } from "../controllers/v2/types";
+
+export type DocumentProvider = {
+  id: string;
+  creditsCost: number;
+  steps: { provider: string; status: string; creditsCost?: number }[];
+};
 import { hasLedgerAcceptance } from "../services/alexandria/terms";
 import {
   type ExchangeTerms,

@@ -44,7 +44,11 @@ import {
   serpScrapeWarningEnabled,
 } from "../../lib/serp-url";
 import { resolveJobPriority } from "../../lib/limits";
-import { Document, scrapeOptions, TeamFlags } from "../../controllers/v2/types";
+import {
+  Document,
+  getV2RequestSchemas,
+  TeamFlags,
+} from "../../controllers/v2/types";
 import { hasFormatOfType } from "../../lib/format-utils";
 import { getACUCTeam } from "../../controllers/auth";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
@@ -685,7 +689,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                     mode: "single_urls",
                     ctx: job.data.ctx,
                     team_id: sc.team_id,
-                    scrapeOptions: scrapeOptions.parse(sc.scrapeOptions),
+                    scrapeOptions: getV2RequestSchemas().scrapeOptions.parse(
+                      sc.scrapeOptions,
+                    ),
                     internalOptions: sc.internalOptions,
                     crawlerOptions: {
                       ...sc.crawlerOptions,
@@ -1449,7 +1455,9 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         ctx: job.data.ctx,
         team_id: job.data.team_id,
         crawlerOptions: job.data.crawlerOptions,
-        scrapeOptions: scrapeOptions.parse(job.data.scrapeOptions),
+        scrapeOptions: getV2RequestSchemas().scrapeOptions.parse(
+          job.data.scrapeOptions,
+        ),
         internalOptions: sc.internalOptions,
         origin: job.data.origin,
         integration: job.data.integration,

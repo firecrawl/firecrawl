@@ -308,7 +308,7 @@ export async function searchController(
         },
       });
     req.ctx = ctx;
-    const hookBody: ServiceSearchRequest = {
+    const hookBody = {
       query: req.body.query,
       limit: req.body.limit,
       tbs: req.body.tbs,
@@ -326,7 +326,7 @@ export async function searchController(
       asyncScraping: false,
       toolDetail: "compact",
       scrapeOptions: shouldScrape ? scrapeOptions : undefined,
-    };
+    } as ServiceSearchRequest;
     const planHooks = installedService()?.hooks;
     const planned = planHooks?.has("search.plan")
       ? await applySearchPlanHook(

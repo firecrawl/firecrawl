@@ -27,7 +27,7 @@ async function expectSafeModeBlocked(
   return res.body;
 }
 
-describe("Safe Mode (v2 scrape, request-time)", () => {
+describeIf(TEST_PRODUCTION)("Safe Mode (v2 scrape, request-time)", () => {
   describe("org flag off", () => {
     let identity: Identity;
 

@@ -8,7 +8,8 @@ export function projectScrapeCredits(
 ): number {
   let credits = 1;
 
-  if (options.lockdown) {
+  const lockdown = (options as { lockdown?: boolean }).lockdown === true;
+  if (lockdown) {
     credits += 4;
   }
 
@@ -53,7 +54,7 @@ export function projectScrapeCredits(
     credits += 4;
   }
 
-  if (zeroDataRetention && !options.lockdown) {
+  if (zeroDataRetention && !lockdown) {
     credits += flags?.zdrCost ?? 1;
   }
 

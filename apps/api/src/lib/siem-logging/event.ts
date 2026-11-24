@@ -207,7 +207,8 @@ export function buildScrapeActivityEvent(
       endpoint: endpointForJob(job),
       teamId: job.team_id,
       apiKeyId: ctx.apiKeyId,
-      auditMetadata: job.scrapeOptions.auditMetadata,
+      auditMetadata: (job.scrapeOptions as { auditMetadata?: AuditMetadata })
+        .auditMetadata,
       url: job.url,
       origin: job.origin,
       integration: job.integration,

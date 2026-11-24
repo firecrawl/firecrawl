@@ -153,7 +153,8 @@ export async function calculateCreditsToBeBilled(
   });
   let creditsToBeBilled = exchangeCredits ?? 1;
 
-  if (options.lockdown) {
+  const lockdown = (options as { lockdown?: boolean }).lockdown === true;
+  if (lockdown) {
     creditsToBeBilled += 4;
   }
 
@@ -202,8 +203,7 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled += 4;
   }
 
-  const mediaFormatsRefused =
-    !!internalOptions.zeroDataRetention && !options.lockdown;
+  const mediaFormatsRefused = !!internalOptions.zeroDataRetention && !lockdown;
 
   if (rawFormats.some(f => f.type === "audio") && !mediaFormatsRefused) {
     creditsToBeBilled += 4;
@@ -213,7 +213,7 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled += 4;
   }
 
-  if (internalOptions.zeroDataRetention && !options.lockdown) {
+  if (internalOptions.zeroDataRetention && !lockdown) {
     creditsToBeBilled += flags?.zdrCost ?? 1;
   }
 

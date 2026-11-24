@@ -59,12 +59,13 @@ export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
   res: Response<BatchScrapeResponse>,
 ) {
-  const preNormalizedBody = { ...req.body };
+  const preNormalizedBody = { ...(req.body as Record<string, any>) };
   req.body = parseBatchScrapeRequest(req.body);
+  const extBody = req.body as Record<string, any>;
 
   // Batch has many URLs; per-URL allowlist is applied at the scrapeURL backstop.
   // Resolve org-level here only for the bypass/enablement decision.
-  const safeMode = resolveSafeMode(req.acuc?.flags, req.body.safeMode);
+  const safeMode = resolveSafeMode(req.acuc?.flags, extBody.safeMode);
   if (safeMode.error) {
     return res.status(403).json({
       success: false,
@@ -77,14 +78,14 @@ export async function batchScrapeController(
     safeMode.safeMode?.lockdown &&
     typeof preNormalizedBody.maxAge === "number"
   ) {
-    req.body.maxAge = preNormalizedBody.maxAge;
+    extBody.maxAge = preNormalizedBody.maxAge;
   }
 
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
     orgId: req.acuc?.org_id ?? null,
     flags: req.acuc?.flags ?? null,
-    override: req.body.threatProtection,
+    override: extBody.threatProtection,
     force: safeMode.safeMode?.domainControls === true,
   });
   if (threatProtection.error) {
@@ -126,15 +127,15 @@ export async function batchScrapeController(
     (safeMode.safeMode?.lockdown ?? false);
 
   if (
-    req.body.__agentInterop &&
+    extBody.__agentInterop &&
     config.AGENT_INTEROP_SECRET &&
-    !isAgentInteropSecretValid(req.body.__agentInterop.auth)
+    !isAgentInteropSecretValid(extBody.__agentInterop.auth)
   ) {
     return res.status(403).json({
       success: false,
       error: "Invalid agent interop.",
     });
-  } else if (req.body.__agentInterop && !config.AGENT_INTEROP_SECRET) {
+  } else if (extBody.__agentInterop && !config.AGENT_INTEROP_SECRET) {
     return res.status(403).json({
       success: false,
       error: "Agent interop is not enabled.",
@@ -160,7 +161,7 @@ export async function batchScrapeController(
 
   const id = req.body.appendToId ?? uuidv7();
   const billing: BillingMetadata = {
-    ...(req.body.__agentInterop
+    ...(extBody.__agentInterop
       ? { endpoint: "agent" as const, jobId: id }
       : { endpoint: "batch_scrape" as const, jobId: id }),
     externalRequestId: externalRequestId(req),
@@ -258,11 +259,11 @@ export async function batchScrapeController(
   emitRejectedScrapeActivityEvents(
     refusedURLs.map(({ url, error }) => ({
       scrapeId: uuidv7(),
-      requestId: req.body.__agentInterop?.requestId ?? id,
-      endpoint: req.body.__agentInterop ? "agent" : "batch_scrape",
+      requestId: extBody.__agentInterop?.requestId ?? id,
+      endpoint: extBody.__agentInterop ? "agent" : "batch_scrape",
       teamId: req.auth.team_id,
       apiKeyId: req.acuc?.api_key_id ?? null,
-      auditMetadata: req.body.auditMetadata,
+      auditMetadata: extBody.auditMetadata,
       url,
       error,
       origin: req.body.origin ?? "api",
@@ -312,7 +313,7 @@ export async function batchScrapeController(
           !req.body.appendToId &&
           urls.some(u => !blockedSet.has(u)),
       );
-      if (req.body.__agentInterop?.shouldBill ?? true) {
+      if (extBody.__agentInterop?.shouldBill ?? true) {
         const threatDecisions = req.body.ignoreInvalidURLs
           ? blocked.map(x => x.decision)
           : [...decisionsByUrl.values()];
@@ -345,11 +346,11 @@ export async function batchScrapeController(
       emitRejectedScrapeActivityEvents(
         blocked.map(blockedUrl => ({
           scrapeId: uuidv7(),
-          requestId: req.body.__agentInterop?.requestId ?? id,
-          endpoint: req.body.__agentInterop ? "agent" : "batch_scrape",
+          requestId: extBody.__agentInterop?.requestId ?? id,
+          endpoint: extBody.__agentInterop ? "agent" : "batch_scrape",
           teamId: req.auth.team_id,
           apiKeyId: req.acuc?.api_key_id ?? null,
-          auditMetadata: req.body.auditMetadata,
+          auditMetadata: extBody.auditMetadata,
           url: blockedUrl.url,
           error: new UnsafeDomainBlockedError(
             blockedUrl.url,
@@ -415,7 +416,7 @@ export async function batchScrapeController(
             : false,
           zeroDataRetention,
           ...(workContactOnly ? { workContactOnly } : {}),
-          bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
+          bypassBilling: !(extBody.__agentInterop?.shouldBill ?? true),
           agentIndexOnly: (req as any).agentIndexOnly ?? false,
           threatProtection: threatProtection.policy ?? undefined,
           // Safe Mode rides the batch payload so each URL resolves it per-URL
@@ -429,13 +430,13 @@ export async function batchScrapeController(
         zeroDataRetention,
         v1: true,
         webhook: req.body.webhook,
-        requestId: req.body.__agentInterop?.requestId ?? undefined,
+        requestId: extBody.__agentInterop?.requestId ?? undefined,
         origin: req.body.origin,
       };
 
   if (req.body.appendToId) {
     sc.internalOptions.bypassBilling = !(
-      req.body.__agentInterop?.shouldBill ?? true
+      extBody.__agentInterop?.shouldBill ?? true
     );
     // Refresh Safe Mode + threat-protection context so appended jobs enforce
     // the team's current policy, not whatever was stored when the batch was
@@ -458,7 +459,7 @@ export async function batchScrapeController(
   });
   req.ctx = ctx;
 
-  if (!req.body.appendToId && !req.body.__agentInterop) {
+  if (!req.body.appendToId && !extBody.__agentInterop) {
     await service.modules.jobStore
       .register({
         id,
@@ -492,7 +493,7 @@ export async function batchScrapeController(
     // An agent-started batch is recorded under the parent request rather than
     // as a request of its own, so initialize usage tracking for both ids
     // without creating fetchable job-access rows.
-    const agentRequestId = req.body.__agentInterop?.requestId;
+    const agentRequestId = extBody.__agentInterop?.requestId;
     if (agentRequestId) {
       await service.modules.jobStore
         .register({
@@ -571,8 +572,8 @@ export async function batchScrapeController(
       integration: req.body.integration,
       billing,
       crawl_id: id,
-      requestId: req.body.__agentInterop?.requestId ?? undefined,
-      bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
+      requestId: extBody.__agentInterop?.requestId ?? undefined,
+      bypassBilling: !(extBody.__agentInterop?.shouldBill ?? true),
       sitemapped: true,
       v1: true,
       webhook: req.body.webhook,

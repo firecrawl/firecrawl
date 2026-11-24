@@ -2,16 +2,13 @@ import type { AgentInteropStatus } from "../../lib/agent-interop";
 import type { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import type { ZDRPolicy } from "../../lib/zdr-policy";
 import { Request, Response } from "express";
-import { hasCategory } from "../../lib/search-query-builder";
 import { config } from "../../config";
 import { z } from "zod";
-import { browserProfileNameSchema } from "../../lib/browser-profiles";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
 import { includesFormat } from "../../lib/format-utils";
 import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
-import { isDeveloperCategoryAlias } from "../../lib/developer-category";
 import { addStrictSchemaIssue } from "../../lib/openai-strict-schema";
 import {
   ExtractorOptions,
@@ -32,13 +29,9 @@ import { ErrorCode } from "../../lib/error";
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import { integrationSchema } from "../../utils/integration";
-import {
-  webhookSchema,
-  createWebhookSchema,
-} from "../../services/webhook/schema";
+import { webhookSchema } from "../../services/webhook/schema";
 
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
-import { auditMetadataSchema } from "../../lib/siem-logging/types";
 import { installedService } from "../../service/service";
 import {
   registerDefaultRequestSchemaBuilder,
@@ -606,49 +599,22 @@ const scrapeOptionFields = z.strictObject({
   fastMode: z.boolean().prefault(false),
   useMock: z.string().optional(),
   blockAds: z.boolean().prefault(true),
-  proxy: z.enum(["basic", "stealth", "enhanced", "auto"]).prefault("auto"),
-  maxAge: z.int().gte(0).optional(),
-  minAge: z.int().gte(0).optional(),
-  storeInCache: z.boolean().prefault(true),
-  lockdown: z.boolean().prefault(false),
+  proxy: z.enum(["basic", "auto"]).prefault("auto"),
   checkPromptInjection: z.boolean().prefault(false),
-  safeMode: z.boolean().optional(),
-  // Enterprise: per-request field-level override of the org's threat
-  // protection policy. Gated on the team flag + org config (checkPermissions).
-  threatProtection: threatProtectionOverrideSchema.optional(),
-  auditMetadata: auditMetadataSchema.optional(),
-
-  profile: z
-    .object({
-      name: browserProfileNameSchema,
-      saveChanges: z.boolean().default(true),
-    })
-    .optional(),
-
-  // @deprecated
-  __searchPreviewToken: z.string().optional(),
-  __experimental_omce: z.boolean().prefault(false).optional(),
-  __experimental_omceDomain: z.string().optional(),
-  __forceFirePDF: z.boolean().prefault(false).optional(),
 });
 
-const baseScrapeOptions = scrapeOptionFields
-  .refine(options => !(options.profile && options.lockdown), {
-    message: "Profiles require live browsing and cannot be used with lockdown.",
-    path: ["profile"],
-  })
-  .refine(
-    options =>
-      !(
-        options.checkPromptInjection &&
-        options.formats.some(f => f.type === "rawBase64")
-      ),
-    {
-      message:
-        "checkPromptInjection scans page markdown and cannot be used with the rawBase64 format.",
-      path: ["checkPromptInjection"],
-    },
-  );
+const baseScrapeOptions = scrapeOptionFields.refine(
+  options =>
+    !(
+      options.checkPromptInjection &&
+      options.formats.some(f => f.type === "rawBase64")
+    ),
+  {
+    message:
+      "checkPromptInjection scans page markdown and cannot be used with the rawBase64 format.",
+    path: ["checkPromptInjection"],
+  },
+);
 
 type ScrapeOptionsBase = z.infer<typeof baseScrapeOptions>;
 
@@ -716,21 +682,8 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
     result = { ...result, timeout: 60000 };
   }
 
-  if (
-    (obj.proxy === "stealth" ||
-      obj.proxy === "enhanced" ||
-      obj.proxy === "auto") &&
-    obj.timeout === 30000
-  ) {
+  if (obj.proxy === "auto" && obj.timeout === 30000) {
     result = { ...result, timeout: 120000 };
-  }
-
-  if (obj.lockdown) {
-    if (obj.maxAge === undefined) {
-      result = { ...result, maxAge: LOCKDOWN_DEFAULT_MAX_AGE_MS };
-    }
-  } else if (obj.maxAge !== undefined && obj.maxAge > MAX_SCRAPE_MAX_AGE_MS) {
-    result = { ...result, maxAge: MAX_SCRAPE_MAX_AGE_MS };
   }
 
   return result as T extends undefined ? undefined : T;
@@ -780,8 +733,6 @@ export type UploadedParseFile = {
 
 const ajv = new Ajv();
 addFormats(ajv);
-const agentAjv = new Ajv();
-addFormats(agentAjv);
 
 const extractOptions = z
   .strictObject({
@@ -862,120 +813,11 @@ export const extractRequestSchema = extractOptions;
 export type ExtractRequest = z.infer<typeof extractRequestSchema>;
 export type ExtractRequestInput = z.input<typeof extractRequestSchema>;
 
-const agentWebhookSchema = createWebhookSchema([
-  "started",
-  "action",
-  "completed",
-  "failed",
-  "cancelled",
-]);
-
-// Forwarded verbatim to the agent service, which owns every default and the
-// per-thread inheritance rules; the gateway only validates the shape.
-// The one list of onTermsRequired modes: the request schema and the response
-// summary type both derive from it.
-const AGENT_ON_TERMS_REQUIRED = ["skip", "ask"] as const;
-type AgentOnTermsRequired = (typeof AGENT_ON_TERMS_REQUIRED)[number];
-
-const agentExchangeSchema = z.strictObject({
-  enabled: z.boolean().optional(),
-  toolkits: z.array(z.string()).optional(),
-  maxCalls: z.number().int().min(1).max(30).optional(),
-  requireApproval: z.boolean().optional(),
-  approve: z
-    .strictObject({
-      approvalId: z.string().uuid(),
-      callIds: z.array(z.string()).optional(),
-      always: z.boolean().optional(),
-    })
-    .optional(),
-  decline: z
-    .strictObject({
-      approvalId: z.string().uuid(),
-    })
-    .optional(),
-  // What to do when a provider the agent would use needs data terms the team
-  // has not accepted: "skip" (the agent service's default) or "ask".
-  // Gated providers are never called in any mode, and there is deliberately
-  // no auto-accept: terms are only accepted by a human-authorized
-  // terms/accept or in the dashboard. Omitted on a follow-up turn means the
-  // previous turn's value.
-  onTermsRequired: z.enum(AGENT_ON_TERMS_REQUIRED).optional(),
-});
-
-export const agentRequestSchema = z
-  .strictObject({
-    urls: URL.array().optional(),
-    prompt: z.string().max(10000),
-    schema: z
-      .any()
-      .optional()
-      .superRefine((val, ctx) => {
-        if (!val) return; // Allow undefined schema
-        try {
-          agentAjv.compile(val);
-        } catch (e) {
-          const message =
-            e instanceof Error
-              ? e.message
-              : typeof e === "string"
-                ? e
-                : "Unknown error";
-          ctx.addIssue({
-            code: "custom",
-            message: `Invalid JSON schema: ${message}`,
-          });
-        }
-      }),
-    origin: z.string().prefault("api"),
-    integration: integrationSchema.optional().transform(val => val || null),
-    maxCredits: z.number().optional(),
-    strictConstrainToURLs: z.boolean().optional(),
-    webhook: agentWebhookSchema.optional(),
-
-    overrideWhitelist: z.string().optional(),
-    // The spark-1 preset names stay accepted so existing callers keep working,
-    // but spark-1 is retired: the transform below runs every request on
-    // spark-2 regardless of what was sent.
-    model: z.enum(["spark-1-pro", "spark-1-mini", "spark-2"]).optional(),
-    effort: z.enum(["low", "medium", "high"]).optional(),
-    threatProtection: threatProtectionOverrideSchema.optional(),
-    auditMetadata: auditMetadataSchema.optional(),
-    // Continue an existing thread. Omitted starts a new one.
-    threadId: z.string().uuid().optional(),
-    mode: z.enum(["extract", "chat"]).optional(),
-    exchange: agentExchangeSchema.optional(),
-    location: countryLocationSchema.optional(),
-    safe: z.boolean().optional(),
-    zeroDataRetention: z.boolean().optional(),
-  })
-  // spark-1 is retired and spark-2 is the default. The spark-1 preset names
-  // remain valid input and silently resolve to spark-2, so every request —
-  // with or without effort, with or without a model — runs spark-2.
-  .transform(x => ({
-    ...x,
-    model: "spark-2" as const,
-  }));
-
-export type AgentRequest = z.infer<typeof agentRequestSchema>;
-// export type AgentRequestInput = z.input<typeof agentRequestSchema>;
-
 const scrapeRequestSchemaBase = baseScrapeOptions.safeExtend({
   url: URL,
   origin: z.string().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   zeroDataRetention: z.boolean().optional(),
-  domainTools: z.boolean().optional(),
-  toolDetail: z.enum(["compact", "summary", "full"]).optional(),
-  __agentInterop: z
-    .object({
-      auth: z.string(),
-      requestId: z.string(),
-      shouldBill: z.boolean(),
-      boostConcurrency: z.boolean().optional(),
-      hostedMcp: z.boolean().optional(),
-    })
-    .optional(),
 });
 
 export const scrapeRequestSchema = strictWithMessage(scrapeRequestSchemaBase)
@@ -1025,15 +867,6 @@ const parseRequestSchemaBase = baseScrapeOptions.safeExtend({
   origin: z.string().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   zeroDataRetention: z.boolean().optional(),
-  __agentInterop: z
-    .object({
-      auth: z.string(),
-      requestId: z.string(),
-      shouldBill: z.boolean(),
-      boostConcurrency: z.boolean().optional(),
-      hostedMcp: z.boolean().optional(),
-    })
-    .optional(),
   file: uploadedParseFileSchema,
 });
 
@@ -1063,14 +896,6 @@ const batchScrapeRequestSchemaBase = baseScrapeOptions.safeExtend({
   ignoreInvalidURLs: z.boolean().prefault(true),
   maxConcurrency: z.int().positive().optional(),
   zeroDataRetention: z.boolean().optional(),
-  __agentInterop: z
-    .object({
-      auth: z.string(),
-      requestId: z.string(),
-      shouldBill: z.boolean(),
-      hostedMcp: z.boolean().optional(),
-    })
-    .optional(),
 });
 
 export const batchScrapeRequestSchema = strictWithMessage(
@@ -1089,14 +914,6 @@ const batchScrapeRequestSchemaNoURLValidationBase =
     ignoreInvalidURLs: z.boolean().prefault(true),
     maxConcurrency: z.int().positive().optional(),
     zeroDataRetention: z.boolean().optional(),
-    __agentInterop: z
-      .object({
-        auth: z.string(),
-        requestId: z.string(),
-        shouldBill: z.boolean(),
-        hostedMcp: z.boolean().optional(),
-      })
-      .optional(),
   });
 
 export const batchScrapeRequestSchemaNoURLValidation = strictWithMessage(
@@ -1217,12 +1034,8 @@ const mapRequestSchemaBase = crawlerOptions
     timeout: z.number().positive().finite().optional(),
     useMock: z.string().optional(),
     filterByPath: z.boolean().prefault(true),
-    useIndex: z.boolean().prefault(true),
-    ignoreCache: z.boolean().prefault(false),
     location: locationSchema,
     headers: z.record(z.string(), z.string()).optional(),
-    threatProtection: threatProtectionOverrideSchema.optional(),
-    auditMetadata: auditMetadataSchema.optional(),
   });
 
 export const mapRequestSchema = strictWithMessage(
@@ -1238,14 +1051,6 @@ export const mapRequestSchema = strictWithMessage(
 
 export type MapRequest = z.infer<typeof mapRequestSchema>;
 export type MapRequestInput = z.input<typeof mapRequestSchema>;
-
-/** The third-party provider that served an Exchange scrape, what the access
- * cost, and every provider tried for it in order. */
-export type DocumentProvider = {
-  id: string;
-  creditsCost: number;
-  steps: { provider: string; status: string; creditsCost?: number }[];
-};
 
 export interface DocumentMetadata {
   title?: string;
@@ -1295,7 +1100,6 @@ export interface DocumentMetadata {
   indexId?: string; // ID used to store the document in the index (GCS)
   concurrencyLimited?: boolean;
   concurrencyQueueDurationMs?: number;
-  provider?: DocumentProvider;
 }
 
 export interface Document {
@@ -1396,306 +1200,6 @@ export interface ExtractResponse {
   tokensUsed?: number;
   creditsUsed?: number;
 }
-
-export type AgentListResponse =
-  | ErrorResponse
-  | {
-      success: true;
-      agents: {
-        id: string;
-        createdAt: string;
-        targetHint: string;
-        origin: string;
-        integration?: string;
-        settings: {
-          hidden: boolean;
-          starred: boolean;
-          label?: string;
-        };
-        status: "processing" | "completed" | "failed";
-        options?: {
-          urls?: string[];
-          prompt: string;
-          schema?: any;
-          // Widened past the known presets on purpose: this is the stored
-          // value from historical runs, and new models ship without an API
-          // type release.
-          model: "spark-1-pro" | "spark-1-mini" | "spark-2" | (string & {});
-          effort?: "low" | "medium" | "high";
-          safe?: boolean;
-          threadId?: string;
-          threadTurn?: number;
-          zeroDataRetention?: boolean;
-        };
-      }[];
-      next?: string;
-    };
-
-export type AgentMode = "extract" | "chat";
-
-export type AgentSuggestion = {
-  label: string;
-  prompt: string;
-};
-
-// A provider the agent would have used but could not, because the team has
-// not accepted its data terms.
-type AgentTermsGate = {
-  provider: string;
-  name: string;
-  logo?: string;
-  capability?: string;
-  // What it would have added, in the agent's words.
-  adds?: string;
-  // The gating agreement version and document digest terms/accept needs.
-  // digest is null when the catalog published none; terms/show returns it.
-  version: string;
-  digest: string | null;
-  // Where a person accepts the terms in the dashboard.
-  url: string;
-};
-
-type AgentPendingApprovalBase = {
-  id: string;
-  reason: string;
-  resolution: null | {
-    approved: boolean;
-    // Calls approved. Ignored on terms offers.
-    callIds: string[];
-    always: boolean;
-    byRunId: string;
-  };
-};
-
-// Paid calls waiting for approval. `kind` is absent on items written before
-// terms offers existed.
-type AgentPendingCallsApproval = AgentPendingApprovalBase & {
-  kind?: "calls";
-  calls: {
-    id: string;
-    provider: string;
-    capability: string;
-    input: Record<string, unknown>;
-    more?: Record<string, unknown>[];
-    creditsEstimate: number | null;
-  }[];
-  terms?: never;
-};
-
-// Providers whose data terms need accepting ("ask" mode). `calls`
-// stays empty so clients reading only the calls shape see nothing to run.
-type AgentPendingTermsApproval = AgentPendingApprovalBase & {
-  kind: "terms";
-  calls: [];
-  terms: AgentTermsGate[];
-};
-
-export type AgentPendingApproval =
-  | AgentPendingCallsApproval
-  | AgentPendingTermsApproval;
-
-// What a run did with Exchange, as the agent service reports it. `toolkits` and
-// `requireApproval` are what the run resolved to after thread inheritance, so
-// they describe the run rather than echoing the request.
-type AgentSkippedProvider = {
-  provider: string;
-  name: string;
-  capability?: string;
-  adds?: string;
-  reason: "terms_required";
-  version: string;
-  termsUrl: string;
-};
-
-// The Exchange calls a calling agent makes to accept a provider's terms once
-// its user has explicitly agreed. The agent service never executes them.
-type AgentTermsRequiredAction = {
-  type: "accept_terms";
-  // The `terms` pending approval that answers this: accept the terms, then
-  // continue the thread with `exchange.approve: { approvalId }` (or decline).
-  approvalId: string;
-  providers: {
-    provider: string;
-    name: string;
-    capability?: string;
-    adds?: string;
-    version: string;
-    // null when the catalog published no digest; terms/show returns it.
-    digest: string | null;
-    url: string;
-    show: {
-      provider: "firecrawl";
-      capability: "terms/show";
-      options: { provider: string };
-    };
-    accept: {
-      provider: "firecrawl";
-      capability: "terms/accept";
-      options: {
-        provider: string;
-        version: string;
-        // null when the catalog published no digest; terms/show returns it.
-        digest: string | null;
-        confirmed: true;
-      };
-    };
-  }[];
-};
-
-export type AgentExchangeSummary = {
-  enabled: boolean;
-  toolkits?: string[];
-  requireApproval?: boolean;
-  onTermsRequired?: AgentOnTermsRequired;
-  paidCalls: number;
-  creditsUsed: number | null;
-  // The terms fields below (and onTermsRequired) appear only when the agent
-  // service's terms gate is on for the thread; it is rolling out.
-  // Gated providers that would have helped and were not used. Any mode.
-  skippedProviders?: AgentSkippedProvider[];
-  // "ask" mode, when a terms offer ended the turn.
-  requiresAction?: AgentTermsRequiredAction;
-};
-
-export type AgentResponse =
-  | (ErrorResponse & {
-      // Set on a 409 thread_busy: the run currently holding the thread.
-      runId?: string;
-    })
-  | {
-      success: boolean;
-      id: string;
-      threadId?: string;
-      threadTurn?: number;
-    };
-
-export type AgentStatusResponse =
-  | ErrorResponse
-  | {
-      success: boolean;
-      status: "processing" | "completed" | "failed";
-      error?: string;
-      data?: any;
-      /** Best-effort JSON on a failed run; `data` remains completed-only. */
-      partial?: unknown;
-      /** Only present when the caller supplied a JSON Schema. */
-      partialSchemaValid?: boolean;
-      stopReason?: "credit_limit_reached";
-      model?: "spark-1-pro" | "spark-1-mini" | "spark-2";
-      effort?: "low" | "medium" | "high";
-      safe?: boolean;
-      expiresAt: string;
-      creditsUsed?: number;
-      threadId?: string;
-      threadTurn?: number;
-      mode?: AgentMode;
-      message?: string;
-      suggestions?: AgentSuggestion[];
-      pendingApproval?: AgentPendingApproval;
-      exchange?: AgentExchangeSummary;
-    };
-
-type AgentThreadRun = {
-  id: string;
-  turn: number;
-  mode: AgentMode;
-  prompt: string;
-  urls?: string[];
-  schema?: unknown;
-  effort?: "low" | "medium" | "high";
-  safe?: boolean;
-  status:
-    | "processing"
-    | "succeeded"
-    | "failed"
-    | "cancelled"
-    | "refused"
-    | "credit_limit_reached";
-  createdAt: string;
-  finishedAt: string | null;
-  creditsUsed: number | null;
-  message: string | null;
-  // Only present when the request asked for includeData.
-  data?: unknown;
-  partial?: unknown;
-  partialSchemaValid?: boolean;
-  stopReason?: "credit_limit_reached";
-  suggestions?: AgentSuggestion[] | null;
-  pendingApproval?: AgentPendingApproval | null;
-  exchange?: AgentExchangeSummary | null;
-};
-
-export type AgentThread = {
-  id: string;
-  createdAt: string;
-  updatedAt: string;
-  status: "idle" | "running";
-  runs: AgentThreadRun[];
-};
-
-export type AgentThreadResponse =
-  | ErrorResponse
-  | {
-      success: true;
-      thread: AgentThread;
-    };
-
-export type AgentTraceResponse =
-  | ErrorResponse
-  | {
-      success: true;
-      id: string;
-      events: object[];
-      creditsUsed: number;
-      // Set by the agent service on a zero data retention run, whose events
-      // are limited to content-free lifecycle events.
-      zeroDataRetention?: boolean;
-      activeBrowserSessions?: Array<{
-        id: string;
-        liveViewUrl: string;
-        viewport: {
-          width: number;
-          height: number;
-        };
-      }>;
-    };
-
-/**
- * A finished run distilled into something reusable: a SKILL.md to paste into a
- * coding agent, and a workflow script that reproduces the run through the API.
- * The upstream shape is passed through verbatim.
- */
-export type AgentSkillResponse =
-  | ErrorResponse
-  | {
-      success: true;
-      id: string;
-      skill: {
-        name: string;
-        spec: object;
-        skillMd: string;
-        workflow: string;
-        schema: string;
-      };
-      blueprint: object;
-      generatedAt: string;
-      generated: boolean;
-    };
-
-export type AgentSnapshotResponse =
-  | ErrorResponse
-  | {
-      success: true;
-      id: string;
-      snapshotId: string;
-      snapshot: string;
-    };
-
-export type AgentCancelResponse =
-  | ErrorResponse
-  | {
-      success: boolean;
-    };
 
 export type CrawlResponse =
   | ErrorResponse
@@ -1819,9 +1323,6 @@ type AuthObject = {
 type Account = {
   remainingCredits: number;
 };
-
-export const MAX_SCRAPE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-export const LOCKDOWN_DEFAULT_MAX_AGE_MS = 2 * 365 * 24 * 60 * 60 * 1000;
 
 export type TeamFlags = {
   exchangeRetrieve?: boolean;
@@ -2105,11 +1606,34 @@ export function fromV1ScrapeOptions(
     v1OriginalFormat = "extract";
   }
 
+  const activeScrapeOptionsSchema = getV2RequestSchemas().scrapeOptions;
+  const isDefaultCoreSchema = activeScrapeOptionsSchema === scrapeOptions;
+  if (isDefaultCoreSchema) {
+    delete (spreadScrapeOptions as any).storeInCache;
+    delete (spreadScrapeOptions as any).maxAge;
+    delete (spreadScrapeOptions as any).minAge;
+    delete (spreadScrapeOptions as any).lockdown;
+    delete (spreadScrapeOptions as any).safeMode;
+    delete (spreadScrapeOptions as any).threatProtection;
+    delete (spreadScrapeOptions as any).auditMetadata;
+    delete (spreadScrapeOptions as any).profile;
+    delete (spreadScrapeOptions as any).__searchPreviewToken;
+    delete (spreadScrapeOptions as any).__experimental_omce;
+    delete (spreadScrapeOptions as any).__experimental_omceDomain;
+    delete (spreadScrapeOptions as any).__forceFirePDF;
+    if (
+      (spreadScrapeOptions as any).proxy === "stealth" ||
+      (spreadScrapeOptions as any).proxy === "enhanced"
+    ) {
+      (spreadScrapeOptions as any).proxy = "auto";
+    }
+  }
+
   return {
-    scrapeOptions: getV2RequestSchemas().scrapeOptions.parse({
+    scrapeOptions: activeScrapeOptionsSchema.parse({
       ...spreadScrapeOptions,
 
-      ...(v1ScrapeOptions.__experimental_cache
+      ...(!isDefaultCoreSchema && v1ScrapeOptions.__experimental_cache
         ? {
             maxAge: v1ScrapeOptions.maxAge ?? 4 * 60 * 60 * 1000, // 4 hours
           }
@@ -2217,50 +1741,9 @@ const newsSearchSourceOptions = z.strictObject({
 });
 
 // Category source type definitions
-const researchCategoryOptions = z.strictObject({
-  type: z.literal("research"),
-});
-
 const pdfCategoryOptions = z.strictObject({
   type: z.literal("pdf"),
 });
-
-const developerCategoryOptions = z.strictObject({
-  type: z.literal("developer"),
-});
-
-const govCategoryOptions = z.strictObject({
-  type: z.literal("gov"),
-});
-
-function normalizeDeveloperCategoryAliases(value: unknown): unknown {
-  if (!Array.isArray(value)) return value;
-  let seenString = false;
-  let seenObject = false;
-  const normalized: unknown[] = [];
-  for (const category of value) {
-    if (isDeveloperCategoryAlias(category)) {
-      if (seenString) continue;
-      seenString = true;
-      normalized.push("developer");
-    } else if (
-      typeof category === "object" &&
-      category !== null &&
-      isDeveloperCategoryAlias((category as { type?: unknown }).type)
-    ) {
-      if (Object.keys(category).length === 1) {
-        if (seenObject) continue;
-        seenObject = true;
-        normalized.push({ type: "developer" });
-      } else {
-        normalized.push({ ...category, type: "developer" });
-      }
-    } else {
-      normalized.push(category);
-    }
-  }
-  return normalized;
-}
 
 const searchDomainSchema = z
   .string()
@@ -2281,45 +1764,23 @@ const searchRequestSchemaBase = z.strictObject({
   filter: z.string().optional(),
   sources: z
     .union([
-      // Array of strings (simple format)
-      z.array(z.enum(["web", "images", "news", "alexandria", "skills"])),
-      // Array of objects (advanced format)
+      z.array(z.enum(["web", "images", "news"])),
       z.array(
         z.union([
           webSearchSourceOptions,
           imagesSearchSourceOptions,
           newsSearchSourceOptions,
-          z.strictObject({
-            type: z.literal("alexandria"),
-          }),
-          z.strictObject({
-            type: z.literal("skills"),
-          }),
         ]),
       ),
     ])
     .prefault(["web"]),
   categories: z
-    .preprocess(
-      normalizeDeveloperCategoryAliases,
-      z.union([
-        z.array(z.enum(["research", "pdf", "developer", "gov"])),
-        z.array(
-          z.union([
-            researchCategoryOptions,
-            pdfCategoryOptions,
-            developerCategoryOptions,
-            govCategoryOptions,
-          ]),
-        ),
-      ]),
-    )
+    .union([z.array(z.enum(["pdf"])), z.array(pdfCategoryOptions)])
     .optional(),
   includeDomains: z.array(searchDomainSchema).optional(),
   excludeDomains: z.array(searchDomainSchema).optional(),
   lang: z.string().prefault("en"),
   safe: z.boolean().optional(),
-  enterprise: z.array(z.enum(["default", "anon", "zdr"])).optional(),
   country: z.string().optional(),
   location: z.string().optional(),
   origin: z.string().prefault("api"),
@@ -2327,14 +1788,6 @@ const searchRequestSchemaBase = z.strictObject({
   timeout: z.int().positive().finite().prefault(60000),
   ignoreInvalidURLs: z.boolean().prefault(false),
   asyncScraping: z.boolean().prefault(false),
-  // Replace each result's snippet with query-relevant highlights pulled from
-  // our index. When omitted, the caller integration and rollout cohort decide
-  // whether generated highlights are returned or only run in shadow mode.
-  highlights: z.boolean().optional(),
-  domainTools: z.boolean().optional(),
-  toolDetail: z.enum(["compact", "summary", "full"]).prefault("compact"),
-  __searchPreviewToken: z.string().optional(),
-  threatProtection: threatProtectionOverrideSchema.optional(),
   scrapeOptions: baseScrapeOptions
     .safeExtend({
       formats: z
@@ -2367,14 +1820,6 @@ const searchRequestSchemaBase = z.strictObject({
         .refine(x => {
           return x.filter(f => f.type === "screenshot").length <= 1;
         }, "You may only specify one screenshot format"),
-    })
-    .optional(),
-  __agentInterop: z
-    .object({
-      auth: z.string(),
-      requestId: z.string(),
-      shouldBill: z.boolean(),
-      hostedMcp: z.boolean().optional(),
     })
     .optional(),
 });
@@ -2449,21 +1894,9 @@ const transformSearchRequest = <
       // It's a string array, transform to object array
       categories = (categories as string[]).map(c => {
         switch (c) {
-          case "research":
-            return {
-              type: "research" as const,
-            };
           case "pdf":
             return {
               type: "pdf" as const,
-            };
-          case "developer":
-            return {
-              type: "developer" as const,
-            };
-          case "gov":
-            return {
-              type: "gov" as const,
             };
           default:
             return { type: c as any };
@@ -2488,14 +1921,6 @@ export const searchRequestSchema = searchRequestSchemaBase
     x => !(x.includeDomains?.length && x.excludeDomains?.length),
     "includeDomains and excludeDomains cannot both be specified",
   )
-  .refine(x => {
-    const categories = x.categories ?? [];
-    return !hasCategory(categories, "developer") || categories.length === 1;
-  }, "the developer category cannot be combined with other categories")
-  .refine(x => {
-    const categories = x.categories ?? [];
-    return !hasCategory(categories, "gov") || categories.length === 1;
-  }, "the gov category cannot be combined with other categories")
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(transformSearchRequest);
 
@@ -2529,252 +1954,6 @@ export type SearchResponse =
       };
       creditsUsed?: number;
       id: string;
-    };
-
-// =============================================
-// Search Feedback
-// =============================================
-
-const searchFeedbackUrlSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(2048)
-  .refine(value => {
-    try {
-      const u = new globalThis.URL(value);
-      return u.protocol === "http:" || u.protocol === "https:";
-    } catch {
-      return false;
-    }
-  }, "Must be a valid http(s) URL");
-
-const missingContentEntrySchema = z.strictObject({
-  topic: z
-    .string()
-    .trim()
-    .min(1, "topic must not be empty")
-    .max(200, "topic must be 200 characters or fewer"),
-  description: z.string().trim().max(2000).optional(),
-});
-
-/**
- * A single valuable search result, addressed by the group it appears in and its
- * 1-indexed position within that group. Results are returned grouped
- * (`data.web`, `data.images`, `data.news`), each group sliced independently to
- * `limit`, so a bare position is ambiguous once more than one source is in play.
- */
-const valuableResultSchema = z.strictObject({
-  source: z.enum(["web", "images", "news"]),
-  // 100 is the max search `limit`, and each group is capped at `limit`
-  // independently, so positions beyond it can only be hallucinated.
-  position: z.number().int().positive().lte(100),
-  reason: z.string().trim().max(1000).optional(),
-});
-
-const valuableResultsSchema = z.array(valuableResultSchema).max(50);
-
-function hasSubstantiveSearchFeedback(data: {
-  rating: "good" | "bad" | "partial";
-  valuableSources?: unknown[];
-  valuableResults?: unknown[];
-  missingContent?: unknown[];
-  querySuggestions?: string;
-}): boolean {
-  const hasSources = (data.valuableSources?.length ?? 0) > 0;
-  const hasResults = (data.valuableResults?.length ?? 0) > 0;
-  const hasMissing = (data.missingContent?.length ?? 0) > 0;
-  const hasSuggestions =
-    !!data.querySuggestions && data.querySuggestions.length > 0;
-
-  switch (data.rating) {
-    case "good":
-      return hasSources || hasResults;
-    case "partial":
-      return hasSources || hasResults || hasMissing;
-    case "bad":
-      return hasMissing || hasSuggestions;
-  }
-
-  return false;
-}
-
-export const searchFeedbackSchema = z
-  .strictObject({
-    rating: z.enum(["good", "bad", "partial"]),
-    valuableSources: z
-      .array(
-        z.strictObject({
-          url: searchFeedbackUrlSchema,
-          reason: z.string().trim().max(1000).optional(),
-        }),
-      )
-      .max(50)
-      .optional(),
-    valuableResults: valuableResultsSchema.optional(),
-    missingContent: z.array(missingContentEntrySchema).max(20).optional(),
-    querySuggestions: z.string().trim().max(2000).optional(),
-    origin: z.string().prefault("api"),
-    integration: integrationSchema.optional().transform(val => val || null),
-  })
-  .refine(data => hasSubstantiveSearchFeedback(data), {
-    message:
-      "Feedback must be substantive. 'good' requires valuableSources or valuableResults; 'partial' requires valuableSources, valuableResults, or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
-  });
-
-export type SearchFeedbackRequest = z.infer<typeof searchFeedbackSchema>;
-export type SearchFeedbackRequestInput = z.input<typeof searchFeedbackSchema>;
-
-export type SearchFeedbackErrorCode =
-  | "SEARCH_NOT_FOUND"
-  | "FEEDBACK_WINDOW_EXPIRED"
-  | "SEARCH_FAILED"
-  | "PREVIEW_TEAM_NOT_ALLOWED"
-  | "TEAM_OPTED_OUT"
-  | "INVALID_BODY"
-  | "DB_DISABLED"
-  | "INTERNAL";
-
-export type SearchFeedbackResponse =
-  | (ErrorResponse & { feedbackErrorCode?: SearchFeedbackErrorCode })
-  | {
-      success: true;
-      feedbackId: string;
-      creditsRefunded: number;
-      alreadySubmitted?: boolean;
-      dailyCapReached?: boolean;
-      creditsRefundedToday?: number;
-      dailyRefundCap?: number;
-      warning?: string;
-    };
-
-// =============================================
-// Generic Endpoint Feedback
-// =============================================
-
-// "interact" takes the scrape job id the session was opened on, "browser" the
-// browser session id.
-const endpointFeedbackEndpointSchema = z.enum([
-  "search",
-  "scrape",
-  "parse",
-  "map",
-  "interact",
-  "browser",
-]);
-
-export type EndpointFeedbackEndpoint = z.infer<
-  typeof endpointFeedbackEndpointSchema
->;
-
-const feedbackIssueSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(80)
-  .regex(
-    /^[a-z0-9][a-z0-9_-]*$/,
-    "Issue codes must use lowercase letters, numbers, underscores, or hyphens",
-  );
-
-const MAX_FEEDBACK_METADATA_BYTES = 8 * 1024;
-const feedbackMetadataSchema = z
-  .record(z.string(), z.unknown())
-  .refine(
-    value =>
-      new TextEncoder().encode(JSON.stringify(value)).length <=
-      MAX_FEEDBACK_METADATA_BYTES,
-    "metadata must be 8KB or smaller",
-  );
-
-export const endpointFeedbackSchema = z
-  .strictObject({
-    endpoint: endpointFeedbackEndpointSchema,
-    jobId: z.uuid(),
-    rating: z.enum(["good", "bad", "partial"]),
-    issues: z.array(feedbackIssueSchema).max(20).optional(),
-    tags: z.array(feedbackIssueSchema).max(20).optional(),
-    note: z.string().trim().max(4000).optional(),
-    valuableSources: z
-      .array(
-        z.strictObject({
-          url: searchFeedbackUrlSchema,
-          reason: z.string().trim().max(1000).optional(),
-        }),
-      )
-      .max(50)
-      .optional(),
-    valuableResults: valuableResultsSchema.optional(),
-    missingContent: z.array(missingContentEntrySchema).max(50).optional(),
-    querySuggestions: z.string().trim().max(2000).optional(),
-    url: searchFeedbackUrlSchema.optional(),
-    pageNumbers: z.array(z.number().int().positive()).max(100).optional(),
-    metadata: feedbackMetadataSchema.optional(),
-    origin: z.string().prefault("api"),
-    integration: integrationSchema.optional().transform(val => val || null),
-  })
-  .refine(
-    data => {
-      return (
-        (data.issues?.length ?? 0) > 0 ||
-        (data.tags?.length ?? 0) > 0 ||
-        (data.note?.length ?? 0) > 0 ||
-        (data.valuableSources?.length ?? 0) > 0 ||
-        (data.valuableResults?.length ?? 0) > 0 ||
-        (data.missingContent?.length ?? 0) > 0 ||
-        !!data.querySuggestions ||
-        !!data.url ||
-        (data.pageNumbers?.length ?? 0) > 0
-      );
-    },
-    {
-      message:
-        "Feedback must include at least one substantive signal: issues, note, sources, valuableResults, missingContent, querySuggestions, url, or pageNumbers.",
-    },
-  )
-  .refine(
-    data =>
-      data.endpoint === "search" || (data.valuableResults?.length ?? 0) === 0,
-    {
-      message: "valuableResults is only supported for search feedback.",
-    },
-  )
-  .refine(
-    data => data.endpoint !== "search" || hasSubstantiveSearchFeedback(data),
-    {
-      message:
-        "Search feedback must be substantive. 'good' requires valuableSources or valuableResults; 'partial' requires valuableSources, valuableResults, or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
-    },
-  );
-
-export type EndpointFeedbackRequest = z.infer<typeof endpointFeedbackSchema>;
-export type EndpointFeedbackRequestInput = z.input<
-  typeof endpointFeedbackSchema
->;
-
-export type EndpointFeedbackErrorCode =
-  | "JOB_NOT_FOUND"
-  | "FEEDBACK_WINDOW_EXPIRED"
-  | "PREVIEW_TEAM_NOT_ALLOWED"
-  | "TEAM_OPTED_OUT"
-  | "INVALID_BODY"
-  | "DB_DISABLED"
-  | "INTERNAL";
-
-export type EndpointFeedbackResponse =
-  | (ErrorResponse & { feedbackErrorCode?: EndpointFeedbackErrorCode })
-  | {
-      success: true;
-      feedbackId: string;
-      creditsRefunded: number;
-      /** Alexandria only: states the refund, or why there was none. */
-      message?: string;
-      alreadySubmitted?: boolean;
-      dailyCapReached?: boolean;
-      websiteCapReached?: boolean;
-      creditsRefundedToday?: number;
-      dailyRefundCap?: number;
-      warning?: string;
     };
 
 export type TokenUsage = {
@@ -2891,24 +2070,18 @@ function createSearchFormatsSchema(
 }
 
 function applyBaseScrapeOptionsRefines<T extends z.ZodType<any>>(schema: T) {
-  return schema
-    .refine((options: any) => !(options.profile && options.lockdown), {
+  return schema.refine(
+    (options: any) =>
+      !(
+        options.checkPromptInjection &&
+        options.formats.some((f: any) => f.type === "rawBase64")
+      ),
+    {
       message:
-        "Profiles require live browsing and cannot be used with lockdown.",
-      path: ["profile"],
-    })
-    .refine(
-      (options: any) =>
-        !(
-          options.checkPromptInjection &&
-          options.formats.some((f: any) => f.type === "rawBase64")
-        ),
-      {
-        message:
-          "checkPromptInjection scans page markdown and cannot be used with the rawBase64 format.",
-        path: ["checkPromptInjection"],
-      },
-    );
+        "checkPromptInjection scans page markdown and cannot be used with the rawBase64 format.",
+      path: ["checkPromptInjection"],
+    },
+  );
 }
 
 function applyScrapeOptionsRules<T extends Record<string, unknown>>(
@@ -3193,16 +2366,6 @@ export function buildV2RequestSchemas(
             (x: any) => !(x.includeDomains?.length && x.excludeDomains?.length),
             "includeDomains and excludeDomains cannot both be specified",
           )
-          .refine((x: any) => {
-            const categories = x.categories ?? [];
-            return (
-              !hasCategory(categories, "developer") || categories.length === 1
-            );
-          }, "the developer category cannot be combined with other categories")
-          .refine((x: any) => {
-            const categories = x.categories ?? [];
-            return !hasCategory(categories, "gov") || categories.length === 1;
-          }, "the gov category cannot be combined with other categories")
           .refine((x: any) => waitForRefine(x.scrapeOptions), waitForRefineOpts)
           .transform((x: any, ctx) => {
             const transformed = transformSearchRequest(x);

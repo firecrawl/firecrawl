@@ -50,13 +50,14 @@ export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
   res: Response<CrawlResponse>,
 ) {
-  const preNormalizedBody = req.body;
+  const preNormalizedBody = req.body as Record<string, any>;
   req.body = getV2RequestSchemas().crawl.parse(req.body);
+  const extScrapeOpts = req.body.scrapeOptions as Record<string, any>;
   const id = uuidv7();
 
   const safeMode = resolveSafeMode(
     req.acuc?.flags,
-    req.body.scrapeOptions?.safeMode,
+    extScrapeOpts?.safeMode,
     req.body.url,
   );
   if (safeMode.error) {
@@ -71,7 +72,7 @@ export async function crawlController(
     safeMode.safeMode?.lockdown &&
     typeof preNormalizedBody?.scrapeOptions?.maxAge === "number"
   ) {
-    req.body.scrapeOptions.maxAge = preNormalizedBody.scrapeOptions.maxAge;
+    extScrapeOpts.maxAge = preNormalizedBody.scrapeOptions.maxAge;
   }
 
   // Safe Mode lockdown is cache-only, which implies zero data retention.
@@ -84,7 +85,7 @@ export async function crawlController(
     teamId: req.auth.team_id,
     orgId: req.acuc?.org_id ?? null,
     flags: req.acuc?.flags ?? null,
-    override: req.body.scrapeOptions?.threatProtection,
+    override: extScrapeOpts?.threatProtection,
     force: safeMode.safeMode?.domainControls === true,
   });
   if (threatProtection.error) {
@@ -160,7 +161,7 @@ export async function crawlController(
         endpoint: "crawl",
         teamId: req.auth.team_id,
         apiKeyId: req.acuc?.api_key_id ?? null,
-        auditMetadata: req.body.scrapeOptions?.auditMetadata,
+        auditMetadata: extScrapeOpts?.auditMetadata,
         url: req.body.url,
         error,
         threatDecisions: [decision],

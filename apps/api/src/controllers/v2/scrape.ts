@@ -62,11 +62,12 @@ export async function scrapeController(
   // unrecorded for zero-data-retention requests (see otel-tracer). Safe Mode
   // lockdown implies ZDR, so fold it in here too — otherwise the rejection
   // paths below would export the target URL on the root span.
+  const rawBody = req.body as Record<string, any> | undefined;
   const zeroDataRetentionTrace =
     getScrapeZDR(req.acuc?.flags) === "forced" ||
     req.body?.zeroDataRetention === true ||
-    req.body?.lockdown === true ||
-    isLockdownZeroDataRetention(req.acuc?.flags, req.body?.safeMode);
+    rawBody?.lockdown === true ||
+    isLockdownZeroDataRetention(req.acuc?.flags, rawBody?.safeMode);
 
   return withSpan(
     "api.scrape.request",
@@ -77,7 +78,7 @@ export async function scrapeController(
       const controllerStartTime = new Date().getTime();
 
       const jobId = uuidv7();
-      const preNormalizedBody = { ...req.body };
+      const preNormalizedBody = { ...(req.body as Record<string, any>) };
 
       // Set initial span attributes
       setSpanAttributes(span, {
@@ -95,6 +96,7 @@ export async function scrapeController(
           "validation.success": true,
         });
       });
+      const extBody = req.body as Record<string, any>;
 
       const emitSafeModeRejection = (message: string) =>
         emitRejectedScrapeActivityEvent({
@@ -112,7 +114,7 @@ export async function scrapeController(
 
       const safeMode = resolveSafeMode(
         req.acuc?.flags,
-        req.body.safeMode,
+        extBody.safeMode,
         req.body.url,
       );
       if (safeMode.error) {
@@ -140,7 +142,7 @@ export async function scrapeController(
         teamId: req.auth.team_id,
         orgId: req.acuc?.org_id ?? null,
         flags: req.acuc?.flags ?? null,
-        override: req.body.threatProtection,
+        override: extBody.threatProtection,
         force: safeMode.safeMode?.domainControls === true,
       });
       if (threatProtection.error) {
@@ -208,21 +210,21 @@ export async function scrapeController(
         safeMode.safeMode?.lockdown &&
         typeof preNormalizedBody.maxAge === "number"
       ) {
-        req.body.maxAge = preNormalizedBody.maxAge;
+        extBody.maxAge = preNormalizedBody.maxAge;
       }
       applySafeMode(safeMode.safeMode, req.body);
 
       const zeroDataRetention =
         getScrapeZDR(req.acuc?.flags) === "forced" ||
         (req.body.zeroDataRetention ?? false) ||
-        (req.body.lockdown ?? false);
-      if (req.body.domainTools && zeroDataRetention)
+        (extBody.lockdown ?? false);
+      if (extBody.domainTools && zeroDataRetention)
         return res.status(403).json({
           success: false,
           error: "Provider discovery does not support zero data retention.",
         });
       const billing: BillingMetadata = {
-        ...(req.body.__agentInterop
+        ...(extBody.__agentInterop
           ? { endpoint: "agent" as const, jobId }
           : { endpoint: "scrape" as const, jobId }),
         externalRequestId: externalRequestId(req),
@@ -241,27 +243,27 @@ export async function scrapeController(
       req.ctx = ctx;
 
       if (
-        req.body.__agentInterop &&
+        extBody.__agentInterop &&
         config.AGENT_INTEROP_SECRET &&
-        !isAgentInteropSecretValid(req.body.__agentInterop.auth)
+        !isAgentInteropSecretValid(extBody.__agentInterop.auth)
       ) {
         return res.status(403).json({
           success: false,
           error: "Invalid agent interop.",
         });
-      } else if (req.body.__agentInterop && !config.AGENT_INTEROP_SECRET) {
+      } else if (extBody.__agentInterop && !config.AGENT_INTEROP_SECRET) {
         return res.status(403).json({
           success: false,
           error: "Agent interop is not enabled.",
         });
       }
 
-      const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
-      const agentRequestId = req.body.__agentInterop?.requestId ?? null;
+      const shouldBill = extBody.__agentInterop?.shouldBill ?? true;
+      const agentRequestId = extBody.__agentInterop?.requestId ?? null;
       const boostConcurrency =
-        req.body.__agentInterop?.boostConcurrency ?? false;
+        extBody.__agentInterop?.boostConcurrency ?? false;
       const isDirectToBullMQ = timingSafeSecretEqual(
-        req.body.__searchPreviewToken,
+        extBody.__searchPreviewToken,
         config.SEARCH_PREVIEW_TOKEN,
       );
       const reservation = await service.modules.billing.authorize({
@@ -459,7 +461,7 @@ export async function scrapeController(
                       ...req.body,
                       ...((req.body as any).__experimental_cache
                         ? {
-                            maxAge: req.body.maxAge ?? 4 * 60 * 60 * 1000, // 4 hours
+                            maxAge: extBody.maxAge ?? 4 * 60 * 60 * 1000, // 4 hours
                           }
                         : {}),
                     },
@@ -725,13 +727,13 @@ export async function scrapeController(
         concurrencyQueueDurationMs: lockTime || undefined,
       });
       const tools =
-        req.body.domainTools && config.FIRE_EXCHANGE_URL
+        extBody.domainTools && config.FIRE_EXCHANGE_URL
           ? await discoverTools(
               {
                 teamId: req.auth.team_id,
                 connectors: req.acuc?.flags?.exchangeRetrieve === true,
                 usOnly: isUsOnly(req.acuc?.flags),
-                toolDetail: req.body.toolDetail,
+                toolDetail: extBody.toolDetail,
                 urls: [
                   ...new Set(
                     [

@@ -140,7 +140,7 @@ export async function performExtraction_F0(
     );
     const searchForcedKind = getEffectiveSearchForcedKind(
       teamFlags,
-      request.scrapeOptions?.safeMode,
+      (request.scrapeOptions as { safeMode?: boolean } | undefined)?.safeMode,
     );
     const searchResults = await search({
       query: rephrasedPrompt.replace('"', "").replace("'", ""),

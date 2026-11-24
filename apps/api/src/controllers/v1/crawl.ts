@@ -223,7 +223,7 @@ export async function crawlController(
     req.auth.team_id,
   );
   if (safeMode.safeMode?.lockdown) {
-    scrapeOptions.maxAge =
+    (scrapeOptions as { maxAge?: number }).maxAge =
       typeof preNormalizedBody?.scrapeOptions?.maxAge === "number"
         ? preNormalizedBody.scrapeOptions.maxAge
         : undefined;
