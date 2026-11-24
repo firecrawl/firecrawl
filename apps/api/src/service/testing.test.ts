@@ -50,6 +50,7 @@ describe("testService", () => {
       "jobStore",
       "limits",
       "messages",
+      "policy",
       "uploads",
       "webhooks",
     ]);
