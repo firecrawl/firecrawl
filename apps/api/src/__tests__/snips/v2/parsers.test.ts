@@ -1,6 +1,7 @@
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
+  TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import { scrape, scrapeRaw, scrapeTimeout, idmux, Identity } from "./lib";
@@ -436,10 +437,13 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
           identity,
         );
 
-        // Should bill based on number of pages when PDF parsing is enabled
-        expect(response.metadata.creditsUsed).toBeGreaterThanOrEqual(
-          response.metadata.numPages || 1,
-        );
+        if (TEST_PRODUCTION) {
+          expect(response.metadata.creditsUsed).toBeGreaterThanOrEqual(
+            response.metadata.numPages || 1,
+          );
+        } else {
+          expect(response.metadata.creditsUsed).toBeUndefined();
+        }
       },
       scrapeTimeout * 2,
     );
@@ -455,8 +459,11 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
           identity,
         );
 
-        // Should bill flat rate (1 credit) when PDF parsing is disabled
-        expect(response.metadata.creditsUsed).toBe(1);
+        if (TEST_PRODUCTION) {
+          expect(response.metadata.creditsUsed).toBe(1);
+        } else {
+          expect(response.metadata.creditsUsed).toBeUndefined();
+        }
       },
       scrapeTimeout * 2,
     );
@@ -472,8 +479,11 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
           identity,
         );
 
-        // Should bill based on limited pages (1 page = 1 credit)
-        expect(response.metadata.creditsUsed).toBe(1);
+        if (TEST_PRODUCTION) {
+          expect(response.metadata.creditsUsed).toBe(1);
+        } else {
+          expect(response.metadata.creditsUsed).toBeUndefined();
+        }
         expect(response.metadata.numPages).toBe(1);
       },
       scrapeTimeout * 2,

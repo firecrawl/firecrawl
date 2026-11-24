@@ -90,7 +90,7 @@ export interface Refusal {
   body: {
     success: false;
     error: string;
-    code?: ErrorCode;
+    code?: ErrorCode | (string & {});
   } & Record<string, unknown>;
   headers?: Record<string, string>;
 }

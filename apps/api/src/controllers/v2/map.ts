@@ -6,9 +6,11 @@ import {
   MapResponse,
 } from "./types";
 import { configDotenv } from "dotenv";
-import { billTeam } from "../../services/billing/credit_billing";
 import { logMap, logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
+import { requestContext } from "../../lib/request-context";
+import type {} from "../../lib/billing-state";
+import { service } from "../../service";
 import { logger as _logger } from "../../lib/logger";
 import { MapTimeoutError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
@@ -25,7 +27,7 @@ import {
   checkUrlsAgainstThreatPolicy,
   resolveThreatProtection,
 } from "../../lib/threat-protection/request";
-import { calculateThreatScanCredits } from "../../lib/scrape-billing";
+import type { ThreatDecision } from "../../lib/threat-protection/types";
 
 configDotenv();
 
@@ -105,6 +107,20 @@ export async function mapController(
   const middlewareTime = controllerStartTime - middlewareStartTime;
 
   const mapId = uuidv7();
+  const ctx = requestContext({
+    teamId: req.auth.team_id,
+    zeroDataRetention,
+    flags: req.acuc?.flags ?? null,
+    orgId: req.acuc?.org_id ?? null,
+    apiKeyId: req.acuc?.api_key_id ?? null,
+    billing: {
+      endpoint: "map",
+      jobId: mapId,
+      externalRequestId: externalRequestId(req),
+      hostedMcp: req.auth.hostedMcp,
+    },
+  });
+  req.ctx = ctx;
 
   logger.info("Map request", {
     request: req.body,
@@ -135,26 +151,15 @@ export async function mapController(
       : await resolveViaAvgrab(req.body.url, req.body.limit, logger);
 
     if (avgrabResults !== null) {
-      const creditsCost = avgrabResults.length;
-
-      billTeam(
-        req.auth.team_id,
-        req.acuc?.org_id ?? null,
-        creditsCost,
-        req.acuc?.api_key_id ?? null,
-        {
-          endpoint: "map",
-          jobId: mapId,
-          // Suffixed so this early-return path can never collide with the main
-          // map charge below, even if both ever billed the same mapId.
+      const creditsCost = await service.modules.billing.charge({
+        kind: "map",
+        ctx,
+        requestId: mapId,
+        urls: avgrabResults.length,
+        state: {
+          perUrl: true,
           chargeId: `${mapId}:avgrab`,
-          externalRequestId: externalRequestId(req),
-          hostedMcp: req.auth.hostedMcp,
         },
-      ).catch(error => {
-        logger.error(
-          `Failed to bill team ${req.auth.team_id} for ${creditsCost} credits: ${error}`,
-        );
       });
 
       logMap({
@@ -172,7 +177,7 @@ export async function mapController(
           location: req.body.location,
         },
         results: avgrabResults,
-        credits_cost: creditsCost,
+        credits_cost: creditsCost ?? 0,
         zeroDataRetention,
       }).catch(error => {
         logger.error(
@@ -262,16 +267,7 @@ export async function mapController(
     }
   }
 
-  // Threat protection: remove blocked links from the returned URL list
-  // entirely. Checks are URL-level; scan fees bill +2 per unique scanned
-  // URL (see calculateThreatScanCredits).
-  //
-  // "zscaler" mode evaluates map results against local rules only (org
-  // lists + synced custom categories): one map can return thousands of
-  // URLs, and inline classification would burn the tenant's 400/hour
-  // urlLookup budget on links that may never be fetched. Every URL still
-  // gets the full provider check when a scrape of it starts.
-  let threatScanCredits = 0;
+  let threatDecisions: ThreatDecision[] = [];
   if (threatProtection.policy && result.mapResults.length > 0) {
     const { decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
       result.mapResults.map(x => x.url),
@@ -281,33 +277,21 @@ export async function mapController(
         localRulesOnly: threatProtection.policy.mode === "zscaler",
       },
     );
-    threatScanCredits = calculateThreatScanCredits(decisionsByUrl.values());
+    threatDecisions = [...decisionsByUrl.values()];
     result.mapResults = result.mapResults.filter(x => {
       const decision = decisionsByUrl.get(x.url);
       return decision === undefined || decision.allowed;
     });
   }
 
-  // Bill the team
-  const creditsToBill = 1 + threatScanCredits;
-  billTeam(
-    req.auth.team_id,
-    req.acuc?.org_id ?? null,
-    creditsToBill,
-    req.acuc?.api_key_id ?? null,
-    {
-      endpoint: "map",
-      externalRequestId: externalRequestId(req),
-      jobId: mapId,
-      chargeId: mapId,
-      hostedMcp: req.auth.hostedMcp,
+  const creditsToBill = await service.modules.billing.charge({
+    kind: "map",
+    ctx,
+    requestId: mapId,
+    urls: result.mapResults.length,
+    state: {
+      threatDecisions,
     },
-  ).catch(error => {
-    logger.error("Failed to bill team for map credits", {
-      teamId: req.auth.team_id,
-      creditsToBill,
-      error,
-    });
   });
 
   logMap({
@@ -325,7 +309,7 @@ export async function mapController(
       location: req.body.location,
     },
     results: result.mapResults,
-    credits_cost: creditsToBill,
+    credits_cost: creditsToBill ?? 0,
     zeroDataRetention,
   }).catch(error => {
     logger.error(`Failed to log job for team ${req.auth.team_id}: ${error}`);

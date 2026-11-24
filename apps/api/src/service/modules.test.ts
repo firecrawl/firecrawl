@@ -6,8 +6,18 @@ import {
   PDFFetchProxyError,
   PDFPrefetchFailed,
 } from "../scraper/scrapeURL/error";
-import { defaultModules, logsMessages, memoryUploads } from "./defaults";
-import type { MessagesModule, Modules, UploadsModule } from "./modules";
+import {
+  defaultModules,
+  logsMessages,
+  memoryUploads,
+  unmeteredBilling,
+} from "./defaults";
+import type {
+  BillingModule,
+  MessagesModule,
+  Modules,
+  UploadsModule,
+} from "./modules";
 import { createService, replaceService, type CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
@@ -174,14 +184,33 @@ describe("memoryUploads", () => {
 });
 
 describe("service module slots", () => {
-  it("fills omitted module slots with built-in defaults", () => {
+  it("fills omitted module slots with built-in defaults", async () => {
     const built = createService({}, parts);
 
     expect(Object.isFrozen(built.modules)).toBe(true);
+    expect(Object.isFrozen(built.modules.billing)).toBe(true);
     expect(Object.isFrozen(built.modules.messages)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads.driver())).toBe(true);
-    expect(built.describe().modules).toEqual(["messages", "uploads"]);
+    expect(built.describe().modules).toEqual([
+      "billing",
+      "messages",
+      "uploads",
+    ]);
+    await expect(
+      built.modules.billing.authorize({
+        caller: { teamId: "t1" },
+        operation: "scrape",
+      }),
+    ).resolves.toEqual({ ok: true });
+    await expect(
+      built.modules.billing.charge({
+        kind: "map",
+        ctx: { teamId: "t1", zeroDataRetention: false },
+        requestId: "map-1",
+        urls: 5,
+      }),
+    ).resolves.toBeUndefined();
     expect(built.modules.messages.errorContact()).toBe(
       logsMessages().errorContact(),
     );
@@ -189,6 +218,11 @@ describe("service module slots", () => {
   });
 
   it("keeps defaults for unspecified slots and snapshots provided modules and drivers", async () => {
+    const customBilling: BillingModule = {
+      authorize: async () => ({ ok: true, maxUnits: 12 }),
+      charge: async () => 3,
+      settle: async () => {},
+    };
     const customMessages: MessagesModule = {
       ...logsMessages(),
       errorContact: id => `custom:${id ?? "none"}`,
@@ -206,10 +240,21 @@ describe("service module slots", () => {
     };
     const customUploads: UploadsModule = { driver: () => customDriver };
     const built = createService(
-      { modules: { messages: customMessages, uploads: customUploads } },
+      {
+        modules: {
+          billing: customBilling,
+          messages: customMessages,
+          uploads: customUploads,
+        },
+      },
       parts,
     );
 
+    customBilling.authorize = async () => ({
+      ok: false,
+      refusal: { status: 402, body: { success: false, error: "mutated" } },
+    });
+    customBilling.charge = async () => 999;
     customMessages.errorContact = () => "mutated";
     customDriver.read = async () => Buffer.from("mutated");
     customUploads.driver = () => ({
@@ -217,6 +262,20 @@ describe("service module slots", () => {
       name: "mutated",
     });
 
+    await expect(
+      built.modules.billing.authorize({
+        caller: { teamId: "t1" },
+        operation: "crawl",
+      }),
+    ).resolves.toEqual({ ok: true, maxUnits: 12 });
+    await expect(
+      built.modules.billing.charge({
+        kind: "map",
+        ctx: { teamId: "t1", zeroDataRetention: false },
+        requestId: "m1",
+        urls: 2,
+      }),
+    ).resolves.toBe(3);
     expect(built.modules.messages.errorContact("42")).toBe("custom:42");
     expect(built.modules.uploads.driver().name).toBe("custom");
     const data = await built.modules.uploads.driver().read({
@@ -229,6 +288,31 @@ describe("service module slots", () => {
   });
 
   it("rejects invalid, null, or unknown module slots and malformed upload drivers at service creation", () => {
+    expect(() =>
+      createService(
+        { modules: { billing: {} as unknown as BillingModule } },
+        parts,
+      ),
+    ).toThrow("Invalid billing module");
+    expect(() =>
+      createService(
+        { modules: { billing: null as unknown as BillingModule } },
+        parts,
+      ),
+    ).toThrow("Invalid billing module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            billing: {
+              ...unmeteredBilling(),
+              settle: "not-a-function",
+            } as unknown as BillingModule,
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid billing module");
     expect(() =>
       createService(
         { modules: { messages: {} as unknown as MessagesModule } },

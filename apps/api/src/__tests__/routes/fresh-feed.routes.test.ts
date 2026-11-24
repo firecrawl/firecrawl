@@ -46,6 +46,8 @@ vi.mock("../../routes/shared", async importOriginal => ({
 import { httpRequestDurationSeconds } from "../../lib/http-metrics";
 import { logger } from "../../lib/logger";
 import { createFreshFeedRouter } from "../../routes/fresh-feed";
+import { createService, replaceService } from "../../service/service";
+import type { BillingModule } from "../../service/modules";
 
 const ROUTE = "/v2/fresh-vertical-feed/local/latest";
 const SHORT_TIMEOUT_ROUTE = "/short-timeout/local/latest";
@@ -144,6 +146,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  replaceService(undefined);
   for (const server of [apiServer, upstreamServer]) {
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));
@@ -155,6 +158,38 @@ beforeEach(() => {
   mocks.logRequest.mockResolvedValue(undefined);
   mocks.billTeam.mockResolvedValue({ success: true });
   mocks.checkCredits.mockResolvedValue({ allowed: true, remaining: 1e9 });
+  const testBilling: BillingModule = {
+    async authorize(input) {
+      const value = input.requestedUnits ?? 1;
+      const result = await mocks.checkCredits({
+        teamId: input.caller.teamId,
+        value,
+      });
+      if (result && !result.allowed) {
+        return {
+          ok: false,
+          refusal: {
+            status: 402,
+            body: {
+              success: false,
+              code: "insufficient_credits",
+              error: "Insufficient credits.",
+            },
+          },
+        };
+      }
+      return { ok: true };
+    },
+    async charge() {
+      return undefined;
+    },
+  };
+  replaceService(
+    createService(
+      { modules: { billing: testBilling } },
+      { core: { name: "core" }, logger: { error: vi.fn() } },
+    ),
+  );
   mocks.flags = { freshFeed: true };
   upstream.requests.length = 0;
   upstream.status = 200;

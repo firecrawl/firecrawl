@@ -34,6 +34,8 @@ import {
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
+import type {} from "../../lib/billing-state";
+import { service } from "../../service";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
@@ -41,8 +43,6 @@ import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { checkUrl } from "../../lib/threat-protection";
 import { getErrorHttpResponse } from "../../lib/error";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
-import { calculateThreatScanCredits } from "../../lib/scrape-billing";
-import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import {
   initializeRequestCredits,
@@ -131,30 +131,30 @@ export async function crawlController(
       teamId: req.auth.team_id,
     });
     if (!decision.allowed) {
-      // A blocked seed still bills the scan fee when the classifier was
-      // consulted — the scan already happened. (An allowed seed is not billed
-      // here: its scrape job re-checks the cached verdict and bills there.)
-      const threatScanCredits = calculateThreatScanCredits([decision]);
-      if (threatScanCredits > 0) {
-        billTeam(
-          req.auth.team_id,
-          req.acuc?.org_id ?? null,
-          threatScanCredits,
-          req.acuc?.api_key_id ?? null,
-          // No chargeId: a fresh crawl id is minted per request and the
-          // rejected crawl is never persisted or queued, so there is no
-          // stable per-charge identity that could dedupe a retry.
-          {
-            endpoint: "crawl",
-            externalRequestId: externalRequestId(req),
-            hostedMcp: req.auth.hostedMcp,
-          },
-        ).catch(error => {
+      const blockedCtx = requestContext({
+        teamId: req.auth.team_id,
+        zeroDataRetention,
+        flags: req.acuc?.flags ?? null,
+        orgId: req.acuc?.org_id ?? null,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+        billing: {
+          endpoint: "crawl",
+          externalRequestId: externalRequestId(req),
+          hostedMcp: req.auth.hostedMcp,
+        },
+      });
+      void service.modules.billing
+        .charge({
+          kind: "crawl",
+          ctx: blockedCtx,
+          urls: 1,
+          state: { threatDecisions: [decision] },
+        })
+        .catch(error => {
           _logger.error(
-            `Failed to bill team ${req.auth.team_id} for ${threatScanCredits} threat scan credit(s): ${error}`,
+            `Failed to bill team ${req.auth.team_id} for rejected crawl seed: ${error}`,
           );
         });
-      }
       const error = new UnsafeDomainBlockedError(req.body.url, decision);
       emitRejectedScrapeActivityEvent({
         scrapeId: uuidv7(),
@@ -221,14 +221,9 @@ export async function crawlController(
     ),
   });
 
-  // checkCreditsMiddleware (always runs before this controller) is the source
-  // of truth: Infinity when Autumn allows the request, the real remaining when
-  // it clamps a low-credit crawl. Default to no clamp if it's somehow unset.
-  let remainingCredits = req.account?.remainingCredits ?? Infinity;
-  const useDbAuthentication = config.USE_DB_AUTHENTICATION;
-  if (!useDbAuthentication) {
-    remainingCredits = Infinity;
-  }
+  // checkCreditsMiddleware sets req.account.remainingCredits from billing.authorize.
+  // Default to no cap when unset.
+  const remainingCredits = req.account?.remainingCredits ?? Infinity;
 
   const crawlerOptions = {
     ...req.body,

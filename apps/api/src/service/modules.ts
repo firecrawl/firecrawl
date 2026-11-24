@@ -4,6 +4,126 @@
  * This file imports only types so creating or describing a service never loads
  * implementations, configuration, or clients.
  */
+import type { Document, ScrapeOptions } from "../controllers/v2/types";
+import type { CostTracking } from "../lib/cost-tracking";
+import type { Refusal, ScrapeState } from "./hooks";
+import type { Caller, RequestContext } from "./request-context";
+
+/** Operations authorized by the billing module. */
+export type BillingOperation =
+  | "scrape"
+  | "parse"
+  | "search"
+  | "map"
+  | "crawl"
+  | "batchScrape"
+  | "other";
+
+/**
+ * Extensible per-request state carried on billing authorization calls.
+ * Extensions may add optional fields through declaration merging.
+ */
+export interface AuthorizeState {}
+
+/**
+ * Extensible per-request state carried on search charge events.
+ * Extensions may add optional fields through declaration merging.
+ */
+export interface SearchChargeState {}
+
+/**
+ * Extensible per-request state carried on map charge events.
+ * Extensions may add optional fields through declaration merging.
+ */
+export interface MapChargeState {}
+
+/**
+ * Extensible per-request state carried on crawl or batch charge events.
+ * Extensions may add optional fields through declaration merging.
+ */
+export interface CrawlChargeState {}
+
+/** Input passed to `BillingModule.authorize` before accepting or starting work. */
+export interface AuthorizeInput {
+  caller: Caller;
+  operation: BillingOperation;
+  /**
+   * `"preflight"` runs in route middleware before request parsing;
+   * `"reserve"` runs in the controller after validation, right before work
+   * starts, and may return a handle settled when the request finishes.
+   */
+  stage?: "preflight" | "reserve";
+  /** Present for operations whose cost scales with a requested count. */
+  requestedUnits?: number;
+  /** Resolved request context when available. */
+  ctx?: RequestContext;
+  /** Optional per-request inputs carried through declaration merging. */
+  state?: AuthorizeState;
+}
+
+/** Outcome of `BillingModule.authorize`. */
+export type Authorization =
+  | {
+      ok: true;
+      /** Maximum units the caller may consume (for example a crawl limit). */
+      maxUnits?: number;
+      /** Clamped request limit to write back onto the request body when allowed. */
+      clampedLimit?: number;
+      /** Opaque reservation handle passed to `settle` when the request ends. */
+      handle?: unknown;
+    }
+  | { ok: false; refusal: Refusal };
+
+/** Facts the service knows about a finished unit of work. The billing module prices them. */
+export type ChargeEvent =
+  | {
+      kind: "scrape";
+      ctx: RequestContext;
+      jobId: string;
+      requestId?: string;
+      options: ScrapeOptions;
+      document: Document | null;
+      costTracking: CostTracking;
+      state: ScrapeState;
+    }
+  | {
+      kind: "search";
+      ctx: RequestContext;
+      requestId: string;
+      results: number;
+      documents: Document[];
+      state?: SearchChargeState;
+    }
+  | {
+      kind: "map";
+      ctx: RequestContext;
+      requestId: string;
+      urls: number;
+      state?: MapChargeState;
+    }
+  | {
+      kind: "crawl";
+      ctx: RequestContext;
+      requestId?: string;
+      urls: number;
+      state?: CrawlChargeState;
+    };
+
+/** Final outcome of a reserved request passed to `BillingModule.settle`. */
+export type SettleOutcome =
+  | { ok: true; charged: number | undefined }
+  | { ok: false };
+
+/**
+ * Meters and gates work performed by the service.
+ * Returning `undefined` from `charge` means the deployment is unmetered and
+ * leaves `creditsUsed` unset in responses.
+ */
+export interface BillingModule {
+  authorize(input: AuthorizeInput): Promise<Authorization>;
+  charge(event: ChargeEvent): Promise<number | undefined>;
+  settle?(handle: unknown, outcome: SettleOutcome): Promise<void>;
+}
 
 export type FetchProxyFileKind = "PDF" | "document";
 
@@ -109,6 +229,7 @@ export interface UploadsModule {
  * calls by name.
  */
 export interface Modules {
+  billing: BillingModule;
   messages: MessagesModule;
   uploads: UploadsModule;
 }
@@ -146,7 +267,16 @@ function freezeUploadDriver(driver: UploadDriver): Readonly<UploadDriver> {
  * later cannot alter the service.
  */
 export function freezeModules(modules: Modules): Readonly<Modules> {
-  const { messages, uploads } = modules;
+  const { billing, messages, uploads } = modules;
+  if (
+    typeof billing !== "object" ||
+    billing === null ||
+    typeof billing.authorize !== "function" ||
+    typeof billing.charge !== "function" ||
+    (billing.settle !== undefined && typeof billing.settle !== "function")
+  ) {
+    throw new Error("Invalid billing module");
+  }
   if (
     typeof messages !== "object" ||
     messages === null ||
@@ -166,6 +296,13 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
     throw new Error("Invalid uploads module");
   }
 
+  const frozenBilling: BillingModule = Object.freeze({
+    authorize: billing.authorize.bind(billing),
+    charge: billing.charge.bind(billing),
+    ...(billing.settle !== undefined
+      ? { settle: billing.settle.bind(billing) }
+      : {}),
+  });
   const frozenMessages: MessagesModule = Object.freeze({
     errorContact: messages.errorContact.bind(messages),
     restrictedCountryContact: messages.restrictedCountryContact.bind(messages),
@@ -180,6 +317,7 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
   });
 
   return Object.freeze({
+    billing: frozenBilling,
     messages: frozenMessages,
     uploads: frozenUploads,
   });

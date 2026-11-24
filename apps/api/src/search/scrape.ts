@@ -253,15 +253,6 @@ export async function scrapeSearchResults(
   return results;
 }
 
-export function calculateScrapeCredits(
-  docs: DocumentWithCostTracking[],
-): number {
-  return docs.reduce(
-    (total, { document }) => total + (document.metadata?.creditsUsed ?? 0),
-    0,
-  );
-}
-
 export function mergeScrapedContent(
   searchResponse: SearchV2Response,
   items: ScrapeItem[],

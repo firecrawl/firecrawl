@@ -1,4 +1,5 @@
 export type { Document, ScrapeOptions } from "../controllers/v2/types";
+export type { CostTracking } from "../lib/cost-tracking";
 export type {
   ErrorCode,
   ErrorCodes,
@@ -7,7 +8,12 @@ export type {
 export type { SearchResultType, SearchV2Response } from "../lib/entities";
 export type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 export { coreParts } from "./core-parts";
-export { defaultModules, logsMessages, memoryUploads } from "./defaults";
+export {
+  defaultModules,
+  logsMessages,
+  memoryUploads,
+  unmeteredBilling,
+} from "./defaults";
 export type {
   DescribedEngineFeature,
   Engine,
@@ -65,13 +71,23 @@ export type {
   LlmProviders,
 } from "./llm-providers";
 export type {
+  Authorization,
+  AuthorizeInput,
+  AuthorizeState,
+  BillingModule,
+  BillingOperation,
+  ChargeEvent,
+  CrawlChargeState,
   DirectUploadInput,
   DirectUploadResult,
   FetchProxyFileKind,
+  MapChargeState,
   MessagesModule,
   Modules,
   PrepareUploadInput,
   PrepareUploadResult,
+  SearchChargeState,
+  SettleOutcome,
   StoredUploadRef,
   UploadDriver,
   UploadsModule,

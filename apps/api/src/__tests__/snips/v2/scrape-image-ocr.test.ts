@@ -1,6 +1,7 @@
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
+  TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import { config } from "../../../config";
@@ -1007,7 +1008,11 @@ describeIf(IMAGE_OCR_ON)("Image OCR parse upload (fire-pdf dependent)", () => {
       // to show the fixture was actually read.
       expect(result.markdown).toMatch(/firecrawl/i);
       expect(result.metadata.contentType).toBe("image/png");
-      expect(result.metadata.creditsUsed).toBe(1);
+      if (TEST_PRODUCTION) {
+        expect(result.metadata.creditsUsed).toBe(1);
+      } else {
+        expect(result.metadata.creditsUsed).toBeUndefined();
+      }
     },
     scrapeTimeout,
   );

@@ -5,12 +5,25 @@
  * describing a service never loads configuration, queues, or storage clients.
  */
 import type {
+  BillingModule,
   FetchProxyFileKind,
   MessagesModule,
   Modules,
   UploadDriver,
   UploadsModule,
 } from "./modules";
+
+/** Default billing module: authorizes every request and records no charges. */
+export function unmeteredBilling(): BillingModule {
+  return {
+    async authorize() {
+      return { ok: true };
+    },
+    async charge() {
+      return undefined;
+    },
+  };
+}
 
 /** Default user-facing messages that direct operators to local logs and config. */
 export function logsMessages(): MessagesModule {
@@ -135,6 +148,7 @@ export function memoryUploads(): UploadsModule {
 /** Returns fresh instances of every default module slot. */
 export function defaultModules(): Modules {
   return {
+    billing: unmeteredBilling(),
     messages: logsMessages(),
     uploads: memoryUploads(),
   };

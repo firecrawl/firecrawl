@@ -31,7 +31,6 @@ const outsideCoreSuite = [
   "src/__tests__/controllers/**",
   "src/__tests__/lib/branding/**",
   "src/__tests__/lib/fire-engine-render-routing.test.ts",
-  "src/__tests__/routes/check-credits-middleware.test.ts",
   "src/__tests__/routes/exchange-*.test.ts",
   "src/__tests__/routes/fresh-feed.routes.test.ts",
   "src/__tests__/routes/hosted-mcp-*.test.ts",

@@ -8,10 +8,13 @@ import {
   SearchResponse,
   searchRequestSchema,
 } from "./types";
-import { billTeam } from "../../services/billing/credit_billing";
 import { v7 as uuidv7 } from "uuid";
 import { logSearch, logRequest } from "../../services/logging/log_job";
+import { trackSearchRequest } from "../../lib/tracking";
 import { externalRequestId } from "../../lib/external-request-id";
+import { requestContext } from "../../lib/request-context";
+import type {} from "../../lib/billing-state";
+import { service } from "../../service";
 import { search } from "../../search";
 import { logger as _logger } from "../../lib/logger";
 import {
@@ -370,34 +373,73 @@ export async function searchController(
     }
 
     // Bill team for search credits only
-    if (!isSearchPreview) {
-      billTeam(
-        req.auth.team_id,
-        req.acuc?.org_id ?? null,
-        result.searchCredits,
-        req.acuc?.api_key_id ?? null,
-        {
-          endpoint: "search",
-          jobId,
-          chargeId: jobId,
-          externalRequestId: externalRequestId(req),
-        },
-      ).catch(error => {
-        logger.error(
-          `Failed to bill team ${req.auth.team_id} for ${result.searchCredits} credits: ${error}`,
-        );
-      });
+    const searchCtx = requestContext({
+      teamId: req.auth.team_id,
+      zeroDataRetention,
+      flags: req.acuc?.flags ?? null,
+      orgId: req.acuc?.org_id ?? null,
+      apiKeyId: req.acuc?.api_key_id ?? null,
+      billing: {
+        endpoint: "search",
+        jobId,
+        externalRequestId: externalRequestId(req),
+      },
+    });
+    const scrapedDocuments = result.scrapedDocuments ?? [];
+    const billableResultsCount =
+      result.billableResultsCount ?? result.totalResultsCount;
+    const searchCredits = !isSearchPreview
+      ? await service.modules.billing.charge({
+          kind: "search",
+          ctx: searchCtx,
+          requestId: jobId,
+          results: billableResultsCount,
+          documents: scrapedDocuments,
+          state: {
+            enterprise: teamEnterprise,
+            threatDecisions: result.threatDecisions,
+          },
+        })
+      : undefined;
+    let scrapeCredits = 0;
+    for (const doc of scrapedDocuments) {
+      if (typeof doc.metadata?.creditsUsed === "number") {
+        scrapeCredits += doc.metadata.creditsUsed;
+      }
     }
+    const totalCredits = (searchCredits ?? 0) + scrapeCredits;
+
+    trackSearchRequest({
+      searchId: jobId,
+      requestId: jobId,
+      teamId: req.auth.team_id,
+      query: req.body.query,
+      origin: req.body.origin,
+      kind: "search",
+      apiVersion: "v1",
+      lang: req.body.lang,
+      country: req.body.country,
+      sources: result.searchTypes ?? [],
+      numResults: result.totalResultsCount,
+      searchCredits: searchCredits ?? 0,
+      scrapeCredits,
+      totalCredits,
+      hasScrapeFormats: result.shouldScrape,
+      scrapeFormats: result.scrapeFormats ?? [],
+      isSuccessful: true,
+      timeTaken: 0,
+      zeroDataRetention,
+    }).catch(err =>
+      logger.warn("Search request tracking failed", { error: err }),
+    );
 
     if (reservedKeylessCredits > 0) {
       reconciledKeylessCredits = true;
       adjustKeylessCredits(
         req.auth.team_id,
-        result.totalCredits - reservedKeylessCredits,
+        totalCredits - reservedKeylessCredits,
       ).catch(() => {});
-      logKeylessCreditUsage(req.auth.team_id, result.totalCredits).catch(
-        () => {},
-      );
+      logKeylessCreditUsage(req.auth.team_id, totalCredits).catch(() => {});
     }
 
     const endTime = new Date().getTime();
@@ -418,7 +460,7 @@ export async function searchController(
         query: undefined,
         scrapeOptions: undefined,
       },
-      credits_cost: result.searchCredits,
+      credits_cost: searchCredits ?? 0,
       zeroDataRetention,
     }).catch(error => {
       logger.error("Failed to log search", { error, jobId });
@@ -436,7 +478,7 @@ export async function searchController(
       middlewareTime,
       controllerTime,
       totalRequestTime,
-      creditsUsed: result.searchCredits,
+      creditsUsed: searchCredits,
       scrapeful: shouldScrape,
     });
 

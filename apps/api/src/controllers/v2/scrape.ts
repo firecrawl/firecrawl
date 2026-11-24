@@ -40,17 +40,10 @@ import { getJobPriority } from "../../lib/job-priority";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
+import type {} from "../../lib/billing-state";
 import { service } from "../../service";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
-import {
-  adjustKeylessCredits,
-  keylessLimitBody,
-  logKeylessCreditUsage,
-  reserveKeylessCredits,
-} from "../../lib/keyless";
-import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
-import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
@@ -270,30 +263,33 @@ export async function scrapeController(
         req.body.__searchPreviewToken,
         config.SEARCH_PREVIEW_TOKEN,
       );
-      const projectedKeylessCredits =
-        shouldBill && !isDirectToBullMQ
-          ? projectScrapeCredits(
-              req.body,
-              req.acuc?.flags ?? null,
-              zeroDataRetention,
-            )
-          : 0;
-      let reservedKeylessCredits = 0;
-      let reconciledKeylessCredits = false;
-
-      if (projectedKeylessCredits > 0) {
-        const reservation = await reserveKeylessCredits(
-          req.auth.team_id,
-          projectedKeylessCredits,
-        );
-        if (!reservation.ok) {
-          applyAgentAuthDiscoveryHeader(res);
-          return res
-            .status(429)
-            .json(await keylessLimitBody(req.auth.team_id, "v2_scrape", req));
+      const reservation = await service.modules.billing.authorize({
+        caller: req.caller ?? { teamId: req.auth.team_id },
+        operation: "scrape",
+        stage: "reserve",
+        ctx,
+        state: {
+          req,
+          shouldBill,
+          isPreview: isDirectToBullMQ,
+          scrapeOptions: req.body,
+          endpoint: "v2_scrape",
+        },
+      });
+      if (!reservation.ok) {
+        if (reservation.refusal.headers) {
+          for (const [name, value] of Object.entries(
+            reservation.refusal.headers,
+          )) {
+            res.setHeader(name, value);
+          }
         }
-        reservedKeylessCredits = projectedKeylessCredits;
+        return res
+          .status(reservation.refusal.status)
+          .json(reservation.refusal.body as ScrapeResponse);
       }
+      const billingHandle = reservation.handle;
+      let settledBilling = false;
 
       const logger = _logger.child({
         method: "scrapeController",
@@ -461,7 +457,7 @@ export async function scrapeController(
                     zeroDataRetention,
                     apiKeyId: req.acuc?.api_key_id ?? null,
                     concurrencyLimited: limited,
-                    keylessReserved: reservedKeylessCredits > 0,
+                    keylessReserved: billingHandle !== undefined,
                     requestId: agentRequestId ?? undefined,
                     logRequestPromise: logRequestPromise,
                   },
@@ -481,11 +477,11 @@ export async function scrapeController(
           },
         );
       } catch (e) {
-        if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
-          reconciledKeylessCredits = true;
-          adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
-            () => {},
-          );
+        if (billingHandle !== undefined && !settledBilling) {
+          settledBilling = true;
+          void service.modules.billing
+            .settle?.(billingHandle, { ok: false })
+            ?.catch(() => {});
         }
 
         const timeoutErr =
@@ -634,16 +630,14 @@ export async function scrapeController(
         }
       }
 
-      if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
-        reconciledKeylessCredits = true;
-        const actualKeylessCredits = doc?.metadata?.creditsUsed ?? 0;
-        adjustKeylessCredits(
-          req.auth.team_id,
-          actualKeylessCredits - reservedKeylessCredits,
-        ).catch(() => {});
-        logKeylessCreditUsage(req.auth.team_id, actualKeylessCredits).catch(
-          () => {},
-        );
+      if (billingHandle !== undefined && !settledBilling) {
+        settledBilling = true;
+        void service.modules.billing
+          .settle?.(billingHandle, {
+            ok: true,
+            charged: doc?.metadata?.creditsUsed,
+          })
+          ?.catch(() => {});
       }
 
       const totalRequestTime = new Date().getTime() - middlewareStartTime;

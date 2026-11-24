@@ -24,6 +24,10 @@
       "types": "./src/service/testing.ts",
       "default": "./dist/src/service/testing.js"
     },
+    "./unstable/billing": {
+      "types": "./src/services/billing/runtime.ts",
+      "default": "./dist/src/services/billing/runtime.js"
+    },
     "./unstable/zdr-queue": {
       "types": "./src/lib/zdr-queue.ts",
       "default": "./dist/src/lib/zdr-queue.js"
