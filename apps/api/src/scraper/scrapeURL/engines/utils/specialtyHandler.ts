@@ -6,7 +6,20 @@ import { writeFile } from "fs/promises";
 import { Meta } from "../..";
 import { documentExtensionFromContentType } from "../../../../lib/document-formats";
 import { downloadFireEngineGcsFile } from "./downloadGcsFile";
-import { declaredContentLength } from "../pdf/truncatedHandoff";
+
+function declaredContentLength(
+  headers: Record<string, string> | undefined,
+): number | undefined {
+  if (!headers) return undefined;
+  const header = (name: string) =>
+    Object.entries(headers).find(([k]) => k.toLowerCase() === name)?.[1];
+  const encoding = header("content-encoding")?.trim().toLowerCase();
+  if (encoding && encoding !== "identity") return undefined;
+  const raw = header("content-length")?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return undefined;
+  const length = Number(raw);
+  return Number.isSafeInteger(length) && length > 0 ? length : undefined;
+}
 import {
   imageExtensionFromContentType,
   sniffImageContentTypeFromBase64,

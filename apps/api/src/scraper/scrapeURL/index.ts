@@ -9,7 +9,6 @@ import {
 import {
   applyScrapeOptionsDefaults,
   type Document,
-  shouldParseImages,
   scrapeOptions,
   type ScrapeOptions,
   type TeamFlags,
@@ -99,7 +98,11 @@ import {
   imageExtensionFromContentType,
   imageExtensionFromUrlPath,
 } from "../../lib/image-formats";
-import { imageOcrGate, type ImageOcrGate } from "../../lib/image-ocr-gate";
+import {
+  imageOcrGate,
+  shouldParseImages,
+  type ImageOcrGate,
+} from "../../lib/image-ocr-gate";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -1224,8 +1227,6 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     let document: Document = {
       markdown: engineResult.markdown,
       warning: engineResult.warning,
-      pages: engineResult.pages,
-      blocks: engineResult.blocks,
       rawHtml: engineResult.html,
       rawBase64: engineResult.rawBase64,
       screenshot: engineResult.screenshot,

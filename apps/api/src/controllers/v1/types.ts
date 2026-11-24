@@ -9,7 +9,6 @@ import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
 import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
 import { addStrictSchemaIssue } from "../../lib/openai-strict-schema";
-import type { PdfPageBlocks } from "../../scraper/scrapeURL/engines/pdf/types";
 import {
   ExtractorOptions,
   PageOptions,
@@ -1041,7 +1040,7 @@ export type Document = {
   pages?: Array<{ pageNumber: number; markdown: string }>;
   /** Typed PDF layout blocks with bounding boxes, populated by the v2
    * `blocks` parser option. */
-  blocks?: PdfPageBlocks[];
+  blocks?: Record<string, unknown>[];
   html?: string;
   rawHtml?: string;
   rawBase64?: string;

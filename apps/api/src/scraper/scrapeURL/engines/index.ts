@@ -14,13 +14,7 @@ import {
   isWikimediaUrl,
 } from "./wikipedia";
 import { hasFormatOfType } from "../../../lib/format-utils";
-import {
-  getPDFBlocks,
-  getPDFPageMarkdown,
-  getPDFPageMarkers,
-  getPDFRefresh,
-} from "../../../controllers/v2/types";
-import type { PdfMetadata, PdfPageBlocks } from "./pdf/types";
+import type { PdfMetadata } from "./pdf/types";
 import { AgentIndexOnlyError, NoCachedDataError } from "../error";
 import type { ExchangeScrapeMetadata } from "../../../lib/exchange";
 import { hasCustomRequestContext } from "../lib/request-context";
@@ -49,8 +43,6 @@ export interface EngineScrapeResult {
   html: string;
   rawBase64?: string;
   markdown?: string;
-  pages?: Array<{ pageNumber: number; markdown: string }>;
-  blocks?: PdfPageBlocks[];
   statusCode: number;
   error?: string;
 
@@ -162,14 +154,8 @@ function shouldAllowCacheEngines(meta: Meta): boolean {
     screenshotFormat?.quality !== undefined;
 
   return (
-    !getPDFPageMarkdown(meta.options.parsers) &&
-    !getPDFBlocks(meta.options.parsers) &&
-    !getPDFPageMarkers(meta.options.parsers) &&
     !hasCustomScreenshotSettings &&
     meta.options.maxAge !== 0 &&
-    !(
-      config.INDEX_SKIP_ON_PDF_REFRESH && getPDFRefresh(meta.options.parsers)
-    ) &&
     !hasCustomRequestContext(meta.options)
   );
 }
@@ -326,18 +312,6 @@ async function selectFallbackList(meta: Meta): Promise<FallbackEngineEntry[]> {
     _engines.push(...cacheEngines);
     meta.internalOptions.forceEngine = cacheEngines;
   } else if (meta.internalOptions.agentIndexOnly) {
-    if (
-      getPDFPageMarkdown(meta.options.parsers) ||
-      getPDFBlocks(meta.options.parsers) ||
-      getPDFPageMarkers(meta.options.parsers) ||
-      (config.INDEX_SKIP_ON_PDF_REFRESH && getPDFRefresh(meta.options.parsers))
-    ) {
-      meta.logger.warn(
-        "agentIndexOnly request demands pageMarkdown/blocks/pageMarkers or a PDF refresh, which the cache cannot serve",
-        { parsers: meta.options.parsers },
-      );
-      throw new AgentIndexOnlyError();
-    }
     _engines.length = 0;
     _engines.push(...cacheEngines);
     meta.internalOptions.forceEngine = cacheEngines;

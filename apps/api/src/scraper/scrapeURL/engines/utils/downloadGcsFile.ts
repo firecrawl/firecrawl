@@ -4,7 +4,8 @@ import { pipeline } from "node:stream/promises";
 import type { Logger } from "winston";
 import { config } from "../../../../config";
 import { storage } from "../../../../lib/gcs-jobs";
-import { FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE } from "../pdf/types";
+
+const DEFAULT_GCS_DOWNLOAD_MAX_BYTES = 256 * 1024 * 1024;
 
 /** Downloading 256MB in-cluster from GCS is seconds; the bound exists so a
  * stuck stream cannot hold a scrape slot indefinitely. */
@@ -80,8 +81,8 @@ export async function downloadFireEngineGcsFile(
     return null;
   }
   const effectiveMaxBytes = Math.min(
-    maxBytes ?? FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE,
-    FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE,
+    maxBytes ?? DEFAULT_GCS_DOWNLOAD_MAX_BYTES,
+    DEFAULT_GCS_DOWNLOAD_MAX_BYTES,
   );
 
   const timeoutAbort = new AbortController();
