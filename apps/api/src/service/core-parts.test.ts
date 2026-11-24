@@ -4,6 +4,7 @@ import { ScrapeJobTimeoutError } from "../lib/error";
 import * as errorSerde from "../lib/error-serde";
 import { coreEngineSpecs } from "../scraper/scrapeURL/engines/metadata";
 import { coreParts } from "./core-parts";
+import { defaultModules } from "./defaults";
 import type { Engine } from "./engines";
 import {
   coreLlmProviderNames,
@@ -24,6 +25,14 @@ vi.mock("../lib/exchange", () => {
 vi.mock("../lib/deployment", () => {
   loadedSideEffectModules.push("deployment");
   return { isSelfHosted: () => true };
+});
+vi.mock("../lib/gcs-jobs", () => {
+  loadedSideEffectModules.push("gcs-jobs");
+  return {};
+});
+vi.mock("../lib/zdr-queue", () => {
+  loadedSideEffectModules.push("zdr-queue");
+  return {};
 });
 
 const errorClassesModule = "../lib/error-serde";
@@ -181,7 +190,7 @@ describe("coreParts", () => {
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: [],
+      modules: ["messages", "uploads"],
       hooks: {},
       errors: {
         AGENT_INDEX_ONLY: "core",
@@ -299,11 +308,11 @@ describe("coreParts", () => {
     expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
   });
 
-  it("loads core error classes without pulling in config, exchange, or deployment", () => {
+  it("loads core error classes and default modules without pulling in config, exchange, deployment, gcs, or zdr", () => {
     answerRequire();
-    const built = createService({ modules: {} }, coreParts());
+    const built = createService({ modules: defaultModules() }, coreParts());
 
-    built.describe();
+    expect(built.describe().modules).toEqual(["messages", "uploads"]);
     expect(loadedSideEffectModules).toEqual([]);
   });
 });
