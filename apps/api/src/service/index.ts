@@ -84,10 +84,11 @@ export type {
   RequestContext,
 } from "./request-context";
 export {
+  buildRequestSchemas,
   hasFormatOfType,
   requestFieldBuckets,
   requestKinds,
-} from "./request-schemas";
+} from "./request";
 export type {
   CrawlRequest,
   CrawlRequestFields,
@@ -114,7 +115,7 @@ export type {
   ScrapeRequestFields,
   SearchRequest,
   SearchRequestFields,
-} from "./request-schemas";
+} from "./request";
 export { coreSearchProviderNames } from "./search-providers";
 export type {
   CoreSearchProviderSpec,

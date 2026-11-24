@@ -423,6 +423,16 @@ describe("describe", () => {
         zebra: { owner: "second", priority: 80 },
       },
       llmProviders: { alpha: "core", openai: "second", zebra: "second" },
+      request: {
+        scrapeOptions: {},
+        scrape: {},
+        parse: {},
+        crawl: {},
+        map: {},
+        search: {},
+        formats: {},
+        rules: [],
+      },
       roles: { api: "second", "queue-worker": "core", zebra: "second" },
       env: {},
     });
@@ -634,6 +644,9 @@ describe("describe", () => {
     first.engineFeatures.waitFor.priority = 999;
     first.searchProviders.searxng.priority = 999;
     first.llmProviders.openai = "changed";
+    first.request.scrapeOptions.injected = "changed";
+    first.request.formats.injected = "changed";
+    first.request.rules.push("changed");
     first.roles.api = "changed";
 
     expect(built.describe()).toEqual({

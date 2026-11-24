@@ -218,7 +218,8 @@ const allowedRequestKeys = new Set<string>([
   "rules",
 ]);
 
-const forbiddenSchemaKeys = new Set(["__proto__", "constructor", "prototype"]);
+const isForbiddenSchemaKey = (key: string): boolean =>
+  key.trim().length === 0 || key === "prototype" || key in Object.prototype;
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -268,7 +269,7 @@ function collectSchemaMap(
     );
   }
   for (const key of Object.keys(raw)) {
-    if (key.trim().length === 0 || forbiddenSchemaKeys.has(key)) {
+    if (isForbiddenSchemaKey(key)) {
       throw new Error(
         `Invalid request "${bucket}" key "${key}" from "${owner}"`,
       );
@@ -278,6 +279,11 @@ function collectSchemaMap(
     if (!isZodSchema(schema)) {
       throw new Error(
         `Request schema "${bucket}.${key}" from "${owner}" must be a Zod schema`,
+      );
+    }
+    if (key in targetOwners) {
+      throw new Error(
+        `Request "${bucket}.${key}" is already registered by "${targetOwners[key]}" and cannot also be registered by "${owner}"`,
       );
     }
     targetSchemas[key] = schema;
@@ -376,6 +382,16 @@ export function buildRequestSchemaRegistry(
     }
   }
 
+  for (const target of ["scrape", "parse"] as const) {
+    for (const key of Object.keys(fieldOwners[target])) {
+      if (key in fieldOwners.scrapeOptions) {
+        throw new Error(
+          `Request field "${key}" is registered in both "scrapeOptions" (by "${fieldOwners.scrapeOptions[key]}") and "${target}" (by "${fieldOwners[target][key]}")`,
+        );
+      }
+    }
+  }
+
   const snapshot: ResolvedRequestContributions = Object.freeze({
     scrapeOptions: freezeNullProto(fieldSchemas.scrapeOptions),
     scrape: freezeNullProto(fieldSchemas.scrape),
@@ -445,4 +461,21 @@ export function buildRequestSchemaRegistry(
   };
 
   return { schemas, describedRequest };
+}
+
+/**
+ * Validates a list of `RequestContributions` and returns the lazy frozen
+ * `RequestSchemas` facade built from them.
+ */
+export function buildRequestSchemas(
+  contributions: readonly RequestContributions[],
+  buildSchemas?: RequestSchemaBuilder,
+): RequestSchemas {
+  return buildRequestSchemaRegistry(
+    contributions.map((request, index) => ({
+      owner: `contribution[${index}]`,
+      request,
+    })),
+    buildSchemas,
+  ).schemas;
 }

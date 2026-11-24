@@ -47,7 +47,7 @@ import type {
   ResolvedRequestContributions,
   ScrapeOptions as ServiceScrapeOptions,
   ScrapeOptionsRule,
-} from "../../service/request-schemas";
+} from "../../service/request";
 
 // Base URL schema with common validation logic
 export const URL = z

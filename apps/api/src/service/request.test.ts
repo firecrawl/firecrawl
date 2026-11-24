@@ -10,6 +10,7 @@ import {
 } from "../controllers/v2/types";
 import {
   buildRequestSchemaRegistry,
+  buildRequestSchemas,
   hasFormatOfType,
   requestFieldBuckets,
   requestKinds,
@@ -18,7 +19,7 @@ import {
   type RequestSchemas,
   type ResolvedRequestContributions,
   type ScrapeOptionsRule,
-} from "./request-schemas";
+} from "./request";
 
 const stubSchemas = (): RequestSchemas =>
   ({
@@ -91,19 +92,15 @@ describe("request-schemas", () => {
       expect(builder).toHaveBeenCalledTimes(1);
     });
 
-    it("merges fields, formats, and rules in extension order with later overrides winning", () => {
-      const firstAudit = z.string().optional();
-      const secondAudit = z.record(z.string(), z.string()).optional();
+    it("merges distinct fields, formats, and rules in extension order", () => {
+      const auditSchema = z.record(z.string(), z.string()).optional();
+      const extraTagSchema = z.string().optional();
       const customFormatA = z.strictObject({
         type: z.literal("customA"),
         flag: z.boolean().default(false),
       });
       const customFormatB = z.strictObject({
         type: z.literal("customB"),
-      });
-      const customFormatAOverride = z.strictObject({
-        type: z.literal("customA"),
-        flag: z.boolean().default(true),
       });
       const rule1: ScrapeOptionsRule = () => undefined;
       const rule2: ScrapeOptionsRule = () => ({ set: { waitFor: 1000 } });
@@ -122,7 +119,7 @@ describe("request-schemas", () => {
             request: asRequest({
               scrapeOptions: {
                 zeta: z.boolean().optional(),
-                auditMetadata: firstAudit,
+                auditMetadata: auditSchema,
                 ignored: undefined,
               },
               scrape: { scrapeOnly: z.string().optional() },
@@ -132,7 +129,6 @@ describe("request-schemas", () => {
               search: { searchOnly: z.string().optional() },
               formats: {
                 customB: customFormatB,
-                customA: customFormatA,
                 skipped: undefined,
               },
               rules: [rule1, rule2],
@@ -141,8 +137,8 @@ describe("request-schemas", () => {
           {
             owner: "ext-b",
             request: asRequest({
-              scrapeOptions: { auditMetadata: secondAudit },
-              formats: { customA: customFormatAOverride },
+              scrapeOptions: { alphaTag: extraTagSchema },
+              formats: { customA: customFormatA },
               rules: [rule3],
             }),
           },
@@ -152,7 +148,8 @@ describe("request-schemas", () => {
 
       expect(describedRequest).toEqual({
         scrapeOptions: {
-          auditMetadata: "ext-b",
+          alphaTag: "ext-b",
+          auditMetadata: "ext-a",
           zeta: "ext-a",
         },
         scrape: { scrapeOnly: "ext-a" },
@@ -168,6 +165,7 @@ describe("request-schemas", () => {
       });
 
       expect(Object.keys(describedRequest.scrapeOptions)).toEqual([
+        "alphaTag",
         "auditMetadata",
         "zeta",
       ]);
@@ -178,14 +176,112 @@ describe("request-schemas", () => {
 
       void schemas.scrape;
       expect(captured).toBeDefined();
-      expect(captured!.scrapeOptions.auditMetadata).toBe(secondAudit);
-      expect(captured!.formats.customA).toBe(customFormatAOverride);
+      expect(captured!.scrapeOptions.auditMetadata).toBe(auditSchema);
+      expect(captured!.scrapeOptions.alphaTag).toBe(extraTagSchema);
+      expect(captured!.formats.customA).toBe(customFormatA);
       expect(captured!.formats.customB).toBe(customFormatB);
       expect(captured!.rules).toEqual([rule1, rule2, rule3]);
       expect(Object.isFrozen(captured)).toBe(true);
       expect(Object.isFrozen(captured!.scrapeOptions)).toBe(true);
       expect(Object.isFrozen(captured!.formats)).toBe(true);
       expect(Object.isFrozen(captured!.rules)).toBe(true);
+    });
+
+    it("builds lazy schemas directly through buildRequestSchemas", () => {
+      const built = stubSchemas();
+      const builder = vi.fn<RequestSchemaBuilder>(() => built);
+      const schemas = buildRequestSchemas(
+        [asRequest({ scrape: { extraFlag: z.boolean().optional() } })],
+        builder,
+      );
+
+      expect(Object.isFrozen(schemas)).toBe(true);
+      expect(builder).not.toHaveBeenCalled();
+      expect(schemas.scrape).toBe(built.scrape);
+      expect(schemas.map).toBe(built.map);
+      expect(builder).toHaveBeenCalledTimes(1);
+    });
+
+    it("rejects duplicate field keys, duplicate format names, and scrapeOptions overlap with scrape or parse", () => {
+      expect(() =>
+        buildRequestSchemaRegistry([
+          {
+            owner: "ext-a",
+            request: asRequest({
+              scrapeOptions: { auditMetadata: z.string().optional() },
+            }),
+          },
+          {
+            owner: "ext-b",
+            request: asRequest({
+              scrapeOptions: { auditMetadata: z.string().optional() },
+            }),
+          },
+        ]),
+      ).toThrow(
+        'Request "scrapeOptions.auditMetadata" is already registered by "ext-a" and cannot also be registered by "ext-b"',
+      );
+
+      expect(() =>
+        buildRequestSchemaRegistry([
+          {
+            owner: "ext-a",
+            request: asRequest({
+              formats: {
+                customA: z.strictObject({ type: z.literal("customA") }),
+              },
+            }),
+          },
+          {
+            owner: "ext-b",
+            request: asRequest({
+              formats: {
+                customA: z.strictObject({ type: z.literal("customA") }),
+              },
+            }),
+          },
+        ]),
+      ).toThrow(
+        'Request "formats.customA" is already registered by "ext-a" and cannot also be registered by "ext-b"',
+      );
+
+      expect(() =>
+        buildRequestSchemaRegistry([
+          {
+            owner: "ext-a",
+            request: asRequest({
+              scrapeOptions: { sharedKey: z.string().optional() },
+            }),
+          },
+          {
+            owner: "ext-b",
+            request: asRequest({
+              scrape: { sharedKey: z.string().optional() },
+            }),
+          },
+        ]),
+      ).toThrow(
+        'Request field "sharedKey" is registered in both "scrapeOptions" (by "ext-a") and "scrape" (by "ext-b")',
+      );
+
+      expect(() =>
+        buildRequestSchemaRegistry([
+          {
+            owner: "ext-a",
+            request: asRequest({
+              scrapeOptions: { sharedKey: z.string().optional() },
+            }),
+          },
+          {
+            owner: "ext-b",
+            request: asRequest({
+              parse: { sharedKey: z.string().optional() },
+            }),
+          },
+        ]),
+      ).toThrow(
+        'Request field "sharedKey" is registered in both "scrapeOptions" (by "ext-a") and "parse" (by "ext-b")',
+      );
     });
 
     it("snapshots contributions at build time so later caller mutations have no effect", () => {
@@ -292,6 +388,45 @@ describe("request-schemas", () => {
           },
         ]),
       ).toThrow('Invalid request "formats" key "constructor" from "bad"');
+
+      expect(() =>
+        buildRequestSchemaRegistry([
+          {
+            owner: "bad",
+            request: asRequest({
+              scrapeOptions: {
+                ["__proto__"]: z.string(),
+              },
+            }),
+          },
+        ]),
+      ).toThrow('Invalid request "scrapeOptions" key "__proto__" from "bad"');
+
+      expect(() =>
+        buildRequestSchemaRegistry([
+          {
+            owner: "bad",
+            request: asRequest({
+              scrapeOptions: {
+                toString: z.string(),
+              },
+            }),
+          },
+        ]),
+      ).toThrow('Invalid request "scrapeOptions" key "toString" from "bad"');
+
+      expect(() =>
+        buildRequestSchemaRegistry([
+          {
+            owner: "bad",
+            request: asRequest({
+              scrapeOptions: {
+                prototype: z.string(),
+              },
+            }),
+          },
+        ]),
+      ).toThrow('Invalid request "scrapeOptions" key "prototype" from "bad"');
 
       expect(() =>
         buildRequestSchemaRegistry([

@@ -25,7 +25,7 @@ import {
   type RequestContributions,
   type RequestSchemaBuilder,
   type RequestSchemas,
-} from "./request-schemas";
+} from "./request";
 import {
   buildSearchProviderRegistry,
   type DescribedSearchProvider,

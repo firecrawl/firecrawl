@@ -17,13 +17,9 @@ import type { ErrorCode } from "../lib/error";
 import type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 import type { EngineFeatureName, EngineName } from "./engines";
 import type { RequestContext } from "./request-context";
-import type {
-  RequestBodies,
-  RequestKind,
-  ScrapeOptions,
-} from "./request-schemas";
+import type { RequestBodies, RequestKind, ScrapeOptions } from "./request";
 
-export type { RequestBodies, RequestKind } from "./request-schemas";
+export type { RequestBodies, RequestKind } from "./request";
 
 export interface Observe<Payload> {
   kind: "observe";
