@@ -26,6 +26,7 @@ import {
   resolveThreatProtection,
 } from "../../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
+import { MAP_SITEMAP_ONLY_LIMIT } from "../../scraper/WebScraper/crawler";
 
 configDotenv();
 
@@ -357,6 +358,16 @@ export async function mapController(
     if (baseDomain) {
       warning = `Only ${result.mapResults.length} result(s) found. For broader coverage, try mapping the base domain: ${baseDomain}`;
     }
+  }
+
+  const truncationWarning =
+    result.sitemapTruncation === "timeout"
+      ? "Sitemap reading stopped at the timeout, so these results may be incomplete. A longer timeout may return more links."
+      : result.sitemapTruncation === "file-limit"
+        ? `Sitemap reading stopped at the ${MAP_SITEMAP_ONLY_LIMIT}-file limit, so these results may be incomplete.`
+        : undefined;
+  if (truncationWarning) {
+    warning = warning ? `${truncationWarning} ${warning}` : truncationWarning;
   }
 
   const response = {
