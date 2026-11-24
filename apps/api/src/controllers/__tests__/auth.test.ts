@@ -267,4 +267,24 @@ describe("auth ACUC and helper functions", () => {
       }),
     ).toBe("10.0.0.1");
   });
+
+  it("honors bypassWhenDbDisabled=false on uncached getACUC lookups", async () => {
+    config.USE_DB_AUTHENTICATION = false;
+
+    const result = await getACUC(
+      apiKey,
+      false,
+      false,
+      RateLimiterMode.Scrape,
+      "hosted_mcp_oauth",
+      false,
+    );
+
+    expect(result).toMatchObject({
+      team_id: "team-1",
+      ...known,
+    });
+    expect(authCreditUsageChunk).toHaveBeenCalledTimes(1);
+    expect(authCreditUsageChunkFromTeam).toHaveBeenCalledTimes(1);
+  });
 });

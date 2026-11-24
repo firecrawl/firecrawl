@@ -261,7 +261,13 @@ export async function getACUC(
 
     // An uncached chunk (a hosted MCP credential) takes the team ACUC's
     // limits, so authenticating it per request never costs an Autumn read.
-    const team = await getACUCTeam(chunk.team_id).catch(() => null);
+    const team = await getACUCTeam(
+      chunk.team_id,
+      false,
+      true,
+      undefined,
+      bypassWhenDbDisabled,
+    ).catch(() => null);
     const limits =
       team ?? (await readTeamLimits(chunk.team_id, chunk.org_id)).limits;
     return {
@@ -324,6 +330,7 @@ export async function getACUCTeam(
   cacheOnly = false,
   useCache = true,
   mode?: RateLimiterMode,
+  bypassWhenDbDisabled = true,
 ): Promise<AuthCreditUsageChunkFromTeam | null> {
   const isExtract =
     mode === RateLimiterMode.Extract || mode === RateLimiterMode.ExtractStatus;
@@ -333,7 +340,7 @@ export async function getACUCTeam(
     return acuc;
   }
 
-  if (config.USE_DB_AUTHENTICATION !== true) {
+  if (bypassWhenDbDisabled && config.USE_DB_AUTHENTICATION !== true) {
     const acuc = mockACUC();
     acuc.is_extract = isExtract;
     return acuc;
