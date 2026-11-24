@@ -3,7 +3,11 @@ import { logger } from "../../../lib/logger";
 import { initializeBlocklist, isUrlBlocked } from "./blocklist";
 
 const insertedHits = vi.hoisted(() =>
-  vi.fn(async (_hits: { team_id: string | null }[]) => {}),
+  vi.fn(
+    async (
+      _hits: { team_id: string | null; url: string | null; domain: string }[],
+    ) => {},
+  ),
 );
 
 vi.mock("../../../config", () => ({
@@ -80,4 +84,23 @@ it("logs a failed batch with only its SQLSTATE", async () => {
     hits: 2,
     errorCode: "22P02",
   });
+});
+
+it("records no hit for zero data retention requests", async () => {
+  const url = "https://facebook.com/page";
+
+  isUrlBlocked(url, null, { origin: "test" });
+  isUrlBlocked(url, null, { origin: "test", zeroDataRetention: true });
+  isUrlBlocked(url, { scrapeZDR: "forced" }, { origin: "test" });
+  isUrlBlocked(url, { forceZDR: true }, { origin: "test" });
+  isUrlBlocked(url, { scrapeZDR: "allowed" }, { origin: "test" });
+  await vi.advanceTimersByTimeAsync(5000);
+
+  expect(insertedHits).toHaveBeenCalledOnce();
+  expect(
+    insertedHits.mock.calls[0][0].map(hit => [hit.url, hit.domain]),
+  ).toEqual([
+    [url, "facebook.com"],
+    [url, "facebook.com"],
+  ]);
 });

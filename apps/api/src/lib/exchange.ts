@@ -4,9 +4,23 @@ import { z } from "zod";
 import { config } from "../config";
 import type { DocumentProvider, FormatObject } from "../controllers/v2/types";
 import { hasLedgerAcceptance } from "../services/alexandria/terms";
-import { type ErrorCodes, TransportableError } from "./error";
+import {
+  type ExchangeTerms,
+  getEnrichmentSettingsUrl,
+  setDashboardUrlReader,
+  ThirdPartyDataTermsRequiredError,
+  ThirdPartyDataUnsupportedOptionError,
+} from "./exchange-errors";
 import { logger as rootLogger } from "./logger";
 import { isXTwitterUrl } from "./x-twitter-url";
+
+setDashboardUrlReader(() => config.FIRECRAWL_DASHBOARD_URL);
+
+export {
+  getEnrichmentSettingsUrl,
+  ThirdPartyDataTermsRequiredError,
+  ThirdPartyDataUnsupportedOptionError,
+};
 
 type OrganizationDataSourceAccessRecord = {
   status?: string | null;
@@ -55,11 +69,6 @@ type RouteInput = {
 export type ExchangeScrapeMetadata = {
   accessEventId?: string;
   provider: DocumentProvider;
-};
-
-type ExchangeTerms = {
-  key: string;
-  version: string;
 };
 
 type ExchangeProvider = {
@@ -683,118 +692,6 @@ export async function canUseExchangeForRequest(
   input: RouteInput,
 ): Promise<boolean> {
   return (await getExchangeAccessForRequest(input)).allowed;
-}
-
-// Terms are keyed by provider id, so the key doubles as the provider page to accept them on.
-function getThirdPartyDataTermsUrl(terms: ExchangeTerms): string {
-  return `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/alexandria/${encodeURIComponent(terms.key)}`;
-}
-
-export function getEnrichmentSettingsUrl(): string {
-  return `${config.FIRECRAWL_DASHBOARD_URL.replace(/\/+$/, "")}/app/alexandria?enrichment=true`;
-}
-
-/**
- * An organization admin has to accept a provider's terms before the request
- * can run. Transportable, so it crosses the worker queue intact; every
- * surface that reports it sends `response()`, or `requiresAction` alone where
- * the error is one entry of a list.
- */
-export class ThirdPartyDataTermsRequiredError extends TransportableError {
-  public readonly terms: ExchangeTerms;
-  /** Set when the provider is a step in the team's enrichment order, which can drop it instead. */
-  public readonly enrichment: boolean;
-
-  constructor(terms: ExchangeTerms, options: { enrichment?: boolean } = {}) {
-    const accept = `An organization admin must accept the ${terms.key} provider's terms (version ${terms.version}) before this request can run. Accept them at ${getThirdPartyDataTermsUrl(terms)}`;
-    super(
-      "THIRD_PARTY_DATA_TERMS_REQUIRED",
-      options.enrichment
-        ? `${accept}, or turn off ${terms.key} in ${getEnrichmentSettingsUrl()}.`
-        : accept,
-    );
-    this.name = "ThirdPartyDataTermsRequiredError";
-    this.terms = { key: terms.key, version: terms.version };
-    this.enrichment = options.enrichment === true;
-  }
-
-  get requiresAction() {
-    return {
-      type: "accept_terms" as const,
-      terms: this.terms.key,
-      version: this.terms.version,
-      url: getThirdPartyDataTermsUrl(this.terms),
-    };
-  }
-
-  response() {
-    return {
-      success: false as const,
-      code: "THIRD_PARTY_DATA_TERMS_REQUIRED" as const,
-      error: this.message,
-      requiresAction: this.requiresAction,
-    };
-  }
-
-  serialize() {
-    return {
-      ...super.serialize(),
-      terms: this.terms,
-      enrichment: this.enrichment,
-    };
-  }
-
-  static deserialize(
-    _code: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new ThirdPartyDataTermsRequiredError(data.terms, {
-      enrichment: data.enrichment,
-    });
-    x.stack = data.stack;
-    return x;
-  }
-}
-
-/**
- * A provider serves the URL and nothing else may, but the request uses an
- * option the provider's data can't honor.
- */
-export class ThirdPartyDataUnsupportedOptionError extends TransportableError {
-  public readonly option: string;
-
-  constructor(option: string) {
-    super(
-      "THIRD_PARTY_DATA_UNSUPPORTED_OPTION",
-      `A third-party data provider serves this URL, but not to requests that use ${option}.`,
-    );
-    this.name = "ThirdPartyDataUnsupportedOptionError";
-    this.option = option;
-  }
-
-  response() {
-    return {
-      success: false as const,
-      code: "THIRD_PARTY_DATA_UNSUPPORTED_OPTION" as const,
-      error: this.message,
-    };
-  }
-
-  serialize() {
-    return {
-      ...super.serialize(),
-      option: this.option,
-    };
-  }
-
-  static deserialize(
-    _code: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new ThirdPartyDataUnsupportedOptionError(data.option);
-    x.stack = data.stack;
-    return x;
-  }
 }
 
 export function getExchangeSuccessCredits(input: {

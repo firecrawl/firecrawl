@@ -1,15 +1,220 @@
-import { describe, expect, it } from "vitest";
+import Module from "node:module";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ScrapeJobTimeoutError } from "../lib/error";
+import * as errorSerde from "../lib/error-serde";
+import { coreEngineSpecs } from "../scraper/scrapeURL/engines/metadata";
 import { coreParts } from "./core-parts";
+import type { Engine } from "./engines";
 import { createService } from "./service";
 
+const loadedSideEffectModules = vi.hoisted(() => [] as string[]);
+vi.mock("../config", () => {
+  loadedSideEffectModules.push("config");
+  return { config: {} };
+});
+vi.mock("../lib/exchange", () => {
+  loadedSideEffectModules.push("exchange");
+  return {};
+});
+vi.mock("../lib/deployment", () => {
+  loadedSideEffectModules.push("deployment");
+  return { isSelfHosted: () => true };
+});
+
+const errorClassesModule = "../lib/error-serde";
+const enginesModule = "../scraper/scrapeURL/engines";
+
+// coreParts() loads its error classes and engine implementations with
+// require() on first use. The test runner cannot resolve a source file loaded
+// that way, so both loads are answered with stub modules.
+function answerRequire(mockEngines?: readonly Engine[]) {
+  const load = Module.prototype.require;
+  const enginesStub = mockEngines
+    ? { coreEngines: mockEngines }
+    : {
+        coreEngines: coreEngineSpecs.map(spec => ({
+          name: spec.name,
+          quality: spec.quality,
+          features: spec.features,
+          ...(spec.explicitOnly ? { explicitOnly: true } : {}),
+          enabled: vi.fn(() => true),
+          scrape: vi.fn(),
+          maxReasonableTime: vi.fn(() => 12345),
+        })),
+      };
+  return vi.spyOn(Module.prototype, "require").mockImplementation(function (
+    this: Module,
+    id: string,
+  ) {
+    if (id === errorClassesModule) return errorSerde;
+    if (id === enginesModule) return enginesStub;
+    return load.call(this, id);
+  });
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe("coreParts", () => {
-  it("gives the service every process role, and nothing else yet", () => {
+  it("loads its error classes on the first lookup, and once", () => {
+    const required = answerRequire();
+    const built = createService({ modules: {} }, coreParts());
+
+    expect(required).not.toHaveBeenCalledWith(errorClassesModule);
+    expect(built.errors.classFor("SCRAPE_TIMEOUT")).toBe(ScrapeJobTimeoutError);
+    expect(built.errors.classFor("NOT_A_CODE")).toBeUndefined();
+    expect(
+      required.mock.calls.filter(([id]) => id === errorClassesModule),
+    ).toHaveLength(1);
+  });
+
+  it("loads its engine implementations on the first engine call, and once", async () => {
+    const enabled = vi.fn(() => true);
+    const scrape = vi.fn().mockResolvedValue({
+      url: "https://example.com",
+      html: "<p>ok</p>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    });
+    const maxReasonableTime = vi.fn(() => 42000);
+    const mockEngines: Engine[] = coreEngineSpecs.map(spec => ({
+      name: spec.name,
+      quality: spec.quality,
+      features: spec.features,
+      ...(spec.explicitOnly ? { explicitOnly: true } : {}),
+      enabled: spec.name === "fetch" ? enabled : () => false,
+      scrape: spec.name === "fetch" ? scrape : vi.fn(),
+      maxReasonableTime:
+        spec.name === "fetch" ? maxReasonableTime : () => 30000,
+    }));
+
+    const required = answerRequire(mockEngines);
+    const built = createService({ modules: {} }, coreParts());
+
+    // Creating the service, inspecting registered engines, and calling
+    // describe() must not load the engine implementations.
+    expect(built.engines.all()).toHaveLength(coreEngineSpecs.length);
+    const fetchEngine = built.engines.get("fetch");
+    expect(fetchEngine?.scrape.name).toBe("scrapeURLWithFetch");
+    built.describe();
+    expect(required).not.toHaveBeenCalledWith(enginesModule);
+
+    expect(built.engines.enabled().map(e => e.name)).toEqual(["fetch"]);
+    expect(enabled).toHaveBeenCalledTimes(1);
+
+    const stubMeta = {} as Parameters<Engine["scrape"]>[0];
+    await fetchEngine!.scrape(stubMeta);
+    expect(scrape).toHaveBeenCalledWith(stubMeta);
+    expect(fetchEngine!.maxReasonableTime?.(stubMeta)).toBe(42000);
+    expect(maxReasonableTime).toHaveBeenCalledWith(stubMeta);
+    expect(
+      required.mock.calls.filter(([id]) => id === enginesModule),
+    ).toHaveLength(1);
+  });
+
+  it("preserves the handler method name on every built-in engine wrapper", () => {
+    const built = createService({ modules: {} }, coreParts());
+
+    for (const spec of coreEngineSpecs) {
+      expect(built.engines.get(spec.name)?.scrape.name).toBe(spec.method);
+    }
+  });
+
+  it("gives the service every process role, engine, feature, and error class", () => {
+    const required = answerRequire();
     const built = createService({ modules: {} }, coreParts());
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
       modules: [],
       hooks: {},
+      errors: {
+        AGENT_INDEX_ONLY: "core",
+        CONCURRENCY_QUEUE_TIMEOUT: "core",
+        CRAWL_DENIAL: "core",
+        MAP_FAILED: "core",
+        MAP_TIMEOUT: "core",
+        RESERVED_CAPACITY_UNAVAILABLE: "core",
+        SCRAPE_ACTIONS_NOT_SUPPORTED: "core",
+        SCRAPE_ACTION_ERROR: "core",
+        SCRAPE_ALL_ENGINES_FAILED: "core",
+        SCRAPE_AUDIO_UNSUPPORTED_URL: "core",
+        SCRAPE_BRANDING_NOT_SUPPORTED: "core",
+        SCRAPE_DNS_RESOLUTION_ERROR: "core",
+        SCRAPE_DOCUMENT_ANTIBOT_ERROR: "core",
+        SCRAPE_DOCUMENT_FETCH_PROXY_ERROR: "core",
+        SCRAPE_DOCUMENT_PREFETCH_FAILED: "core",
+        SCRAPE_JOB_CANCELLED: "core",
+        SCRAPE_JSON_CONTENT_TOO_LARGE: "core",
+        SCRAPE_LOCKDOWN_CACHE_MISS: "core",
+        SCRAPE_MEDIA_ACCESS_DENIED: "core",
+        SCRAPE_NO_CACHED_DATA: "core",
+        SCRAPE_PAYWALLED_CONTENT: "core",
+        SCRAPE_PDF_ANTIBOT_ERROR: "core",
+        SCRAPE_PDF_FETCH_PROXY_ERROR: "core",
+        SCRAPE_PDF_INSUFFICIENT_TIME_ERROR: "core",
+        SCRAPE_PDF_OCR_REQUIRED: "core",
+        SCRAPE_PDF_PREFETCH_FAILED: "core",
+        SCRAPE_PROMPT_INJECTION_DETECTED: "core",
+        SCRAPE_PROXY_SELECTION_ERROR: "core",
+        SCRAPE_RACED_REDIRECT_ERROR: "core",
+        SCRAPE_RETRY_LIMIT: "core",
+        SCRAPE_SITEMAP_ERROR: "core",
+        SCRAPE_SITE_ERROR: "core",
+        SCRAPE_SITE_RESTRICTION_BLOCKED: "core",
+        SCRAPE_SSL_ERROR: "core",
+        SCRAPE_TIMEOUT: "core",
+        SCRAPE_UNSUPPORTED_FILE_ERROR: "core",
+        SCRAPE_VIDEO_UNSUPPORTED_URL: "core",
+        SCRAPE_ZDR_VIOLATION_ERROR: "core",
+        THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED: "core",
+        THIRD_PARTY_DATA_NOT_ENABLED: "core",
+        THIRD_PARTY_DATA_NOT_FOUND: "core",
+        THIRD_PARTY_DATA_TERMS_REQUIRED: "core",
+        THIRD_PARTY_DATA_UNSUPPORTED_OPTION: "core",
+        THIRD_PARTY_DATA_UNSUPPORTED_URL: "core",
+        UNKNOWN_ERROR: "core",
+        UNSUPPORTED_SITE: "core",
+        US_ONLY_UNAVAILABLE: "core",
+        unsafe_domain_blocked: "core",
+      },
+      engines: {
+        document: "core",
+        exchange: "core",
+        fetch: "core",
+        "fire-engine(retry);chrome-cdp": "core",
+        "fire-engine(retry);chrome-cdp;stealth": "core",
+        "fire-engine;chrome-cdp": "core",
+        "fire-engine;chrome-cdp;stealth": "core",
+        "fire-engine;tlsclient": "core",
+        "fire-engine;tlsclient;stealth": "core",
+        image: "core",
+        index: "core",
+        "index;documents": "core",
+        pdf: "core",
+        playwright: "core",
+        wikipedia: "core",
+      },
+      engineFeatures: {
+        actions: { owner: "core", priority: 20 },
+        atsv: { owner: "core", priority: 90 },
+        audio: { owner: "core", priority: 100 },
+        branding: { owner: "core", priority: 20 },
+        disableAdblock: { owner: "core", priority: 10 },
+        document: { owner: "core", priority: 100 },
+        image: { owner: "core", priority: 100 },
+        location: { owner: "core", priority: 10 },
+        mobile: { owner: "core", priority: 10 },
+        pdf: { owner: "core", priority: 100 },
+        screenshot: { owner: "core", priority: 10 },
+        "screenshot@fullScreen": { owner: "core", priority: 10 },
+        skipTlsVerification: { owner: "core", priority: 10 },
+        stealthProxy: { owner: "core", priority: 20 },
+        useFastMode: { owner: "core", priority: 90 },
+        video: { owner: "core", priority: 100 },
+        waitFor: { owner: "core", priority: 1 },
+      },
       roles: {
         api: "core",
         "cclog-worker": "core",
@@ -23,6 +228,16 @@ describe("coreParts", () => {
         "queue-worker": "core",
         "zdr-worker": "core",
       },
+      env: {},
     });
+    expect(required).not.toHaveBeenCalledWith(enginesModule);
+  });
+
+  it("loads core error classes without pulling in config, exchange, or deployment", () => {
+    answerRequire();
+    const built = createService({ modules: {} }, coreParts());
+
+    built.describe();
+    expect(loadedSideEffectModules).toEqual([]);
   });
 });

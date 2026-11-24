@@ -30,6 +30,10 @@ describe("buildHooks", () => {
     expect(order).toEqual(["first", "second", "third"]);
   });
 
+  it("returns a frozen dispatcher", () => {
+    expect(Object.isFrozen(buildHooks<Points>([], vi.fn()))).toBe(true);
+  });
+
   describe("observe", () => {
     it("reports a handler that throws or rejects and still runs the rest", async () => {
       const report = vi.fn();
@@ -59,6 +63,38 @@ describe("buildHooks", () => {
         ["seen", thrown],
         ["seen", rejected],
       ]);
+    });
+
+    it("keeps a reporter that throws away from the caller", async () => {
+      const unhandled = vi.fn();
+      const last = vi.fn();
+      const hooks = buildHooks<Points>(
+        [
+          {
+            seen: [
+              () => {
+                throw new Error("thrown");
+              },
+              () => Promise.reject(new Error("rejected")),
+              last,
+            ],
+          },
+        ],
+        () => {
+          throw new Error("reporter failed");
+        },
+      );
+
+      process.on("unhandledRejection", unhandled);
+      try {
+        expect(() => hooks.observe("seen", { id: "a" })).not.toThrow();
+        await tick();
+      } finally {
+        process.off("unhandledRejection", unhandled);
+      }
+
+      expect(last).toHaveBeenCalledWith({ id: "a" });
+      expect(unhandled).not.toHaveBeenCalled();
     });
 
     it("does not wait for a handler", () => {

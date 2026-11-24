@@ -392,15 +392,7 @@ export function authMiddleware(
           ? options.allowKeyless(req)
           : options.allowKeyless;
 
-      let currentRateLimiterMode = rateLimiterMode;
-      if (
-        currentRateLimiterMode === RateLimiterMode.Extract &&
-        isAgentExtractModelValid((req.body as any)?.agent?.model)
-      ) {
-        currentRateLimiterMode = RateLimiterMode.ExtractAgentPreview;
-      }
-
-      const auth = await authenticateUser(req, res, currentRateLimiterMode, {
+      const auth = await authenticateUser(req, res, rateLimiterMode, {
         ...options,
         allowKeyless,
       });
@@ -444,6 +436,7 @@ export function authMiddleware(
         ...(hostedMcp ? { hostedMcp: true } : {}),
       };
       req.acuc = chunk ?? undefined;
+      req.caller = { teamId: team_id };
       next();
     })().catch(err => next(err));
   };
@@ -537,6 +530,9 @@ function blocklistGate(
         team_id: req.acuc?.team_id ?? null,
         org_id: req.acuc?.org_id ?? null,
         origin: typeof req.body.origin === "string" ? req.body.origin : null,
+        zeroDataRetention:
+          req.body.zeroDataRetention === true || req.body.lockdown === true,
+        safeMode: req.body.safeMode,
       })
     ) {
       return next();

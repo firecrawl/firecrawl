@@ -348,6 +348,7 @@ export async function agentController(
     return res.status(500).json({
       success: false,
       error: "Failed to passthrough agent request.",
+      jobId: agentId,
     });
   }
 

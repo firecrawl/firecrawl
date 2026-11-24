@@ -148,6 +148,8 @@ const configSchema = z.object({
   LABS_SEARCH_URL: z.string().url().optional(),
   LABS_SEARCH_SECRET: z.string().optional(),
   FRESH_FEED_URL: emptyStringAsUndefined(z.string().url()),
+  FRESH_FEED_CURATED_URL: emptyStringAsUndefined(z.string().url()),
+  FRESH_FEED_GLOBAL_URL: emptyStringAsUndefined(z.string().url()),
 
   // Express
   EXPRESS_TRUST_PROXY: z.coerce.number().optional(),
@@ -579,7 +581,6 @@ const configSchema = z.object({
   NUQ_WORKER_COUNT: z.coerce.number().default(5),
   NUQ_PREFETCH_WORKER_PORT: z.coerce.number().default(3011).catch(3011), // todo: investigate why .catch is needed
   NUQ_RECONCILER_WORKER_PORT: z.coerce.number().default(3012).catch(3012),
-  CCLOG_WORKER_PORT: z.coerce.number().default(3013).catch(3013),
   EXTRACT_WORKER_PORT: z.coerce.number().default(3004),
   NUQ_WAIT_MODE: z.string().optional(),
 
@@ -589,8 +590,6 @@ const configSchema = z.object({
   // Job & Lock Management
   JOB_LOCK_EXTEND_INTERVAL: z.coerce.number().default(10000),
   JOB_LOCK_EXTENSION_TIME: z.coerce.number().default(60000),
-  WORKER_LOCK_DURATION: z.coerce.number().default(60000),
-  WORKER_STALLED_CHECK_INTERVAL: z.coerce.number().default(30000),
   CONNECTION_MONITOR_INTERVAL: z.coerce.number().default(10),
   CANT_ACCEPT_CONNECTION_INTERVAL: z.coerce.number().default(2000),
 
@@ -602,7 +601,6 @@ const configSchema = z.object({
   // External Services
   PLAYWRIGHT_MICROSERVICE_URL: z.string().optional(),
   HTML_TO_MARKDOWN_SERVICE_URL: z.string().optional(),
-  SMART_SCRAPE_API_URL: z.string().optional(),
 
   // Fire PDF (OCR fallback for a % of PDFs)
   FIRE_PDF_ENABLE: z.stringbool().optional(),
@@ -793,7 +791,6 @@ const configSchema = z.object({
 
   // Indexing
   BACKGROUND_INDEX_TEAM_ID: z.string().optional(),
-  PRECRAWL_TEAM_ID: z.string().optional(),
 
   // System
   MAX_CPU: z.coerce.number().default(0.8),
@@ -839,7 +836,6 @@ const configSchema = z.object({
   GITHUB_RUN_NUMBER: z.string().optional(),
   GITHUB_REF_NAME: z.string().optional(),
   RESTRICTED_COUNTRIES: delimitedList(",").optional(),
-  DISABLE_ENGPICKER: z.stringbool().optional(),
   DISABLE_MONITORING: z.stringbool().default(false),
 
   // Stamp an inferred `integration` on unlabelled direct callers.
@@ -855,6 +851,10 @@ const configSchema = z.object({
       error: "AGENT_INTEROP_SECRET must not contain lone surrogates",
     })
     .optional(),
+
+  // Per-request internal JWTs; replaces AGENT_INTEROP_SECRET once rolled out.
+  INTERNAL_JWT_ENABLED: z.stringbool().default(false),
+  INTERNAL_JWT_PUBLIC_KEYS: z.string().optional(),
 
   // Wikipedia Enterprise API
   WIKIPEDIA_ENTERPRISE_USERNAME: z.string().optional(),
@@ -877,16 +877,6 @@ const configSchema = z.object({
   FIRE_PRIVACY_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
 
   NUQ_PREFETCH_WORKER_HEARTBEAT_URL: z.string().optional(),
-
-  ZDRCLEANER_HEARTBEAT_URL: z.string().optional(),
-
-  CCLOG_WORKER_HEARTBEAT_URL: z.string().optional(),
-
-  // Deterministic JSON extraction (reusable-json-mode)
-  EXTRACT_CODEGEN_MODEL: z.string().default("gemini-3.1-flash-lite"),
-  EXTRACT_ANCHOR_MODEL: z.string().default("openai/gpt-oss-120b"),
-  EXTRACT_LIGHT_MODEL: z.string().default("openai/gpt-oss-20b"),
-  CODE_SANDBOX_URL: z.string().default("ws://code-sandbox:3001"),
 });
 
 const validatedConfigSchema = configSchema.superRefine((value, context) => {
