@@ -166,6 +166,8 @@ export function getItemsToScrape(
     team_id?: string | null;
     org_id?: string | null;
     origin?: string | null;
+    zeroDataRetention?: boolean;
+    safeMode?: boolean;
   },
 ): ScrapeItem[] {
   const items: ScrapeItem[] = [];
