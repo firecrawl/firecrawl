@@ -121,6 +121,18 @@ describe("v2 request schema wiring", () => {
       expect(serviceErr.issues).toEqual(staticErr.issues);
       expect(serviceErr.issues[0]?.code).toBe("unrecognized_keys");
     });
+
+    const minimalService = createService(
+      { modules: {} },
+      { core: { name: "core" }, logger: { error: () => {} } },
+    );
+
+    await withService(minimalService, async () => {
+      const schemas = getV2RequestSchemas();
+      expect(schemas).toBe(minimalService.schemas);
+      expect(schemas.search).toBe(searchRequestSchema);
+      expect(schemas.batchScrape).toBe(batchScrapeRequestSchema);
+    });
   });
 
   it("validates extension formats, fields, and rules end to end through service.schemas and v2 helpers", async () => {

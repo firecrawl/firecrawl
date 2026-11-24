@@ -43,12 +43,13 @@ import { MenuProfile } from "../../types/menu";
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
 import { auditMetadataSchema } from "../../lib/siem-logging/types";
 import { installedService } from "../../service/service";
-import type {
-  RequestKind,
-  RequestSchemas,
-  ResolvedRequestContributions,
-  ScrapeOptions as ServiceScrapeOptions,
-  ScrapeOptionsRule,
+import {
+  registerDefaultRequestSchemaBuilder,
+  type RequestKind,
+  type RequestSchemas,
+  type ResolvedRequestContributions,
+  type ScrapeOptions as ServiceScrapeOptions,
+  type ScrapeOptionsRule,
 } from "../../service/request";
 
 // Base URL schema with common validation logic
@@ -3648,6 +3649,8 @@ export function buildV2RequestSchemas(
     scrapeOptions: compiledScrapeOptions,
   } as unknown as RequestSchemas;
 }
+
+registerDefaultRequestSchemaBuilder(buildV2RequestSchemas);
 
 /**
  * Returns the installed service's compiled v2 request schemas, falling back to

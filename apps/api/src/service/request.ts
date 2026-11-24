@@ -267,10 +267,36 @@ const freezeNullProto = <T>(
   return Object.freeze(out);
 };
 
-const defaultBuildRequestSchemas: RequestSchemaBuilder = contributions =>
-  (
-    require("../controllers/v2/types") as typeof import("../controllers/v2/types")
-  ).buildV2RequestSchemas(contributions);
+let registeredRequestSchemaBuilder: RequestSchemaBuilder | undefined;
+
+/**
+ * Registers the built-in v2 request-schema builder when the v2 types module
+ * loads so lazy `service.schemas` resolution avoids a runtime `require()`.
+ *
+ * @internal
+ */
+export function registerDefaultRequestSchemaBuilder(
+  builder: RequestSchemaBuilder,
+): void {
+  registeredRequestSchemaBuilder = builder;
+}
+
+/**
+ * Resolves the built-in v2 request-schema builder, preferring one already
+ * registered by the loaded v2 types module and falling back to lazy `require()`
+ * so callers that never imported v2 types still work without eager loading.
+ *
+ * @internal
+ */
+export const defaultBuildRequestSchemas: RequestSchemaBuilder =
+  contributions => {
+    if (registeredRequestSchemaBuilder) {
+      return registeredRequestSchemaBuilder(contributions);
+    }
+    return (
+      require("../controllers/v2/types") as typeof import("../controllers/v2/types")
+    ).buildV2RequestSchemas(contributions);
+  };
 
 function collectSchemaMap(
   targetSchemas: Record<string, z.ZodType>,
