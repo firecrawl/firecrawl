@@ -39,6 +39,18 @@ vi.mock("../lib/zdr-queue", () => {
   loadedSideEffectModules.push("zdr-queue");
   return {};
 });
+vi.mock("../services/redis", () => {
+  loadedSideEffectModules.push("redis");
+  return {};
+});
+vi.mock("../services/queue-service", () => {
+  loadedSideEffectModules.push("queue-service");
+  return {};
+});
+vi.mock("../db/connection", () => {
+  loadedSideEffectModules.push("db");
+  return {};
+});
 
 const errorClassesModule = "../lib/error-serde";
 const enginesModule = "../scraper/scrapeURL/engines";
@@ -255,7 +267,7 @@ describe("coreParts", () => {
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: ["messages", "uploads"],
+      modules: ["idempotency", "messages", "uploads", "webhooks"],
       hooks: {},
       errors: {
         AGENT_INDEX_ONLY: "core",
@@ -379,7 +391,7 @@ describe("coreParts", () => {
     expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
   });
 
-  it("loads core error classes and default modules without pulling in config, exchange, deployment, gcs, or zdr", () => {
+  it("loads core error classes and default modules without pulling in config, exchange, deployment, gcs, zdr, redis, or db", () => {
     const required = answerRequire();
     const built = createService({ modules: defaultModules() }, coreParts());
 
@@ -396,7 +408,12 @@ describe("coreParts", () => {
     expect(transformed instanceof Promise).toBe(false);
 
     expect(built.describe().hooks).toEqual({});
-    expect(built.describe().modules).toEqual(["messages", "uploads"]);
+    expect(built.describe().modules).toEqual([
+      "idempotency",
+      "messages",
+      "uploads",
+      "webhooks",
+    ]);
     expect(required).not.toHaveBeenCalledWith(enginesModule);
     expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
     expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
