@@ -38,8 +38,10 @@ import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { withPdfExtractionPermit } from "./semaphore";
 
 export {
+  detectPdf,
   isPdfBuffer,
   PDF_SNIFF_WINDOW,
+  processPdf,
   reconcilePageCountWithPdfParse,
   scrapePDFWithParsePDF,
   withPdfExtractionPermit,

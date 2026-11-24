@@ -10,6 +10,7 @@ import { countries } from "../../lib/validate-country";
 import { includesFormat } from "../../lib/format-utils";
 import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
 import { addStrictSchemaIssue } from "../../lib/openai-strict-schema";
+export { addStrictSchemaIssue };
 import {
   ExtractorOptions,
   PageOptions,
@@ -109,7 +110,7 @@ function strictWithMessage<T extends z.ZodObject<any>>(schema: T): T {
   return schema.strict() as any as T;
 }
 
-function normalizeSchemaForOpenAI(schema: any): any {
+export function normalizeSchemaForOpenAI(schema: any): any {
   if (!schema || typeof schema !== "object") {
     return schema;
   }
@@ -205,7 +206,7 @@ function normalizeSchemaForOpenAI(schema: any): any {
   return normalizeObject(schema);
 }
 
-function validateSchemaForOpenAI(schema: any): boolean {
+export function validateSchemaForOpenAI(schema: any): boolean {
   if (!schema || typeof schema !== "object") {
     return true;
   }
@@ -246,7 +247,7 @@ function validateSchemaForOpenAI(schema: any): boolean {
   return !hasInvalidStructure(schema);
 }
 
-const OPENAI_SCHEMA_ERROR_MESSAGE =
+export const OPENAI_SCHEMA_ERROR_MESSAGE =
   "Schema contains invalid structure for OpenAI: object type with no 'properties' defined but 'additionalProperties: true' (schema-less dictionary not supported by OpenAI). Please define specific properties for your object. Note: Recursive schemas using '$ref' are supported.";
 
 const ACTIONS_MAX_WAIT_TIME = 60;
@@ -1723,7 +1724,7 @@ export function fromV0Combo(
 // These allow fine-grained control over each search source type
 // Similar to how scrape formats work with jsonFormatWithOptions, etc.
 
-const webSearchSourceOptions = z.strictObject({
+export const webSearchSourceOptions = z.strictObject({
   type: z.literal("web"),
   tbs: z.string().optional(), // Time-based search (e.g., "qdr:d" for past day)
   filter: z.string().optional(), // Search filter
@@ -1732,16 +1733,16 @@ const webSearchSourceOptions = z.strictObject({
   location: z.string().optional(), // Location override for this source
 });
 
-const imagesSearchSourceOptions = z.strictObject({
+export const imagesSearchSourceOptions = z.strictObject({
   type: z.literal("images"),
 });
 
-const newsSearchSourceOptions = z.strictObject({
+export const newsSearchSourceOptions = z.strictObject({
   type: z.literal("news"),
 });
 
 // Category source type definitions
-const pdfCategoryOptions = z.strictObject({
+export const pdfCategoryOptions = z.strictObject({
   type: z.literal("pdf"),
 });
 
@@ -2112,6 +2113,45 @@ function applyScrapeOptionsRules<T extends Record<string, unknown>>(
   return current;
 }
 
+function applyExtractTransformAndRules<T extends Record<string, unknown>>(
+  value: T,
+  kind: RequestKind,
+  rules: readonly ScrapeOptionsRule[],
+  ctx: z.RefinementCtx,
+  pathPrefix: (string | number)[] = [],
+): T | typeof z.NEVER {
+  const originalTimeout = (value as { timeout?: unknown }).timeout;
+  const base = liftCheckPromptInjection(
+    applyScrapeOptionsDefaults(value as unknown as ScrapeOptionsBase),
+  ) as unknown as T;
+  const ruled =
+    rules.length > 0
+      ? applyScrapeOptionsRules(base, kind, rules, ctx, pathPrefix)
+      : base;
+  if (ruled === z.NEVER) return z.NEVER;
+  let result = ruled as T & {
+    formats?: unknown[];
+    timeout?: number;
+    proxy?: string;
+  };
+  if (
+    result.formats?.find(
+      x =>
+        typeof x === "object" &&
+        x !== null &&
+        (x as { type?: unknown }).type === "json",
+    ) &&
+    originalTimeout === 30000 &&
+    result.timeout === 30000
+  ) {
+    result = { ...result, timeout: 60000 };
+  }
+  if (result.proxy === "auto" && originalTimeout === 30000) {
+    result = { ...result, timeout: 120000 };
+  }
+  return result;
+}
+
 // Core fields that extensions are explicitly allowed to widen.
 const extensibleCoreFields: Readonly<Record<string, ReadonlySet<string>>> = {
   scrapeOptions: new Set(["parsers", "proxy"]),
@@ -2251,16 +2291,14 @@ export function buildV2RequestSchemas(
           }),
         )
           .refine((x: any) => waitForRefine(x), waitForRefineOpts)
-          .transform((x: any, ctx) => {
-            const transformed = extractTransformRequired(x);
-            if (!hasRules) return transformed;
-            return applyScrapeOptionsRules(
-              transformed,
+          .transform((x: any, ctx) =>
+            applyExtractTransformAndRules(
+              x,
               "scrape",
               contributions.rules,
               ctx,
-            );
-          })
+            ),
+          )
       : scrapeRequestSchema;
 
   const parse =
@@ -2280,12 +2318,8 @@ export function buildV2RequestSchemas(
           .refine((x: any) => waitForRefine(x), waitForRefineOpts)
           .transform((x: any, ctx) => {
             const { file, ...scrapeLike } = x;
-            const transformed = extractTransformRequired(scrapeLike);
-            if (!hasRules) {
-              return { ...transformed, file };
-            }
-            const ruled = applyScrapeOptionsRules(
-              transformed,
+            const ruled = applyExtractTransformAndRules(
+              scrapeLike,
               "parse",
               contributions.rules,
               ctx,
@@ -2312,16 +2346,13 @@ export function buildV2RequestSchemas(
           .transform((x: any, ctx) => {
             const scrapeOptionsValue =
               x.scrapeOptions ?? baseScrapeOpts.parse({});
-            const transformed = extractTransformRequired(scrapeOptionsValue);
-            const ruled = hasRules
-              ? applyScrapeOptionsRules(
-                  transformed,
-                  "crawl",
-                  contributions.rules,
-                  ctx,
-                  ["scrapeOptions"],
-                )
-              : transformed;
+            const ruled = applyExtractTransformAndRules(
+              scrapeOptionsValue,
+              "crawl",
+              contributions.rules,
+              ctx,
+              ["scrapeOptions"],
+            );
             if (ruled === z.NEVER) return z.NEVER;
             return {
               ...x,
@@ -2368,12 +2399,16 @@ export function buildV2RequestSchemas(
           )
           .refine((x: any) => waitForRefine(x.scrapeOptions), waitForRefineOpts)
           .transform((x: any, ctx) => {
-            const transformed = transformSearchRequest(x);
-            if (!hasRules || transformed.scrapeOptions === undefined) {
+            const rawScrapeOptions = x.scrapeOptions;
+            const transformed = transformSearchRequest({
+              ...x,
+              scrapeOptions: undefined,
+            });
+            if (rawScrapeOptions === undefined) {
               return transformed;
             }
-            const ruled = applyScrapeOptionsRules(
-              transformed.scrapeOptions as unknown as Record<string, unknown>,
+            const ruled = applyExtractTransformAndRules(
+              rawScrapeOptions as unknown as Record<string, unknown>,
               "search",
               contributions.rules,
               ctx,
@@ -2396,16 +2431,14 @@ export function buildV2RequestSchemas(
       }),
     )
       .refine((x: any) => waitForRefine(x), waitForRefineOpts)
-      .transform((x: any, ctx) => {
-        const transformed = extractTransformRequired(x);
-        if (!hasRules) return transformed;
-        return applyScrapeOptionsRules(
-          transformed,
+      .transform((x: any, ctx) =>
+        applyExtractTransformAndRules(
+          x,
           "batchScrape",
           contributions.rules,
           ctx,
-        );
-      });
+        ),
+      );
 
   const hasBatchScrapeChanges =
     hasFormats || hasScrapeOptionsFields || hasBatchScrapeFields || hasRules;
@@ -2434,16 +2467,14 @@ export function buildV2RequestSchemas(
             },
           )
           .refine((x: any) => waitForRefine(x), waitForRefineOpts)
-          .transform((x: any, ctx) => {
-            const transformed = extractTransformRequired(x);
-            if (!hasRules) return transformed;
-            return applyScrapeOptionsRules(
-              transformed,
+          .transform((x: any, ctx) =>
+            applyExtractTransformAndRules(
+              x,
               "scrape",
               contributions.rules,
               ctx,
-            );
-          })
+            ),
+          )
       : scrapeOptions;
 
   return {
