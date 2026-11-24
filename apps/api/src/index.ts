@@ -33,11 +33,6 @@ import { QueueFullError } from "./lib/queue-full-error";
 import { v7 as uuidv7 } from "uuid";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
-import { exchangeRouter } from "./routes/exchange";
-import { registerExchangeFileRoutes } from "./routes/exchange-files";
-import { exchangeInternalRouter } from "./routes/exchange-internal";
-import { labsRouter } from "./routes/labs";
-import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
 import { nuqShutdown } from "./services/worker/nuq";
 import { service } from "./service";
 import { installedService, runProcessStop } from "./service/service";
@@ -93,11 +88,15 @@ const captureRawBody = (
   }
 };
 
-registerMcpActionLogIngestRoute(app);
-// Marketplace file bytes stream through to Exchange untouched, so these come before the body
-// parsers, and carry their own CORS (the website only) before the catch-all one.
+const contributedRootRawRouter = express.Router();
+const contributedRootRouter = express.Router();
+const contributedV2Router = express.Router();
+const contributedAdminRouter = express.Router();
+const contributedAdminInternalRouter = express.Router();
+let contributedRoutesMounted = false;
+
 app.use(responseTime());
-registerExchangeFileRoutes(app);
+app.use(contributedRootRawRouter);
 
 app.use(bodyParser.urlencoded({ extended: true, verify: captureRawBody }));
 app.use(bodyParser.json({ limit: "10mb", verify: captureRawBody }));
@@ -151,12 +150,6 @@ if (!config.BULL_AUTH_KEY) {
   }
 }
 
-const contributedRootRouter = express.Router();
-const contributedV2Router = express.Router();
-const contributedAdminRouter = express.Router();
-const contributedAdminInternalRouter = express.Router();
-let contributedRoutesMounted = false;
-
 app.use(contributedRootRouter);
 
 app.get("/", (_, res) => {
@@ -178,9 +171,6 @@ app.use(v0Router);
 app.use("/v1", v1Router);
 app.use("/v2", contributedV2Router);
 app.use("/v2", v2Router);
-app.use("/labs", labsRouter);
-app.use("/exchange", exchangeRouter);
-app.use(exchangeInternalRouter);
 app.use(contributedAdminRouter);
 app.use(adminRouter);
 
@@ -239,6 +229,7 @@ async function startServer(port = DEFAULT_PORT) {
 
   if (!contributedRoutesMounted) {
     installedService()?.mountRoutes({
+      rootRaw: contributedRootRawRouter,
       root: contributedRootRouter,
       v2: contributedV2Router,
       admin: contributedAdminRouter,
