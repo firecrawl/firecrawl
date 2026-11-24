@@ -21,6 +21,7 @@ import {
 import { logExtract, shutdownPubSubLogging } from "./logging/log_job";
 import { jobDurationSeconds } from "../lib/job-metrics";
 import { register } from "prom-client";
+import { startRole } from "../main";
 
 configDotenv();
 
@@ -212,7 +213,7 @@ async function shutdown() {
   process.exit(0);
 }
 
-if (require.main === module) {
+export async function start() {
   process.on("SIGINT", () => {
     _logger.debug("Received SIGINT. Shutting down gracefully...");
     shutdown();
@@ -222,9 +223,7 @@ if (require.main === module) {
     _logger.debug("Received SIGTERM. Shutting down gracefully...");
     shutdown();
   });
-}
 
-(async () => {
   await initializeBlocklist().catch(e => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);
@@ -241,4 +240,8 @@ if (require.main === module) {
   ]);
 
   _logger.info("Extract worker started, consuming from RabbitMQ");
-})();
+}
+
+if (require.main === module) {
+  void startRole("extract-worker");
+}

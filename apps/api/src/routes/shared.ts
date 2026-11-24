@@ -20,7 +20,7 @@ import {
 } from "../lib/http-metrics";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
 import * as geoip from "geoip-country";
-import { isSelfHosted } from "../lib/deployment";
+import { service } from "../service";
 import { validate as isUuid } from "uuid";
 
 import { config } from "../config";
@@ -30,7 +30,10 @@ import {
   CREDITS_FEATURE_ID,
 } from "../services/autumn/autumn.service";
 import { getTeamBalance } from "../services/autumn/usage";
-import { checkHostedMcpCredits } from "../services/autumn/hosted-mcp-gate";
+import {
+  checkHostedMcpCredits,
+  hostedMcpCreditsRefusal,
+} from "../services/autumn/hosted-mcp-gate";
 import { getApiKeySpendLimit } from "../lib/api-key-spend-limit";
 import {
   ThirdPartyDataTermsRequiredError,
@@ -331,7 +334,7 @@ export function checkCreditsMiddleware(
               code: "mcp_credits_exhausted",
               requested_credits: requestedCredits,
               ...(resetsAt ? { resets_at: resetsAt } : {}),
-              error: `Insufficient credits for this connected-app request. Hosted MCP calls (from apps such as ChatGPT, Claude or Codex) spend a daily MCP credit allowance first and then your team's credits, and neither can cover this request${resetsAt ? `; the allowance resets at ${resetsAt}` : ""}. To continue now, add credits or upgrade your plan at https://firecrawl.dev/pricing.`,
+              error: hostedMcpCreditsRefusal(autumnResult.resetsAt),
             });
           }
 
@@ -389,19 +392,7 @@ export function authMiddleware(
           ? options.allowKeyless(req)
           : options.allowKeyless;
 
-      let currentRateLimiterMode = rateLimiterMode;
-      if (
-        currentRateLimiterMode === RateLimiterMode.Extract &&
-        isAgentExtractModelValid((req.body as any)?.agent?.model)
-      ) {
-        currentRateLimiterMode = RateLimiterMode.ExtractAgentPreview;
-      }
-
-      // if (currentRateLimiterMode === RateLimiterMode.Scrape && isAgentExtractModelValid((req.body as any)?.agent?.model)) {
-      //   currentRateLimiterMode = RateLimiterMode.ScrapeAgentPreview;
-      // }
-
-      const auth = await authenticateUser(req, res, currentRateLimiterMode, {
+      const auth = await authenticateUser(req, res, rateLimiterMode, {
         ...options,
         allowKeyless,
       });
@@ -445,6 +436,7 @@ export function authMiddleware(
         ...(hostedMcp ? { hostedMcp: true } : {}),
       };
       req.acuc = chunk ?? undefined;
+      req.caller = { teamId: team_id };
       next();
     })().catch(err => next(err));
   };
@@ -538,6 +530,9 @@ function blocklistGate(
         team_id: req.acuc?.team_id ?? null,
         org_id: req.acuc?.org_id ?? null,
         origin: typeof req.body.origin === "string" ? req.body.origin : null,
+        zeroDataRetention:
+          req.body.zeroDataRetention === true || req.body.lockdown === true,
+        safeMode: req.body.safeMode,
       })
     ) {
       return next();
@@ -626,9 +621,7 @@ export function countryCheck(
     });
     return res.status(403).json({
       success: false,
-      error: isSelfHosted()
-        ? "Use of headers, actions, the agent, and browser/interact sessions is not allowed by default in your country. Please check your server configuration."
-        : "Use of headers, actions, the agent, and browser/interact sessions is not allowed by default in your country. Please contact us at help@firecrawl.com",
+      error: `Use of headers, actions, the agent, and browser/interact sessions is not allowed by default in your country. ${service.modules.messages.restrictedCountryContact()}`,
     });
   }
 

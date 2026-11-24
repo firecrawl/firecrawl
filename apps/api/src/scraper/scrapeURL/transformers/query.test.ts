@@ -20,7 +20,10 @@ import { encoding_for_model } from "@dqbd/tiktoken";
 import type { Mock } from "vitest";
 import { keepWholeLines, performQuery } from "./query";
 import { CostTracking } from "../../../lib/cost-tracking";
+import { getModel } from "../../../lib/generic-ai";
 import { modelPrices } from "../../../lib/model-prices";
+import { createService, replaceService } from "../../../service/service";
+import type { LlmModel } from "../../../service/llm-providers";
 
 const noopLogger = {
   info: () => {},
@@ -80,11 +83,37 @@ beforeAll(async () => {
     await vi.importActual<typeof import("@dqbd/tiktoken")>("@dqbd/tiktoken"));
 });
 
+let vertexEnabled = false;
+
 beforeEach(() => {
+  vertexEnabled = false;
+  replaceService(
+    createService(
+      { modules: {} },
+      {
+        core: {
+          name: "core",
+          llmProviders: [
+            {
+              name: "vertex",
+              enabled: () => vertexEnabled,
+              model: id => ({ modelId: id }) as unknown as LlmModel,
+            },
+          ],
+        },
+        logger: { error: vi.fn() },
+      },
+    ),
+  );
   (generateText as Mock).mockReset();
+  (getModel as Mock).mockClear();
   (encoding_for_model as Mock)
     .mockReset()
     .mockImplementation(realEncodingForModel);
+});
+
+afterEach(() => {
+  replaceService(undefined);
 });
 
 describe("keepWholeLines", () => {
@@ -119,9 +148,7 @@ describe("performQuery highlights", () => {
     );
 
     const [args] = calls();
-    expect(args.experimental_telemetry.functionId).toBe(
-      "performQuery/highlights",
-    );
+    expect(args.telemetry.functionId).toBe("performQuery/highlights");
     const lines = sentLines(args.prompt);
     expect(lines.length).toBeLessThan(40_000);
     lines.forEach((line, i) =>
@@ -187,9 +214,7 @@ describe("performQuery highlights", () => {
     );
 
     const [args] = calls();
-    expect(args.experimental_telemetry.functionId).toBe(
-      "performQuery/directQuote",
-    );
+    expect(args.telemetry.functionId).toBe("performQuery/directQuote");
     expect(args.prompt).toContain("2: Line number 2");
     expect(document.warning).toBeUndefined();
   });
@@ -223,12 +248,30 @@ describe("performQuery freeform", () => {
     const miniTokens = countTokens(mini.prompt);
     expect(miniTokens).toBeLessThanOrEqual(budget + 100);
     expect(miniTokens).toBeGreaterThan(budget - 100);
-    expect(mini.experimental_telemetry.functionId).toBe(
-      "performQuery/freeform",
-    );
+    expect(mini.telemetry.functionId).toBe("performQuery/freeform");
     expect(document.answer).toBe("the answer");
     expect(document.warning).toContain(
       "the answer was generated from the first part of it",
     );
+  });
+
+  it("picks vertex when the registered vertex provider is enabled, otherwise google", async () => {
+    respond("from google");
+    const docGoogle: any = { markdown: "hello", metadata: {} };
+    await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), docGoogle);
+    expect((getModel as Mock).mock.calls[0]).toEqual([
+      "gemini-3.5-flash-lite",
+      "google",
+    ]);
+
+    (getModel as Mock).mockClear();
+    vertexEnabled = true;
+    respond("from vertex");
+    const docVertex: any = { markdown: "hello", metadata: {} };
+    await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), docVertex);
+    expect((getModel as Mock).mock.calls[0]).toEqual([
+      "gemini-3.5-flash-lite",
+      "vertex",
+    ]);
   });
 });

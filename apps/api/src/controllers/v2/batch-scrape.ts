@@ -38,6 +38,7 @@ import {
 } from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
+import { requestContext } from "../../lib/request-context";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
@@ -144,6 +145,23 @@ export async function batchScrapeController(
     });
   }
 
+  // Only batch scrapes can be appended to: crawls (including monitor crawls)
+  // carry their own billing and scope.
+  const appendTarget = req.body.appendToId
+    ? ((await getCrawl(req.body.appendToId)) as StoredCrawl | null)
+    : null;
+  if (
+    req.body.appendToId &&
+    (!appendTarget ||
+      appendTarget.team_id !== req.auth.team_id ||
+      appendTarget.crawlerOptions != null)
+  ) {
+    return res.status(404).json({
+      success: false,
+      error: "Job not found",
+    });
+  }
+
   const id = req.body.appendToId ?? uuidv7();
   const billing: BillingMetadata = {
     ...(req.body.__agentInterop
@@ -169,6 +187,9 @@ export async function batchScrapeController(
         team_id: req.auth.team_id,
         org_id: req.acuc?.org_id ?? null,
         origin: req.body.origin ?? null,
+        zeroDataRetention:
+          zeroDataRetention || appendTarget?.zeroDataRetention === true,
+        safeMode: req.body.safeMode,
       })
     ) {
       return null;
@@ -425,8 +446,10 @@ export async function batchScrapeController(
     });
   }
 
-  const sc: StoredCrawl = req.body.appendToId
-    ? ((await getCrawl(req.body.appendToId)) as StoredCrawl)
+  const workContactOnly =
+    req.headers["x-firecrawl-work-contact-only"] === "true";
+  const sc: StoredCrawl = appendTarget
+    ? appendTarget
     : {
         crawlerOptions: null,
         scrapeOptions: req.body,
@@ -438,6 +461,7 @@ export async function batchScrapeController(
             ? true
             : false,
           zeroDataRetention,
+          ...(workContactOnly ? { workContactOnly } : {}),
           bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
           agentIndexOnly: (req as any).agentIndexOnly ?? false,
           threatProtection: threatProtection.policy ?? undefined,
@@ -457,21 +481,30 @@ export async function batchScrapeController(
       };
 
   if (req.body.appendToId) {
-    if (!sc || sc.team_id !== req.auth.team_id) {
-      return res.status(404).json({
-        success: false,
-        error: "Job not found",
-      });
-    }
+    sc.internalOptions.bypassBilling = !(
+      req.body.__agentInterop?.shouldBill ?? true
+    );
     // Refresh Safe Mode + threat-protection context so appended jobs enforce
     // the team's current policy, not whatever was stored when the batch was
     // first created.
     sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
     sc.internalOptions.safeModeBypassed = safeMode.bypassed === true;
     sc.internalOptions.threatProtection = threatProtection.policy ?? undefined;
+    if (workContactOnly) sc.internalOptions.workContactOnly = true;
   }
 
+  const ctx = requestContext({
+    teamId: req.auth.team_id,
+    zeroDataRetention,
+    flags: sc.internalOptions.teamFlags,
+    orgId: sc.internalOptions.orgId,
+    apiKeyId: req.acuc?.api_key_id ?? null,
+    billing,
+  });
+  req.ctx = ctx;
+
   if (!req.body.appendToId) {
+    sc.ctx = ctx;
     sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
     await crawlGroup.addGroup(
       id,
@@ -510,6 +543,7 @@ export async function batchScrapeController(
     data: {
       url: x,
       mode: "single_urls" as const,
+      ctx,
       team_id: req.auth.team_id,
       crawlerOptions: null,
       scrapeOptions,

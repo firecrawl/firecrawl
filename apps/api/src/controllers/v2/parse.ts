@@ -14,7 +14,7 @@ import {
 } from "./types";
 import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
-import { TransportableError } from "../../lib/error";
+import { isTransportableError } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import { withSpan, setSpanAttributes, SpanKind } from "../../lib/otel-tracer";
@@ -24,7 +24,8 @@ import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { getJobPriority } from "../../lib/job-priority";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
-import { getErrorContactMessage } from "../../lib/deployment";
+import { requestContext } from "../../lib/request-context";
+import { service } from "../../service";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
@@ -377,6 +378,15 @@ export async function parseController(
         externalRequestId: externalRequestId(req),
         hostedMcp: req.auth.hostedMcp,
       };
+      const ctx = requestContext({
+        teamId: req.auth.team_id,
+        zeroDataRetention,
+        flags: req.acuc?.flags ?? null,
+        orgId: req.acuc?.org_id ?? null,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+        billing,
+      });
+      req.ctx = ctx;
 
       if (
         req.body.__agentInterop &&
@@ -541,6 +551,7 @@ export async function parseController(
                   data: {
                     url: syntheticUrl,
                     mode: "single_urls",
+                    ctx,
                     team_id: req.auth.team_id,
                     scrapeOptions: {
                       ...parseOptions,
@@ -599,17 +610,16 @@ export async function parseController(
         }
 
         const timeoutErr =
-          e instanceof TransportableError &&
+          isTransportableError(e) &&
           (e.code === "SCRAPE_TIMEOUT" ||
             e.code === "CONCURRENCY_QUEUE_TIMEOUT");
 
         setSpanAttributes(span, {
           "parse.error": e instanceof Error ? e.message : String(e),
-          "parse.error_type":
-            e instanceof TransportableError ? e.code : "unknown",
+          "parse.error_type": isTransportableError(e) ? e.code : "unknown",
         });
 
-        if (e instanceof TransportableError) {
+        if (isTransportableError(e)) {
           if (!timeoutErr) {
             logger.error("Error in parseController", {
               version: "v2",
@@ -652,7 +662,10 @@ export async function parseController(
             });
           }
 
-          if (e.code === "US_ONLY_UNAVAILABLE") {
+          if (
+            e.code === "US_ONLY_UNAVAILABLE" ||
+            e.code === "RESERVED_CAPACITY_UNAVAILABLE"
+          ) {
             setSpanAttributes(span, {
               "parse.status_code": 403,
             });
@@ -688,7 +701,7 @@ export async function parseController(
           return res.status(500).json({
             success: false,
             code: "UNKNOWN_ERROR",
-            error: getErrorContactMessage(id),
+            error: service.modules.messages.errorContact(id),
           });
         }
       } finally {

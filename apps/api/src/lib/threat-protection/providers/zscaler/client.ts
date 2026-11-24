@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { ProxyAgent, type Dispatcher } from "undici";
-import { config } from "../../../../config";
+import { threatProtectionEnv } from "../../env";
 
 // Minimal Zscaler OneAPI client for the ZIA endpoints the "zscaler" threat
 // protection mode needs: OAuth2 client-credentials tokens from Zidentity,
@@ -86,27 +86,29 @@ let proxyDispatcher: ProxyAgent | undefined;
 let proxyDispatcherUrl: string | undefined;
 
 function getDispatcher(): Dispatcher | undefined {
-  if (!config.PARTNER_EGRESS_PROXY_URL) return undefined;
+  if (!threatProtectionEnv.PARTNER_EGRESS_PROXY_URL) return undefined;
   if (
     !proxyDispatcher ||
-    proxyDispatcherUrl !== config.PARTNER_EGRESS_PROXY_URL
+    proxyDispatcherUrl !== threatProtectionEnv.PARTNER_EGRESS_PROXY_URL
   ) {
-    proxyDispatcher = new ProxyAgent(config.PARTNER_EGRESS_PROXY_URL);
-    proxyDispatcherUrl = config.PARTNER_EGRESS_PROXY_URL;
+    proxyDispatcher = new ProxyAgent(
+      threatProtectionEnv.PARTNER_EGRESS_PROXY_URL,
+    );
+    proxyDispatcherUrl = threatProtectionEnv.PARTNER_EGRESS_PROXY_URL;
   }
   return proxyDispatcher;
 }
 
 function tokenUrl(credentials: ZscalerCredentials): string {
   return (
-    config.ZSCALER_TOKEN_URL_OVERRIDE ??
+    threatProtectionEnv.ZSCALER_TOKEN_URL_OVERRIDE ??
     `https://${credentials.vanityDomain}.zslogin.net/oauth2/v1/token`
   );
 }
 
 function apiBaseUrl(credentials: ZscalerCredentials): string {
   const base =
-    config.ZSCALER_API_URL_OVERRIDE ??
+    threatProtectionEnv.ZSCALER_API_URL_OVERRIDE ??
     (credentials.cloud
       ? `https://api.${credentials.cloud}.zsapi.net`
       : "https://api.zsapi.net");

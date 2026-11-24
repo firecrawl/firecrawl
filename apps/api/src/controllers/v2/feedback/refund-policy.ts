@@ -1,8 +1,9 @@
-import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
 import {
   FeedbackJobRow,
   FeedbackRating,
   RefundPolicySnapshot,
+  isSessionEndpoint,
 } from "./internal-types";
 import type { RefundClass } from "../../../lib/feedback-job-store";
 
@@ -53,7 +54,7 @@ function none(
     desiredRefund: 0,
     policy: {
       version: "feedback_refund_v1",
-      enabled: config.FEEDBACK_REFUND_ENABLED,
+      enabled: feedbackEnv.FEEDBACK_REFUND_ENABLED,
       endpoint: job.endpoint,
       mode: "none",
       refundableRatings,
@@ -116,7 +117,8 @@ function policyForRefundClass(refundClass: RefundClass): RefundablePolicy {
   }
 }
 
-function policyFor(job: FeedbackJobRow): RefundablePolicy {
+function policyFor(job: FeedbackJobRow): RefundablePolicy | null {
+  if (isSessionEndpoint(job.endpoint)) return null;
   if (job.refund_class) return policyForRefundClass(job.refund_class);
   if (job.endpoint !== "scrape") return policyForRefundClass(job.endpoint);
   if (optionListIncludes(job.options, "parsers", "pdf")) {
@@ -139,10 +141,12 @@ export function computeRefundPolicy(
   rating: FeedbackRating,
 ): { desiredRefund: number; policy: RefundPolicySnapshot } {
   const billedCredits = Math.max(0, job.credits_cost ?? 0);
-  if (!config.FEEDBACK_REFUND_ENABLED) return none(job, "refunds_disabled");
+  if (!feedbackEnv.FEEDBACK_REFUND_ENABLED)
+    return none(job, "refunds_disabled");
   if (billedCredits <= 0) return none(job, "zero_billed_credits");
 
   const policy = policyFor(job);
+  if (!policy) return none(job, "endpoint_not_refundable");
   if (!policy.ratings.includes(rating)) {
     return none(job, "rating_not_refundable", policy.ratings);
   }

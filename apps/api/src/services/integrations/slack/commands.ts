@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { config } from "../../../config";
+import { notificationsEnv } from "../../notification/env";
 import { logger as _logger } from "../../../lib/logger";
 import {
   createMonitor,
@@ -10,7 +10,11 @@ import {
   listMonitors,
   updateMonitor,
 } from "../../monitoring/store";
-import { enqueueMonitorCheck } from "../../monitoring/scheduler";
+import {
+  enqueueMonitorCheck,
+  MONITOR_ZDR_REFUSED_ERROR,
+  monitorRefusedForZdr,
+} from "../../monitoring/scheduler";
 import { validateMonitorCron } from "../../monitoring/cron";
 import {
   createMonitorSchema,
@@ -42,7 +46,7 @@ type SlackSlashCommandInput = {
 const DEFAULT_WATCH_CRON = "0 9 * * *"; // daily at 09:00 UTC
 
 function dashboardUrl(path: string): string {
-  return new URL(path, config.FIRECRAWL_DASHBOARD_URL).toString();
+  return new URL(path, notificationsEnv.FIRECRAWL_DASHBOARD_URL).toString();
 }
 
 function ephemeral(text: string, blocks?: unknown[]): SlackCommandResponse {
@@ -53,6 +57,16 @@ function invalidIdResponse(id: string): SlackCommandResponse {
   return ephemeral(
     `\`${escapeSlackText(id)}\` isn't a valid monitor id. Use \`/monitor list\` to find it.`,
   );
+}
+
+async function zdrRefusal(
+  teamId: string,
+  targets: { type: string }[],
+): Promise<SlackCommandResponse | null> {
+  const acuc = await getACUCTeam(teamId);
+  return monitorRefusedForZdr(acuc?.flags ?? undefined, targets)
+    ? ephemeral(MONITOR_ZDR_REFUSED_ERROR)
+    : null;
 }
 
 function truncate(input: string, max: number): string {
@@ -325,6 +339,12 @@ async function createWebsiteMonitor(
       origin: "slack",
     });
 
+    const refusal = await zdrRefusal(
+      input.installation.team_id,
+      parsedInput.targets,
+    );
+    if (refusal) return refusal;
+
     const monitor = await createMonitorFromInput(input, parsedInput);
 
     const lead = hasGoal
@@ -371,6 +391,12 @@ async function createSearchMonitor(
       },
       origin: "slack",
     });
+
+    const refusal = await zdrRefusal(
+      input.installation.team_id,
+      parsedInput.targets,
+    );
+    if (refusal) return refusal;
 
     const monitor = await createMonitorFromInput(input, parsedInput);
 
@@ -628,6 +654,8 @@ async function runResponse(
       `No monitor with id \`${escapeSlackText(trimmed)}\` on your team.`,
     );
   }
+  const refusal = await zdrRefusal(installation.team_id, monitor.targets);
+  if (refusal) return refusal;
   if (monitor.status === "paused") {
     return ephemeral(
       `*${escapeSlackText(monitor.name)}* is paused. Resume it first: \`/monitor resume ${monitor.id}\`.`,
@@ -666,6 +694,8 @@ async function resumeResponse(
       `No monitor with id \`${escapeSlackText(trimmed)}\` on your team.`,
     );
   }
+  const refusal = await zdrRefusal(installation.team_id, existing.targets);
+  if (refusal) return refusal;
 
   const updated = await updateMonitor({
     teamId: installation.team_id,

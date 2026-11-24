@@ -1,7 +1,7 @@
 import { Resend } from "resend";
 import escapeHtml from "escape-html";
 import { eq } from "drizzle-orm";
-import { config } from "../../config";
+import { notificationsEnv } from "./env";
 import { logger as _logger } from "../../lib/logger";
 import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
@@ -14,11 +14,17 @@ import {
   touchRecipientsNotified,
   type MonitorEmailRecipientRow,
 } from "../monitoring/email_recipients";
+import {
+  humanFacingAlertPages,
+  noiseOmittedFromAlertPages,
+} from "./monitoring_alert_pages";
 
 const logger = _logger.child({ module: "monitoring-email" });
 
 const FROM_ADDRESS = "Firecrawl <notifications@notifications.firecrawl.dev>";
 const REPLY_TO_ADDRESS = "help@firecrawl.com";
+// Monitors created after email opt-in shipped always have recipient rows.
+const EMAIL_OPT_IN_CUTOFF = Date.parse("2026-06-01T00:00:00Z");
 
 type MonitoringEmailPage = {
   url: string;
@@ -85,6 +91,13 @@ export type MonitoringEmailPayload = {
   };
   pages: MonitoringEmailPage[];
   creditsUsed: number | null;
+  // Changed pages removed from `pages` because judging called them noise.
+  // Set only when every changed page is in this list, so the number is the
+  // whole check rather than the 100-page notification window.
+  noiseOmitted?: number;
+  // Noise rows were hidden, but changed pages exist outside this list. The
+  // summary then must not state a noise total.
+  hidePartialNoiseCount?: boolean;
   // When omitted, the footer drops the unsubscribe row.
   unsubscribeUrl?: string;
 };
@@ -135,7 +148,7 @@ async function getTeamEmails(teamId: string): Promise<string[]> {
 
 export function buildMonitoringCheckDashboardUrl(
   params: { monitorId: string; checkId: string },
-  baseUrl: string = config.FIRECRAWL_DASHBOARD_URL,
+  baseUrl: string = notificationsEnv.FIRECRAWL_DASHBOARD_URL,
 ): string {
   const url = new URL(
     `/app/monitoring/${encodeURIComponent(params.monitorId)}`,
@@ -146,7 +159,7 @@ export function buildMonitoringCheckDashboardUrl(
 }
 
 function buildPublicWebUrl(path: string, token: string): string {
-  const base = config.FIRECRAWL_DASHBOARD_URL.trim();
+  const base = notificationsEnv.FIRECRAWL_DASHBOARD_URL.trim();
   const url = new URL(path, base);
   url.searchParams.set("token", token);
   return url.toString();
@@ -161,6 +174,30 @@ export function buildRecipientConfirmationUrl(token: string): string {
 
 export function buildRecipientUnsubscribeUrl(token: string): string {
   return buildPublicWebUrl("/monitoring/email/unsubscribe", token);
+}
+
+function formatChangedLine(params: {
+  changed: number;
+  meaningfulCount: number;
+  listedNoiseCount: number;
+  noiseOmitted: number;
+  hasJudgment: boolean;
+  hidePartialNoiseCount: boolean;
+}): string {
+  const { changed, meaningfulCount, listedNoiseCount, noiseOmitted } = params;
+  if (params.hidePartialNoiseCount) {
+    return meaningfulCount > 0
+      ? `Changed: ${changed} (${meaningfulCount} meaningful)`
+      : `Changed: ${changed}`;
+  }
+  if (!params.hasJudgment) return `Changed: ${changed}`;
+  if (noiseOmitted > 0 && listedNoiseCount === 0) {
+    return `Changed: ${changed} (${meaningfulCount} meaningful, ${noiseOmitted} noise omitted)`;
+  }
+  if (noiseOmitted > 0) {
+    return `Changed: ${changed} (${meaningfulCount} meaningful, ${listedNoiseCount} noise, ${noiseOmitted} noise omitted)`;
+  }
+  return `Changed: ${changed} (${meaningfulCount} meaningful, ${listedNoiseCount} noise)`;
 }
 
 function buildUnsubscribeFooter(unsubscribeUrl: string): string {
@@ -210,11 +247,19 @@ export function buildHtml(payload: MonitoringEmailPayload): string {
   const meaningfulCount = judgedPages.filter(
     p => p.judgment!.meaningful,
   ).length;
-  const noiseCount = judgedPages.length - meaningfulCount;
-  const changedLine =
-    judgedPages.length > 0
-      ? `Changed: ${payload.summary.changed} (${meaningfulCount} meaningful, ${noiseCount} noise)`
-      : `Changed: ${payload.summary.changed}`;
+  const listedNoiseCount = judgedPages.length - meaningfulCount;
+  const noiseOmitted = payload.noiseOmitted ?? 0;
+  // Counts come from the pages still rendered, plus noise rows removed above
+  // when that removal count covers every changed page. An empty list must not
+  // leave a heading, and a truncated window must not report "0 noise".
+  const changedLine = formatChangedLine({
+    changed: payload.summary.changed,
+    meaningfulCount,
+    listedNoiseCount,
+    noiseOmitted,
+    hasJudgment: judgedPages.length > 0 || noiseOmitted > 0,
+    hidePartialNoiseCount: payload.hidePartialNoiseCount === true,
+  });
 
   return `Hey there,<br/>
 <p>Your Firecrawl monitor <strong>${escapeHtml(payload.monitorName)}</strong> detected activity.</p>
@@ -265,7 +310,7 @@ export function buildConfirmationHtml(params: {
 }
 
 function getResendClient(): Resend | null {
-  const key = config.RESEND_API_KEY?.trim();
+  const key = notificationsEnv.RESEND_API_KEY?.trim();
   if (!key) return null;
   return new Resend(key);
 }
@@ -357,7 +402,10 @@ async function resolveSendableRecipients(
     // as confirmed so existing alerts keep flowing without a DB backfill.
     // Partial-row monitors keep strict gating — missing addresses stay
     // pending rather than getting auto-confirmed.
-    if (rows.length === 0) {
+    if (
+      rows.length === 0 &&
+      Date.parse(monitor.created_at) < EMAIL_OPT_IN_CUTOFF
+    ) {
       const legacyRows = await Promise.all(
         explicitConfigured.map(async email => {
           const { row } = await ensureMonitorEmailRecipient({
@@ -568,6 +616,15 @@ export async function sendMonitoringEmailSummary(params: {
     checkId: params.check.id,
   });
 
+  // Suppression already ran on the full page list. The rendered list drops
+  // changed pages the judge called noise; new/removed/error/unjudged stay.
+  const alertPages = humanFacingAlertPages(params.monitor, params.pages);
+  const noiseSummary = noiseOmittedFromAlertPages(
+    params.monitor,
+    params.check,
+    params.pages,
+  );
+
   // One email per recipient: unique unsubscribe links + no recipient leakage.
   const sendResults = await Promise.all(
     resolved.confirmedRecipients.map(async recipient => {
@@ -583,7 +640,9 @@ export async function sendMonitoringEmailSummary(params: {
           error: params.check.error_count,
           totalPages: params.check.total_pages,
         },
-        pages: params.pages,
+        pages: alertPages,
+        noiseOmitted: noiseSummary.noiseOmitted,
+        hidePartialNoiseCount: noiseSummary.hidePartialNoiseCount,
         creditsUsed: params.check.actual_credits,
         unsubscribeUrl: buildRecipientUnsubscribeUrl(recipient.token),
       };

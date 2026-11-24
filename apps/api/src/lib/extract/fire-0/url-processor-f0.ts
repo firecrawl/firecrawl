@@ -14,6 +14,7 @@ import { generateText } from "ai";
 import { getModel } from "../../generic-ai";
 import { CostTracking } from "../../cost-tracking";
 import { getACUCTeam } from "../../../controllers/auth";
+import { aiTelemetry } from "../../ai-telemetry";
 
 export async function generateBasicCompletion_FO(
   prompt: string,
@@ -36,7 +37,7 @@ export async function generateBasicCompletion_FO(
         },
       },
     },
-    experimental_telemetry: {
+    telemetry: aiTelemetry({
       isEnabled: true,
       functionId: "generateBasicCompletion_F0",
       metadata: {
@@ -48,7 +49,7 @@ export async function generateBasicCompletion_FO(
           : {}),
         teamId: metadata.teamId,
       },
-    },
+    }),
   });
   return text;
 }

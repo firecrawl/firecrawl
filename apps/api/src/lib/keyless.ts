@@ -263,6 +263,36 @@ export function keylessLimitPromptForTeam(
   );
 }
 
+function keylessProviderToolsMessage(signupUrl: string): string {
+  return `An API key is required for provider tools. Sign up for a free API key at ${signupUrl}
+
+Then authenticate with:
+Authorization: Bearer YOUR_API_KEY`;
+}
+
+/**
+ * The 403 body for a keyless caller asking for provider tools, with the
+ * caller's own signup link. Reports the prompt.
+ */
+export function keylessProviderToolsBody(
+  teamId: string,
+  req: Parameters<typeof keylessSignupSurface>[0],
+): { success: false; error: string; signup_url: string } {
+  const ip = keylessPromptIp(keylessIpFromTeamId(teamId));
+  const surface = keylessSignupSurface(req);
+  const { url, signupRef } = keylessSignupUrlForIp(
+    ip,
+    surface,
+    "account_only_tool",
+  );
+  reportKeylessPromptShown(ip, surface, "account_only_tool", 403, signupRef);
+  return {
+    success: false,
+    error: keylessProviderToolsMessage(url),
+    signup_url: url,
+  };
+}
+
 /** Structured response for projected-credit reservation exhaustion. */
 export async function keylessLimitBody(
   teamId: string,

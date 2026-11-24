@@ -4,7 +4,7 @@ import { encoding_for_model } from "@dqbd/tiktoken";
 import { Document, FormatObject } from "../../../controllers/v2/types";
 import { Meta } from "..";
 import { getModel } from "../../../lib/generic-ai";
-import { config } from "../../../config";
+import { service } from "../../../service";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { isUsOnly } from "../../../lib/us-only";
 import { calculateCost } from "./llmExtract";
@@ -13,6 +13,7 @@ import {
   parseMarkdownToSentences,
   assembleAnswer,
 } from "../../../lib/highlight-spans";
+import { aiTelemetry } from "../../../lib/ai-telemetry";
 
 const PROMPT_TAGS = /(<\/?)(query|page|lines)([\s>])/gi;
 function escapePromptTags(text: string): string {
@@ -23,7 +24,7 @@ function escapePromptTags(text: string): string {
 // labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
 // aren't configured (e.g. self-hosted). Mirrors services/monitoring/search/tuning.ts.
 function hasVertex(): boolean {
-  return Boolean(config.VERTEX_CREDENTIALS);
+  return service.llmProviders.get("vertex")?.enabled() ?? false;
 }
 
 const DIRECT_QUOTE_MODEL = {
@@ -199,7 +200,7 @@ ${escapePromptTags(indexedLines)}
       model,
       system: querySystemPrompt,
       prompt: queryPrompt,
-      experimental_telemetry: {
+      telemetry: aiTelemetry({
         isEnabled: true,
         functionId:
           purpose === "highlights"
@@ -210,7 +211,7 @@ ${escapePromptTags(indexedLines)}
           teamId: meta.internalOptions.teamId ?? "",
           feature: "query",
         },
-      },
+      }),
     });
 
     const elapsed = Date.now() - start;
@@ -329,7 +330,7 @@ ${escapePromptTags(fitted.text)}
         system: querySystemPrompt,
         prompt: queryPrompt,
         providerOptions: FREEFORM_PROVIDER_OPTIONS,
-        experimental_telemetry: {
+        telemetry: aiTelemetry({
           isEnabled: true,
           functionId: "performQuery/freeform",
           metadata: {
@@ -337,7 +338,7 @@ ${escapePromptTags(fitted.text)}
             teamId: meta.internalOptions.teamId ?? "",
             feature: "query",
           },
-        },
+        }),
       });
 
       const elapsed = Date.now() - start;

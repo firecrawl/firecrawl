@@ -3,15 +3,21 @@ import multer from "multer";
 import { config } from "../config";
 import { RateLimiterMode } from "../types";
 import { registerMcpActionLogReadRoute } from "./mcp-action-logs";
+import { createFreshFeedRouter } from "./fresh-feed";
+import {
+  getFreshFeedUpstreams,
+  hasFreshFeedUpstreams,
+} from "../lib/fresh-feed";
 import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
-import {
-  researchCategoryNoticeMiddleware,
-  searchController,
-} from "../controllers/v2/search";
+import { searchController } from "../controllers/v2/search";
 import { feedbackController } from "../controllers/v2/feedback/controller";
 import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { scrapeController } from "../controllers/v2/scrape";
+import {
+  alexandriaQueryBody,
+  providerScrapeController,
+} from "../controllers/v2/scrape-alexandria";
 import { keylessEligibilityController } from "../controllers/v2/keyless-eligibility";
 import {
   keylessWorldIdDeviceController,
@@ -28,6 +34,7 @@ import {
   parseUploadUrlController,
 } from "../controllers/v2/parse-upload";
 import { parseFormatsController } from "../controllers/v2/parse-formats";
+import { configuredComputerSessionFiles } from "../controllers/v2/computer-session-files";
 import { batchScrapeController } from "../controllers/v2/batch-scrape";
 import { crawlController } from "../controllers/v2/crawl";
 import { crawlParamsPreviewController } from "../controllers/v2/crawl-params-preview";
@@ -127,6 +134,7 @@ import {
   slackStatusController,
 } from "../controllers/v2/slack";
 import { agentListController } from "../controllers/v2/agent-list";
+import { internalJwtMiddleware } from "../lib/internal-jwt";
 
 // Every v2 route opts in to the hosted MCP minimums (see AuthenticateOptions
 // in controllers/auth.ts); /v1 routes do not.
@@ -209,7 +217,6 @@ registerMcpActionLogReadRoute(
 
 v2Router.post(
   "/search",
-  researchCategoryNoticeMiddleware,
   authMiddleware(RateLimiterMode.Search, {
     allowKeyless: true,
     allowAgentManagedKey: true,
@@ -258,6 +265,33 @@ v2Router.put(
   wrap(parseLocalUploadController),
 );
 
+// Files of hosted MCP shell sessions. Registered only on a deployment that
+// configures them, so the paths otherwise answer like an unknown route.
+const computerSessionFiles = configuredComputerSessionFiles();
+if (computerSessionFiles) {
+  v2Router.post(
+    "/computer/sessions",
+    authMiddleware(RateLimiterMode.Account),
+    wrap(computerSessionFiles.createSession),
+  );
+  v2Router.put(
+    "/computer/sessions/:sessionId/workspace",
+    authMiddleware(RateLimiterMode.Account),
+    wrap(computerSessionFiles.saveWorkspace),
+  );
+  v2Router.get(
+    "/computer/sessions/:sessionId/workspace",
+    authMiddleware(RateLimiterMode.Account),
+    wrap(computerSessionFiles.readWorkspace),
+  );
+  v2Router.post(
+    "/computer/sessions/:sessionId/links",
+    authMiddleware(RateLimiterMode.Account),
+    wrap(computerSessionFiles.createLink),
+  );
+  v2Router.get("/computer/links/:token", wrap(computerSessionFiles.openLink));
+}
+
 v2Router.post(
   "/parse",
   authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
@@ -279,6 +313,25 @@ v2Router.post(
   checkCreditsMiddleware(1, undefined, { mcpCredits: true }),
   scrapeBlocklistMiddleware,
   wrap(scrapeController),
+);
+
+// The provider call as the body: { provider, capability, options }.
+v2Router.post(
+  "/alexandria",
+  authMiddleware(RateLimiterMode.Exchange, { allowAgentManagedKey: true }),
+  inferIntegrationMiddleware,
+  wrap((req, res) => providerScrapeController(req as any, res, true)),
+);
+
+// The whole call in the URL: the capability in the path, its options in the query string.
+v2Router.get(
+  "/alexandria/:provider/*capability",
+  authMiddleware(RateLimiterMode.Exchange, { allowAgentManagedKey: true }),
+  (req, res, next) => {
+    alexandriaQueryBody(req, res, next).catch(next);
+  },
+  inferIntegrationMiddleware,
+  wrap((req, res) => providerScrapeController(req as any, res, true)),
 );
 
 v2Router.get(
@@ -432,6 +485,7 @@ v2Router.get(
 v2Router.get(
   "/agent",
   authMiddleware(RateLimiterMode.ExtractStatus),
+  internalJwtMiddleware(),
   wrap(agentListController),
 );
 
@@ -674,7 +728,7 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Browser, { allowAgentManagedKey: true }),
   inferIntegrationMiddleware,
   countryCheck,
-  checkCreditsMiddleware(2),
+  checkCreditsMiddleware(2, undefined, { mcpCredits: true }),
   wrap(browserCreateController),
 );
 
@@ -731,7 +785,7 @@ v2Router.post(
 );
 v2Router.post(
   "/support/docs-search",
-  authMiddleware(RateLimiterMode.SupportDocsSearch),
+  authMiddleware(RateLimiterMode.SupportAsk),
   wrap(supportProxyController),
 );
 
@@ -770,14 +824,21 @@ if (config.RESEARCH_PROXY_URL) {
     authMiddleware(RateLimiterMode.DeveloperSearch),
     createDeveloperRouter(),
   );
-}
 
-if (config.SEARCH_PLATFORM_URL) {
   v2Router.use(
     "/search/gov",
     authMiddleware(RateLimiterMode.GovSearch, {
       allowKeyless: true,
     }),
     createGovRouter(),
+  );
+}
+
+const freshFeedUpstreams = getFreshFeedUpstreams(config);
+if (hasFreshFeedUpstreams(freshFeedUpstreams)) {
+  v2Router.use(
+    "/fresh-vertical-feed",
+    authMiddleware(RateLimiterMode.FreshFeed),
+    createFreshFeedRouter(freshFeedUpstreams),
   );
 }
