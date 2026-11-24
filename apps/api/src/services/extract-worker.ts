@@ -10,7 +10,7 @@ import { createWebhookSender, WebhookEvent } from "./webhook";
 import Express from "express";
 import { startNodeRuntimeMetrics } from "../lib/node-runtime-metrics";
 import { getErrorContactMessage } from "../lib/deployment";
-import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
+import { service } from "../service";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 import {
   consumeExtractJobs,
@@ -224,7 +224,7 @@ export async function start() {
     shutdown();
   });
 
-  await initializeBlocklist().catch(e => {
+  await service.modules.blocklist.init().catch(e => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);
   });

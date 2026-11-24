@@ -3,7 +3,8 @@ import type { Logger } from "winston";
 import { Document, ScrapeOptions, TeamFlags } from "../controllers/v2/types";
 import { CostTracking } from "../lib/cost-tracking";
 import { getJobPriority } from "../lib/job-priority";
-import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
+import { isLockdownZeroDataRetention } from "../lib/safe-mode";
+import { service } from "../service";
 import { NuQJob } from "../services/worker/nuq";
 import { processJobInternal } from "../services/worker/scrape-worker";
 import { ScrapeJobData } from "../types";
@@ -171,10 +172,28 @@ export function getItemsToScrape(
   },
 ): ScrapeItem[] {
   const items: ScrapeItem[] = [];
+  const blockCtx = requestContext({
+    teamId: context?.team_id ?? "",
+    zeroDataRetention:
+      context?.zeroDataRetention === true ||
+      getScrapeZDR(flags ?? undefined) === "forced" ||
+      isLockdownZeroDataRetention(
+        flags,
+        typeof context?.safeMode === "boolean" ? context.safeMode : undefined,
+      ),
+    flags,
+    orgId: context?.org_id ?? null,
+  });
+  const blockOptions =
+    context === undefined
+      ? { record: false }
+      : { origin: context.origin ?? null };
 
   if (searchResponse.web) {
     for (const item of searchResponse.web) {
-      if (!isUrlBlocked(item.url, flags, context)) {
+      if (
+        !service.modules.blocklist.isBlocked(item.url, blockCtx, blockOptions)
+      ) {
         items.push({
           item,
           type: "web",
@@ -190,7 +209,10 @@ export function getItemsToScrape(
 
   if (searchResponse.news) {
     for (const item of searchResponse.news) {
-      if (item.url && !isUrlBlocked(item.url, flags, context)) {
+      if (
+        item.url &&
+        !service.modules.blocklist.isBlocked(item.url, blockCtx, blockOptions)
+      ) {
         items.push({
           item,
           type: "news",
@@ -206,7 +228,10 @@ export function getItemsToScrape(
 
   if (searchResponse.images) {
     for (const item of searchResponse.images) {
-      if (item.url && !isUrlBlocked(item.url, flags, context)) {
+      if (
+        item.url &&
+        !service.modules.blocklist.isBlocked(item.url, blockCtx, blockOptions)
+      ) {
         items.push({
           item,
           type: "image",

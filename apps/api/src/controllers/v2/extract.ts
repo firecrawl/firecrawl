@@ -9,7 +9,9 @@ import {
 import { addExtractJobToQueue } from "../../services/queue-service";
 import { saveExtract } from "../../lib/extract/extract-redis";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
-import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
+import { requestContext } from "../../lib/request-context";
+import { isLockdownZeroDataRetention } from "../../lib/safe-mode";
+import { service } from "../../service";
 import { logger as _logger } from "../../lib/logger";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
@@ -91,11 +93,17 @@ export async function extractController(
     });
   }
 
+  const blockCtx = requestContext({
+    teamId: req.auth.team_id,
+    zeroDataRetention:
+      getScrapeZDR(req.acuc?.flags) === "forced" ||
+      isLockdownZeroDataRetention(req.acuc?.flags, undefined),
+    flags: req.acuc?.flags ?? null,
+    orgId: req.acuc?.org_id ?? null,
+  });
   const invalidURLs: string[] =
     req.body.urls?.filter((url: string) =>
-      isUrlBlocked(url, req.acuc?.flags ?? null, {
-        team_id: req.auth.team_id,
-        org_id: req.acuc?.org_id ?? null,
+      service.modules.blocklist.isBlocked(url, blockCtx, {
         origin: req.body.origin ?? null,
       }),
     ) ?? [];

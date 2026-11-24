@@ -23,7 +23,7 @@ export {
   isAlexandriaZDRForced,
 } from "../../lib/zdr-helpers";
 export { authMiddleware, wrap } from "../../routes/shared";
-export { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
+export { requestContext } from "../../lib/request-context";
 export {
   acceptProviderTerms,
   acceptTermsSchema,

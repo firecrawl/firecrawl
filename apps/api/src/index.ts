@@ -36,8 +36,7 @@ import { v2Router } from "./routes/v2";
 import { nuqShutdown } from "./services/worker/nuq";
 import { service } from "./service";
 import { installedService } from "./service/service";
-import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
-import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
+import { initializeApiStartupDependencies } from "./lib/api-startup";
 import responseTime from "response-time";
 import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
 import { isKeylessConfigured } from "./lib/keyless";
@@ -226,15 +225,7 @@ function startAdminInternalServer(port: number) {
 
 async function startServer(port = DEFAULT_PORT) {
   startNodeRuntimeMetrics();
-  try {
-    await initializeBlocklist();
-    initializeEngineForcing();
-  } catch (error) {
-    logger.error("Failed to initialize API startup dependencies", {
-      error,
-    });
-    throw error;
-  }
+  await initializeApiStartupDependencies();
 
   if (!contributedRoutesMounted) {
     installedService()?.mountRoutes({
