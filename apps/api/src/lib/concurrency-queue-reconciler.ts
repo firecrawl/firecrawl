@@ -108,7 +108,16 @@ async function reconcileTeam(
   }
 
   // Crawl and extract share the same per-team concurrency limit; null means unlimited.
-  const teamConcurrency = await currentLimits().teamConcurrency(ownerId);
+  let teamConcurrency: number | null;
+  try {
+    teamConcurrency = await currentLimits().teamConcurrency(ownerId);
+  } catch (error) {
+    teamLogger.warn(
+      "Failed to resolve team concurrency limit, skipping drift recovery for team",
+      { error },
+    );
+    return null;
+  }
   const maxCrawlConcurrency = teamConcurrency ?? Infinity;
   const maxExtractConcurrency = teamConcurrency ?? Infinity;
 
@@ -202,7 +211,16 @@ async function drainQueue(
   teamLogger: Logger,
 ): Promise<{ jobsPromoted: number; staleSkipped: number }> {
   // Crawl and extract share the same per-team concurrency limit; null means unlimited.
-  const teamConcurrency = await currentLimits().teamConcurrency(ownerId);
+  let teamConcurrency: number | null;
+  try {
+    teamConcurrency = await currentLimits().teamConcurrency(ownerId);
+  } catch (error) {
+    teamLogger.warn(
+      "Failed to resolve team concurrency limit, skipping queue drain for team",
+      { error },
+    );
+    return { jobsPromoted: 0, staleSkipped: 0 };
+  }
   const maxCrawlConcurrency = teamConcurrency ?? Infinity;
   const maxExtractConcurrency = teamConcurrency ?? Infinity;
 

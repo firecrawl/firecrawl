@@ -59,7 +59,9 @@ export async function getJobPriority({
     rateLimitMultiplier: acuc?.rate_limit_multiplier,
   });
   return await resolveJobPriority(ctx, basePriority, error => {
-    logger.error(`Get job priority failed: ${team_id}, ${basePriority}`, {
+    logger.error("Get job priority failed", {
+      teamId: team_id,
+      basePriority,
       error,
     });
   });

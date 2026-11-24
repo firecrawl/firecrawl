@@ -91,15 +91,14 @@ export async function getJob(id: string): Promise<PseudoJob<any> | null> {
 
   let data = gcsJob ?? nuqJob?.returnvalue;
   let storedJob: StoredJob | null = null;
-  if (!data && externalStore && jobStore) {
+  const effectiveStatus = scrapeState?.status ?? nuqJob?.status;
+  if (!data && externalStore && jobStore && effectiveStatus === "completed") {
     try {
       storedJob = await jobStore.read(id, "scrape");
       data = storedJob?.document;
     } catch (error) {
       logger.warn("Job store read failed", { error, scrapeId: id });
-      if ((scrapeState?.status ?? nuqJob?.status) === "completed") {
-        throw error;
-      }
+      throw error;
     }
   }
   if (gcsJob === null && data && !storedJob) {

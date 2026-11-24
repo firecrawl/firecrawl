@@ -763,17 +763,26 @@ async function searchControllerInner(
     // Bills search results only; each scraped document is already billed via kind: "scrape".
     const searchCredits =
       !isSearchPreview && shouldBill
-        ? await service.modules.billing.charge({
-            kind: "search",
-            ctx,
-            requestId: jobId,
-            results: billableResultsCount,
-            documents: scrapedDocuments,
-            state: {
-              enterprise: req.body.enterprise,
-              threatDecisions: result.threatDecisions,
-            },
-          })
+        ? await service.modules.billing
+            .charge({
+              kind: "search",
+              ctx,
+              requestId: jobId,
+              results: billableResultsCount,
+              documents: scrapedDocuments,
+              state: {
+                enterprise: req.body.enterprise,
+                threatDecisions: result.threatDecisions,
+              },
+            })
+            .catch(error => {
+              logger.error("Failed to bill team for search credits", {
+                teamId: req.auth.team_id,
+                jobId,
+                error,
+              });
+              return undefined;
+            })
         : undefined;
 
     let scrapeCredits: number | undefined;
@@ -786,6 +795,8 @@ async function searchControllerInner(
       searchCredits !== undefined || scrapeCredits !== undefined
         ? (searchCredits ?? 0) + (scrapeCredits ?? 0)
         : undefined;
+    const endTime = new Date().getTime();
+    const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
     trackSearchRequest({
       searchId: jobId,
@@ -805,14 +816,11 @@ async function searchControllerInner(
       hasScrapeFormats: result.shouldScrape,
       scrapeFormats: result.scrapeFormats ?? [],
       isSuccessful: true,
-      timeTaken: 0,
+      timeTaken: timeTakenInSeconds,
       zeroDataRetention,
     }).catch(err =>
       logger.warn("Search request tracking failed", { error: err }),
     );
-
-    const endTime = new Date().getTime();
-    const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
     logSearch({
       id: jobId,

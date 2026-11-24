@@ -224,10 +224,10 @@ function billThreatBlockedDiscoveries(
       },
     })
     .catch(error => {
-      logger.error(
-        `Failed to bill team ${args.ctx.teamId} for blocked crawl discoveries`,
-        { error },
-      );
+      logger.error("Failed to bill team for blocked crawl discoveries", {
+        teamId: args.ctx.teamId,
+        error,
+      });
     });
 }
 
@@ -285,9 +285,11 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           links: Array<{ content: Document; source: string; id: string }>;
         };
         document: Document | null;
+        externalResultStored?: boolean;
         error?: Error;
       }
     | undefined;
+  let externalResultStored = false;
   let failureCleanupError: unknown;
   let hasFailureCleanupError = false;
 
@@ -788,6 +790,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           },
           { state: "completed", document: doc },
         );
+        externalResultStored = true;
       } catch (error) {
         logger.error("Failed to record completed scrape in job store", {
           error,
@@ -1000,8 +1003,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             },
           );
         }
+        externalResultStored = recorded;
       } else {
-        await Promise.all([recordOutcomePromise, logScrapePromise]);
+        const [recorded] = await Promise.all([
+          recordOutcomePromise,
+          logScrapePromise,
+        ]);
+        externalResultStored = recorded;
       }
 
       finishedOutcome = {
@@ -1020,7 +1028,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     });
 
     logger.info(`🐂 Job done ${job.id}`);
-    resultData = data;
+    resultData = { ...data, externalResultStored };
   } catch (error) {
     let credits_billed: number | null | undefined;
     let failureEnd: number | undefined;
@@ -1942,6 +1950,7 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
             try {
               if (
                 service.modules.jobStore.storesResultsExternally?.() &&
+                result.externalResultStored &&
                 !job.data.skipNuq
               ) {
                 logger.debug("Job succeeded -- putting null in queue");

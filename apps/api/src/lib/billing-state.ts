@@ -11,7 +11,10 @@ import type { ThreatDecision } from "./threat-protection/types";
 
 declare module "../service/modules" {
   interface AuthorizeState {
-    /** Express request carried while route middleware and controllers read request metadata. */
+    /**
+     * Express request carried for preflight and reservation checks.
+     * A billing module may update request auth flags (such as `hostedMcp` or `agentIndexOnly`) during preflight.
+     */
     req?: RequestWithAuth<any, any, any>;
     /** Explicit minimum units configured on the route middleware. */
     minimum?: number;

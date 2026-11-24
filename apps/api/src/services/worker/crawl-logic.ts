@@ -162,14 +162,17 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
     const FINALIZE_USAGE_RETRY_ATTEMPTS = 3;
     const FINALIZE_USAGE_RETRY_MS = 500;
     let credits_billed: number | null = null;
+    let lastUsageError: unknown = null;
 
     for (let attempt = 1; attempt <= FINALIZE_USAGE_RETRY_ATTEMPTS; attempt++) {
       try {
         credits_billed = await service.modules.jobStore.usage(requestId, {
           finalize: true,
         });
+        lastUsageError = null;
         break;
       } catch (error) {
+        lastUsageError = error;
         logger.warn("Job store usage read failed", {
           error,
           requestId,
@@ -181,6 +184,13 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
           );
         }
       }
+    }
+    if (lastUsageError !== null) {
+      logger.error("Failed to read crawl usage after retries", {
+        error: lastUsageError,
+        requestId,
+        attempts: FINALIZE_USAGE_RETRY_ATTEMPTS,
+      });
     }
 
     if (sc.crawlerOptions !== null) {

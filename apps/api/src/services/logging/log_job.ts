@@ -37,6 +37,7 @@ import {
 } from "../../lib/job-access-store";
 import { writeFeedbackJob } from "../../lib/feedback-job-store";
 import { setSpanAttributes, withSpan } from "../../lib/otel-tracer";
+import { installedService } from "../../service/service";
 import {
   writeExtractJobState,
   writeScrapeJobState,
@@ -800,7 +801,10 @@ async function logScrapeInternal(scrape: LoggedScrape, hooks?: LogScrapeHooks) {
   }
 
   if (
-    !scrape.skipJobStore &&
+    !(
+      scrape.skipJobStore &&
+      installedService()?.modules.jobStore.storesResultsExternally?.()
+    ) &&
     !scrape.is_parse &&
     scrape.doc &&
     config.GCS_BUCKET_NAME &&

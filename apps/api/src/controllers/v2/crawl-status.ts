@@ -64,21 +64,38 @@ export async function getJob(
   id: string,
   _logger = logger,
 ): Promise<PseudoJob<any> | null> {
+  const store = service.modules.jobStore;
+  const externalStore = store.storesResultsExternally?.() ?? false;
   let storeReadError: unknown = null;
-  const [nuqJob, stored] = await Promise.all([
-    scrapeQueue.getJob(
-      id,
-      _logger,
-    ) as Promise<NuQJob<ScrapeJobSingleUrls> | null>,
-    service.modules.jobStore.read(id, "scrape").catch(error => {
+  const readStore = () =>
+    store.read(id, "scrape").catch(error => {
       _logger.warn("Job store read failed", {
         error,
         scrapeId: id,
       });
       storeReadError = error;
       return null;
-    }),
-  ]);
+    });
+
+  let nuqJob: NuQJob<ScrapeJobSingleUrls> | null;
+  let stored: StoredJob | null = null;
+  if (externalStore) {
+    [nuqJob, stored] = await Promise.all([
+      scrapeQueue.getJob(
+        id,
+        _logger,
+      ) as Promise<NuQJob<ScrapeJobSingleUrls> | null>,
+      readStore(),
+    ]);
+  } else {
+    nuqJob = (await scrapeQueue.getJob(
+      id,
+      _logger,
+    )) as NuQJob<ScrapeJobSingleUrls> | null;
+    if (!nuqJob) {
+      stored = await readStore();
+    }
+  }
 
   if (!nuqJob && !stored) {
     if (storeReadError) throw storeReadError;

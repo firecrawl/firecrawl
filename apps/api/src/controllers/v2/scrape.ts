@@ -515,7 +515,7 @@ export async function scrapeController(
           ctx,
         );
       } catch (e) {
-        await settleBilling({ ok: false });
+        void settleBilling({ ok: false });
 
         const timeoutErr =
           isTransportableError(e) &&

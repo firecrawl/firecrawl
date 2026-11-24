@@ -214,7 +214,7 @@ export async function mapController(
         req.auth.team_id,
       );
 
-    const creditsCost = await service.modules.billing
+    void service.modules.billing
       .charge({
         kind: "map",
         ctx,
@@ -235,32 +235,34 @@ export async function mapController(
           error,
         });
         return undefined;
+      })
+      .then(creditsCost =>
+        logMap({
+          id: mapId,
+          request_id: mapId,
+          url: req.body.url,
+          team_id: req.auth.team_id,
+          options: {
+            search: req.body.search,
+            sitemap: req.body.sitemap,
+            includeSubdomains: req.body.includeSubdomains,
+            ignoreQueryParameters: req.body.ignoreQueryParameters,
+            limit: req.body.limit,
+            timeout: req.body.timeout,
+            location: req.body.location,
+          },
+          results: collectedResults,
+          credits_cost: creditsCost ?? 0,
+          zeroDataRetention,
+        }),
+      )
+      .catch(error => {
+        logger.error("Failed to log map job", {
+          teamId: req.auth.team_id,
+          mapId,
+          error,
+        });
       });
-
-    logMap({
-      id: mapId,
-      request_id: mapId,
-      url: req.body.url,
-      team_id: req.auth.team_id,
-      options: {
-        search: req.body.search,
-        sitemap: req.body.sitemap,
-        includeSubdomains: req.body.includeSubdomains,
-        ignoreQueryParameters: req.body.ignoreQueryParameters,
-        limit: req.body.limit,
-        timeout: req.body.timeout,
-        location: req.body.location,
-      },
-      results: collectedResults,
-      credits_cost: creditsCost ?? 0,
-      zeroDataRetention,
-    }).catch(error => {
-      logger.error("Failed to log map job", {
-        teamId: req.auth.team_id,
-        mapId,
-        error,
-      });
-    });
 
     const hooks = installedService()?.hooks;
     if (hooks?.has("map.finished")) {
@@ -348,7 +350,7 @@ export async function mapController(
   result.mapResults = filtered.links;
   const threatDecisions = filtered.threatDecisions;
 
-  const creditsToBill = await service.modules.billing
+  void service.modules.billing
     .charge({
       kind: "map",
       ctx,
@@ -365,28 +367,34 @@ export async function mapController(
         error,
       });
       return undefined;
+    })
+    .then(creditsToBill =>
+      logMap({
+        id: result.job_id,
+        request_id: result.job_id,
+        url: req.body.url,
+        team_id: req.auth.team_id,
+        options: {
+          search: req.body.search,
+          sitemap: req.body.sitemap,
+          includeSubdomains: req.body.includeSubdomains,
+          ignoreQueryParameters: req.body.ignoreQueryParameters,
+          limit: req.body.limit,
+          timeout: req.body.timeout,
+          location: req.body.location,
+        },
+        results: result.mapResults,
+        credits_cost: creditsToBill ?? 0,
+        zeroDataRetention,
+      }),
+    )
+    .catch(error => {
+      logger.error("Failed to log map job", {
+        teamId: req.auth.team_id,
+        mapId: result.job_id,
+        error,
+      });
     });
-
-  logMap({
-    id: result.job_id,
-    request_id: result.job_id,
-    url: req.body.url,
-    team_id: req.auth.team_id,
-    options: {
-      search: req.body.search,
-      sitemap: req.body.sitemap,
-      includeSubdomains: req.body.includeSubdomains,
-      ignoreQueryParameters: req.body.ignoreQueryParameters,
-      limit: req.body.limit,
-      timeout: req.body.timeout,
-      location: req.body.location,
-    },
-    results: result.mapResults,
-    credits_cost: creditsToBill ?? 0,
-    zeroDataRetention,
-  }).catch(error => {
-    logger.error(`Failed to log job for team ${req.auth.team_id}: ${error}`);
-  });
 
   const hooks = installedService()?.hooks;
   if (hooks?.has("map.finished")) {

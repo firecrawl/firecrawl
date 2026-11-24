@@ -98,6 +98,9 @@ beforeEach(() => {
     scrapedDocuments: [],
     searchTypes: ["web"],
     scrapeFormats: [],
+    resultCountsBySource: {},
+    resultCategories: {},
+    toolFusion: false,
     shouldScrape: false,
   });
 });

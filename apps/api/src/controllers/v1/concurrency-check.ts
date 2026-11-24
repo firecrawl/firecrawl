@@ -5,6 +5,7 @@ import {
 } from "./types";
 import { Response } from "express";
 import { getCombinedTeamActiveCount } from "../../services/worker/nuq-router";
+import { currentLimits } from "../../lib/limits";
 import { requestContext } from "../../lib/request-context";
 import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
 
@@ -22,15 +23,15 @@ export async function concurrencyCheckController(
     concurrencyLimit: req.acuc?.concurrency_limit,
     rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
   });
-  const activeJobsOfTeam = await getCombinedTeamActiveCount(
-    req.auth.team_id,
-    ctx,
-  );
+  const [activeJobsOfTeam, maxConcurrency] = await Promise.all([
+    getCombinedTeamActiveCount(req.auth.team_id, ctx),
+    currentLimits().concurrency(ctx),
+  ]);
 
   return res.status(200).json({
     success: true,
     concurrency: activeJobsOfTeam,
-    maxConcurrency:
-      req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit,
+    // v1 response schema requires a finite maxConcurrency number.
+    maxConcurrency: maxConcurrency ?? DEFAULT_TEAM_LIMITS.concurrency_limit,
   });
 }

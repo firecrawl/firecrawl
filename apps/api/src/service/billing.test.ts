@@ -302,7 +302,7 @@ describe("custom BillingModule in v2 searchController", () => {
     expect(res.status).toHaveBeenCalledWith(500);
   });
 
-  it("retries transient settlement failures and keeps the 200 response when settlement still fails", async () => {
+  it("retries transient settlement failures and keeps the 200 response when settlement succeeds on retry", async () => {
     const handle = { token: "res-flaky" };
     const authorize = vi.fn().mockResolvedValue({ ok: true as const, handle });
     const charge = vi.fn().mockResolvedValue(2);
@@ -325,10 +325,30 @@ describe("custom BillingModule in v2 searchController", () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json.mock.calls[0][0].creditsUsed).toBe(2);
   });
+
+  it("keeps the 200 response when settlement fails on every retry attempt", async () => {
+    const handle = { token: "res-fail" };
+    const authorize = vi.fn().mockResolvedValue({ ok: true as const, handle });
+    const charge = vi.fn().mockResolvedValue(2);
+    const settle = vi.fn().mockRejectedValue(new Error("redis down"));
+    const billing: BillingModule = { authorize, charge, settle };
+    const res = makeRes();
+
+    await withService(
+      testService(defaultModules(), parts, { billing }),
+      async () => {
+        await searchController(makeSearchReq({ query: "docs" }), res);
+      },
+    );
+
+    expect(settle).toHaveBeenCalledTimes(2);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json.mock.calls[0][0].creditsUsed).toBe(2);
+  });
 });
 
 describe("unstable billing runtime entry point", () => {
-  it("exports lazy loaders without evaluating runtime dependencies on import", async () => {
+  it("exports lazy loader functions from the unstable billing runtime", async () => {
     const runtime = await import("../services/billing/runtime.js");
     expect(typeof runtime.loadAuthBillingHelpers).toBe("function");
     expect(typeof runtime.loadPricingHelpers).toBe("function");

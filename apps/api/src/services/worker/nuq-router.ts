@@ -226,6 +226,7 @@ async function markExternalSlotBackend(
       backend,
       error,
     });
+    throw error;
   }
 }
 
@@ -364,7 +365,15 @@ export async function fdbEnqueueScrapeJobs(
     const keyIds = new Set(jobs.map(j => jobContext(j.data).apiKeyId ?? null));
     const apiKeyId = keyIds.size === 1 ? [...keyIds][0] : null;
     if (apiKeyId !== null) {
-      keyGate = await limits.keyConcurrency(firstCtx);
+      keyGate = await limits.keyConcurrency(firstCtx).catch(error => {
+        _logger.warn("Failed to resolve API key concurrency limit", {
+          module: "nuq-router",
+          teamId,
+          apiKeyId,
+          error,
+        });
+        return null;
+      });
     }
   }
 

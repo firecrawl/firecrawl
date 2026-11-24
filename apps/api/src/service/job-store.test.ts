@@ -549,4 +549,30 @@ describe("crawlStatusController and helpers with jobStore", () => {
       },
     );
   });
+
+  it("rethrows jobStore.read failures when no queue job exists or external results are missing", async () => {
+    const readError = new Error("store unavailable");
+    const customStore: JobStoreModule = {
+      ...queueJobStore(),
+      storesResultsExternally: () => true,
+      read: vi.fn().mockRejectedValue(readError),
+    };
+
+    await withService(
+      testService(defaultModules(), parts, { jobStore: customStore }),
+      async () => {
+        mocks.getJob.mockResolvedValueOnce(null);
+        await expect(getJob(JOB_ID)).rejects.toThrow("store unavailable");
+
+        mocks.getJob.mockResolvedValueOnce({
+          id: JOB_ID,
+          status: "completed",
+          createdAt: new Date(1_700_000_000_000),
+          data: { mode: "single_urls", scrapeOptions: {} },
+          returnvalue: null,
+        });
+        await expect(getJob(JOB_ID)).rejects.toThrow("store unavailable");
+      },
+    );
+  });
 });

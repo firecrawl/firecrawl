@@ -710,7 +710,7 @@ export async function parseController(
         }
       }
 
-      await settleBilling({
+      void settleBilling({
         ok: true,
         charged: doc?.metadata?.creditsUsed,
       });

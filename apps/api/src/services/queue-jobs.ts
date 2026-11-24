@@ -38,7 +38,6 @@ import {
   withFdbTimeout,
 } from "./worker/nuq-fdb";
 import { serializeTraceContext } from "../lib/otel-tracer";
-import { isSelfHosted } from "../lib/deployment";
 import { installedService } from "../service/service";
 import { MONITOR_CHECK_STALE_TIMEOUT_MS } from "./monitoring/stale";
 
@@ -854,7 +853,6 @@ export async function addScrapeJobs(
       })),
     );
     if (
-      !isSelfHosted() &&
       maxConcurrency !== null &&
       jobsPotentiallyInCQ.length > countCanBeDirectlyAdded
     ) {

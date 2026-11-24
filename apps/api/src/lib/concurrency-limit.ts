@@ -346,16 +346,20 @@ export async function concurrentJobDone(job: NuQJob<any>) {
       await cleanOldCrawlConcurrencyLimitEntries(job.data.crawl_id);
     }
 
-    // Once per call, not once per job promoted below.
-    const maxTeamConcurrency = await currentLimits()
-      .teamConcurrency(job.data.team_id)
-      .catch(error => {
-        logger.warn(
-          "Failed to resolve team concurrency limit during job completion, proceeding without team cap",
-          { teamId: job.data.team_id, error },
-        );
-        return null;
-      });
+    // Once per call, not once per job promoted below. Skip promotion if lookup fails
+    // so a transient limits error is never treated as an unlimited cap.
+    let maxTeamConcurrency: number | null;
+    try {
+      maxTeamConcurrency = await currentLimits().teamConcurrency(
+        job.data.team_id,
+      );
+    } catch (error) {
+      logger.warn(
+        "Failed to resolve team concurrency limit during job completion, skipping backlog promotion",
+        { teamId: job.data.team_id, error },
+      );
+      return;
+    }
 
     let staleSkipped = 0;
     while (staleSkipped < 100) {

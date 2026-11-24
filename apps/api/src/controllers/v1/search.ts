@@ -300,6 +300,12 @@ export async function searchController(
         flags: req.acuc?.flags ?? null,
         orgId: req.acuc?.org_id ?? null,
         apiKeyId: req.acuc?.api_key_id ?? null,
+        billing: {
+          endpoint: "search",
+          jobId,
+          chargeId: jobId,
+          externalRequestId: externalRequestId(req),
+        },
       });
     req.ctx = ctx;
     const hookBody: V2SearchRequest = {
@@ -492,19 +498,6 @@ export async function searchController(
     }
 
     // Bill team for search credits only
-    const searchCtx = requestContext({
-      teamId: req.auth.team_id,
-      zeroDataRetention,
-      flags: req.acuc?.flags ?? null,
-      orgId: req.acuc?.org_id ?? null,
-      apiKeyId: req.acuc?.api_key_id ?? null,
-      billing: {
-        endpoint: "search",
-        jobId,
-        chargeId: jobId,
-        externalRequestId: externalRequestId(req),
-      },
-    });
     const scrapedDocuments = result.scrapedDocuments ?? [];
     const billableResultsCount =
       result.billableResultsCount ?? result.totalResultsCount;
@@ -512,17 +505,26 @@ export async function searchController(
     const billingModule = installedService()?.modules.billing;
     const searchCredits =
       !isSearchPreview && billingModule
-        ? await billingModule.charge({
-            kind: "search",
-            ctx: searchCtx,
-            requestId: jobId,
-            results: billableResultsCount,
-            documents: scrapedDocuments,
-            state: {
-              enterprise: teamEnterprise,
-              threatDecisions: result.threatDecisions,
-            },
-          })
+        ? await billingModule
+            .charge({
+              kind: "search",
+              ctx,
+              requestId: jobId,
+              results: billableResultsCount,
+              documents: scrapedDocuments,
+              state: {
+                enterprise: teamEnterprise,
+                threatDecisions: result.threatDecisions,
+              },
+            })
+            .catch(error => {
+              logger.error("Failed to bill team for search credits", {
+                teamId: req.auth.team_id,
+                jobId,
+                error,
+              });
+              return undefined;
+            })
         : undefined;
     let scrapeCredits = 0;
     for (const doc of scrapedDocuments) {
@@ -531,6 +533,8 @@ export async function searchController(
       }
     }
     const totalCredits = (searchCredits ?? 0) + scrapeCredits;
+    const endTime = new Date().getTime();
+    const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
     trackSearchRequest({
       searchId: jobId,
@@ -550,7 +554,7 @@ export async function searchController(
       hasScrapeFormats: result.shouldScrape,
       scrapeFormats: result.scrapeFormats ?? [],
       isSuccessful: true,
-      timeTaken: 0,
+      timeTaken: timeTakenInSeconds,
       zeroDataRetention,
     }).catch(err =>
       logger.warn("Search request tracking failed", { error: err }),
@@ -564,9 +568,6 @@ export async function searchController(
       ).catch(() => {});
       logKeylessCreditUsage(req.auth.team_id, totalCredits).catch(() => {});
     }
-
-    const endTime = new Date().getTime();
-    const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
 
     logSearch({
       id: jobId,

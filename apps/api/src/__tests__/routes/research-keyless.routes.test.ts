@@ -33,6 +33,7 @@ async function appWithResearchGate(flag: string | undefined) {
   const { testService } = await import("../../service/testing.js");
   const { RateLimiterMode } = await import("../../types.js");
 
+  // Stub verifies route-level allowKeyless policy forwarding and refusal passthrough.
   replaceService(
     testService({}, coreParts(), {
       auth: {
