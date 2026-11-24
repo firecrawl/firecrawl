@@ -204,25 +204,13 @@
       "types": "./src/scraper/scrapeURL/lib/mock.ts",
       "default": "./dist/src/scraper/scrapeURL/lib/mock.js"
     },
-    "./unstable/scrape-pdf-by-reference": {
-      "types": "./src/scraper/scrapeURL/engines/pdf/fire-pdf/by-reference.ts",
-      "default": "./dist/src/scraper/scrapeURL/engines/pdf/fire-pdf/by-reference.js"
-    },
-    "./unstable/scrape-pdf-cache": {
-      "types": "./src/scraper/scrapeURL/engines/pdf/fire-pdf/cache-service.ts",
-      "default": "./dist/src/scraper/scrapeURL/engines/pdf/fire-pdf/cache-service.js"
-    },
-    "./unstable/scrape-pdf-fire-pdf": {
-      "types": "./src/scraper/scrapeURL/engines/pdf/firePDF.ts",
-      "default": "./dist/src/scraper/scrapeURL/engines/pdf/firePDF.js"
+    "./unstable/scrape-pdf-local": {
+      "types": "./src/scraper/scrapeURL/engines/pdf/index.ts",
+      "default": "./dist/src/scraper/scrapeURL/engines/pdf/index.js"
     },
     "./unstable/scrape-pdf-markdown": {
       "types": "./src/scraper/scrapeURL/engines/pdf/markdownToHtml.ts",
       "default": "./dist/src/scraper/scrapeURL/engines/pdf/markdownToHtml.js"
-    },
-    "./unstable/scrape-pdf-routing": {
-      "types": "./src/scraper/scrapeURL/engines/pdf/fire-pdf/routing.ts",
-      "default": "./dist/src/scraper/scrapeURL/engines/pdf/fire-pdf/routing.js"
     },
     "./unstable/scrape-pdf-types": {
       "types": "./src/scraper/scrapeURL/engines/pdf/types.ts",

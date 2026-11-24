@@ -35,6 +35,17 @@ export type ImageOcrGate = () => Promise<boolean>;
  * `image` parser — it does by default, and a parse upload of an image counts
  * regardless — and the deployment switch must be on (see isImageOcrEnabled).
  */
+export function shouldParseImages(parsers?: readonly unknown[]): boolean {
+  if (!parsers) return true;
+  return parsers.some(
+    parser =>
+      parser === "image" ||
+      (typeof parser === "object" &&
+        parser !== null &&
+        (parser as { type?: unknown }).type === "image"),
+  );
+}
+
 export function imageOcrGate(requested: boolean): ImageOcrGate {
   const enabled = Promise.resolve(requested && isImageOcrEnabled());
   return () => enabled;

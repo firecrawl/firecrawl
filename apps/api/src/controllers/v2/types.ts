@@ -28,7 +28,6 @@ import {
   ScrapeOptions as V1ScrapeOptions,
 } from "../v1/types";
 import type { InternalOptions } from "../../scraper/scrapeURL";
-import type { PdfPageBlocks } from "../../scraper/scrapeURL/engines/pdf/types";
 import { ErrorCode } from "../../lib/error";
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
@@ -447,191 +446,62 @@ export type FormatObject =
   | QuestionFormatWithOptions
   | QueryFormatWithOptions;
 
-const pdfModeSchema = z.enum(["fast", "auto", "ocr"]);
+const pdfModeSchema = z.enum(["fast", "auto"]);
 
 export type PDFMode = z.infer<typeof pdfModeSchema>;
 
-const pdfParserWithOptions = z
-  .strictObject({
-    type: z.literal("pdf"),
-    mode: pdfModeSchema.optional(),
-    maxPages: z.int().positive().finite().max(10000).optional(),
-    /** Include physical per-page markdown alongside document markdown —
-     * populates `document.pages`. */
-    pages: z.boolean().optional(),
-    /**
-     * @deprecated Renamed to `pages` (2026-08). Accepted as a silent alias
-     * for callers that adopted the option pre-rename; never documented.
-     * Normalized into `pages` below — internal code never sees this field.
-     */
-    pageMarkdown: z.boolean().optional(),
-    /** Include per-page typed layout blocks (bounding boxes, block types,
-     * reading order) alongside document markdown — populates
-     * `document.blocks`. */
-    blocks: z.boolean().optional(),
-    /** Join PDF pages in `document.markdown` with
-     * `\n\n---\n\n<!-- page N -->\n\n` where N is the 1-based physical page
-     * of the content that follows. Markers appear between pages only (no
-     * leading marker for page 1), and numbering may skip pages merged by
-     * cross-page stitching — callers that need every physical page should
-     * use `pages: true` instead. No new response field. */
-    pageMarkers: z.boolean().optional(),
-    /** Skip the cached conversion for this document and parse it again with
-     * the current pipeline; the fresh result overwrites the cache entry for
-     * everyone. Billed like a fresh parse. Use it when a cached result is
-     * wrong or outdated. */
-    refresh: z.boolean().optional(),
-    // Experimental: route this request through the fire-pdf async pipeline
-    // (POST /jobs + poll) instead of the sync POST /ocr endpoint. Falls back
-    // to sync on any async-path failure, so user-visible behavior is unchanged
-    // beyond latency variance. Underscored to mark as internal/experimental.
-    __firePdfAsync: z.boolean().optional(),
-  })
-  .transform(({ pageMarkdown, pages, ...parser }) => {
-    // Fold the deprecated alias into the canonical name at the schema
-    // boundary; `pages` wins when both are set. Keep the key optional so
-    // plain `{ type: "pdf" }` parser literals stay assignable.
-    const normalized: typeof parser & { pages?: boolean } = { ...parser };
-    const effective = pages ?? pageMarkdown;
-    if (effective !== undefined) normalized.pages = effective;
-    return normalized;
-  });
-
-/**
- * Raster image OCR (PNG, JPEG, JPEG 2000, TIFF, GIF, BMP). Like `pdf` it is
- * part of the default list, so a request that says nothing about parsers OCRs
- * image URLs (where the deployment has image OCR on, see
- * lib/image-ocr-gate.ts); an explicit list that omits it (`["pdf"]`, `[]`)
- * opts out and keeps the historical unsupported-file rejection. The object form carries no options yet; it
- * exists so options can be added later without a breaking change.
- */
-const imageParserWithOptions = z.strictObject({
-  type: z.literal("image"),
+const pdfParserWithOptions = z.strictObject({
+  type: z.literal("pdf"),
+  mode: pdfModeSchema.optional(),
+  maxPages: z.int().positive().finite().max(10000).optional(),
 });
 
 const parsersSchema = z
-  .array(
-    z.union([
-      z.literal("pdf"),
-      pdfParserWithOptions,
-      z.literal("image"),
-      imageParserWithOptions,
-    ]),
-  )
-  .prefault(["pdf", "image"]);
+  .array(z.union([z.literal("pdf"), pdfParserWithOptions]))
+  .prefault(["pdf"]);
 
 type Parsers = z.infer<typeof parsersSchema>;
 
-export function shouldParsePDF(parsers?: Parsers): boolean {
+export function shouldParsePDF(parsers?: readonly unknown[]): boolean {
   if (!parsers) return true;
   return parsers.some(parser => {
     if (parser === "pdf") return true;
     if (typeof parser === "object" && parser !== null && "type" in parser) {
-      return (parser as any).type === "pdf";
+      return (parser as { type?: unknown }).type === "pdf";
     }
     return false;
   });
 }
 
-/**
- * Whether the request wants raster image OCR. Like PDFs, images are parsed
- * by default: `undefined` means the default list, while an explicit list
- * that omits `image` (including `[]`) opts out.
- */
-export function shouldParseImages(parsers?: Parsers): boolean {
-  if (!parsers) return true;
-  return parsers.some(
-    parser =>
-      parser === "image" ||
-      (typeof parser === "object" &&
-        parser !== null &&
-        parser.type === "image"),
-  );
-}
-
-export function getPDFMaxPages(parsers?: Parsers): number | undefined {
+export function getPDFMaxPages(
+  parsers?: readonly unknown[],
+): number | undefined {
   if (!parsers) return undefined;
   const pdfParser = parsers.find(parser => {
     if (typeof parser === "object" && parser !== null && "type" in parser) {
-      return (parser as any).type === "pdf";
+      return (parser as { type?: unknown }).type === "pdf";
     }
     return false;
   });
   if (pdfParser && typeof pdfParser === "object" && "maxPages" in pdfParser) {
-    return (pdfParser as any).maxPages;
+    return (pdfParser as { maxPages?: number }).maxPages;
   }
   return undefined;
 }
 
-export function getPDFMode(parsers?: Parsers): PDFMode {
+export function getPDFMode(parsers?: readonly unknown[]): PDFMode {
   if (!parsers) return "auto";
   for (const parser of parsers) {
     if (parser === "pdf") return "auto";
-    if (typeof parser === "object" && parser.type === "pdf") {
-      return parser.mode ?? "auto";
+    if (
+      typeof parser === "object" &&
+      parser !== null &&
+      (parser as { type?: unknown }).type === "pdf"
+    ) {
+      return ((parser as { mode?: PDFMode }).mode ?? "auto") as PDFMode;
     }
   }
   return "auto";
-}
-
-export function getPDFPageMarkdown(parsers?: Parsers): boolean {
-  if (!parsers) return false;
-  for (const parser of parsers) {
-    if (typeof parser === "object" && parser.type === "pdf") {
-      // The deprecated `pageMarkdown` alias is folded into `pages` at the
-      // schema boundary, so freshly parsed parsers only carry the canonical
-      // name. Serialized options bypass re-parsing (queued jobs and crawl
-      // option snapshots from before the rename), so read the legacy key
-      // defensively too; `pages` wins when both are present.
-      return (
-        (parser.pages ??
-          (parser as { pageMarkdown?: boolean }).pageMarkdown) === true
-      );
-    }
-  }
-  return false;
-}
-
-export function getPDFBlocks(parsers?: Parsers): boolean {
-  if (!parsers) return false;
-  for (const parser of parsers) {
-    if (typeof parser === "object" && parser.type === "pdf") {
-      return parser.blocks === true;
-    }
-  }
-  return false;
-}
-
-export function getPDFPageMarkers(parsers?: Parsers): boolean {
-  if (!parsers) return false;
-  for (const parser of parsers) {
-    if (typeof parser === "object" && parser.type === "pdf") {
-      return parser.pageMarkers === true;
-    }
-  }
-  return false;
-}
-
-/** `parsers: [{ type: "pdf", refresh: true }]`: bypass the content cache for this request. */
-export function getPDFRefresh(parsers?: Parsers): boolean {
-  if (!parsers) return false;
-  for (const parser of parsers) {
-    if (typeof parser === "object" && parser.type === "pdf") {
-      return parser.refresh === true;
-    }
-  }
-  return false;
-}
-
-export function getFirePdfAsync(parsers?: Parsers): boolean {
-  if (!parsers) return false;
-  for (const parser of parsers) {
-    if (parser === "pdf") return false;
-    if (typeof parser === "object" && parser.type === "pdf") {
-      return parser.__firePdfAsync === true;
-    }
-  }
-  return false;
 }
 
 function transformIframeSelector(selector: string): string {
@@ -1433,11 +1303,6 @@ export interface Document {
   description?: string;
   url?: string;
   markdown?: string;
-  /** Physical PDF pages, present only for the `parsers[].pages` option. */
-  pages?: Array<{ pageNumber: number; markdown: string }>;
-  /** Typed PDF layout blocks with bounding boxes, present only for
-   * `parsers[].blocks`. */
-  blocks?: PdfPageBlocks[];
   html?: string;
   rawHtml?: string;
   rawBase64?: string;
@@ -2184,12 +2049,7 @@ export function fromV0ScrapeOptions(
           : pageOptions.removeTags,
       onlyMainContent: pageOptions.onlyMainContent ?? false,
       timeout: timeout,
-      parsers:
-        pageOptions.parsePDF !== undefined
-          ? pageOptions.parsePDF
-            ? ["pdf", "image"]
-            : []
-          : undefined,
+      parsers: pageOptions.parsePDF === false ? [] : undefined,
       actions: pageOptions.actions,
       location: pageOptions.geolocation,
       skipTlsVerification: pageOptions.skipTlsVerification,
@@ -2305,12 +2165,7 @@ export function fromV1ScrapeOptions(
           }
         })
         .filter(x => x !== null),
-      parsers:
-        v1ScrapeOptions.parsePDF !== undefined
-          ? v1ScrapeOptions.parsePDF
-            ? ["pdf", "image"]
-            : []
-          : undefined,
+      parsers: v1ScrapeOptions.parsePDF === false ? [] : undefined,
     }),
     internalOptions: {
       teamId,
