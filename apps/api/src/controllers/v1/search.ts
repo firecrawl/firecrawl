@@ -55,6 +55,9 @@ import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 import { teamPlanClass } from "../../lib/team-plan-class";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
+const IMAGE_SEARCH_US_ONLY_MESSAGE =
+  "Image search is not available for teams restricted to US-only processing.";
+
 // Used for deep research
 export async function searchAndScrapeSearchResult(
   query: string,
@@ -263,6 +266,19 @@ export async function searchController(
       }
     }
 
+    await logRequest({
+      id: jobId,
+      kind: "search",
+      api_version: "v1",
+      external_request_id: externalRequestId(req),
+      team_id: req.auth.team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: req.body.query,
+      zeroDataRetention,
+      api_key_id: req.acuc?.api_key_id ?? null,
+    });
+
     // Convert v1 scrape options to v2 format
     const { scrapeOptions } = fromV1ScrapeOptions(
       req.body.scrapeOptions,
@@ -321,6 +337,7 @@ export async function searchController(
           sources: [{ type: "web" }],
         };
 
+    let usOnlyImagesWarning: string | undefined;
     if (planHooks?.has("search.plan")) {
       const plannedWantsTools = planned.sources.some(
         source => source.type === "alexandria",
@@ -363,25 +380,12 @@ export async function searchController(
           return res.status(403).json({
             success: false,
             code: "US_ONLY_UNAVAILABLE",
-            error:
-              "Image search is not available for teams restricted to US-only processing.",
+            error: IMAGE_SEARCH_US_ONLY_MESSAGE,
           });
         }
+        usOnlyImagesWarning = IMAGE_SEARCH_US_ONLY_MESSAGE;
       }
     }
-
-    await logRequest({
-      id: jobId,
-      kind: "search",
-      api_version: "v1",
-      external_request_id: externalRequestId(req),
-      team_id: req.auth.team_id,
-      origin: req.body.origin ?? "api",
-      integration: req.body.integration,
-      target_hint: req.body.query,
-      zeroDataRetention,
-      api_key_id: req.acuc?.api_key_id ?? null,
-    });
     const projectedKeylessCredits = !isSearchPreview
       ? projectSearchTotalCredits(
           {
@@ -470,6 +474,17 @@ export async function searchController(
         title: d.title,
         description: d.description,
       })) as Document[];
+    }
+
+    const extraWarnings = [
+      usOnlyImagesWarning,
+      result.usOnlyWarning,
+      result.toolsWarning,
+    ].filter(Boolean);
+    if (extraWarnings.length > 0) {
+      responseData.warning = [responseData.warning, ...extraWarnings]
+        .filter(Boolean)
+        .join(" ");
     }
 
     // Bill team for search credits only

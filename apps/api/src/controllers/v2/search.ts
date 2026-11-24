@@ -449,6 +449,40 @@ async function searchControllerInner(
       });
     req.ctx = ctx;
 
+    // Kick off the `requests` row insert without blocking: it queues on the
+    // Postgres pool and can take seconds under pool pressure. We only need it
+    // committed before the child-row writes (logSearch et al. below) to keep
+    // the request_id FK ordering — same pattern as the scrape controllers.
+    let logRequestPromise: Promise<void> | undefined;
+    if (!agentRequestId) {
+      logRequestPromise = logRequest({
+        id: jobId,
+        kind: "search",
+        api_version: "v2",
+        external_request_id: externalRequestId(req),
+        team_id: req.auth.team_id,
+        origin: req.body.origin ?? "api",
+        integration: req.body.integration,
+        target_hint: req.body.query,
+        zeroDataRetention,
+        api_key_id: req.acuc?.api_key_id ?? null,
+      });
+      // The rejection is surfaced where the promise is awaited below; this
+      // only stops it counting as unhandled until then.
+      logRequestPromise.catch(() => {});
+    }
+
+    // The request must be on record before anything is reserved, runs, or
+    // bills. A failed log fails the request here, ahead of the keyless
+    // reservation and the search, so there is nothing to refund or unbill.
+    const logStart = Date.now();
+    await logRequestPromise;
+    const waited = Date.now() - logStart;
+    if (waited >= 5)
+      logger.warn("Had to wait for log request promise to complete", {
+        timeMs: waited,
+      });
+
     const planHooks = installedService()?.hooks;
     const planned = planHooks?.has("search.plan")
       ? await applySearchPlanHook(
@@ -517,40 +551,6 @@ async function searchControllerInner(
         usOnlyImagesWarning = IMAGE_SEARCH_US_ONLY_MESSAGE;
       }
     }
-
-    // Kick off the `requests` row insert without blocking: it queues on the
-    // Postgres pool and can take seconds under pool pressure. We only need it
-    // committed before the child-row writes (logSearch et al. below) to keep
-    // the request_id FK ordering — same pattern as the scrape controllers.
-    let logRequestPromise: Promise<void> | undefined;
-    if (!agentRequestId) {
-      logRequestPromise = logRequest({
-        id: jobId,
-        kind: "search",
-        api_version: "v2",
-        external_request_id: externalRequestId(req),
-        team_id: req.auth.team_id,
-        origin: req.body.origin ?? "api",
-        integration: req.body.integration,
-        target_hint: req.body.query,
-        zeroDataRetention,
-        api_key_id: req.acuc?.api_key_id ?? null,
-      });
-      // The rejection is surfaced where the promise is awaited below; this
-      // only stops it counting as unhandled until then.
-      logRequestPromise.catch(() => {});
-    }
-
-    // The request must be on record before anything is reserved, runs, or
-    // bills. A failed log fails the request here, ahead of the keyless
-    // reservation and the search, so there is nothing to refund or unbill.
-    const logStart = Date.now();
-    await logRequestPromise;
-    const waited = Date.now() - logStart;
-    if (waited >= 5)
-      logger.warn("Had to wait for log request promise to complete", {
-        timeMs: waited,
-      });
 
     const toolsOnly = isToolsOnlySearch(planned.sources, req.body.categories);
     const freeCatalogue = isFreeCatalogueSearch(
