@@ -58,7 +58,6 @@ vi.mock("./search/run", () => ({}));
 vi.mock("./search/judge", () => ({}));
 vi.mock("./search/dedupe", () => ({}));
 vi.mock("./search/persist", () => ({}));
-vi.mock("../../scraper/WebScraper/utils/blocklist", () => ({}));
 vi.mock("../../lib/team-org", () => ({
   orgIdForTeam: async () => "synthetic-org",
 }));

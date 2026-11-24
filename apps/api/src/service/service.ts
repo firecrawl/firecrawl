@@ -20,23 +20,40 @@ import {
 } from "./llm-providers";
 import { freezeModules, type Modules } from "./modules";
 import {
+  buildRequestSchemaRegistry,
+  type DescribedRequestSchemas,
+  type RequestContributions,
+  type RequestSchemaBuilder,
+  type RequestSchemas,
+} from "./request";
+import {
+  buildRouteRegistry,
+  type DescribedRoute,
+  type RouteRegistrar,
+  type RouterName,
+  type Routers,
+} from "./routes";
+import {
   buildSearchProviderRegistry,
   type DescribedSearchProvider,
   type SearchProvider,
   type SearchProviderRegistry,
 } from "./search-providers";
+import {
+  buildWorkerRegistry,
+  type RoleRegistry,
+  type Worker,
+  type WorkerRunEnv,
+} from "./workers";
 
 export type { Modules } from "./modules";
-
-/** A process role: what one process of the service runs. */
-export interface Worker {
-  /**
-   * `entry` is the file that starts any role as `node <entry> <role>`. A role
-   * that starts other processes starts them through it, whichever file its own
-   * process was started from.
-   */
-  run(env: { entry: string }): void | Promise<void>;
-}
+export type {
+  DescribedRoute,
+  RouteRegistrar,
+  RouterName,
+  Routers,
+} from "./routes";
+export type { RoleRegistry, Worker, WorkerRunEnv } from "./workers";
 
 /**
  * A named bundle of everything that can be added to a service without the
@@ -73,6 +90,17 @@ export interface Extension {
    * name replaces an earlier one.
    */
   llmProviders?: readonly LlmProvider[];
+  /**
+   * Request-schema fields, formats, and cross-field scrape-option rules
+   * contributed by this extension.
+   */
+  request?: RequestContributions;
+  /**
+   * Express routes contributed by this extension. Non-core extensions mount
+   * before core's routes so a contributed route can answer first or call
+   * `next()`.
+   */
+  routes?: RouteRegistrar;
   /** Process roles, by name. A later extension replaces a role of the same name. */
   workers?: Record<string, Worker>;
 }
@@ -90,6 +118,8 @@ export interface CoreParts {
   core: Extension;
   /** Where the service reports a failure it does not pass on to a caller. */
   logger: { error(message: string, meta: Record<string, unknown>): void };
+  /** Builds compiled request schemas lazily on first `service.schemas` access. */
+  buildRequestSchemas?: RequestSchemaBuilder;
 }
 
 /** What a service is made of, as plain data that can be compared between builds. */
@@ -110,6 +140,10 @@ export interface ServiceDescription {
   searchProviders: Record<string, DescribedSearchProvider>;
   /** For each registered LLM provider, the extension it comes from. */
   llmProviders: Record<string, string>;
+  /** Contributed request fields, formats, and rules, by owner. */
+  request: DescribedRequestSchemas;
+  /** Express routes registered by extensions, in mount order. */
+  routes: DescribedRoute[];
   /** For each process role, the extension it comes from. */
   roles: Record<string, string>;
   /**
@@ -132,7 +166,11 @@ export interface Service {
   readonly engines: EngineRegistry;
   readonly searchProviders: SearchProviderRegistry;
   readonly llmProviders: LlmProviderRegistry;
+  readonly schemas: RequestSchemas;
+  readonly roles: RoleRegistry;
   readonly workers: Readonly<Record<string, Worker>>;
+  /** Mounts every extension's Express routes onto `routers` in mount order. */
+  mountRoutes(routers: Routers): void;
   /** What the service was made of when it was created, plus declared env owners. Each call returns a copy. */
   describe(): ServiceDescription;
 }
@@ -158,7 +196,13 @@ export function createService(
       throw new Error("Invalid modules config");
     }
     for (const key of Object.keys(config.modules)) {
-      if (key !== "messages" && key !== "uploads") {
+      if (
+        key !== "blocklist" &&
+        key !== "messages" &&
+        key !== "uploads" &&
+        key !== "idempotency" &&
+        key !== "webhooks"
+      ) {
         throw new Error(`Unknown module slot "${key}"`);
       }
     }
@@ -166,6 +210,10 @@ export function createService(
 
   const defaults = defaultModules();
   const modules = freezeModules({
+    blocklist:
+      config.modules?.blocklist === undefined
+        ? defaults.blocklist
+        : config.modules.blocklist,
     messages:
       config.modules?.messages === undefined
         ? defaults.messages
@@ -174,11 +222,28 @@ export function createService(
       config.modules?.uploads === undefined
         ? defaults.uploads
         : config.modules.uploads,
+    idempotency:
+      config.modules?.idempotency === undefined
+        ? defaults.idempotency
+        : config.modules.idempotency,
+    webhooks:
+      config.modules?.webhooks === undefined
+        ? defaults.webhooks
+        : config.modules.webhooks,
   });
-  const workers: Record<string, Worker> = Object.freeze(
-    Object.fromEntries(
-      extensions.flatMap(extension => Object.entries(extension.workers ?? {})),
-    ),
+  const { roles, workers, describedRoles } = buildWorkerRegistry(
+    extensions.map(extension => ({
+      owner: extension.name,
+      workers: extension.workers,
+    })),
+  );
+
+  const { mountRoutes, describeRoutes } = buildRouteRegistry(
+    extensions.map((extension, index) => ({
+      owner: extension.name,
+      isCore: index === 0,
+      routes: extension.routes,
+    })),
   );
 
   const { hooks, describedHooks } = buildHookRegistry(
@@ -217,6 +282,14 @@ export function createService(
       })),
     );
 
+  const { schemas, describedRequest } = buildRequestSchemaRegistry(
+    extensions.map(extension => ({
+      owner: extension.name,
+      request: extension.request,
+    })),
+    parts.buildRequestSchemas,
+  );
+
   // Snapshot extension names and error sources at creation so mutating an
   // extension later cannot change what loads or is described, while keeping
   // lazy error loaders deferred until first lookup.
@@ -252,16 +325,6 @@ export function createService(
     return byCode;
   };
 
-  // Worked out here, from the extensions as the roles above were just read
-  // from them, so it stays true to what the service runs whatever happens to
-  // an extension object later. The record has no prototype, so a name such as
-  // "constructor" is a key like any other.
-  const roleOwners: Record<string, string> = Object.create(null);
-  for (const extension of extensions) {
-    for (const role of Object.keys(extension.workers ?? {})) {
-      roleOwners[role] = extension.name;
-    }
-  }
   const baseDescription = {
     extensions: names,
     modules: Object.keys(modules).sort(),
@@ -270,7 +333,8 @@ export function createService(
     engineFeatures: describedFeatures,
     searchProviders: describedSearchProviders,
     llmProviders: describedLlmProviders,
-    roles: sortedByKey(roleOwners),
+    request: describedRequest,
+    roles: describedRoles,
   };
 
   return Object.freeze({
@@ -282,7 +346,10 @@ export function createService(
     engines,
     searchProviders,
     llmProviders,
+    schemas,
+    roles,
     workers,
+    mountRoutes,
     describe(): ServiceDescription {
       // Built from entries, so that a code is listed whatever its name is.
       const errors = Object.fromEntries(
@@ -298,6 +365,8 @@ export function createService(
         engineFeatures: copy.engineFeatures,
         searchProviders: copy.searchProviders,
         llmProviders: copy.llmProviders,
+        request: copy.request,
+        routes: describeRoutes(),
         roles: copy.roles,
         env: sortedByKey(describeEnv()),
       };
@@ -307,6 +376,7 @@ export function createService(
 
 let installed: Service | undefined;
 let startedRole: string | undefined;
+let stopRun: Promise<void> | undefined;
 
 /** The role `run` started in this process, or undefined when it has started none. */
 export function processRole(): string | undefined {
@@ -316,6 +386,22 @@ export function processRole(): string | undefined {
 /** The currently installed service, or undefined when none is installed. */
 export function installedService(): Service | undefined {
   return installed;
+}
+
+/**
+ * Runs `process.stop` hooks at most once for the active process role.
+ * Repeated shutdown triggers share the same completion promise.
+ */
+export function runProcessStop(role?: string): Promise<void> {
+  const currentService = installed;
+  if (!currentService || !currentService.hooks.has("process.stop")) {
+    return Promise.resolve();
+  }
+  if (!stopRun) {
+    const activeRole = startedRole ?? role ?? "";
+    stopRun = currentService.hooks.run("process.stop", { role: activeRole });
+  }
+  return stopRun;
 }
 
 function current(): Service {
@@ -350,9 +436,16 @@ export const service: Service = {
   get llmProviders() {
     return current().llmProviders;
   },
+  get schemas() {
+    return current().schemas;
+  },
+  get roles() {
+    return current().roles;
+  },
   get workers() {
     return current().workers;
   },
+  mountRoutes: (routers: Routers) => current().mountRoutes(routers),
   describe: () => current().describe(),
 };
 
@@ -364,27 +457,40 @@ export function replaceService(next: Service | undefined): Service | undefined {
   const previous = installed;
   installed = next;
   startedRole = undefined;
+  stopRun = undefined;
   return previous;
+}
+
+/** Optional execution controls for `run()`. */
+export interface RunOptions {
+  /** Abort signal forwarded to the worker's `run()` environment. */
+  signal?: AbortSignal;
 }
 
 /**
  * Starts one process role: checks the environment of every owner defined so
- * far, installs the service, then runs the role. The returned promise settles
- * when the role's own start does.
+ * far, installs the service, runs `process.start` hooks, then runs the role.
+ * The returned promise settles when the role's own start does.
  *
  * The check comes before the role runs. A role that loads its code only when
  * it runs can define an owner then, and that owner is checked where it is
  * defined.
  *
- * An unknown role, a second install, an environment with a problem and a role
- * that throws while it loads are thrown from this call and not turned into a
- * rejection, so a process that cannot start fails the way a main module that
- * throws does.
+ * An unknown role, a second install, and an environment with a problem are
+ * thrown synchronously from this call. A role that throws while it loads
+ * throws synchronously when no `process.start` hook is registered, and
+ * rejects the returned promise when `process.start` hooks run first.
  */
-export function run(next: Service, role: string, entry: string): Promise<void> {
-  if (!Object.hasOwn(next.workers, role)) {
+export function run(
+  next: Service,
+  role: string,
+  entry: string,
+  options?: RunOptions,
+): Promise<void> {
+  const worker = next.roles.get(role);
+  if (!worker) {
     throw new Error(
-      `Unknown role "${role}". Known roles: ${Object.keys(next.workers).sort().join(", ")}`,
+      `Unknown role "${role}". Known roles: ${next.roles.names().join(", ")}`,
     );
   }
   if (installed) {
@@ -393,5 +499,13 @@ export function run(next: Service, role: string, entry: string): Promise<void> {
   assertEnv();
   installed = next;
   startedRole = role;
-  return Promise.resolve(next.workers[role].run({ entry }));
+  stopRun = undefined;
+  const env: WorkerRunEnv =
+    options?.signal !== undefined
+      ? { entry, signal: options.signal }
+      : { entry };
+  if (!next.hooks.has("process.start")) {
+    return Promise.resolve(worker.run(env));
+  }
+  return next.hooks.run("process.start", { role }).then(() => worker.run(env));
 }

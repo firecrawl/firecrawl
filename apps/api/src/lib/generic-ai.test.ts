@@ -16,6 +16,8 @@ const fakeModel = (modelId: string, provider = "custom"): LlmModel =>
   }) as unknown as LlmModel;
 
 beforeEach(() => {
+  vi.stubEnv("OPENAI_API_KEY", "");
+  vi.stubEnv("OPENAI_BASE_URL", "");
   vi.stubEnv("OLLAMA_BASE_URL", "");
   vi.stubEnv("MODEL_NAME", "");
 });
@@ -56,12 +58,102 @@ async function loadFresh(
 }
 
 describe("coreLlmProviders and getModel", () => {
-  it("defines every built-in LLM provider in coreLlmProviderNames order", async () => {
+  it("defines only openai and ollama in coreLlmProviderNames order", async () => {
     const { coreLlmProviders, cleanup } = await loadFresh();
     try {
+      expect(coreLlmProviders.map(p => p.name)).toEqual(["openai", "ollama"]);
       expect(coreLlmProviders.map(p => p.name)).toEqual([
         ...coreLlmProviderNames,
       ]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("reports openai and ollama enabled() from OPENAI_API_KEY, OPENAI_BASE_URL, and OLLAMA_BASE_URL", async () => {
+    const disabled = await loadFresh();
+    try {
+      expect(
+        disabled.coreLlmProviders.find(p => p.name === "openai")?.enabled(),
+      ).toBe(false);
+      expect(
+        disabled.coreLlmProviders.find(p => p.name === "ollama")?.enabled(),
+      ).toBe(false);
+    } finally {
+      disabled.cleanup();
+    }
+
+    vi.stubEnv("OPENAI_API_KEY", "   ");
+    vi.stubEnv("OLLAMA_BASE_URL", "   ");
+    const whitespaceKey = await loadFresh();
+    try {
+      expect(
+        whitespaceKey.coreLlmProviders
+          .find(p => p.name === "openai")
+          ?.enabled(),
+      ).toBe(false);
+      expect(
+        whitespaceKey.coreLlmProviders
+          .find(p => p.name === "ollama")
+          ?.enabled(),
+      ).toBe(false);
+      expect(whitespaceKey.getModel("gpt-4o-mini").provider).toBe(
+        "openai.responses",
+      );
+    } finally {
+      whitespaceKey.cleanup();
+    }
+
+    vi.stubEnv("OLLAMA_BASE_URL", "");
+    vi.stubEnv("OPENAI_API_KEY", "test-openai-key");
+    const apiKeyOnly = await loadFresh();
+    try {
+      expect(
+        apiKeyOnly.coreLlmProviders.find(p => p.name === "openai")?.enabled(),
+      ).toBe(true);
+      expect(
+        apiKeyOnly.coreLlmProviders.find(p => p.name === "ollama")?.enabled(),
+      ).toBe(false);
+    } finally {
+      apiKeyOnly.cleanup();
+    }
+
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("OPENAI_BASE_URL", "http://localhost:8080/v1");
+    vi.stubEnv("OLLAMA_BASE_URL", "http://localhost:11434/api");
+    const enabled = await loadFresh();
+    try {
+      expect(
+        enabled.coreLlmProviders.find(p => p.name === "openai")?.enabled(),
+      ).toBe(true);
+      expect(
+        enabled.coreLlmProviders.find(p => p.name === "ollama")?.enabled(),
+      ).toBe(true);
+    } finally {
+      enabled.cleanup();
+    }
+  });
+
+  it("refuses core openai and ollama models for US-only teams", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-openai-key");
+    vi.stubEnv("OLLAMA_BASE_URL", "http://localhost:11434/api");
+    const { getModel, cleanup } = await loadFresh();
+    const { UsOnlyUnavailableError } = await import(
+      "../scraper/scrapeURL/error.js"
+    );
+    try {
+      expect(() =>
+        getModel("gpt-4o-mini", "openai", {
+          teamFlags: { usOnly: true },
+          feature: "Extract",
+        }),
+      ).toThrow(UsOnlyUnavailableError);
+      expect(() =>
+        getModel("llama3", "ollama", {
+          teamFlags: { usOnly: true },
+          feature: "Extract",
+        }),
+      ).toThrow(UsOnlyUnavailableError);
     } finally {
       cleanup();
     }
@@ -98,6 +190,40 @@ describe("coreLlmProviders and getModel", () => {
       });
       expect(result.modelId).toBe("gpt-4o-mini");
       expect(result.provider).toBe("custom-openai");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("resolves extension-contributed non-core LLM providers via getModel", async () => {
+    const customModelFn = vi.fn((id: string) => fakeModel(id, "custom-ext"));
+    const customProvider = {
+      name: "custom-ext",
+      enabled: () => true,
+      model: customModelFn,
+    } as unknown as LlmProvider;
+
+    const { getModel, cleanup } = await loadFresh(undefined, [
+      {
+        name: "extra",
+        llmProviders: [customProvider],
+      },
+    ]);
+
+    try {
+      const ctx = { teamId: "team-2", zeroDataRetention: true };
+      const result = getModel("custom-model-1", "custom-ext", {
+        ctx,
+        feature: "Query",
+      });
+
+      expect(customModelFn).toHaveBeenCalledWith("custom-model-1", {
+        ctx,
+        teamFlags: undefined,
+        feature: "Query",
+      });
+      expect(result.modelId).toBe("custom-model-1");
+      expect(result.provider).toBe("custom-ext");
     } finally {
       cleanup();
     }
@@ -154,11 +280,21 @@ describe("coreLlmProviders and getModel", () => {
   });
 
   it("throws when the requested provider is not registered", async () => {
-    const { getModel, cleanup } = await loadFresh([]);
+    const { getModel, cleanup } = await loadFresh();
     try {
-      expect(() => getModel("gpt-4o-mini", "openai")).toThrow(
-        'LLM provider "openai" is not registered',
-      );
+      for (const name of [
+        "anthropic",
+        "groq",
+        "google",
+        "openrouter",
+        "fireworks",
+        "deepinfra",
+        "vertex",
+      ]) {
+        expect(() => getModel("some-model", name)).toThrow(
+          `LLM provider "${name}" is not registered`,
+        );
+      }
     } finally {
       cleanup();
     }
@@ -175,85 +311,5 @@ describe("coreLlmProviders and getModel", () => {
     } finally {
       cleanup();
     }
-  });
-
-  it("enforces US-only routing rules for built-in providers", async () => {
-    vi.stubEnv("OPENAI_API_KEY", "test-key");
-    vi.stubEnv("OPENAI_US_API_KEY", "");
-    vi.stubEnv("ANTHROPIC_API_KEY", "test-anthropic");
-    vi.stubEnv("VERTEX_USE_ADC", "true");
-    const { getModel, cleanup } = await loadFresh();
-
-    try {
-      // OpenAI without US key or service account is refused.
-      expect(() =>
-        getModel("gpt-4o-mini", "openai", {
-          teamFlags: { usOnly: true },
-          feature: "JSON extraction",
-        }),
-      ).toThrow(
-        "JSON extraction is not available for teams restricted to US-only processing.",
-      );
-
-      // Anthropic wraps with US inferenceGeo middleware.
-      const claude = getModel("claude-sonnet-4-5", "anthropic", {
-        teamFlags: { usOnly: true },
-      });
-      expect(claude.modelId).toBe("claude-sonnet-4-5");
-
-      // Vertex allows only US-endpoint models.
-      const allowedVertex = getModel("gemini-3.5-flash-lite", "vertex", {
-        teamFlags: { usOnly: true },
-      });
-      expect(allowedVertex.modelId).toBe("gemini-3.5-flash-lite");
-
-      expect(() =>
-        getModel("gemini-2.5-pro", "vertex", {
-          teamFlags: { usOnly: true },
-          feature: "Query",
-        }),
-      ).toThrow(
-        "Query is not available for teams restricted to US-only processing.",
-      );
-
-      // Providers without a US endpoint throw UsOnlyUnavailableError.
-      expect(() =>
-        getModel("llama3", "groq", {
-          teamFlags: { usOnly: true },
-          feature: "Fast mode",
-        }),
-      ).toThrow(
-        "Fast mode is not available for teams restricted to US-only processing.",
-      );
-    } finally {
-      cleanup();
-    }
-  });
-
-  it("reports vertex enabled() from VERTEX_CREDENTIALS and VERTEX_USE_ADC", async () => {
-    vi.stubEnv("VERTEX_CREDENTIALS", "");
-    vi.stubEnv("VERTEX_USE_ADC", "false");
-    const off = await loadFresh();
-    try {
-      const vertex = off.coreLlmProviders.find(p => p.name === "vertex");
-      expect(vertex?.enabled()).toBe(false);
-    } finally {
-      off.cleanup();
-    }
-
-    vi.stubEnv("VERTEX_USE_ADC", "true");
-    const on = await loadFresh();
-    try {
-      const vertex = on.coreLlmProviders.find(p => p.name === "vertex");
-      expect(vertex?.enabled()).toBe(true);
-    } finally {
-      on.cleanup();
-    }
-  });
-
-  it("fails fast when VERTEX_CREDENTIALS is malformed", async () => {
-    vi.stubEnv("VERTEX_CREDENTIALS", "not-valid-json");
-    vi.resetModules();
-    await expect(import("./generic-ai.js")).rejects.toThrow();
   });
 });

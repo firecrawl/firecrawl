@@ -27,15 +27,6 @@ vi.mock("../../lib/generic-ai", async importOriginal => {
   };
 });
 
-// Vertex is the production provider and the only one that takes billing labels.
-vi.mock("../../config", async importOriginal => {
-  const actual = await importOriginal<typeof import("../../config")>();
-  return {
-    ...actual,
-    config: { ...actual.config, VERTEX_CREDENTIALS: btoa("{}") },
-  };
-});
-
 import { context, propagation, trace } from "@opentelemetry/api";
 import {
   InMemorySpanExporter,
@@ -47,7 +38,39 @@ import {
   createTracerProvider,
   withZeroDataRetention,
 } from "../../lib/otel-tracer";
+import { createService, replaceService } from "../../service/service";
+import type { LlmModel, LlmProvider } from "../../service/llm-providers";
 import { judgeChange } from "./judgeChange";
+
+beforeAll(() => {
+  replaceService(
+    createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "extra-llm",
+            llmProviders: [
+              {
+                name: "vertex",
+                enabled: () => true,
+                model: (id: string) => ({ modelId: id }) as unknown as LlmModel,
+              } as unknown as LlmProvider,
+            ],
+          },
+        ],
+      },
+      {
+        core: { name: "core" },
+        logger: { error: vi.fn() },
+      },
+    ),
+  );
+});
+
+afterAll(() => {
+  replaceService(undefined);
+});
 
 const LABELS = {
   teamId: "test-team",

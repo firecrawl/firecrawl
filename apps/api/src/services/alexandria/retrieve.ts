@@ -43,16 +43,34 @@ const repeatTotal = new Counter({
   name: "firecrawl_alexandria_repeat_total",
   help: "Requests whose x-request-id already had a record, by how they were answered",
   // outcome: replayed|response_expired|response_withheld|duplicate_request|request_in_flight|request_unresolved
-  labelNames: ["outcome"] as const,
+  // client: mcp|cli|sdk|api|other
+  labelNames: ["outcome", "client"] as const,
 });
 /** How long after a request completed its charge id was sent again. */
 const repeatAgeSeconds = new Histogram({
   name: "firecrawl_alexandria_repeat_age_seconds",
   help: "Seconds between a request completing and a repeat of its x-request-id",
   // outcome: replayed|response_expired|response_withheld
-  labelNames: ["outcome"] as const,
+  // client: mcp|cli|sdk|api|other
+  labelNames: ["outcome", "client"] as const,
   buckets: [1, 5, 15, 60, 300, 900, 3600, 21600, 86400, 604800],
 });
+/** The kind of client a request came from, as far as it said: a fixed set, for labels. */
+const clientKind = (input: {
+  hostedMcp?: boolean;
+  clientOrigin?: string;
+  clientIntegration?: string;
+}) => {
+  const origin = (input.clientOrigin ?? "").trim().toLowerCase();
+  const integration = (input.clientIntegration ?? "").trim().toLowerCase();
+  if (input.hostedMcp || origin.startsWith("mcp")) return "mcp";
+  // "cli", "cli@1.2.3", "cli.codex@1.2.3": the name ends at the first non-word character.
+  if (integration === "cli" || /^cli\b/.test(origin)) return "cli";
+  if (origin.includes("sdk")) return "sdk";
+  // A request that names no origin is a plain API call.
+  if (origin === "" || origin === "api") return "api";
+  return "other";
+};
 const RETENTION_SECONDS = 7 * 86400;
 const GRACE_MS = 30_000;
 const HOLD_GRACE_MS = 15 * 60_000;
@@ -340,17 +358,42 @@ export async function retrieveProviders(input: {
   if (claimed !== "OK") {
     const raw = await redisRateLimitClient.get(key);
     const existing: Retrieval | null = raw ? JSON.parse(raw) : null;
-    const repeat = (outcome: string, response: ProviderRetrieval) => {
-      repeatTotal.labels(outcome).inc();
+    const client = clientKind(input);
+    const repeat = (
+      outcome: string,
+      response: ProviderRetrieval,
+      ageSeconds?: number,
+    ) => {
+      repeatTotal.labels(outcome, client).inc();
+      // Who sends an id again, and how long after: the metrics carry no team.
+      logger.info("Alexandria request repeated", {
+        chargeId: id,
+        teamId: input.teamId,
+        outcome,
+        client,
+        catalogueOnly,
+        ...(ageSeconds === undefined ? {} : { ageSeconds }),
+        ...(input.clientOrigin
+          ? { clientOrigin: input.clientOrigin.slice(0, 100) }
+          : {}),
+        ...(input.clientIntegration
+          ? { clientIntegration: input.clientIntegration.slice(0, 100) }
+          : {}),
+        calls: input.calls.map(call => `${call.provider}/${call.capability}`),
+        // The logger drops a line that carries this set, so such a request leaves no log.
+        zeroDataRetention,
+      });
       return response;
     };
     // A repeat of the request that completed, as opposed to another request under its id.
     const repeatOfDone = (outcome: string, response: ProviderRetrieval) => {
-      if (existing?.doneAt !== undefined)
-        repeatAgeSeconds
-          .labels(outcome)
-          .observe((Date.now() - existing.doneAt) / 1000);
-      return repeat(outcome, response);
+      const ageSeconds =
+        existing?.doneAt === undefined
+          ? undefined
+          : (Date.now() - existing.doneAt) / 1000;
+      if (ageSeconds !== undefined)
+        repeatAgeSeconds.labels(outcome, client).observe(ageSeconds);
+      return repeat(outcome, response, ageSeconds);
     };
     if (
       existing?.phase === "done" &&

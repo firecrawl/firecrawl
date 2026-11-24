@@ -3,7 +3,9 @@ import { updateGeneratedLlmsTxt } from "./generate-llmstxt-redis";
 import { getMapResults } from "../../controllers/v1/map";
 import { z } from "zod";
 import { scrapeDocument } from "../extract/document-scraper";
-import { hasOrgScopedBlocklist } from "../../scraper/WebScraper/utils/blocklist";
+import { requestContext } from "../request-context";
+import { getScrapeZDR } from "../zdr-helpers";
+import { service } from "../../service";
 import {
   getLlmsTextFromCache,
   saveLlmsTextToCache,
@@ -111,7 +113,14 @@ export async function performGenerateLlmsTxt(
     // itself unblocked, mapped child URLs may still be blocked, so a cached
     // generation could hand them blocked content and their filtered output
     // would poison the cache for everyone else.
-    const skipSharedCache = hasOrgScopedBlocklist(acuc?.org_id);
+    const skipSharedCache = service.modules.blocklist.hasScopedRules(
+      requestContext({
+        teamId,
+        zeroDataRetention: getScrapeZDR(acuc?.flags) === "forced",
+        flags: acuc?.flags ?? null,
+        orgId: acuc?.org_id ?? null,
+      }),
+    );
 
     // Check cache first, unless cache is set to false
     const cachedResult =

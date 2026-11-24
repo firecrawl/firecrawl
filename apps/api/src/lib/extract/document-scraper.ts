@@ -11,7 +11,10 @@ import { waitForJob } from "../../services/queue-jobs";
 import { addScrapeJob } from "../../services/queue-jobs";
 import { getJobPriority } from "../job-priority";
 import type { Logger } from "winston";
-import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
+import { requestContext } from "../request-context";
+import { isLockdownZeroDataRetention } from "../safe-mode";
+import { getScrapeZDR } from "../zdr-helpers";
+import { service } from "../../service";
 import { scrapeQueue } from "../../services/worker/nuq-router";
 
 interface ScrapeDocumentOptions {
@@ -39,11 +42,20 @@ export async function scrapeDocument(
   }
 
   if (
-    isUrlBlocked(options.url, options.flags ?? null, {
-      team_id: options.teamId,
-      org_id: options.orgId ?? null,
-      origin: options.origin,
-    })
+    service.modules.blocklist.isBlocked(
+      options.url,
+      requestContext({
+        teamId: options.teamId,
+        zeroDataRetention:
+          getScrapeZDR(options.flags ?? undefined) === "forced" ||
+          isLockdownZeroDataRetention(options.flags, undefined),
+        flags: options.flags ?? null,
+        orgId: options.orgId ?? null,
+      }),
+      {
+        origin: options.origin,
+      },
+    )
   ) {
     return null;
   }

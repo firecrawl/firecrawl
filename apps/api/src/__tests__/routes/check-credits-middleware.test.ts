@@ -37,14 +37,6 @@ vi.mock("../../controllers/auth", () => ({
   authenticateUser: vi.fn(),
 }));
 
-vi.mock("../../services/idempotency/create", () => ({
-  createIdempotencyKey: vi.fn(),
-}));
-
-vi.mock("../../services/idempotency/validate", () => ({
-  validateIdempotencyKey: vi.fn(),
-}));
-
 vi.mock("geoip-country", () => ({ lookup: vi.fn(() => null) }));
 
 import { checkCreditsMiddleware } from "../../routes/shared";
