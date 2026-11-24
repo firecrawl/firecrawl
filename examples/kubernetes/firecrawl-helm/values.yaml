@@ -59,6 +59,18 @@ nuqPrefetchWorker:
       memory: "2G"
       cpu: "1000m"
 
+nuqReconcilerWorker:
+  enabled: true
+  replicaCount: 1
+  port: 3012
+  resources:
+    requests:
+      memory: "1G"
+      cpu: "500m"
+    limits:
+      memory: "2G"
+      cpu: "1000m"
+
 cclogWorker:
   enabled: false
   replicaCount: 1

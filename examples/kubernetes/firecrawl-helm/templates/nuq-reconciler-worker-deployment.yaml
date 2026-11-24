@@ -1,0 +1,67 @@
+{{- if .Values.nuqReconcilerWorker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "firecrawl.fullname" . }}-nuq-reconciler-worker
+  labels:
+    app: {{ include "firecrawl.name" . }}-nuq-reconciler-worker
+spec:
+  replicas: {{ .Values.nuqReconcilerWorker.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ include "firecrawl.name" . }}-nuq-reconciler-worker
+  template:
+    metadata:
+      labels:
+        app: {{ include "firecrawl.name" . }}-nuq-reconciler-worker
+    spec:
+      {{- if .Values.image.dockerSecretEnabled }}
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: nuq-reconciler-worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: [ "node" ]
+          args: [ "--max-old-space-size=2048", "dist/src/services/worker/nuq-reconciler-worker.js" ]
+          ports:
+            - containerPort: {{ .Values.nuqReconcilerWorker.port | int }}
+          env:
+            - name: FLY_PROCESS_GROUP
+              value: "nuq-reconciler-worker"
+            - name: NUQ_RECONCILER_WORKER_PORT
+              value: {{ .Values.nuqReconcilerWorker.port | quote }}
+            - name: NUQ_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          envFrom:
+            - configMapRef:
+                name: {{ include "firecrawl.fullname" . }}-config
+            - secretRef:
+                name: {{ include "firecrawl.fullname" . }}-secret
+          {{- if and .Values.resources.enabled .Values.nuqReconcilerWorker.resources }}
+          resources:
+            {{- toYaml .Values.nuqReconcilerWorker.resources | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.nuqReconcilerWorker.port | int }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.nuqReconcilerWorker.port | int }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+{{- end }}
