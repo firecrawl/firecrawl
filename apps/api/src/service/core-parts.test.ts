@@ -11,6 +11,10 @@ import {
   type LlmModel,
   type LlmProvider,
 } from "./llm-providers";
+import {
+  coreSearchProviderSpecs,
+  type SearchProvider,
+} from "./search-providers";
 import { createService } from "./service";
 
 const loadedSideEffectModules = vi.hoisted(() => [] as string[]);
@@ -37,15 +41,17 @@ vi.mock("../lib/zdr-queue", () => {
 
 const errorClassesModule = "../lib/error-serde";
 const enginesModule = "../scraper/scrapeURL/engines";
+const searchProvidersModule = "../search/providers";
 const llmProvidersModule = "../lib/generic-ai";
 
-// coreParts() loads its error classes, engine implementations, and LLM
-// provider implementations with require() on first use. The test runner cannot
-// resolve a source file loaded that way, so those loads are answered with stub
-// modules.
+// coreParts() loads its error classes, engine implementations, search provider
+// implementations, and LLM provider implementations with require() on first
+// use. The test runner cannot resolve a source file loaded that way, so those
+// loads are answered with stub modules.
 function answerRequire(
   mockEngines?: readonly Engine[],
   mockLlmProviders?: readonly LlmProvider[],
+  mockSearchProviders?: readonly SearchProvider[],
 ) {
   const load = Module.prototype.require;
   const enginesStub = mockEngines
@@ -59,6 +65,17 @@ function answerRequire(
           enabled: vi.fn(() => true),
           scrape: vi.fn(),
           maxReasonableTime: vi.fn(() => 12345),
+        })),
+      };
+  const searchProvidersStub = mockSearchProviders
+    ? { coreSearchProviders: mockSearchProviders }
+    : {
+        coreSearchProviders: coreSearchProviderSpecs.map(spec => ({
+          name: spec.name,
+          priority: spec.priority,
+          ...(spec.supportsUsOnly ? { supportsUsOnly: true } : {}),
+          enabled: vi.fn(() => true),
+          search: vi.fn(async () => ({ web: [] })),
         })),
       };
   const llmProvidersStub = mockLlmProviders
@@ -78,6 +95,7 @@ function answerRequire(
   ) {
     if (id === errorClassesModule) return errorSerde;
     if (id === enginesModule) return enginesStub;
+    if (id === searchProvidersModule) return searchProvidersStub;
     if (id === llmProvidersModule) return llmProvidersStub;
     return load.call(this, id);
   });
@@ -173,6 +191,52 @@ describe("coreParts", () => {
     expect(model).toHaveBeenCalledWith("gpt-4o-mini", opts);
     expect(
       required.mock.calls.filter(([id]) => id === llmProvidersModule),
+    ).toHaveLength(1);
+  });
+
+  it("loads its search provider implementations on the first provider call, and once", async () => {
+    const enabled = vi.fn(() => true);
+    const searchResult = {
+      web: [{ url: "https://example.com", title: "Example", description: "" }],
+    };
+    const search = vi.fn(async () => searchResult);
+    const mockProviders: SearchProvider[] = coreSearchProviderSpecs.map(
+      spec => ({
+        name: spec.name,
+        priority: spec.priority,
+        ...(spec.supportsUsOnly ? { supportsUsOnly: true } : {}),
+        enabled: spec.name === "searxng" ? enabled : () => false,
+        search: spec.name === "searxng" ? search : vi.fn(async () => null),
+      }),
+    );
+
+    const required = answerRequire(undefined, undefined, mockProviders);
+    const built = createService({ modules: {} }, coreParts());
+
+    // Creating the service, inspecting registered providers, and calling
+    // describe() must not load the search provider implementations.
+    expect(built.searchProviders.all()).toHaveLength(
+      coreSearchProviderSpecs.length,
+    );
+    const fireEngineProvider = built.searchProviders.get("fire-engine");
+    expect(fireEngineProvider?.priority).toBe(100);
+    expect(fireEngineProvider?.supportsUsOnly).toBe(true);
+    const searxngProvider = built.searchProviders.get("searxng");
+    expect(searxngProvider?.priority).toBe(50);
+    expect(searxngProvider?.supportsUsOnly).toBeUndefined();
+    built.describe();
+    expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
+
+    expect(built.searchProviders.enabled().map(p => p.name)).toEqual([
+      "searxng",
+    ]);
+    expect(enabled).toHaveBeenCalledTimes(1);
+
+    const query = { query: "firecrawl", numResults: 5 };
+    expect(await searxngProvider!.search(query)).toBe(searchResult);
+    expect(search).toHaveBeenCalledWith(query);
+    expect(
+      required.mock.calls.filter(([id]) => id === searchProvidersModule),
     ).toHaveLength(1);
   });
 
@@ -278,6 +342,11 @@ describe("coreParts", () => {
         video: { owner: "core", priority: 100 },
         waitFor: { owner: "core", priority: 1 },
       },
+      searchProviders: {
+        duckduckgo: { owner: "core", priority: 0 },
+        "fire-engine": { owner: "core", priority: 100 },
+        searxng: { owner: "core", priority: 50 },
+      },
       llmProviders: {
         anthropic: "core",
         deepinfra: "core",
@@ -305,6 +374,7 @@ describe("coreParts", () => {
       env: {},
     });
     expect(required).not.toHaveBeenCalledWith(enginesModule);
+    expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
     expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
   });
 

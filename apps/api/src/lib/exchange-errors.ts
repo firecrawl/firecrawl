@@ -59,6 +59,20 @@ export class ThirdPartyDataTermsRequiredError extends TransportableError {
     this.enrichment = options.enrichment === true;
   }
 
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
+  get httpStatus(): number {
+    return 403;
+  }
+
+  get httpResponseFields(): Record<string, unknown> {
+    return {
+      requiresAction: this.requiresAction,
+    };
+  }
+
   get requiresAction() {
     return {
       type: "accept_terms" as const,
@@ -115,6 +129,10 @@ export class ThirdPartyDataUnsupportedOptionError extends TransportableError {
     );
     this.name = "ThirdPartyDataUnsupportedOptionError";
     this.option = option;
+  }
+
+  get httpStatus(): number {
+    return 400;
   }
 
   response() {
