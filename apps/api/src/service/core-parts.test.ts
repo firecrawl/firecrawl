@@ -42,6 +42,10 @@ vi.mock("../services/redis", () => {
   loadedSideEffectModules.push("redis");
   return {};
 });
+vi.mock("../services/queue-service", () => {
+  loadedSideEffectModules.push("queue-service");
+  return {};
+});
 vi.mock("../db/connection", () => {
   loadedSideEffectModules.push("db");
   return {};

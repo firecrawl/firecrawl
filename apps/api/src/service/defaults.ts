@@ -165,8 +165,10 @@ export function redisIdempotency(
   const setIfAbsent =
     options.setIfAbsent ??
     (async (key: string, ttl: number): Promise<boolean> => {
-      const { redisEvictConnection } = await import("../services/redis.js");
-      const result = await redisEvictConnection.set(key, "1", "EX", ttl, "NX");
+      const { getRedisConnection } = await import(
+        "../services/queue-service.js"
+      );
+      const result = await getRedisConnection().set(key, "1", "EX", ttl, "NX");
       return result === "OK";
     });
 
