@@ -26,8 +26,10 @@ describe("testService", () => {
     expect(built.modules.uploads.driver().name).toBe("base-uploads");
     expect(built.describe().modules).toEqual([
       "billing",
+      "idempotency",
       "messages",
       "uploads",
+      "webhooks",
     ]);
     expect(built.describe().extensions).toEqual(["core", "extra"]);
   });

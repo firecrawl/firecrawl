@@ -28,6 +28,18 @@
       "types": "./src/services/billing/runtime.ts",
       "default": "./dist/src/services/billing/runtime.js"
     },
+    "./unstable/db": {
+      "types": "./src/db/connection.ts",
+      "default": "./dist/src/db/connection.js"
+    },
+    "./unstable/db-schema": {
+      "types": "./src/db/schema/index.ts",
+      "default": "./dist/src/db/schema/index.js"
+    },
+    "./unstable/redis": {
+      "types": "./src/services/redis.ts",
+      "default": "./dist/src/services/redis.js"
+    },
     "./unstable/zdr-queue": {
       "types": "./src/lib/zdr-queue.ts",
       "default": "./dist/src/lib/zdr-queue.js"

@@ -9,8 +9,6 @@ import {
 import { RateLimiterMode } from "../types";
 import { authenticateUser } from "../controllers/auth";
 import { applyAgentAuthDiscoveryHeader } from "../lib/agent-auth-discovery";
-import { createIdempotencyKey } from "../services/idempotency/create";
-import { validateIdempotencyKey } from "../services/idempotency/validate";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { logger } from "../lib/logger";
 import { logAuthDenied } from "../lib/auth-denied-log";
@@ -20,6 +18,7 @@ import {
 } from "../lib/http-metrics";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
 import * as geoip from "geoip-country";
+import { claimIdempotencyKey } from "../lib/idempotency";
 import { service, type BillingOperation } from "../service";
 import type {} from "../lib/billing-state";
 import { validate as isUuid } from "uuid";
@@ -211,16 +210,22 @@ export function idempotencyMiddleware(
   next: NextFunction,
 ) {
   (async () => {
-    if (req.headers["x-idempotency-key"]) {
-      const isIdempotencyValid = await validateIdempotencyKey(req);
-      if (!isIdempotencyValid) {
+    const rawHeader = req.headers["x-idempotency-key"];
+    if (rawHeader) {
+      const teamId =
+        req.ctx?.teamId ??
+        req.caller?.teamId ??
+        (req as RequestWithMaybeAuth).auth?.team_id ??
+        "bypass";
+      const claimed = await claimIdempotencyKey(rawHeader, teamId);
+      if (!claimed) {
         if (!res.headersSent) {
           return res
             .status(409)
             .json({ success: false, error: "Idempotency key already used" });
         }
+        return;
       }
-      createIdempotencyKey(req);
     }
     next();
   })().catch(err => next(err));
