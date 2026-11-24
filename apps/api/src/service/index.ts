@@ -14,10 +14,12 @@ export {
   memoryUploads,
   noBlocklist,
   noLimits,
+  openAuth,
   queueJobStore,
   redisIdempotency,
 } from "./defaults";
 export type {
+  DefaultModules,
   DirectWebhooksOptions,
   RedisIdempotencyOptions,
 } from "./defaults";
@@ -68,7 +70,7 @@ export type {
   ValueOf,
 } from "./hooks";
 export { authenticate } from "./http";
-export type { RouteKind } from "./http";
+export type { AuthRoute, CoreRouteKind, RouteKind } from "./http";
 export type {
   LlmModel,
   LlmModelOptions,
@@ -78,6 +80,8 @@ export type {
   LlmProviders,
 } from "./llm-providers";
 export type {
+  AuthModule,
+  AuthResult,
   BlocklistCheckOptions,
   BlocklistModule,
   ConcurrencyKeyGate,
@@ -166,6 +170,7 @@ export type {
   CoreParts,
   ErrorRegistry,
   Extension,
+  ModulesConfig,
   RoleRegistry,
   RunOptions,
   Service,

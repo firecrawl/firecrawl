@@ -1,5 +1,4 @@
 import { RateLimiterMode } from "../../types";
-import { authenticateUser } from "../auth";
 import {
   CrawlStatusParams,
   CrawlStatusResponse,
@@ -20,6 +19,7 @@ import { getJobs, PseudoJob } from "./crawl-status";
 import { getConcurrencyLimitedJobs } from "../../lib/concurrency-limit";
 import { scrapeQueue, NuQJobStatus } from "../../services/worker/nuq-router";
 import { getErrorContactMessage } from "../../lib/deployment";
+import { service, type Caller } from "../../service";
 
 type ErrorMessage = {
   type: "error";
@@ -172,18 +172,20 @@ export async function crawlStatusWSController(
   req: RequestWithAuth<CrawlStatusParams, undefined, undefined>,
 ) {
   try {
-    const auth = await authenticateUser(req, null, RateLimiterMode.CrawlStatus);
+    const auth = await service.modules.auth.authenticate(req, {
+      kind: RateLimiterMode.CrawlStatus,
+    });
 
-    if (!auth.success) {
+    if (!auth.ok) {
       return close(ws, 3000, {
         type: "error",
-        error: auth.error,
+        error: auth.refusal.body.error,
       });
     }
 
-    const { team_id, org_id } = auth;
-
-    req.auth = { team_id, org_id };
+    const caller = auth.caller as Caller & { orgId?: string | null };
+    req.caller = auth.caller;
+    req.auth = { team_id: caller.teamId, org_id: caller.orgId ?? null };
 
     await crawlStatusWS(ws, req);
   } catch (err) {

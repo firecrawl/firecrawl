@@ -28,6 +28,10 @@
       "types": "./src/controllers/auth.ts",
       "default": "./dist/src/controllers/auth.js"
     },
+    "./unstable/auth-deps": {
+      "types": "./src/service/unstable/auth-deps.ts",
+      "default": "./dist/src/service/unstable/auth-deps.js"
+    },
     "./unstable/autumn": {
       "types": "./src/services/autumn/autumn.service.ts",
       "default": "./dist/src/services/autumn/autumn.service.js"

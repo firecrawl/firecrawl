@@ -6,6 +6,7 @@
  */
 import type { JobKind } from "./hooks";
 import type {
+  AuthModule,
   BlocklistModule,
   FetchProxyFileKind,
   IdempotencyModule,
@@ -22,6 +23,18 @@ import type {
   UploadsModule,
   WebhooksModule,
 } from "./modules";
+import type { BaseCaller } from "./request-context";
+
+/**
+ * Default authentication module that admits every request under a single fixed
+ * team id. Typed on `BaseCaller` so widening `Caller` rejects it at compile
+ * time.
+ */
+export function openAuth(teamId = "bypass"): AuthModule<BaseCaller> {
+  return {
+    authenticate: async () => ({ ok: true, caller: { teamId } }),
+  };
+}
 
 /** Empty blocklist that initializes as a no-op and allows every URL. */
 export function noBlocklist(): BlocklistModule {
@@ -378,9 +391,18 @@ export function directWebhooks(
   };
 }
 
+/**
+ * The default slot table, with `auth` typed on `BaseCaller`. Assignable to
+ * `Modules` only when `Caller` has not been widened with required fields.
+ */
+export type DefaultModules = Omit<Modules, "auth"> & {
+  auth: AuthModule<BaseCaller>;
+};
+
 /** Returns fresh instances of every default module slot. */
-export function defaultModules(): Modules {
+export function defaultModules(): DefaultModules {
   return {
+    auth: openAuth(),
     blocklist: noBlocklist(),
     limits: noLimits(),
     messages: logsMessages(),

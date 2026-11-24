@@ -298,6 +298,7 @@ describe("coreParts", () => {
     expect(built.describe()).toEqual({
       extensions: ["core"],
       modules: [
+        "auth",
         "blocklist",
         "idempotency",
         "jobStore",
@@ -474,6 +475,7 @@ describe("coreParts", () => {
     expect(built.describe().routes).toEqual([]);
     expect(built.roles.names()).toHaveLength(11);
     expect(built.describe().modules).toEqual([
+      "auth",
       "blocklist",
       "idempotency",
       "jobStore",

@@ -58,9 +58,6 @@ vi.mock("../../services/autumn/autumn.service", async importOriginal => {
     },
   };
 });
-vi.mock("../../services/agent-sponsor", () => ({
-  getAgentSponsorStatus: vi.fn().mockResolvedValue(null),
-}));
 vi.mock("../../services/queue-service", () => ({
   getRedisConnection: vi.fn(() => ({ sadd: vi.fn() })),
   getBillingQueue: vi.fn(() => ({ add: vi.fn() })),
@@ -76,6 +73,10 @@ vi.mock("undici", async importOriginal => ({
 
 import { config } from "../../config";
 import { exchangeRouter } from "../../routes/exchange";
+import { coreParts } from "../../service";
+import { replaceService } from "../../service/service";
+import { testService } from "../../service/testing";
+import { acucTestAuth } from "./test-auth";
 
 const KEY = "44444444-4444-4444-8444-444444444444";
 const TEAM_ID = "11111111-1111-4111-8111-111111111111";
@@ -99,6 +100,7 @@ describe("Exchange proxy under zero data retention", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    replaceService(testService({}, coreParts(), { auth: acucTestAuth() }));
     flags = {};
     config.USE_DB_AUTHENTICATION = true;
     config.FIRE_EXCHANGE_URL = "https://exchange.test/";
@@ -130,6 +132,7 @@ describe("Exchange proxy under zero data retention", () => {
   });
 
   afterEach(() => {
+    replaceService(undefined);
     Object.assign(config, original);
   });
 

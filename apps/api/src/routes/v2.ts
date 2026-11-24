@@ -136,8 +136,7 @@ import {
 import { agentListController } from "../controllers/v2/agent-list";
 import { internalJwtMiddleware } from "../lib/internal-jwt";
 
-// Every v2 route opts in to the hosted MCP minimums (see AuthenticateOptions
-// in controllers/auth.ts); /v1 routes do not.
+// Every v2 route opts in to hosted MCP rate-limit minimums; /v1 routes do not.
 const authMiddleware: typeof sharedAuthMiddleware = (mode, options = {}) =>
   sharedAuthMiddleware(mode, { ...options, hostedMcpRateLimit: true });
 

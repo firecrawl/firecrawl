@@ -33,10 +33,6 @@ vi.mock("../../lib/http-metrics", () => ({
   getRoutePattern: vi.fn(() => "/v1/crawl"),
 }));
 
-vi.mock("../../controllers/auth", () => ({
-  authenticateUser: vi.fn(),
-}));
-
 vi.mock("geoip-country", () => ({ lookup: vi.fn(() => null) }));
 
 import { checkCreditsMiddleware } from "../../routes/shared";

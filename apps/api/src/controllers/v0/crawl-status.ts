@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { config } from "../../config";
-import { authenticateUser } from "../auth";
+import { authenticateV0 } from "./auth";
 import { RateLimiterMode } from "../../../src/types";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { logger } from "../../../src/lib/logger";
@@ -11,7 +11,6 @@ import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { scrapeQueue, crawlGroup } from "../../services/worker/nuq-router";
 import { includesFormat } from "../../lib/format-utils";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
-import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 configDotenv();
 
 async function getNuQCrawlStatus(crawlId: string, sc: StoredCrawl) {
@@ -103,11 +102,8 @@ export async function crawlStatusController(req: Request, res: Response) {
       return res.status(400).json({ error: "Invalid job ID" });
     }
 
-    const auth = await authenticateUser(req, res, RateLimiterMode.CrawlStatus);
-    if (!auth.success) {
-      if (auth.status === 401) applyAgentAuthDiscoveryHeader(res);
-      return res.status(auth.status).json({ error: auth.error });
-    }
+    const auth = await authenticateV0(req, res, RateLimiterMode.CrawlStatus);
+    if (!auth) return;
 
     if (getScrapeZDR(auth.chunk?.flags) === "forced") {
       return res.status(400).json({

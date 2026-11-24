@@ -53,9 +53,6 @@ vi.mock("../../services/autumn/autumn.service", async importOriginal => {
     },
   };
 });
-vi.mock("../../services/agent-sponsor", () => ({
-  getAgentSponsorStatus: vi.fn().mockResolvedValue(null),
-}));
 vi.mock("../../services/queue-service", () => ({
   getRedisConnection: vi.fn(() => ({ sadd: vi.fn() })),
   getBillingQueue: vi.fn(() => ({ add: vi.fn() })),

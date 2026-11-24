@@ -409,6 +409,7 @@ describe("describe", () => {
     expect(description).toEqual({
       extensions: ["core", "second", "third"],
       modules: [
+        "auth",
         "blocklist",
         "idempotency",
         "jobStore",
@@ -561,6 +562,7 @@ describe("describe", () => {
     expect(built.describe()).toEqual({
       extensions: ["core", "mine"],
       modules: [
+        "auth",
         "blocklist",
         "idempotency",
         "jobStore",
@@ -676,6 +678,7 @@ describe("describe", () => {
     expect(built.describe()).toEqual({
       extensions: ["core"],
       modules: [
+        "auth",
         "blocklist",
         "idempotency",
         "jobStore",

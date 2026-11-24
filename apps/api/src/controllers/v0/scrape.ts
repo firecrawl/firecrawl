@@ -1,8 +1,8 @@
 import { ExtractorOptions, PageOptions } from "./../../lib/entities";
 import { Request, Response } from "express";
 import { autumnService } from "../../services/autumn/autumn.service";
-import { authenticateUser } from "../auth";
-import { RateLimiterMode, AuthResponse } from "../../types";
+import { authenticateV0 } from "./auth";
+import { RateLimiterMode } from "../../types";
 import {
   AuthCreditUsageChunk,
   toLegacyDocument,
@@ -40,7 +40,6 @@ import {
   isLockdownZeroDataRetention,
   SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
-import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 import { ipWhitelistRefusal } from "../../lib/permissions";
 
@@ -244,11 +243,8 @@ export async function scrapeController(req: Request, res: Response) {
   try {
     let earlyReturn = false;
     // make sure to authenticate user first, Bearer <token>
-    const auth = await authenticateUser(req, res, RateLimiterMode.Scrape);
-    if (!auth.success) {
-      if (auth.status === 401) applyAgentAuthDiscoveryHeader(res);
-      return res.status(auth.status).json({ error: auth.error });
-    }
+    const auth = await authenticateV0(req, res, RateLimiterMode.Scrape);
+    if (!auth) return;
 
     const { team_id, chunk } = auth;
 

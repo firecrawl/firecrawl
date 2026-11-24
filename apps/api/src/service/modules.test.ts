@@ -13,11 +13,13 @@ import {
   memoryUploads,
   noBlocklist,
   noLimits,
+  openAuth,
   queueJobStore,
   redisIdempotency,
 } from "./defaults";
 import { currentLimits, resolveJobPriority } from "../lib/limits";
 import type {
+  AuthModule,
   BlocklistModule,
   IdempotencyModule,
   JobStoreModule,
@@ -223,6 +225,27 @@ describe("noBlocklist", () => {
   });
 });
 
+describe("openAuth", () => {
+  it("admits requests under the bypass team by default and returns fresh caller objects", async () => {
+    const auth = openAuth();
+    const first = await auth.authenticate({} as never, { kind: "scrape" });
+    const second = await auth.authenticate({} as never, { kind: "crawl" });
+
+    expect(first).toEqual({ ok: true, caller: { teamId: "bypass" } });
+    expect(second).toEqual({ ok: true, caller: { teamId: "bypass" } });
+    if (first.ok && second.ok) {
+      expect(first.caller).not.toBe(second.caller);
+    }
+  });
+
+  it("uses the supplied team id", async () => {
+    const auth = openAuth("local-team");
+    const result = await auth.authenticate({} as never, { kind: "map" });
+
+    expect(result).toEqual({ ok: true, caller: { teamId: "local-team" } });
+  });
+});
+
 describe("redisIdempotency", () => {
   it("claims team-scoped keys with the default 24h TTL and rejects duplicates", async () => {
     const seen = new Map<string, number>();
@@ -346,6 +369,7 @@ describe("service module slots", () => {
     const ctx = { teamId: "team-1", zeroDataRetention: false };
 
     expect(Object.isFrozen(built.modules)).toBe(true);
+    expect(Object.isFrozen(built.modules.auth)).toBe(true);
     expect(Object.isFrozen(built.modules.blocklist)).toBe(true);
     expect(Object.isFrozen(built.modules.limits)).toBe(true);
     expect(Object.isFrozen(built.modules.messages)).toBe(true);
@@ -355,6 +379,7 @@ describe("service module slots", () => {
     expect(Object.isFrozen(built.modules.idempotency)).toBe(true);
     expect(Object.isFrozen(built.modules.webhooks)).toBe(true);
     expect(built.describe().modules).toEqual([
+      "auth",
       "blocklist",
       "idempotency",
       "jobStore",
@@ -363,6 +388,9 @@ describe("service module slots", () => {
       "uploads",
       "webhooks",
     ]);
+    await expect(
+      built.modules.auth.authenticate({} as never, { kind: "scrape" }),
+    ).resolves.toEqual({ ok: true, caller: { teamId: "bypass" } });
     expect(built.modules.blocklist.isBlocked("https://example.com", ctx)).toBe(
       false,
     );
@@ -382,6 +410,12 @@ describe("service module slots", () => {
   });
 
   it("keeps defaults for unspecified slots and snapshots provided modules and drivers", async () => {
+    const customAuth: AuthModule = {
+      authenticate: async () => ({
+        ok: true,
+        caller: { teamId: "custom-team" },
+      }),
+    };
     const initSpy = vi.fn(async () => {});
     const customBlocklist: BlocklistModule = {
       init: initSpy,
@@ -428,6 +462,7 @@ describe("service module slots", () => {
     const built = createService(
       {
         modules: {
+          auth: customAuth,
           blocklist: customBlocklist,
           limits: customLimits,
           messages: customMessages,
@@ -440,6 +475,10 @@ describe("service module slots", () => {
       parts,
     );
 
+    customAuth.authenticate = async () => ({
+      ok: true,
+      caller: { teamId: "mutated" },
+    });
     customBlocklist.init = async () => {
       throw new Error("mutated");
     };
@@ -489,6 +528,9 @@ describe("service module slots", () => {
       built.modules.limits.jobPriority({ ctx, base: 10 }),
     ).resolves.toBe(13);
     expect(built.modules.limits.queueBackend(ctx)).toBe("fdb");
+    await expect(
+      built.modules.auth.authenticate({} as never, { kind: "scrape" }),
+    ).resolves.toEqual({ ok: true, caller: { teamId: "custom-team" } });
     expect(built.modules.messages.errorContact("42")).toBe("custom:42");
     expect(built.modules.uploads.driver().name).toBe("custom");
     expect(built.modules.jobStore.storesResultsExternally?.()).toBe(true);
@@ -528,6 +570,15 @@ describe("service module slots", () => {
   });
 
   it("rejects invalid, null, or unknown module slots and malformed upload drivers at service creation", () => {
+    expect(() =>
+      createService({ modules: { auth: {} as unknown as AuthModule } }, parts),
+    ).toThrow("Invalid auth module");
+    expect(() =>
+      createService(
+        { modules: { auth: null as unknown as AuthModule } },
+        parts,
+      ),
+    ).toThrow("Invalid auth module");
     expect(() =>
       createService(
         { modules: { blocklist: {} as unknown as BlocklistModule } },
