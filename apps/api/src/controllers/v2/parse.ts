@@ -8,6 +8,7 @@ import {
   getV2RequestSchemas,
   ParseRequest,
   RequestWithAuth,
+  ScrapeOptions,
   ScrapeResponse,
   UploadedParseFile,
   UploadedParseFileKind,
@@ -370,11 +371,12 @@ export async function parseController(
         });
       }
 
+      const extBody = req.body as Record<string, any>;
       const zeroDataRetention =
         getScrapeZDR(req.acuc?.flags) === "forced" ||
         (req.body.zeroDataRetention ?? false);
       const billing: BillingMetadata = {
-        ...(req.body.__agentInterop
+        ...(extBody.__agentInterop
           ? { endpoint: "agent" as const, jobId }
           : { endpoint: "parse" as const, jobId }),
         externalRequestId: externalRequestId(req),
@@ -393,27 +395,27 @@ export async function parseController(
       req.ctx = ctx;
 
       if (
-        req.body.__agentInterop &&
+        extBody.__agentInterop &&
         config.AGENT_INTEROP_SECRET &&
-        !isAgentInteropSecretValid(req.body.__agentInterop.auth)
+        !isAgentInteropSecretValid(extBody.__agentInterop.auth)
       ) {
         return res.status(403).json({
           success: false,
           error: "Invalid agent interop.",
         });
-      } else if (req.body.__agentInterop && !config.AGENT_INTEROP_SECRET) {
+      } else if (extBody.__agentInterop && !config.AGENT_INTEROP_SECRET) {
         return res.status(403).json({
           success: false,
           error: "Agent interop is not enabled.",
         });
       }
 
-      const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
-      const agentRequestId = req.body.__agentInterop?.requestId ?? null;
+      const shouldBill = extBody.__agentInterop?.shouldBill ?? true;
+      const agentRequestId = extBody.__agentInterop?.requestId ?? null;
       const boostConcurrency =
-        req.body.__agentInterop?.boostConcurrency ?? false;
+        extBody.__agentInterop?.boostConcurrency ?? false;
       const isDirectToBullMQ = timingSafeSecretEqual(
-        req.body.__searchPreviewToken,
+        extBody.__searchPreviewToken,
         config.SEARCH_PREVIEW_TOKEN,
       );
       const reservation = await service.modules.billing.authorize({
@@ -583,7 +585,7 @@ export async function parseController(
                       ...parseOptions,
                       maxAge: 0,
                       storeInCache: false,
-                    },
+                    } as ScrapeOptions,
                     internalOptions: {
                       teamId: req.auth.team_id,
                       saveScrapeResultToGCS: process.env

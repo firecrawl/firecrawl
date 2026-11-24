@@ -85,7 +85,7 @@ async function scrapeSearchResultDirect(
         scrapeOptions: {
           ...options.scrapeOptions,
           maxAge: 3 * 24 * 60 * 60 * 1000, // 3 days
-        },
+        } as ScrapeOptions,
         internalOptions: {
           teamId: options.teamId,
           orgId: options.orgId ?? null,

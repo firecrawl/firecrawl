@@ -1,7 +1,7 @@
 import { parseStringPromise } from "xml2js";
 import { WebCrawler, SITEMAP_LIMIT } from "./crawler";
 import { scrapeURL } from "../scrapeURL";
-import { scrapeOptions } from "../../controllers/v2/types";
+import { getV2RequestSchemas, scrapeOptions } from "../../controllers/v2/types";
 import type { Logger } from "winston";
 import { CostTracking } from "../../lib/cost-tracking";
 import { ScrapeJobTimeoutError } from "../../lib/error";
@@ -84,13 +84,18 @@ export async function getLinksFromSitemap(
         const response = await scrapeURL(
           "sitemap;" + crawlId,
           sitemapUrl,
-          scrapeOptions.parse({
-            formats: ["rawHtml"],
-            useMock: mock,
-            maxAge,
-            ...(location ? { location } : {}),
-            ...(headers ? { headers } : {}),
-          }),
+          (() => {
+            const schema = getV2RequestSchemas().scrapeOptions;
+            return schema.parse({
+              formats: ["rawHtml"],
+              useMock: mock,
+              ...(schema !== scrapeOptions && maxAge !== undefined
+                ? { maxAge }
+                : {}),
+              ...(location ? { location } : {}),
+              ...(headers ? { headers } : {}),
+            });
+          })(),
           {
             forceEngine,
             sitemapFetch: mode === "fire-engine" ? "http" : "direct",

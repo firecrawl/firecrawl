@@ -298,9 +298,7 @@ function buildFeatureFlags(
 ): Set<FeatureFlag> {
   const flags: Set<FeatureFlag> = new Set();
 
-  // Lockdown forces index-only engines and ignores every request-time feature.
-  // Return empty so the fallback threshold never filters index engines out.
-  if (options.lockdown) {
+  if ((options as { lockdown?: boolean }).lockdown) {
     return flags;
   }
 
@@ -340,7 +338,10 @@ function buildFeatureFlags(
     flags.add("useFastMode");
   }
 
-  if (options.proxy === "stealth" || options.proxy === "enhanced") {
+  if (
+    (options.proxy as string) === "stealth" ||
+    (options.proxy as string) === "enhanced"
+  ) {
     flags.add("stealthProxy");
   }
 
@@ -1188,7 +1189,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         "engine.no_engines_left": true,
         "engine.engines_attempted": enginesAttempted.join(","),
       });
-      if (meta.options.lockdown) {
+      if ((meta.options as { lockdown?: boolean }).lockdown) {
         throw new LockdownMissError();
       }
       throw new NoEnginesLeftError(fallbackList.map(x => x.engine));
@@ -1259,8 +1260,10 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               }
           : {}),
         postprocessorsUsed: engineResult.postprocessorsUsed,
-        provider: engineResult.exchange?.provider,
-      },
+        ...(engineResult.exchange?.provider
+          ? { provider: engineResult.exchange.provider }
+          : {}),
+      } as Document["metadata"],
     };
 
     if (result.unsupportedFeatures.size > 0) {
@@ -1335,7 +1338,7 @@ export async function scrapeURL(
               a => !SAFE_MODE_LOGIN_ACTIONS.includes(a.type),
             );
           }
-          options.profile = undefined;
+          (options as { profile?: unknown }).profile = undefined;
           // Basic Auth embedded in the URL (user:pass@host) is another way to
           // authenticate; strip the userinfo so no engine can use it, and from
           // the preserved source URL so it isn't returned/persisted in metadata.
@@ -1526,7 +1529,12 @@ export async function scrapeURL(
         });
       }
 
-      if (shouldCheckRobots(meta.options, internalOptions)) {
+      if (
+        shouldCheckRobots(
+          meta.options as { lockdown?: boolean },
+          internalOptions,
+        )
+      ) {
         const result = await withSpan(
           "scrape.robots_check",
           async robotsSpan => {
@@ -1861,7 +1869,7 @@ export async function scrapeURL(
         meta.logger.debug("scrapeURL metrics", {
           module: "scrapeURL/metrics",
           timeTaken: Date.now() - startTime,
-          maxAgeValid: (meta.options.maxAge ?? 0) > 0,
+          maxAgeValid: ((meta.options as { maxAge?: number }).maxAge ?? 0) > 0,
           success: result.success,
           indexHit:
             result.success && result.document.metadata.cacheState === "hit",
@@ -1909,7 +1917,7 @@ export async function scrapeURL(
         meta.logger.debug("scrapeURL metrics", {
           module: "scrapeURL/metrics",
           timeTaken: Date.now() - startTime,
-          maxAgeValid: (meta.options.maxAge ?? 0) > 0,
+          maxAgeValid: ((meta.options as { maxAge?: number }).maxAge ?? 0) > 0,
           success: false,
           indexHit: false,
         });

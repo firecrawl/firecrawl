@@ -1,7 +1,6 @@
-import {
-  LOCKDOWN_DEFAULT_MAX_AGE_MS,
-  TeamFlags,
-} from "../controllers/v2/types";
+import { TeamFlags } from "../controllers/v2/types";
+
+const LOCKDOWN_DEFAULT_MAX_AGE_MS = 2 * 365 * 24 * 60 * 60 * 1000;
 import type { ErrorCode } from "./error";
 import { getSearchForcedKind } from "./zdr-helpers";
 import {

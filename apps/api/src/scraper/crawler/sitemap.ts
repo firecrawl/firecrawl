@@ -1,5 +1,9 @@
 import type { Logger } from "winston";
-import { scrapeOptions, ScrapeOptions } from "../../controllers/v2/types";
+import {
+  getV2RequestSchemas,
+  scrapeOptions,
+  ScrapeOptions,
+} from "../../controllers/v2/types";
 import { logger as _logger } from "../../lib/logger";
 import { Engine } from "../scrapeURL/engines";
 import { scrapeURL } from "../scrapeURL";
@@ -64,11 +68,16 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
   const response = await scrapeURL(
     "sitemap;" + options.crawlId,
     options.url,
-    scrapeOptions.parse({
-      formats: ["rawHtml"],
-      maxAge: options.maxAge,
-      ...(options.location ? { location: options.location } : {}),
-    }),
+    (() => {
+      const schema = getV2RequestSchemas().scrapeOptions;
+      return schema.parse({
+        formats: ["rawHtml"],
+        ...(schema !== scrapeOptions && options.maxAge !== undefined
+          ? { maxAge: options.maxAge }
+          : {}),
+        ...(options.location ? { location: options.location } : {}),
+      });
+    })(),
     {
       forceEngine,
       sitemapFetch: "full",

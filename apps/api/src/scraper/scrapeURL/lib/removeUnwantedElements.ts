@@ -90,10 +90,14 @@ export const htmlTransform = async (
       ? [...dropSignatures]
       : undefined;
 
-  if (scrapeOptions.__experimental_omce) {
+  const extOptions = scrapeOptions as ScrapeOptions & {
+    __experimental_omce?: boolean;
+    __experimental_omceDomain?: string;
+  };
+  if (extOptions.__experimental_omce) {
     try {
       const hostname =
-        scrapeOptions.__experimental_omceDomain || new URL(url).hostname;
+        extOptions.__experimental_omceDomain || new URL(url).hostname;
       const queried = await queryOMCESignatures(hostname);
       logger.info("Got OMCE signatures", { signatures: queried.length });
       omceSignatures = omceSignatures

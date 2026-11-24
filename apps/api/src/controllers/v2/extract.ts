@@ -115,7 +115,7 @@ export async function extractController(
       endpoint: "extract",
       teamId: req.auth.team_id,
       apiKeyId: req.acuc?.api_key_id ?? null,
-      auditMetadata: req.body.scrapeOptions?.auditMetadata,
+      auditMetadata: (req.body.scrapeOptions as any)?.auditMetadata,
       url,
       error: new UnsupportedSiteError(),
       origin: req.body.origin ?? "api",
@@ -191,7 +191,7 @@ export async function extractController(
             endpoint: "extract",
             teamId: req.auth.team_id,
             apiKeyId: req.acuc?.api_key_id ?? null,
-            auditMetadata: req.body.scrapeOptions?.auditMetadata,
+            auditMetadata: (req.body.scrapeOptions as any)?.auditMetadata,
             url: blockedUrl.url,
             error: new UnsafeDomainBlockedError(
               blockedUrl.url,

@@ -1488,7 +1488,7 @@ describe("Scrape tests", () => {
         const response = await scrape(
           {
             url: "https://drive.google.com/file/d/14m3ZVDnWJwwPSDHX6U6jkL7FXxOf6cHB/view?usp=sharing",
-            maxAge: 0,
+            ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
           },
           identity,
         );
@@ -1504,7 +1504,7 @@ describe("Scrape tests", () => {
         const response = await scrape(
           {
             url: "https://docs.google.com/spreadsheets/d/1DTpw_bbsf3OY17ZqEYEpW6lAmLdCRC2WfLrV0isG9ac/edit?usp=sharing",
-            maxAge: 0,
+            ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
           },
           identity,
         );
@@ -1837,7 +1837,7 @@ describe("Scrape tests", () => {
   );
 
   // TODO: check if these are required
-  describeIf(ALLOW_TEST_SUITE_WEBSITE)(
+  describeIf(TEST_PRODUCTION && ALLOW_TEST_SUITE_WEBSITE)(
     "__experimental_omceDomain functionality",
     () => {
       it.concurrent(

@@ -243,7 +243,7 @@ function buildSearchRequestFallback(
     domainTools: options.domainTools,
     toolDetail: options.toolDetail ?? "compact",
     scrapeOptions: options.scrapeOptions,
-  };
+  } as SearchRequest;
 }
 
 export async function executeSearch(

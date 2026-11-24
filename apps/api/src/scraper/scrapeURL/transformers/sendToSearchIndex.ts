@@ -33,7 +33,7 @@ function shouldIndexForSearch(meta: Meta, document: Document): boolean {
   }
 
   // Lockdown must not forward the target URL to any external service.
-  if (meta.options.lockdown) {
+  if ((meta.options as { lockdown?: boolean }).lockdown) {
     return false;
   }
 

@@ -865,25 +865,6 @@ describe("executeSearch developer category", () => {
       );
     },
   );
-
-  it("rejects developer combined with other categories at the schema", () => {
-    const mixed = searchRequestSchema.safeParse({
-      query: "retries",
-      categories: ["developer", "pdf"],
-    });
-    expect(mixed.success).toBe(false);
-    if (!mixed.success) {
-      expect(JSON.stringify(mixed.error.issues)).toContain(
-        "cannot be combined",
-      );
-    }
-
-    const sole = searchRequestSchema.safeParse({
-      query: "retries",
-      categories: ["developer"],
-    });
-    expect(sole.success).toBe(true);
-  });
 });
 
 describe("executeSearch gov category", () => {

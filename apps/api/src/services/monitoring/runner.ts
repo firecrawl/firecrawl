@@ -25,8 +25,7 @@ import { _addScrapeJobToBullMQ, addScrapeJob } from "../queue-jobs";
 import {
   CrawlRequest,
   type ScrapeOptions,
-  crawlRequestSchema,
-  scrapeRequestSchema,
+  getV2RequestSchemas,
   toV0CrawlerOptions,
 } from "../../controllers/v2/types";
 import { createWebhookSender, WebhookEvent } from "../webhook";
@@ -255,7 +254,7 @@ function withMonitorScrapeDefaults(
   return {
     maxAge: 0,
     ...withMarkdownFormat({ ...options, formats }),
-  };
+  } as ScrapeOptions;
 }
 
 export function estimateActualCredits(doc: any, options?: any): number {
@@ -287,7 +286,7 @@ async function scrapeSearchMonitorPage(params: {
   judgePrompt: string;
 }): Promise<ScrapeSearchResult | null> {
   const scrapeId = uuidv7();
-  const scrapeOptions = scrapeRequestSchema.parse({
+  const scrapeOptions = getV2RequestSchemas().scrape.parse({
     url: params.url,
     formats: [
       { type: "markdown" },
@@ -650,7 +649,7 @@ async function enqueueMonitorScrapeTarget(params: {
 
   for (const [index, url] of params.target.urls.entries()) {
     const scrapeId = params.targetRun.expectedJobs[index];
-    const scrapeOptions = scrapeRequestSchema.parse({
+    const scrapeOptions = getV2RequestSchemas().scrape.parse({
       url,
       ...withMonitorScrapeDefaults(params.target.scrapeOptions ?? {}),
       origin: "monitor",
@@ -715,7 +714,7 @@ async function enqueueMonitorCrawlTarget(params: {
   }
 
   const crawlId = params.targetRun.crawlId;
-  const body = crawlRequestSchema.parse({
+  const body = getV2RequestSchemas().crawl.parse({
     url: params.target.url,
     ...(params.target.crawlOptions ?? {}),
     scrapeOptions: withMonitorScrapeDefaults(params.target.scrapeOptions ?? {}),

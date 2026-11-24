@@ -86,8 +86,9 @@ export async function searchController(
 ) {
   // Resolved before any span starts so the whole request stays unrecorded for
   // zero-data-retention and anonymous searches (see otel-tracer).
-  const enterprise: unknown[] = Array.isArray(req.body?.enterprise)
-    ? req.body.enterprise
+  const rawBody = req.body as Record<string, any> | undefined;
+  const enterprise: unknown[] = Array.isArray(rawBody?.enterprise)
+    ? rawBody.enterprise
     : [];
   const zeroDataRetentionTrace =
     Boolean(getSearchForcedKind(req.acuc?.flags)) ||
@@ -95,7 +96,7 @@ export async function searchController(
     enterprise.includes("anon") ||
     isLockdownZeroDataRetention(
       req.acuc?.flags,
-      req.body?.scrapeOptions?.safeMode,
+      rawBody?.scrapeOptions?.safeMode,
     );
 
   return withSpan(
@@ -126,9 +127,10 @@ async function searchControllerInner(
   // Safe Mode lockdown forces the "zdr" kind like the searchZDR flag does
   // (see getEffectiveSearchForcedKind).
   const flagForcedKind = getSearchForcedKind(req.acuc?.flags);
+  const extBody = () => req.body as Record<string, any>;
   const teamForcedKind = getEffectiveSearchForcedKind(
     req.acuc?.flags,
-    req.body?.scrapeOptions?.safeMode,
+    extBody()?.scrapeOptions?.safeMode,
   );
   let logger = _logger.child({
     jobId,
@@ -141,7 +143,7 @@ async function searchControllerInner(
 
   const middlewareTime = controllerStartTime - middlewareStartTime;
   const isSearchPreview = timingSafeSecretEqual(
-    req.body.__searchPreviewToken,
+    extBody().__searchPreviewToken,
     config.SEARCH_PREVIEW_TOKEN,
   );
 
@@ -198,14 +200,14 @@ async function searchControllerInner(
     const sourcesOmitted = rawBody?.sources === undefined;
     req.body = getV2RequestSchemas().search.parse(req.body);
 
-    const wantsTools = req.body.sources.some(
+    const wantsTools = (req.body.sources as Array<{ type: string }>).some(
       source => source.type === "alexandria",
     );
-    const wantsSkills = req.body.sources.some(
+    const wantsSkills = (req.body.sources as Array<{ type: string }>).some(
       source => source.type === "skills",
     );
     if (
-      (wantsTools || wantsSkills || req.body.domainTools) &&
+      (wantsTools || wantsSkills || extBody().domainTools) &&
       req.auth.team_id.startsWith("preview_keyless_")
     ) {
       applyAgentAuthDiscoveryHeader(res);
@@ -221,9 +223,11 @@ async function searchControllerInner(
           : "A query is required for skill search.",
       });
     if (
-      (wantsTools || wantsSkills || req.body.domainTools) &&
+      (wantsTools || wantsSkills || extBody().domainTools) &&
       (teamForcedKind ||
-        req.body.enterprise?.some(mode => mode === "zdr" || mode === "anon"))
+        (
+          extBody().enterprise as ("default" | "anon" | "zdr")[] | undefined
+        )?.some(mode => mode === "zdr" || mode === "anon"))
     )
       return res.status(403).json({
         success: false,
@@ -276,15 +280,15 @@ async function searchControllerInner(
     }
 
     if (
-      req.body.__agentInterop &&
+      extBody().__agentInterop &&
       config.AGENT_INTEROP_SECRET &&
-      !isAgentInteropSecretValid(req.body.__agentInterop.auth)
+      !isAgentInteropSecretValid(extBody().__agentInterop.auth)
     ) {
       return res.status(403).json({
         success: false,
         error: "Invalid agent interop.",
       });
-    } else if (req.body.__agentInterop && !config.AGENT_INTEROP_SECRET) {
+    } else if (extBody().__agentInterop && !config.AGENT_INTEROP_SECRET) {
       return res.status(403).json({
         success: false,
         error: "Agent interop is not enabled.",
@@ -317,7 +321,7 @@ async function searchControllerInner(
     // silently). Domain controls force threat protection over the results.
     const safeMode = resolveSafeMode(
       req.acuc?.flags,
-      req.body.scrapeOptions?.safeMode,
+      extBody().scrapeOptions?.safeMode,
     );
     if (safeMode.error) {
       return res.status(403).json({
@@ -335,7 +339,7 @@ async function searchControllerInner(
       orgId: req.acuc?.org_id ?? null,
       flags: req.acuc?.flags ?? null,
       override:
-        req.body.threatProtection ?? req.body.scrapeOptions?.threatProtection,
+        extBody().threatProtection ?? extBody().scrapeOptions?.threatProtection,
       force: safeMode.safeMode?.domainControls === true,
     });
     if (threatProtection.error) {
@@ -398,10 +402,10 @@ async function searchControllerInner(
       }
     }
 
-    const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
-    const agentRequestId = req.body.__agentInterop?.requestId ?? null;
+    const shouldBill = extBody().__agentInterop?.shouldBill ?? true;
+    const agentRequestId = extBody().__agentInterop?.requestId ?? null;
     const billing: BillingMetadata = {
-      ...(req.body.__agentInterop
+      ...(extBody().__agentInterop
         ? { endpoint: "agent" as const, jobId }
         : { endpoint: "search" as const, jobId }),
       externalRequestId: externalRequestId(req),
@@ -417,21 +421,31 @@ async function searchControllerInner(
     // Kinds the request itself asked for, captured before the forced kind is
     // injected: the entitlement check below applies to these only.
     const requestedZDROrAnon =
-      req.body.enterprise?.includes("zdr") ||
-      req.body.enterprise?.includes("anon") ||
+      (
+        extBody().enterprise as ("default" | "anon" | "zdr")[] | undefined
+      )?.includes("zdr") ||
+      (
+        extBody().enterprise as ("default" | "anon" | "zdr")[] | undefined
+      )?.includes("anon") ||
       false;
 
     // Inject the team-forced enterprise mode so downstream billing,
     // upstream routing, and ZDR cleanup all see it.
     if (teamForcedKind) {
-      const existing = req.body.enterprise ?? [];
+      const existing =
+        (extBody().enterprise as ("default" | "anon" | "zdr")[] | undefined) ??
+        [];
       if (!existing.includes(teamForcedKind)) {
-        req.body.enterprise = [...existing, teamForcedKind];
+        extBody().enterprise = [...existing, teamForcedKind];
       }
     }
 
-    const isZDR = req.body.enterprise?.includes("zdr");
-    const isAnon = req.body.enterprise?.includes("anon");
+    const isZDR = (
+      extBody().enterprise as ("default" | "anon" | "zdr")[] | undefined
+    )?.includes("zdr");
+    const isAnon = (
+      extBody().enterprise as ("default" | "anon" | "zdr")[] | undefined
+    )?.includes("anon");
     const isZDROrAnon = isZDR || isAnon;
     zeroDataRetention = isZDROrAnon ?? false;
     logger = logger.child({ zeroDataRetention });
@@ -541,7 +555,9 @@ async function searchControllerInner(
       if (
         (plannedWantsTools || plannedWantsSkills) &&
         (teamForcedKind ||
-          req.body.enterprise?.some(mode => mode === "zdr" || mode === "anon"))
+          (
+            extBody().enterprise as ("default" | "anon" | "zdr")[] | undefined
+          )?.some(mode => mode === "zdr" || mode === "anon"))
       ) {
         return res.status(403).json({
           success: false,
@@ -607,7 +623,9 @@ async function searchControllerInner(
         govSearch,
         hasScrapeFormats: requestedFormats.length > 0,
         limit: planned.limit,
-        enterprise: req.body.enterprise,
+        enterprise: extBody().enterprise as
+          | ("default" | "anon" | "zdr")[]
+          | undefined,
         scrapeOptions: req.body.scrapeOptions,
         endpoint: "v2_search",
       },
@@ -668,15 +686,17 @@ async function searchControllerInner(
         categories: req.body.categories as CategoryOption[],
         includeDomains: req.body.includeDomains,
         excludeDomains: req.body.excludeDomains,
-        enterprise: req.body.enterprise,
+        enterprise: extBody().enterprise as
+          | ("default" | "anon" | "zdr")[]
+          | undefined,
         scrapeOptions: req.body.scrapeOptions,
-        highlights: req.body.highlights,
-        domainTools: req.body.domainTools,
-        toolDetail: req.body.toolDetail,
+        highlights: extBody().highlights,
+        domainTools: extBody().domainTools,
+        toolDetail: extBody().toolDetail,
         inferToolQuery: queryInferenceEnabled(),
         toolFusion: toolFusionEnabled(req.acuc?.flags),
         autoTools:
-          (sourcesOmitted || req.body.domainTools === true) &&
+          (sourcesOmitted || extBody().domainTools === true) &&
           !req.auth.team_id.startsWith("preview_keyless_") &&
           config.FIRE_EXCHANGE_URL !== undefined &&
           autoToolsEnabled(req.acuc?.flags),
@@ -771,7 +791,9 @@ async function searchControllerInner(
               results: billableResultsCount,
               documents: scrapedDocuments,
               state: {
-                enterprise: req.body.enterprise,
+                enterprise: extBody().enterprise as
+                  | ("default" | "anon" | "zdr")[]
+                  | undefined,
                 threatDecisions: result.threatDecisions,
               },
             })

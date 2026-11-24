@@ -153,10 +153,14 @@ function shouldAllowCacheEngines(meta: Meta): boolean {
     screenshotFormat?.viewport !== undefined ||
     screenshotFormat?.quality !== undefined;
 
+  const extOptions = meta.options as Meta["options"] & {
+    maxAge?: number;
+    profile?: unknown;
+  };
   return (
     !hasCustomScreenshotSettings &&
-    meta.options.maxAge !== 0 &&
-    !hasCustomRequestContext(meta.options)
+    extOptions.maxAge !== 0 &&
+    !hasCustomRequestContext(extOptions)
   );
 }
 
@@ -187,10 +191,14 @@ function isEngineAllowedByPolicy(meta: Meta, engine: Engine): boolean {
 
   const registered = service.engines.get(engine);
 
+  const extOptions = meta.options as Meta["options"] & {
+    profile?: unknown;
+    lockdown?: boolean;
+  };
   // A profile must never fall back to fetching anonymous content. File parsers
   // may consume bytes already fetched by the authenticated browser.
   if (
-    meta.options.profile &&
+    extOptions.profile &&
     !registered?.supportsProfile &&
     !(engine === "pdf" && meta.pdfPrefetch) &&
     !(engine === "document" && meta.documentPrefetch) &&
@@ -205,7 +213,7 @@ function isEngineAllowedByPolicy(meta: Meta, engine: Engine): boolean {
   }
 
   if (
-    (meta.options.lockdown || meta.internalOptions.agentIndexOnly) &&
+    (extOptions.lockdown || meta.internalOptions.agentIndexOnly) &&
     !registered?.cache
   ) {
     return false;
@@ -287,12 +295,16 @@ export async function buildFallbackList(
 }
 
 async function selectFallbackList(meta: Meta): Promise<FallbackEngineEntry[]> {
+  const extOptions = meta.options as Meta["options"] & {
+    minAge?: number;
+    lockdown?: boolean;
+  };
   if (hasFormatOfType(meta.options.formats, "rawBase64")) {
     if (meta.internalOptions.agentIndexOnly) {
       throw new AgentIndexOnlyError();
     }
 
-    if (meta.options.minAge !== undefined) {
+    if (extOptions.minAge !== undefined) {
       throw new NoCachedDataError();
     }
 
@@ -307,7 +319,7 @@ async function selectFallbackList(meta: Meta): Promise<FallbackEngineEntry[]> {
     .filter(engine => engine.cache === true)
     .map(engine => engine.name);
 
-  if (meta.options.lockdown) {
+  if (extOptions.lockdown) {
     _engines.length = 0;
     _engines.push(...cacheEngines);
     meta.internalOptions.forceEngine = cacheEngines;

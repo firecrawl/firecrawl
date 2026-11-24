@@ -332,7 +332,6 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
         raw.body.id,
         {
           rating: "bad",
-          // @ts-expect-error testing invalid shape
           missingContent: [{ description: "no topic supplied" }],
         },
         identity,

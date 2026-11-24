@@ -1,23 +1,39 @@
 import { config } from "../../../config";
 import {
-  ScrapeRequestInput,
+  ScrapeRequestInput as CoreScrapeRequestInput,
   Document,
   ExtractRequestInput,
   ExtractResponse,
-  CrawlRequestInput,
+  CrawlRequestInput as CoreCrawlRequestInput,
   CrawlResponse,
   CrawlStatusResponse,
   OngoingCrawlsResponse,
   ErrorResponse,
   CrawlErrorsResponse,
-  MapRequestInput,
-  BatchScrapeRequestInput,
-  SearchRequestInput,
-  SearchFeedbackRequestInput,
-  EndpointFeedbackRequestInput,
-  EndpointFeedbackResponse,
-  ParseRequestInput,
+  MapRequestInput as CoreMapRequestInput,
+  BatchScrapeRequestInput as CoreBatchScrapeRequestInput,
+  SearchRequestInput as CoreSearchRequestInput,
+  ParseRequestInput as CoreParseRequestInput,
 } from "../../../controllers/v2/types";
+
+type ScrapeRequestInput = Omit<CoreScrapeRequestInput, "proxy"> & {
+  proxy?: string;
+} & Record<string, unknown>;
+type CrawlRequestInput = Omit<CoreCrawlRequestInput, "scrapeOptions"> & {
+  scrapeOptions?: Record<string, unknown>;
+} & Record<string, unknown>;
+type MapRequestInput = CoreMapRequestInput & Record<string, unknown>;
+type BatchScrapeRequestInput = Omit<CoreBatchScrapeRequestInput, "proxy"> & {
+  proxy?: string;
+} & Record<string, unknown>;
+type SearchRequestInput = Omit<
+  CoreSearchRequestInput,
+  "sources" | "categories"
+> & {
+  sources?: unknown;
+  categories?: unknown;
+} & Record<string, unknown>;
+type ParseRequestInput = CoreParseRequestInput & Record<string, unknown>;
 import request from "supertest";
 import {
   TEST_API_URL,
@@ -758,7 +774,7 @@ export async function searchRawFull(
 
 export async function searchFeedbackRaw(
   searchId: string,
-  body: SearchFeedbackRequestInput,
+  body: Record<string, unknown>,
   identity: Identity,
 ) {
   return await request(TEST_API_URL)
@@ -770,7 +786,7 @@ export async function searchFeedbackRaw(
 
 export async function searchFeedback(
   searchId: string,
-  body: SearchFeedbackRequestInput,
+  body: Record<string, unknown>,
   identity: Identity,
 ): Promise<{
   success: true;
@@ -798,7 +814,7 @@ export async function searchFeedback(
 
 export async function searchFeedbackWithFailure(
   searchId: string,
-  body: SearchFeedbackRequestInput,
+  body: Record<string, unknown>,
   identity: Identity,
 ): Promise<{
   success: false;
@@ -817,7 +833,7 @@ export async function searchFeedbackWithFailure(
 // =========================================
 
 export async function endpointFeedbackRaw(
-  body: EndpointFeedbackRequestInput,
+  body: Record<string, unknown>,
   identity: Identity,
 ) {
   return await request(TEST_API_URL)
@@ -828,9 +844,9 @@ export async function endpointFeedbackRaw(
 }
 
 export async function endpointFeedback(
-  body: EndpointFeedbackRequestInput,
+  body: Record<string, unknown>,
   identity: Identity,
-): Promise<Exclude<EndpointFeedbackResponse, ErrorResponse>> {
+): Promise<Record<string, any>> {
   const raw = await endpointFeedbackRaw(body, identity);
   if (raw.statusCode !== 200) {
     console.warn(
@@ -846,7 +862,7 @@ export async function endpointFeedback(
 }
 
 export async function endpointFeedbackWithFailure(
-  body: EndpointFeedbackRequestInput,
+  body: Record<string, unknown>,
   identity: Identity,
 ): Promise<{
   success: false;

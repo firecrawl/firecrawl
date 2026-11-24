@@ -28,6 +28,10 @@
       "types": "./src/service/unstable/admin-deps.ts",
       "default": "./dist/src/service/unstable/admin-deps.js"
     },
+    "./unstable/ai-telemetry": {
+      "types": "./src/lib/ai-telemetry.ts",
+      "default": "./dist/src/lib/ai-telemetry.js"
+    },
     "./unstable/auth": {
       "types": "./src/controllers/auth.ts",
       "default": "./dist/src/controllers/auth.js"
@@ -40,6 +44,14 @@
       "types": "./src/services/autumn/autumn.service.ts",
       "default": "./dist/src/services/autumn/autumn.service.js"
     },
+    "./unstable/avgrab-resolve": {
+      "types": "./src/lib/avgrab-resolve.ts",
+      "default": "./dist/src/lib/avgrab-resolve.js"
+    },
+    "./unstable/bigtable-client": {
+      "types": "./src/lib/bigtable-client.ts",
+      "default": "./dist/src/lib/bigtable-client.js"
+    },
     "./unstable/billing": {
       "types": "./src/services/billing/runtime.ts",
       "default": "./dist/src/services/billing/runtime.js"
@@ -47,6 +59,10 @@
     "./unstable/browser-options": {
       "types": "./src/lib/browser-options.ts",
       "default": "./dist/src/lib/browser-options.js"
+    },
+    "./unstable/browser-profiles": {
+      "types": "./src/lib/browser-profiles.ts",
+      "default": "./dist/src/lib/browser-profiles.js"
     },
     "./unstable/clickhouse-client": {
       "types": "./src/lib/clickhouse-client.ts",
@@ -68,13 +84,25 @@
       "types": "./src/db/schema/index.ts",
       "default": "./dist/src/db/schema/index.js"
     },
+    "./unstable/developer-category": {
+      "types": "./src/lib/developer-category.ts",
+      "default": "./dist/src/lib/developer-category.js"
+    },
     "./unstable/exchange": {
       "types": "./src/lib/exchange.ts",
       "default": "./dist/src/lib/exchange.js"
     },
+    "./unstable/format-utils": {
+      "types": "./src/lib/format-utils.ts",
+      "default": "./dist/src/lib/format-utils.js"
+    },
     "./unstable/gcs-jobs": {
       "types": "./src/lib/gcs-jobs.ts",
       "default": "./dist/src/lib/gcs-jobs.js"
+    },
+    "./unstable/generic-ai": {
+      "types": "./src/lib/generic-ai.ts",
+      "default": "./dist/src/lib/generic-ai.js"
     },
     "./unstable/html-to-markdown": {
       "types": "./src/lib/html-to-markdown.ts",
@@ -100,6 +128,10 @@
       "types": "./src/service/unstable/index-worker-deps.ts",
       "default": "./dist/src/service/unstable/index-worker-deps.js"
     },
+    "./unstable/integration": {
+      "types": "./src/utils/integration.ts",
+      "default": "./dist/src/utils/integration.js"
+    },
     "./unstable/job-access-store": {
       "types": "./src/lib/job-access-store.ts",
       "default": "./dist/src/lib/job-access-store.js"
@@ -119,6 +151,18 @@
     "./unstable/keyless-team": {
       "types": "./src/lib/keyless-team.ts",
       "default": "./dist/src/lib/keyless-team.js"
+    },
+    "./unstable/llm-extract": {
+      "types": "./src/scraper/scrapeURL/transformers/llmExtract.ts",
+      "default": "./dist/src/scraper/scrapeURL/transformers/llmExtract.js"
+    },
+    "./unstable/model-prices": {
+      "types": "./src/lib/model-prices.ts",
+      "default": "./dist/src/lib/model-prices.js"
+    },
+    "./unstable/native-logging": {
+      "types": "./src/lib/native-logging.ts",
+      "default": "./dist/src/lib/native-logging.js"
     },
     "./unstable/nuq-fdb": {
       "types": "./src/services/worker/nuq-fdb/index.ts",
@@ -144,6 +188,10 @@
       "types": "./src/services/queue-service.ts",
       "default": "./dist/src/services/queue-service.js"
     },
+    "./unstable/rate-limiter": {
+      "types": "./src/services/rate-limiter.ts",
+      "default": "./dist/src/services/rate-limiter.js"
+    },
     "./unstable/redis": {
       "types": "./src/services/redis.ts",
       "default": "./dist/src/services/redis.js"
@@ -159,6 +207,10 @@
     "./unstable/reserved-capacity": {
       "types": "./src/lib/reserved-capacity.ts",
       "default": "./dist/src/lib/reserved-capacity.js"
+    },
+    "./unstable/rollout": {
+      "types": "./src/lib/rollout.ts",
+      "default": "./dist/src/lib/rollout.js"
     },
     "./unstable/root-routes-deps": {
       "types": "./src/service/unstable/root-routes-deps.ts",
@@ -179,6 +231,10 @@
     "./unstable/scrape-download": {
       "types": "./src/scraper/scrapeURL/engines/utils/downloadFile.ts",
       "default": "./dist/src/scraper/scrapeURL/engines/utils/downloadFile.js"
+    },
+    "./unstable/scrape-download-gcs": {
+      "types": "./src/scraper/scrapeURL/engines/utils/downloadGcsFile.ts",
+      "default": "./dist/src/scraper/scrapeURL/engines/utils/downloadGcsFile.js"
     },
     "./unstable/scrape-engines": {
       "types": "./src/scraper/scrapeURL/engines/index.ts",
@@ -240,6 +296,22 @@
       "types": "./src/scraper/scrapeURL/engines/wikipedia/index.ts",
       "default": "./dist/src/scraper/scrapeURL/engines/wikipedia/index.js"
     },
+    "./unstable/search-query-builder": {
+      "types": "./src/lib/search-query-builder.ts",
+      "default": "./dist/src/lib/search-query-builder.js"
+    },
+    "./unstable/siem-types": {
+      "types": "./src/lib/siem-logging/types.ts",
+      "default": "./dist/src/lib/siem-logging/types.js"
+    },
+    "./unstable/threat-protection-config": {
+      "types": "./src/lib/threat-protection/config.ts",
+      "default": "./dist/src/lib/threat-protection/config.js"
+    },
+    "./unstable/typesafe": {
+      "types": "./src/lib/typesafe.ts",
+      "default": "./dist/src/lib/typesafe.js"
+    },
     "./unstable/us-only": {
       "types": "./src/lib/us-only.ts",
       "default": "./dist/src/lib/us-only.js"
@@ -255,6 +327,10 @@
     "./unstable/v2-types": {
       "types": "./src/controllers/v2/types.ts",
       "default": "./dist/src/controllers/v2/types.js"
+    },
+    "./unstable/webhook-schema": {
+      "types": "./src/services/webhook/schema.ts",
+      "default": "./dist/src/services/webhook/schema.js"
     },
     "./unstable/x-twitter-url": {
       "types": "./src/lib/x-twitter-url.ts",

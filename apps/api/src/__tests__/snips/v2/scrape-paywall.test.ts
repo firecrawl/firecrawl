@@ -71,7 +71,7 @@ describe("Safe Mode respectPaywalls", () => {
     return scrapeURL(
       randomUUID(),
       URL_UNDER_TEST,
-      scrapeOptions.parse({ formats: ["rawHtml"], maxAge: 0 }),
+      scrapeOptions.parse({ formats: ["rawHtml"] }),
       { teamId: "paywall-test", orgId: null, forceEngine: "fetch", safeMode },
       new CostTracking(),
     );

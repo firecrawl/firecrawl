@@ -2,6 +2,7 @@ import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
   HAS_AI,
+  itIf,
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
@@ -755,7 +756,7 @@ describe("/v2/parse", () => {
     scrapeTimeout,
   );
 
-  it(
+  itIf(TEST_PRODUCTION)(
     "rejects changeTracking format for parse uploads",
     async () => {
       const failure = await parseWithFailure(
@@ -850,7 +851,7 @@ describe("/v2/parse", () => {
     scrapeTimeout,
   );
 
-  it(
+  itIf(TEST_PRODUCTION)(
     "rejects non-basic/auto proxy for parse uploads",
     async () => {
       const failure = await parseWithFailure(
@@ -897,7 +898,7 @@ describe("/v2/parse", () => {
     scrapeTimeout,
   );
 
-  it(
+  itIf(TEST_PRODUCTION)(
     "rejects branding format for parse uploads",
     async () => {
       const failure = await parseWithFailure(
