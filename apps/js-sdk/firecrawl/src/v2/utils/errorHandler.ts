@@ -32,7 +32,7 @@ export function throwForBadResponse(resp: AxiosResponse, action: string): never 
     status,
     body?.code,
     body?.details,
-    undefined,
+    typeof body?.jobId === "string" ? body.jobId : undefined,
     body?.chargeId,
     parseRequiresAction(body?.requiresAction),
   ), agentHintMetadata(body));
@@ -48,7 +48,7 @@ export function normalizeAxiosError(err: AxiosError, action: string): never {
     status,
     code,
     body?.details ?? body,
-    undefined,
+    typeof body?.jobId === "string" ? body.jobId : undefined,
     body?.chargeId,
     parseRequiresAction(body?.requiresAction),
   ), agentHintMetadata(body));
