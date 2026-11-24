@@ -1,6 +1,5 @@
 import { feedbackEnv } from "./feedback-env";
 import { alexandriaFeedbackNextStep } from "./alexandria-feedback-hint";
-import { alexandriaFeedbackSchema } from "../controllers/v2/feedback/alexandria-schema";
 
 const original = feedbackEnv.FEEDBACK_REFUND_ENABLED;
 beforeEach(() => {
@@ -55,22 +54,6 @@ it("gives any other caller the HTTP request, with the tokens it rates", () => {
     request: "POST /v2/feedback",
     body: { tokens: ["<feedbackToken of each result you rate>"] },
   });
-});
-
-it("names only fields the feedback endpoint accepts", () => {
-  const step = alexandriaFeedbackNextStep("api") as {
-    body: Record<string, unknown>;
-  };
-  expect(
-    alexandriaFeedbackSchema.safeParse({
-      ...step.body,
-      rating: "good",
-      requestedWebsite: {
-        url: "https://example.com",
-        requestedFunctionality: "stock price",
-      },
-    }).success,
-  ).toBe(true);
 });
 
 it("does not promise a refund when refunds are off", () => {

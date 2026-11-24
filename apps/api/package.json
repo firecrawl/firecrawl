@@ -144,6 +144,10 @@
       "types": "./src/lib/scrape-interact/scrape-replay.ts",
       "default": "./dist/src/lib/scrape-interact/scrape-replay.js"
     },
+    "./unstable/v2-routes-deps": {
+      "types": "./src/service/unstable/v2-routes-deps.ts",
+      "default": "./dist/src/service/unstable/v2-routes-deps.js"
+    },
     "./unstable/zdr-queue": {
       "types": "./src/lib/zdr-queue.ts",
       "default": "./dist/src/lib/zdr-queue.js"
