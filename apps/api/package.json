@@ -24,7 +24,7 @@
       "types": "./src/service/testing.ts",
       "default": "./dist/src/service/testing.js"
     },
-    "./unstable/db-connection": {
+    "./unstable/db": {
       "types": "./src/db/connection.ts",
       "default": "./dist/src/db/connection.js"
     },
@@ -39,6 +39,10 @@
     "./unstable/keyless-team": {
       "types": "./src/lib/keyless-team.ts",
       "default": "./dist/src/lib/keyless-team.js"
+    },
+    "./unstable/redis": {
+      "types": "./src/services/redis.ts",
+      "default": "./dist/src/services/redis.js"
     },
     "./unstable/zdr-queue": {
       "types": "./src/lib/zdr-queue.ts",

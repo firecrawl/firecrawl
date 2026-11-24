@@ -1,19 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  fireEngineSearchLegacy: vi.fn(),
-  fireEngineSearchV2: vi.fn(),
   searxngSearchLegacy: vi.fn(),
   searxngSearchV2: vi.fn(),
   ddgSearch: vi.fn(),
 }));
 
-vi.mock("./fireEngine", () => ({
-  fire_engine_search: mocks.fireEngineSearchLegacy,
-}));
-vi.mock("./v2/fireEngine-v2", () => ({
-  fire_engine_search_v2: mocks.fireEngineSearchV2,
-}));
 vi.mock("./searxng", () => ({
   searxng_search: mocks.searxngSearchLegacy,
 }));
@@ -35,17 +27,14 @@ const logger = {
   debug: vi.fn(),
 } as any;
 
-const originalFireEngineUrl = config.FIRE_ENGINE_BETA_URL;
 const originalSearxngEndpoint = config.SEARXNG_ENDPOINT;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  config.FIRE_ENGINE_BETA_URL = undefined;
   config.SEARXNG_ENDPOINT = undefined;
 });
 
 afterEach(() => {
-  config.FIRE_ENGINE_BETA_URL = originalFireEngineUrl;
   config.SEARXNG_ENDPOINT = originalSearxngEndpoint;
 });
 
@@ -53,7 +42,11 @@ const byName = (name: string) =>
   coreSearchProviders.find(provider => provider.name === name)!;
 
 describe("coreSearchProviders", () => {
-  it("matches coreSearchProviderSpecs in order, priority, and US-only support", () => {
+  it("registers only SearXNG and DuckDuckGo matching coreSearchProviderSpecs", () => {
+    expect(coreSearchProviders.map(provider => provider.name)).toEqual([
+      "searxng",
+      "duckduckgo",
+    ]);
     expect(
       coreSearchProviders.map(provider => ({
         name: provider.name,
@@ -64,59 +57,13 @@ describe("coreSearchProviders", () => {
   });
 
   it("evaluates enabled() dynamically from config", () => {
-    expect(byName("fire-engine").enabled()).toBe(false);
     expect(byName("searxng").enabled()).toBe(false);
     expect(byName("duckduckgo").enabled()).toBe(true);
 
-    config.FIRE_ENGINE_BETA_URL = "http://fire-engine.test";
     config.SEARXNG_ENDPOINT = "http://searxng.test";
 
-    expect(byName("fire-engine").enabled()).toBe(true);
     expect(byName("searxng").enabled()).toBe(true);
     expect(byName("duckduckgo").enabled()).toBe(true);
-  });
-
-  it("routes fire-engine between v2 and legacy endpoints and returns empty responses without falling back", async () => {
-    mocks.fireEngineSearchV2.mockResolvedValue({ web: [], news: [] });
-    const v2Result = await byName("fire-engine").search({
-      query: "firecrawl",
-      numResults: 5,
-      logger,
-      requestId: "req-1",
-      type: ["web", "news"],
-      usOnly: true,
-      teamPlanClass: "contract",
-    });
-
-    expect(v2Result).toEqual({ web: [], news: [] });
-    expect(mocks.fireEngineSearchV2).toHaveBeenCalledWith(
-      "firecrawl",
-      expect.objectContaining({
-        requestId: "req-1",
-        numResults: 5,
-        type: ["web", "news"],
-        usOnly: true,
-        teamPlanClass: "contract",
-      }),
-      undefined,
-    );
-    expect(mocks.fireEngineSearchLegacy).not.toHaveBeenCalled();
-
-    mocks.fireEngineSearchLegacy.mockResolvedValue([]);
-    const legacyResult = await byName("fire-engine").search({
-      query: "firecrawl",
-      numResults: 5,
-      logger,
-      legacy: true,
-      usOnly: true,
-    });
-
-    expect(legacyResult).toEqual({ web: [] });
-    expect(mocks.fireEngineSearchLegacy).toHaveBeenCalledWith(
-      "firecrawl",
-      expect.objectContaining({ numResults: 5, usOnly: true }),
-      undefined,
-    );
   });
 
   it("returns null from searxng when results are empty or filtered out by domains", async () => {
@@ -175,5 +122,18 @@ describe("coreSearchProviders", () => {
         { url: "https://firecrawl.dev", title: "Firecrawl", description: "" },
       ],
     });
+  });
+
+  it("returns null from DuckDuckGo when legacy search returns no results", async () => {
+    mocks.ddgSearch.mockResolvedValue({ web: [] });
+
+    const result = await byName("duckduckgo").search({
+      query: "firecrawl",
+      numResults: 5,
+      logger,
+      legacy: true,
+    });
+
+    expect(result).toBeNull();
   });
 });

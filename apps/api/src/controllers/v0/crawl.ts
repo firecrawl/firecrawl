@@ -5,8 +5,6 @@ import { RateLimiterMode } from "../../../src/types";
 import { addScrapeJob } from "../../../src/services/queue-jobs";
 import { requestContext } from "../../lib/request-context";
 import { service } from "../../service";
-import { validateIdempotencyKey } from "../../../src/services/idempotency/validate";
-import { createIdempotencyKey } from "../../../src/services/idempotency/create";
 import {
   defaultCrawlPageOptions,
   defaultCrawlerOptions,
@@ -14,6 +12,7 @@ import {
 } from "../../../src/lib/default-values";
 import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../../src/lib/logger";
+import { claimIdempotencyKey } from "../../lib/idempotency";
 import {
   addCrawlJob,
   addCrawlJobs,
@@ -120,16 +119,11 @@ export async function crawlController(req: Request, res: Response) {
         }),
       );
 
-    if (req.headers["x-idempotency-key"]) {
-      const isIdempotencyValid = await validateIdempotencyKey(req);
-      if (!isIdempotencyValid) {
+    const rawIdempotencyKey = req.headers["x-idempotency-key"];
+    if (rawIdempotencyKey) {
+      const claimed = await claimIdempotencyKey(rawIdempotencyKey, team_id);
+      if (!claimed) {
         return res.status(409).json({ error: "Idempotency key already used" });
-      }
-      try {
-        createIdempotencyKey(req);
-      } catch (error) {
-        logger.error(error);
-        return res.status(500).json({ error: error.message });
       }
     }
 
