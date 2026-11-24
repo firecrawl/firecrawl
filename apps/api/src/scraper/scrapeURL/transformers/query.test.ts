@@ -356,6 +356,31 @@ describe("performQuery freeform", () => {
     expect(doc.answer).toBe("from openai");
   });
 
+  it("uses ollama in freeform mode when ollama is enabled and optional providers are absent", async () => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            llmProviders: [
+              stubProvider("openai", () => false),
+              stubProvider("ollama", () => true),
+            ],
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+
+    respond("from ollama");
+    const doc: any = { markdown: "hello", metadata: {} };
+    await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), doc);
+
+    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", "ollama"]]);
+    expect(doc.answer).toBe("from ollama");
+  });
+
   it("falls back to the default core provider in directQuote/highlights when fireworks is unregistered", async () => {
     replaceService(
       createService(

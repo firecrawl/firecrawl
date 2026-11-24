@@ -84,7 +84,7 @@ export function getModel(
 ): LlmModel {
   const modelName = options?.ignoreModelOverride
     ? name
-    : config.MODEL_NAME || name;
+    : config.MODEL_NAME?.trim() || name;
   const providerName: string =
     provider ?? (config.OLLAMA_BASE_URL?.trim() ? "ollama" : "openai");
   const registered = service.llmProviders.get(providerName);

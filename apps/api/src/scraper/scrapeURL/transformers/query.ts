@@ -2,6 +2,7 @@ import { generateText } from "ai";
 import { encoding_for_model } from "@dqbd/tiktoken";
 import { Document, FormatObject } from "../../../controllers/v2/types";
 import { Meta } from "..";
+import { config } from "../../../config";
 import { getModel } from "../../../lib/generic-ai";
 import { service } from "../../../service";
 import { hasFormatOfType } from "../../../lib/format-utils";
@@ -160,22 +161,27 @@ async function performDirectQuoteQuery(
 
   const useFireworks =
     service.llmProviders.get(DIRECT_QUOTE_MODEL.provider)?.enabled() ?? false;
+  const fallbackModelId = config.MODEL_NAME?.trim() || "gpt-4o-mini";
   const directQuoteModel = useFireworks
     ? DIRECT_QUOTE_MODEL
     : {
-        id: "gpt-4o-mini",
+        id: fallbackModelId,
         provider: service.llmProviders.get("ollama")?.enabled()
           ? "ollama"
           : "openai",
-        contextTokens: modelPrices["gpt-4o-mini"]?.max_input_tokens ?? 128_000,
-        pricedAs: "gpt-4o-mini",
+        contextTokens:
+          modelPrices[fallbackModelId]?.max_input_tokens ?? 128_000,
+        pricedAs: fallbackModelId,
       };
 
   // Drop lines from the end until the rest fits the model's context window.
   // The lines that remain keep their indices and format.
   const fitted = await fitToTokens(
     indexedLines,
-    directQuoteModel.contextTokens - DIRECT_QUOTE_RESERVED_TOKENS,
+    Math.max(
+      1_024,
+      directQuoteModel.contextTokens - DIRECT_QUOTE_RESERVED_TOKENS,
+    ),
     meta.logger,
   );
   if (fitted.trimmed) {
@@ -325,8 +331,10 @@ ${escapePromptTags(fitted.text)}
     });
   }
   modelChain.push({
-    name: "gpt-4o-mini",
-    provider: "openai",
+    name: config.MODEL_NAME?.trim() || "gpt-4o-mini",
+    provider: service.llmProviders.get("ollama")?.enabled()
+      ? "ollama"
+      : "openai",
   });
   if (hasVertex()) {
     modelChain.push({
