@@ -2,18 +2,8 @@ import { crawlController } from "../v0/crawl";
 import { config } from "../../config";
 import { Request, Response } from "express";
 import { v7 as uuidv7 } from "uuid";
-import { defaultModules, type CoreParts } from "../../service";
+import { defaultModules, openAuth, type CoreParts } from "../../service";
 import { testService, withService } from "../../service/testing";
-
-vi.mock("../auth", () => ({
-  authenticateUser: vi.fn().mockResolvedValue({
-    success: true,
-    team_id: "team123",
-    error: null,
-    status: 200,
-  }),
-  reduce: vi.fn(),
-}));
 
 const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
 
@@ -39,7 +29,10 @@ describe("crawlController", () => {
       .mockResolvedValueOnce(false);
 
     await withService(
-      testService(defaultModules(), parts, { idempotency: { claim } }),
+      testService(defaultModules(), parts, {
+        auth: openAuth("team123"),
+        idempotency: { claim },
+      }),
       async () => {
         // First request should succeed
         await crawlController(req, res);

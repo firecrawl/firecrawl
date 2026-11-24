@@ -65,9 +65,6 @@ vi.mock("../../services/autumn/autumn.service", async importOriginal => {
     },
   };
 });
-vi.mock("../../services/agent-sponsor", () => ({
-  getAgentSponsorStatus: vi.fn().mockResolvedValue(null),
-}));
 vi.mock("../../services/queue-service", () => ({
   getRedisConnection: vi.fn(() => ({ sadd: vi.fn() })),
   getBillingQueue: vi.fn(() => ({ add: vi.fn() })),
@@ -150,9 +147,13 @@ vi.mock("../../services/billing/credit_billing", () => ({
 }));
 
 import { authMiddleware } from "../../routes/shared";
+import { coreParts } from "../../service";
+import { replaceService } from "../../service/service";
+import { testService } from "../../service/testing";
 import { RateLimiterMode } from "../../types";
+import { acucTestAuth } from "./test-auth";
 import { scrapeInteractController } from "../../controllers/v2/scrape-browser";
-import { HOBBY_CONCURRENCY_LIMIT } from "../../lib/concurrency-limit";
+import { HOBBY_CONCURRENCY_LIMIT } from "../../lib/browser-lifecycle";
 import { getBrowserSessionFromScrape } from "../../lib/browser-sessions";
 import { executeCodeViaBrowserSession } from "../../lib/scrape-interact/browser-agent";
 
@@ -222,6 +223,7 @@ async function reservedLimit(interop: Interop): Promise<number> {
 describe("interact browser concurrency for trusted agent requests", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    replaceService(testService({}, coreParts(), { auth: acucTestAuth() }));
     mocks.reserveExternalSlot.mockResolvedValue(true);
     vi.mocked(getBrowserSessionFromScrape).mockResolvedValue(null);
     mocks.authChunk.mockResolvedValue([
@@ -269,6 +271,10 @@ describe("interact browser concurrency for trusted agent requests", () => {
     expect(await reservedLimit("none")).toBe(FREE_LIMIT);
   });
 
+  afterEach(() => {
+    replaceService(undefined);
+  });
+
   it("ignores a forged trustedAgentInterop field in the body", async () => {
     expect(await reservedLimit("forged")).toBe(FREE_LIMIT);
   });
@@ -277,6 +283,7 @@ describe("interact browser concurrency for trusted agent requests", () => {
 describe("interact on an existing browser session", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    replaceService(testService({}, coreParts(), { auth: acucTestAuth() }));
     mocks.authChunk.mockResolvedValue([
       {
         api_key: API_KEY,
@@ -313,6 +320,10 @@ describe("interact on an existing browser session", () => {
       error: "Invalid agent interop.",
     });
     expect(executeCodeViaBrowserSession).not.toHaveBeenCalled();
+  });
+
+  afterEach(() => {
+    replaceService(undefined);
   });
 
   it.each(["body", "header", "both", "none"] as const)(

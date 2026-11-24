@@ -39,8 +39,20 @@ vi.mock("../lib/zdr-queue", () => {
   loadedSideEffectModules.push("zdr-queue");
   return {};
 });
+vi.mock("../services/worker/nuq-router", () => {
+  loadedSideEffectModules.push("nuq-router");
+  return {};
+});
+vi.mock("../lib/crawl-redis", () => {
+  loadedSideEffectModules.push("crawl-redis");
+  return {};
+});
 vi.mock("../services/redis", () => {
   loadedSideEffectModules.push("redis");
+  return {};
+});
+vi.mock("../controllers/auth", () => {
+  loadedSideEffectModules.push("auth");
   return {};
 });
 vi.mock("../services/queue-service", () => {
@@ -285,7 +297,17 @@ describe("coreParts", () => {
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: ["blocklist", "idempotency", "messages", "uploads", "webhooks"],
+      modules: [
+        "auth",
+        "billing",
+        "blocklist",
+        "idempotency",
+        "jobStore",
+        "limits",
+        "messages",
+        "uploads",
+        "webhooks",
+      ],
       hooks: {},
       errors: {
         AGENT_INDEX_ONLY: "core",
@@ -454,8 +476,12 @@ describe("coreParts", () => {
     expect(built.describe().routes).toEqual([]);
     expect(built.roles.names()).toHaveLength(11);
     expect(built.describe().modules).toEqual([
+      "auth",
+      "billing",
       "blocklist",
       "idempotency",
+      "jobStore",
+      "limits",
       "messages",
       "uploads",
       "webhooks",

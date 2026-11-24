@@ -1,8 +1,6 @@
 import type { Mock } from "vitest";
-import { vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
-// Hermetic: job-priority talks to services/redis (not queue-service) and reads
-// the team's limits off its ACUC, so both are stubbed here.
 vi.mock("../../services/redis", () => ({
   redisEvictConnection: {
     sadd: vi.fn(),
@@ -12,41 +10,22 @@ vi.mock("../../services/redis", () => ({
   },
 }));
 
-vi.mock("../../controllers/auth", () => ({
-  getACUCTeam: vi.fn(),
-}));
-
-vi.mock("../../services/autumn/autumn.service", () => ({
-  DEFAULT_TEAM_LIMITS: { concurrency_limit: 2, rate_limit_multiplier: 1 },
-}));
-
 import {
-  getJobPriority,
   addJobPriority,
   deleteJobPriority,
+  getJobPriority,
+  getJobPriorityActiveCount,
 } from "../job-priority";
 import { redisEvictConnection } from "../../services/redis";
-import { getACUCTeam } from "../../controllers/auth";
-import {} from "../../types";
+import { defaultModules, noLimits } from "../../service/defaults";
+import { replaceService, type CoreParts } from "../../service/service";
+import { testService, withService } from "../../service/testing";
 
-function mockMultiplier(rate_limit_multiplier: number) {
-  vi.mocked(getACUCTeam).mockResolvedValue({
-    team_id: "team1",
-    rate_limit_multiplier,
-  } as never);
-}
-
-// Multipliers that land on the plan tiers the priority cases below assume.
-const STANDARD_MULTIPLIER = 50;
-const HOBBY_MULTIPLIER = 10;
-const FREE_MULTIPLIER = 1;
-
-beforeEach(() => {
-  mockMultiplier(FREE_MULTIPLIER);
-});
+const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
 
 describe("Job Priority Tests", () => {
   afterEach(() => {
+    replaceService(undefined);
     vi.clearAllMocks();
   });
 
@@ -74,39 +53,12 @@ describe("Job Priority Tests", () => {
     );
   });
 
-  test("getJobPriority should return correct priority based on plan and set length", async () => {
-    const team_id = "team1";
-    mockMultiplier(STANDARD_MULTIPLIER);
-    (redisEvictConnection.scard as Mock).mockResolvedValue(150);
-
-    const priority = await getJobPriority({ team_id });
-    expect(priority).toBe(10);
-
-    (redisEvictConnection.scard as Mock).mockResolvedValue(250);
-    const priorityExceeded = await getJobPriority({ team_id });
-    expect(priorityExceeded).toBe(20); // basePriority + Math.ceil((250 - 200) * 0.2)
-  });
-
-  test("getJobPriority should handle different plans correctly", async () => {
-    const team_id = "team1";
-
-    mockMultiplier(HOBBY_MULTIPLIER);
-    (redisEvictConnection.scard as Mock).mockResolvedValue(50);
-    let priority = await getJobPriority({ team_id });
-    expect(priority).toBe(10);
-
-    (redisEvictConnection.scard as Mock).mockResolvedValue(150);
-    priority = await getJobPriority({ team_id });
-    expect(priority).toBe(25); // basePriority + Math.ceil((150 - 100) * 0.3)
-
-    mockMultiplier(FREE_MULTIPLIER);
-    (redisEvictConnection.scard as Mock).mockResolvedValue(25);
-    priority = await getJobPriority({ team_id });
-    expect(priority).toBe(10);
-
-    (redisEvictConnection.scard as Mock).mockResolvedValue(60);
-    priority = await getJobPriority({ team_id });
-    expect(priority).toBe(28); // basePriority + Math.ceil((60 - 25) * 0.5)
+  test("getJobPriorityActiveCount reads the Redis set cardinality", async () => {
+    (redisEvictConnection.scard as Mock).mockResolvedValue(42);
+    await expect(getJobPriorityActiveCount("team1")).resolves.toBe(42);
+    expect(redisEvictConnection.scard).toHaveBeenCalledWith(
+      "limit_team_id:team1",
+    );
   });
 
   test("addJobPriority should reset expiration time when adding new job", async () => {
@@ -120,68 +72,75 @@ describe("Job Priority Tests", () => {
       60,
     );
 
-    // Clear the mock calls
-    (redisEvictConnection.expire as Mock).mockClear();
-
-    // Add another job
     await addJobPriority(team_id, job_id2);
-    expect(redisEvictConnection.expire).toHaveBeenCalledWith(
+    expect(redisEvictConnection.expire).toHaveBeenCalledTimes(2);
+    expect(redisEvictConnection.expire).toHaveBeenLastCalledWith(
       `limit_team_id:${team_id}`,
       60,
     );
   });
 
-  test("Set should expire after 60 seconds", async () => {
-    const team_id = "team1";
-    const job_id = "job1";
-
-    vi.useFakeTimers();
-
-    await addJobPriority(team_id, job_id);
-    expect(redisEvictConnection.expire).toHaveBeenCalledWith(
-      `limit_team_id:${team_id}`,
-      60,
-    );
-
-    // Fast-forward time by 59 seconds
-    vi.advanceTimersByTime(59000);
-
-    // The set should still exist
-    expect(redisEvictConnection.scard).not.toHaveBeenCalled();
-
-    // Fast-forward time by 2 more seconds (total 61 seconds)
-    vi.advanceTimersByTime(2000);
-
-    // Check if the set has been removed (scard should return 0)
-    (redisEvictConnection.scard as Mock).mockResolvedValue(0);
-    const setSize = await redisEvictConnection.scard(
-      `limit_team_id:${team_id}`,
-    );
-    expect(setSize).toBe(0);
-
-    vi.useRealTimers();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Where the multiplier comes from: the caller's ACUC when it holds one.
-// ---------------------------------------------------------------------------
-
-describe("the ACUC the caller supplies", () => {
-  it("reads the multiplier off the ACUC the caller holds", async () => {
-    // 2500 lands on the top tier: no penalty at this set size.
-    (redisEvictConnection.scard as Mock).mockResolvedValue(250);
-    const acuc = { team_id: "team1", rate_limit_multiplier: 2500 } as never;
-
-    expect(await getJobPriority({ team_id: "team1", acuc })).toBe(10);
-    expect(getACUCTeam).not.toHaveBeenCalled();
+  test("getJobPriority returns basePriority with default noLimits", async () => {
+    await expect(getJobPriority({ team_id: "team1" })).resolves.toBe(10);
+    await expect(
+      getJobPriority({ team_id: "team1", basePriority: 21 }),
+    ).resolves.toBe(21);
   });
 
-  it("reads the team's ACUC when the caller holds none", async () => {
-    (redisEvictConnection.scard as Mock).mockResolvedValue(1);
+  test("getJobPriority delegates to the installed limits module with request context", async () => {
+    const jobPriority = vi.fn().mockResolvedValue(28);
+    await withService(
+      testService(defaultModules(), parts, {
+        limits: {
+          ...noLimits(),
+          jobPriority,
+        },
+      }),
+      async () => {
+        const result = await getJobPriority({
+          team_id: "team1",
+          acuc: {
+            team_id: "team1",
+            org_id: "org1",
+            api_key_id: 99,
+            concurrency_limit: 50,
+            rate_limit_multiplier: 10,
+            flags: { nuqFdb: true },
+          } as never,
+          basePriority: 15,
+        });
 
-    await getJobPriority({ team_id: "team1" });
+        expect(result).toBe(28);
+        expect(jobPriority).toHaveBeenCalledWith({
+          ctx: {
+            teamId: "team1",
+            zeroDataRetention: false,
+            flags: { nuqFdb: true },
+            orgId: "org1",
+            apiKeyId: 99,
+            billing: undefined,
+            concurrencyLimit: 50,
+            rateLimitMultiplier: 10,
+          },
+          base: 15,
+        });
+      },
+    );
+  });
 
-    expect(getACUCTeam).toHaveBeenCalledWith("team1");
+  test("getJobPriority falls back to basePriority when the limits module throws", async () => {
+    await withService(
+      testService(defaultModules(), parts, {
+        limits: {
+          ...noLimits(),
+          jobPriority: vi.fn().mockRejectedValue(new Error("limits failed")),
+        },
+      }),
+      async () => {
+        await expect(
+          getJobPriority({ team_id: "team1", basePriority: 15 }),
+        ).resolves.toBe(15);
+      },
+    );
   });
 });

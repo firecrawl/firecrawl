@@ -1,4 +1,5 @@
 export type { Document } from "../controllers/v2/types";
+export type { CostTracking } from "../lib/cost-tracking";
 export type {
   ErrorCode,
   ErrorCodes,
@@ -13,9 +14,14 @@ export {
   logsMessages,
   memoryUploads,
   noBlocklist,
+  noLimits,
+  openAuth,
+  queueJobStore,
   redisIdempotency,
+  unmeteredBilling,
 } from "./defaults";
 export type {
+  DefaultModules,
   DirectWebhooksOptions,
   RedisIdempotencyOptions,
 } from "./defaults";
@@ -66,7 +72,7 @@ export type {
   ValueOf,
 } from "./hooks";
 export { authenticate } from "./http";
-export type { RouteKind } from "./http";
+export type { AuthRoute, CoreRouteKind, RouteKind } from "./http";
 export type {
   LlmModel,
   LlmModelOptions,
@@ -76,17 +82,39 @@ export type {
   LlmProviders,
 } from "./llm-providers";
 export type {
+  AuthModule,
+  AuthResult,
+  Authorization,
+  AuthorizeInput,
+  AuthorizeState,
+  BillingModule,
+  BillingOperation,
   BlocklistCheckOptions,
   BlocklistModule,
+  ChargeEvent,
+  ConcurrencyKeyGate,
+  CrawlChargeState,
   DirectUploadInput,
   DirectUploadResult,
   FetchProxyFileKind,
   IdempotencyContext,
   IdempotencyModule,
+  JobOutcome,
+  JobOwner,
+  JobPriorityInput,
+  JobRecord,
+  JobStoreModule,
+  JobUsageOptions,
+  LimitsModule,
+  MapChargeState,
   MessagesModule,
   Modules,
   PrepareUploadInput,
   PrepareUploadResult,
+  QueueBackendOverride,
+  SearchChargeState,
+  SettleOutcome,
+  StoredJob,
   StoredUploadRef,
   UploadDriver,
   UploadsModule,
@@ -97,12 +125,7 @@ export type {
   WebhookResponse,
   WebhooksModule,
 } from "./modules";
-export type {
-  BaseCaller,
-  BaseRequestContext,
-  Caller,
-  RequestContext,
-} from "./request-context";
+export * from "./request-context";
 export {
   buildRequestSchemas,
   hasFormatOfType,
@@ -159,6 +182,7 @@ export type {
   CoreParts,
   ErrorRegistry,
   Extension,
+  ModulesConfig,
   RoleRegistry,
   RunOptions,
   Service,

@@ -9,9 +9,6 @@ vi.mock("../../services/autumn/autumn.service", () => ({
 vi.mock("../../services/autumn/usage", () => ({
   getTeamBalance: vi.fn(),
 }));
-vi.mock("../../controllers/auth", () => ({
-  authenticateUser: vi.fn(),
-}));
 vi.mock("geoip-country", () => ({ lookup: vi.fn(() => null) }));
 
 import { idempotencyMiddleware } from "../../routes/shared";

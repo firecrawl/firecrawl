@@ -15,6 +15,7 @@ import {
   getConcurrencyQueueJobsCount,
 } from "../../lib/concurrency-limit";
 import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
+import { requestContext } from "../../lib/request-context";
 
 type QueueStatusResponse = {
   success: boolean;
@@ -38,8 +39,18 @@ export async function queueStatusController(
   await cleanOldConcurrencyLimitedJobs(req.auth.team_id);
   let queuedJobsOfTeam = await getConcurrencyQueueJobsCount(req.auth.team_id);
 
+  const ctx = requestContext({
+    teamId: req.auth.team_id,
+    zeroDataRetention: false,
+    flags: req.acuc?.flags ?? null,
+    orgId: req.acuc?.org_id ?? null,
+    apiKeyId: req.acuc?.api_key_id ?? null,
+    concurrencyLimit: req.acuc?.concurrency_limit,
+    rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
+  });
+
   // during the FDB migration a team can have load on both ledgers
-  if (await isFdbTeam(req.auth.team_id)) {
+  if (await isFdbTeam(req.auth.team_id, ctx)) {
     try {
       if (await nuqFdbHealthCheck(FDB_OPTIONAL_COUNT_TIMEOUT_MS)) {
         const [fdbActive, fdbPending] = await Promise.all([

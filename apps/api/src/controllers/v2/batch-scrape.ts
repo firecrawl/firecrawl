@@ -18,7 +18,7 @@ import {
   saveCrawl,
   StoredCrawl,
 } from "../../lib/crawl-redis";
-import { getJobPriority } from "../../lib/job-priority";
+import { resolveJobPriority } from "../../lib/limits";
 import { addScrapeJobs } from "../../services/queue-jobs";
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 import { logger as _logger } from "../../lib/logger";
@@ -38,6 +38,7 @@ import {
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
+import type {} from "../../lib/billing-state";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
@@ -46,8 +47,6 @@ import {
 } from "../../lib/threat-protection/request";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
-import { calculateThreatScanCredits } from "../../lib/scrape-billing";
-import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
 import {
@@ -55,11 +54,6 @@ import {
   ThirdPartyDataUnsupportedOptionError,
 } from "../../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../../lib/exchange-request";
-import {
-  AGENT_REQUEST_CREDITS_SHARDS,
-  initializeRequestCredits,
-  requestCreditsShards,
-} from "../../lib/request-credits-store";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -312,37 +306,41 @@ export async function batchScrapeController(
       { teamId: req.auth.team_id },
     );
     if (blocked.length > 0) {
-      // Consulted decisions bill the scan fee (+2 per unique scanned URL) —
-      // the scans already happened. With ignoreInvalidURLs the allowed URLs
-      // proceed to scrape jobs that bill their own scans, so only blocked
-      // ones bill here; when the whole request is rejected below, no scrape
-      // jobs will ever run, so every scanned URL bills here.
-      const threatScanCredits = calculateThreatScanCredits(
-        req.body.ignoreInvalidURLs
-          ? blocked.map(x => x.decision)
-          : decisionsByUrl.values(),
+      const blockedSet = new Set(blocked.map(x => x.url));
+      const batchWillPersist = Boolean(
+        req.body.ignoreInvalidURLs &&
+          !req.body.appendToId &&
+          urls.some(u => !blockedSet.has(u)),
       );
-      if (
-        threatScanCredits > 0 &&
-        (req.body.__agentInterop?.shouldBill ?? true)
-      ) {
-        billTeam(
-          req.auth.team_id,
-          req.acuc?.org_id ?? null,
-          threatScanCredits,
-          req.acuc?.api_key_id ?? null,
-          {
-            ...billing,
-            // Appends reuse the batch id but each append's threat scans are a
-            // fresh charge — a shared key would underbill them. Appends stay
-            // keyless (per-request UUID in firebill).
-            ...(req.body.appendToId ? {} : { chargeId: `${id}:threat` }),
-          },
-        ).catch(error => {
-          logger.error(
-            `Failed to bill team ${req.auth.team_id} for ${threatScanCredits} threat scan credit(s): ${error}`,
-          );
+      if (req.body.__agentInterop?.shouldBill ?? true) {
+        const threatDecisions = req.body.ignoreInvalidURLs
+          ? blocked.map(x => x.decision)
+          : [...decisionsByUrl.values()];
+        const blockedCtx = requestContext({
+          teamId: req.auth.team_id,
+          zeroDataRetention,
+          flags: req.acuc?.flags ?? null,
+          orgId: req.acuc?.org_id ?? null,
+          apiKeyId: req.acuc?.api_key_id ?? null,
+          billing,
         });
+        void service.modules.billing
+          .charge({
+            kind: "crawl",
+            ctx: blockedCtx,
+            requestId: id,
+            urls: threatDecisions.length,
+            state: {
+              threatDecisions,
+              ...(batchWillPersist ? { chargeId: `${id}:threat` } : {}),
+            },
+          })
+          .catch(error => {
+            logger.error("Failed to bill team for rejected batch URLs", {
+              teamId: req.auth.team_id,
+              error,
+            });
+          });
       }
       emitRejectedScrapeActivityEvents(
         blocked.map(blockedUrl => ({
@@ -364,7 +362,6 @@ export async function batchScrapeController(
         })),
       );
       if (req.body.ignoreInvalidURLs) {
-        const blockedSet = new Set(blocked.map(x => x.url));
         const keptUnnormalized: string[] = [];
         const keptUrls: string[] = [];
         urls.forEach((u, i) => {
@@ -401,54 +398,6 @@ export async function batchScrapeController(
     appendToId: req.body.appendToId,
     account: req.account,
   });
-
-  if (!req.body.appendToId && !req.body.__agentInterop) {
-    await logRequest({
-      id,
-      kind: "batch_scrape",
-      api_version: "v2",
-      external_request_id: externalRequestId(req),
-      team_id: req.auth.team_id,
-      origin: req.body.origin ?? "api",
-      integration: req.body.integration,
-      target_hint: urls[0] ?? "",
-      zeroDataRetention: zeroDataRetention || false,
-      api_key_id: req.acuc?.api_key_id ?? null,
-      jobAccessExpiresAt: new Date(
-        Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
-      ),
-      creditsShards: requestCreditsShards(urls.length),
-    });
-  } else if (!req.body.appendToId) {
-    // An agent-started batch is recorded under the agent's request rather
-    // than as a request of its own, so logRequest never created a credit
-    // row for it. Its status is still polled: v2 reads credits under the
-    // saved agent request id, v1 under the batch id, and its children record
-    // credits under the agent request id. Make sure both rows exist. The
-    // agent row is created once with the agent controller's shard count;
-    // for an agent that came through that controller this is a no-op, for
-    // one that reaches the API first through interop it is the only writer.
-    const agentRequestId = req.body.__agentInterop?.requestId;
-    if (agentRequestId) {
-      await initializeRequestCredits(
-        agentRequestId,
-        AGENT_REQUEST_CREDITS_SHARDS,
-      ).catch(error => {
-        logger.warn("Failed to initialize Bigtable request credits", {
-          error,
-          requestId: agentRequestId,
-          shards: AGENT_REQUEST_CREDITS_SHARDS,
-        });
-      });
-    }
-    const creditsShards = requestCreditsShards(urls.length);
-    await initializeRequestCredits(id, creditsShards).catch(error => {
-      logger.warn("Failed to initialize Bigtable request credits", {
-        error,
-        shards: creditsShards,
-      });
-    });
-  }
 
   const workContactOnly =
     req.headers["x-firecrawl-work-contact-only"] === "true";
@@ -504,12 +453,81 @@ export async function batchScrapeController(
     orgId: sc.internalOptions.orgId,
     apiKeyId: req.acuc?.api_key_id ?? null,
     billing,
+    concurrencyLimit: req.acuc?.concurrency_limit,
+    rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
   });
   req.ctx = ctx;
 
+  if (!req.body.appendToId && !req.body.__agentInterop) {
+    await service.modules.jobStore
+      .register({
+        id,
+        kind: "batchScrape",
+        ctx,
+        expiresAtMs:
+          Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+        clientOrigin: req.body.origin ?? "api",
+        estimatedJobs: urls.length,
+      })
+      .catch(error => {
+        logger.error("Failed to register batch scrape job", {
+          error,
+          estimatedJobs: urls.length,
+        });
+      });
+    await logRequest({
+      id,
+      kind: "batch_scrape",
+      api_version: "v2",
+      external_request_id: externalRequestId(req),
+      team_id: req.auth.team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: urls[0] ?? "",
+      zeroDataRetention: zeroDataRetention || false,
+      api_key_id: req.acuc?.api_key_id ?? null,
+      skipJobStore: true,
+    });
+  } else if (!req.body.appendToId) {
+    // An agent-started batch is recorded under the parent request rather than
+    // as a request of its own, so initialize usage tracking for both ids
+    // without creating fetchable job-access rows.
+    const agentRequestId = req.body.__agentInterop?.requestId;
+    if (agentRequestId) {
+      await service.modules.jobStore
+        .register({
+          id: agentRequestId,
+          kind: "batchScrape",
+          ctx,
+          jobAccess: false,
+          estimatedJobs: 0,
+        })
+        .catch(error => {
+          logger.error("Failed to initialize request usage tracking", {
+            error,
+            requestId: agentRequestId,
+          });
+        });
+    }
+    await service.modules.jobStore
+      .register({
+        id,
+        kind: "batchScrape",
+        ctx,
+        jobAccess: false,
+        estimatedJobs: urls.length,
+      })
+      .catch(error => {
+        logger.error("Failed to initialize request usage tracking", {
+          error,
+          estimatedJobs: urls.length,
+        });
+      });
+  }
+
   if (!req.body.appendToId) {
     sc.ctx = ctx;
-    sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
+    sc.queueBackend = await resolveNewGroupBackend(sc.team_id, ctx);
     await crawlGroup.addGroup(
       id,
       sc.team_id,
@@ -530,10 +548,8 @@ export async function batchScrapeController(
   // otherwise we can use the default priority of 20
   if (urls.length > 1000) {
     // set base to 21
-    jobPriority = await getJobPriority({
-      team_id: req.auth.team_id,
-      acuc: req.acuc,
-      basePriority: 21,
+    jobPriority = await resolveJobPriority(ctx, 21, error => {
+      logger.error("Failed to determine job priority", { error });
     });
   }
   logger.debug("Using job priority " + jobPriority, { jobPriority });

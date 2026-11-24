@@ -29,6 +29,8 @@ import { readScrapeJobState } from "../../lib/job-state-store";
 import { storedZeroDataRetention } from "../../lib/request-context";
 import { readRequestCredits } from "../../lib/request-credits-store";
 import { readRequestCreditsFromAnalytics } from "../../lib/request-credits-analytics";
+import { installedService } from "../../service/service";
+import type { StoredJob } from "../../service";
 configDotenv();
 
 export type PseudoJob<T> = {
@@ -45,6 +47,8 @@ export type PseudoJob<T> = {
 
 export async function getJob(id: string): Promise<PseudoJob<any> | null> {
   let stateReadError: unknown = null;
+  const jobStore = installedService()?.modules.jobStore;
+  const externalStore = jobStore?.storesResultsExternally?.() ?? false;
   const [nuqJob, scrapeState, gcsJob] = await Promise.all([
     scrapeQueue.getJob(id) as Promise<NuQJob<ScrapeJobSingleUrls> | null>,
     readScrapeJobState(id).catch(error => {
@@ -59,6 +63,21 @@ export async function getJob(id: string): Promise<PseudoJob<any> | null> {
   ]);
 
   if (!nuqJob && !scrapeState) {
+    if (externalStore && jobStore) {
+      const stored = await jobStore.read(id, "scrape");
+      if (stored) {
+        return {
+          id,
+          status: stored.state,
+          returnvalue: stored.document ?? null,
+          data: {
+            scrapeOptions: null,
+          },
+          timestamp: stored.completedAtMs ?? Date.now(),
+          failedReason: stored.error || undefined,
+        };
+      }
+    }
     // With no NuQ job, Bigtable is the only place a finished job's state
     // lives. A failed read is an outage, not a missing job: surface it rather
     // than answer 404 for a job that exists.
@@ -66,12 +85,23 @@ export async function getJob(id: string): Promise<PseudoJob<any> | null> {
     return null;
   }
 
-  if (nuqJob && nuqJob.data.mode !== "single_urls") {
+  if (nuqJob && nuqJob.data != null && nuqJob.data.mode !== "single_urls") {
     return null;
   }
 
-  const data = gcsJob ?? nuqJob?.returnvalue;
-  if (gcsJob === null && data) {
+  let data = gcsJob ?? nuqJob?.returnvalue;
+  let storedJob: StoredJob | null = null;
+  const effectiveStatus = scrapeState?.status ?? nuqJob?.status;
+  if (!data && externalStore && jobStore && effectiveStatus === "completed") {
+    try {
+      storedJob = await jobStore.read(id, "scrape");
+      data = storedJob?.document;
+    } catch (error) {
+      logger.warn("Job store read failed", { error, scrapeId: id });
+      throw error;
+    }
+  }
+  if (gcsJob === null && data && !storedJob) {
     logger.warn("GCS Job not found", {
       jobId: id,
     });
@@ -79,19 +109,26 @@ export async function getJob(id: string): Promise<PseudoJob<any> | null> {
 
   const job: PseudoJob<any> = {
     id,
-    status: scrapeState?.status ?? nuqJob!.status,
+    status: scrapeState?.status ?? storedJob?.state ?? nuqJob!.status,
     returnvalue: Array.isArray(data) ? data[0] : data,
     data: {
-      scrapeOptions: nuqJob ? nuqJob.data.scrapeOptions : null,
+      scrapeOptions: nuqJob?.data?.scrapeOptions ?? null,
     },
-    timestamp: scrapeState?.completedAtMs ?? nuqJob!.createdAt.valueOf(),
-    failedReason: (scrapeState?.error ?? nuqJob?.failedReason) || undefined,
+    timestamp:
+      scrapeState?.completedAtMs ??
+      storedJob?.completedAtMs ??
+      nuqJob!.createdAt.valueOf(),
+    failedReason:
+      (scrapeState?.error ?? storedJob?.error ?? nuqJob?.failedReason) ||
+      undefined,
   };
 
   return job;
 }
 
 export async function getJobs(ids: string[]): Promise<PseudoJob<any>[]> {
+  const jobStore = installedService()?.modules.jobStore;
+  const externalStore = jobStore?.storesResultsExternally?.() ?? false;
   const [nuqJobs, gcsJobs] = await Promise.all([
     scrapeQueue.getJobs(ids) as Promise<NuQJob<ScrapeJobSingleUrls>[]>,
     config.GCS_BUCKET_NAME
@@ -114,16 +151,48 @@ export async function getJobs(ids: string[]): Promise<PseudoJob<any>[]> {
     gcsJobMap.set(job.id, job.job);
   }
 
+  const storedJobMap = new Map<string, StoredJob>();
+  if (externalStore && jobStore) {
+    const missingIds = ids.filter(id => {
+      const nuqJob = nuqJobMap.get(id);
+      return (
+        nuqJob &&
+        nuqJob.status === "completed" &&
+        !gcsJobMap.has(id) &&
+        !nuqJob.returnvalue
+      );
+    });
+    if (missingIds.length > 0) {
+      if (jobStore.readMany) {
+        const fetched = await jobStore.readMany(missingIds, "scrape");
+        for (const [id, entry] of fetched) {
+          storedJobMap.set(id, entry);
+        }
+      } else {
+        const fetched = await Promise.all(
+          missingIds.map(async id => ({
+            id,
+            entry: await jobStore.read(id, "scrape"),
+          })),
+        );
+        for (const { id, entry } of fetched) {
+          if (entry) storedJobMap.set(id, entry);
+        }
+      }
+    }
+  }
+
   const jobs: PseudoJob<any>[] = [];
 
   for (const id of ids) {
     const nuqJob = nuqJobMap.get(id);
     const gcsJob = gcsJobMap.get(id);
+    const storedJob = storedJobMap.get(id);
 
     if (!nuqJob) continue;
 
-    const data = gcsJob ?? nuqJob.returnvalue;
-    if (gcsJob === null && data) {
+    const data = gcsJob ?? storedJob?.document ?? nuqJob.returnvalue;
+    if (gcsJob === null && data && !storedJob) {
       logger.warn("GCS Job not found", {
         jobId: id,
       });
@@ -134,7 +203,7 @@ export async function getJobs(ids: string[]): Promise<PseudoJob<any>[]> {
       status: nuqJob.status,
       returnvalue: Array.isArray(data) ? data[0] : data,
       data: {
-        scrapeOptions: nuqJob.data.scrapeOptions,
+        scrapeOptions: nuqJob.data?.scrapeOptions ?? null,
       },
       timestamp: nuqJob.createdAt.valueOf(),
       failedReason: nuqJob.failedReason || undefined,

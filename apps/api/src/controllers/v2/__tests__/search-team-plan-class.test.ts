@@ -58,19 +58,6 @@ vi.mock("../../../lib/logger", () => ({
 import { searchController } from "../search";
 import { createService, replaceService } from "../../../service/service";
 
-beforeAll(() => {
-  replaceService(
-    createService(
-      { modules: {} },
-      { core: { name: "core" }, logger: { error: vi.fn() } },
-    ),
-  );
-});
-
-afterAll(() => {
-  replaceService(undefined);
-});
-
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 
 function makeRes() {
@@ -99,15 +86,27 @@ async function searchContextFor(acuc: unknown, teamId = TEAM_ID) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  replaceService(
+    createService({}, { core: { name: "core" }, logger: { error: vi.fn() } }),
+  );
   mockExecuteSearch.mockResolvedValue({
     response: { web: [] },
     totalResultsCount: 0,
+    billableResultsCount: 0,
     indexResultsCount: 0,
-    searchCredits: 0,
-    scrapeCredits: 0,
-    totalCredits: 0,
+    threatDecisions: [],
+    scrapedDocuments: [],
+    searchTypes: ["web"],
+    scrapeFormats: [],
+    resultCountsBySource: {},
+    resultCategories: {},
+    toolFusion: false,
     shouldScrape: false,
   });
+});
+
+afterEach(() => {
+  replaceService(undefined);
 });
 
 describe("the team plan class a v2 search runs with", () => {

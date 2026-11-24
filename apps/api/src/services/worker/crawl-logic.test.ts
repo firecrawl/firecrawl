@@ -4,6 +4,8 @@ import { getCrawl, getDoneJobsOrderedLength } from "../../lib/crawl-redis";
 import { logCrawl } from "../logging/log_job";
 import { createWebhookSender } from "../webhook/index";
 import { createInAppNotification } from "../notification/in_app";
+import { queueJobStore } from "../../service/defaults";
+import { createService, replaceService } from "../../service/service";
 import type { NuQJob } from "./nuq";
 
 vi.mock("../../lib/crawl-redis", () => ({
@@ -11,14 +13,6 @@ vi.mock("../../lib/crawl-redis", () => ({
   getCrawl: vi.fn(),
   getCrawlJobs: vi.fn(async () => []),
   getDoneJobsOrderedLength: vi.fn(async () => 2),
-}));
-
-vi.mock("../../lib/request-credits-store", () => ({
-  readRequestCredits: vi.fn(async () => 7),
-}));
-
-vi.mock("../../lib/request-credits-analytics", () => ({
-  readRequestCreditsFromAnalytics: vi.fn(async () => 7),
 }));
 
 vi.mock("../../controllers/v1/crawl-status", () => ({
@@ -55,7 +49,32 @@ const baseSc = {
   zeroDataRetention: true,
 };
 
-beforeEach(() => vi.clearAllMocks());
+const jobStoreUsage = vi.fn(async () => 7);
+
+beforeAll(() => {
+  replaceService(
+    createService(
+      {
+        modules: {
+          jobStore: {
+            ...queueJobStore(),
+            usage: jobStoreUsage,
+          },
+        },
+      },
+      { core: { name: "core" }, logger: { error: vi.fn() } },
+    ),
+  );
+});
+
+afterAll(() => {
+  replaceService(undefined);
+});
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  jobStoreUsage.mockResolvedValue(7);
+});
 
 // A ZDR crawl on the FDB queue sheds the member's input data, so finishCrawlSuper
 // runs with job.data === null. It must not crash and must recover the webhook,

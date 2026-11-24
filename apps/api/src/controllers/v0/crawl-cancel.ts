@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { authenticateUser } from "../auth";
+import { authenticateV0 } from "./auth";
 import { RateLimiterMode } from "../../../src/types";
 import { logger } from "../../../src/lib/logger";
 import { getCrawl, saveCrawl } from "../../../src/lib/crawl-redis";
@@ -7,7 +7,6 @@ import { configDotenv } from "dotenv";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { crawlGroup } from "../../services/worker/nuq-router";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
-import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 configDotenv();
 
 export async function crawlCancelController(req: Request, res: Response) {
@@ -17,11 +16,8 @@ export async function crawlCancelController(req: Request, res: Response) {
       return res.status(400).json({ error: "Invalid job ID" });
     }
 
-    const auth = await authenticateUser(req, res, RateLimiterMode.CrawlStatus);
-    if (!auth.success) {
-      if (auth.status === 401) applyAgentAuthDiscoveryHeader(res);
-      return res.status(auth.status).json({ error: auth.error });
-    }
+    const auth = await authenticateV0(req, res, RateLimiterMode.CrawlStatus);
+    if (!auth) return;
 
     const { team_id } = auth;
 

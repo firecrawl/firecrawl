@@ -34,6 +34,8 @@ import {
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
+import type {} from "../../lib/billing-state";
+import { service } from "../../service";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
@@ -41,14 +43,8 @@ import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { checkUrl } from "../../lib/threat-protection";
 import { getErrorHttpResponse } from "../../lib/error";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
-import { calculateThreatScanCredits } from "../../lib/scrape-billing";
-import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
-import {
-  initializeRequestCredits,
-  requestCreditsShards,
-} from "../../lib/request-credits-store";
-import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
+import { currentLimits } from "../../lib/limits";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -131,30 +127,32 @@ export async function crawlController(
       teamId: req.auth.team_id,
     });
     if (!decision.allowed) {
-      // A blocked seed still bills the scan fee when the classifier was
-      // consulted — the scan already happened. (An allowed seed is not billed
-      // here: its scrape job re-checks the cached verdict and bills there.)
-      const threatScanCredits = calculateThreatScanCredits([decision]);
-      if (threatScanCredits > 0) {
-        billTeam(
-          req.auth.team_id,
-          req.acuc?.org_id ?? null,
-          threatScanCredits,
-          req.acuc?.api_key_id ?? null,
-          // No chargeId: a fresh crawl id is minted per request and the
-          // rejected crawl is never persisted or queued, so there is no
-          // stable per-charge identity that could dedupe a retry.
-          {
-            endpoint: "crawl",
-            externalRequestId: externalRequestId(req),
-            hostedMcp: req.auth.hostedMcp,
-          },
-        ).catch(error => {
-          _logger.error(
-            `Failed to bill team ${req.auth.team_id} for ${threatScanCredits} threat scan credit(s): ${error}`,
-          );
+      const blockedCtx = requestContext({
+        teamId: req.auth.team_id,
+        zeroDataRetention,
+        flags: req.acuc?.flags ?? null,
+        orgId: req.acuc?.org_id ?? null,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+        billing: {
+          endpoint: "crawl",
+          externalRequestId: externalRequestId(req),
+          hostedMcp: req.auth.hostedMcp,
+        },
+      });
+      void service.modules.billing
+        .charge({
+          kind: "crawl",
+          ctx: blockedCtx,
+          requestId: id,
+          urls: 1,
+          state: { threatDecisions: [decision] },
+        })
+        .catch(error => {
+          _logger.error("Failed to bill team for rejected crawl seed", {
+            teamId: req.auth.team_id,
+            error,
+          });
         });
-      }
       const error = new UnsafeDomainBlockedError(req.body.url, decision);
       emitRejectedScrapeActivityEvent({
         scrapeId: uuidv7(),
@@ -205,39 +203,6 @@ export async function crawlController(
     account: req.account,
   });
 
-  await logRequest({
-    id,
-    kind: "crawl",
-    api_version: "v2",
-    external_request_id: externalRequestId(req),
-    team_id: req.auth.team_id,
-    origin: req.body.origin ?? "api",
-    integration: req.body.integration,
-    target_hint: req.body.url,
-    zeroDataRetention: zeroDataRetention || false,
-    api_key_id: req.acuc?.api_key_id ?? null,
-    jobAccessExpiresAt: new Date(
-      Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
-    ),
-  });
-
-  // checkCreditsMiddleware (always runs before this controller) is the source
-  // of truth: Infinity when Autumn allows the request, the real remaining when
-  // it clamps a low-credit crawl. Default to no clamp if it's somehow unset.
-  let remainingCredits = req.account?.remainingCredits ?? Infinity;
-  const useDbAuthentication = config.USE_DB_AUTHENTICATION;
-  if (!useDbAuthentication) {
-    remainingCredits = Infinity;
-  }
-
-  const crawlerOptions = {
-    ...req.body,
-    url: undefined,
-    scrapeOptions: undefined,
-    prompt: undefined,
-  };
-  const scrapeOptions = req.body.scrapeOptions;
-
   const billing: BillingMetadata = {
     endpoint: "crawl",
     jobId: id,
@@ -253,8 +218,36 @@ export async function crawlController(
       orgId: req.acuc?.org_id ?? null,
       apiKeyId: req.acuc?.api_key_id ?? null,
       billing,
+      concurrencyLimit: req.acuc?.concurrency_limit,
+      rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
     });
   req.ctx = ctx;
+
+  await logRequest({
+    id,
+    kind: "crawl",
+    api_version: "v2",
+    external_request_id: externalRequestId(req),
+    team_id: req.auth.team_id,
+    origin: req.body.origin ?? "api",
+    integration: req.body.integration,
+    target_hint: req.body.url,
+    zeroDataRetention: zeroDataRetention || false,
+    api_key_id: req.acuc?.api_key_id ?? null,
+    skipJobStore: true,
+  });
+
+  // checkCreditsMiddleware sets req.account.remainingCredits from billing.authorize.
+  // Default to no cap when unset.
+  const remainingCredits = req.account?.remainingCredits ?? Infinity;
+
+  const crawlerOptions = {
+    ...req.body,
+    url: undefined,
+    scrapeOptions: undefined,
+    prompt: undefined,
+  };
+  const scrapeOptions = req.body.scrapeOptions;
 
   let promptGeneratedOptions = {};
   if (req.body.prompt) {
@@ -367,16 +360,24 @@ export async function crawlController(
     originalBodyLimit: preNormalizedBody.limit,
   });
 
-  const creditsShards = requestCreditsShards(finalCrawlerOptions.limit);
-  await initializeRequestCredits(id, creditsShards).catch(error => {
-    logger.warn("Failed to initialize Bigtable request credits", {
-      error,
-      shards: creditsShards,
+  await service.modules.jobStore
+    .register({
+      id,
+      kind: "crawl",
+      ctx,
+      expiresAtMs:
+        Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+      clientOrigin: req.body.origin ?? "api",
+      estimatedJobs: finalCrawlerOptions.limit,
+    })
+    .catch(error => {
+      logger.error("Failed to register crawl job", {
+        error,
+        estimatedJobs: finalCrawlerOptions.limit,
+      });
     });
-  });
 
-  const effectiveConcurrency =
-    req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
+  const effectiveConcurrency = await currentLimits().concurrency(ctx);
   const sc: StoredCrawl = {
     ctx,
     originUrl: req.body.url,
@@ -399,7 +400,9 @@ export async function crawlController(
     createdAt: Date.now(),
     maxConcurrency:
       req.body.maxConcurrency !== undefined
-        ? Math.min(req.body.maxConcurrency, effectiveConcurrency)
+        ? effectiveConcurrency !== null
+          ? Math.min(req.body.maxConcurrency, effectiveConcurrency)
+          : req.body.maxConcurrency
         : undefined,
     zeroDataRetention,
     v1: true,
@@ -421,7 +424,7 @@ export async function crawlController(
     });
   }
 
-  sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
+  sc.queueBackend = await resolveNewGroupBackend(sc.team_id, ctx);
   await crawlGroup.addGroup(
     id,
     sc.team_id,

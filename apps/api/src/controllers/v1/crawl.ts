@@ -38,6 +38,7 @@ import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { requestCreditsShards } from "../../lib/request-credits-store";
+import { requestContext } from "../../lib/request-context";
 import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
 
 export async function crawlController(
@@ -304,7 +305,23 @@ export async function crawlController(
     });
   }
 
-  sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
+  const billing = {
+    endpoint: "crawl" as const,
+    jobId: id,
+    externalRequestId: externalRequestId(req),
+  };
+  const ctx = requestContext({
+    teamId: req.auth.team_id,
+    zeroDataRetention: zeroDataRetention ?? false,
+    flags: req.acuc?.flags ?? null,
+    orgId: req.acuc?.org_id ?? null,
+    apiKeyId: req.acuc?.api_key_id ?? null,
+    billing,
+    concurrencyLimit: req.acuc?.concurrency_limit,
+    rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
+  });
+  sc.ctx = ctx;
+  sc.queueBackend = await resolveNewGroupBackend(sc.team_id, ctx);
   await crawlGroup.addGroup(
     id,
     sc.team_id,
@@ -323,6 +340,7 @@ export async function crawlController(
   await _addScrapeJobToBullMQ(
     {
       mode: "kickoff" as const,
+      ctx,
       url: req.body.url,
       team_id: req.auth.team_id,
       crawlerOptions,
@@ -330,11 +348,7 @@ export async function crawlController(
       internalOptions: sc.internalOptions,
       origin: req.body.origin,
       integration: req.body.integration,
-      billing: {
-        endpoint: "crawl",
-        jobId: id,
-        externalRequestId: externalRequestId(req),
-      },
+      billing,
       crawl_id: id,
       webhook: req.body.webhook,
       v1: true,

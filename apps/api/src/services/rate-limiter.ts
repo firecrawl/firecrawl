@@ -235,50 +235,7 @@ export function getHostedMcpConcurrencyLimit(
  * free team's agent runs are limited like hobby rather than at ×1; see
  * buildAuthenticatedRateLimiter in controllers/auth.ts. Paid plans already
  * meet or exceed it, so the floor only ever lifts free. Pairs with
- * HOBBY_CONCURRENCY_LIMIT in lib/concurrency-limit.ts; change both if the
+ * HOBBY_CONCURRENCY_LIMIT in lib/browser-lifecycle.ts; change both if the
  * hobby plan in firecrawl-web autumn.config.ts changes.
  */
 export const HOBBY_RATE_LIMIT_MULTIPLIER = 10;
-
-/**
- * Plan-priority tiers keyed by the minimum Autumn rate-limit multiplier that
- * qualifies. Values mirror the tuned production `plan_priority` for each plan.
- * A customer's multiplier selects the highest tier they meet or exceed, so
- * off-tier multipliers round down.
- *
- * `bucketLimit` / `planModifier` only affect internal job-scheduling priority
- * (see getJobPriority) — never request success — so inferring them from the
- * multiplier is safe: a wrong guess shifts queue ordering, not correctness.
- */
-const PLAN_PRIORITY_TIERS: {
-  minMultiplier: number;
-  bucketLimit: number;
-  planModifier: number;
-}[] = [
-  { minMultiplier: 1, bucketLimit: 25, planModifier: 0.5 }, // free
-  {
-    minMultiplier: HOBBY_RATE_LIMIT_MULTIPLIER,
-    bucketLimit: 100,
-    planModifier: 0.3,
-  }, // hobby
-  { minMultiplier: 50, bucketLimit: 200, planModifier: 0.2 }, // standard
-  { minMultiplier: 500, bucketLimit: 400, planModifier: 0.1 }, // growth
-  { minMultiplier: 1000, bucketLimit: 400, planModifier: 0.1 }, // scale
-  { minMultiplier: 2500, bucketLimit: 1000, planModifier: 0.05 }, // enterprise
-];
-
-/**
- * Infers safe `bucketLimit` / `planModifier` values from a rate-limit
- * multiplier. Monotonic: bucketLimit never decreases and planModifier never
- * increases as the multiplier grows.
- */
-export function inferPlanPriorityFromMultiplier(multiplier: number): {
-  bucketLimit: number;
-  planModifier: number;
-} {
-  let chosen = PLAN_PRIORITY_TIERS[0];
-  for (const tier of PLAN_PRIORITY_TIERS) {
-    if (multiplier >= tier.minMultiplier) chosen = tier;
-  }
-  return { bucketLimit: chosen.bucketLimit, planModifier: chosen.planModifier };
-}
