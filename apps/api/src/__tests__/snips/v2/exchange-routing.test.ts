@@ -14,9 +14,6 @@ const mocks = vi.hoisted(() => ({
   exchangeRequest: vi.fn(),
 }));
 
-vi.mock("../../../scraper/WebScraper/utils/blocklist", () => ({
-  isUrlBlocked: mocks.isUrlBlocked,
-}));
 vi.mock("../../../scraper/scrapeURL/lib/fetch", () => ({
   robustFetch: mocks.robustFetch,
 }));
@@ -65,11 +62,19 @@ describe("Exchange routing", () => {
       "../../../scraper/scrapeURL/engines/index.js"
     );
     const serviceModule = await import("../../../service/service.js");
+    const defaultsModule = await import("../../../service/defaults.js");
     buildFallbackList = enginesModule.buildFallbackList;
     replaceService = serviceModule.replaceService;
     replaceService(
       serviceModule.createService(
-        { modules: {} },
+        {
+          modules: {
+            blocklist: {
+              ...defaultsModule.noBlocklist(),
+              isBlocked: mocks.isUrlBlocked,
+            },
+          },
+        },
         {
           core: {
             name: "core",

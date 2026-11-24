@@ -30,6 +30,7 @@ import { hasFormatOfType } from "../../../lib/format-utils";
 import { brandingTransformer } from "../../../lib/branding/transformer";
 import { indexerQueue } from "../../../services/indexing/indexer-queue";
 import { config } from "../../../config";
+import { scrapeHooks, toScrapeMeta } from "../hooks";
 
 type Transformer = (
   meta: Meta,
@@ -63,12 +64,45 @@ async function deriveHTMLFromRawHTML(
     );
   }
 
+  const targetUrl =
+    document.metadata.url ??
+    document.metadata.sourceURL ??
+    meta.rewrittenUrl ??
+    meta.url;
+
+  const hooks = scrapeHooks();
+  if (hooks?.has("scrape.html.clean")) {
+    const cleaning = await hooks.transform(
+      "scrape.html.clean",
+      {
+        url: targetUrl,
+        includeTags: (meta.options.includeTags ?? [])
+          .map(x => x.trim())
+          .filter(x => x.length !== 0),
+        excludeTags: (meta.options.excludeTags ?? [])
+          .map(x => x.trim())
+          .filter(x => x.length !== 0),
+        onlyMainContent: meta.options.onlyMainContent,
+      },
+      toScrapeMeta(meta),
+    );
+    document.html = await htmlTransform(
+      document.rawHtml,
+      cleaning.url,
+      {
+        ...meta.options,
+        includeTags: cleaning.includeTags,
+        excludeTags: cleaning.excludeTags,
+        onlyMainContent: cleaning.onlyMainContent,
+      },
+      cleaning.dropSignatures,
+    );
+    return document;
+  }
+
   document.html = await htmlTransform(
     document.rawHtml,
-    document.metadata.url ??
-      document.metadata.sourceURL ??
-      meta.rewrittenUrl ??
-      meta.url,
+    targetUrl,
     meta.options,
   );
   return document;
@@ -617,17 +651,27 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   return document;
 }
 
+type DocumentHookName =
+  | "scrape.document.markdown"
+  | "scrape.document.derived"
+  | "scrape.document.extracted"
+  | "scrape.document.final";
+
+type TransformerStep = Transformer | { hook: DocumentHookName };
+
 // TODO: allow some of these to run in parallel
-const transformerStack: Transformer[] = [
+const transformerStack: TransformerStep[] = [
   deriveHTMLFromRawHTML,
   deriveMarkdownFromHTML,
   performCleanContent,
+  { hook: "scrape.document.markdown" },
   performRedactPII,
   performPromptInjectionGuard,
   deriveLinksFromHTML,
   deriveImagesFromHTML,
   deriveBrandingFromActions,
   deriveMetadataFromRawHTML,
+  { hook: "scrape.document.derived" },
   fetchProduct,
   fetchMenu,
   ...(useIndex ? [sendDocumentToIndex] : []),
@@ -637,7 +681,9 @@ const transformerStack: Transformer[] = [
   performSummary,
   performQuery,
   performAttributes,
+  { hook: "scrape.document.extracted" },
   removeBase64Images,
+  { hook: "scrape.document.final" },
   deriveDiff,
   fetchAudio,
   fetchVideo,
@@ -660,16 +706,33 @@ export async function executeTransformers(
 
   const executions: [string, number][] = [];
 
-  for (const transformer of transformerStack) {
+  for (const step of transformerStack) {
+    if (typeof step !== "function") {
+      const hooks = scrapeHooks();
+      if (!hooks?.has(step.hook)) {
+        continue;
+      }
+      const childLogger = meta.logger.child({
+        method: "executeTransformers/" + step.hook,
+      });
+      const start = Date.now();
+      document = await hooks.transform(
+        step.hook,
+        document,
+        toScrapeMeta(meta, childLogger),
+      );
+      executions.push([step.hook, Date.now() - start]);
+      continue;
+    }
     const _meta = {
       ...meta,
       logger: meta.logger.child({
-        method: "executeTransformers/" + transformer.name,
+        method: "executeTransformers/" + step.name,
       }),
     };
     const start = Date.now();
-    document = await transformer(_meta, document);
-    executions.push([transformer.name, Date.now() - start]);
+    document = await step(_meta, document);
+    executions.push([step.name, Date.now() - start]);
   }
 
   meta.logger.debug("Executed transformers.", { executions });

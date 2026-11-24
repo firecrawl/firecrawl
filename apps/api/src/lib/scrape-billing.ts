@@ -9,7 +9,8 @@ import { CostTracking } from "./cost-tracking";
 import { hasFormatOfType } from "./format-utils";
 import { isTransportableError } from "./error";
 import { FeatureFlag } from "../scraper/scrapeURL/engines";
-import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
+import { requestContext } from "./request-context";
+import { service } from "../service";
 import { ExchangeScrapeMetadata, getExchangeSuccessCredits } from "./exchange";
 import type { ThreatDecision } from "./threat-protection/types";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
@@ -241,11 +242,33 @@ export async function calculateCreditsToBeBilled(
     document.metadata?.url,
     document.metadata?.sourceURL,
   ].filter((u): u is string => !!u);
-  if (
-    exchangeCredits === null &&
-    urlsToCheck.some(u => isUrlBlocked(u, null) && !isUrlBlocked(u, flags))
-  ) {
-    creditsToBeBilled += unblockedDomainCostBonus;
+  if (exchangeCredits === null && urlsToCheck.length > 0) {
+    // Check global rules only (orgId: null) so org-scoped rules do not trigger the surcharge.
+    const globalCtx = requestContext({
+      teamId: "",
+      zeroDataRetention: true,
+      flags: null,
+      orgId: null,
+    });
+    const teamCtx = requestContext({
+      teamId: internalOptions.teamId ?? "",
+      zeroDataRetention: true,
+      flags: flags ?? null,
+      orgId: null,
+    });
+    if (
+      urlsToCheck.some(
+        u =>
+          service.modules.blocklist.isBlocked(u, globalCtx, {
+            record: false,
+          }) &&
+          !service.modules.blocklist.isBlocked(u, teamCtx, {
+            record: false,
+          }),
+      )
+    ) {
+      creditsToBeBilled += unblockedDomainCostBonus;
+    }
   }
 
   creditsToBeBilled += threatScanCredits;

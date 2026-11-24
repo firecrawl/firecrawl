@@ -3,8 +3,8 @@ import { config } from "../../config";
 import { v7 as uuidv7 } from "uuid";
 import {
   CrawlRequest,
-  crawlRequestSchema,
   CrawlResponse,
+  getV2RequestSchemas,
   RequestWithAuth,
   toV0CrawlerOptions,
 } from "./types";
@@ -55,7 +55,7 @@ export async function crawlController(
   res: Response<CrawlResponse>,
 ) {
   const preNormalizedBody = req.body;
-  req.body = crawlRequestSchema.parse(req.body);
+  req.body = getV2RequestSchemas().crawl.parse(req.body);
   const id = uuidv7();
 
   const safeMode = resolveSafeMode(
@@ -238,6 +238,24 @@ export async function crawlController(
   };
   const scrapeOptions = req.body.scrapeOptions;
 
+  const billing: BillingMetadata = {
+    endpoint: "crawl",
+    jobId: id,
+    externalRequestId: externalRequestId(req),
+    hostedMcp: req.auth.hostedMcp,
+  };
+  const ctx =
+    req.ctx ??
+    requestContext({
+      teamId: req.auth.team_id,
+      zeroDataRetention,
+      flags: req.acuc?.flags ?? null,
+      orgId: req.acuc?.org_id ?? null,
+      apiKeyId: req.acuc?.api_key_id ?? null,
+      billing,
+    });
+  req.ctx = ctx;
+
   let promptGeneratedOptions = {};
   if (req.body.prompt) {
     const basePrompt = req.body.prompt;
@@ -262,6 +280,7 @@ export async function crawlController(
               useIndex: true,
               maxFireEngineResults: 500,
               zeroDataRetention,
+              ctx,
             });
           return generateCrawlerOptionsFromPrompt(
             enhancedPrompt,
@@ -358,21 +377,6 @@ export async function crawlController(
 
   const effectiveConcurrency =
     req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
-  const billing: BillingMetadata = {
-    endpoint: "crawl",
-    jobId: id,
-    externalRequestId: externalRequestId(req),
-    hostedMcp: req.auth.hostedMcp,
-  };
-  const ctx = requestContext({
-    teamId: req.auth.team_id,
-    zeroDataRetention,
-    flags: req.acuc?.flags ?? null,
-    orgId: req.acuc?.org_id ?? null,
-    apiKeyId: req.acuc?.api_key_id ?? null,
-    billing,
-  });
-  req.ctx = ctx;
   const sc: StoredCrawl = {
     ctx,
     originUrl: req.body.url,

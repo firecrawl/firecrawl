@@ -23,6 +23,10 @@ import type { Logger } from "winston";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
 import { executeSearch } from "../../search/execute";
+import { applySearchPlanHook } from "../../search/plan-hook";
+import { requestContext } from "../../lib/request-context";
+import { installedService } from "../../service/service";
+import type { SearchRequest as ServiceSearchRequest } from "../../service/request";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import {
   resolveSafeMode,
@@ -41,14 +45,19 @@ import { fromV1ScrapeOptions } from "../v2/types";
 import {
   adjustKeylessCredits,
   keylessLimitBody,
+  keylessProviderToolsBody,
   logKeylessCreditUsage,
   reserveKeylessCredits,
 } from "../../lib/keyless";
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
+import { isSelfHosted } from "../../lib/deployment";
 import { teamPlanClass } from "../../lib/team-plan-class";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+
+const IMAGE_SEARCH_US_ONLY_MESSAGE =
+  "Image search is not available for teams restricted to US-only processing.";
 
 // Used for deep research
 export async function searchAndScrapeSearchResult(
@@ -282,10 +291,104 @@ export async function searchController(
     const shouldScrape =
       req.body.scrapeOptions.formats &&
       req.body.scrapeOptions.formats.length > 0;
+    const ctx =
+      req.ctx ??
+      requestContext({
+        teamId: req.auth.team_id,
+        zeroDataRetention,
+        flags: req.acuc?.flags ?? null,
+        orgId: req.acuc?.org_id ?? null,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+      });
+    req.ctx = ctx;
+    const hookBody: ServiceSearchRequest = {
+      query: req.body.query,
+      limit: req.body.limit,
+      tbs: req.body.tbs,
+      filter: req.body.filter,
+      sources: [{ type: "web" }],
+      categories: [],
+      lang: req.body.lang ?? "en",
+      enterprise: teamEnterprise,
+      country: req.body.country,
+      location: req.body.location,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration ?? null,
+      timeout: req.body.timeout,
+      ignoreInvalidURLs: req.body.ignoreInvalidURLs ?? false,
+      asyncScraping: false,
+      toolDetail: "compact",
+      scrapeOptions: shouldScrape ? scrapeOptions : undefined,
+    };
+    const planHooks = installedService()?.hooks;
+    const planned = planHooks?.has("search.plan")
+      ? await applySearchPlanHook(
+          {
+            query: req.body.query,
+            limit: req.body.limit,
+            sources: [{ type: "web" }],
+          },
+          { ctx, body: hookBody },
+        )
+      : {
+          query: req.body.query,
+          limit: req.body.limit,
+          sources: [{ type: "web" }],
+        };
+
+    let usOnlyImagesWarning: string | undefined;
+    if (planHooks?.has("search.plan")) {
+      const plannedWantsTools = planned.sources.some(
+        source => source.type === "alexandria",
+      );
+      const plannedWantsSkills = planned.sources.some(
+        source => source.type === "skills",
+      );
+      if (
+        (plannedWantsTools || plannedWantsSkills) &&
+        req.auth.team_id.startsWith("preview_keyless_")
+      ) {
+        applyAgentAuthDiscoveryHeader(res);
+        return res
+          .status(403)
+          .json(keylessProviderToolsBody(req.auth.team_id, req));
+      }
+      if ((plannedWantsTools || plannedWantsSkills) && !planned.query.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: plannedWantsTools
+            ? "A query is required for tool search."
+            : "A query is required for skill search.",
+        });
+      }
+      if ((plannedWantsTools || plannedWantsSkills) && zeroDataRetention) {
+        return res.status(403).json({
+          success: false,
+          error:
+            "Provider discovery requires access and does not support zero data retention.",
+        });
+      }
+      if (
+        isUsOnly(req.acuc?.flags) &&
+        planned.sources.some(source => source.type === "images")
+      ) {
+        planned.sources = planned.sources.filter(
+          source => source.type !== "images",
+        );
+        if (planned.sources.length === 0) {
+          return res.status(403).json({
+            success: false,
+            code: "US_ONLY_UNAVAILABLE",
+            error: IMAGE_SEARCH_US_ONLY_MESSAGE,
+          });
+        }
+        usOnlyImagesWarning = IMAGE_SEARCH_US_ONLY_MESSAGE;
+      }
+    }
     const projectedKeylessCredits = !isSearchPreview
       ? projectSearchTotalCredits(
           {
-            limit: req.body.limit,
+            limit: planned.limit,
             enterprise: teamEnterprise,
             scrapeOptions: shouldScrape ? scrapeOptions : undefined,
           },
@@ -311,14 +414,14 @@ export async function searchController(
     // Execute search using v2 logic
     const result = await executeSearch(
       {
-        query: req.body.query,
-        limit: req.body.limit,
+        query: planned.query,
+        limit: planned.limit,
         tbs: req.body.tbs,
         filter: req.body.filter,
         lang: req.body.lang,
         country: req.body.country,
         location: req.body.location,
-        sources: [{ type: "web" }], // v1 only supports web
+        sources: planned.sources, // v1 defaults to web
         scrapeOptions: shouldScrape ? scrapeOptions : undefined,
         timeout: req.body.timeout,
         enterprise: teamEnterprise,
@@ -340,6 +443,9 @@ export async function searchController(
         keylessReserved: reservedKeylessCredits > 0,
         threatProtectionPolicy: threatProtection.policy,
         safeModeBypassed: safeMode.bypassed === true,
+        ctx,
+        body: hookBody,
+        planApplied: true,
       },
       logger,
     );
@@ -367,6 +473,17 @@ export async function searchController(
         title: d.title,
         description: d.description,
       })) as Document[];
+    }
+
+    const extraWarnings = [
+      usOnlyImagesWarning,
+      result.usOnlyWarning,
+      result.toolsWarning,
+    ].filter(Boolean);
+    if (extraWarnings.length > 0) {
+      responseData.warning = [responseData.warning, ...extraWarnings]
+        .filter(Boolean)
+        .join(" ");
     }
 
     // Bill team for search credits only
@@ -423,6 +540,19 @@ export async function searchController(
     }).catch(error => {
       logger.error("Failed to log search", { error, jobId });
     });
+
+    const hooks = installedService()?.hooks;
+    if (hooks?.has("search.finished")) {
+      hooks.observe("search.finished", {
+        id: jobId,
+        ctx,
+        results: result.totalResultsCount,
+        charged:
+          !isSelfHosted() && !isSearchPreview
+            ? result.searchCredits
+            : undefined,
+      });
+    }
 
     const totalRequestTime = new Date().getTime() - middlewareStartTime;
     const controllerTime = new Date().getTime() - controllerStartTime;

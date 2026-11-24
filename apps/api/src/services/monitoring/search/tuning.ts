@@ -1,6 +1,5 @@
-import type { GoogleLanguageModelOptions } from "@ai-sdk/google";
 import { getModel } from "../../../lib/generic-ai";
-import { config } from "../../../config";
+import { service } from "../../../service";
 import type { TeamFlags } from "../../../controllers/v2/types";
 
 // Vertex billing labels so every LLM call is traceable at the billing level by
@@ -31,35 +30,55 @@ export function monitorTelemetryMetadata(
   };
 }
 
-function geminiApiKey(): string | undefined {
-  return process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GEMINI_API_KEY;
+// Prefer Vertex when registered and enabled so usage is traceable via Vertex
+// billing labels; fall back to the google provider otherwise.
+function hasVertex(): boolean {
+  return service.llmProviders.get("vertex")?.enabled() ?? false;
 }
 
-// Vertex is the preferred provider so usage is traceable via Vertex billing
-// labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
-// aren't configured (e.g. self-hosted).
-function hasVertex(): boolean {
-  return Boolean(config.VERTEX_CREDENTIALS) || config.VERTEX_USE_ADC;
+function hasGoogle(): boolean {
+  return service.llmProviders.get("google")?.enabled() ?? false;
 }
 
 export function hasLlmProvider(): boolean {
-  return hasVertex() || Boolean(geminiApiKey());
+  return (
+    hasVertex() ||
+    hasGoogle() ||
+    service.llmProviders.get("openai")?.enabled() === true ||
+    service.llmProviders.get("ollama")?.enabled() === true
+  );
 }
 
 export function googleModel(
   modelId: string,
   options?: { teamFlags?: TeamFlags | null; feature?: string },
 ) {
-  return getModel(modelId, hasVertex() ? "vertex" : "google", options);
+  if (hasVertex()) {
+    return getModel(modelId, "vertex", options);
+  }
+  if (hasGoogle()) {
+    return getModel(modelId, "google", options);
+  }
+  return getModel(
+    "gpt-4o-mini",
+    service.llmProviders.get("ollama")?.enabled() ? "ollama" : "openai",
+    options,
+  );
 }
 
 export function googleProviderOptions(
   functionId: string,
   labels?: LlmUsageLabels,
 ) {
+  if (!hasVertex() && !hasGoogle()) {
+    return {};
+  }
   const provider = hasVertex() ? "vertex" : "google";
 
-  const options: GoogleLanguageModelOptions = {
+  const options: {
+    thinkingConfig: { thinkingLevel: "minimal" };
+    labels?: Record<string, string>;
+  } = {
     thinkingConfig: { thinkingLevel: "minimal" },
   };
   // Billing labels are Vertex-only; the GenAI provider ignores them.

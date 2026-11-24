@@ -11,13 +11,16 @@ import {
   FRESH_FEED_COLLECTION_HEADER,
   FRESH_FEED_FILTER_KEYS,
   FRESH_FEED_UPSTREAM_ROUTES,
+  MAX_FRESH_FEED_AGENTS,
   freshFeedUpstreamPath,
   isFreshFeedUpstream,
+  isValidFreshFeedAgentToken,
   isValidFreshFeedCollection,
-  isValidFreshFeedFilterToken,
+  normalizeFreshFeedHostToken,
   normalizeFreshFeedUpstreams,
   parseFreshFeedFilters,
   resolveFreshFeedVertical,
+  type FreshFeedFilterKey,
   type FreshFeedFilters,
   type FreshFeedUpstream,
   type FreshFeedUpstreamRouteDefinition,
@@ -184,43 +187,61 @@ function rejectVerticalHead(req: Request, res: Response) {
   return res.status(404).end();
 }
 
-function isAllowedFilterSubset(inbound: string, lockedValue: string): boolean {
-  const allowed = new Set(lockedValue.split(","));
+const INVALID_AGENTS_ERROR =
+  "agents is 1 to 4 robots.txt product tokens, comma-separated, each of letters, - and _";
+
+function normalizeFilterToken(key: FreshFeedFilterKey, token: string): string {
+  return key === "domain" || key === "host"
+    ? normalizeFreshFeedHostToken(token)
+    : token;
+}
+
+function isAllowedFilterSubset(
+  key: FreshFeedFilterKey,
+  inbound: string,
+  lockedValue: string,
+): boolean {
+  const allowed = new Set(
+    lockedValue.split(",").map(token => normalizeFilterToken(key, token)),
+  );
   const requested = inbound.split(",");
   if (requested.length === 0 || requested.length > allowed.size) return false;
   const seen = new Set<string>();
   for (const token of requested) {
-    if (token.length === 0 || !allowed.has(token) || seen.has(token)) {
+    const normalized = normalizeFilterToken(key, token);
+    if (
+      normalized.length === 0 ||
+      !allowed.has(normalized) ||
+      seen.has(normalized)
+    ) {
       return false;
     }
-    seen.add(token);
+    seen.add(normalized);
   }
   return true;
 }
 
-function isAllowedAgentsSuperset(
+function validateAgentsSuperset(
   inbound: string,
   lockedValue: string,
-): boolean {
+): string | undefined {
   const requested = inbound.split(",");
-  if (requested.length === 0) return false;
+  if (requested.length === 0 || requested.length > MAX_FRESH_FEED_AGENTS) {
+    return INVALID_AGENTS_ERROR;
+  }
   const requestedFolded = new Set<string>();
   for (const token of requested) {
-    if (!isValidFreshFeedFilterToken(token)) {
-      return false;
+    if (!isValidFreshFeedAgentToken(token)) {
+      return INVALID_AGENTS_ERROR;
     }
-    const folded = token.toLowerCase();
-    if (requestedFolded.has(folded)) {
-      return false;
-    }
-    requestedFolded.add(folded);
+    requestedFolded.add(token.toLowerCase());
   }
   for (const required of lockedValue.split(",")) {
     if (!requestedFolded.has(required.toLowerCase())) {
-      return false;
+      return "The agents parameter conflicts with the configured feed filter.";
     }
   }
-  return true;
+  return undefined;
 }
 
 function buildUpstreamTarget(
@@ -255,11 +276,17 @@ function buildUpstreamTarget(
       };
     }
     if (inboundValues.length === 1) {
-      const matchesFilter =
-        key === "agents"
-          ? isAllowedAgentsSuperset(inboundValues[0], lockedValue)
-          : isAllowedFilterSubset(inboundValues[0], lockedValue);
-      if (!matchesFilter) {
+      if (key === "agents") {
+        const agentsError = validateAgentsSuperset(
+          inboundValues[0],
+          lockedValue,
+        );
+        if (agentsError) {
+          return { error: agentsError };
+        }
+        continue;
+      }
+      if (!isAllowedFilterSubset(key, inboundValues[0], lockedValue)) {
         return {
           error:
             key === "subcategory" && forcedSubcategory
@@ -316,40 +343,32 @@ function resolveFreshFeedTarget(
 
     const flagUpstream: unknown = authedReq.acuc?.flags?.freshFeedUpstream;
     let upstream: FreshFeedUpstream;
-    if (defaultUpstream !== undefined) {
-      if (flagUpstream === undefined || flagUpstream === null) {
-        upstream = defaultUpstream;
-      } else if (isFreshFeedUpstream(flagUpstream)) {
-        if (!allowedUpstreams.includes(flagUpstream)) {
-          return freshFeedError(
-            res,
-            403,
-            "This endpoint is not enabled for this team.",
-          );
-        }
-        upstream = flagUpstream;
-      } else {
-        rootLogger.error("Invalid freshFeedUpstream flag", {
-          module: "api/fresh-feed",
-          teamId,
-          configuredUpstream:
-            typeof flagUpstream === "string"
-              ? flagUpstream.slice(0, 64)
-              : typeof flagUpstream,
-        });
-        return freshFeedError(res, 503, "The feed is temporarily unavailable.");
-      }
-    } else {
-      if (
-        !isFreshFeedUpstream(flagUpstream) ||
-        !allowedUpstreams.includes(flagUpstream)
-      ) {
+    if (flagUpstream === undefined || flagUpstream === null) {
+      if (defaultUpstream === undefined) {
         return freshFeedError(
           res,
           403,
           "This endpoint is not enabled for this team.",
         );
       }
+      upstream = defaultUpstream;
+    } else if (!isFreshFeedUpstream(flagUpstream)) {
+      rootLogger.error("Invalid freshFeedUpstream flag", {
+        module: "api/fresh-feed",
+        teamId,
+        configuredUpstream:
+          typeof flagUpstream === "string"
+            ? flagUpstream.slice(0, 64)
+            : typeof flagUpstream,
+      });
+      return freshFeedError(res, 503, "The feed is temporarily unavailable.");
+    } else if (!allowedUpstreams.includes(flagUpstream)) {
+      return freshFeedError(
+        res,
+        403,
+        "This endpoint is not enabled for this team.",
+      );
+    } else {
       upstream = flagUpstream;
     }
 

@@ -10,6 +10,7 @@
  */
 import type { z } from "zod";
 import type {
+  BatchScrapeRequest as BaseBatchScrapeRequest,
   CrawlRequest as BaseCrawlRequest,
   FormatObject,
   MapRequest as BaseMapRequest,
@@ -62,6 +63,8 @@ export interface ScrapeRequestFields {}
 export interface ParseRequestFields {}
 /** Top-level fields added to the crawl request body. */
 export interface CrawlRequestFields {}
+/** Top-level fields added to the batch scrape request body. */
+export interface BatchScrapeRequestFields {}
 /** Top-level fields added to the map request body. */
 export interface MapRequestFields {}
 /** Top-level fields added to the search request body. */
@@ -95,6 +98,11 @@ export type CrawlRequest = Omit<BaseCrawlRequest, "scrapeOptions"> & {
   scrapeOptions: ScrapeOptions;
 } & CrawlRequestFields;
 
+export type BatchScrapeRequest = Omit<BaseBatchScrapeRequest, "formats"> & {
+  formats: Format[];
+} & ScrapeOptionsFields &
+  BatchScrapeRequestFields;
+
 export type MapRequest = BaseMapRequest & MapRequestFields;
 
 export type SearchRequest = Omit<BaseSearchRequest, "scrapeOptions"> & {
@@ -106,6 +114,7 @@ export interface RequestBodies {
   scrape: ScrapeRequest;
   parse: ParseRequest;
   crawl: CrawlRequest;
+  batchScrape: BatchScrapeRequest;
   map: MapRequest;
   search: SearchRequest;
 }
@@ -117,6 +126,7 @@ export const requestKinds: readonly RequestKind[] = Object.freeze([
   "scrape",
   "parse",
   "crawl",
+  "batchScrape",
   "map",
   "search",
 ]);
@@ -127,6 +137,7 @@ export const requestFieldBuckets = Object.freeze([
   "scrape",
   "parse",
   "crawl",
+  "batchScrape",
   "map",
   "search",
 ] as const);
@@ -154,15 +165,19 @@ export interface RequestContributions {
   readonly scrape?: FieldSchemas<ScrapeRequestFields>;
   readonly parse?: FieldSchemas<ParseRequestFields>;
   readonly crawl?: FieldSchemas<CrawlRequestFields>;
+  readonly batchScrape?: FieldSchemas<BatchScrapeRequestFields>;
   readonly map?: FieldSchemas<MapRequestFields>;
   readonly search?: FieldSchemas<SearchRequestFields>;
   readonly formats?: FormatSchemas;
   readonly rules?: readonly ScrapeOptionsRule[];
 }
 
-/** Compiled Zod schemas for each API request kind. */
+/** Compiled Zod schemas for each API request kind and standalone scrape options. */
 export type RequestSchemas = {
   readonly [K in RequestKind]: z.ZodType<RequestBodies[K]>;
+} & {
+  readonly batchScrapeNoURLValidation: z.ZodType<BatchScrapeRequest>;
+  readonly scrapeOptions: z.ZodType<ScrapeOptions>;
 };
 
 /** Request-schema contributions recorded in `ServiceDescription`, by owner. */
@@ -171,6 +186,7 @@ export interface DescribedRequestSchemas {
   scrape: Record<string, string>;
   parse: Record<string, string>;
   crawl: Record<string, string>;
+  batchScrape: Record<string, string>;
   map: Record<string, string>;
   search: Record<string, string>;
   formats: Record<string, string>;
@@ -183,6 +199,7 @@ export interface ResolvedRequestContributions {
   readonly scrape: Readonly<Record<string, z.ZodType>>;
   readonly parse: Readonly<Record<string, z.ZodType>>;
   readonly crawl: Readonly<Record<string, z.ZodType>>;
+  readonly batchScrape: Readonly<Record<string, z.ZodType>>;
   readonly map: Readonly<Record<string, z.ZodType>>;
   readonly search: Readonly<Record<string, z.ZodType>>;
   readonly formats: Readonly<Record<string, z.ZodType>>;
@@ -250,10 +267,36 @@ const freezeNullProto = <T>(
   return Object.freeze(out);
 };
 
-const defaultBuildRequestSchemas: RequestSchemaBuilder = contributions =>
-  (
-    require("../controllers/v2/types") as typeof import("../controllers/v2/types")
-  ).buildV2RequestSchemas(contributions);
+let registeredRequestSchemaBuilder: RequestSchemaBuilder | undefined;
+
+/**
+ * Registers the built-in v2 request-schema builder when the v2 types module
+ * loads so lazy `service.schemas` resolution avoids a runtime `require()`.
+ *
+ * @internal
+ */
+export function registerDefaultRequestSchemaBuilder(
+  builder: RequestSchemaBuilder,
+): void {
+  registeredRequestSchemaBuilder = builder;
+}
+
+/**
+ * Resolves the built-in v2 request-schema builder, preferring one already
+ * registered by the loaded v2 types module and falling back to lazy `require()`
+ * so callers that never imported v2 types still work without eager loading.
+ *
+ * @internal
+ */
+export const defaultBuildRequestSchemas: RequestSchemaBuilder =
+  contributions => {
+    if (registeredRequestSchemaBuilder) {
+      return registeredRequestSchemaBuilder(contributions);
+    }
+    return (
+      require("../controllers/v2/types") as typeof import("../controllers/v2/types")
+    ).buildV2RequestSchemas(contributions);
+  };
 
 function collectSchemaMap(
   targetSchemas: Record<string, z.ZodType>,
@@ -313,6 +356,7 @@ export function buildRequestSchemaRegistry(
     scrape: Object.create(null),
     parse: Object.create(null),
     crawl: Object.create(null),
+    batchScrape: Object.create(null),
     map: Object.create(null),
     search: Object.create(null),
   };
@@ -321,6 +365,7 @@ export function buildRequestSchemaRegistry(
     scrape: Object.create(null),
     parse: Object.create(null),
     crawl: Object.create(null),
+    batchScrape: Object.create(null),
     map: Object.create(null),
     search: Object.create(null),
   };
@@ -382,7 +427,7 @@ export function buildRequestSchemaRegistry(
     }
   }
 
-  for (const target of ["scrape", "parse"] as const) {
+  for (const target of ["scrape", "parse", "batchScrape"] as const) {
     for (const key of Object.keys(fieldOwners[target])) {
       if (key in fieldOwners.scrapeOptions) {
         throw new Error(
@@ -397,11 +442,18 @@ export function buildRequestSchemaRegistry(
     scrape: freezeNullProto(fieldSchemas.scrape),
     parse: freezeNullProto(fieldSchemas.parse),
     crawl: freezeNullProto(fieldSchemas.crawl),
+    batchScrape: freezeNullProto(fieldSchemas.batchScrape),
     map: freezeNullProto(fieldSchemas.map),
     search: freezeNullProto(fieldSchemas.search),
     formats: freezeNullProto(formatSchemas),
     rules: Object.freeze([...rules]),
   });
+
+  const schemaKeys = [
+    ...requestKinds,
+    "batchScrapeNoURLValidation",
+    "scrapeOptions",
+  ] as const;
 
   const builder = buildSchemas ?? defaultBuildRequestSchemas;
   let compiled: RequestSchemas | undefined;
@@ -412,21 +464,24 @@ export function buildRequestSchemaRegistry(
       throw new Error("Request schema builder must return a schemas object");
     }
     const validated: Record<string, z.ZodType> = Object.create(null);
-    for (const kind of requestKinds) {
-      const schema = built[kind];
+    for (const key of schemaKeys) {
+      const schema = built[key];
       if (!isZodSchema(schema)) {
         throw new Error(
-          `Request schema builder returned an invalid "${kind}" schema`,
+          `Request schema builder returned an invalid "${key}" schema`,
         );
       }
-      validated[kind] = schema;
+      validated[key] = schema;
     }
     compiled = Object.freeze({
       scrape: validated.scrape,
       parse: validated.parse,
       crawl: validated.crawl,
+      batchScrape: validated.batchScrape,
+      batchScrapeNoURLValidation: validated.batchScrapeNoURLValidation,
       map: validated.map,
       search: validated.search,
+      scrapeOptions: validated.scrapeOptions,
     }) as unknown as RequestSchemas;
     return compiled;
   };
@@ -441,11 +496,20 @@ export function buildRequestSchemaRegistry(
     get crawl() {
       return resolveSchemas().crawl;
     },
+    get batchScrape() {
+      return resolveSchemas().batchScrape;
+    },
+    get batchScrapeNoURLValidation() {
+      return resolveSchemas().batchScrapeNoURLValidation;
+    },
     get map() {
       return resolveSchemas().map;
     },
     get search() {
       return resolveSchemas().search;
+    },
+    get scrapeOptions() {
+      return resolveSchemas().scrapeOptions;
     },
   });
 
@@ -454,6 +518,7 @@ export function buildRequestSchemaRegistry(
     scrape: sortedByKey(fieldOwners.scrape),
     parse: sortedByKey(fieldOwners.parse),
     crawl: sortedByKey(fieldOwners.crawl),
+    batchScrape: sortedByKey(fieldOwners.batchScrape),
     map: sortedByKey(fieldOwners.map),
     search: sortedByKey(fieldOwners.search),
     formats: sortedByKey(formatOwners),
