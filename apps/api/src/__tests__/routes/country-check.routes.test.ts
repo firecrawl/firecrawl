@@ -97,7 +97,7 @@ describe("countryCheck middleware", () => {
     expect(res.status).toBe(204);
   });
 
-  it("rejects keyless requests without a team ACUC", async () => {
+  it("rejects requests without a team ACUC from a restricted country", async () => {
     fromCountry("XX");
     mocks.auth = { team_id: "preview_keyless_127.0.0.1" };
     mocks.acuc = undefined;
