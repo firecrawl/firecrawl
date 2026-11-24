@@ -12,19 +12,18 @@
  * request schemas, scrape engines, configuration, or clients.
  */
 import type { Logger } from "winston";
-import type {
-  CrawlRequest,
-  Document,
-  MapRequest,
-  ParseRequest,
-  ScrapeOptions,
-  ScrapeRequest,
-  SearchRequest,
-} from "../controllers/v2/types";
+import type { Document } from "../controllers/v2/types";
 import type { ErrorCode } from "../lib/error";
 import type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 import type { EngineFeatureName, EngineName } from "./engines";
 import type { RequestContext } from "./request-context";
+import type {
+  RequestBodies,
+  RequestKind,
+  ScrapeOptions,
+} from "./request-schemas";
+
+export type { RequestBodies, RequestKind } from "./request-schemas";
 
 export interface Observe<Payload> {
   kind: "observe";
@@ -97,17 +96,6 @@ export interface Refusal {
 
 /** Job kinds tracked across queue and completion hooks. */
 export type JobKind = "scrape" | "crawl" | "batchScrape";
-
-/** Request body shapes keyed by request kind. */
-export interface RequestBodies {
-  scrape: ScrapeRequest;
-  parse: ParseRequest;
-  crawl: CrawlRequest;
-  map: MapRequest;
-  search: SearchRequest;
-}
-
-export type RequestKind = keyof RequestBodies;
 
 /** Discriminated event describing an admitted API request. */
 export type RequestEvent = {

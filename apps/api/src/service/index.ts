@@ -1,4 +1,4 @@
-export type { Document, ScrapeOptions } from "../controllers/v2/types";
+export type { Document } from "../controllers/v2/types";
 export type {
   ErrorCode,
   ErrorCodes,
@@ -83,6 +83,38 @@ export type {
   Caller,
   RequestContext,
 } from "./request-context";
+export {
+  hasFormatOfType,
+  requestFieldBuckets,
+  requestKinds,
+} from "./request-schemas";
+export type {
+  CrawlRequest,
+  CrawlRequestFields,
+  DescribedRequestSchemas,
+  FieldSchemas,
+  Format,
+  FormatName,
+  Formats,
+  FormatSchemas,
+  MapRequest,
+  MapRequestFields,
+  ParseRequest,
+  ParseRequestFields,
+  RequestContributions,
+  RequestFieldBucket,
+  RequestSchemaBuilder,
+  RequestSchemas,
+  ResolvedRequestContributions,
+  ScrapeOptions,
+  ScrapeOptionsFields,
+  ScrapeOptionsRule,
+  ScrapeOptionsRuleResult,
+  ScrapeRequest,
+  ScrapeRequestFields,
+  SearchRequest,
+  SearchRequestFields,
+} from "./request-schemas";
 export { coreSearchProviderNames } from "./search-providers";
 export type {
   CoreSearchProviderSpec,
