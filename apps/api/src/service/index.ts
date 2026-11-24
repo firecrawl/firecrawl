@@ -1,3 +1,4 @@
+export type { Document, ScrapeOptions } from "../controllers/v2/types";
 export type {
   ErrorCode,
   ErrorCodes,
@@ -19,13 +20,39 @@ export type {
   Engines,
 } from "./engines";
 export { assertEnv, defineEnv } from "./env";
+export { hookPointNames, hookPoints } from "./hooks";
 export type {
   Await,
+  CrawlFinished,
+  EnginePlan,
+  HandlersOf,
+  HookHandler,
   HookHandlers,
+  HookKind,
+  HookName,
+  HookPointSpec,
   HookPoints,
   Hooks,
+  HooksOf,
+  HtmlCleaning,
+  InfoOf,
+  JobKind,
+  NamesOfKind,
   Observe,
+  PayloadOf,
+  Refusal,
+  RequestBodies,
+  RequestEvent,
+  RequestKind,
+  ResponseInfo,
+  ScrapeFinished,
+  ScrapeMeta,
+  ScrapePlan,
+  ScrapeState,
+  SearchHit,
+  SearchPlan,
   Transform,
+  ValueOf,
 } from "./hooks";
 export { authenticate } from "./http";
 export type { RouteKind } from "./http";

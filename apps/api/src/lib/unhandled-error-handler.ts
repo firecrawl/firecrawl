@@ -4,6 +4,7 @@ import type {
   ErrorResponse,
   RequestWithMaybeACUC,
 } from "../controllers/v1/types";
+import { redactAdminKey } from "./admin-auth";
 import { getRoutePattern } from "./http-metrics";
 import { logger } from "./logger";
 import { recordUnhandledException } from "./otel-tracer";
@@ -54,7 +55,7 @@ export function unhandledErrorHandler(
   logger.error("Error occurred in request!", {
     error: err,
     errorId: id,
-    path: req.path,
+    path: redactAdminKey(req.path),
     teamId: req.acuc?.team_id,
     team_id: req.acuc?.team_id,
   });
