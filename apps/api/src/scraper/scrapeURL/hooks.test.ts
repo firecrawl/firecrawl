@@ -36,6 +36,7 @@ import { scrapeURL } from ".";
 import { coreEngineFeatures, type EngineScrapeResult } from "./engines";
 import { EngineError, NoEnginesLeftError } from "./error";
 import { createScrapeFinishedEmitter } from "./hooks";
+import { AbortManager, AbortManagerThrownError } from "./lib/abortManager";
 import { htmlTransform } from "./lib/removeUnwantedElements";
 import { executeTransformers } from "./transformers";
 
@@ -656,6 +657,21 @@ describe("scrape pipeline hook points", () => {
         new CostTracking(),
       ),
     ).rejects.toBeInstanceOf(ScrapeJobTimeoutError);
+
+    const expiredController = new AbortController();
+    expiredController.abort(new ScrapeJobTimeoutError());
+    const expiredManager = new AbortManager({
+      signal: expiredController.signal,
+      tier: "scrape",
+      timesOutAt: new Date(Date.now()),
+      throwable: () => new ScrapeJobTimeoutError(),
+    });
+    const mapped = expiredManager.asSignal();
+    expect(mapped.aborted).toBe(true);
+    expect(mapped.reason).toBeInstanceOf(AbortManagerThrownError);
+    expect((mapped.reason as AbortManagerThrownError).inner).toBeInstanceOf(
+      ScrapeJobTimeoutError,
+    );
   });
 
   it("short-circuits before engine selection when scrape.start throws", async () => {
