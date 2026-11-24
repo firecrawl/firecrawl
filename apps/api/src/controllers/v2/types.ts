@@ -42,6 +42,7 @@ import { ProductProfile } from "../../types/product";
 import { MenuProfile } from "../../types/menu";
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
 import { auditMetadataSchema } from "../../lib/siem-logging/types";
+import { installedService } from "../../service/service";
 import type {
   RequestKind,
   RequestSchemas,
@@ -2341,7 +2342,7 @@ export function fromV0ScrapeOptions(
   teamId: string,
 ): { scrapeOptions: ScrapeOptions; internalOptions: InternalOptions } {
   return {
-    scrapeOptions: scrapeOptions.parse({
+    scrapeOptions: getV2RequestSchemas().scrapeOptions.parse({
       formats: [
         (pageOptions.includeMarkdown ?? true) ? ("markdown" as const) : null,
         (pageOptions.includeHtml ?? false) ? ("html" as const) : null,
@@ -2434,7 +2435,7 @@ export function fromV1ScrapeOptions(
   }
 
   return {
-    scrapeOptions: scrapeOptions.parse({
+    scrapeOptions: getV2RequestSchemas().scrapeOptions.parse({
       ...spreadScrapeOptions,
 
       ...(v1ScrapeOptions.__experimental_cache
@@ -3313,9 +3314,20 @@ function assertNoCoreCollision(
   }
 }
 
+const defaultV2RequestSchemas: RequestSchemas = Object.freeze({
+  scrape: scrapeRequestSchema,
+  parse: parseRequestSchema,
+  crawl: crawlRequestSchema,
+  batchScrape: batchScrapeRequestSchema,
+  batchScrapeNoURLValidation: batchScrapeRequestSchemaNoURLValidation,
+  map: mapRequestSchema,
+  search: searchRequestSchema,
+  scrapeOptions,
+}) as unknown as RequestSchemas;
+
 /**
- * Builds the five v2 request schemas with extension-contributed fields,
- * formats, and cross-field scrape-options rules applied.
+ * Builds the v2 request and scrape-options schemas with extension-contributed
+ * fields, formats, and cross-field scrape-options rules applied.
  */
 export function buildV2RequestSchemas(
   contributions: ResolvedRequestContributions,
@@ -3341,6 +3353,11 @@ export function buildV2RequestSchemas(
     parseRequestSchemaBase.shape,
   );
   assertNoCoreCollision(
+    "scrapeOptions",
+    contributions.scrapeOptions,
+    batchScrapeRequestSchemaBase.shape,
+  );
+  assertNoCoreCollision(
     "scrape",
     contributions.scrape,
     scrapeRequestSchemaBase.shape,
@@ -3355,6 +3372,11 @@ export function buildV2RequestSchemas(
     contributions.crawl,
     crawlRequestSchemaBase.shape,
   );
+  assertNoCoreCollision(
+    "batchScrape",
+    contributions.batchScrape,
+    batchScrapeRequestSchemaBase.shape,
+  );
   assertNoCoreCollision("map", contributions.map, mapRequestSchemaBase.shape);
   assertNoCoreCollision(
     "search",
@@ -3367,6 +3389,8 @@ export function buildV2RequestSchemas(
   const hasScrapeFields = Object.keys(contributions.scrape).length > 0;
   const hasParseFields = Object.keys(contributions.parse).length > 0;
   const hasCrawlFields = Object.keys(contributions.crawl).length > 0;
+  const hasBatchScrapeFields =
+    Object.keys(contributions.batchScrape).length > 0;
   const hasMapFields = Object.keys(contributions.map).length > 0;
   const hasSearchFields = Object.keys(contributions.search).length > 0;
   const hasFormats = Object.keys(contributions.formats).length > 0;
@@ -3377,18 +3401,13 @@ export function buildV2RequestSchemas(
     !hasScrapeFields &&
     !hasParseFields &&
     !hasCrawlFields &&
+    !hasBatchScrapeFields &&
     !hasMapFields &&
     !hasSearchFields &&
     !hasFormats &&
     !hasRules
   ) {
-    return {
-      scrape: scrapeRequestSchema,
-      parse: parseRequestSchema,
-      crawl: crawlRequestSchema,
-      map: mapRequestSchema,
-      search: searchRequestSchema,
-    } as unknown as RequestSchemas;
+    return defaultV2RequestSchemas;
   }
 
   const scrapeOptionsShape: z.ZodRawShape = {
@@ -3398,7 +3417,7 @@ export function buildV2RequestSchemas(
       : {}),
     ...contributions.scrapeOptions,
   };
-  const baseScrapeOpts =
+  const baseScrapeOpts: z.ZodType<any> =
     hasFormats || hasScrapeOptionsFields
       ? applyBaseScrapeOptionsRefines(z.strictObject(scrapeOptionsShape))
       : baseScrapeOptions;
@@ -3559,11 +3578,97 @@ export function buildV2RequestSchemas(
           })
       : searchRequestSchema;
 
+  const buildBatchScrapeSchema = (baseShape: z.ZodRawShape) =>
+    applyBaseScrapeOptionsRefines(
+      z.strictObject({
+        ...baseShape,
+        ...scrapeOptionsShape,
+        ...contributions.batchScrape,
+      }),
+    )
+      .refine((x: any) => waitForRefine(x), waitForRefineOpts)
+      .transform((x: any, ctx) => {
+        const transformed = extractTransformRequired(x);
+        if (!hasRules) return transformed;
+        return applyScrapeOptionsRules(
+          transformed,
+          "batchScrape",
+          contributions.rules,
+          ctx,
+        );
+      });
+
+  const hasBatchScrapeChanges =
+    hasFormats || hasScrapeOptionsFields || hasBatchScrapeFields || hasRules;
+
+  const batchScrape = hasBatchScrapeChanges
+    ? buildBatchScrapeSchema(batchScrapeRequestSchemaBase.shape)
+    : batchScrapeRequestSchema;
+
+  const batchScrapeNoURLValidation = hasBatchScrapeChanges
+    ? buildBatchScrapeSchema(batchScrapeRequestSchemaNoURLValidationBase.shape)
+    : batchScrapeRequestSchemaNoURLValidation;
+
+  const compiledScrapeOptions =
+    hasFormats || hasScrapeOptionsFields || hasRules
+      ? baseScrapeOpts
+          .refine(
+            (obj: any) => {
+              if (!obj.actions) return true;
+              return (
+                calculateTotalWaitTime(obj.actions, obj.waitFor) <=
+                ACTIONS_MAX_WAIT_TIME * 1000
+              );
+            },
+            {
+              message: `Total wait time (waitFor + wait actions) cannot exceed ${ACTIONS_MAX_WAIT_TIME} seconds`,
+            },
+          )
+          .refine((x: any) => waitForRefine(x), waitForRefineOpts)
+          .transform((x: any, ctx) => {
+            const transformed = extractTransformRequired(x);
+            if (!hasRules) return transformed;
+            return applyScrapeOptionsRules(
+              transformed,
+              "scrape",
+              contributions.rules,
+              ctx,
+            );
+          })
+      : scrapeOptions;
+
   return {
     scrape,
     parse,
     crawl,
+    batchScrape,
+    batchScrapeNoURLValidation,
     map,
     search,
+    scrapeOptions: compiledScrapeOptions,
   } as unknown as RequestSchemas;
+}
+
+/**
+ * Returns the installed service's compiled v2 request schemas, falling back to
+ * the built-in static schemas when no service is installed.
+ */
+export function getV2RequestSchemas(): RequestSchemas {
+  return installedService()?.schemas ?? defaultV2RequestSchemas;
+}
+
+/**
+ * Parses a v2 batch scrape request body through the active service schemas,
+ * skipping upfront URL validation when `ignoreInvalidURLs` is explicitly true.
+ */
+export function parseBatchScrapeRequest(body: unknown): BatchScrapeRequest {
+  const schemas = getV2RequestSchemas();
+  if (
+    typeof body === "object" &&
+    body !== null &&
+    (body as { ignoreInvalidURLs?: unknown }).ignoreInvalidURLs === true
+  ) {
+    return schemas.batchScrapeNoURLValidation.parse(body);
+  }
+  return schemas.batchScrape.parse(body);
 }

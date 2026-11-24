@@ -7,7 +7,7 @@ import {
   StoredCrawl,
 } from "../../lib/crawl-redis";
 import { configDotenv } from "dotenv";
-import { RequestWithAuth, scrapeOptions } from "./types";
+import { getV2RequestSchemas, RequestWithAuth } from "./types";
 import { crawlGroup } from "../../services/worker/nuq-router";
 import { normalizeOwnerId } from "../../lib/owner-id";
 import { removeConcurrencyLimitedJobs } from "../../lib/concurrency-limit";
@@ -37,7 +37,7 @@ export async function crawlCancelController(
       team_id: req.auth.team_id,
       createdAt: Date.now(),
       crawlerOptions: null,
-      scrapeOptions: scrapeOptions.parse({}),
+      scrapeOptions: getV2RequestSchemas().scrapeOptions.parse({}),
       internalOptions: {
         teamId: req.auth.team_id,
         orgId: req.acuc?.org_id ?? null,

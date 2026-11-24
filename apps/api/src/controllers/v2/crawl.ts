@@ -3,8 +3,8 @@ import { config } from "../../config";
 import { v7 as uuidv7 } from "uuid";
 import {
   CrawlRequest,
-  crawlRequestSchema,
   CrawlResponse,
+  getV2RequestSchemas,
   RequestWithAuth,
   toV0CrawlerOptions,
 } from "./types";
@@ -55,7 +55,7 @@ export async function crawlController(
   res: Response<CrawlResponse>,
 ) {
   const preNormalizedBody = req.body;
-  req.body = crawlRequestSchema.parse(req.body);
+  req.body = getV2RequestSchemas().crawl.parse(req.body);
   const id = uuidv7();
 
   const safeMode = resolveSafeMode(

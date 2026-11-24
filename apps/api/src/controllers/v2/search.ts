@@ -2,12 +2,8 @@ import { Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
 import { timingSafeSecretEqual } from "../../lib/secret-compare";
-import {
-  RequestWithAuth,
-  SearchRequest,
-  SearchResponse,
-  searchRequestSchema,
-} from "./types";
+import { getV2RequestSchemas, RequestWithAuth, SearchResponse } from "./types";
+import type { SearchRequest } from "../../service/request";
 import { billTeam } from "../../services/billing/credit_billing";
 import {
   adjustKeylessCredits,
@@ -162,8 +158,9 @@ async function searchControllerInner(
     const lineage = isAlexandriaZDRForced(req.acuc?.flags ?? undefined)
       ? {}
       : lineageIds(req);
-    delete (req.body as Record<string, unknown>)?.objective;
-    delete (req.body as Record<string, unknown>)?.clientModel;
+    const rawBody = req.body as unknown as Record<string, unknown> | undefined;
+    delete rawBody?.objective;
+    delete rawBody?.clientModel;
     if (hasCategory(req.body?.categories, "github")) {
       logger.warn("Removed search category requested", {
         module: "deprecations",
@@ -178,9 +175,8 @@ async function searchControllerInner(
         documentation_url: "https://docs.firecrawl.dev/features/developer",
       });
     }
-    const sourcesOmitted =
-      (req.body as Record<string, unknown>)?.sources === undefined;
-    req.body = searchRequestSchema.parse(req.body);
+    const sourcesOmitted = rawBody?.sources === undefined;
+    req.body = getV2RequestSchemas().search.parse(req.body);
 
     const wantsTools = req.body.sources.some(
       source => source.type === "alexandria",

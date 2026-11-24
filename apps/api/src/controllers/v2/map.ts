@@ -1,6 +1,6 @@
 import { Response } from "express";
 import {
-  mapRequestSchema,
+  getV2RequestSchemas,
   RequestWithAuth,
   MapRequest,
   MapResponse,
@@ -50,7 +50,7 @@ export async function mapController(
   const controllerStartTime = new Date().getTime();
 
   const originalRequest = req.body;
-  req.body = mapRequestSchema.parse(req.body);
+  req.body = getV2RequestSchemas().map.parse(req.body);
 
   // Map is link discovery, not content scraping, but it is outbound to the
   // target. Under Safe Mode: force domainControls so discovered links are
