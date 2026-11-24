@@ -19,7 +19,16 @@ export async function processWebhookInsertJobs() {
     )) ?? [];
   if (jobs.length === 0) return;
 
-  const parsedJobs = jobs.map(x => JSON.parse(x));
+  const parsedJobs = jobs.flatMap(x => {
+    try {
+      return [JSON.parse(x)];
+    } catch (error) {
+      _logger.error("Webhook inserter skipped malformed job", { error });
+      return [];
+    }
+  });
+  if (parsedJobs.length === 0) return;
+
   _logger.info("Webhook inserter found jobs to insert", {
     jobCount: parsedJobs.length,
   });

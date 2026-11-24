@@ -18,6 +18,7 @@ import {
 } from "../lib/http-metrics";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
 import * as geoip from "geoip-country";
+import { claimIdempotencyKey } from "../lib/idempotency";
 import { service } from "../service";
 import { validate as isUuid } from "uuid";
 
@@ -477,20 +478,12 @@ export function idempotencyMiddleware(
   (async () => {
     const rawHeader = req.headers["x-idempotency-key"];
     if (rawHeader) {
-      const key = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
-      let claimed = false;
-      if (typeof key !== "string" || !isUuid(key)) {
-        logger.debug(
-          "Invalid idempotency key provided in the request headers.",
-        );
-      } else {
-        const teamId =
-          req.ctx?.teamId ??
-          req.caller?.teamId ??
-          (req as RequestWithMaybeAuth).auth?.team_id ??
-          "bypass";
-        claimed = await service.modules.idempotency.claim(key, { teamId });
-      }
+      const teamId =
+        req.ctx?.teamId ??
+        req.caller?.teamId ??
+        (req as RequestWithMaybeAuth).auth?.team_id ??
+        "bypass";
+      const claimed = await claimIdempotencyKey(rawHeader, teamId);
       if (!claimed) {
         if (!res.headersSent) {
           return res

@@ -129,7 +129,7 @@ export interface WebhookDelivery {
   url: string;
   event: string;
   payload: unknown;
-  /** Caller-configured headers (excluding Content-Type and signature headers). */
+  /** Caller-configured headers (excluding signature headers). */
   headers: Record<string, string>;
   jobId: string;
   scrapeId?: string;
