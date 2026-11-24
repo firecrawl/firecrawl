@@ -74,7 +74,9 @@ import { runSearchTarget, type ScrapeSearchResult } from "./search/run";
 import { verdictJsonSchema } from "./search/judge";
 import { monitorTelemetryMetadata } from "./search/tuning";
 import { computeGoalVersion } from "./search/dedupe";
-import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
+import { isLockdownZeroDataRetention } from "../../lib/safe-mode";
+import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { service } from "../../service";
 import { getACUCTeam } from "../../controllers/auth";
 import { isUsOnly } from "../../lib/us-only";
 import type { TeamFlags } from "../../controllers/v1/types";
@@ -912,6 +914,14 @@ async function runMonitorSearchTarget(params: {
   // Same blocklist gate prod scrapes use, applied per team (honors unblockedDomains).
   const acuc = await getACUCTeam(monitor.team_id);
   const teamFlags = acuc?.flags ?? null;
+  const blockCtx = requestContext({
+    teamId: monitor.team_id,
+    zeroDataRetention:
+      getScrapeZDR(teamFlags ?? undefined) === "forced" ||
+      isLockdownZeroDataRetention(teamFlags, undefined),
+    flags: teamFlags,
+    orgId: acuc?.org_id ?? null,
+  });
 
   const result = await runSearchTarget({
     monitor: {
@@ -945,9 +955,7 @@ async function runMonitorSearchTarget(params: {
         judgePrompt,
       }),
     isBlocked: url =>
-      isUrlBlocked(url, teamFlags, {
-        team_id: monitor.team_id,
-        org_id: acuc?.org_id ?? null,
+      service.modules.blocklist.isBlocked(url, blockCtx, {
         origin: "monitor.search",
       }),
     goalVersion,

@@ -24,7 +24,7 @@ import { addScrapeJobs } from "../../services/queue-jobs";
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 import { logger as _logger } from "../../lib/logger";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
-import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
+import { service } from "../../service";
 import { checkPermissions } from "../../lib/permissions";
 import { resolveSafeMode } from "../../lib/safe-mode";
 import {
@@ -188,15 +188,17 @@ export async function batchScrapeController(
 
   // A blocklisted URL is admitted when the Exchange can serve it, as on
   // single scrape; null means the URL may be scraped.
+  const blockCtx = requestContext({
+    teamId: req.auth.team_id,
+    zeroDataRetention:
+      zeroDataRetention || appendTarget?.zeroDataRetention === true,
+    flags: req.acuc?.flags ?? null,
+    orgId: req.acuc?.org_id ?? null,
+  });
   const blocklistRefusal = async (url: string) => {
     if (
-      !isUrlBlocked(url, req.acuc?.flags ?? null, {
-        team_id: req.auth.team_id,
-        org_id: req.acuc?.org_id ?? null,
+      !service.modules.blocklist.isBlocked(url, blockCtx, {
         origin: req.body.origin ?? null,
-        zeroDataRetention:
-          zeroDataRetention || appendTarget?.zeroDataRetention === true,
-        safeMode: req.body.safeMode,
       })
     ) {
       return null;

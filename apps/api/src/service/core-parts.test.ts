@@ -282,7 +282,7 @@ describe("coreParts", () => {
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: ["idempotency", "messages", "uploads", "webhooks"],
+      modules: ["blocklist", "idempotency", "messages", "uploads", "webhooks"],
       hooks: {},
       errors: {
         AGENT_INDEX_ONLY: "core",
@@ -375,15 +375,8 @@ describe("coreParts", () => {
         searxng: { owner: "core", priority: 50 },
       },
       llmProviders: {
-        anthropic: "core",
-        deepinfra: "core",
-        fireworks: "core",
-        google: "core",
-        groq: "core",
         ollama: "core",
         openai: "core",
-        openrouter: "core",
-        vertex: "core",
       },
       request: {
         scrapeOptions: {},
@@ -454,6 +447,7 @@ describe("coreParts", () => {
     expect(built.roles.has("index-worker")).toBe(false);
     expect(built.roles.has("zdr-worker")).toBe(false);
     expect(built.describe().modules).toEqual([
+      "blocklist",
       "idempotency",
       "messages",
       "uploads",
@@ -464,6 +458,40 @@ describe("coreParts", () => {
     expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
     expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
     expect(required).not.toHaveBeenCalledWith(v2TypesModule);
+    expect(loadedSideEffectModules).toEqual([]);
+  });
+
+  it("registers only openai and ollama in core and accepts extension-contributed LLM providers without side effects", () => {
+    const required = answerRequire();
+    const customModel = { modelId: "custom-model" } as unknown as LlmModel;
+    const customEnabled = vi.fn(() => true);
+    const customProvider = {
+      name: "custom-llm",
+      enabled: customEnabled,
+      model: vi.fn(() => customModel),
+    } as unknown as LlmProvider;
+
+    const built = createService(
+      {
+        modules: defaultModules(),
+        extensions: [{ name: "extra-llm", llmProviders: [customProvider] }],
+      },
+      coreParts(),
+    );
+
+    expect(built.describe().llmProviders).toEqual({
+      "custom-llm": "extra-llm",
+      ollama: "core",
+      openai: "core",
+    });
+    expect(built.llmProviders.all().map(p => p.name)).toEqual([
+      "openai",
+      "ollama",
+      "custom-llm",
+    ]);
+    expect(built.llmProviders.get("custom-llm")?.model("m")).toBe(customModel);
+    expect(customEnabled).not.toHaveBeenCalled();
+    expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
     expect(loadedSideEffectModules).toEqual([]);
   });
 

@@ -38,10 +38,9 @@ const compiledTldSetCache = new WeakMap<readonly string[], Set<string>>();
  * Only frozen arrays are cached in the WeakMap so in-place mutations to a
  * caller-owned mutable array can never serve stale results.
  *
- * - Exact entries match the domain itself AND its subdomains — consistent with
- *   how the global blocklist treats domains (see
- *   src/scraper/WebScraper/utils/blocklist.ts), and what users expect from
- *   listing "example.com".
+ * - Exact entries match the domain itself AND its subdomains, consistent with
+ *   domain blocklist semantics and what users expect from listing
+ *   "example.com".
  * - Leading wildcard entries ("*.example.com") match any strict subdomain
  *   ("a.example.com", "a.b.example.com") but not the apex ("example.com").
  * - Any other glob containing "*" falls back to a pre-compiled RegExp.
