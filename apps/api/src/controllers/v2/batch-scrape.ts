@@ -19,7 +19,7 @@ import {
   saveCrawl,
   StoredCrawl,
 } from "../../lib/crawl-redis";
-import { getJobPriority } from "../../lib/job-priority";
+import { currentLimits } from "../../lib/limits";
 import { addScrapeJobs } from "../../services/queue-jobs";
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 import { logger as _logger } from "../../lib/logger";
@@ -507,12 +507,14 @@ export async function batchScrapeController(
     orgId: sc.internalOptions.orgId,
     apiKeyId: req.acuc?.api_key_id ?? null,
     billing,
+    concurrencyLimit: req.acuc?.concurrency_limit,
+    rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
   });
   req.ctx = ctx;
 
   if (!req.body.appendToId) {
     sc.ctx = ctx;
-    sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
+    sc.queueBackend = await resolveNewGroupBackend(sc.team_id, ctx);
     await crawlGroup.addGroup(
       id,
       sc.team_id,
@@ -533,10 +535,9 @@ export async function batchScrapeController(
   // otherwise we can use the default priority of 20
   if (urls.length > 1000) {
     // set base to 21
-    jobPriority = await getJobPriority({
-      team_id: req.auth.team_id,
-      acuc: req.acuc,
-      basePriority: 21,
+    jobPriority = await currentLimits().jobPriority({
+      ctx,
+      base: 21,
     });
   }
   logger.debug("Using job priority " + jobPriority, { jobPriority });

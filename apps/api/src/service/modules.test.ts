@@ -6,8 +6,19 @@ import {
   PDFFetchProxyError,
   PDFPrefetchFailed,
 } from "../scraper/scrapeURL/error";
-import { defaultModules, logsMessages, memoryUploads } from "./defaults";
-import type { MessagesModule, Modules, UploadsModule } from "./modules";
+import {
+  defaultModules,
+  logsMessages,
+  memoryUploads,
+  noLimits,
+} from "./defaults";
+import { currentLimits } from "../lib/limits";
+import type {
+  LimitsModule,
+  MessagesModule,
+  Modules,
+  UploadsModule,
+} from "./modules";
 import { createService, replaceService, type CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
@@ -15,6 +26,20 @@ const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
 
 afterEach(() => {
   replaceService(undefined);
+});
+
+describe("noLimits", () => {
+  it("returns unlimited concurrency, base priority, and no queue backend override", async () => {
+    const limits = noLimits();
+    const ctx = { teamId: "team-1", zeroDataRetention: false };
+
+    await expect(limits.concurrency(ctx)).resolves.toBeNull();
+    await expect(limits.teamConcurrency("team-1")).resolves.toBeNull();
+    expect(limits.keyConcurrency).toBeUndefined();
+    await expect(limits.jobPriority({ ctx, base: 10 })).resolves.toBe(10);
+    await expect(limits.jobPriority({ ctx, base: 21 })).resolves.toBe(21);
+    expect(limits.queueBackend(ctx)).toBeUndefined();
+  });
 });
 
 describe("logsMessages", () => {
@@ -174,14 +199,24 @@ describe("memoryUploads", () => {
 });
 
 describe("service module slots", () => {
-  it("fills omitted module slots with built-in defaults", () => {
+  it("fills omitted module slots with built-in defaults", async () => {
     const built = createService({}, parts);
+    const ctx = { teamId: "team-1", zeroDataRetention: false };
 
     expect(Object.isFrozen(built.modules)).toBe(true);
+    expect(Object.isFrozen(built.modules.limits)).toBe(true);
     expect(Object.isFrozen(built.modules.messages)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads.driver())).toBe(true);
-    expect(built.describe().modules).toEqual(["messages", "uploads"]);
+    expect(built.describe().modules).toEqual(["limits", "messages", "uploads"]);
+    await expect(built.modules.limits.concurrency(ctx)).resolves.toBeNull();
+    await expect(
+      built.modules.limits.teamConcurrency("team-1"),
+    ).resolves.toBeNull();
+    await expect(
+      built.modules.limits.jobPriority({ ctx, base: 15 }),
+    ).resolves.toBe(15);
+    expect(built.modules.limits.queueBackend(ctx)).toBeUndefined();
     expect(built.modules.messages.errorContact()).toBe(
       logsMessages().errorContact(),
     );
@@ -189,6 +224,13 @@ describe("service module slots", () => {
   });
 
   it("keeps defaults for unspecified slots and snapshots provided modules and drivers", async () => {
+    const customLimits: LimitsModule = {
+      concurrency: async () => 25,
+      teamConcurrency: async () => 20,
+      keyConcurrency: async () => ({ id: "7", limit: 5 }),
+      jobPriority: async ({ base }) => base + 3,
+      queueBackend: () => "fdb",
+    };
     const customMessages: MessagesModule = {
       ...logsMessages(),
       errorContact: id => `custom:${id ?? "none"}`,
@@ -206,10 +248,18 @@ describe("service module slots", () => {
     };
     const customUploads: UploadsModule = { driver: () => customDriver };
     const built = createService(
-      { modules: { messages: customMessages, uploads: customUploads } },
+      {
+        modules: {
+          limits: customLimits,
+          messages: customMessages,
+          uploads: customUploads,
+        },
+      },
       parts,
     );
 
+    customLimits.concurrency = async () => 999;
+    customLimits.keyConcurrency = async () => ({ id: "mutated", limit: 1 });
     customMessages.errorContact = () => "mutated";
     customDriver.read = async () => Buffer.from("mutated");
     customUploads.driver = () => ({
@@ -217,6 +267,19 @@ describe("service module slots", () => {
       name: "mutated",
     });
 
+    const ctx = { teamId: "team-1", zeroDataRetention: false };
+    await expect(built.modules.limits.concurrency(ctx)).resolves.toBe(25);
+    await expect(built.modules.limits.teamConcurrency("team-1")).resolves.toBe(
+      20,
+    );
+    await expect(built.modules.limits.keyConcurrency!(ctx)).resolves.toEqual({
+      id: "7",
+      limit: 5,
+    });
+    await expect(
+      built.modules.limits.jobPriority({ ctx, base: 10 }),
+    ).resolves.toBe(13);
+    expect(built.modules.limits.queueBackend(ctx)).toBe("fdb");
     expect(built.modules.messages.errorContact("42")).toBe("custom:42");
     expect(built.modules.uploads.driver().name).toBe("custom");
     const data = await built.modules.uploads.driver().read({
@@ -229,6 +292,31 @@ describe("service module slots", () => {
   });
 
   it("rejects invalid, null, or unknown module slots and malformed upload drivers at service creation", () => {
+    expect(() =>
+      createService(
+        { modules: { limits: {} as unknown as LimitsModule } },
+        parts,
+      ),
+    ).toThrow("Invalid limits module");
+    expect(() =>
+      createService(
+        { modules: { limits: null as unknown as LimitsModule } },
+        parts,
+      ),
+    ).toThrow("Invalid limits module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            limits: {
+              ...noLimits(),
+              keyConcurrency: "not-a-function" as unknown as never,
+            },
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid limits module");
     expect(() =>
       createService(
         { modules: { messages: {} as unknown as MessagesModule } },
@@ -346,5 +434,41 @@ describe("scrape error messages", () => {
         );
       },
     );
+  });
+});
+
+describe("currentLimits", () => {
+  it("falls back to noLimits when no service is installed and reads the installed module otherwise", async () => {
+    const ctx = { teamId: "team-1", zeroDataRetention: false };
+
+    await expect(currentLimits().concurrency(ctx)).resolves.toBeNull();
+    await expect(currentLimits().teamConcurrency("team-1")).resolves.toBeNull();
+    await expect(currentLimits().jobPriority({ ctx, base: 10 })).resolves.toBe(
+      10,
+    );
+    expect(currentLimits().queueBackend(ctx)).toBeUndefined();
+
+    const customLimits: LimitsModule = {
+      concurrency: async () => 12,
+      teamConcurrency: async () => 8,
+      jobPriority: async ({ base }) => base + 5,
+      queueBackend: () => "fdb",
+    };
+
+    await withService(
+      testService(defaultModules(), parts, { limits: customLimits }),
+      async () => {
+        await expect(currentLimits().concurrency(ctx)).resolves.toBe(12);
+        await expect(currentLimits().teamConcurrency("team-1")).resolves.toBe(
+          8,
+        );
+        await expect(
+          currentLimits().jobPriority({ ctx, base: 10 }),
+        ).resolves.toBe(15);
+        expect(currentLimits().queueBackend(ctx)).toBe("fdb");
+      },
+    );
+
+    await expect(currentLimits().concurrency(ctx)).resolves.toBeNull();
   });
 });

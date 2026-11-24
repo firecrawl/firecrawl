@@ -21,6 +21,7 @@ import {
 } from "../../services/worker/nuq-router";
 import { _addScrapeJobToBullMQ } from "../../services/queue-jobs";
 import { requestCreditsShards } from "../../lib/request-credits-store";
+import { requestContext } from "../../lib/request-context";
 
 type ResponseType = {
   ok: boolean;
@@ -83,7 +84,14 @@ export async function crawlMonitorController(
     });
   }
 
-  sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
+  const ctx = requestContext({
+    teamId: req.auth.team_id,
+    zeroDataRetention: false,
+    flags: req.acuc?.flags ?? null,
+    orgId: req.acuc?.org_id ?? null,
+    apiKeyId: req.acuc?.api_key_id ?? null,
+  });
+  sc.queueBackend = await resolveNewGroupBackend(sc.team_id, ctx);
   await crawlGroup.addGroup(
     id,
     sc.team_id,

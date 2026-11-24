@@ -28,6 +28,10 @@ declare module "../service/request-context" {
     apiKeyId?: number | null;
     /** How the work of the request is billed. */
     billing?: BillingMetadata;
+    /** Request-scoped concurrency limit resolved during authentication, when present. */
+    concurrencyLimit?: number;
+    /** Team rate-limit multiplier resolved during authentication, when present. */
+    rateLimitMultiplier?: number;
   }
 }
 
@@ -38,6 +42,8 @@ export function requestContext(facts: {
   orgId?: string | null;
   apiKeyId?: number | null;
   billing?: BillingMetadata;
+  concurrencyLimit?: number;
+  rateLimitMultiplier?: number;
 }): RequestContext {
   return {
     teamId: facts.teamId,
@@ -46,6 +52,12 @@ export function requestContext(facts: {
     orgId: facts.orgId,
     apiKeyId: facts.apiKeyId,
     billing: facts.billing,
+    ...(facts.concurrencyLimit !== undefined
+      ? { concurrencyLimit: facts.concurrencyLimit }
+      : {}),
+    ...(facts.rateLimitMultiplier !== undefined
+      ? { rateLimitMultiplier: facts.rateLimitMultiplier }
+      : {}),
   };
 }
 

@@ -39,6 +39,18 @@ vi.mock("../lib/zdr-queue", () => {
   loadedSideEffectModules.push("zdr-queue");
   return {};
 });
+vi.mock("../services/redis", () => {
+  loadedSideEffectModules.push("redis");
+  return {};
+});
+vi.mock("../controllers/auth", () => {
+  loadedSideEffectModules.push("auth");
+  return {};
+});
+vi.mock("../db/connection", () => {
+  loadedSideEffectModules.push("db");
+  return {};
+});
 
 const errorClassesModule = "../lib/error-serde";
 const enginesModule = "../scraper/scrapeURL/engines";
@@ -255,7 +267,7 @@ describe("coreParts", () => {
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: ["messages", "uploads"],
+      modules: ["limits", "messages", "uploads"],
       hooks: {},
       errors: {
         AGENT_INDEX_ONLY: "core",
@@ -396,7 +408,7 @@ describe("coreParts", () => {
     expect(transformed instanceof Promise).toBe(false);
 
     expect(built.describe().hooks).toEqual({});
-    expect(built.describe().modules).toEqual(["messages", "uploads"]);
+    expect(built.describe().modules).toEqual(["limits", "messages", "uploads"]);
     expect(required).not.toHaveBeenCalledWith(enginesModule);
     expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
     expect(required).not.toHaveBeenCalledWith(llmProvidersModule);

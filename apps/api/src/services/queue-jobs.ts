@@ -18,9 +18,9 @@ import { sendNotificationWithCustomDays } from "./notification/email_notificatio
 import { shouldSendConcurrencyLimitNotification } from "./notification/notification-check";
 import { getJobFromGCS, removeJobFromGCS } from "../lib/gcs-jobs";
 import { Document } from "../controllers/v1/types";
-import { getACUCTeam } from "../controllers/auth";
-import { DEFAULT_TEAM_LIMITS } from "./autumn/autumn.service";
 import { getCrawl } from "../lib/crawl-redis";
+import { currentLimits } from "../lib/limits";
+import { jobContext } from "../lib/request-context";
 import { Logger } from "winston";
 import { isTransportableError, ScrapeJobTimeoutError } from "../lib/error";
 import { deserializeTransportableError } from "../lib/error-serde";
@@ -37,7 +37,6 @@ import {
   withFdbTimeout,
 } from "./worker/nuq-fdb";
 import { serializeTraceContext } from "../lib/otel-tracer";
-import { isSelfHosted } from "../lib/deployment";
 import { MONITOR_CHECK_STALE_TIMEOUT_MS } from "./monitoring/stale";
 
 // Queue-wait deadline for a backlogged job (how long its owner still cares about the result)
@@ -365,52 +364,52 @@ async function addScrapeJobRaw(
 
   let concurrencyLimited: "yes" | "yes-crawl" | "no" | null = null;
   let currentActiveConcurrency: number | null = null;
-  let maxConcurrency = 0;
+  let maxConcurrency: number | null = null;
   let currentCrawlConcurrency: number | null = null;
   let maxCrawlConcurrency: number | null = null;
 
-  // Bypass concurrency limits for self-hosted deployments
-  if (isSelfHosted()) {
-    concurrencyLimited = "no";
-  } else if (directToBullMQ) {
+  if (directToBullMQ) {
     concurrencyLimited = "no";
   } else {
-    if (webScraperOptions.crawl_id) {
-      const crawl = await getCrawl(webScraperOptions.crawl_id);
-      const concurrencyLimit = !crawl
-        ? null
-        : crawl.crawlerOptions?.delay === undefined &&
-            crawl.maxConcurrency === undefined
+    maxConcurrency = await currentLimits().concurrency(
+      jobContext(webScraperOptions),
+    );
+    if (maxConcurrency === null) {
+      concurrencyLimited = "no";
+    } else {
+      if (webScraperOptions.crawl_id) {
+        const crawl = await getCrawl(webScraperOptions.crawl_id);
+        const concurrencyLimit = !crawl
           ? null
-          : (crawl.maxConcurrency ?? 1);
+          : crawl.crawlerOptions?.delay === undefined &&
+              crawl.maxConcurrency === undefined
+            ? null
+            : (crawl.maxConcurrency ?? 1);
 
-      if (concurrencyLimit !== null) {
-        maxCrawlConcurrency = concurrencyLimit;
-        currentCrawlConcurrency = (
-          await getCrawlConcurrencyLimitActiveJobs(webScraperOptions.crawl_id)
-        ).length;
-        const freeSlots = Math.max(
-          concurrencyLimit - currentCrawlConcurrency,
-          0,
-        );
-        if (freeSlots === 0) {
-          concurrencyLimited = "yes-crawl";
+        if (concurrencyLimit !== null) {
+          maxCrawlConcurrency = concurrencyLimit;
+          currentCrawlConcurrency = (
+            await getCrawlConcurrencyLimitActiveJobs(webScraperOptions.crawl_id)
+          ).length;
+          const freeSlots = Math.max(
+            concurrencyLimit - currentCrawlConcurrency,
+            0,
+          );
+          if (freeSlots === 0) {
+            concurrencyLimited = "yes-crawl";
+          }
         }
       }
-    }
 
-    maxConcurrency =
-      (await getACUCTeam(webScraperOptions.team_id).catch(() => null))
-        ?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
-
-    if (concurrencyLimited === null) {
-      const now = Date.now();
-      await cleanOldConcurrencyLimitEntries(webScraperOptions.team_id, now);
-      currentActiveConcurrency = (
-        await getConcurrencyLimitActiveJobs(webScraperOptions.team_id, now)
-      ).length;
-      concurrencyLimited =
-        currentActiveConcurrency >= maxConcurrency ? "yes" : "no";
+      if (concurrencyLimited === null) {
+        const now = Date.now();
+        await cleanOldConcurrencyLimitEntries(webScraperOptions.team_id, now);
+        currentActiveConcurrency = (
+          await getConcurrencyLimitActiveJobs(webScraperOptions.team_id, now)
+        ).length;
+        concurrencyLimited =
+          currentActiveConcurrency >= maxConcurrency ? "yes" : "no";
+      }
     }
   }
 
@@ -419,9 +418,11 @@ async function addScrapeJobRaw(
       webScraperOptions.team_id,
     );
 
-    const queueLimit = getTeamQueueLimit(maxConcurrency);
-    if (concurrencyQueueJobs >= queueLimit) {
-      throw new QueueFullError(concurrencyQueueJobs, queueLimit);
+    if (maxConcurrency !== null) {
+      const queueLimit = getTeamQueueLimit(maxConcurrency);
+      if (concurrencyQueueJobs >= queueLimit) {
+        throw new QueueFullError(concurrencyQueueJobs, queueLimit);
+      }
     }
 
     if (currentActiveConcurrency === null) {
@@ -444,7 +445,7 @@ async function addScrapeJobRaw(
       jobId,
     });
 
-    if (concurrencyLimited === "yes") {
+    if (concurrencyLimited === "yes" && maxConcurrency !== null) {
       // Detect if they hit their concurrent limit
       // If above by 2x, send them an email
       // No need to 2x as if there are more than the max concurrency in the concurrency queue, it is already 2x
@@ -681,22 +682,22 @@ export async function addScrapeJobs(
     // All jobs without a crawl ID may be in the CQ depending on the global team concurrency limit
     jobsPotentiallyInCQ.push(...jobsWithoutCrawlID);
 
-    // Bypass concurrency limits for self-hosted deployments
+    const firstCtx = teamJobs.length > 0 ? jobContext(teamJobs[0].data) : null;
+    const maxConcurrency =
+      firstCtx && firstCtx.teamId === teamId
+        ? await currentLimits().concurrency(firstCtx)
+        : await currentLimits().teamConcurrency(teamId);
+
     let addToBull: typeof jobsPotentiallyInCQ;
     let addToCQ: typeof jobsPotentiallyInCQ;
-    let maxConcurrency = 0;
     let currentActiveConcurrency: number | null = null;
     let countCanBeDirectlyAdded = 0;
 
-    if (isSelfHosted()) {
-      // For self-hosted, add all jobs directly to BullMQ
+    if (maxConcurrency === null) {
       addToBull = jobsPotentiallyInCQ;
       addToCQ = jobsForcedToCQ;
     } else {
       const now = Date.now();
-      maxConcurrency =
-        (await getACUCTeam(teamId).catch(() => null))?.concurrency_limit ??
-        DEFAULT_TEAM_LIMITS.concurrency_limit;
       await cleanOldConcurrencyLimitEntries(teamId, now);
 
       currentActiveConcurrency = (
@@ -757,9 +758,8 @@ export async function addScrapeJobs(
       });
     }
 
-    // equals 2x the max concurrency (only check for non-self-hosted)
     if (
-      !isSelfHosted() &&
+      maxConcurrency !== null &&
       jobsPotentiallyInCQ.length - countCanBeDirectlyAdded > maxConcurrency
     ) {
       // logger.info(`Concurrency limited 2x (multiple) - Concurrency queue jobs: ${addToCQ.length} Max concurrency: ${maxConcurrency} Team ID: ${jobs[0].data.team_id}`);

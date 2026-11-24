@@ -525,7 +525,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               zeroDataRetention: false,
             };
 
-            sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
+            sc.queueBackend = await resolveNewGroupBackend(sc.team_id, ctx);
             await crawlGroup.addGroup(
               crawlId,
               sc.team_id,

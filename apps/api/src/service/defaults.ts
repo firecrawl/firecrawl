@@ -6,11 +6,22 @@
  */
 import type {
   FetchProxyFileKind,
+  LimitsModule,
   MessagesModule,
   Modules,
   UploadDriver,
   UploadsModule,
 } from "./modules";
+
+/** Default limits module: unlimited concurrency, base priority, and configured queue backend. */
+export function noLimits(): LimitsModule {
+  return {
+    concurrency: async () => null,
+    teamConcurrency: async () => null,
+    jobPriority: async ({ base }) => base,
+    queueBackend: () => undefined,
+  };
+}
 
 /** Default user-facing messages that direct operators to local logs and config. */
 export function logsMessages(): MessagesModule {
@@ -135,6 +146,7 @@ export function memoryUploads(): UploadsModule {
 /** Returns fresh instances of every default module slot. */
 export function defaultModules(): Modules {
   return {
+    limits: noLimits(),
     messages: logsMessages(),
     uploads: memoryUploads(),
   };

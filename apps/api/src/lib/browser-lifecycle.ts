@@ -30,7 +30,6 @@ import {
   browserCreditsPerHour,
   browserSecondsForCredits,
 } from "./browser-billing";
-import { HOBBY_CONCURRENCY_LIMIT } from "./concurrency-limit";
 import {
   reserveExternalSlot,
   mirrorExternalSlotRelease,
@@ -63,6 +62,13 @@ import { isUsOnly, usOnlyLocationRefusal } from "./us-only";
 import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
 
 const logger = rootLogger;
+
+/**
+ * CONCURRENCY granted by the Autumn `hobby` plan (firecrawl-web
+ * autumn.config.ts). Pairs with HOBBY_RATE_LIMIT_MULTIPLIER in
+ * services/rate-limiter.ts; change both if the hobby plan changes.
+ */
+export const HOBBY_CONCURRENCY_LIMIT = 5;
 
 export class BrowserSessionError extends Error {
   constructor(

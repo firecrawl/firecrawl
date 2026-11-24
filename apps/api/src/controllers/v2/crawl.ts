@@ -48,7 +48,7 @@ import {
   initializeRequestCredits,
   requestCreditsShards,
 } from "../../lib/request-credits-store";
-import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
+import { currentLimits } from "../../lib/limits";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -356,8 +356,6 @@ export async function crawlController(
     });
   });
 
-  const effectiveConcurrency =
-    req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
   const billing: BillingMetadata = {
     endpoint: "crawl",
     jobId: id,
@@ -371,8 +369,11 @@ export async function crawlController(
     orgId: req.acuc?.org_id ?? null,
     apiKeyId: req.acuc?.api_key_id ?? null,
     billing,
+    concurrencyLimit: req.acuc?.concurrency_limit,
+    rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
   });
   req.ctx = ctx;
+  const effectiveConcurrency = await currentLimits().concurrency(ctx);
   const sc: StoredCrawl = {
     ctx,
     originUrl: req.body.url,
@@ -395,7 +396,9 @@ export async function crawlController(
     createdAt: Date.now(),
     maxConcurrency:
       req.body.maxConcurrency !== undefined
-        ? Math.min(req.body.maxConcurrency, effectiveConcurrency)
+        ? effectiveConcurrency !== null
+          ? Math.min(req.body.maxConcurrency, effectiveConcurrency)
+          : req.body.maxConcurrency
         : undefined,
     zeroDataRetention,
     v1: true,
@@ -417,7 +420,7 @@ export async function crawlController(
     });
   }
 
-  sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
+  sc.queueBackend = await resolveNewGroupBackend(sc.team_id, ctx);
   await crawlGroup.addGroup(
     id,
     sc.team_id,

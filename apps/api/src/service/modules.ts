@@ -4,6 +4,42 @@
  * This file imports only types so creating or describing a service never loads
  * implementations, configuration, or clients.
  */
+import type { RequestContext } from "./request-context";
+
+export type QueueBackendOverride = "postgres" | "fdb";
+
+/** Secondary per-key concurrency gate for queue backends that enforce it. */
+export interface ConcurrencyKeyGate {
+  id: string;
+  limit: number;
+}
+
+/** Input passed when computing queue scheduling priority for a job. */
+export interface JobPriorityInput {
+  ctx: RequestContext;
+  base: number;
+}
+
+/**
+ * Concurrency limits, job scheduling priority, and queue backend selection.
+ */
+export interface LimitsModule {
+  /** Maximum concurrent jobs for a request. `null` means unlimited. */
+  concurrency(ctx: RequestContext): Promise<number | null>;
+  /** Maximum concurrent jobs for a team when only a team id is available. `null` means unlimited. */
+  teamConcurrency(teamId: string): Promise<number | null>;
+  /** Optional per-key concurrency gate for queue backends that enforce a secondary key cap. */
+  keyConcurrency?(ctx: RequestContext): Promise<ConcurrencyKeyGate | null>;
+  /** Queue priority for a new job. */
+  jobPriority(input: JobPriorityInput): Promise<number>;
+  /** Queue backend override for this request, or `undefined` to use the configured default. */
+  queueBackend(
+    ctx: RequestContext,
+  ):
+    | QueueBackendOverride
+    | undefined
+    | Promise<QueueBackendOverride | undefined>;
+}
 
 export type FetchProxyFileKind = "PDF" | "document";
 
@@ -109,6 +145,7 @@ export interface UploadsModule {
  * calls by name.
  */
 export interface Modules {
+  limits: LimitsModule;
   messages: MessagesModule;
   uploads: UploadsModule;
 }
@@ -146,7 +183,19 @@ function freezeUploadDriver(driver: UploadDriver): Readonly<UploadDriver> {
  * later cannot alter the service.
  */
 export function freezeModules(modules: Modules): Readonly<Modules> {
-  const { messages, uploads } = modules;
+  const { limits, messages, uploads } = modules;
+  if (
+    typeof limits !== "object" ||
+    limits === null ||
+    typeof limits.concurrency !== "function" ||
+    typeof limits.teamConcurrency !== "function" ||
+    (limits.keyConcurrency !== undefined &&
+      typeof limits.keyConcurrency !== "function") ||
+    typeof limits.jobPriority !== "function" ||
+    typeof limits.queueBackend !== "function"
+  ) {
+    throw new Error("Invalid limits module");
+  }
   if (
     typeof messages !== "object" ||
     messages === null ||
@@ -166,6 +215,15 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
     throw new Error("Invalid uploads module");
   }
 
+  const frozenLimits: LimitsModule = Object.freeze({
+    concurrency: limits.concurrency.bind(limits),
+    teamConcurrency: limits.teamConcurrency.bind(limits),
+    ...(limits.keyConcurrency !== undefined
+      ? { keyConcurrency: limits.keyConcurrency.bind(limits) }
+      : {}),
+    jobPriority: limits.jobPriority.bind(limits),
+    queueBackend: limits.queueBackend.bind(limits),
+  });
   const frozenMessages: MessagesModule = Object.freeze({
     errorContact: messages.errorContact.bind(messages),
     restrictedCountryContact: messages.restrictedCountryContact.bind(messages),
@@ -180,6 +238,7 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
   });
 
   return Object.freeze({
+    limits: frozenLimits,
     messages: frozenMessages,
     uploads: frozenUploads,
   });

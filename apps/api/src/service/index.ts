@@ -7,7 +7,12 @@ export type {
 export type { SearchResultType, SearchV2Response } from "../lib/entities";
 export type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 export { coreParts } from "./core-parts";
-export { defaultModules, logsMessages, memoryUploads } from "./defaults";
+export {
+  defaultModules,
+  logsMessages,
+  memoryUploads,
+  noLimits,
+} from "./defaults";
 export type {
   DescribedEngineFeature,
   Engine,
@@ -65,13 +70,17 @@ export type {
   LlmProviders,
 } from "./llm-providers";
 export type {
+  ConcurrencyKeyGate,
   DirectUploadInput,
   DirectUploadResult,
   FetchProxyFileKind,
+  JobPriorityInput,
+  LimitsModule,
   MessagesModule,
   Modules,
   PrepareUploadInput,
   PrepareUploadResult,
+  QueueBackendOverride,
   StoredUploadRef,
   UploadDriver,
   UploadsModule,

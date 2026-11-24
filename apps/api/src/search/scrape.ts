@@ -2,7 +2,7 @@ import { v7 as uuidv7 } from "uuid";
 import type { Logger } from "winston";
 import { Document, ScrapeOptions, TeamFlags } from "../controllers/v2/types";
 import { CostTracking } from "../lib/cost-tracking";
-import { getJobPriority } from "../lib/job-priority";
+import { currentLimits } from "../lib/limits";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { NuQJob } from "../services/worker/nuq";
 import { processJobInternal } from "../services/worker/scrape-worker";
@@ -11,6 +11,7 @@ import { SearchV2Response } from "../lib/entities";
 import type { BillingMetadata } from "../services/billing/types";
 import { getScrapeZDR } from "../lib/zdr-helpers";
 import { requestContext } from "../lib/request-context";
+import type { RequestContext } from "../service/request-context";
 import type { ThreatProtectionPolicy } from "../lib/threat-protection/types";
 
 export interface DocumentWithCostTracking {
@@ -53,11 +54,11 @@ async function scrapeSearchResultDirect(
   options: ScrapeSearchOptions,
   logger: Logger,
   flags: TeamFlags,
+  ctx: RequestContext,
   jobPriority: number,
 ): Promise<DocumentWithCostTracking> {
   const jobId = uuidv7();
-  const zeroDataRetention =
-    getScrapeZDR(flags) === "forced" || (options.zeroDataRetention ?? false);
+  const zeroDataRetention = ctx.zeroDataRetention;
 
   logger.debug("Starting direct scrape for search result", {
     scrapeId: jobId,
@@ -76,14 +77,7 @@ async function scrapeSearchResultDirect(
       data: {
         url: searchResult.url,
         mode: "single_urls",
-        ctx: requestContext({
-          teamId: options.teamId,
-          zeroDataRetention,
-          flags,
-          orgId: options.orgId ?? null,
-          apiKeyId: options.apiKeyId,
-          billing: options.billing,
-        }),
+        ctx,
         team_id: options.teamId,
         scrapeOptions: {
           ...options.scrapeOptions,
@@ -233,16 +227,27 @@ export async function scrapeSearchResults(
     return [];
   }
 
-  const jobPriority = await getJobPriority({
-    team_id: options.teamId,
-    basePriority: 10,
+  const zeroDataRetention =
+    getScrapeZDR(flags) === "forced" || (options.zeroDataRetention ?? false);
+  const ctx = requestContext({
+    teamId: options.teamId,
+    zeroDataRetention,
+    flags,
+    orgId: options.orgId ?? null,
+    apiKeyId: options.apiKeyId,
+    billing: options.billing,
+  });
+
+  const jobPriority = await currentLimits().jobPriority({
+    ctx,
+    base: 10,
   });
 
   logger.info(`Starting ${items.length} concurrent scrapes for search results`);
 
   const results = await Promise.all(
     items.map(item =>
-      scrapeSearchResultDirect(item, options, logger, flags, jobPriority),
+      scrapeSearchResultDirect(item, options, logger, flags, ctx, jobPriority),
     ),
   );
 

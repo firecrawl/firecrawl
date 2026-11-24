@@ -52,7 +52,7 @@ import {
   serpScrapeWarning,
   serpScrapeWarningEnabled,
 } from "../../lib/serp-url";
-import { getJobPriority } from "../../lib/job-priority";
+import { currentLimits } from "../../lib/limits";
 import { Document, scrapeOptions, TeamFlags } from "../../controllers/v2/types";
 import { hasFormatOfType } from "../../lib/format-utils";
 import { getACUCTeam } from "../../controllers/auth";
@@ -748,11 +748,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               }
             }
 
-            // Hoisted: one ACUC read per job, not one per discovered link.
-            const crawlACUC =
-              discoveredLinks.length > 0
-                ? await getACUCTeam(sc.team_id).catch(() => null)
-                : null;
+            const discoveredPriorityCtx =
+              sc.team_id === ctx.teamId ? ctx : { ...ctx, teamId: sc.team_id };
+            let discoveredJobPriority: number | undefined;
 
             const crawlLimit = sc.crawlerOptions?.limit;
             let remainingLimit =
@@ -767,12 +765,12 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               if (remainingLimit <= 0) break;
               if (await lockURL(job.data.crawl_id, sc, link)) {
                 remainingLimit--;
-                // This seems to work really welel
-                const jobPriority = await getJobPriority({
-                  team_id: sc.team_id,
-                  acuc: crawlACUC,
-                  basePriority: job.data.crawl_id ? 20 : 10,
-                });
+                const jobPriority =
+                  discoveredJobPriority ??
+                  (discoveredJobPriority = await currentLimits().jobPriority({
+                    ctx: discoveredPriorityCtx,
+                    base: job.data.crawl_id ? 20 : 10,
+                  }));
                 const jobId = uuidv7();
 
                 logger.debug(
@@ -1430,9 +1428,9 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
           : undefined,
       },
       jobId,
-      await getJobPriority({
-        team_id: job.data.team_id,
-        basePriority: 15,
+      await currentLimits().jobPriority({
+        ctx,
+        base: 15,
       }),
     );
     logger.debug("Adding scrape job to BullMQ...", { jobId });
@@ -1552,9 +1550,9 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         indexLinksLength: indexLinks.length,
       });
 
-      let jobPriority = await getJobPriority({
-        team_id: job.data.team_id,
-        basePriority: 21,
+      let jobPriority = await currentLimits().jobPriority({
+        ctx,
+        base: 21,
       });
       logger.debug("Using job priority " + jobPriority, { jobPriority });
 
@@ -1725,9 +1723,9 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
         urlsLength: passingURLs.length,
       });
 
-      const jobPriority = await getJobPriority({
-        team_id: job.data.team_id,
-        basePriority: 21,
+      const jobPriority = await currentLimits().jobPriority({
+        ctx,
+        base: 21,
       });
 
       const jobs = passingURLs.map(url => ({

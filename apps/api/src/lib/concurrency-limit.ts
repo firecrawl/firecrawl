@@ -18,17 +18,9 @@ import {
   pushConcurrencyLimitActiveJob,
   removeConcurrencyLimitActiveJob,
 } from "./concurrency-redis";
-import { getACUCTeam } from "../controllers/auth";
-import { DEFAULT_TEAM_LIMITS } from "../services/autumn/autumn.service";
 import { reportPipelineError } from "./redis-pipeline";
 import { storedZeroDataRetention } from "./request-context";
-
-/**
- * CONCURRENCY granted by the Autumn `hobby` plan (firecrawl-web
- * autumn.config.ts). Pairs with HOBBY_RATE_LIMIT_MULTIPLIER in
- * services/rate-limiter.ts; change both if the hobby plan changes.
- */
-export const HOBBY_CONCURRENCY_LIMIT = 5;
+import { currentLimits } from "./limits";
 
 const constructKey = constructConcurrencyLimitKey;
 const constructQueueKey = (team_id: string) =>
@@ -331,17 +323,19 @@ export async function concurrentJobDone(job: NuQJob<any>) {
     }
 
     // Once per call, not once per job promoted below.
-    const maxTeamConcurrency =
-      (await getACUCTeam(job.data.team_id).catch(() => null))
-        ?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
+    const maxTeamConcurrency = await currentLimits().teamConcurrency(
+      job.data.team_id,
+    );
 
     let staleSkipped = 0;
     while (staleSkipped < 100) {
-      const currentActiveConcurrency = (
-        await getConcurrencyLimitActiveJobs(job.data.team_id)
-      ).length;
+      if (maxTeamConcurrency !== null) {
+        const currentActiveConcurrency = (
+          await getConcurrencyLimitActiveJobs(job.data.team_id)
+        ).length;
 
-      if (currentActiveConcurrency >= maxTeamConcurrency) break;
+        if (currentActiveConcurrency >= maxTeamConcurrency) break;
+      }
 
       const nextJob = await getNextConcurrentJob(job.data.team_id);
       if (nextJob === null) break;

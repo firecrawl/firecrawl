@@ -36,7 +36,7 @@ import { withSpan, setSpanAttributes, SpanKind } from "../../lib/otel-tracer";
 import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
-import { getJobPriority } from "../../lib/job-priority";
+import { currentLimits } from "../../lib/limits";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
@@ -55,7 +55,6 @@ import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { markAlexandriaActivity } from "../../lib/alexandria-activity";
-import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
 import { isUsOnly } from "../../lib/us-only";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
@@ -243,6 +242,8 @@ export async function scrapeController(
         orgId: req.acuc?.org_id ?? null,
         apiKeyId: req.acuc?.api_key_id ?? null,
         billing,
+        concurrencyLimit: req.acuc?.concurrency_limit,
+        rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
       });
       req.ctx = ctx;
 
@@ -373,11 +374,13 @@ export async function scrapeController(
         }
         req.on("close", () => aborter.abort());
 
-        const baseConcurrency =
-          req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
-        const concurrency = boostConcurrency
-          ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST
-          : baseConcurrency;
+        const baseConcurrency = await currentLimits().concurrency(ctx);
+        const concurrency =
+          baseConcurrency === null
+            ? null
+            : boostConcurrency
+              ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST
+              : baseConcurrency;
 
         doc = await teamConcurrencySemaphore.withSemaphore(
           req.auth.team_id,
@@ -386,10 +389,9 @@ export async function scrapeController(
           aborter.signal,
           timeout ?? 60_000,
           async limited => {
-            const jobPriority = await getJobPriority({
-              team_id: req.auth.team_id,
-              acuc: req.acuc,
-              basePriority: 10,
+            const jobPriority = await currentLimits().jobPriority({
+              ctx,
+              base: 10,
             });
 
             lockTime = Date.now() - lockStart;
@@ -479,6 +481,7 @@ export async function scrapeController(
 
             return doc;
           },
+          ctx,
         );
       } catch (e) {
         if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
