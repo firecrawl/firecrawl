@@ -1,0 +1,104 @@
+apps/api/src/__tests__/routes/exchange-files.routes.test.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 1-226
+apps/api/src/index.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 34,96-99
+apps/api/src/search/scrape.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 169-170
+apps/api/src/service/core-parts.test.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 8-21,128-134
+  s_6a7201d5c4fd9c::t_a4f52a39391640 135
+apps/api/src/routes/exchange-files.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 1-309
+apps/api/src/services/alexandria/retrieve.test.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 2,7-17,56,83-102,420,765,823,875,904,921,931-995,1015,1235
+apps/api/src/controllers/v1/types.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 33,1402-1404
+apps/api/src/lib/internal-jwt.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 1-120
+apps/api/src/config.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 151-152,860-862
+  s_6a7201d5c4fd9c::t_775466f98709c3 863
+apps/api/src/controllers/v2/scrape.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 495-496,513,525,537,549,563,579,591,603,615,627,639,647,661,673,688,709,729
+apps/api/src/lib/fresh-feed.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 1-205
+apps/api/src/routes/exchange.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 87,872-884
+  s_6a7201d5c4fd9c::t_58781f90e29f77 885
+apps/api/src/lib/internal-jwt.test.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 1-195
+apps/api/src/scraper/scrapeURL/error.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 2-3,6-22,78,438,632,685,712
+apps/api/src/scraper/WebScraper/utils/blocklist-hits.test.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 6-10,88-105
+  s_6a7201d5c4fd9c::t_26160c963e6776 106
+apps/api/src/lib/error-serde.test.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 64
+apps/api/src/controllers/v2/types.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 1661-1662
+apps/api/src/routes/shared.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 533-535
+apps/api/src/scraper/WebScraper/utils/blocklist.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 13-14,27-30,90,95-103,347,367
+apps/api/src/search/execute.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 765-766
+apps/js-sdk/firecrawl/src/v2/utils/errorHandler.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 35,51
+apps/api/src/services/alexandria/response-cache.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 1-31
+apps/api/src/controllers/v1/batch-scrape.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 164-166,186-188
+apps/api/src/lib/error-serde.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 55
+apps/api/src/controllers/v2/map.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 199,254
+apps/api/src/lib/exchange.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 7-13,17-24
+apps/api/src/controllers/v2/batch-scrape.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 190-192
+apps/api/src/lib/deployment.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 2-3,8
+  s_6a7201d5c4fd9c::t_5745ca730beb05 9
+apps/api/src/routes/fresh-feed.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 10-29,43-46,54-64,122-154,162-168,179-429,431-435,446,450,468-484,489,495-498,500,504,508,517,525,556-559,575,604,607,609-630
+apps/api/src/services/worker/scrape-worker.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 504-508
+apps/api/src/services/logging/redact.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 20-22,60-62
+apps/api/src/routes/v2.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 7-10,137,488,837-838,842
+apps/api/src/services/integrations/slack/types.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 35-38
+apps/api/src/controllers/v2/crawl.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 285,292,323-327
+apps/api/src/lib/fresh-feed-metrics.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 1-19
+apps/api/src/controllers/v2/agent.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 351
+apps/api/src/services/integrations/slack/oauth.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 10,174-188,199
+apps/js-sdk/firecrawl/package.json
+  s_6a7201d5c4fd9c::t_93d147faec8370 3
+apps/api/src/lib/exchange-errors.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 1-143
+apps/api/src/routes/exchange-blocklist.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 4-5,53-55
+apps/api/src/services/alexandria/retrieve.ts
+  s_6a7201d5c4fd9c::t_93d147faec8370 2,28,41-55,77-80,343-354,360-367,370-384,387-388,390-397,405-412,415,478-484,828-833,837
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f8579fa25bc0a653f096939ff1f4947f7cbfa2b2",
+  "prompts": {},
+  "sessions": {
+    "s_6a7201d5c4fd9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc25e5bc-9ab3-420e-8413-1c98a5787305",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
