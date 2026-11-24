@@ -37,7 +37,6 @@ import {
   webhookSchema,
   createWebhookSchema,
 } from "../../services/webhook/schema";
-import { BrandingProfile } from "../../types/branding";
 import { ProductProfile } from "../../types/product";
 import { MenuProfile } from "../../types/menu";
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
@@ -480,15 +479,6 @@ const queryFormatWithOptions = z.strictObject({
 
 type QueryFormatWithOptions = z.output<typeof queryFormatWithOptions>;
 
-// `mode` is accepted for compatibility and ignored: the same engine answers
-// every branding request (lib/branding/jev.ts). `__experimental_screenshot`
-// also shows Jev the page's first screen (an extra screenshot action).
-const brandingFormatWithOptions = z.strictObject({
-  type: z.literal("branding"),
-  mode: z.enum(["auto", "fast", "standard"]).optional(),
-  __experimental_screenshot: z.boolean().optional(),
-});
-
 export type FormatObject =
   | { type: "markdown" }
   | { type: "html" }
@@ -505,7 +495,6 @@ export type FormatObject =
   | QuestionFormatWithOptions
   | HighlightsFormatWithOptions
   | QueryFormatWithOptions
-  | z.output<typeof brandingFormatWithOptions>
   | { type: "product" }
   | { type: "menu" }
   | { type: "audio" }
@@ -808,7 +797,6 @@ const scrapeOptionFields = z.strictObject({
           changeTrackingFormatWithOptions,
           screenshotFormatWithOptions,
           attributesFormatWithOptions,
-          brandingFormatWithOptions,
           z.strictObject({ type: z.literal("product") }),
           z.strictObject({ type: z.literal("menu") }),
           questionFormatWithOptions,
@@ -1519,7 +1507,58 @@ export type DocumentProvider = {
   steps: { provider: string; status: string; creditsCost?: number }[];
 };
 
-export type Document = {
+export interface DocumentMetadata {
+  title?: string;
+  description?: string;
+  language?: string;
+  keywords?: string;
+  robots?: string;
+  ogTitle?: string;
+  ogDescription?: string;
+  ogUrl?: string;
+  ogImage?: string;
+  ogAudio?: string;
+  ogDeterminer?: string;
+  ogLocale?: string;
+  ogLocaleAlternate?: string[];
+  ogSiteName?: string;
+  ogVideo?: string;
+  favicon?: string;
+  dcTermsCreated?: string;
+  dcDateCreated?: string;
+  dcDate?: string;
+  dcTermsType?: string;
+  dcType?: string;
+  dcTermsAudience?: string;
+  dcTermsSubject?: string;
+  dcSubject?: string;
+  dcDescription?: string;
+  dcTermsKeywords?: string;
+  modifiedTime?: string;
+  publishedTime?: string;
+  articleTag?: string;
+  articleSection?: string;
+  url?: string;
+  sourceURL?: string;
+  statusCode: number;
+  scrapeId?: string;
+  error?: string;
+  numPages?: number;
+  totalPages?: number;
+  contentType?: string;
+  timezone?: string;
+  proxyUsed: "basic" | "stealth";
+  cacheState?: "hit" | "miss";
+  cachedAt?: string;
+  creditsUsed?: number;
+  postprocessorsUsed?: string[];
+  indexId?: string; // ID used to store the document in the index (GCS)
+  concurrencyLimited?: boolean;
+  concurrencyQueueDurationMs?: number;
+  provider?: DocumentProvider;
+}
+
+export interface Document {
   title?: string;
   description?: string;
   url?: string;
@@ -1543,7 +1582,6 @@ export type Document = {
   summary?: string;
   answer?: string;
   highlights?: string;
-  branding?: BrandingProfile;
   product?: ProductProfile;
   menu?: MenuProfile;
   warning?: string;
@@ -1587,63 +1625,13 @@ export type Document = {
     };
     json?: any;
   };
-  metadata: {
-    title?: string;
-    description?: string;
-    language?: string;
-    keywords?: string;
-    robots?: string;
-    ogTitle?: string;
-    ogDescription?: string;
-    ogUrl?: string;
-    ogImage?: string;
-    ogAudio?: string;
-    ogDeterminer?: string;
-    ogLocale?: string;
-    ogLocaleAlternate?: string[];
-    ogSiteName?: string;
-    ogVideo?: string;
-    favicon?: string;
-    dcTermsCreated?: string;
-    dcDateCreated?: string;
-    dcDate?: string;
-    dcTermsType?: string;
-    dcType?: string;
-    dcTermsAudience?: string;
-    dcTermsSubject?: string;
-    dcSubject?: string;
-    dcDescription?: string;
-    dcTermsKeywords?: string;
-    modifiedTime?: string;
-    publishedTime?: string;
-    articleTag?: string;
-    articleSection?: string;
-    url?: string;
-    sourceURL?: string;
-    statusCode: number;
-    scrapeId?: string;
-    error?: string;
-    numPages?: number;
-    totalPages?: number;
-    contentType?: string;
-    timezone?: string;
-    proxyUsed: "basic" | "stealth";
-    cacheState?: "hit" | "miss";
-    cachedAt?: string;
-    creditsUsed?: number;
-    postprocessorsUsed?: string[];
-    indexId?: string; // ID used to store the document in the index (GCS)
-    concurrencyLimited?: boolean;
-    concurrencyQueueDurationMs?: number;
-    provider?: DocumentProvider;
-    // [key: string]: string | string[] | number | { smartScrape: number; other: number; total: number } | undefined;
-  };
+  metadata: DocumentMetadata;
   serpResults?: {
     title: string;
     description: string;
     url: string;
   };
-};
+}
 
 export type VideoItem = {
   url: string;
@@ -3158,7 +3146,6 @@ const coreScrapeFormatSchemas: Record<string, z.ZodType> = {
   changeTracking: changeTrackingFormatWithOptions,
   screenshot: screenshotFormatWithOptions,
   attributes: attributesFormatWithOptions,
-  branding: brandingFormatWithOptions,
   product: z.strictObject({ type: z.literal("product") }),
   menu: z.strictObject({ type: z.literal("menu") }),
   question: questionFormatWithOptions,
@@ -3301,13 +3288,20 @@ function applyScrapeOptionsRules<T extends Record<string, unknown>>(
   return current;
 }
 
+// Core fields that extensions are explicitly allowed to widen.
+const extensibleCoreFields: Readonly<Record<string, ReadonlySet<string>>> = {
+  scrapeOptions: new Set(["parsers", "proxy"]),
+  search: new Set(["sources", "categories"]),
+};
+
 function assertNoCoreCollision(
   bucket: string,
   contributed: Readonly<Record<string, unknown>>,
   coreShape: Record<string, unknown>,
 ): void {
+  const allowed = extensibleCoreFields[bucket];
   for (const key of Object.keys(contributed)) {
-    if (Object.hasOwn(coreShape, key)) {
+    if (Object.hasOwn(coreShape, key) && !allowed?.has(key)) {
       throw new Error(
         `Request "${bucket}.${key}" collides with a built-in field or format`,
       );

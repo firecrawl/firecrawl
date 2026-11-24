@@ -26,7 +26,6 @@ import { performPromptInjectionGuard } from "./promptInjectionGuard";
 import { useSearchIndex } from "../../../services/index";
 import { sendDocumentToSearchIndex } from "./sendToSearchIndex";
 import { hasFormatOfType } from "../../../lib/format-utils";
-import { brandingTransformer } from "../../../lib/branding/transformer";
 import { indexerQueue } from "../../../services/indexing/indexer-queue";
 import { config } from "../../../config";
 import { scrapeHooks, toScrapeMeta } from "../hooks";
@@ -149,6 +148,7 @@ async function deriveMarkdownFromHTML(
   const hasQuery = hasFormatOfType(meta.options.formats, "query");
   const hasRedactPII = !!meta.options.redactPII;
   if (
+    !meta.needsMarkdown &&
     !hasMarkdown &&
     !hasChangeTracking &&
     !hasJson &&
@@ -334,46 +334,6 @@ async function deriveImagesFromHTML(
   return document;
 }
 
-async function deriveBrandingFromActions(
-  meta: Meta,
-  document: Document,
-): Promise<Document> {
-  const hasBranding = hasFormatOfType(meta.options.formats, "branding");
-
-  if (!hasBranding) {
-    return document;
-  }
-
-  if (document.branding !== undefined) {
-    return document;
-  }
-
-  /**
-   * Find the branding return in the actions javascript returns
-   * @see src/scraper/scrapeURL/engines/fire-engine/scripts/branding.js
-   */
-  const brandingReturnIndex = document.actions?.javascriptReturns?.findIndex(
-    x => x.type === "object" && "branding" in (x.value as any),
-  );
-
-  if (brandingReturnIndex === -1 || brandingReturnIndex === undefined) {
-    return document;
-  }
-
-  // cast as any since this is js return, we might need to validate this
-  const javascriptReturn = document.actions!.javascriptReturns![
-    brandingReturnIndex
-  ].value as any;
-
-  const rawBranding = javascriptReturn?.branding;
-
-  document.actions!.javascriptReturns!.splice(brandingReturnIndex, 1);
-
-  document.branding = await brandingTransformer(meta, document, rawBranding);
-
-  return document;
-}
-
 function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
   const hasRawHtml = hasFormatOfType(meta.options.formats, "rawHtml");
@@ -392,7 +352,6 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     hasFormatOfType(meta.options.formats, "deterministicJson");
   const hasScreenshot = hasFormatOfType(meta.options.formats, "screenshot");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
-  const hasBranding = hasFormatOfType(meta.options.formats, "branding");
   const hasProduct = hasFormatOfType(meta.options.formats, "product");
   const hasMenu = hasFormatOfType(meta.options.formats, "menu");
   const hasQuestionFormat = hasFormatOfType(meta.options.formats, "question");
@@ -486,8 +445,9 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     });
   }
 
+  const keepJson = !!hasJson || meta.keepDocumentFields?.has("json") === true;
   if (
-    !hasJson &&
+    !keepJson &&
     (document.extract !== undefined || document.json !== undefined)
   ) {
     // For v1 API, keep the field specified by v1OriginalFormat
@@ -543,17 +503,6 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   } else if (hasHighlightsFormat && document.highlights === undefined) {
     meta.logger.warn(
       "Request had format highlights, but there was no highlights field in the result.",
-    );
-  }
-
-  if (!hasBranding && document.branding !== undefined) {
-    meta.logger.warn(
-      "Removed branding from Document because it wasn't in formats -- this indicates the engine returned unexpected data.",
-    );
-    delete document.branding;
-  } else if (hasBranding && document.branding === undefined) {
-    meta.logger.warn(
-      "Request had format branding, but there was no branding field in the result.",
     );
   }
 
@@ -668,7 +617,6 @@ const transformerStack: TransformerStep[] = [
   performPromptInjectionGuard,
   deriveLinksFromHTML,
   deriveImagesFromHTML,
-  deriveBrandingFromActions,
   deriveMetadataFromRawHTML,
   { hook: "scrape.document.derived" },
   fetchProduct,

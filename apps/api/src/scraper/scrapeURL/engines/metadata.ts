@@ -41,7 +41,6 @@ export const coreEngineFeatures = {
   mobile: { priority: 10 },
   skipTlsVerification: { priority: 10 },
   stealthProxy: { priority: 20 },
-  branding: { priority: 20 },
   disableAdblock: { priority: 10 },
 } as const satisfies Record<EngineFeatureName, EngineFeature>;
 

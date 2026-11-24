@@ -29,7 +29,6 @@ const outsideCoreSuite = [
 
   // Cover features that are off in the default self-hosted configuration.
   "src/__tests__/controllers/**",
-  "src/__tests__/lib/branding/**",
   "src/__tests__/routes/fresh-feed.routes.test.ts",
   "src/__tests__/routes/hosted-mcp-*.test.ts",
   "src/__tests__/routes/research-*.test.ts",
@@ -38,7 +37,6 @@ const outsideCoreSuite = [
   "src/controllers/__tests__/auth.test.ts",
   "src/controllers/v2/__tests__/agent-credit-gate.test.ts",
   "src/controllers/v2/__tests__/bash.test.ts",
-  "src/controllers/v2/__tests__/branding-mode-schema.test.ts",
   "src/controllers/v2/__tests__/developer-access.test.ts",
   "src/controllers/v2/__tests__/gov-search.test.ts",
   "src/controllers/v2/__tests__/redactPII-schema.test.ts",

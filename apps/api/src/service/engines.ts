@@ -44,7 +44,6 @@ export interface EngineFeatures {
   skipTlsVerification: true;
   useFastMode: true;
   stealthProxy: true;
-  branding: true;
   disableAdblock: true;
 }
 

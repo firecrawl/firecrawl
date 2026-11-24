@@ -21,12 +21,7 @@ import {
   getPDFRefresh,
 } from "../../../controllers/v2/types";
 import type { PdfMetadata, PdfPageBlocks } from "./pdf/types";
-import { BrandingProfile } from "../../../types/branding";
-import {
-  AgentIndexOnlyError,
-  BrandingNotSupportedError,
-  NoCachedDataError,
-} from "../error";
+import { AgentIndexOnlyError, NoCachedDataError } from "../error";
 import type { ExchangeScrapeMetadata } from "../../../lib/exchange";
 import { hasCustomRequestContext } from "../lib/request-context";
 import { service } from "../../../service";
@@ -69,10 +64,6 @@ export interface EngineScrapeResult {
     }[];
     pdfs: string[];
   };
-
-  branding?: BrandingProfile;
-  /** First-screen screenshot taken for branding extraction; internal, never returned. */
-  brandingScreenshot?: string;
 
   pdfMetadata?: PdfMetadata;
 
@@ -174,7 +165,6 @@ function shouldAllowCacheEngines(meta: Meta): boolean {
 
   return (
     !hasFormatOfType(meta.options.formats, "changeTracking") &&
-    !hasFormatOfType(meta.options.formats, "branding") &&
     !getPDFPageMarkdown(meta.options.parsers) &&
     !getPDFBlocks(meta.options.parsers) &&
     !getPDFPageMarkers(meta.options.parsers) &&
@@ -309,33 +299,6 @@ export async function buildFallbackList(
   meta.logger.info("Selected engines", {
     selectedEngines: selected,
   });
-
-  if (meta.featureFlags.has("branding")) {
-    const hasBrandingEngine = selected.some(entry => {
-      const registered = service.engines.get(entry.engine);
-      return (
-        registered !== undefined && hasFeature(registered.features, "branding")
-      );
-    });
-    if (!hasBrandingEngine) {
-      if (meta.featureFlags.has("pdf")) {
-        throw new BrandingNotSupportedError(
-          "Branding extraction is only supported for HTML web pages. PDFs are not supported.",
-        );
-      } else if (meta.featureFlags.has("image")) {
-        throw new BrandingNotSupportedError(
-          "Branding extraction is only supported for HTML web pages. Images are not supported.",
-        );
-      } else if (meta.featureFlags.has("document")) {
-        throw new BrandingNotSupportedError(
-          "Branding extraction is only supported for HTML web pages. Documents (docx, xlsx, etc.) are not supported.",
-        );
-      }
-      throw new BrandingNotSupportedError(
-        "Branding extraction requires an engine that supports the branding feature.",
-      );
-    }
-  }
 
   return selected;
 }

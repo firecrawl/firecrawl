@@ -4,7 +4,6 @@ import {
   ActionError,
   AddFeatureError,
   AgentIndexOnlyError,
-  BrandingNotSupportedError,
   DNSResolutionError,
   DocumentAntibotError,
   DocumentFetchProxyError,
@@ -169,7 +168,6 @@ describe("behavioral error traits", () => {
       new NoEnginesLeftError(["fetch"]),
       new LockdownMissError(),
       new PaywalledContentError(),
-      new BrandingNotSupportedError("PDFs are not supported."),
       new MediaAccessDeniedError(),
       new UnsafeDomainBlockedError("https://bad.example", sampleThreatDecision),
       new ThirdPartyDataUnsupportedOptionError("actions"),
@@ -412,7 +410,6 @@ describe("wire format stability", () => {
       ),
       new MediaAccessDeniedError("denied"),
       new PaywalledContentError(),
-      new BrandingNotSupportedError("PDFs are not supported."),
       new UnsafeDomainBlockedError(
         "https://bad.example/path",
         sampleThreatDecision,
@@ -477,47 +474,49 @@ describe("FormatUnavailableError and isFormatUnavailable", () => {
   it("matches concrete FormatUnavailableError subclasses with preserved warning text", () => {
     class StubFormatUnavailableError extends FormatUnavailableError {
       constructor(message: string) {
-        super("custom", "SCRAPE_BRANDING_NOT_SUPPORTED", message);
+        super("custom", "UNKNOWN_ERROR", message);
+      }
+    }
+
+    class CustomFormatError extends FormatUnavailableError {
+      constructor(message: string) {
+        super(
+          "custom-format",
+          "UNKNOWN_ERROR",
+          message,
+          `Custom format was skipped: ${message}`,
+        );
       }
     }
 
     const custom = new StubFormatUnavailableError("Custom format unavailable");
-    const branding = new BrandingNotSupportedError(
-      "Branding extraction is only supported for HTML web pages. PDFs are not supported.",
+    const customWithWarning = new CustomFormatError(
+      "Format is only supported for HTML web pages.",
     );
 
     expect(isFormatUnavailable(custom)).toBe(true);
     expect(custom.format).toBe("custom");
     expect(custom.warning).toBe("Custom format unavailable");
 
-    expect(branding).toBeInstanceOf(FormatUnavailableError);
-    expect(isFormatUnavailable(branding)).toBe(true);
-    expect(branding.format).toBe("branding");
-    expect(branding.warning).toBe(
-      "Branding was skipped: Branding extraction is only supported for HTML web pages. PDFs are not supported.",
+    expect(customWithWarning).toBeInstanceOf(FormatUnavailableError);
+    expect(isFormatUnavailable(customWithWarning)).toBe(true);
+    expect(customWithWarning.format).toBe("custom-format");
+    expect(customWithWarning.warning).toBe(
+      "Custom format was skipped: Format is only supported for HTML web pages.",
     );
-
-    const revived = deserializeTransportableError(
-      serializeTransportableError(branding),
-    )!;
-    expect(isFormatUnavailable(revived)).toBe(true);
-    if (isFormatUnavailable(revived)) {
-      expect(revived.format).toBe("branding");
-      expect(revived.warning).toBe(branding.warning);
-    }
 
     expect(isFormatUnavailable(new NoCachedDataError())).toBe(false);
     expect(
       isFormatUnavailable(
         Object.assign(new Error("plain"), {
-          format: "branding",
+          format: "custom-format",
           warning: "warn",
         }),
       ),
     ).toBe(false);
-    expect(isFormatUnavailable({ format: "branding", warning: "warn" })).toBe(
-      false,
-    );
+    expect(
+      isFormatUnavailable({ format: "custom-format", warning: "warn" }),
+    ).toBe(false);
   });
 
   it("recognizes FormatUnavailableError and behavioral traits across module copies", async () => {
@@ -527,10 +526,10 @@ describe("FormatUnavailableError and isFormatUnavailable", () => {
     class ForeignFormatUnavailableError extends second.FormatUnavailableError {
       constructor(message: string) {
         super(
-          "branding",
-          "SCRAPE_BRANDING_NOT_SUPPORTED",
+          "custom-format",
+          "UNKNOWN_ERROR",
           message,
-          `Branding was skipped: ${message}`,
+          `Custom format was skipped: ${message}`,
         );
       }
     }
@@ -540,8 +539,10 @@ describe("FormatUnavailableError and isFormatUnavailable", () => {
     expect(foreignFormat instanceof FormatUnavailableError).toBe(false);
     expect(isFormatUnavailable(foreignFormat)).toBe(true);
     if (isFormatUnavailable(foreignFormat)) {
-      expect(foreignFormat.format).toBe("branding");
-      expect(foreignFormat.warning).toBe("Branding was skipped: Not supported");
+      expect(foreignFormat.format).toBe("custom-format");
+      expect(foreignFormat.warning).toBe(
+        "Custom format was skipped: Not supported",
+      );
     }
 
     class ForeignRefusal extends second.TransportableError {
@@ -592,7 +593,6 @@ describe("FormatUnavailableError and isFormatUnavailable", () => {
 describe("scrapeLog diagnostics metadata", () => {
   it("preserves established errorType, warning text, and structured context across round-trips", () => {
     const siteRestriction = new SiteRestrictionError();
-    const branding = new BrandingNotSupportedError("PDFs are not supported.");
     const threatBlocked = new UnsafeDomainBlockedError(
       "https://bad.example/path",
       sampleThreatDecision,
@@ -603,11 +603,6 @@ describe("scrapeLog diagnostics metadata", () => {
       errorType: "SiteRestrictionError",
       message: "scrapeURL: Site restriction returned (Safe Mode)",
       context: { error: siteRestriction },
-    });
-    expect(getErrorScrapeLog(branding)).toEqual({
-      errorType: "BrandingNotSupportedError",
-      message: "scrapeURL: Branding not supported for this content",
-      context: { error: branding },
     });
     expect(getErrorScrapeLog(threatBlocked)).toEqual({
       errorType: "UnsafeDomainBlockedError",
@@ -623,7 +618,7 @@ describe("scrapeLog diagnostics metadata", () => {
       message: "scrapeURL: Paywalled page refused by Safe Mode",
     });
 
-    for (const error of [siteRestriction, branding, threatBlocked, paywalled]) {
+    for (const error of [siteRestriction, threatBlocked, paywalled]) {
       const revived = deserializeTransportableError(
         serializeTransportableError(error),
       )!;

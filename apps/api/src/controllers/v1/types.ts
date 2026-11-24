@@ -24,7 +24,7 @@ import { ErrorCode } from "../../lib/error";
 import { integrationSchema } from "../../utils/integration";
 import { includesFormat } from "../../lib/format-utils";
 import { webhookSchema } from "../../services/webhook/schema";
-import { BrandingProfile } from "../../types/branding";
+
 import { ProductProfile } from "../../types/product";
 import { MenuProfile } from "../../types/menu";
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
@@ -1053,7 +1053,7 @@ export type Document = {
   extract?: any;
   json?: any;
   summary?: string;
-  branding?: BrandingProfile;
+  branding?: Record<string, unknown>;
   product?: ProductProfile;
   menu?: MenuProfile;
   warning?: string;

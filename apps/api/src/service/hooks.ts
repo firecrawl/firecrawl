@@ -59,6 +59,10 @@ export interface ScrapePlan {
   options: ScrapeOptions;
   /** Engine features the waterfall must satisfy. */
   features: Set<EngineFeatureName>;
+  /** Require markdown derivation even when no built-in format needs it. */
+  needsMarkdown?: boolean;
+  /** Top-level document keys kept during final format coercion. */
+  keepDocumentFields?: Set<string>;
 }
 
 /**

@@ -4,7 +4,6 @@ import {
   ActionError,
   AgentIndexOnlyError,
   AudioUnsupportedUrlError,
-  BrandingNotSupportedError,
   DNSResolutionError,
   DocumentAntibotError,
   DocumentFetchProxyError,
@@ -584,15 +583,6 @@ describe("the wire form of every class", () => {
       "SCRAPE_VIDEO_UNSUPPORTED_URL",
       "VideoUnsupportedUrlError",
       () => new VideoUnsupportedUrlError(),
-      {},
-    ],
-    [
-      "SCRAPE_BRANDING_NOT_SUPPORTED",
-      "BrandingNotSupportedError",
-      () =>
-        new BrandingNotSupportedError(
-          "Branding is not supported by the selected engine",
-        ),
       {},
     ],
     [
