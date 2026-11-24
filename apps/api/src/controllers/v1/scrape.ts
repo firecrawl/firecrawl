@@ -404,7 +404,7 @@ async function scrapeControllerInner(
         });
       }
 
-      if (e.code === "SCRAPE_MEDIA_ACCESS_DENIED") {
+      if ((e.code as string) === "SCRAPE_MEDIA_ACCESS_DENIED") {
         return res.status(403).json({
           success: false,
           code: e.code,

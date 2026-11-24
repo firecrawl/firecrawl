@@ -37,8 +37,7 @@ import {
   webhookSchema,
   createWebhookSchema,
 } from "../../services/webhook/schema";
-import { ProductProfile } from "../../types/product";
-import { MenuProfile } from "../../types/menu";
+
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
 import { auditMetadataSchema } from "../../lib/siem-logging/types";
 import { installedService } from "../../service/service";
@@ -386,44 +385,6 @@ export type JsonFormatWithOptions = Omit<
   "checkPromptInjection"
 >;
 
-// "Deterministic JSON" — same shape as json mode, but extraction is performed by
-// reusable-json-mode (a cached, reusable JS extractor run in the code-sandbox)
-// rather than a per-request LLM call. Populates document.json like json mode.
-const deterministicJsonFormatWithOptions = z.strictObject({
-  type: z.literal("deterministicJson"),
-  schema: z
-    .any()
-    .optional()
-    .transform(val => normalizeSchemaForOpenAI(val))
-    .refine(val => validateSchemaForOpenAI(val), {
-      message: OPENAI_SCHEMA_ERROR_MESSAGE,
-    }),
-  prompt: z.string().max(10000).optional(),
-});
-
-type DeterministicJsonFormatWithOptions = z.output<
-  typeof deterministicJsonFormatWithOptions
->;
-
-const changeTrackingFormatWithOptions = z.strictObject({
-  type: z.literal("changeTracking"),
-  prompt: z.string().optional(),
-  schema: z
-    .any()
-    .optional()
-    .transform(val => normalizeSchemaForOpenAI(val))
-    .refine(val => validateSchemaForOpenAI(val), {
-      message: OPENAI_SCHEMA_ERROR_MESSAGE,
-    })
-    .superRefine(addStrictSchemaIssue),
-  modes: z.enum(["json", "git-diff"]).array().prefault([]),
-  tag: z.string().or(z.null()).prefault(null),
-});
-
-type ChangeTrackingFormatWithOptions = z.output<
-  typeof changeTrackingFormatWithOptions
->;
-
 const screenshotFormatWithOptions = z.object({
   type: z.literal("screenshot"),
   fullPage: z.boolean().prefault(false),
@@ -463,14 +424,7 @@ const questionFormatWithOptions = z.strictObject({
 
 type QuestionFormatWithOptions = z.output<typeof questionFormatWithOptions>;
 
-const highlightsFormatWithOptions = z.strictObject({
-  type: z.literal("highlights"),
-  query: z.string().min(1).max(10000),
-});
-
-type HighlightsFormatWithOptions = z.output<typeof highlightsFormatWithOptions>;
-
-/** @deprecated Use `question` or `highlights` format instead. */
+/** @deprecated Use `question` format instead. */
 const queryFormatWithOptions = z.strictObject({
   type: z.literal("query"),
   prompt: z.string().max(10000),
@@ -488,17 +442,10 @@ export type FormatObject =
   | { type: "images" }
   | { type: "summary" }
   | JsonFormatWithOptions
-  | DeterministicJsonFormatWithOptions
-  | ChangeTrackingFormatWithOptions
   | ScreenshotFormatWithOptions
   | AttributesFormatWithOptions
   | QuestionFormatWithOptions
-  | HighlightsFormatWithOptions
-  | QueryFormatWithOptions
-  | { type: "product" }
-  | { type: "menu" }
-  | { type: "audio" }
-  | { type: "video" };
+  | QueryFormatWithOptions;
 
 const pdfModeSchema = z.enum(["fast", "auto", "ocr"]);
 
@@ -726,51 +673,6 @@ export const countryLocationSchema = z.strictObject({
     .transform(value => value.toLowerCase()),
 });
 
-// Unified entity taxonomy exposed to callers. Maps to fire-privacy's
-// internal span kinds (PRIVATE_PERSON / EMAIL_ADDRESS / ACCOUNT_NUMBER /
-// etc.) inside the fire-privacy client. Names chosen to match the public
-// surface; if a caller asks for "EMAIL" they get email-shaped spans
-// regardless of which recognizer found them.
-const REDACT_PII_ENTITIES = [
-  "PERSON",
-  "EMAIL",
-  "PHONE",
-  "LOCATION",
-  "FINANCIAL",
-  "SECRET",
-] as const;
-const redactPIIEntitySchema = z.enum(REDACT_PII_ENTITIES);
-export type RedactPIIEntity = z.infer<typeof redactPIIEntitySchema>;
-
-// Public mode names. Mapped to fire-privacy internal modes
-// (model / both / heuristics) inside the client; the internal "precise"
-// mode is intentionally not exposed.
-//
-// - accurate (default): model only. Best precision (0.87), F1 (0.73).
-//   Cleanest redacted output.
-// - aggressive: model + Presidio + spaCy. Higher recall (0.73) at the
-//   cost of precision (0.68). Compliance use cases.
-// - fast: Presidio only, no model call. ~2x throughput, lower F1.
-const redactPIIOptionsSchema = z.strictObject({
-  mode: z.enum(["accurate", "aggressive", "fast"]).default("accurate"),
-  entities: z.array(redactPIIEntitySchema).optional(),
-  replaceStyle: z.enum(["tag", "mask", "remove"]).default("tag"),
-});
-export type RedactPIIOptions = z.infer<typeof redactPIIOptionsSchema>;
-
-// Boolean is the common case. Object form is for callers who want to
-// tune. After parse: `true` normalizes to defaults; `false` / unset
-// → `undefined`. Downstream code only has to check truthiness.
-const redactPIISchema = z
-  .union([z.boolean(), redactPIIOptionsSchema])
-  .optional()
-  .transform(v => {
-    if (v === undefined || v === false) return undefined;
-    if (v === true) return redactPIIOptionsSchema.parse({});
-    return v;
-  });
-// inferred shape: RedactPIIOptions | undefined after the transform
-
 const scrapeOptionFields = z.strictObject({
   formats: z
     .preprocess(
@@ -793,17 +695,10 @@ const scrapeOptionFields = z.strictObject({
           z.strictObject({ type: z.literal("images") }),
           z.strictObject({ type: z.literal("summary") }),
           jsonFormatWithOptions,
-          deterministicJsonFormatWithOptions,
-          changeTrackingFormatWithOptions,
           screenshotFormatWithOptions,
           attributesFormatWithOptions,
-          z.strictObject({ type: z.literal("product") }),
-          z.strictObject({ type: z.literal("menu") }),
           questionFormatWithOptions,
-          highlightsFormatWithOptions,
           queryFormatWithOptions,
-          z.strictObject({ type: z.literal("audio") }),
-          z.strictObject({ type: z.literal("video") }),
         ])
         .array()
         .prefault([{ type: "markdown" }]),
@@ -811,18 +706,6 @@ const scrapeOptionFields = z.strictObject({
     .refine(x => {
       return x.filter(f => f.type === "screenshot").length <= 1;
     }, "You may only specify one screenshot format")
-    .refine(x => {
-      const hasChangeTracking = x.find(f => f.type === "changeTracking");
-      const hasMarkdown = x.find(f => f.type === "markdown");
-      return !hasChangeTracking || hasMarkdown;
-    }, "The changeTracking format requires the markdown format to be specified as well")
-    .refine(x => {
-      // Both json and deterministicJson populate the `json` field, so one would
-      // just clobber the other. Require choosing one.
-      const hasJson = x.some(f => f.type === "json");
-      const hasDeterministicJson = x.some(f => f.type === "deterministicJson");
-      return !(hasJson && hasDeterministicJson);
-    }, "Cannot specify both json and deterministicJson formats")
     .refine(
       x => !x.some(f => f.type === "rawBase64") || x.length === 1,
       "The rawBase64 format cannot be combined with other formats",
@@ -860,7 +743,6 @@ const scrapeOptionFields = z.strictObject({
   lockdown: z.boolean().prefault(false),
   checkPromptInjection: z.boolean().prefault(false),
   safeMode: z.boolean().optional(),
-  redactPII: redactPIISchema,
   // Enterprise: per-request field-level override of the org's threat
   // protection policy. Gated on the team flag + org config (checkPermissions).
   threatProtection: threatProtectionOverrideSchema.optional(),
@@ -961,18 +843,6 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
     obj.formats.find(x => typeof x === "object" && x.type === "json") &&
     obj.timeout === 30000
   ) {
-    result = { ...result, timeout: 60000 };
-  }
-
-  const changeTracking = obj.formats?.find(
-    x => typeof x === "object" && x.type === "changeTracking",
-  );
-
-  if (changeTracking && (obj.waitFor === undefined || obj.waitFor < 5000)) {
-    result = { ...result, waitFor: 5000 };
-  }
-
-  if (changeTracking && obj.timeout === 30000) {
     result = { ...result, timeout: 60000 };
   }
 
@@ -1574,16 +1444,10 @@ export interface Document {
   links?: string[];
   images?: string[];
   screenshot?: string;
-  audio?: string;
-  video?: string;
-  videos?: VideoItem[];
   extract?: any;
   json?: any;
   summary?: string;
   answer?: string;
-  highlights?: string;
-  product?: ProductProfile;
-  menu?: MenuProfile;
   warning?: string;
   attributes?: {
     selector: string;
@@ -1599,32 +1463,6 @@ export interface Document {
     }[];
     pdfs?: string[];
   };
-  changeTracking?: {
-    previousScrapeAt: string | null;
-    changeStatus: "new" | "same" | "changed" | "removed";
-    visibility: "visible" | "hidden";
-    diff?: {
-      text: string;
-      json: {
-        files: Array<{
-          from: string | null;
-          to: string | null;
-          chunks: Array<{
-            content: string;
-            changes: Array<{
-              type: string;
-              normal?: boolean;
-              ln?: number;
-              ln1?: number;
-              ln2?: number;
-              content: string;
-            }>;
-          }>;
-        }>;
-      };
-    };
-    json?: any;
-  };
   metadata: DocumentMetadata;
   serpResults?: {
     title: string;
@@ -1632,22 +1470,6 @@ export interface Document {
     url: string;
   };
 }
-
-export type VideoItem = {
-  url: string;
-  sourceURL: string;
-  source: string;
-  kind?: string;
-  provider?: string;
-  title?: string;
-  thumbnail?: string;
-  description?: string;
-  duration?: string;
-  mimeType?: string;
-  width?: number;
-  height?: number;
-  metadata?: Record<string, unknown>;
-};
 
 export type ErrorResponse = {
   success: false;
@@ -2463,14 +2285,13 @@ export function fromV1ScrapeOptions(
             return null;
           } else if (x === "changeTracking") {
             const opts = v1ScrapeOptions.changeTrackingOptions;
-            const fmt: ChangeTrackingFormatWithOptions = {
-              type: "changeTracking",
+            return {
+              type: "changeTracking" as const,
               modes: opts?.modes ?? [],
               tag: opts?.tag ?? null,
               schema: opts?.schema,
               prompt: opts?.prompt,
             };
-            return fmt;
           } else if (x === "screenshot@fullPage") {
             return { type: "screenshot" as const, fullPage: true };
           } else if (x === "branding") {
@@ -2680,11 +2501,8 @@ const searchRequestSchemaBase = z.strictObject({
               z.strictObject({ type: z.literal("links") }),
               z.strictObject({ type: z.literal("images") }),
               z.strictObject({ type: z.literal("summary") }),
-              z.strictObject({ type: z.literal("product") }),
-              z.strictObject({ type: z.literal("menu") }),
               jsonFormatWithOptions,
               questionFormatWithOptions,
-              highlightsFormatWithOptions,
               queryFormatWithOptions,
               screenshotFormatWithOptions,
             ])
@@ -3142,17 +2960,10 @@ const coreScrapeFormatSchemas: Record<string, z.ZodType> = {
   images: z.strictObject({ type: z.literal("images") }),
   summary: z.strictObject({ type: z.literal("summary") }),
   json: jsonFormatWithOptions,
-  deterministicJson: deterministicJsonFormatWithOptions,
-  changeTracking: changeTrackingFormatWithOptions,
   screenshot: screenshotFormatWithOptions,
   attributes: attributesFormatWithOptions,
-  product: z.strictObject({ type: z.literal("product") }),
-  menu: z.strictObject({ type: z.literal("menu") }),
   question: questionFormatWithOptions,
-  highlights: highlightsFormatWithOptions,
   query: queryFormatWithOptions,
-  audio: z.strictObject({ type: z.literal("audio") }),
-  video: z.strictObject({ type: z.literal("video") }),
 };
 
 const coreSearchFormatSchemas: Record<string, z.ZodType> = {
@@ -3162,11 +2973,8 @@ const coreSearchFormatSchemas: Record<string, z.ZodType> = {
   links: coreScrapeFormatSchemas.links,
   images: coreScrapeFormatSchemas.images,
   summary: coreScrapeFormatSchemas.summary,
-  product: coreScrapeFormatSchemas.product,
-  menu: coreScrapeFormatSchemas.menu,
   json: jsonFormatWithOptions,
   question: questionFormatWithOptions,
-  highlights: highlightsFormatWithOptions,
   query: queryFormatWithOptions,
   screenshot: screenshotFormatWithOptions,
 };
@@ -3198,18 +3006,6 @@ function createScrapeFormatsSchema(
     .refine(x => {
       return x.filter((f: any) => f.type === "screenshot").length <= 1;
     }, "You may only specify one screenshot format")
-    .refine(x => {
-      const hasChangeTracking = x.find((f: any) => f.type === "changeTracking");
-      const hasMarkdown = x.find((f: any) => f.type === "markdown");
-      return !hasChangeTracking || hasMarkdown;
-    }, "The changeTracking format requires the markdown format to be specified as well")
-    .refine(x => {
-      const hasJson = x.some((f: any) => f.type === "json");
-      const hasDeterministicJson = x.some(
-        (f: any) => f.type === "deterministicJson",
-      );
-      return !(hasJson && hasDeterministicJson);
-    }, "Cannot specify both json and deterministicJson formats")
     .refine(
       x => !x.some((f: any) => f.type === "rawBase64") || x.length === 1,
       "The rawBase64 format cannot be combined with other formats",

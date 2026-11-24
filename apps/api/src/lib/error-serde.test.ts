@@ -3,7 +3,6 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   ActionError,
   AgentIndexOnlyError,
-  AudioUnsupportedUrlError,
   DNSResolutionError,
   DocumentAntibotError,
   DocumentFetchProxyError,
@@ -11,7 +10,6 @@ import {
   ExchangeRefusedError,
   JsonExtractionContentTooLargeError,
   LockdownMissError,
-  MediaAccessDeniedError,
   NoCachedDataError,
   NoEnginesLeftError,
   PaywalledContentError,
@@ -30,7 +28,6 @@ import {
   SSLError,
   UnsupportedFileError,
   UsOnlyUnavailableError,
-  VideoUnsupportedUrlError,
   ZDRViolationError,
 } from "../scraper/scrapeURL/error";
 import { createService, replaceService } from "../service/service";
@@ -550,18 +547,6 @@ describe("the wire form of every class", () => {
       {},
     ],
     [
-      "SCRAPE_AUDIO_UNSUPPORTED_URL",
-      "AudioUnsupportedUrlError",
-      () => new AudioUnsupportedUrlError(),
-      {},
-    ],
-    [
-      "SCRAPE_MEDIA_ACCESS_DENIED",
-      "MediaAccessDeniedError",
-      () => new MediaAccessDeniedError(),
-      {},
-    ],
-    [
       "SCRAPE_PROMPT_INJECTION_DETECTED",
       "PromptInjectionDetectedError",
       () => new PromptInjectionDetectedError(),
@@ -577,12 +562,6 @@ describe("the wire form of every class", () => {
       "SCRAPE_JSON_CONTENT_TOO_LARGE",
       "JsonExtractionContentTooLargeError",
       () => new JsonExtractionContentTooLargeError(),
-      {},
-    ],
-    [
-      "SCRAPE_VIDEO_UNSUPPORTED_URL",
-      "VideoUnsupportedUrlError",
-      () => new VideoUnsupportedUrlError(),
       {},
     ],
     [

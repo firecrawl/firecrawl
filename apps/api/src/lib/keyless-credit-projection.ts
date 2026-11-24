@@ -12,9 +12,12 @@ export function projectScrapeCredits(
     credits += 4;
   }
 
-  const changeTrackingFormat = hasFormatOfType(
-    options.formats,
-    "changeTracking",
+  const rawFormats = (options.formats ?? []) as Array<{
+    type: string;
+    modes?: string[];
+  }>;
+  const changeTrackingFormat = rawFormats.find(
+    f => f.type === "changeTracking",
   );
   if (
     hasFormatOfType(options.formats, "json") ||
@@ -23,7 +26,7 @@ export function projectScrapeCredits(
     credits = 5;
   }
 
-  if (hasFormatOfType(options.formats, "deterministicJson")) {
+  if (rawFormats.some(f => f.type === "deterministicJson")) {
     credits = 10;
   }
 
@@ -38,15 +41,15 @@ export function projectScrapeCredits(
     credits += 4;
   }
 
-  if (hasFormatOfType(options.formats, "highlights")) {
+  if (rawFormats.some(f => f.type === "highlights")) {
     credits += 4;
   }
 
-  if (hasFormatOfType(options.formats, "audio")) {
+  if (rawFormats.some(f => f.type === "audio")) {
     credits += 4;
   }
 
-  if (hasFormatOfType(options.formats, "video")) {
+  if (rawFormats.some(f => f.type === "video")) {
     credits += 4;
   }
 
@@ -54,7 +57,7 @@ export function projectScrapeCredits(
     credits += flags?.zdrCost ?? 1;
   }
 
-  if (options.redactPII) {
+  if ((options as Record<string, unknown>).redactPII) {
     credits += 4;
   }
 

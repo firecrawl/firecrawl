@@ -38,17 +38,10 @@ export interface Formats {
   images: BuiltInFormat<"images">;
   summary: BuiltInFormat<"summary">;
   json: BuiltInFormat<"json">;
-  deterministicJson: BuiltInFormat<"deterministicJson">;
-  changeTracking: BuiltInFormat<"changeTracking">;
   screenshot: BuiltInFormat<"screenshot">;
   attributes: BuiltInFormat<"attributes">;
   question: BuiltInFormat<"question">;
-  highlights: BuiltInFormat<"highlights">;
   query: BuiltInFormat<"query">;
-  product: BuiltInFormat<"product">;
-  menu: BuiltInFormat<"menu">;
-  audio: BuiltInFormat<"audio">;
-  video: BuiltInFormat<"video">;
 }
 
 export type FormatName = keyof Formats;

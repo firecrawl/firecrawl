@@ -72,7 +72,7 @@ describeIf(TEST_PRODUCTION)("US-only teams", () => {
       );
 
       expect(response.markdown).toBeDefined();
-      expect(response.highlights).toBeUndefined();
+      expect((response as any).highlights).toBeUndefined();
       expect(response.warning).toContain(
         "Query mode is not supported for teams restricted to US-only processing.",
       );

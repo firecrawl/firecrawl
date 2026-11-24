@@ -25,8 +25,6 @@ import { integrationSchema } from "../../utils/integration";
 import { includesFormat } from "../../lib/format-utils";
 import { webhookSchema } from "../../services/webhook/schema";
 
-import { ProductProfile } from "../../types/product";
-import { MenuProfile } from "../../types/menu";
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
 import { auditMetadataSchema } from "../../lib/siem-logging/types";
 import type { RateLimiterMode } from "../../types";
@@ -1054,8 +1052,8 @@ export type Document = {
   json?: any;
   summary?: string;
   branding?: Record<string, unknown>;
-  product?: ProductProfile;
-  menu?: MenuProfile;
+  product?: Record<string, unknown>;
+  menu?: Record<string, unknown>;
   warning?: string;
   actions?: {
     screenshots?: string[];
