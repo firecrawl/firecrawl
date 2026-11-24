@@ -21,6 +21,7 @@ import { search } from "./v2";
 import {
   SearchV2Response,
   SearchResultType,
+  WebSearchResult,
   SearchResultCountsBySource,
   SearchResultCategoriesBySource,
   countSearchResultsBySource,
@@ -68,6 +69,12 @@ import { isUsOnly } from "../lib/us-only";
 import type { TeamPlanClass } from "../lib/team-plan-class";
 import { isAlexandriaZDRForced } from "../lib/zdr-helpers";
 import { alexandriaFeedbackStorage } from "../lib/alexandria-feedback-storage";
+import { requestContext } from "../lib/request-context";
+import type { SearchHit } from "../service/hooks";
+import type { SearchRequest } from "../service/request";
+import type { RequestContext } from "../service/request-context";
+import { installedService } from "../service/service";
+import { applySearchPlanHook } from "./plan-hook";
 
 interface SearchOptions {
   query: string;
@@ -126,6 +133,9 @@ interface SearchContext {
   safeModeBypassed?: boolean;
   /** Asks third-party data providers behind scraped results to leave personal email addresses and personal phone numbers out. */
   workContactOnly?: boolean;
+  ctx?: RequestContext;
+  body?: SearchRequest;
+  planApplied?: boolean;
 }
 
 interface SearchExecuteResult {
@@ -201,12 +211,43 @@ function fuseRankings(
     .map(([, tool]) => tool);
 }
 
+function buildSearchRequestFallback(
+  options: SearchOptions,
+  context: SearchContext,
+): SearchRequest {
+  return {
+    query: options.query,
+    limit: options.limit,
+    tbs: options.tbs,
+    filter: options.filter,
+    sources: options.sources as SearchRequest["sources"],
+    categories: (options.categories ?? []) as SearchRequest["categories"],
+    includeDomains: options.includeDomains,
+    excludeDomains: options.excludeDomains,
+    lang: options.lang ?? "en",
+    safe: options.safe,
+    enterprise: options.enterprise,
+    country: options.country,
+    location: options.location,
+    origin: context.origin ?? "api",
+    integration: context.integration ?? null,
+    timeout: options.timeout,
+    ignoreInvalidURLs: false,
+    asyncScraping: false,
+    highlights: options.highlights,
+    domainTools: options.domainTools,
+    toolDetail: options.toolDetail ?? "compact",
+    scrapeOptions: options.scrapeOptions,
+  };
+}
+
 export async function executeSearch(
   options: SearchOptions,
   context: SearchContext,
   logger: Logger,
 ): Promise<SearchExecuteResult> {
-  const { query, limit, sources, categories, scrapeOptions } = options;
+  let { query, limit, sources } = options;
+  const { categories, scrapeOptions } = options;
   const {
     teamId,
     orgId,
@@ -218,6 +259,34 @@ export async function executeSearch(
     zeroDataRetention,
     billing,
   } = context;
+
+  const hooks = installedService()?.hooks;
+  const shouldRunPlan = !context.planApplied && hooks?.has("search.plan");
+  const needSearchHookContext = shouldRunPlan || hooks?.has("search.results");
+  const searchCtx = needSearchHookContext
+    ? (context.ctx ??
+      requestContext({
+        teamId,
+        zeroDataRetention,
+        flags: flags ?? undefined,
+        orgId: orgId ?? null,
+        apiKeyId,
+        billing,
+      }))
+    : undefined;
+  const searchBody = needSearchHookContext
+    ? (context.body ?? buildSearchRequestFallback(options, context))
+    : undefined;
+
+  if (shouldRunPlan) {
+    const planned = await applySearchPlanHook(
+      { query, limit, sources },
+      { ctx: searchCtx!, body: searchBody! },
+    );
+    query = planned.query;
+    limit = planned.limit;
+    sources = planned.sources;
+  }
 
   const num_results_buffer = Math.floor(limit * 2);
   const usOnly = isUsOnly(flags);
@@ -483,6 +552,180 @@ export async function executeSearch(
     keepOperatorMatches(
       indexResultsPromise ? await indexResultsPromise : undefined,
     ) ?? [];
+
+  if (hooks?.has("search.results")) {
+    type ResultEntry =
+      | { group: "index"; item: WebSearchResult }
+      | { group: "web"; item: WebSearchResult }
+      | { group: "news"; item: NonNullable<SearchV2Response["news"]>[number] }
+      | {
+          group: "images";
+          item: NonNullable<SearchV2Response["images"]>[number];
+        };
+
+    const hits: SearchHit[] = [];
+    const byRef = new Map<SearchHit, ResultEntry>();
+    const byUrl = new Map<string, ResultEntry[]>();
+    const newsWithoutUrl: Array<{
+      index: number;
+      item: NonNullable<SearchV2Response["news"]>[number];
+    }> = [];
+    const imagesWithoutUrl: Array<{
+      index: number;
+      item: NonNullable<SearchV2Response["images"]>[number];
+    }> = [];
+
+    const record = (hit: SearchHit, entry: ResultEntry) => {
+      hits.push(hit);
+      byRef.set(hit, entry);
+      const bucket = byUrl.get(hit.url);
+      if (bucket) {
+        bucket.push(entry);
+      } else {
+        byUrl.set(hit.url, [entry]);
+      }
+    };
+
+    const hadWeb = searchResponse.web !== undefined;
+    const hadNews = searchResponse.news !== undefined;
+    const hadImages = searchResponse.images !== undefined;
+
+    if (indexCategorySearch !== null) {
+      for (const item of indexResults) {
+        record(
+          { url: item.url, title: item.title, description: item.description },
+          { group: "index", item },
+        );
+      }
+    } else if (searchResponse.web) {
+      for (const item of searchResponse.web) {
+        record(
+          { url: item.url, title: item.title, description: item.description },
+          { group: "web", item },
+        );
+      }
+    }
+
+    if (searchResponse.news) {
+      for (let i = 0; i < searchResponse.news.length; i++) {
+        const item = searchResponse.news[i];
+        if (!item.url) {
+          newsWithoutUrl.push({ index: i, item });
+          continue;
+        }
+        record(
+          { url: item.url, title: item.title, description: item.snippet },
+          { group: "news", item },
+        );
+      }
+    }
+
+    if (searchResponse.images) {
+      for (let i = 0; i < searchResponse.images.length; i++) {
+        const item = searchResponse.images[i];
+        if (!item.url) {
+          imagesWithoutUrl.push({ index: i, item });
+          continue;
+        }
+        record({ url: item.url, title: item.title }, { group: "images", item });
+      }
+    }
+
+    const transformed = await hooks.transform("search.results", hits, {
+      ctx: searchCtx!,
+      body: searchBody!,
+    });
+
+    const nextIndex: WebSearchResult[] = [];
+    const nextWeb: WebSearchResult[] = [];
+    const nextNews: NonNullable<SearchV2Response["news"]> = [];
+    const nextImages: NonNullable<SearchV2Response["images"]> = [];
+    const consumed = new Set<ResultEntry>();
+
+    for (const hit of transformed) {
+      let entry = byRef.get(hit);
+      if (entry && consumed.has(entry)) {
+        entry = undefined;
+      }
+      if (!entry) {
+        const candidates = byUrl.get(hit.url);
+        if (candidates) {
+          entry = candidates.find(candidate => !consumed.has(candidate));
+        }
+      }
+      if (entry) {
+        consumed.add(entry);
+        if (entry.group === "index") {
+          nextIndex.push({
+            ...entry.item,
+            url: hit.url,
+            title: hit.title ?? entry.item.title,
+            description: hit.description ?? entry.item.description,
+          });
+        } else if (entry.group === "web") {
+          nextWeb.push({
+            ...entry.item,
+            url: hit.url,
+            title: hit.title ?? entry.item.title,
+            description: hit.description ?? entry.item.description,
+          });
+        } else if (entry.group === "news") {
+          nextNews.push({
+            ...entry.item,
+            url: hit.url,
+            title: hit.title ?? entry.item.title,
+            snippet: hit.description ?? entry.item.snippet,
+          });
+        } else {
+          nextImages.push({
+            ...entry.item,
+            url: hit.url,
+            title: hit.title ?? entry.item.title,
+          });
+        }
+      } else {
+        const added: WebSearchResult = {
+          url: hit.url,
+          title: hit.title ?? "",
+          description: hit.description ?? "",
+        };
+        if (indexCategorySearch !== null) {
+          nextIndex.push(added);
+        } else {
+          nextWeb.push(added);
+        }
+      }
+    }
+
+    for (const { index, item } of newsWithoutUrl) {
+      nextNews.splice(Math.min(index, nextNews.length), 0, item);
+    }
+    for (const { index, item } of imagesWithoutUrl) {
+      nextImages.splice(Math.min(index, nextImages.length), 0, item);
+    }
+
+    if (indexCategorySearch !== null) {
+      indexResults = nextIndex.slice(0, limit);
+    }
+    if (hadWeb || nextWeb.length > 0) {
+      searchResponse.web = nextWeb.map((item, index) => ({
+        ...item,
+        position: index + 1,
+      }));
+    }
+    if (hadNews || nextNews.length > 0) {
+      searchResponse.news = nextNews.map((item, index) => ({
+        ...item,
+        position: index + 1,
+      }));
+    }
+    if (hadImages || nextImages.length > 0) {
+      searchResponse.images = nextImages.map((item, index) => ({
+        ...item,
+        position: index + 1,
+      }));
+    }
+  }
 
   // Threat protection: remove blocked results entirely — before
   // slicing/counting, before scraping, and before returning. Checks are

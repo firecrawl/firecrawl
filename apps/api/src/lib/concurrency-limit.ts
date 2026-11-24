@@ -21,7 +21,10 @@ import {
 import { getACUCTeam } from "../controllers/auth";
 import { DEFAULT_TEAM_LIMITS } from "../services/autumn/autumn.service";
 import { reportPipelineError } from "./redis-pipeline";
-import { storedZeroDataRetention } from "./request-context";
+import { jobContext, storedZeroDataRetention } from "./request-context";
+import type { JobKind } from "../service/hooks";
+import { installedService } from "../service/service";
+import type { ScrapeJobData } from "../types";
 
 /**
  * CONCURRENCY granted by the Autumn `hobby` plan (firecrawl-web
@@ -29,6 +32,27 @@ import { storedZeroDataRetention } from "./request-context";
  * services/rate-limiter.ts; change both if the hobby plan changes.
  */
 export const HOBBY_CONCURRENCY_LIMIT = 5;
+
+function scrapeJobKind(data: ScrapeJobData): JobKind {
+  if (data.mode === "kickoff" || data.mode === "kickoff_sitemap") {
+    return "crawl";
+  }
+  if (data.crawl_id) {
+    return data.crawlerOptions != null ? "crawl" : "batchScrape";
+  }
+  return "scrape";
+}
+
+/** Emits `job.enqueued` when a handler is registered on the active service. */
+export function observeJobEnqueued(jobId: string, data: ScrapeJobData): void {
+  const hooks = installedService()?.hooks;
+  if (!hooks?.has("job.enqueued")) return;
+  hooks.observe("job.enqueued", {
+    jobId,
+    kind: scrapeJobKind(data),
+    ctx: jobContext(data),
+  });
+}
 
 const constructKey = constructConcurrencyLimitKey;
 const constructQueueKey = (team_id: string) =>
@@ -382,6 +406,7 @@ export async function concurrentJobDone(job: NuQJob<any>) {
         )) !== null;
 
       if (promotedSuccessfully) {
+        observeJobEnqueued(nextJob.job.id, nextJob.job.data);
         logger.debug("Successfully promoted concurrent queued job", {
           teamId: job.data.team_id,
           jobId: nextJob.job.id,

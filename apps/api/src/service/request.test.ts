@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
+  batchScrapeRequestSchema,
+  batchScrapeRequestSchemaNoURLValidation,
   buildV2RequestSchemas,
   crawlRequestSchema,
   mapRequestSchema,
   parseRequestSchema,
+  scrapeOptions,
   scrapeRequestSchema,
   searchRequestSchema,
 } from "../controllers/v2/types";
@@ -26,8 +29,13 @@ const stubSchemas = (): RequestSchemas =>
     scrape: z.object({ kind: z.literal("scrape") }),
     parse: z.object({ kind: z.literal("parse") }),
     crawl: z.object({ kind: z.literal("crawl") }),
+    batchScrape: z.object({ kind: z.literal("batchScrape") }),
+    batchScrapeNoURLValidation: z.object({
+      kind: z.literal("batchScrapeNoURLValidation"),
+    }),
     map: z.object({ kind: z.literal("map") }),
     search: z.object({ kind: z.literal("search") }),
+    scrapeOptions: z.object({ kind: z.literal("scrapeOptions") }),
   }) as unknown as RequestSchemas;
 
 const asRequest = (value: Record<string, unknown>): RequestContributions =>
@@ -37,12 +45,20 @@ describe("request-schemas", () => {
   it("exports frozen requestKinds and requestFieldBuckets", () => {
     expect(Object.isFrozen(requestKinds)).toBe(true);
     expect(Object.isFrozen(requestFieldBuckets)).toBe(true);
-    expect(requestKinds).toEqual(["scrape", "parse", "crawl", "map", "search"]);
+    expect(requestKinds).toEqual([
+      "scrape",
+      "parse",
+      "crawl",
+      "batchScrape",
+      "map",
+      "search",
+    ]);
     expect(requestFieldBuckets).toEqual([
       "scrapeOptions",
       "scrape",
       "parse",
       "crawl",
+      "batchScrape",
       "map",
       "search",
     ]);
@@ -77,6 +93,7 @@ describe("request-schemas", () => {
         scrape: {},
         parse: {},
         crawl: {},
+        batchScrape: {},
         map: {},
         search: {},
         formats: {},
@@ -87,8 +104,13 @@ describe("request-schemas", () => {
       expect(schemas.scrape).toBe(built.scrape);
       expect(schemas.parse).toBe(built.parse);
       expect(schemas.crawl).toBe(built.crawl);
+      expect(schemas.batchScrape).toBe(built.batchScrape);
+      expect(schemas.batchScrapeNoURLValidation).toBe(
+        built.batchScrapeNoURLValidation,
+      );
       expect(schemas.map).toBe(built.map);
       expect(schemas.search).toBe(built.search);
+      expect(schemas.scrapeOptions).toBe(built.scrapeOptions);
       expect(builder).toHaveBeenCalledTimes(1);
     });
 
@@ -125,6 +147,7 @@ describe("request-schemas", () => {
               scrape: { scrapeOnly: z.string().optional() },
               parse: { parseOnly: z.string().optional() },
               crawl: { crawlOnly: z.number().optional() },
+              batchScrape: { batchOnly: z.string().optional() },
               map: { mapOnly: z.boolean().optional() },
               search: { searchOnly: z.string().optional() },
               formats: {
@@ -155,6 +178,7 @@ describe("request-schemas", () => {
         scrape: { scrapeOnly: "ext-a" },
         parse: { parseOnly: "ext-a" },
         crawl: { crawlOnly: "ext-a" },
+        batchScrape: { batchOnly: "ext-a" },
         map: { mapOnly: "ext-a" },
         search: { searchOnly: "ext-a" },
         formats: {
@@ -281,6 +305,25 @@ describe("request-schemas", () => {
         ]),
       ).toThrow(
         'Request field "sharedKey" is registered in both "scrapeOptions" (by "ext-a") and "parse" (by "ext-b")',
+      );
+
+      expect(() =>
+        buildRequestSchemaRegistry([
+          {
+            owner: "ext-a",
+            request: asRequest({
+              scrapeOptions: { sharedKey: z.string().optional() },
+            }),
+          },
+          {
+            owner: "ext-b",
+            request: asRequest({
+              batchScrape: { sharedKey: z.string().optional() },
+            }),
+          },
+        ]),
+      ).toThrow(
+        'Request field "sharedKey" is registered in both "scrapeOptions" (by "ext-a") and "batchScrape" (by "ext-b")',
       );
     });
 
@@ -486,6 +529,7 @@ describe("request-schemas", () => {
       scrape: Object.freeze({}),
       parse: Object.freeze({}),
       crawl: Object.freeze({}),
+      batchScrape: Object.freeze({}),
       map: Object.freeze({}),
       search: Object.freeze({}),
       formats: Object.freeze({}),
@@ -498,11 +542,16 @@ describe("request-schemas", () => {
       expect(built.scrape).toBe(scrapeRequestSchema);
       expect(built.parse).toBe(parseRequestSchema);
       expect(built.crawl).toBe(crawlRequestSchema);
+      expect(built.batchScrape).toBe(batchScrapeRequestSchema);
+      expect(built.batchScrapeNoURLValidation).toBe(
+        batchScrapeRequestSchemaNoURLValidation,
+      );
       expect(built.map).toBe(mapRequestSchema);
       expect(built.search).toBe(searchRequestSchema);
+      expect(built.scrapeOptions).toBe(scrapeOptions);
     });
 
-    it("composes contributed fields, formats, and rules across all five request kinds", () => {
+    it("composes contributed fields, formats, and rules across all request kinds and scrapeOptions", () => {
       const customFormatSchema = z.strictObject({
         type: z.literal("customMetric"),
         depth: z.number().int().min(1).default(1),
@@ -557,6 +606,9 @@ describe("request-schemas", () => {
               },
               crawl: {
                 crawlOnlyTag: z.string().optional(),
+              },
+              batchScrape: {
+                batchOnlyTag: z.string().optional(),
               },
               map: {
                 mapOnlyTag: z.string().optional(),
@@ -729,6 +781,78 @@ describe("request-schemas", () => {
       expect(observedKinds).toContain("parse");
       expect(observedKinds).toContain("crawl");
       expect(observedKinds).toContain("search");
+
+      // Batch scrape (strict URL validation and no-URL-validation variant)
+      const batchOk = schemas.batchScrape.safeParse({
+        urls: ["https://example.com"],
+        formats: ["markdown", "customMetric"],
+        timeout: 30000,
+        proxy: "basic",
+        batchOnlyTag: "b1",
+      });
+      expect(batchOk.success).toBe(true);
+      if (batchOk.success) {
+        const data = batchOk.data as unknown as Record<string, unknown>;
+        expect(data.batchOnlyTag).toBe("b1");
+        expect(data.customTraceId).toBe("default-trace");
+        expect(data.waitFor).toBe(5000);
+        expect(data.timeout).toBe(60000);
+        expect(data.onlyMainContent).toBe(false);
+      }
+      expect(
+        schemas.batchScrape.safeParse({
+          urls: ["not a valid url"],
+          formats: ["markdown", "customMetric"],
+        }).success,
+      ).toBe(false);
+
+      const batchNoUrlOk = schemas.batchScrapeNoURLValidation.safeParse({
+        urls: ["https://example.com", "not a valid url"],
+        ignoreInvalidURLs: true,
+        formats: ["markdown", "customMetric"],
+        batchOnlyTag: "b2",
+      });
+      expect(batchNoUrlOk.success).toBe(true);
+      if (batchNoUrlOk.success) {
+        const data = batchNoUrlOk.data as unknown as Record<string, unknown>;
+        expect(data.urls).toEqual(["https://example.com", "not a valid url"]);
+        expect(data.batchOnlyTag).toBe("b2");
+        expect(data.customTraceId).toBe("default-trace");
+        expect(data.waitFor).toBe(5000);
+      }
+
+      const batchRefused = schemas.batchScrape.safeParse({
+        urls: ["https://example.com"],
+        formats: [{ type: "customMetric" }],
+      });
+      expect(batchRefused.success).toBe(false);
+      if (!batchRefused.success) {
+        expect(batchRefused.error.issues[0]?.message).toBe(
+          "customMetric requires markdown.",
+        );
+      }
+      expect(observedKinds).toContain("batchScrape");
+
+      // Standalone scrapeOptions: applies contributed fields, formats, rules, and wait-time refine
+      const optsOk = schemas.scrapeOptions.safeParse({
+        formats: ["markdown", "customMetric"],
+        timeout: 30000,
+        proxy: "basic",
+      });
+      expect(optsOk.success).toBe(true);
+      if (optsOk.success) {
+        const data = optsOk.data as unknown as Record<string, unknown>;
+        expect(data.customTraceId).toBe("default-trace");
+        expect(data.waitFor).toBe(5000);
+        expect(data.timeout).toBe(60000);
+        expect(data.onlyMainContent).toBe(false);
+      }
+
+      const optsWaitExceeded = schemas.scrapeOptions.safeParse({
+        waitFor: 30000,
+        actions: [{ type: "wait", milliseconds: 35000 }],
+      });
+      expect(optsWaitExceeded.success).toBe(false);
     });
 
     it("rejects contributions that collide with built-in fields or formats", () => {
@@ -757,6 +881,11 @@ describe("request-schemas", () => {
             'Request "scrapeOptions.file" collides with a built-in field or format',
         },
         {
+          contribution: { scrapeOptions: { urls: z.string() } },
+          expected:
+            'Request "scrapeOptions.urls" collides with a built-in field or format',
+        },
+        {
           contribution: { parse: { file: z.string() } },
           expected:
             'Request "parse.file" collides with a built-in field or format',
@@ -765,6 +894,11 @@ describe("request-schemas", () => {
           contribution: { crawl: { scrapeOptions: z.string() } },
           expected:
             'Request "crawl.scrapeOptions" collides with a built-in field or format',
+        },
+        {
+          contribution: { batchScrape: { urls: z.string() } },
+          expected:
+            'Request "batchScrape.urls" collides with a built-in field or format',
         },
         {
           contribution: { map: { url: z.string() } },

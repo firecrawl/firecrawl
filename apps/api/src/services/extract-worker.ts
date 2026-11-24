@@ -10,7 +10,7 @@ import { createWebhookSender, WebhookEvent } from "./webhook";
 import Express from "express";
 import { startNodeRuntimeMetrics } from "../lib/node-runtime-metrics";
 import { getErrorContactMessage } from "../lib/deployment";
-import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
+import { service } from "../service";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 import {
   consumeExtractJobs,
@@ -22,6 +22,7 @@ import { logExtract, shutdownPubSubLogging } from "./logging/log_job";
 import { jobDurationSeconds } from "../lib/job-metrics";
 import { register } from "prom-client";
 import { startRole } from "../main";
+import { runProcessStop } from "../service/service";
 
 configDotenv();
 
@@ -206,8 +207,12 @@ app.listen(workerPort, (error?: Error) => {
 
 async function shutdown() {
   _logger.info("Shutting down extract worker...");
-  await shutdownExtractQueue();
-  await shutdownPubSubLogging();
+  try {
+    await shutdownExtractQueue();
+    await shutdownPubSubLogging();
+  } finally {
+    await runProcessStop("extract-worker");
+  }
   await shutdownTracing();
   _logger.info("Extract worker shut down");
   process.exit(0);
@@ -224,7 +229,7 @@ export async function start() {
     shutdown();
   });
 
-  await initializeBlocklist().catch(e => {
+  await service.modules.blocklist.init().catch(e => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);
   });

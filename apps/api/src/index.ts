@@ -40,10 +40,8 @@ import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
 import { nuqShutdown } from "./services/worker/nuq";
 import { service } from "./service";
-import { installedService } from "./service/service";
-import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
-import { warmExchangeCatalog } from "./lib/exchange";
-import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
+import { installedService, runProcessStop } from "./service/service";
+import { initializeApiStartupDependencies } from "./lib/api-startup";
 import responseTime from "response-time";
 import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
 import { isKeylessConfigured } from "./lib/keyless";
@@ -153,6 +151,14 @@ if (!config.BULL_AUTH_KEY) {
   }
 }
 
+const contributedRootRouter = express.Router();
+const contributedV2Router = express.Router();
+const contributedAdminRouter = express.Router();
+const contributedAdminInternalRouter = express.Router();
+let contributedRoutesMounted = false;
+
+app.use(contributedRootRouter);
+
 app.get("/", (_, res) => {
   res.json({
     message: "Firecrawl API",
@@ -170,10 +176,12 @@ app.get("/health/readiness", readinessController);
 // register router
 app.use(v0Router);
 app.use("/v1", v1Router);
+app.use("/v2", contributedV2Router);
 app.use("/v2", v2Router);
 app.use("/labs", labsRouter);
 app.use("/exchange", exchangeRouter);
 app.use(exchangeInternalRouter);
+app.use(contributedAdminRouter);
 app.use(adminRouter);
 
 const DEFAULT_PORT = config.PORT;
@@ -193,6 +201,7 @@ function startAdminInternalServer(port: number) {
   });
   adminApp.use("/admin/queues", internalBullBoard.getRouter());
 
+  adminApp.use(contributedAdminInternalRouter);
   adminApp.use(adminInternalRouter);
   adminApp.use(notFoundHandler);
   adminApp.use(
@@ -226,15 +235,16 @@ function startAdminInternalServer(port: number) {
 
 async function startServer(port = DEFAULT_PORT) {
   startNodeRuntimeMetrics();
-  try {
-    await initializeBlocklist();
-    initializeEngineForcing();
-    warmExchangeCatalog();
-  } catch (error) {
-    logger.error("Failed to initialize API startup dependencies", {
-      error,
+  await initializeApiStartupDependencies();
+
+  if (!contributedRoutesMounted) {
+    installedService()?.mountRoutes({
+      root: contributedRootRouter,
+      v2: contributedV2Router,
+      admin: contributedAdminRouter,
+      adminInternal: contributedAdminInternalRouter,
     });
-    throw error;
+    contributedRoutesMounted = true;
   }
 
   const server = app.listen(Number(port), HOST, (error?: Error) => {
@@ -275,8 +285,12 @@ async function startServer(port = DEFAULT_PORT) {
           })
           .finally(() => {
             shutdownIndexerQueue().finally(async () => {
-              await shutdownPubSubLogging();
-              await shutdownTracing();
+              try {
+                await shutdownPubSubLogging();
+              } finally {
+                await runProcessStop("api");
+                await shutdownTracing();
+              }
               logger.info("NUQ shutdown complete");
               process.exit(0);
             });

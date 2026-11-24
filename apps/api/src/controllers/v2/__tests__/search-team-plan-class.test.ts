@@ -56,6 +56,20 @@ vi.mock("../../../lib/logger", () => ({
 }));
 
 import { searchController } from "../search";
+import { createService, replaceService } from "../../../service/service";
+
+beforeAll(() => {
+  replaceService(
+    createService(
+      { modules: {} },
+      { core: { name: "core" }, logger: { error: vi.fn() } },
+    ),
+  );
+});
+
+afterAll(() => {
+  replaceService(undefined);
+});
 
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 

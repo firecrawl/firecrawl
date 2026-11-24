@@ -5,12 +5,12 @@ import { logger as _logger } from "../../lib/logger";
 import {
   Document,
   FormatObject,
+  getV2RequestSchemas,
   ParseRequest,
   RequestWithAuth,
   ScrapeResponse,
   UploadedParseFile,
   UploadedParseFileKind,
-  parseRequestSchema,
 } from "./types";
 import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
@@ -325,7 +325,7 @@ export async function parseController(
       });
 
       await withSpan("api.parse.validate", async validateSpan => {
-        req.body = parseRequestSchema.parse(req.body);
+        req.body = getV2RequestSchemas().parse.parse(req.body);
         setSpanAttributes(validateSpan, {
           "validation.success": true,
         });
@@ -619,6 +619,8 @@ export async function parseController(
           "parse.error_type": isTransportableError(e) ? e.code : "unknown",
         });
 
+        const jobIdField = agentRequestId ? {} : { jobId };
+
         if (isTransportableError(e)) {
           if (!timeoutErr) {
             logger.error("Error in parseController", {
@@ -637,6 +639,7 @@ export async function parseController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -648,6 +651,7 @@ export async function parseController(
               success: false,
               code: e.code,
               error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -659,6 +663,7 @@ export async function parseController(
             success: false,
             code: e.code,
             error: e.message,
+            ...jobIdField,
           });
         } else {
           const id = uuidv7();
@@ -677,6 +682,7 @@ export async function parseController(
             success: false,
             code: "UNKNOWN_ERROR",
             error: service.modules.messages.errorContact(id),
+            ...jobIdField,
           });
         }
       } finally {
