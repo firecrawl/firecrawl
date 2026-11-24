@@ -2,21 +2,84 @@ import Module from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ScrapeJobTimeoutError } from "../lib/error";
 import * as errorSerde from "../lib/error-serde";
+import { coreEngineSpecs } from "../scraper/scrapeURL/engines/metadata";
 import { coreParts } from "./core-parts";
+import { defaultModules } from "./defaults";
+import type { Engine } from "./engines";
+import {
+  coreLlmProviderNames,
+  type LlmModel,
+  type LlmProvider,
+} from "./llm-providers";
 import { createService } from "./service";
 
-const errorClassesModule = "../lib/error-serde";
+const loadedSideEffectModules = vi.hoisted(() => [] as string[]);
+vi.mock("../config", () => {
+  loadedSideEffectModules.push("config");
+  return { config: {} };
+});
+vi.mock("../lib/exchange", () => {
+  loadedSideEffectModules.push("exchange");
+  return {};
+});
+vi.mock("../lib/deployment", () => {
+  loadedSideEffectModules.push("deployment");
+  return { isSelfHosted: () => true };
+});
+vi.mock("../lib/gcs-jobs", () => {
+  loadedSideEffectModules.push("gcs-jobs");
+  return {};
+});
+vi.mock("../lib/zdr-queue", () => {
+  loadedSideEffectModules.push("zdr-queue");
+  return {};
+});
 
-// coreParts() loads its error classes with require() on the first lookup. The
-// test runner cannot resolve a source file that is loaded that way, so the
-// load is answered with the module the runner imported.
-function answerRequire() {
+const errorClassesModule = "../lib/error-serde";
+const enginesModule = "../scraper/scrapeURL/engines";
+const llmProvidersModule = "../lib/generic-ai";
+
+// coreParts() loads its error classes, engine implementations, and LLM
+// provider implementations with require() on first use. The test runner cannot
+// resolve a source file loaded that way, so those loads are answered with stub
+// modules.
+function answerRequire(
+  mockEngines?: readonly Engine[],
+  mockLlmProviders?: readonly LlmProvider[],
+) {
   const load = Module.prototype.require;
+  const enginesStub = mockEngines
+    ? { coreEngines: mockEngines }
+    : {
+        coreEngines: coreEngineSpecs.map(spec => ({
+          name: spec.name,
+          quality: spec.quality,
+          features: spec.features,
+          ...(spec.explicitOnly ? { explicitOnly: true } : {}),
+          enabled: vi.fn(() => true),
+          scrape: vi.fn(),
+          maxReasonableTime: vi.fn(() => 12345),
+        })),
+      };
+  const llmProvidersStub = mockLlmProviders
+    ? { coreLlmProviders: mockLlmProviders }
+    : {
+        coreLlmProviders: coreLlmProviderNames.map(name => ({
+          name,
+          enabled: vi.fn(() => true),
+          model: vi.fn(
+            (id: string) => ({ modelId: id }) as unknown as LlmModel,
+          ),
+        })),
+      };
   return vi.spyOn(Module.prototype, "require").mockImplementation(function (
     this: Module,
     id: string,
   ) {
-    return id === errorClassesModule ? errorSerde : load.call(this, id);
+    if (id === errorClassesModule) return errorSerde;
+    if (id === enginesModule) return enginesStub;
+    if (id === llmProvidersModule) return llmProvidersStub;
+    return load.call(this, id);
   });
 }
 
@@ -37,13 +100,97 @@ describe("coreParts", () => {
     ).toHaveLength(1);
   });
 
-  it("gives the service every process role and error class, and nothing else yet", () => {
-    answerRequire();
+  it("loads its engine implementations on the first engine call, and once", async () => {
+    const enabled = vi.fn(() => true);
+    const scrape = vi.fn().mockResolvedValue({
+      url: "https://example.com",
+      html: "<p>ok</p>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    });
+    const maxReasonableTime = vi.fn(() => 42000);
+    const mockEngines: Engine[] = coreEngineSpecs.map(spec => ({
+      name: spec.name,
+      quality: spec.quality,
+      features: spec.features,
+      ...(spec.explicitOnly ? { explicitOnly: true } : {}),
+      enabled: spec.name === "fetch" ? enabled : () => false,
+      scrape: spec.name === "fetch" ? scrape : vi.fn(),
+      maxReasonableTime:
+        spec.name === "fetch" ? maxReasonableTime : () => 30000,
+    }));
+
+    const required = answerRequire(mockEngines);
+    const built = createService({ modules: {} }, coreParts());
+
+    // Creating the service, inspecting registered engines, and calling
+    // describe() must not load the engine implementations.
+    expect(built.engines.all()).toHaveLength(coreEngineSpecs.length);
+    const fetchEngine = built.engines.get("fetch");
+    expect(fetchEngine?.scrape.name).toBe("scrapeURLWithFetch");
+    built.describe();
+    expect(required).not.toHaveBeenCalledWith(enginesModule);
+
+    expect(built.engines.enabled().map(e => e.name)).toEqual(["fetch"]);
+    expect(enabled).toHaveBeenCalledTimes(1);
+
+    const stubMeta = {} as Parameters<Engine["scrape"]>[0];
+    await fetchEngine!.scrape(stubMeta);
+    expect(scrape).toHaveBeenCalledWith(stubMeta);
+    expect(fetchEngine!.maxReasonableTime?.(stubMeta)).toBe(42000);
+    expect(maxReasonableTime).toHaveBeenCalledWith(stubMeta);
+    expect(
+      required.mock.calls.filter(([id]) => id === enginesModule),
+    ).toHaveLength(1);
+  });
+
+  it("loads its LLM provider implementations on the first provider call, and once", () => {
+    const enabled = vi.fn(() => true);
+    const fakeModel = { modelId: "gpt-4o-mini" } as unknown as LlmModel;
+    const model = vi.fn(() => fakeModel);
+    const mockProviders: LlmProvider[] = coreLlmProviderNames.map(name => ({
+      name,
+      enabled: name === "openai" ? enabled : () => false,
+      model: name === "openai" ? model : vi.fn(() => fakeModel),
+    }));
+
+    const required = answerRequire(undefined, mockProviders);
+    const built = createService({ modules: {} }, coreParts());
+
+    // Creating the service, inspecting registered providers, and calling
+    // describe() must not load the provider implementations.
+    expect(built.llmProviders.all()).toHaveLength(coreLlmProviderNames.length);
+    const openaiProvider = built.llmProviders.get("openai");
+    expect(openaiProvider?.name).toBe("openai");
+    built.describe();
+    expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
+
+    expect(built.llmProviders.enabled().map(p => p.name)).toEqual(["openai"]);
+    expect(enabled).toHaveBeenCalledTimes(1);
+
+    const opts = { feature: "Extract" };
+    expect(openaiProvider!.model("gpt-4o-mini", opts)).toBe(fakeModel);
+    expect(model).toHaveBeenCalledWith("gpt-4o-mini", opts);
+    expect(
+      required.mock.calls.filter(([id]) => id === llmProvidersModule),
+    ).toHaveLength(1);
+  });
+
+  it("preserves the handler method name on every built-in engine wrapper", () => {
+    const built = createService({ modules: {} }, coreParts());
+
+    for (const spec of coreEngineSpecs) {
+      expect(built.engines.get(spec.name)?.scrape.name).toBe(spec.method);
+    }
+  });
+
+  it("gives the service every process role, engine, feature, and error class", () => {
+    const required = answerRequire();
     const built = createService({ modules: {} }, coreParts());
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: [],
+      modules: ["messages", "uploads"],
       hooks: {},
       errors: {
         AGENT_INDEX_ONLY: "core",
@@ -95,6 +242,53 @@ describe("coreParts", () => {
         US_ONLY_UNAVAILABLE: "core",
         unsafe_domain_blocked: "core",
       },
+      engines: {
+        document: "core",
+        exchange: "core",
+        fetch: "core",
+        "fire-engine(retry);chrome-cdp": "core",
+        "fire-engine(retry);chrome-cdp;stealth": "core",
+        "fire-engine;chrome-cdp": "core",
+        "fire-engine;chrome-cdp;stealth": "core",
+        "fire-engine;tlsclient": "core",
+        "fire-engine;tlsclient;stealth": "core",
+        image: "core",
+        index: "core",
+        "index;documents": "core",
+        pdf: "core",
+        playwright: "core",
+        wikipedia: "core",
+      },
+      engineFeatures: {
+        actions: { owner: "core", priority: 20 },
+        atsv: { owner: "core", priority: 90 },
+        audio: { owner: "core", priority: 100 },
+        branding: { owner: "core", priority: 20 },
+        disableAdblock: { owner: "core", priority: 10 },
+        document: { owner: "core", priority: 100 },
+        image: { owner: "core", priority: 100 },
+        location: { owner: "core", priority: 10 },
+        mobile: { owner: "core", priority: 10 },
+        pdf: { owner: "core", priority: 100 },
+        screenshot: { owner: "core", priority: 10 },
+        "screenshot@fullScreen": { owner: "core", priority: 10 },
+        skipTlsVerification: { owner: "core", priority: 10 },
+        stealthProxy: { owner: "core", priority: 20 },
+        useFastMode: { owner: "core", priority: 90 },
+        video: { owner: "core", priority: 100 },
+        waitFor: { owner: "core", priority: 1 },
+      },
+      llmProviders: {
+        anthropic: "core",
+        deepinfra: "core",
+        fireworks: "core",
+        google: "core",
+        groq: "core",
+        ollama: "core",
+        openai: "core",
+        openrouter: "core",
+        vertex: "core",
+      },
       roles: {
         api: "core",
         "cclog-worker": "core",
@@ -109,5 +303,15 @@ describe("coreParts", () => {
       },
       env: {},
     });
+    expect(required).not.toHaveBeenCalledWith(enginesModule);
+    expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
+  });
+
+  it("loads core error classes and default modules without pulling in config, exchange, deployment, gcs, or zdr", () => {
+    answerRequire();
+    const built = createService({ modules: defaultModules() }, coreParts());
+
+    expect(built.describe().modules).toEqual(["messages", "uploads"]);
+    expect(loadedSideEffectModules).toEqual([]);
   });
 });

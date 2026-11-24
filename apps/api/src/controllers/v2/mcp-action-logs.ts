@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { config } from "../../config";
+import { mcpLogsEnv } from "../../lib/mcp-action-log-env";
 import { db } from "../../db/connection";
 import { ErrorResponse, RequestWithAuth, TeamFlags } from "./types";
 import { isAlexandriaZDRForced } from "../../lib/zdr-helpers";
@@ -71,7 +71,7 @@ export async function listMcpActionLogsController(
   res: Response<ListResponse>,
 ) {
   try {
-    if (!config.MCP_ACTION_LOG_STORAGE_ENABLED) {
+    if (!mcpLogsEnv.MCP_ACTION_LOG_STORAGE_ENABLED) {
       return res.status(503).json({
         success: false,
         error: "MCP action logging is disabled",

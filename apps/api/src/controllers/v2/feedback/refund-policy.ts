@@ -1,4 +1,4 @@
-import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
 import {
   FeedbackJobRow,
   FeedbackRating,
@@ -54,7 +54,7 @@ function none(
     desiredRefund: 0,
     policy: {
       version: "feedback_refund_v1",
-      enabled: config.FEEDBACK_REFUND_ENABLED,
+      enabled: feedbackEnv.FEEDBACK_REFUND_ENABLED,
       endpoint: job.endpoint,
       mode: "none",
       refundableRatings,
@@ -141,7 +141,8 @@ export function computeRefundPolicy(
   rating: FeedbackRating,
 ): { desiredRefund: number; policy: RefundPolicySnapshot } {
   const billedCredits = Math.max(0, job.credits_cost ?? 0);
-  if (!config.FEEDBACK_REFUND_ENABLED) return none(job, "refunds_disabled");
+  if (!feedbackEnv.FEEDBACK_REFUND_ENABLED)
+    return none(job, "refunds_disabled");
   if (billedCredits <= 0) return none(job, "zero_billed_credits");
 
   const policy = policyFor(job);

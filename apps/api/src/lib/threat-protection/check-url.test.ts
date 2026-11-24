@@ -14,7 +14,7 @@ vi.mock("../../services/queue-service", async () => {
   return { getRedisConnection: () => client };
 });
 
-import { config } from "../../config";
+import { threatProtectionEnv } from "./env";
 import {
   checkUrl,
   THREAT_PROTECTION_POLICY_DEFAULTS,
@@ -59,8 +59,8 @@ let failHashesSearches = 0;
 let server: http.Server;
 
 const originalConfig = {
-  webRiskUrl: config.GOOGLE_WEB_RISK_API_URL,
-  webRiskKey: config.GOOGLE_WEB_RISK_API_KEY,
+  webRiskUrl: threatProtectionEnv.GOOGLE_WEB_RISK_API_URL,
+  webRiskKey: threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY,
 };
 
 beforeAll(async () => {
@@ -82,16 +82,16 @@ beforeAll(async () => {
     });
     server.listen(0, "127.0.0.1", () => {
       const addr = server.address() as AddressInfo;
-      config.GOOGLE_WEB_RISK_API_URL = `http://127.0.0.1:${addr.port}`;
-      config.GOOGLE_WEB_RISK_API_KEY = "test-web-risk-key";
+      threatProtectionEnv.GOOGLE_WEB_RISK_API_URL = `http://127.0.0.1:${addr.port}`;
+      threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY = "test-web-risk-key";
       resolve();
     });
   });
 });
 
 afterAll(async () => {
-  config.GOOGLE_WEB_RISK_API_URL = originalConfig.webRiskUrl;
-  config.GOOGLE_WEB_RISK_API_KEY = originalConfig.webRiskKey;
+  threatProtectionEnv.GOOGLE_WEB_RISK_API_URL = originalConfig.webRiskUrl;
+  threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY = originalConfig.webRiskKey;
   await new Promise<void>(resolve => server.close(() => resolve()));
 });
 

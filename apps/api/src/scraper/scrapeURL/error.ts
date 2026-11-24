@@ -1,7 +1,11 @@
 import { ErrorCode, TransportableError } from "../../lib/error";
-import { Meta } from ".";
-import { Engine, FeatureFlag } from "./engines";
-import { isSelfHosted } from "../../lib/deployment";
+import { logsMessages } from "../../service/defaults";
+import { installedService } from "../../service/service";
+import type { Meta } from ".";
+import type { Engine, FeatureFlag } from "./engines";
+
+const defaultMessages = logsMessages();
+const messages = () => installedService()?.modules.messages ?? defaultMessages;
 
 export class EngineError extends Error {
   constructor(message?: string, options?: ErrorOptions) {
@@ -56,9 +60,7 @@ export class NoEnginesLeftError extends TransportableError {
 
   constructor(fallbackList: Engine[]) {
     const enginesTriedStr = fallbackList.join(", ");
-    const message = isSelfHosted()
-      ? `All scraping engines failed to retrieve content from this URL. Engines tried: [${enginesTriedStr}]. This usually happens when: (1) The URL is invalid or the page doesn't exist (404), (2) The website is blocking automated access, (3) The website is down or unreachable, (4) The page requires authentication. Double check the URL is correct and accessible in a browser. Check your server logs for more detailed error information from each engine.`
-      : `All scraping engines failed to retrieve content from this URL. Engines tried: [${enginesTriedStr}]. This usually happens when: (1) The URL is invalid or the page doesn't exist (404), (2) The website is blocking automated access, (3) The website is down or unreachable, (4) The page requires authentication. Double check the URL is correct and accessible in a browser. If the issue persists, contact us at help@firecrawl.com with your request ID for investigation.`;
+    const message = `All scraping engines failed to retrieve content from this URL. Engines tried: [${enginesTriedStr}]. This usually happens when: (1) The URL is invalid or the page doesn't exist (404), (2) The website is blocking automated access, (3) The website is down or unreachable, (4) The page requires authentication. Double check the URL is correct and accessible in a browser. ${messages().allEnginesFailedContact()}`;
 
     super("SCRAPE_ALL_ENGINES_FAILED", message);
     this.fallbackList = fallbackList;
@@ -414,11 +416,10 @@ export class PDFFetchProxyError extends TransportableError {
   ];
 
   constructor() {
-    const message = isSelfHosted()
-      ? "Failed to download the PDF file because the configured proxy could not establish a connection to the website (the proxy rejected the tunneling request). Check your proxy configuration (PROXY_SERVER) and whether the target site is reachable from it, then retry."
-      : "Failed to download the PDF file — Firecrawl could not establish a connection to the website while downloading it. Please retry your request, and if the issue persists, contact help@firecrawl.com with your request ID for investigation.";
-
-    super("SCRAPE_PDF_FETCH_PROXY_ERROR", message);
+    super(
+      "SCRAPE_PDF_FETCH_PROXY_ERROR",
+      messages().fileFetchProxyError("PDF"),
+    );
   }
 
   serialize() {
@@ -607,9 +608,7 @@ export class PDFPrefetchFailed extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_PDF_PREFETCH_FAILED"];
 
   constructor() {
-    const message = isSelfHosted()
-      ? "Failed to prefetch the PDF file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the PDF is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. Check your server logs for more details about the specific protection mechanism encountered."
-      : "Failed to prefetch the PDF file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the PDF is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. If this is a business-critical URL, please contact help@firecrawl.com with the URL and we can investigate adding specific support for this site.";
+    const message = `Failed to prefetch the PDF file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the PDF is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. ${messages().filePrefetchFailedContact()}`;
 
     super("SCRAPE_PDF_PREFETCH_FAILED", message);
   }
@@ -660,11 +659,10 @@ export class DocumentFetchProxyError extends TransportableError {
   ];
 
   constructor() {
-    const message = isSelfHosted()
-      ? "Failed to download the document file because the configured proxy could not establish a connection to the website (the proxy rejected the tunneling request). Check your proxy configuration (PROXY_SERVER) and whether the target site is reachable from it, then retry."
-      : "Failed to download the document file — Firecrawl could not establish a connection to the website while downloading it. Please retry your request, and if the issue persists, contact help@firecrawl.com with your request ID for investigation.";
-
-    super("SCRAPE_DOCUMENT_FETCH_PROXY_ERROR", message);
+    super(
+      "SCRAPE_DOCUMENT_FETCH_PROXY_ERROR",
+      messages().fileFetchProxyError("document"),
+    );
   }
 
   serialize() {
@@ -687,9 +685,7 @@ export class DocumentPrefetchFailed extends TransportableError {
   ];
 
   constructor() {
-    const message = isSelfHosted()
-      ? "Failed to prefetch the document file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the document (DOCX, XLSX, etc.) is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. Check your server logs for more details about the specific protection mechanism encountered."
-      : "Failed to prefetch the document file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the document (DOCX, XLSX, etc.) is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. If this is a business-critical URL, please contact help@firecrawl.com with the URL and we can investigate adding specific support for this site.";
+    const message = `Failed to prefetch the document file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the document (DOCX, XLSX, etc.) is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. ${messages().filePrefetchFailedContact()}`;
 
     super("SCRAPE_DOCUMENT_PREFETCH_FAILED", message);
   }

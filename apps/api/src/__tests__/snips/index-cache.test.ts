@@ -3,7 +3,6 @@ import {
   deriveIndexVariantKey,
   filterIndexEntries,
   getCachedIndexEntries,
-  getCachedMaxAge,
   getCachedNegative,
   isNegativeStillValid,
   setCachedNegative,
@@ -253,12 +252,6 @@ describe("index cache fail-open", () => {
     await expect(
       upsertCachedIndexEntries("idxc:test", [entry()], undefined, deadClient),
     ).resolves.toBeUndefined();
-  }, 5000);
-
-  it("getCachedMaxAge resolves to null", async () => {
-    await expect(
-      getCachedMaxAge(urlHash, undefined, deadClient),
-    ).resolves.toBeNull();
   }, 5000);
 
   it("getCachedNegative resolves to null (disabled or dead) and never throws", async () => {
