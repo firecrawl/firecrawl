@@ -68,9 +68,20 @@ describe("buildLlmProviderRegistry", () => {
   });
 
   it("replaces an earlier provider of the same name in place and updates its owner", () => {
-    const coreOpenAI = makeProvider("openai");
-    const coreAnthropic = makeProvider("anthropic");
-    const overrideOpenAI = makeProvider("openai");
+    const coreOpenAIModel = vi.fn((id: string) => fakeModel(`core:${id}`));
+    const coreAnthropicModel = vi.fn((id: string) =>
+      fakeModel(`anthropic:${id}`),
+    );
+    const overrideOpenAIModel = vi.fn((id: string) =>
+      fakeModel(`override:${id}`),
+    );
+    const coreOpenAI = makeProvider("openai", { model: coreOpenAIModel });
+    const coreAnthropic = makeProvider("anthropic", {
+      model: coreAnthropicModel,
+    });
+    const overrideOpenAI = makeProvider("openai", {
+      model: overrideOpenAIModel,
+    });
 
     const { registry, describedLlmProviders } = buildLlmProviderRegistry([
       { owner: "core", llmProviders: [coreOpenAI, coreAnthropic] },
@@ -78,8 +89,15 @@ describe("buildLlmProviderRegistry", () => {
     ]);
 
     expect(registry.all().map(p => p.name)).toEqual(["openai", "anthropic"]);
-    expect(registry.get("openai")?.model).toBe(overrideOpenAI.model);
-    expect(registry.get("anthropic")?.model).toBe(coreAnthropic.model);
+    expect(registry.get("openai")?.model("gpt-4o-mini").modelId).toBe(
+      "override:gpt-4o-mini",
+    );
+    expect(overrideOpenAIModel).toHaveBeenCalledTimes(1);
+    expect(coreOpenAIModel).not.toHaveBeenCalled();
+    expect(registry.get("anthropic")?.model("claude").modelId).toBe(
+      "anthropic:claude",
+    );
+    expect(coreAnthropicModel).toHaveBeenCalledTimes(1);
     expect(describedLlmProviders).toEqual({
       anthropic: "core",
       openai: "custom",
@@ -100,7 +118,8 @@ describe("buildLlmProviderRegistry", () => {
   });
 
   it("snapshots providers so later mutation does not alter the registry", () => {
-    const originalModel = vi.fn((id: string) => fakeModel(id));
+    const originalModel = vi.fn((id: string) => fakeModel(`orig:${id}`));
+    const replacementModel = vi.fn((id: string) => fakeModel(`other:${id}`));
     const provider = makeProvider("openai", { model: originalModel }) as {
       name: string;
       enabled: () => boolean;
@@ -114,11 +133,41 @@ describe("buildLlmProviderRegistry", () => {
 
     list.push(makeProvider("anthropic"));
     provider.name = "mutated";
-    provider.model = vi.fn((id: string) => fakeModel(`other:${id}`));
+    provider.model = replacementModel;
 
     expect(registry.all().map(p => p.name)).toEqual(["openai"]);
     expect(Object.isFrozen(registry.get("openai"))).toBe(true);
-    expect(registry.get("openai")?.model).toBe(originalModel);
+    expect(registry.get("openai")?.model("gpt-4o-mini").modelId).toBe(
+      "orig:gpt-4o-mini",
+    );
+    expect(originalModel).toHaveBeenCalledTimes(1);
+    expect(replacementModel).not.toHaveBeenCalled();
+  });
+
+  it("preserves method this-binding for class-based providers", () => {
+    class StatefulProvider implements LlmProvider {
+      readonly name = "openai" as const;
+      private active = true;
+      private prefix = "stateful:";
+
+      enabled() {
+        return this.active;
+      }
+
+      model(id: string) {
+        return fakeModel(`${this.prefix}${id}`);
+      }
+    }
+
+    const { registry } = buildLlmProviderRegistry([
+      { owner: "custom", llmProviders: [new StatefulProvider()] },
+    ]);
+
+    const registered = registry.get("openai");
+    expect(registered?.enabled()).toBe(true);
+    expect(registered?.model("gpt-4o-mini").modelId).toBe(
+      "stateful:gpt-4o-mini",
+    );
   });
 
   it("handles prototype property names safely", () => {

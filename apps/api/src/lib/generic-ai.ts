@@ -36,17 +36,17 @@ function once<T>(create: () => T): () => T {
   };
 }
 
-const getVertexAuthOptions = once(() =>
-  config.VERTEX_CREDENTIALS
-    ? {
-        credentials: JSON.parse(atob(config.VERTEX_CREDENTIALS)),
-      }
-    : config.VERTEX_USE_ADC
-      ? undefined
-      : {
-          keyFile: "./gke-key.json",
-        },
-);
+// Parse Vertex credentials eagerly so malformed configuration fails fast when
+// this module loads, while SDK clients stay lazily constructed on first use.
+const vertexAuthOptions = config.VERTEX_CREDENTIALS
+  ? {
+      credentials: JSON.parse(atob(config.VERTEX_CREDENTIALS)),
+    }
+  : config.VERTEX_USE_ADC
+    ? undefined
+    : {
+        keyFile: "./gke-key.json",
+      };
 
 // An API key wins while it is set, so federation can be rolled out next to it.
 const getAnthropicClient = once(() =>
@@ -93,7 +93,7 @@ const getVertexClient = once(() =>
     baseURL:
       "https://aiplatform.googleapis.com/v1/projects/firecrawl/locations/global/publishers/google",
     location: "global",
-    googleAuthOptions: getVertexAuthOptions(),
+    googleAuthOptions: vertexAuthOptions,
   }),
 );
 
@@ -122,7 +122,7 @@ const getUsVertexClient = once(() =>
     baseURL:
       "https://aiplatform.us.rep.googleapis.com/v1/projects/firecrawl/locations/us/publishers/google",
     location: "us",
-    googleAuthOptions: getVertexAuthOptions(),
+    googleAuthOptions: vertexAuthOptions,
   }),
 );
 

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   coreLlmProviderNames,
   type LlmModel,
@@ -14,6 +14,11 @@ const fakeModel = (modelId: string, provider = "custom"): LlmModel =>
     doGenerate: vi.fn(),
     doStream: vi.fn(),
   }) as unknown as LlmModel;
+
+beforeEach(() => {
+  vi.stubEnv("OLLAMA_BASE_URL", "");
+  vi.stubEnv("MODEL_NAME", "");
+});
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -133,7 +138,8 @@ describe("coreLlmProviders and getModel", () => {
       withOllama.cleanup();
     }
 
-    vi.unstubAllEnvs();
+    vi.stubEnv("OLLAMA_BASE_URL", "");
+    vi.stubEnv("MODEL_NAME", "");
     const withoutOllama = await loadFresh([
       { name: "openai", enabled: () => true, model: openaiModel },
       { name: "ollama", enabled: () => false, model: ollamaModel },
@@ -243,5 +249,11 @@ describe("coreLlmProviders and getModel", () => {
     } finally {
       on.cleanup();
     }
+  });
+
+  it("fails fast when VERTEX_CREDENTIALS is malformed", async () => {
+    vi.stubEnv("VERTEX_CREDENTIALS", "not-valid-json");
+    vi.resetModules();
+    await expect(import("./generic-ai.js")).rejects.toThrow();
   });
 });

@@ -104,8 +104,8 @@ function snapshotLlmProvider(provider: LlmProvider): LlmProvider {
 
   return Object.freeze({
     name: provider.name,
-    enabled: provider.enabled,
-    model: provider.model,
+    enabled: provider.enabled.bind(provider),
+    model: provider.model.bind(provider),
   });
 }
 
