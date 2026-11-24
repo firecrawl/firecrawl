@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { config } from "../../../config";
+import { browserEnv } from "../../../lib/browser-env";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   HAS_FIRE_ENGINE,
@@ -37,7 +38,7 @@ describe("Scrape browser interact replay", () => {
   const canRunReplayHappyPath =
     !TEST_SELF_HOST &&
     ALLOW_TEST_SUITE_WEBSITE &&
-    !!config.HANGAR_URL &&
+    !!browserEnv.HANGAR_URL &&
     (TEST_PRODUCTION || HAS_FIRE_ENGINE);
 
   itIf(canRunReplayHappyPath)(

@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { z } from "zod";
-import { config } from "../../config";
+import { notificationsEnv } from "../../services/notification/env";
 import { logger as _logger } from "../../lib/logger";
 import { RequestWithAuth } from "./types";
 import {
@@ -36,8 +36,11 @@ const startBodySchema = z.object({
 });
 
 // Builds an absolute dashboard URL for post-OAuth browser redirects.
-function dashboardRedirect(path: string, params: Record<string, string>): string {
-  const url = new URL(path, config.FIRECRAWL_DASHBOARD_URL);
+function dashboardRedirect(
+  path: string,
+  params: Record<string, string>,
+): string {
+  const url = new URL(path, notificationsEnv.FIRECRAWL_DASHBOARD_URL);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   return url.toString();
 }
@@ -75,7 +78,10 @@ export async function slackOAuthStartController(
 
 // GET /v2/slack/oauth/callback (public) — Slack redirects here after the user
 // approves. We exchange the code and bounce the browser back to the dashboard.
-export async function slackOAuthCallbackController(req: Request, res: Response) {
+export async function slackOAuthCallbackController(
+  req: Request,
+  res: Response,
+) {
   const code = typeof req.query.code === "string" ? req.query.code : undefined;
   const state =
     typeof req.query.state === "string" ? req.query.state : undefined;
@@ -84,7 +90,10 @@ export async function slackOAuthCallbackController(req: Request, res: Response) 
 
   if (slackError) {
     return res.redirect(
-      dashboardRedirect("/app/monitoring", { slack: "error", reason: slackError }),
+      dashboardRedirect("/app/monitoring", {
+        slack: "error",
+        reason: slackError,
+      }),
     );
   }
 
@@ -236,7 +245,7 @@ export async function slackCommandsController(req: Request, res: Response) {
     if (!installation) {
       return {
         response_type: "ephemeral",
-        text: `This workspace isn't linked to Firecrawl yet. Connect it from the dashboard: ${config.FIRECRAWL_DASHBOARD_URL}/app/monitoring`,
+        text: `This workspace isn't linked to Firecrawl yet. Connect it from the dashboard: ${notificationsEnv.FIRECRAWL_DASHBOARD_URL}/app/monitoring`,
       };
     }
 
@@ -323,8 +332,7 @@ export async function slackEventsController(req: Request, res: Response) {
       eventType === "tokens_revoked" &&
       Array.isArray(event.tokens?.bot) &&
       event.tokens.bot.length > 0;
-    const shouldDisconnect =
-      eventType === "app_uninstalled" || botTokenRevoked;
+    const shouldDisconnect = eventType === "app_uninstalled" || botTokenRevoked;
 
     if (shouldDisconnect && slackTeamId) {
       try {

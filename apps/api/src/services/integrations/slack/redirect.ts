@@ -1,4 +1,4 @@
-import { config } from "../../../config";
+import { notificationsEnv } from "../../notification/env";
 
 const DEFAULT_REDIRECT_PATH = "/app/monitoring";
 
@@ -11,7 +11,7 @@ export function sanitizeRedirectPath(path?: string | null): string {
   if (/[\u0000-\u001f\u007f]/.test(path)) return DEFAULT_REDIRECT_PATH;
 
   try {
-    const base = new URL(config.FIRECRAWL_DASHBOARD_URL);
+    const base = new URL(notificationsEnv.FIRECRAWL_DASHBOARD_URL);
     const resolved = new URL(path, base);
     if (resolved.origin !== base.origin) return DEFAULT_REDIRECT_PATH;
     return resolved.pathname + resolved.search + resolved.hash;

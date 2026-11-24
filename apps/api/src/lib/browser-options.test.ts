@@ -1,6 +1,8 @@
 import { vi } from "vitest";
 
-vi.mock("../config", () => ({ config: { HANGAR_URL: "http://hangar.test" } }));
+vi.mock("./browser-env", () => ({
+  browserEnv: { HANGAR_URL: "http://hangar.test" },
+}));
 
 import {
   type BrowserOptions,

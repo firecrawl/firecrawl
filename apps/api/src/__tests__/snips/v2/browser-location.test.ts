@@ -1,4 +1,4 @@
-import { config } from "../../../config";
+import { browserEnv } from "../../../lib/browser-env";
 import { itIf } from "../lib";
 import { browserCreateRaw, idmux, Identity } from "./lib";
 
@@ -27,7 +27,7 @@ describe("POST /v2/interact location", () => {
   });
 
   // Without Hangar a valid request stops at the 503 after validation.
-  itIf(!config.HANGAR_URL)("accepts an ISO country", async () => {
+  itIf(!browserEnv.HANGAR_URL)("accepts an ISO country", async () => {
     const res = await browserCreateRaw(
       { location: { country: "GB" } },
       identity,

@@ -2,6 +2,7 @@ import { fetch } from "undici";
 import { z } from "zod";
 
 import { config } from "../config";
+import { notificationsEnv } from "../services/notification/env";
 import type { DocumentProvider, FormatObject } from "../controllers/v2/types";
 import { hasLedgerAcceptance } from "../services/alexandria/terms";
 import {
@@ -14,7 +15,7 @@ import {
 import { logger as rootLogger } from "./logger";
 import { isXTwitterUrl } from "./x-twitter-url";
 
-setDashboardUrlReader(() => config.FIRECRAWL_DASHBOARD_URL);
+setDashboardUrlReader(() => notificationsEnv.FIRECRAWL_DASHBOARD_URL);
 
 export {
   getEnrichmentSettingsUrl,
