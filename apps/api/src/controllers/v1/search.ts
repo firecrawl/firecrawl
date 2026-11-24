@@ -26,7 +26,7 @@ import { executeSearch } from "../../search/execute";
 import { applySearchPlanHook } from "../../search/plan-hook";
 import { requestContext } from "../../lib/request-context";
 import { installedService } from "../../service/service";
-import type { SearchRequest as V2SearchRequest } from "../v2/types";
+import type { SearchRequest as ServiceSearchRequest } from "../../service/request";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import {
   resolveSafeMode,
@@ -301,7 +301,7 @@ export async function searchController(
         apiKeyId: req.acuc?.api_key_id ?? null,
       });
     req.ctx = ctx;
-    const hookBody: V2SearchRequest = {
+    const hookBody: ServiceSearchRequest = {
       query: req.body.query,
       limit: req.body.limit,
       tbs: req.body.tbs,
@@ -318,9 +318,7 @@ export async function searchController(
       ignoreInvalidURLs: req.body.ignoreInvalidURLs ?? false,
       asyncScraping: false,
       toolDetail: "compact",
-      scrapeOptions: (shouldScrape
-        ? scrapeOptions
-        : undefined) as V2SearchRequest["scrapeOptions"],
+      scrapeOptions: shouldScrape ? scrapeOptions : undefined,
     };
     const planHooks = installedService()?.hooks;
     const planned = planHooks?.has("search.plan")
