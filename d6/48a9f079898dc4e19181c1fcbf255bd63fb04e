@@ -1,0 +1,21 @@
+apps/api/src/routes/exchange-files.ts
+  s_0d1c9cb5d0e076::t_7d5f9becd9659e 1-41,43-303
+apps/api/src/__tests__/routes/exchange-files.routes.test.ts
+  s_0d1c9cb5d0e076::t_1c17fb15907202 1-121,123-129,131-159,161-189,191-204,206-226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d648a9f079898dc4e19181c1fcbf255bd63fb04e",
+  "prompts": {},
+  "sessions": {
+    "s_0d1c9cb5d0e076": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4d45374-a8f2-4343-991a-6b9220a78ec9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Developers Digest <124798203+developersdigest@users.noreply.github.com>"
+    }
+  }
+}
