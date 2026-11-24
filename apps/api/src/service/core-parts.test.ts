@@ -451,7 +451,7 @@ describe("coreParts", () => {
 
     expect(built.describe().hooks).toEqual({});
     expect(built.describe().routes).toEqual([]);
-    expect(built.roles.names()).toHaveLength(11);
+    expect(built.roles.names()).toHaveLength(10);
     expect(built.describe().modules).toEqual([
       "blocklist",
       "idempotency",
