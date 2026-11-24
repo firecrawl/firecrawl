@@ -3,8 +3,7 @@ import { config } from "../../config";
 import { v7 as uuidv7 } from "uuid";
 import {
   BatchScrapeRequest,
-  batchScrapeRequestSchema,
-  batchScrapeRequestSchemaNoURLValidation,
+  parseBatchScrapeRequest,
   URL as urlSchema,
   RequestWithAuth,
   ScrapeOptions,
@@ -67,11 +66,7 @@ export async function batchScrapeController(
   res: Response<BatchScrapeResponse>,
 ) {
   const preNormalizedBody = { ...req.body };
-  if (req.body?.ignoreInvalidURLs === true) {
-    req.body = batchScrapeRequestSchemaNoURLValidation.parse(req.body);
-  } else {
-    req.body = batchScrapeRequestSchema.parse(req.body);
-  }
+  req.body = parseBatchScrapeRequest(req.body);
 
   // Batch has many URLs; per-URL allowlist is applied at the scrapeURL backstop.
   // Resolve org-level here only for the bypass/enablement decision.

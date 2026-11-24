@@ -7,9 +7,9 @@ import { logger as _logger } from "../../lib/logger";
 import {
   Document,
   FormatObject,
+  getV2RequestSchemas,
   RequestWithAuth,
   ScrapeRequest,
-  scrapeRequestSchema,
   ScrapeResponse,
 } from "./types";
 import { v7 as uuidv7 } from "uuid";
@@ -98,7 +98,7 @@ export async function scrapeController(
 
       // Validation span
       await withSpan("api.scrape.validate", async validateSpan => {
-        req.body = scrapeRequestSchema.parse(req.body);
+        req.body = getV2RequestSchemas().scrape.parse(req.body);
         setSpanAttributes(validateSpan, {
           "validation.success": true,
         });

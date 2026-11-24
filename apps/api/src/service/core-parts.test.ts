@@ -110,8 +110,11 @@ function answerRequire(
         scrape: fakeSchema,
         parse: fakeSchema,
         crawl: fakeSchema,
+        batchScrape: fakeSchema,
+        batchScrapeNoURLValidation: fakeSchema,
         map: fakeSchema,
         search: fakeSchema,
+        scrapeOptions: fakeSchema,
       };
     }),
   };
@@ -383,6 +386,7 @@ describe("coreParts", () => {
         scrape: {},
         parse: {},
         crawl: {},
+        batchScrape: {},
         map: {},
         search: {},
         formats: {},
@@ -420,8 +424,11 @@ describe("coreParts", () => {
     expect(built.schemas.scrape).toBeDefined();
     expect(built.schemas.parse).toBeDefined();
     expect(built.schemas.crawl).toBeDefined();
+    expect(built.schemas.batchScrape).toBeDefined();
+    expect(built.schemas.batchScrapeNoURLValidation).toBeDefined();
     expect(built.schemas.map).toBeDefined();
     expect(built.schemas.search).toBeDefined();
+    expect(built.schemas.scrapeOptions).toBeDefined();
     expect(
       required.mock.calls.filter(([id]) => id === v2TypesModule),
     ).toHaveLength(1);

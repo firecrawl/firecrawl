@@ -110,6 +110,8 @@ export {
   requestKinds,
 } from "./request";
 export type {
+  BatchScrapeRequest,
+  BatchScrapeRequestFields,
   CrawlRequest,
   CrawlRequestFields,
   DescribedRequestSchemas,

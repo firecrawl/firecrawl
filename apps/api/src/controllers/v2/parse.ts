@@ -5,12 +5,12 @@ import { logger as _logger } from "../../lib/logger";
 import {
   Document,
   FormatObject,
+  getV2RequestSchemas,
   ParseRequest,
   RequestWithAuth,
   ScrapeResponse,
   UploadedParseFile,
   UploadedParseFileKind,
-  parseRequestSchema,
 } from "./types";
 import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
@@ -325,7 +325,7 @@ export async function parseController(
       });
 
       await withSpan("api.parse.validate", async validateSpan => {
-        req.body = parseRequestSchema.parse(req.body);
+        req.body = getV2RequestSchemas().parse.parse(req.body);
         setSpanAttributes(validateSpan, {
           "validation.success": true,
         });
