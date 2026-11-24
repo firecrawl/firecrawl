@@ -31,7 +31,13 @@ describe("testService", () => {
     ).resolves.toEqual({ ok: true, caller: { teamId: "base-team" } });
     expect(built.modules.messages.errorContact()).toBe("Custom contact.");
     expect(built.modules.uploads.driver().name).toBe("base-uploads");
-    expect(built.describe().modules).toEqual(["auth", "messages", "uploads"]);
+    expect(built.describe().modules).toEqual([
+      "auth",
+      "idempotency",
+      "messages",
+      "uploads",
+      "webhooks",
+    ]);
     expect(built.describe().extensions).toEqual(["core", "extra"]);
   });
 

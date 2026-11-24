@@ -139,6 +139,69 @@ export interface UploadsModule {
   driver(): UploadDriver;
 }
 
+/** Request context passed to the idempotency module. */
+export interface IdempotencyContext {
+  teamId: string;
+}
+
+/** Tracks idempotency keys to reject duplicate requests. */
+export interface IdempotencyModule {
+  /**
+   * Claims an idempotency key for a request. Returns true when this is the
+   * first use of the key and false when it has already been used.
+   */
+  claim(key: string, ctx: IdempotencyContext): Promise<boolean>;
+}
+
+/** Request context passed to the webhooks module. */
+export interface WebhookContext {
+  teamId: string;
+  zeroDataRetention: boolean;
+}
+
+/** Webhook payload and dispatch metadata passed to `WebhooksModule.deliver`. */
+export interface WebhookDelivery {
+  url: string;
+  event: string;
+  payload: unknown;
+  /** Caller-configured headers (excluding signature headers). */
+  headers: Record<string, string>;
+  jobId: string;
+  scrapeId?: string;
+  timeoutMs: number;
+}
+
+/** HTTP response summary returned by the in-process webhook send callback. */
+export interface WebhookResponse {
+  ok: boolean;
+  status: number;
+}
+
+/** Outcome returned by `WebhooksModule.deliver`. */
+export interface WebhookDeliveryResult {
+  delivered: boolean;
+  queued?: boolean;
+  skipped?: boolean;
+  statusCode?: number;
+}
+
+/** Resolves webhook signing secrets and dispatches webhook deliveries. */
+export interface WebhooksModule {
+  /** Returns the HMAC signing secret for this request context, if configured. */
+  signingSecret(ctx: WebhookContext): Promise<string | undefined>;
+  /**
+   * Dispatches a webhook delivery. Calling `send()` performs the signed
+   * in-process HTTP POST with timeout and SSRF protection.
+   */
+  deliver(
+    ctx: WebhookContext,
+    delivery: WebhookDelivery,
+    send: () => Promise<WebhookResponse>,
+  ): Promise<WebhookDeliveryResult>;
+  /** Optional graceful shutdown hook called when the server exits. */
+  shutdown?(): Promise<void>;
+}
+
 /**
  * The module slots: one implementation for each piece of behaviour the service
  * calls by name.
@@ -147,6 +210,8 @@ export interface Modules {
   auth: AuthModule;
   messages: MessagesModule;
   uploads: UploadsModule;
+  idempotency: IdempotencyModule;
+  webhooks: WebhooksModule;
 }
 
 function freezeUploadDriver(driver: UploadDriver): Readonly<UploadDriver> {
@@ -182,7 +247,7 @@ function freezeUploadDriver(driver: UploadDriver): Readonly<UploadDriver> {
  * later cannot alter the service.
  */
 export function freezeModules(modules: Modules): Readonly<Modules> {
-  const { auth, messages, uploads } = modules;
+  const { auth, messages, uploads, idempotency, webhooks } = modules;
   if (
     typeof auth !== "object" ||
     auth === null ||
@@ -208,6 +273,22 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
   ) {
     throw new Error("Invalid uploads module");
   }
+  if (
+    typeof idempotency !== "object" ||
+    idempotency === null ||
+    typeof idempotency.claim !== "function"
+  ) {
+    throw new Error("Invalid idempotency module");
+  }
+  if (
+    typeof webhooks !== "object" ||
+    webhooks === null ||
+    typeof webhooks.signingSecret !== "function" ||
+    typeof webhooks.deliver !== "function" ||
+    (webhooks.shutdown !== undefined && typeof webhooks.shutdown !== "function")
+  ) {
+    throw new Error("Invalid webhooks module");
+  }
 
   const frozenAuth: AuthModule = Object.freeze({
     authenticate: auth.authenticate.bind(auth),
@@ -224,10 +305,22 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
   const frozenUploads: UploadsModule = Object.freeze({
     driver: () => frozenDriver,
   });
+  const frozenIdempotency: IdempotencyModule = Object.freeze({
+    claim: idempotency.claim.bind(idempotency),
+  });
+  const frozenWebhooks: WebhooksModule = Object.freeze({
+    signingSecret: webhooks.signingSecret.bind(webhooks),
+    deliver: webhooks.deliver.bind(webhooks),
+    ...(webhooks.shutdown !== undefined
+      ? { shutdown: webhooks.shutdown.bind(webhooks) }
+      : {}),
+  });
 
   return Object.freeze({
     auth: frozenAuth,
     messages: frozenMessages,
     uploads: frozenUploads,
+    idempotency: frozenIdempotency,
+    webhooks: frozenWebhooks,
   });
 }

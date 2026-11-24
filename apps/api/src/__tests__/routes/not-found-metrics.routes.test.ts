@@ -8,12 +8,6 @@ vi.mock("../../services/autumn/autumn.service", () => ({
 vi.mock("../../services/autumn/usage", () => ({
   getTeamBalance: vi.fn(),
 }));
-vi.mock("../../services/idempotency/create", () => ({
-  createIdempotencyKey: vi.fn(),
-}));
-vi.mock("../../services/idempotency/validate", () => ({
-  validateIdempotencyKey: vi.fn(),
-}));
 vi.mock("geoip-country", () => ({ lookup: vi.fn(() => null) }));
 
 import { notFoundHandler } from "../../lib/not-found";

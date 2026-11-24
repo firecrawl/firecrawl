@@ -1,4 +1,4 @@
-export type { Document, ScrapeOptions } from "../controllers/v2/types";
+export type { Document } from "../controllers/v2/types";
 export type {
   ErrorCode,
   ErrorCodes,
@@ -9,10 +9,16 @@ export type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 export { coreParts } from "./core-parts";
 export {
   defaultModules,
+  directWebhooks,
   logsMessages,
   memoryUploads,
   openAuth,
-  type DefaultModules,
+  redisIdempotency,
+} from "./defaults";
+export type {
+  DefaultModules,
+  DirectWebhooksOptions,
+  RedisIdempotencyOptions,
 } from "./defaults";
 export type {
   DescribedEngineFeature,
@@ -76,6 +82,8 @@ export type {
   DirectUploadInput,
   DirectUploadResult,
   FetchProxyFileKind,
+  IdempotencyContext,
+  IdempotencyModule,
   MessagesModule,
   Modules,
   PrepareUploadInput,
@@ -84,6 +92,11 @@ export type {
   UploadDriver,
   UploadsModule,
   UploadTarget,
+  WebhookContext,
+  WebhookDelivery,
+  WebhookDeliveryResult,
+  WebhookResponse,
+  WebhooksModule,
 } from "./modules";
 export type {
   BaseCaller,
@@ -91,6 +104,39 @@ export type {
   Caller,
   RequestContext,
 } from "./request-context";
+export {
+  buildRequestSchemas,
+  hasFormatOfType,
+  requestFieldBuckets,
+  requestKinds,
+} from "./request";
+export type {
+  CrawlRequest,
+  CrawlRequestFields,
+  DescribedRequestSchemas,
+  FieldSchemas,
+  Format,
+  FormatName,
+  Formats,
+  FormatSchemas,
+  MapRequest,
+  MapRequestFields,
+  ParseRequest,
+  ParseRequestFields,
+  RequestContributions,
+  RequestFieldBucket,
+  RequestSchemaBuilder,
+  RequestSchemas,
+  ResolvedRequestContributions,
+  ScrapeOptions,
+  ScrapeOptionsFields,
+  ScrapeOptionsRule,
+  ScrapeOptionsRuleResult,
+  ScrapeRequest,
+  ScrapeRequestFields,
+  SearchRequest,
+  SearchRequestFields,
+} from "./request";
 export { coreSearchProviderNames } from "./search-providers";
 export type {
   CoreSearchProviderSpec,
