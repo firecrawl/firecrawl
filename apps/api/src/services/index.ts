@@ -27,6 +27,7 @@ import type { PdfMetadata } from "../scraper/scrapeURL/engines/pdf/types";
 import { storage } from "../lib/gcs-jobs";
 import { withSpan, setSpanAttributes } from "../lib/otel-tracer";
 import { config } from "../config";
+import { searchIndexEnv } from "../lib/search-index-env";
 import { getGcsScreenshotUrlResignReason } from "./index-screenshot-url";
 configDotenv();
 
@@ -170,7 +171,8 @@ export const useIndex =
   config.INDEX_DATABASE_URL !== "" && config.INDEX_DATABASE_URL !== undefined;
 
 export const useSearchIndex =
-  config.SEARCH_SERVICE_URL !== "" && config.SEARCH_SERVICE_URL !== undefined;
+  searchIndexEnv.SEARCH_SERVICE_URL !== "" &&
+  searchIndexEnv.SEARCH_SERVICE_URL !== undefined;
 
 export function normalizeURLForIndex(url: string): string {
   const urlObj = new URL(url);
