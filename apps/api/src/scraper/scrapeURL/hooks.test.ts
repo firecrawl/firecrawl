@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Engine as RegisteredEngine } from "../../service/engines";
+import type { ScrapeFinished } from "../../service/hooks";
 import type { Extension } from "../../service/service";
 import { createService, replaceService } from "../../service/service";
 import { scrapeOptions } from "../../controllers/v2/types";
 import { CostTracking } from "../../lib/cost-tracking";
+import { requestContext } from "../../lib/request-context";
 
 vi.mock("../../services/index", () => ({
   useIndex: false,
@@ -32,18 +34,22 @@ vi.mock("./lib/removeUnwantedElements", async importOriginal => {
 import { scrapeURL } from ".";
 import { coreEngineFeatures, type EngineScrapeResult } from "./engines";
 import { EngineError } from "./error";
+import { createScrapeFinishedEmitter } from "./hooks";
 import { htmlTransform } from "./lib/removeUnwantedElements";
 import { executeTransformers } from "./transformers";
 
 const makeEngine = (
   name: string,
   scrape: RegisteredEngine["scrape"],
-  quality = 10,
+  options: {
+    quality?: number;
+    features?: Record<string, boolean>;
+  } = {},
 ): RegisteredEngine =>
   ({
     name,
-    quality,
-    features: {},
+    quality: options.quality ?? 10,
+    features: options.features ?? {},
     enabled: () => true,
     maxReasonableTime: () => 5_000,
     scrape,
@@ -77,7 +83,7 @@ afterEach(() => {
 });
 
 describe("scrape pipeline hook points", () => {
-  it("runs all 9 in-pipeline scrape hooks in order with shared ScrapeState", async () => {
+  it("runs all 10 scrape hooks in order with shared ScrapeState", async () => {
     const fetchScrape = vi.fn(async (): Promise<EngineScrapeResult> => {
       throw new EngineError("fetch failed");
     });
@@ -96,10 +102,12 @@ describe("scrape pipeline hook points", () => {
       state.trace = trace;
     };
 
+    const finishedEvents: ScrapeFinished[] = [];
+
     installTestService(
       [
-        makeEngine("fetch", fetchScrape, 20),
-        makeEngine("playwright", playwrightScrape, 10),
+        makeEngine("fetch", fetchScrape, { quality: 20 }),
+        makeEngine("playwright", playwrightScrape, { quality: 10 }),
       ],
       [
         {
@@ -189,21 +197,52 @@ describe("scrape pipeline hook points", () => {
                 warning: "final-hook-note",
               };
             },
+            "scrape.finished": async event => {
+              pushTrace(
+                event.state as Record<string, unknown>,
+                "scrape.finished",
+              );
+              finishedEvents.push(event);
+            },
           },
         },
       ],
     );
 
+    const parsedOptions = scrapeOptions.parse({
+      formats: ["markdown", "html"],
+    });
+    const ctx = requestContext({
+      teamId: "team-hooks",
+      zeroDataRetention: false,
+      orgId: null,
+    });
+
     const result = await scrapeURL(
       "scrape-hooks-e2e",
       "https://example.com/page",
-      scrapeOptions.parse({ formats: ["markdown", "html"] }),
-      { teamId: "team-hooks", orgId: null },
+      parsedOptions,
+      { teamId: "team-hooks", orgId: null, ctx },
       new CostTracking(),
     );
 
     expect(result.success).toBe(true);
     if (!result.success) return;
+
+    const emitFinished = createScrapeFinishedEmitter({
+      jobId: "scrape-hooks-e2e",
+      requestId: "req-1",
+      kind: "scrape",
+      ctx,
+      url: "https://example.com/page",
+      options: parsedOptions,
+      getState: () => result.state,
+    });
+    await emitFinished({
+      document: result.document,
+      charged: 1,
+      timeTakenMs: 42,
+    });
 
     expect(fetchScrape).toHaveBeenCalledTimes(1);
     expect(playwrightScrape).toHaveBeenCalledTimes(1);
@@ -211,6 +250,17 @@ describe("scrape pipeline hook points", () => {
     expect(result.document.markdown).toContain("<!-- md-hook -->");
     expect(result.document.metadata.title).toBe("Derived Title");
     expect(result.document.warning).toBe("final-hook-note");
+    expect(finishedEvents).toHaveLength(1);
+    expect(finishedEvents[0]).toMatchObject({
+      jobId: "scrape-hooks-e2e",
+      requestId: "req-1",
+      kind: "scrape",
+      ctx,
+      url: "https://example.com/page",
+      charged: 1,
+      timeTakenMs: 42,
+    });
+    expect(finishedEvents[0].state).toBe(result.state);
     expect((result.state as Record<string, unknown>)?.trace).toEqual([
       "scrape.start",
       "scrape.engines.select",
@@ -221,6 +271,7 @@ describe("scrape pipeline hook points", () => {
       "scrape.document.derived",
       "scrape.document.extracted",
       "scrape.document.final",
+      "scrape.finished",
     ]);
 
     const cleanCall = vi
@@ -229,12 +280,150 @@ describe("scrape pipeline hook points", () => {
     expect(cleanCall?.[3]).toEqual(["sig-nav"]);
   });
 
+  it("lets scrape.start add engine features that steer engine selection", async () => {
+    const fetchScrape = vi.fn(
+      async (): Promise<EngineScrapeResult> => ({
+        url: "https://example.com/basic",
+        html: "<html><body><p>From fetch</p></body></html>",
+        statusCode: 200,
+        proxyUsed: "basic",
+      }),
+    );
+    const playwrightScrape = vi.fn(
+      async (): Promise<EngineScrapeResult> => ({
+        url: "https://example.com/wait",
+        html: "<html><body><p>From playwright</p></body></html>",
+        statusCode: 200,
+        proxyUsed: "basic",
+      }),
+    );
+
+    installTestService(
+      [
+        makeEngine("fetch", fetchScrape, {
+          quality: 20,
+          features: { waitFor: false },
+        }),
+        makeEngine("playwright", playwrightScrape, {
+          quality: 10,
+          features: { waitFor: true },
+        }),
+      ],
+      [
+        {
+          name: "feature-hook",
+          hooks: {
+            "scrape.start": plan => {
+              plan.features.add("waitFor");
+              return plan;
+            },
+          },
+        },
+      ],
+    );
+
+    const result = await scrapeURL(
+      "scrape-feature-add",
+      "https://example.com/wait",
+      scrapeOptions.parse({ formats: ["markdown"] }),
+      { teamId: "team-feature", orgId: null },
+      new CostTracking(),
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(playwrightScrape).toHaveBeenCalledTimes(1);
+    expect(fetchScrape).not.toHaveBeenCalled();
+    expect(result.document.markdown).toContain("From playwright");
+  });
+
+  it("skips unregistered engines returned by scrape.engines.select", async () => {
+    const playwrightScrape = vi.fn(
+      async (): Promise<EngineScrapeResult> => ({
+        url: "https://example.com/reordered",
+        html: "<html><body><p>Reordered</p></body></html>",
+        statusCode: 200,
+        proxyUsed: "basic",
+      }),
+    );
+
+    installTestService(
+      [makeEngine("playwright", playwrightScrape, { quality: 10 })],
+      [
+        {
+          name: "select-hook",
+          hooks: {
+            "scrape.engines.select": () => ({
+              candidates: ["fetch", "playwright"],
+            }),
+          },
+        },
+      ],
+    );
+
+    const result = await scrapeURL(
+      "scrape-select-skip",
+      "https://example.com/reordered",
+      scrapeOptions.parse({ formats: ["markdown"] }),
+      { teamId: "team-select", orgId: null },
+      new CostTracking(),
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(playwrightScrape).toHaveBeenCalledTimes(1);
+    expect(result.document.markdown).toContain("Reordered");
+  });
+
+  it("produces identical output when no hook handlers are registered", async () => {
+    const html =
+      "<html><head><title>Baseline</title></head><body><h1>Hello World</h1></body></html>";
+    const scrape = vi.fn(
+      async (): Promise<EngineScrapeResult> => ({
+        url: "https://example.com/baseline",
+        html,
+        statusCode: 200,
+        proxyUsed: "basic",
+      }),
+    );
+
+    installTestService([makeEngine("fetch", scrape, { quality: 20 })]);
+
+    const first = await scrapeURL(
+      "scrape-baseline-1",
+      "https://example.com/baseline",
+      scrapeOptions.parse({ formats: ["markdown", "html"] }),
+      { teamId: "team-baseline", orgId: null },
+      new CostTracking(),
+    );
+
+    installTestService(
+      [makeEngine("fetch", scrape, { quality: 20 })],
+      [{ name: "empty-extension", hooks: {} }],
+    );
+
+    const second = await scrapeURL(
+      "scrape-baseline-2",
+      "https://example.com/baseline",
+      scrapeOptions.parse({ formats: ["markdown", "html"] }),
+      { teamId: "team-baseline", orgId: null },
+      new CostTracking(),
+    );
+
+    expect(first.success).toBe(true);
+    expect(second.success).toBe(true);
+    if (!first.success || !second.success) return;
+    expect(second.document).toEqual(first.document);
+    expect(first.state).toEqual({});
+    expect(second.state).toEqual({});
+  });
+
   it("short-circuits before engine selection when scrape.start throws", async () => {
     const fetchScrape = vi.fn();
     const selectHook = vi.fn();
 
     installTestService(
-      [makeEngine("fetch", fetchScrape, 20)],
+      [makeEngine("fetch", fetchScrape, { quality: 20 })],
       [
         {
           name: "veto-start",
@@ -309,7 +498,86 @@ describe("scrape pipeline hook points", () => {
     expect(markdownHook).not.toHaveBeenCalled();
   });
 
-  it("allows executeTransformers to run without an installed service", async () => {
+  it("emits scrape.finished once, awaits errors, and supports failure payloads", async () => {
+    const onFinished = vi.fn(async (event: ScrapeFinished) => {
+      if (event.document !== null) {
+        throw new Error("monitor recording failed");
+      }
+    });
+
+    installTestService(
+      [],
+      [{ name: "finished-hook", hooks: { "scrape.finished": onFinished } }],
+    );
+
+    const ctx = requestContext({
+      teamId: "team-finished",
+      zeroDataRetention: true,
+      orgId: null,
+    });
+    const options = scrapeOptions.parse({ formats: ["markdown"] });
+    const sharedState: Record<string, unknown> = { stage: "done" };
+
+    const emitSuccess = createScrapeFinishedEmitter({
+      jobId: "job-1",
+      requestId: "req-1",
+      kind: "crawl",
+      ctx,
+      url: "https://example.com/a",
+      options,
+      getState: () => sharedState,
+    });
+
+    await expect(
+      emitSuccess({
+        document: { metadata: { statusCode: 200, proxyUsed: "basic" } },
+        charged: 1,
+        timeTakenMs: 100,
+      }),
+    ).rejects.toThrow("monitor recording failed");
+
+    // A second call from a catch path must not emit a duplicate event.
+    await emitSuccess({
+      document: null,
+      error: new Error("monitor recording failed"),
+      charged: 0,
+      timeTakenMs: 120,
+    });
+    expect(onFinished).toHaveBeenCalledTimes(1);
+
+    const emitFailure = createScrapeFinishedEmitter({
+      jobId: "job-2",
+      kind: "batchScrape",
+      ctx,
+      url: "https://example.com/b",
+      options,
+      getState: () => undefined,
+    });
+    const failure = new Error("scrape failed");
+    await emitFailure({
+      document: null,
+      error: failure,
+      charged: undefined,
+      timeTakenMs: 55,
+    });
+
+    expect(onFinished).toHaveBeenCalledTimes(2);
+    expect(onFinished.mock.calls[1][0]).toEqual({
+      jobId: "job-2",
+      requestId: undefined,
+      kind: "batchScrape",
+      ctx,
+      url: "https://example.com/b",
+      options,
+      state: {},
+      document: null,
+      error: failure,
+      charged: undefined,
+      timeTakenMs: 55,
+    });
+  });
+
+  it("allows executeTransformers and scrape.finished emitter to run without an installed service", async () => {
     replaceService(undefined);
     const log = {
       child: vi.fn(),
@@ -342,5 +610,21 @@ describe("scrape pipeline hook points", () => {
     );
 
     expect(document.markdown).toBe("# Standalone");
+
+    const emitFinished = createScrapeFinishedEmitter({
+      jobId: "job-no-service",
+      kind: "scrape",
+      ctx: requestContext({ teamId: "t", zeroDataRetention: false }),
+      url: "https://example.com/no-service",
+      options: scrapeOptions.parse({ formats: ["markdown"] }),
+      getState: () => undefined,
+    });
+    await expect(
+      emitFinished({
+        document,
+        charged: undefined,
+        timeTakenMs: 10,
+      }),
+    ).resolves.toBeUndefined();
   });
 });

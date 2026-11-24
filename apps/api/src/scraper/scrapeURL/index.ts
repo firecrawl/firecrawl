@@ -1455,6 +1455,12 @@ export async function scrapeURL(
           if (error instanceof AbortManagerThrownError) {
             throw error.inner;
           }
+          setSpanAttributes(span, {
+            "scrape.success": false,
+            "scrape.error":
+              error instanceof Error ? error.message : String(error),
+            "scrape.duration_ms": Date.now() - startTime,
+          });
           return {
             success: false,
             error,

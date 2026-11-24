@@ -114,8 +114,8 @@ import {
   type ExchangeScrapeMetadata,
 } from "../../lib/exchange";
 import { emitScrapeActivityEvent } from "../../lib/siem-logging";
+import { createScrapeFinishedEmitter } from "../../scraper/scrapeURL/hooks";
 import type { JobKind } from "../../service/hooks";
-import { installedService } from "../../service/service";
 
 configDotenv();
 
@@ -416,31 +416,15 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       ? "crawl"
       : "batchScrape"
     : "scrape";
-  let scrapeFinishedEmitted = false;
-  const emitScrapeFinished = async (params: {
-    document: Document | null;
-    error?: unknown;
-    charged: number | undefined;
-    timeTakenMs: number;
-  }) => {
-    if (scrapeFinishedEmitted) return;
-    scrapeFinishedEmitted = true;
-    const hooks = installedService()?.hooks;
-    if (!hooks?.has("scrape.finished")) return;
-    await hooks.run("scrape.finished", {
-      jobId: job.id,
-      requestId: job.data.requestId,
-      kind: scrapeKind,
-      ctx,
-      url: job.data.url,
-      options: job.data.scrapeOptions,
-      state: pipeline?.state ?? {},
-      document: params.document,
-      error: params.error,
-      charged: params.charged,
-      timeTakenMs: params.timeTakenMs,
-    });
-  };
+  const emitScrapeFinished = createScrapeFinishedEmitter({
+    jobId: job.id,
+    requestId: job.data.requestId,
+    kind: scrapeKind,
+    ctx,
+    url: job.data.url,
+    options: job.data.scrapeOptions,
+    getState: () => pipeline?.state,
+  });
 
   try {
     if (remainingTime !== undefined && remainingTime < 0) {
