@@ -9,6 +9,7 @@ import {
 } from "../lib/cclog";
 import { getRedisConnection } from "./queue-service";
 import { startRole } from "../main";
+import { runProcessStop } from "../service/service";
 import { cclogWorkerEnv } from "./cclog-worker-env";
 
 const CCLOG_WORKER_LOCK_KEY = "cclog:worker:tick-lock";
@@ -78,6 +79,7 @@ export async function start() {
     }
 
     server.close(async () => {
+      await runProcessStop("cclog-worker");
       await shutdownTracing();
       _logger.info("cclog worker shut down");
       process.exit(0);

@@ -41,6 +41,7 @@ import { startSiemLoggingConsumer } from "../siem-logging/worker";
 import { closeSiemLoggingTransport } from "../../lib/siem-logging/transport";
 import { requestCreditsShards } from "../../lib/request-credits-store";
 import { startRole } from "../../main";
+import { runProcessStop } from "../../service/service";
 import { indexWorkerEnv } from "./index-worker-env";
 
 const workerLockDuration = indexWorkerEnv.WORKER_LOCK_DURATION;
@@ -681,6 +682,7 @@ const workerFun = async (
   }
   logger.info("All jobs finished. Worker exiting!");
   await shutdownPubSubLogging();
+  await runProcessStop("index-worker");
   await shutdownTracing();
   process.exit(0);
 };
@@ -822,6 +824,7 @@ export async function start() {
   clearInterval(browserActivityInterval);
   clearInterval(browserReconcileInterval);
   // clearInterval(omceInserterInterval);
+  await runProcessStop("index-worker");
   logger.info("All workers shut down, exiting process");
 }
 

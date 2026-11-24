@@ -5,6 +5,7 @@ import * as net from "net";
 import { basename, join } from "path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
 import { startRole } from "./main";
+import { runProcessStop } from "./service/service";
 
 const childProcesses = new Set<ChildProcess>();
 const stopping = new WeakSet<ChildProcess>(); // processes we're intentionally stopping
@@ -1183,6 +1184,7 @@ async function gracefulShutdown() {
     fdbContainer = null;
   }
 
+  await runProcessStop("harness");
   logger.success("All processes terminated");
 }
 

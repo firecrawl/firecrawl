@@ -307,6 +307,7 @@ export function createService(
 
 let installed: Service | undefined;
 let startedRole: string | undefined;
+let stopRun: Promise<void> | undefined;
 
 /** The role `run` started in this process, or undefined when it has started none. */
 export function processRole(): string | undefined {
@@ -316,6 +317,22 @@ export function processRole(): string | undefined {
 /** The currently installed service, or undefined when none is installed. */
 export function installedService(): Service | undefined {
   return installed;
+}
+
+/**
+ * Runs `process.stop` hooks at most once for the active process role.
+ * Repeated shutdown triggers share the same completion promise.
+ */
+export function runProcessStop(role?: string): Promise<void> {
+  const currentService = installed;
+  if (!currentService || !currentService.hooks.has("process.stop")) {
+    return Promise.resolve();
+  }
+  if (!stopRun) {
+    const activeRole = startedRole ?? role ?? "";
+    stopRun = currentService.hooks.run("process.stop", { role: activeRole });
+  }
+  return stopRun;
 }
 
 function current(): Service {
@@ -364,13 +381,14 @@ export function replaceService(next: Service | undefined): Service | undefined {
   const previous = installed;
   installed = next;
   startedRole = undefined;
+  stopRun = undefined;
   return previous;
 }
 
 /**
  * Starts one process role: checks the environment of every owner defined so
- * far, installs the service, then runs the role. The returned promise settles
- * when the role's own start does.
+ * far, installs the service, runs `process.start` hooks, then runs the role.
+ * The returned promise settles when the role's own start does.
  *
  * The check comes before the role runs. A role that loads its code only when
  * it runs can define an owner then, and that owner is checked where it is
@@ -393,5 +411,11 @@ export function run(next: Service, role: string, entry: string): Promise<void> {
   assertEnv();
   installed = next;
   startedRole = role;
-  return Promise.resolve(next.workers[role].run({ entry }));
+  stopRun = undefined;
+  if (!next.hooks.has("process.start")) {
+    return Promise.resolve(next.workers[role].run({ entry }));
+  }
+  return next.hooks
+    .run("process.start", { role })
+    .then(() => next.workers[role].run({ entry }));
 }

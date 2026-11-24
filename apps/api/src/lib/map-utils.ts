@@ -26,6 +26,9 @@ import {
 } from "../services/index";
 import { performCosineSimilarityV2 } from "./map-cosine";
 import { Logger } from "winston";
+import { requestContext } from "./request-context";
+import type { RequestContext } from "../service/request-context";
+import { installedService } from "../service/service";
 
 // Max Links that "Smart /map" can return
 const MAX_FIRE_ENGINE_RESULTS = 100;
@@ -98,6 +101,7 @@ export async function getMapResults({
   maxFireEngineResults = MAX_FIRE_ENGINE_RESULTS,
   id: providedId,
   zeroDataRetention: requestZeroDataRetention = false,
+  ctx,
 }: {
   url: string;
   search?: string;
@@ -121,6 +125,7 @@ export async function getMapResults({
   id?: string;
   /** The calling request's own zero data retention, on top of the team's. */
   zeroDataRetention?: boolean;
+  ctx?: RequestContext;
 }): Promise<MapResult> {
   const functionStartTime = Date.now();
 
@@ -382,6 +387,36 @@ export async function getMapResults({
   }
 
   mapResults = dedupeMapDocumentArray(mapResults);
+
+  const hooks = installedService()?.hooks;
+  if (hooks?.has("map.collect")) {
+    const mapCtx =
+      ctx ??
+      requestContext({
+        teamId,
+        zeroDataRetention,
+        flags: flags ?? undefined,
+        orgId: orgId ?? null,
+      });
+    const currentUrls = mapResults.map(doc => doc.url);
+    const collectedUrls = await hooks.transform("map.collect", currentUrls, {
+      ctx: mapCtx,
+      url,
+      limit,
+    });
+    const byUrl = new Map<string, MapDocument>();
+    for (const doc of mapResults) {
+      if (!byUrl.has(doc.url)) {
+        byUrl.set(doc.url, doc);
+      }
+    }
+    mapResults = dedupeMapDocumentArray(
+      collectedUrls.map(
+        collectedUrl => byUrl.get(collectedUrl) ?? { url: collectedUrl },
+      ),
+    );
+  }
+
   mapResults = mapResults.slice(0, limit);
 
   const totalTimeMs = Date.now() - functionStartTime;

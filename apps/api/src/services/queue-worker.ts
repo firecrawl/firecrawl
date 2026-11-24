@@ -33,6 +33,7 @@ import {
 } from "./monitoring/queue";
 import { shutdownPubSubLogging } from "./logging/log_job";
 import { startRole } from "../main";
+import { runProcessStop } from "../service/service";
 
 configDotenv();
 
@@ -492,6 +493,7 @@ export async function start() {
 
   _logger.info("All jobs finished. Shutting down...");
   await shutdownPubSubLogging();
+  await runProcessStop("queue-worker");
   await shutdownTracing();
   process.exit(0);
 }

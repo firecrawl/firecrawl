@@ -60,6 +60,8 @@ import { orgIdForTeam } from "../../lib/team-org";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
 import { crawlContext, jobContext } from "../../lib/request-context";
+import type { RequestContext } from "../../service/request-context";
+import { installedService } from "../../service/service";
 import { CostTracking } from "../../lib/cost-tracking";
 import { chargeKeylessCredits } from "../../lib/keyless";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
@@ -748,6 +750,26 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               }
             }
 
+            const hooks = installedService()?.hooks;
+            if (
+              job.data.crawl_id &&
+              hooks?.has("crawl.links") &&
+              discoveredLinks.length > 0
+            ) {
+              discoveredLinks = await hooks.transform(
+                "crawl.links",
+                discoveredLinks,
+                {
+                  id: job.data.crawl_id,
+                  ctx,
+                  from:
+                    doc.metadata?.url ??
+                    doc.metadata?.sourceURL ??
+                    sc.originUrl!,
+                },
+              );
+            }
+
             // Hoisted: one ACUC read per job, not one per discovered link.
             const crawlACUC =
               discoveredLinks.length > 0
@@ -1292,6 +1314,7 @@ async function kickoffGetIndexLinks(
   sc: StoredCrawl,
   crawler: WebCrawler,
   url: string,
+  ctx: RequestContext,
 ) {
   if (sc.crawlerOptions.ignoreSitemap || sc.crawlerOptions.sitemapOnly) {
     return [];
@@ -1300,12 +1323,21 @@ async function kickoffGetIndexLinks(
   const trimmedURL = new URL(url);
   trimmedURL.search = "";
 
-  const index = await queryIndexAtSplitLevel(
+  let index = await queryIndexAtSplitLevel(
     sc.crawlerOptions.allowBackwardCrawling
       ? generateURLSplits(trimmedURL.href)[0]
       : trimmedURL.href,
     sc.crawlerOptions.limit ?? 10000,
   );
+
+  const hooks = installedService()?.hooks;
+  if (hooks?.has("crawl.kickoff")) {
+    index = await hooks.transform("crawl.kickoff", index, {
+      id: crawlId,
+      ctx,
+      url,
+    });
+  }
 
   const { links, robotsBlocked } = await crawler.filterLinks(
     index,
@@ -1493,6 +1525,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
       sc,
       crawler,
       job.data.url,
+      ctx,
     );
 
     // Threat protection: skip blocked index-sourced discoveries (URL-level
@@ -1545,6 +1578,15 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
           logger,
         );
       }
+    }
+
+    const kickoffHooks = installedService()?.hooks;
+    if (kickoffHooks?.has("crawl.links") && indexLinks.length > 0) {
+      indexLinks = await kickoffHooks.transform("crawl.links", indexLinks, {
+        id: job.data.crawl_id,
+        ctx,
+        from: job.data.url,
+      });
     }
 
     if (indexLinks.length > 0) {
@@ -1718,6 +1760,15 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
           logger,
         );
       }
+    }
+
+    const sitemapHooks = installedService()?.hooks;
+    if (sitemapHooks?.has("crawl.links") && passingURLs.length > 0) {
+      passingURLs = await sitemapHooks.transform("crawl.links", passingURLs, {
+        id: job.data.crawl_id,
+        ctx,
+        from: job.data.sitemapUrl,
+      });
     }
 
     if (passingURLs.length > 0) {

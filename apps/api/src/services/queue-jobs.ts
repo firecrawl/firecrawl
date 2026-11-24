@@ -12,6 +12,7 @@ import {
   pushConcurrencyLimitedJobs,
   pushCrawlConcurrencyLimitActiveJob,
   QueueFullError,
+  scrapeJobKind,
 } from "../lib/concurrency-limit";
 import { logger as _logger } from "../lib/logger";
 import { sendNotificationWithCustomDays } from "./notification/email_notification";
@@ -38,6 +39,8 @@ import {
 } from "./worker/nuq-fdb";
 import { serializeTraceContext } from "../lib/otel-tracer";
 import { isSelfHosted } from "../lib/deployment";
+import { jobContext } from "../lib/request-context";
+import { installedService } from "../service/service";
 import { MONITOR_CHECK_STALE_TIMEOUT_MS } from "./monitoring/stale";
 
 // Queue-wait deadline for a backlogged job (how long its owner still cares about the result)
@@ -61,6 +64,25 @@ function isCrawlOrBatchScrape(options: {
   // If crawlerOptions exists, it's a crawl
   // If crawl_id exists but no crawlerOptions, it's a batch scrape
   return !!options.crawlerOptions || !!options.crawl_id;
+}
+
+function observeJobEnqueued(jobId: string, data: ScrapeJobData): void {
+  const hooks = installedService()?.hooks;
+  if (!hooks?.has("job.enqueued")) return;
+  hooks.observe("job.enqueued", {
+    jobId,
+    kind: scrapeJobKind(data),
+    ctx: jobContext(data),
+  });
+}
+
+function observeConcurrencyLimited(data: ScrapeJobData, limit: number): void {
+  const hooks = installedService()?.hooks;
+  if (!hooks?.has("concurrency.limited")) return;
+  hooks.observe("concurrency.limited", {
+    ctx: jobContext(data),
+    limit,
+  });
 }
 
 async function _addScrapeJobToConcurrencyQueue(
@@ -175,6 +197,7 @@ export async function _addScrapeJobToBullMQ(
       webScraperOptions.team_id,
       { bypassGate: true },
     );
+    observeJobEnqueued(jobId, webScraperOptions);
     return jobs[0];
   }
 
@@ -215,12 +238,14 @@ async function _addScrapeJobToBullMQPg(
     }
   }
 
-  return await scrapeQueue.addJob(jobId, webScraperOptions, {
+  const added = await scrapeQueue.addJob(jobId, webScraperOptions, {
     priority,
     listenable,
     ownerId: webScraperOptions.team_id ?? undefined,
     groupId: webScraperOptions.crawl_id ?? undefined,
   });
+  observeJobEnqueued(jobId, webScraperOptions);
+  return added;
 }
 
 async function _addScrapeJobsToBullMQ(
@@ -256,7 +281,7 @@ async function _addScrapeJobsToBullMQ(
     }
   }
 
-  return await scrapeQueue.addJobs(
+  const added = await scrapeQueue.addJobs(
     jobs.map(job => ({
       id: job.jobId,
       data: job.data,
@@ -268,6 +293,10 @@ async function _addScrapeJobsToBullMQ(
       },
     })),
   );
+  for (const job of jobs) {
+    observeJobEnqueued(job.jobId, job.data);
+  }
+  return added;
 }
 
 async function addScrapeJobFdb(
@@ -295,7 +324,12 @@ async function addScrapeJobFdb(
     { bypassGate: directToBullMQ },
   );
 
+  observeJobEnqueued(jobId, webScraperOptions);
+
   if (backloggedCount > 0) {
+    if (teamLimit !== null) {
+      observeConcurrencyLimited(webScraperOptions, teamLimit);
+    }
     await maybeSendConcurrencyNotificationFdb(
       webScraperOptions.team_id,
       teamLimit,
@@ -481,6 +515,9 @@ async function addScrapeJobRaw(
       priority,
       listenable,
     );
+    if (concurrencyLimited === "yes") {
+      observeConcurrencyLimited(webScraperOptions, maxConcurrency);
+    }
     return null;
   } else {
     return await _addScrapeJobToBullMQPg(
@@ -575,7 +612,16 @@ export async function addScrapeJobs(
         })),
         teamId,
       );
+      for (const job of fdbJobs) {
+        observeJobEnqueued(job.jobId, { ...job.data, traceContext });
+      }
       if (backloggedCount > 0) {
+        if (teamLimit !== null) {
+          observeConcurrencyLimited(
+            { ...fdbJobs[0].data, traceContext },
+            teamLimit,
+          );
+        }
         await maybeSendConcurrencyNotificationFdb(
           teamId,
           teamLimit,
@@ -792,6 +838,15 @@ export async function addScrapeJobs(
         listenable: job.listenable,
       })),
     );
+    if (
+      !isSelfHosted() &&
+      jobsPotentiallyInCQ.length > countCanBeDirectlyAdded
+    ) {
+      observeConcurrencyLimited(
+        { ...jobsPotentiallyInCQ[countCanBeDirectlyAdded].data, traceContext },
+        maxConcurrency,
+      );
+    }
 
     await _addScrapeJobsToBullMQ(
       addToBull.map(job => ({

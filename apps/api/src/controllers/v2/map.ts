@@ -26,6 +26,8 @@ import {
   resolveThreatProtection,
 } from "../../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
+import { requestContext } from "../../lib/request-context";
+import { installedService } from "../../service/service";
 
 configDotenv();
 
@@ -105,6 +107,16 @@ export async function mapController(
   const middlewareTime = controllerStartTime - middlewareStartTime;
 
   const mapId = uuidv7();
+  const ctx =
+    req.ctx ??
+    requestContext({
+      teamId: req.auth.team_id,
+      zeroDataRetention,
+      flags: req.acuc?.flags ?? null,
+      orgId: req.acuc?.org_id ?? null,
+      apiKeyId: req.acuc?.api_key_id ?? null,
+    });
+  req.ctx = ctx;
 
   logger.info("Map request", {
     request: req.body,
@@ -180,6 +192,15 @@ export async function mapController(
         );
       });
 
+      const hooks = installedService()?.hooks;
+      if (hooks?.has("map.finished")) {
+        hooks.observe("map.finished", {
+          id: mapId,
+          ctx,
+          urls: avgrabResults.length,
+        });
+      }
+
       return res.status(200).json({
         success: true,
         id: mapId,
@@ -232,6 +253,7 @@ export async function mapController(
         location: req.body.location,
         headers: req.body.headers,
         id: mapId,
+        ctx,
       }),
       ...(req.body.timeout !== undefined
         ? [
@@ -330,6 +352,15 @@ export async function mapController(
   }).catch(error => {
     logger.error(`Failed to log job for team ${req.auth.team_id}: ${error}`);
   });
+
+  const hooks = installedService()?.hooks;
+  if (hooks?.has("map.finished")) {
+    hooks.observe("map.finished", {
+      id: result.job_id,
+      ctx,
+      urls: result.mapResults.length,
+    });
+  }
 
   // Log final timing information
   const totalRequestTime = new Date().getTime() - middlewareStartTime;

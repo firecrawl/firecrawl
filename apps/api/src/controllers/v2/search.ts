@@ -78,6 +78,9 @@ import {
   toolFusionEnabled,
 } from "../../search/tool-intent";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
+import { isSelfHosted } from "../../lib/deployment";
+import { requestContext } from "../../lib/request-context";
+import { installedService } from "../../service/service";
 
 const IMAGE_SEARCH_US_ONLY_MESSAGE =
   "Image search is not available for teams restricted to US-only processing.";
@@ -433,6 +436,18 @@ async function searchControllerInner(
       }
     }
 
+    const ctx =
+      req.ctx ??
+      requestContext({
+        teamId: req.auth.team_id,
+        zeroDataRetention,
+        flags: req.acuc?.flags ?? null,
+        orgId: req.acuc?.org_id ?? null,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+        billing,
+      });
+    req.ctx = ctx;
+
     // Kick off the `requests` row insert without blocking: it queues on the
     // Postgres pool and can take seconds under pool pressure. We only need it
     // committed before the child-row writes (logSearch et al. below) to keep
@@ -597,6 +612,8 @@ async function searchControllerInner(
         ...(req.headers["x-firecrawl-work-contact-only"] === "true"
           ? { workContactOnly: true }
           : {}),
+        ctx,
+        body: req.body,
       },
       logger,
     );
@@ -621,6 +638,16 @@ async function searchControllerInner(
       }).catch(error => {
         logger.error("Failed to log search", { error, jobId });
       });
+      const hooks = installedService()?.hooks;
+      if (hooks?.has("search.finished")) {
+        hooks.observe("search.finished", {
+          id: jobId,
+          ctx,
+          results: 0,
+          charged:
+            !isSelfHosted() && !isSearchPreview && shouldBill ? 0 : undefined,
+        });
+      }
       return res.status(503).json({
         success: false,
         code: "TOOL_DISCOVERY_UNAVAILABLE",
@@ -739,6 +766,18 @@ async function searchControllerInner(
         result.response.tools,
         lineage,
       );
+    }
+    const hooks = installedService()?.hooks;
+    if (hooks?.has("search.finished")) {
+      hooks.observe("search.finished", {
+        id: jobId,
+        ctx,
+        results: result.totalResultsCount,
+        charged:
+          !isSelfHosted() && !isSearchPreview && shouldBill
+            ? result.searchCredits
+            : undefined,
+      });
     }
     const warning = [
       usOnlyImagesWarning,

@@ -9,6 +9,7 @@ import {
   processRole,
   replaceService,
   run,
+  runProcessStop,
   service,
   type CoreParts,
   type Extension,
@@ -748,5 +749,181 @@ describe("run", () => {
     );
 
     await expect(run(built, "api", "/app/main.js")).rejects.toThrow("stopped");
+  });
+
+  it("awaits process.start hooks in order before running the role", async () => {
+    const events: string[] = [];
+    const api: Worker = {
+      run: vi.fn(() => {
+        events.push("worker:run");
+      }),
+    };
+    const built = createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "first",
+            hooks: {
+              "process.start": async ({ role }) => {
+                expect(processRole()).toBe("api");
+                expect(service.workers.api).toBe(api);
+                await Promise.resolve();
+                events.push(`start:first:${role}`);
+              },
+            },
+          },
+          {
+            name: "second",
+            hooks: {
+              "process.start": ({ role }) => {
+                events.push(`start:second:${role}`);
+              },
+            },
+          },
+        ],
+      },
+      parts({ workers: { api } }),
+    );
+
+    await run(built, "api", "/app/main.js");
+
+    expect(events).toEqual([
+      "start:first:api",
+      "start:second:api",
+      "worker:run",
+    ]);
+    expect(api.run).toHaveBeenCalledWith({ entry: "/app/main.js" });
+  });
+
+  it("does not start the role when a process.start hook rejects", async () => {
+    const api: Worker = { run: vi.fn() };
+    const built = createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "veto",
+            hooks: {
+              "process.start": async () => {
+                throw new Error("startup blocked");
+              },
+            },
+          },
+        ],
+      },
+      parts({ workers: { api } }),
+    );
+
+    await expect(run(built, "api", "/app/main.js")).rejects.toThrow(
+      "startup blocked",
+    );
+    expect(api.run).not.toHaveBeenCalled();
+  });
+});
+
+describe("runProcessStop", () => {
+  it("is a no-op when no service is installed or no handler is registered", async () => {
+    await expect(runProcessStop("api")).resolves.toBeUndefined();
+
+    const built = createService(
+      { modules: {} },
+      parts({ workers: { api: worker() } }),
+    );
+    await run(built, "api", "/app/main.js");
+
+    await expect(runProcessStop("api")).resolves.toBeUndefined();
+  });
+
+  it("runs process.stop hooks once in reverse order with the active role", async () => {
+    const events: string[] = [];
+    const built = createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "first",
+            hooks: {
+              "process.stop": async ({ role }) => {
+                await Promise.resolve();
+                events.push(`stop:first:${role}`);
+              },
+            },
+          },
+          {
+            name: "second",
+            hooks: {
+              "process.stop": async ({ role }) => {
+                await Promise.resolve();
+                events.push(`stop:second:${role}`);
+              },
+            },
+          },
+        ],
+      },
+      parts({ workers: { "queue-worker": worker() } }),
+    );
+
+    await run(built, "queue-worker", "/app/main.js");
+
+    await Promise.all([runProcessStop("fallback"), runProcessStop("fallback")]);
+    await runProcessStop("fallback");
+
+    expect(events).toEqual([
+      "stop:second:queue-worker",
+      "stop:first:queue-worker",
+    ]);
+  });
+
+  it("isolates errors and 10s timeouts across process.stop handlers", async () => {
+    vi.useFakeTimers();
+    try {
+      const errorLogger = vi.fn();
+      const events: string[] = [];
+      const built = createService(
+        {
+          modules: {},
+          extensions: [
+            {
+              name: "first",
+              hooks: {
+                "process.stop": ({ role }) => {
+                  events.push(`first:${role}`);
+                },
+              },
+            },
+            {
+              name: "slow",
+              hooks: {
+                "process.stop": () => new Promise<void>(() => {}),
+              },
+            },
+            {
+              name: "throwing",
+              hooks: {
+                "process.stop": () => {
+                  events.push("throwing");
+                  throw new Error("flush failed");
+                },
+              },
+            },
+          ],
+        },
+        {
+          core: { name: "core", workers: { api: worker() } },
+          logger: { error: errorLogger },
+        },
+      );
+      replaceService(built);
+
+      const pending = runProcessStop("api");
+      await vi.advanceTimersByTimeAsync(10_000);
+      await pending;
+
+      expect(events).toEqual(["throwing", "first:api"]);
+      expect(errorLogger).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

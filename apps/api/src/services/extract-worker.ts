@@ -22,6 +22,7 @@ import { logExtract, shutdownPubSubLogging } from "./logging/log_job";
 import { jobDurationSeconds } from "../lib/job-metrics";
 import { register } from "prom-client";
 import { startRole } from "../main";
+import { runProcessStop } from "../service/service";
 
 configDotenv();
 
@@ -208,6 +209,7 @@ async function shutdown() {
   _logger.info("Shutting down extract worker...");
   await shutdownExtractQueue();
   await shutdownPubSubLogging();
+  await runProcessStop("extract-worker");
   await shutdownTracing();
   _logger.info("Extract worker shut down");
   process.exit(0);

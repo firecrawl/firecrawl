@@ -40,6 +40,7 @@ import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
 import { nuqShutdown } from "./services/worker/nuq";
 import { service } from "./service";
+import { runProcessStop } from "./service/service";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
 import { warmExchangeCatalog } from "./lib/exchange";
 import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
@@ -271,6 +272,7 @@ async function startServer(port = DEFAULT_PORT) {
         shutdownWebhookQueue().finally(() => {
           shutdownIndexerQueue().finally(async () => {
             await shutdownPubSubLogging();
+            await runProcessStop("api");
             await shutdownTracing();
             logger.info("NUQ shutdown complete");
             process.exit(0);
