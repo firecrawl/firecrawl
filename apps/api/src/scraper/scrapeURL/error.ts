@@ -1,27 +1,24 @@
-import { ErrorCode, TransportableError } from "../../lib/error";
+import {
+  ErrorCode,
+  ErrorScrapeLog,
+  FormatUnavailableError,
+  TransportableError,
+} from "../../lib/error";
+import { logsMessages } from "../../service/defaults";
+import { installedService } from "../../service/service";
 import type { Meta } from ".";
 import type { Engine, FeatureFlag } from "./engines";
 
-// Matches Zod's z.stringbool() truthy values so constructing errors before
-// deployment.ts loads agrees with config.USE_DB_AUTHENTICATION.
-const TRUTHY_ENV_VALUES = new Set(["true", "1", "yes", "on", "y", "enabled"]);
-
-let readIsSelfHosted: () => boolean = () =>
-  !TRUTHY_ENV_VALUES.has(
-    (process.env.USE_DB_AUTHENTICATION ?? "").toLowerCase(),
-  );
-
-/**
- * Registers the deployment check once runtime config is loaded, keeping this
- * module free of config import side effects.
- */
-export function setIsSelfHostedReader(reader: () => boolean): void {
-  readIsSelfHosted = reader;
-}
+const defaultMessages = logsMessages();
+const messages = () => installedService()?.modules.messages ?? defaultMessages;
 
 export class EngineError extends Error {
   constructor(message?: string, options?: ErrorOptions) {
     super(message, options);
+  }
+
+  formatEngineLog(engine: string): string {
+    return `Engine ${engine} could not scrape the page.`;
   }
 }
 
@@ -31,6 +28,18 @@ export class UsOnlyUnavailableError extends TransportableError {
 
   constructor(message: string) {
     super("US_ONLY_UNAVAILABLE", message);
+  }
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
+  get propagateFromExtraction(): boolean {
+    return true;
+  }
+
+  get httpStatus(): number {
+    return 403;
   }
 
   static deserialize(
@@ -55,6 +64,14 @@ export class ReservedCapacityUnavailableError extends TransportableError {
     super("RESERVED_CAPACITY_UNAVAILABLE", message);
   }
 
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
+  get httpStatus(): number {
+    return 403;
+  }
+
   static deserialize(
     _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
@@ -72,9 +89,7 @@ export class NoEnginesLeftError extends TransportableError {
 
   constructor(fallbackList: Engine[]) {
     const enginesTriedStr = fallbackList.join(", ");
-    const message = readIsSelfHosted()
-      ? `All scraping engines failed to retrieve content from this URL. Engines tried: [${enginesTriedStr}]. This usually happens when: (1) The URL is invalid or the page doesn't exist (404), (2) The website is blocking automated access, (3) The website is down or unreachable, (4) The page requires authentication. Double check the URL is correct and accessible in a browser. Check your server logs for more detailed error information from each engine.`
-      : `All scraping engines failed to retrieve content from this URL. Engines tried: [${enginesTriedStr}]. This usually happens when: (1) The URL is invalid or the page doesn't exist (404), (2) The website is blocking automated access, (3) The website is down or unreachable, (4) The page requires authentication. Double check the URL is correct and accessible in a browser. If the issue persists, contact us at help@firecrawl.com with your request ID for investigation.`;
+    const message = `All scraping engines failed to retrieve content from this URL. Engines tried: [${enginesTriedStr}]. This usually happens when: (1) The URL is invalid or the page doesn't exist (404), (2) The website is blocking automated access, (3) The website is down or unreachable, (4) The page requires authentication. Double check the URL is correct and accessible in a browser. ${messages().allEnginesFailedContact()}`;
 
     super("SCRAPE_ALL_ENGINES_FAILED", message);
     this.fallbackList = fallbackList;
@@ -115,6 +130,10 @@ export class AddFeatureError extends Error {
     this.documentPrefetch = documentPrefetch;
     this.imagePrefetch = imagePrefetch;
   }
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 }
 
 export class RemoveFeatureError extends Error {
@@ -127,10 +146,18 @@ export class RemoveFeatureError extends Error {
     );
     this.featureFlags = featureFlags;
   }
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 }
 
 export class SSLError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_SSL_ERROR"];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 
   constructor(
     public skipTlsVerification: boolean,
@@ -187,6 +214,22 @@ export class ExchangeRefusedError extends TransportableError {
     super(code, message);
   }
 
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
+  get httpStatus(): number {
+    switch (this.code as ExchangeRefusalCode) {
+      case "THIRD_PARTY_DATA_NOT_FOUND":
+        return 404;
+      case "THIRD_PARTY_DATA_UNSUPPORTED_URL":
+        return 400;
+      case "THIRD_PARTY_DATA_NOT_ENABLED":
+      case "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED":
+        return 403;
+    }
+  }
+
   static deserialize(
     code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
@@ -202,6 +245,10 @@ export class ExchangeRefusedError extends TransportableError {
 
 export class SiteError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_SITE_ERROR"];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 
   constructor(public errorCode: string) {
     const errorExplanations: Record<string, string> = {
@@ -265,6 +312,10 @@ export class ProxySelectionError extends TransportableError {
     "SCRAPE_PROXY_SELECTION_ERROR",
   ];
 
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
   constructor() {
     super(
       "SCRAPE_PROXY_SELECTION_ERROR",
@@ -292,6 +343,18 @@ export class SiteRestrictionError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = [
     "SCRAPE_SITE_RESTRICTION_BLOCKED",
   ];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
+  get scrapeLog(): ErrorScrapeLog {
+    return {
+      errorType: "SiteRestrictionError",
+      message: "scrapeURL: Site restriction returned (Safe Mode)",
+      context: { error: this },
+    };
+  }
 
   constructor() {
     super(
@@ -328,6 +391,10 @@ export class SiteBlockNoRetryError extends Error {
       `Fire Engine reported a site block that a retry does not get past: ${fireEngineError}`,
     );
   }
+
+  get abortsEngineRace(): boolean {
+    return true;
+  }
 }
 
 // Whether a failed Fire Engine job is such a block. Fire Engine sends
@@ -349,6 +416,10 @@ export function isNoRetrySiteBlock(
 
 export class ActionError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_ACTION_ERROR"];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 
   constructor(public errorCode: string) {
     super(
@@ -379,6 +450,10 @@ export class UnsupportedFileError extends TransportableError {
     "SCRAPE_UNSUPPORTED_FILE_ERROR",
   ];
 
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
   constructor(public reason: string) {
     super(
       "SCRAPE_UNSUPPORTED_FILE_ERROR",
@@ -406,6 +481,10 @@ export class UnsupportedFileError extends TransportableError {
 export class PDFAntibotError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_PDF_ANTIBOT_ERROR"];
 
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
   constructor() {
     super("SCRAPE_PDF_ANTIBOT_ERROR", "PDF scrape was prevented by anti-bot");
   }
@@ -429,12 +508,15 @@ export class PDFFetchProxyError extends TransportableError {
     "SCRAPE_PDF_FETCH_PROXY_ERROR",
   ];
 
-  constructor() {
-    const message = readIsSelfHosted()
-      ? "Failed to download the PDF file because the configured proxy could not establish a connection to the website (the proxy rejected the tunneling request). Check your proxy configuration (PROXY_SERVER) and whether the target site is reachable from it, then retry."
-      : "Failed to download the PDF file — Firecrawl could not establish a connection to the website while downloading it. Please retry your request, and if the issue persists, contact help@firecrawl.com with your request ID for investigation.";
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 
-    super("SCRAPE_PDF_FETCH_PROXY_ERROR", message);
+  constructor() {
+    super(
+      "SCRAPE_PDF_FETCH_PROXY_ERROR",
+      messages().fileFetchProxyError("PDF"),
+    );
   }
 
   serialize() {
@@ -455,6 +537,10 @@ export class PDFInsufficientTimeError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = [
     "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR",
   ];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 
   constructor(
     public pageCount: number,
@@ -487,6 +573,10 @@ export class PDFInsufficientTimeError extends TransportableError {
 export class DNSResolutionError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_DNS_RESOLUTION_ERROR"];
 
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
   constructor(public hostname: string) {
     super(
       "SCRAPE_DNS_RESOLUTION_ERROR",
@@ -511,14 +601,26 @@ export class DNSResolutionError extends TransportableError {
   }
 }
 
-export class IndexMissError extends Error {
+export class IndexMissError extends EngineError {
   constructor() {
     super("Index doesn't have the page we're looking for");
+  }
+
+  override formatEngineLog(engine: string): string {
+    return `Engine ${engine} could not find the page in the index.`;
   }
 }
 
 export class NoCachedDataError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_NO_CACHED_DATA"];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
+  get httpStatus(): number {
+    return 404;
+  }
 
   constructor() {
     super(
@@ -543,6 +645,10 @@ export class NoCachedDataError extends TransportableError {
 
 export class LockdownMissError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_LOCKDOWN_CACHE_MISS"];
+
+  get httpStatus(): number {
+    return 404;
+  }
 
   constructor() {
     super(
@@ -595,6 +701,10 @@ export class ZDRViolationError extends TransportableError {
 export class PDFOCRRequiredError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_PDF_OCR_REQUIRED"];
 
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
   constructor(public pdfType: string) {
     super(
       "SCRAPE_PDF_OCR_REQUIRED",
@@ -623,9 +733,7 @@ export class PDFPrefetchFailed extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_PDF_PREFETCH_FAILED"];
 
   constructor() {
-    const message = readIsSelfHosted()
-      ? "Failed to prefetch the PDF file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the PDF is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. Check your server logs for more details about the specific protection mechanism encountered."
-      : "Failed to prefetch the PDF file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the PDF is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. If this is a business-critical URL, please contact help@firecrawl.com with the URL and we can investigate adding specific support for this site.";
+    const message = `Failed to prefetch the PDF file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the PDF is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. ${messages().filePrefetchFailedContact()}`;
 
     super("SCRAPE_PDF_PREFETCH_FAILED", message);
   }
@@ -648,6 +756,10 @@ export class DocumentAntibotError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = [
     "SCRAPE_DOCUMENT_ANTIBOT_ERROR",
   ];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 
   constructor() {
     super(
@@ -675,12 +787,15 @@ export class DocumentFetchProxyError extends TransportableError {
     "SCRAPE_DOCUMENT_FETCH_PROXY_ERROR",
   ];
 
-  constructor() {
-    const message = readIsSelfHosted()
-      ? "Failed to download the document file because the configured proxy could not establish a connection to the website (the proxy rejected the tunneling request). Check your proxy configuration (PROXY_SERVER) and whether the target site is reachable from it, then retry."
-      : "Failed to download the document file — Firecrawl could not establish a connection to the website while downloading it. Please retry your request, and if the issue persists, contact help@firecrawl.com with your request ID for investigation.";
+  get endsEngineLoop(): boolean {
+    return true;
+  }
 
-    super("SCRAPE_DOCUMENT_FETCH_PROXY_ERROR", message);
+  constructor() {
+    super(
+      "SCRAPE_DOCUMENT_FETCH_PROXY_ERROR",
+      messages().fileFetchProxyError("document"),
+    );
   }
 
   serialize() {
@@ -703,9 +818,7 @@ export class DocumentPrefetchFailed extends TransportableError {
   ];
 
   constructor() {
-    const message = readIsSelfHosted()
-      ? "Failed to prefetch the document file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the document (DOCX, XLSX, etc.) is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. Check your server logs for more details about the specific protection mechanism encountered."
-      : "Failed to prefetch the document file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the document (DOCX, XLSX, etc.) is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. If this is a business-critical URL, please contact help@firecrawl.com with the URL and we can investigate adding specific support for this site.";
+    const message = `Failed to prefetch the document file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the document (DOCX, XLSX, etc.) is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. ${messages().filePrefetchFailedContact()}`;
 
     super("SCRAPE_DOCUMENT_PREFETCH_FAILED", message);
   }
@@ -726,6 +839,21 @@ export class DocumentPrefetchFailed extends TransportableError {
 
 export class AgentIndexOnlyError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["AGENT_INDEX_ONLY"];
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
+  get httpStatus(): number {
+    return 403;
+  }
+
+  get httpResponseFields(): Record<string, unknown> {
+    return {
+      sponsor_status: "pending",
+      login_url: "https://firecrawl.dev/signin",
+    };
+  }
 
   constructor() {
     super(
@@ -776,6 +904,10 @@ export class AudioUnsupportedUrlError extends TransportableError {
 
 export class MediaAccessDeniedError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_MEDIA_ACCESS_DENIED"];
+
+  get httpStatus(): number {
+    return 403;
+  }
 
   constructor(message?: string) {
     super(
@@ -828,6 +960,21 @@ export class PromptInjectionDetectedError extends TransportableError {
 
 export class PaywalledContentError extends TransportableError {
   static readonly codes: readonly ErrorCode[] = ["SCRAPE_PAYWALLED_CONTENT"];
+
+  get stopsCrawlRetry(): boolean {
+    return true;
+  }
+
+  get httpStatus(): number {
+    return 403;
+  }
+
+  get scrapeLog(): ErrorScrapeLog {
+    return {
+      errorType: "PaywalledContentError",
+      message: "scrapeURL: Paywalled page refused by Safe Mode",
+    };
+  }
 
   constructor(message?: string) {
     super(
@@ -927,13 +1074,26 @@ export class VideoUnsupportedUrlError extends TransportableError {
   }
 }
 
-export class BrandingNotSupportedError extends TransportableError {
+export class BrandingNotSupportedError extends FormatUnavailableError {
   static readonly codes: readonly ErrorCode[] = [
     "SCRAPE_BRANDING_NOT_SUPPORTED",
   ];
 
   constructor(message: string) {
-    super("SCRAPE_BRANDING_NOT_SUPPORTED", message);
+    super(
+      "branding",
+      "SCRAPE_BRANDING_NOT_SUPPORTED",
+      message,
+      `Branding was skipped: ${message}`,
+    );
+  }
+
+  get scrapeLog(): ErrorScrapeLog {
+    return {
+      errorType: "BrandingNotSupportedError",
+      message: "scrapeURL: Branding not supported for this content",
+      context: { error: this },
+    };
   }
 
   serialize() {
@@ -950,11 +1110,15 @@ export class BrandingNotSupportedError extends TransportableError {
   }
 }
 
-export class FEPageLoadFailed extends Error {
+export class FEPageLoadFailed extends EngineError {
   constructor() {
     super(
       "The page failed to load with the specified timeout. Please increase the timeout parameter in your request.",
     );
+  }
+
+  override formatEngineLog(_engine: string): string {
+    return "FEPageLoadFailed encountered";
   }
 }
 

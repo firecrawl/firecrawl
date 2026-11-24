@@ -55,12 +55,19 @@ vi.mock("../../config", () => ({
     AGENT_AUTH_RESOURCE_METADATA_URL: "https://x/auth",
   },
 }));
+vi.mock("../../lib/feedback-env", () => ({
+  feedbackEnv: {
+    ALEXANDRIA_FEEDBACK_HINT_ENABLED: false,
+    FEEDBACK_REFUND_ENABLED: false,
+  },
+}));
 import {
   alexandriaQueryBody,
   providerScrapeController,
 } from "./scrape-alexandria";
 import { resolveIntegration } from "../../utils/integration";
 import { config } from "../../config";
+import { feedbackEnv } from "../../lib/feedback-env";
 import { verifyFeedbackToken } from "../../lib/alexandria-feedback-token";
 import { alexandriaFeedbackNextStep } from "../../lib/alexandria-feedback-hint";
 
@@ -1416,7 +1423,7 @@ describe("GET /v2/alexandria/:provider/*capability", () => {
 });
 
 describe("feedback next step", () => {
-  const hint = config as { ALEXANDRIA_FEEDBACK_HINT_ENABLED?: boolean };
+  const hint = feedbackEnv;
   const second = { provider: "sec", capability: "filings", options: {} };
   const answered = (item: object = call) => ({
     ...item,
@@ -1429,7 +1436,7 @@ describe("feedback next step", () => {
     mocks.retrieve.mockResolvedValue(result([answered()]));
   });
   afterEach(() => {
-    hint.ALEXANDRIA_FEEDBACK_HINT_ENABLED = undefined;
+    hint.ALEXANDRIA_FEEDBACK_HINT_ENABLED = false;
   });
 
   it("adds the next step beside the existing fields of a provider answer", async () => {
@@ -1536,7 +1543,7 @@ describe("feedback next step", () => {
 });
 
 describe("next step from Exchange", () => {
-  const hint = config as { ALEXANDRIA_FEEDBACK_HINT_ENABLED?: boolean };
+  const hint = feedbackEnv;
   const ifNotFound = {
     note: "<note>",
     call: {
@@ -1556,7 +1563,7 @@ describe("next step from Exchange", () => {
       .post("/v2/scrape")
       .send({ alexandria: call, origin: "mcp-cursor" });
   afterEach(() => {
-    hint.ALEXANDRIA_FEEDBACK_HINT_ENABLED = undefined;
+    hint.ALEXANDRIA_FEEDBACK_HINT_ENABLED = false;
   });
 
   it("keeps both next steps, the feedback keys first and unchanged", async () => {
@@ -1730,15 +1737,11 @@ describe("a free Firecrawl capability", () => {
     },
   };
   beforeEach(() => {
-    (
-      config as { ALEXANDRIA_FEEDBACK_HINT_ENABLED?: boolean }
-    ).ALEXANDRIA_FEEDBACK_HINT_ENABLED = true;
+    feedbackEnv.ALEXANDRIA_FEEDBACK_HINT_ENABLED = true;
     mocks.retrieve.mockResolvedValue(result([answer]));
   });
   afterEach(() => {
-    (
-      config as { ALEXANDRIA_FEEDBACK_HINT_ENABLED?: boolean }
-    ).ALEXANDRIA_FEEDBACK_HINT_ENABLED = undefined;
+    feedbackEnv.ALEXANDRIA_FEEDBACK_HINT_ENABLED = false;
   });
 
   it("returns the answer unchanged on every route and charges nothing", async () => {

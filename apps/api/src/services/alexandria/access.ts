@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { config } from "../../config";
+import { notificationsEnv } from "../notification/env";
 import type { TeamFlags } from "../../controllers/v2/types";
 import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { exchangeRequest } from "./client";
@@ -166,7 +167,7 @@ export async function authorizeProviders(
       ].join(", ");
       return refusal(
         403,
-        `${addresses} ${gated.length === 1 ? "is" : "are"} available on paid plans only. Upgrade at ${config.FIRECRAWL_DASHBOARD_URL ?? "https://www.firecrawl.dev"} to use ${gated.length === 1 ? "it" : "them"}. No provider was executed.`,
+        `${addresses} ${gated.length === 1 ? "is" : "are"} available on paid plans only. Upgrade at ${notificationsEnv.FIRECRAWL_DASHBOARD_URL ?? "https://www.firecrawl.dev"} to use ${gated.length === 1 ? "it" : "them"}. No provider was executed.`,
         { code: "paid_plan_required" },
       );
     }

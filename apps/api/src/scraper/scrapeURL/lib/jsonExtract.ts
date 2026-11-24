@@ -9,10 +9,8 @@ import {
   CostLimitExceededError,
   CostTracking,
 } from "../../../lib/cost-tracking";
-import {
-  JsonExtractionContentTooLargeError,
-  UsOnlyUnavailableError,
-} from "../error";
+import { shouldPropagateFromExtraction } from "../../../lib/error";
+import { JsonExtractionContentTooLargeError } from "../error";
 import { toRootSchema, typeIncludes } from "../../../lib/openai-strict-schema";
 
 // ~2MB of markdown, well past typical page sizes -- caps worst-case JSON extraction cost/latency.
@@ -213,7 +211,7 @@ export async function extractData({
   } catch (error) {
     if (
       error instanceof CostLimitExceededError ||
-      error instanceof UsOnlyUnavailableError
+      shouldPropagateFromExtraction(error)
     ) {
       throw error;
     }

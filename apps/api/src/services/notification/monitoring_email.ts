@@ -1,7 +1,7 @@
 import { Resend } from "resend";
 import escapeHtml from "escape-html";
 import { eq } from "drizzle-orm";
-import { config } from "../../config";
+import { notificationsEnv } from "./env";
 import { logger as _logger } from "../../lib/logger";
 import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
@@ -148,7 +148,7 @@ async function getTeamEmails(teamId: string): Promise<string[]> {
 
 export function buildMonitoringCheckDashboardUrl(
   params: { monitorId: string; checkId: string },
-  baseUrl: string = config.FIRECRAWL_DASHBOARD_URL,
+  baseUrl: string = notificationsEnv.FIRECRAWL_DASHBOARD_URL,
 ): string {
   const url = new URL(
     `/app/monitoring/${encodeURIComponent(params.monitorId)}`,
@@ -159,7 +159,7 @@ export function buildMonitoringCheckDashboardUrl(
 }
 
 function buildPublicWebUrl(path: string, token: string): string {
-  const base = config.FIRECRAWL_DASHBOARD_URL.trim();
+  const base = notificationsEnv.FIRECRAWL_DASHBOARD_URL.trim();
   const url = new URL(path, base);
   url.searchParams.set("token", token);
   return url.toString();
@@ -310,7 +310,7 @@ export function buildConfirmationHtml(params: {
 }
 
 function getResendClient(): Resend | null {
-  const key = config.RESEND_API_KEY?.trim();
+  const key = notificationsEnv.RESEND_API_KEY?.trim();
   if (!key) return null;
   return new Resend(key);
 }

@@ -1,6 +1,8 @@
 import "dotenv/config";
 import { z } from "zod";
-import { getMcpActionLogConfigErrors } from "./lib/mcp-action-log-config";
+import { emptyStringAsUndefined } from "./config-helpers";
+
+export { emptyStringAsUndefined };
 
 /* Codecs */
 const delimitedList = (separator = ",") => {
@@ -9,9 +11,6 @@ const delimitedList = (separator = ",") => {
     encode: arr => arr.join(separator),
   });
 };
-
-const emptyStringAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
-  z.preprocess(value => (value === "" ? undefined : value), schema.optional());
 
 const emptyStringAsDefault = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess(value => (value === "" ? undefined : value), schema);
@@ -116,7 +115,6 @@ const configSchema = z.object({
   FIRECRAWL_APP_PORT: z.string().default("3002"),
   FIRECRAWL_APP_SCHEME: z.string().default("http"),
   LOGGING_LEVEL: z.string().optional(),
-  FIRECRAWL_DASHBOARD_URL: z.url().default("https://www.firecrawl.dev"),
   SUPPORT_AGENT_URL: z.string().url().optional(),
   SUPPORT_AGENT_VERCEL_BYPASS_SECRET: z.string().optional(),
   FIREBRAIN_TRACKS_URL: z.preprocess(
@@ -223,45 +221,6 @@ const configSchema = z.object({
   // TOR). Unset disables the check entirely (keyless behaves as before).
   SPUR_API_KEY: z.string().optional(),
 
-  // Threat protection (enterprise domain risk blocking). "normal" mode uses
-  // Google Web Risk. An unset key disables the provider (lookups then fail
-  // per the org's failurePolicy).
-  GOOGLE_WEB_RISK_API_KEY: z.string().optional(),
-  GOOGLE_WEB_RISK_API_URL: z
-    .string()
-    .url()
-    .default("https://webrisk.googleapis.com"),
-  // Google Web Risk Update API sync tuning. ZDR: "normal" mode checks run
-  // against a locally synced hash-prefix database (threatLists:computeDiff)
-  // instead of sending URLs to Google, and verdicts are never persisted.
-  //
-  // Floor for how often threatLists:computeDiff may run per list. Google's
-  // recommendedNextDiff is respected when it is later than this floor.
-  THREAT_LIST_SYNC_MIN_INTERVAL_SECONDS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(60),
-  // A synced threat list older than this is treated as unavailable
-  // (provider-failure semantics → the org's failurePolicy decides).
-  THREAT_LIST_STALENESS_SECONDS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(6 * 60 * 60),
-
-  // Zscaler ZIA provider ("zscaler" threat protection mode). Base-URL
-  // overrides exist for tests (mock ZIA server); production always uses the
-  // real endpoints derived from the org's vanity domain and cloud name.
-  ZSCALER_TOKEN_URL_OVERRIDE: z.string().url().optional(),
-  ZSCALER_API_URL_OVERRIDE: z.string().url().optional(),
-
-  // Organization SIEM logging delivery. The encryption key must decode to
-  // exactly 32 bytes; validation happens when a secret is encrypted/decrypted
-  // so self-hosted deployments that do not use this feature need no key.
-  SIEM_LOGGING_ENCRYPTION_KEY: z.string().optional(),
-  PARTNER_EGRESS_PROXY_URL: z.string().url().optional(),
-
   // API Keys & Authentication
   BULL_AUTH_KEY: z.string().optional(),
   BULL_AUTH_KEY_PREVIOUS: emptyStringAsUndefined(z.string()),
@@ -287,44 +246,10 @@ const configSchema = z.object({
   ),
   OPENROUTER_API_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
-  RESEND_API_KEY: z.string().optional(),
   PREVIEW_TOKEN: z.string().optional(),
   SEARCH_PREVIEW_TOKEN: z.string().optional(),
-  SEARCH_SERVICE_API_SECRET: z.string().optional(),
-  SEARCH_FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(300),
-  SEARCH_FEEDBACK_DAILY_CAP_CREDITS: z.coerce
-    .number()
-    .int()
-    .nonnegative()
-    .default(100),
-  FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(120),
-  FEEDBACK_DAILY_CAP_CREDITS: z.coerce.number().int().nonnegative().default(50),
-  FEEDBACK_REFUND_ENABLED: z.stringbool().default(true),
-  // Feedback window for interact and browser sessions, from their last activity.
-  BROWSER_FEEDBACK_MAX_AGE_SEC: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(3600),
-  // Kill switch for the feedback next step on Alexandria answers.
-  ALEXANDRIA_FEEDBACK_HINT_ENABLED: z.stringbool().default(true),
   // Kill switch for search context sent to Exchange and search attribution on provider call logs.
   ALEXANDRIA_SEARCH_CONTEXT_ENABLED: z.stringbool().default(true),
-  ALEXANDRIA_FEEDBACK_WINDOW_SEC: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(1200),
-  ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS: z.coerce
-    .number()
-    .int()
-    .nonnegative()
-    .default(100),
-  ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS: z.coerce
-    .number()
-    .int()
-    .nonnegative()
-    .default(10),
 
   // Vercel Marketplace integration id (oac_...). Vercel OIDC resource tokens
   // (iss https://integrations.vercel.com/<id>) are accepted as bearer
@@ -343,27 +268,6 @@ const configSchema = z.object({
   // OAuth token introspection
   OAUTH_INTROSPECT_URL: z.string().optional(),
   OAUTH_INTROSPECT_SECRET: z.string().optional(),
-  MCP_ACTION_LOG_SECRET: z.string().optional(),
-  MCP_ACTION_LOG_STORAGE_ENABLED: z.stringbool().default(false),
-  MCP_ACTION_LOG_WRITES_ENABLED: z.stringbool().default(false),
-  // Comma-separated https URL prefixes, each ending in "/". Besides the
-  // canonical hosted MCP URLs, an action log may name a resource made of one
-  // of these, a deployment name and a canonical MCP path.
-  MCP_ACTION_LOG_RESOURCE_PREFIXES: emptyStringAsUndefined(
-    z
-      .string()
-      .refine(
-        value =>
-          value
-            .split(",")
-            .every(prefix =>
-              /^https:\/\/[a-z0-9.-]+(?::\d+)?\/(?:[a-z0-9._~-]+\/)*$/.test(
-                prefix.trim(),
-              ),
-            ),
-        "MCP_ACTION_LOG_RESOURCE_PREFIXES must be comma-separated https URL prefixes ending in /",
-      ),
-  ),
   // Autumn feature id of the balance hosted MCP calls spend first (see
   // AutumnService.trackHostedMcpCredits).
   MCP_CREDITS_FEATURE_ID: emptyStringAsDefault(
@@ -381,13 +285,7 @@ const configSchema = z.object({
   POSTGRES_DB: z.string().default("postgres"),
   POSTGRES_USER: z.string().default("postgres"),
   POSTGRES_PASSWORD: z.string().default("postgres"),
-  DATABASE_URL: z.string().optional(),
-  DATABASE_REPLICA_URL: z.string().optional(),
   INDEX_DATABASE_URL: z.string().optional(),
-  // Pool sizing preset for this process (see db/pool-profiles.ts). Unset keeps
-  // the historical pool settings; deployments opt into `api`, `worker` or
-  // `utility` to keep connections warm within the pooler's client budget.
-  DB_POOL_PROFILE: emptyStringAsUndefined(z.enum(["api", "worker", "utility"])),
   INDEX_CACHE_REDIS_URL: z.string().optional(),
   // Negative (miss) caching TTL for index URL->id lookups, in ms. 0 disables
   // it; the cache then only shields lookups that find data. A positive value
@@ -476,9 +374,7 @@ const configSchema = z.object({
   BIGTABLE_PROJECT_ID: z.string().optional(),
   BIGTABLE_INSTANCE_ID: z.string().optional(),
   BIGTABLE_APP_PROFILE_ID: z.string().optional(),
-  BIGTABLE_CHANGE_TRACKING_TABLE: z.string().optional(),
   BIGTABLE_JOB_ACCESS_TABLE: z.string().optional(),
-  BIGTABLE_FEEDBACK_JOBS_TABLE: z.string().optional(),
   BIGTABLE_SCRAPE_STATE_TABLE: z.string().optional(),
   BIGTABLE_EXTRACT_STATE_TABLE: z.string().optional(),
   BIGTABLE_REQUEST_CREDITS_TABLE: z.string().optional(),
@@ -570,9 +466,6 @@ const configSchema = z.object({
   SEARXNG_ENDPOINT: z.string().optional(),
   SEARXNG_ENGINES: z.string().optional(),
   SEARXNG_CATEGORIES: z.string().optional(),
-  SEARCH_SERVICE_URL: z.string().optional(),
-  SEARCH_INDEX_SAMPLE_RATE: z.coerce.number().default(0.1),
-  ENABLE_SEARCH_INDEX: z.stringbool().optional(),
 
   // Worker Configuration
   WORKER_PORT: z.coerce.number().default(3005),
@@ -709,30 +602,7 @@ const configSchema = z.object({
   // Webhooks
   SELF_HOSTED_WEBHOOK_URL: z.string().optional(),
   SELF_HOSTED_WEBHOOK_HMAC_SECRET: z.string().optional(),
-  SLACK_WEBHOOK_URL: z.string().optional(),
-  SLACK_ADMIN_WEBHOOK_URL: z.string().optional(),
   DISABLE_WEBHOOK_DELIVERY: z.stringbool().optional(),
-
-  // Slack integration ("Add to Slack" for monitor notifications + /monitor
-  // slash command). Credentials come from the Firecrawl Slack app.
-  SLACK_CLIENT_ID: z.string().optional(),
-  SLACK_CLIENT_SECRET: z.string().optional(),
-  SLACK_SIGNING_SECRET: z.string().optional(),
-  // Bot scopes requested during install. Override only if the Slack app manifest
-  // changes; keep in sync with slack-app-manifest.json.
-  SLACK_OAUTH_SCOPES: z
-    .string()
-    .default(
-      "chat:write,chat:write.public,commands,channels:read,groups:read,team:read,incoming-webhook",
-    ),
-  // Absolute URL Slack redirects back to after authorize. Must exactly match a
-  // Redirect URL configured on the Slack app (e.g.
-  // https://api.firecrawl.dev/v2/slack/oauth/callback).
-  SLACK_OAUTH_REDIRECT_URL: z.string().optional(),
-  // 32-byte key (hex or base64) used to AES-256-GCM encrypt stored bot tokens.
-  // Required when ENV=production. Elsewhere, if unset, tokens are stored with a
-  // `plain:` prefix.
-  SLACK_TOKEN_ENCRYPTION_KEY: z.string().optional(),
   ALLOW_LOCAL_WEBHOOKS: z.stringbool().optional(),
   WEBHOOK_USE_RABBITMQ: z.stringbool().optional(),
 
@@ -774,12 +644,6 @@ const configSchema = z.object({
   VERTEX_CREDENTIALS: z.string().optional(),
   // Uses Vertex with ambient credentials when VERTEX_CREDENTIALS is unset.
   VERTEX_USE_ADC: z.stringbool().default(false),
-
-  // LangSmith (tracing for interact agent)
-  LANGSMITH_API_KEY: z.string().optional(),
-  LANGSMITH_PROJECT: z.string().optional(),
-  LANGSMITH_ENDPOINT: z.string().optional(),
-  LANGSMITH_TRACING: z.stringbool().optional(),
 
   // Testing
   TEST_API_KEY: z.string().optional(),
@@ -860,9 +724,6 @@ const configSchema = z.object({
   WIKIPEDIA_ENTERPRISE_USERNAME: z.string().optional(),
   WIKIPEDIA_ENTERPRISE_PASSWORD: z.string().optional(),
 
-  // Browser Service
-  HANGAR_URL: z.url().optional(),
-
   // Audio (avgrab)
   AVGRAB_SERVICE_URL: z.string().optional(),
 
@@ -886,13 +747,6 @@ const validatedConfigSchema = configSchema.superRefine((value, context) => {
       path: ["GOV_ROUTING_ENABLED"],
       message:
         "GOV_ROUTING_ENABLED needs SEARCH_PLATFORM_URL: set it, or turn routing off",
-    });
-  }
-  for (const error of getMcpActionLogConfigErrors(value)) {
-    context.addIssue({
-      code: "custom",
-      path: [error.path],
-      message: error.message,
     });
   }
 });

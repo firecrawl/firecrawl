@@ -40,6 +40,7 @@ const {
 });
 
 vi.mock("../config", () => ({ config: mutableConfig }));
+vi.mock("./feedback-env", () => ({ feedbackEnv: mutableConfig }));
 vi.mock("./bigtable-client", () => ({ getBigtableTable }));
 vi.mock("./otel-tracer", () => ({
   withSpan,

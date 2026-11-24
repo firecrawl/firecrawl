@@ -1,5 +1,5 @@
 import { and, eq, gt, gte, inArray, ne, sql } from "drizzle-orm";
-import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 import { logger as _logger } from "../../../lib/logger";
@@ -44,7 +44,7 @@ function policyFor(outcome: RefundOutcome): RefundPolicySnapshot {
   const refunds = outcome === "alexandria_feedback";
   return {
     version: "feedback_refund_v1",
-    enabled: config.FEEDBACK_REFUND_ENABLED,
+    enabled: feedbackEnv.FEEDBACK_REFUND_ENABLED,
     endpoint: "alexandria",
     mode: refunds ? "flat" : "none",
     refundableRatings: REFUNDABLE_RATINGS,
@@ -212,8 +212,9 @@ export async function refundAlexandriaFeedback(params: {
 }): Promise<AlexandriaRefundResult> {
   const { feedbackId, teamId, orgId, rating, calls } = params;
   const now = params.now ?? new Date();
-  const dailyRefundCap = config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS;
-  const websiteRefundCap = config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS;
+  const dailyRefundCap = feedbackEnv.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS;
+  const websiteRefundCap =
+    feedbackEnv.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS;
   const host = new URL(params.requestedUrl).hostname.toLowerCase();
   const logger = _logger.child({
     module: "api/v2",
@@ -240,7 +241,7 @@ export async function refundAlexandriaFeedback(params: {
   let outcome: RefundOutcome;
   let refundedTodayBefore = 0;
   let websiteRefundedBefore = 0;
-  if (!config.FEEDBACK_REFUND_ENABLED) {
+  if (!feedbackEnv.FEEDBACK_REFUND_ENABLED) {
     outcome = "refunds_disabled";
     await persist(outcome);
   } else {

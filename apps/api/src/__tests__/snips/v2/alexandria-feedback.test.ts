@@ -5,6 +5,7 @@ import { idmux, Identity } from "./lib";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
 
 const feedbackRows = async (feedbackId: string) => {
   const [[parent], providers, capabilities] = await Promise.all([
@@ -208,7 +209,8 @@ describeIf(TEST_PRODUCTION)("Alexandria session feedback", () => {
     });
 
     it("stops refunding a website at its daily cap", async () => {
-      const websiteCap = config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS;
+      const websiteCap =
+        feedbackEnv.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS;
       const website = {
         url: "https://www.usaspending.gov/search",
         requestedFunctionality: "List federal awards by recipient.",

@@ -39,6 +39,9 @@ vi.mock("../../routes/shared", async importOriginal => {
 
 import { config } from "../../config";
 import { v2Router } from "../../routes/v2";
+import { coreParts, createService, logsMessages } from "../../service";
+import { replaceService } from "../../service/service";
+import { testService, withService } from "../../service/testing";
 
 const app = express();
 app.use(express.json());
@@ -66,6 +69,11 @@ beforeEach(() => {
   mocks.auth = { team_id: "team-1" };
   mocks.acuc = { flags: {} };
   config.USE_DB_AUTHENTICATION = true;
+  replaceService(createService({}, coreParts()));
+});
+
+afterEach(() => {
+  replaceService(undefined);
 });
 
 describe("country check on agent and browser routes", () => {
@@ -120,9 +128,8 @@ describe("country check on agent and browser routes", () => {
     expect((await request(app).post("/v2/browser").send({})).status).toBe(204);
   });
 
-  it("points self-hosted deployments at their server configuration", async () => {
+  it("uses the default messages module copy", async () => {
     fromCountry("XX");
-    config.USE_DB_AUTHENTICATION = false;
 
     const res = await request(app).post("/v2/agent").send({ prompt: "x" });
 
@@ -130,12 +137,23 @@ describe("country check on agent and browser routes", () => {
     expect(res.body.error).toContain("check your server configuration");
   });
 
-  it("uses the hosted contact copy otherwise", async () => {
+  it("uses a custom messages module when configured on the service", async () => {
     fromCountry("XX");
+    const customService = testService({}, coreParts(), {
+      messages: {
+        ...logsMessages(),
+        restrictedCountryContact: () => "Please contact support.",
+      },
+    });
 
-    const res = await request(app).post("/v2/agent").send({ prompt: "x" });
+    await withService(customService, async () => {
+      const res = await request(app).post("/v2/agent").send({ prompt: "x" });
 
-    expect(res.body.error).toContain("help@firecrawl.com");
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe(
+        "Use of headers, actions, the agent, and browser/interact sessions is not allowed by default in your country. Please contact support.",
+      );
+    });
   });
 });
 

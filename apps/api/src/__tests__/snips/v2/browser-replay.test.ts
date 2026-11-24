@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import request from "supertest";
 import { config } from "../../../config";
+import { browserEnv } from "../../../lib/browser-env";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   TEST_SELF_HOST,
@@ -39,7 +40,7 @@ describe("Interact session replay", () => {
   }, 10000 + scrapeTimeout);
 
   const canRunReplayHappyPath =
-    !TEST_SELF_HOST && ALLOW_TEST_SUITE_WEBSITE && !!config.HANGAR_URL;
+    !TEST_SELF_HOST && ALLOW_TEST_SUITE_WEBSITE && !!browserEnv.HANGAR_URL;
 
   itIf(canRunReplayHappyPath)(
     "records a session and serves replay metadata + HLS playlist after destroy",
@@ -147,7 +148,7 @@ describe("Interact session replay", () => {
     scrapeTimeout + 60_000,
   );
 
-  itIf(!TEST_SELF_HOST && !!config.HANGAR_URL)(
+  itIf(!TEST_SELF_HOST && !!browserEnv.HANGAR_URL)(
     "returns 404 when the session does not exist",
     async () => {
       const response = await browserReplayRaw(crypto.randomUUID(), identity);
@@ -223,7 +224,7 @@ describe("Interact session replay", () => {
     scrapeTimeout,
   );
 
-  itIf(!TEST_SELF_HOST && !!config.HANGAR_URL)(
+  itIf(!TEST_SELF_HOST && !!browserEnv.HANGAR_URL)(
     "persists profiles, excludes concurrent writers, and discards reader changes",
     async () => {
       const profile = {

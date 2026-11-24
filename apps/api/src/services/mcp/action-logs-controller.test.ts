@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { config } from "../../config";
+import { mcpLogsEnv } from "../../lib/mcp-action-log-env";
 
 const mocks = vi.hoisted(() => ({
   primaryDb: { name: "primary" },
@@ -51,7 +51,7 @@ describe("MCP action log controllers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.policy.mockResolvedValue({ flags: null });
-    config.MCP_ACTION_LOG_STORAGE_ENABLED = true;
+    mcpLogsEnv.MCP_ACTION_LOG_STORAGE_ENABLED = true;
     mocks.record.mockResolvedValue({ disposition: "accepted", id: "log-id" });
     mocks.list.mockResolvedValue({ data: [], nextCursor: null });
   });
@@ -207,7 +207,7 @@ describe("MCP action log controllers", () => {
   });
 
   it("does not query storage when activity logging is disabled", async () => {
-    config.MCP_ACTION_LOG_STORAGE_ENABLED = false;
+    mcpLogsEnv.MCP_ACTION_LOG_STORAGE_ENABLED = false;
     const res = response();
     await listMcpActionLogsController(
       { auth: { team_id: "team" }, acuc: { api_key_id: 42 }, query: {} } as any,

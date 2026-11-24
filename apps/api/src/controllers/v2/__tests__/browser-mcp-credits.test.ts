@@ -15,13 +15,9 @@ const mocks = vi.hoisted(() => ({
   insertSession: vi.fn(),
 }));
 
-vi.mock("../../../config", async importOriginal => {
-  const actual = await importOriginal<typeof import("../../../config")>();
-  return {
-    ...actual,
-    config: { ...actual.config, HANGAR_URL: "http://hangar.test" },
-  };
-});
+vi.mock("../../../lib/browser-env", () => ({
+  browserEnv: { HANGAR_URL: "http://hangar.test" },
+}));
 
 vi.mock("../../../lib/logger", () => {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };

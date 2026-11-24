@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { config } from "../../../config";
+import { notificationsEnv } from "../../notification/env";
 import { logger as _logger } from "../../../lib/logger";
 import { redisEvictConnection } from "../../redis";
 import { exchangeOAuthCode } from "./client";
@@ -26,9 +26,9 @@ type SlackOAuthStatePayload = {
 
 export function isSlackConfigured(): boolean {
   return Boolean(
-    config.SLACK_CLIENT_ID &&
-      config.SLACK_CLIENT_SECRET &&
-      config.SLACK_OAUTH_REDIRECT_URL,
+    notificationsEnv.SLACK_CLIENT_ID &&
+      notificationsEnv.SLACK_CLIENT_SECRET &&
+      notificationsEnv.SLACK_OAUTH_REDIRECT_URL,
   );
 }
 
@@ -59,9 +59,12 @@ export async function createAuthorizeUrl(params: {
   );
 
   const url = new URL(AUTHORIZE_ENDPOINT);
-  url.searchParams.set("client_id", config.SLACK_CLIENT_ID!);
-  url.searchParams.set("scope", config.SLACK_OAUTH_SCOPES);
-  url.searchParams.set("redirect_uri", config.SLACK_OAUTH_REDIRECT_URL!);
+  url.searchParams.set("client_id", notificationsEnv.SLACK_CLIENT_ID!);
+  url.searchParams.set("scope", notificationsEnv.SLACK_OAUTH_SCOPES);
+  url.searchParams.set(
+    "redirect_uri",
+    notificationsEnv.SLACK_OAUTH_REDIRECT_URL!,
+  );
   url.searchParams.set("state", state);
 
   return { url: url.toString(), state };
@@ -148,7 +151,7 @@ export async function handleOAuthCallback(params: {
 
   const result = await exchangeOAuthCode({
     code: params.code,
-    redirectUri: config.SLACK_OAUTH_REDIRECT_URL!,
+    redirectUri: notificationsEnv.SLACK_OAUTH_REDIRECT_URL!,
   });
 
   if (!result.ok || !result.access_token || !result.team?.id) {

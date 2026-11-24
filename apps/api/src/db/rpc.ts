@@ -149,15 +149,6 @@ export function queryDomainPriority(
   );
 }
 
-export function queryMaxAge(
-  i_domain_hash: Buffer,
-): Promise<{ max_age: number | null }[]> {
-  return execRows(
-    dbIndex,
-    sql`select * from query_max_age(i_domain_hash => ${i_domain_hash})`,
-  );
-}
-
 type IndexGetRecentRow = {
   id: string;
   created_at: string;

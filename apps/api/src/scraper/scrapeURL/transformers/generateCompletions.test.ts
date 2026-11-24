@@ -22,7 +22,9 @@ import {
   generateCrawlerOptionsFromPrompt,
 } from "./llmExtract";
 import { CostTracking } from "../../../lib/cost-tracking";
-import { modelPrices } from "../../../lib/extract/usage/model-prices";
+import { coreLlmProviders } from "../../../lib/generic-ai";
+import { modelPrices } from "../../../lib/model-prices";
+import { createService, replaceService } from "../../../service/service";
 
 const noopLogger = {
   warn: () => {},
@@ -58,6 +60,22 @@ function countTokens(text: string): number {
     encoder.free();
   }
 }
+
+beforeAll(() => {
+  replaceService(
+    createService(
+      { modules: {} },
+      {
+        core: { name: "core", llmProviders: coreLlmProviders },
+        logger: { error: vi.fn() },
+      },
+    ),
+  );
+});
+
+afterAll(() => {
+  replaceService(undefined);
+});
 
 beforeEach(() => {
   (generateObject as Mock).mockClear();

@@ -1,11 +1,11 @@
 import axios from "axios";
 import { logger } from "../../../src/lib/logger";
 
-import { config } from "../../config";
+import { notificationsEnv } from "../notification/env";
 export async function sendSlackWebhook(
   message: string,
   alertEveryone: boolean = false,
-  webhookUrl: string = config.SLACK_WEBHOOK_URL ?? "",
+  webhookUrl: string = notificationsEnv.SLACK_WEBHOOK_URL ?? "",
 ) {
   const messagePrefix = alertEveryone ? "<!channel> " : "";
   const payload = {

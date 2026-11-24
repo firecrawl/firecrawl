@@ -16,11 +16,13 @@ import { livenessController, readinessController } from "./controllers/health";
 import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
 import os from "os";
 import { logger } from "./lib/logger";
+import { adminInternalRouter, adminRouter } from "./routes/admin";
 import {
-  adminInternalRouter,
-  adminRouter,
-  countAdminPathRoute,
-} from "./routes/admin";
+  AdminKeySlot,
+  adminAuth,
+  adminPathKeyAuth,
+  redactAdminKey,
+} from "./lib/admin-auth";
 import http from "node:http";
 import https from "node:https";
 import { v1Router } from "./routes/v1";
@@ -37,12 +39,12 @@ import { exchangeInternalRouter } from "./routes/exchange-internal";
 import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
 import { nuqShutdown } from "./services/worker/nuq";
-import { getErrorContactMessage } from "./lib/deployment";
+import { service } from "./service";
+import { installedService } from "./service/service";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
 import { warmExchangeCatalog } from "./lib/exchange";
 import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
 import responseTime from "response-time";
-import { shutdownWebhookQueue } from "./services/webhook";
 import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
 import { isKeylessConfigured } from "./lib/keyless";
 import {
@@ -110,8 +112,6 @@ if (config.EXPRESS_TRUST_PROXY) {
   app.set("trust proxy", config.EXPRESS_TRUST_PROXY);
 }
 
-const serverAdapter = new ExpressAdapter();
-
 const bullBoardQueues = [
   new BullMQAdapter(getGenerateLlmsTxtQueue()),
   new BullMQAdapter(getDeepResearchQueue()),
@@ -122,20 +122,35 @@ const bullBoardQueues = [
   // management UI, not here.
 ];
 
-const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
-  queues: bullBoardQueues,
-  serverAdapter: serverAdapter,
-});
-
 if (!config.BULL_AUTH_KEY) {
   logger.warn("BULL_AUTH_KEY is not set; admin routes are disabled.");
-} else if (config.BULL_AUTH_KEY_PATH_ROUTES) {
-  serverAdapter.setBasePath(`/admin/${config.BULL_AUTH_KEY}/queues`);
-  app.use(
-    `/admin/${config.BULL_AUTH_KEY}/queues`,
-    countAdminPathRoute("queues"),
-    serverAdapter.getRouter(),
-  );
+} else {
+  // A browser cannot add the Authorization header by itself; use the internal
+  // listener's /admin/queues where possible.
+  const opsBullBoard = new ExpressAdapter();
+  opsBullBoard.setBasePath("/admin/ops/queues");
+  createBullBoard({ queues: bullBoardQueues, serverAdapter: opsBullBoard });
+  app.use("/admin/ops/queues", adminAuth, opsBullBoard.getRouter());
+
+  if (config.BULL_AUTH_KEY_PATH_ROUTES) {
+    // One board per accepted key, since the UI links to its own base path.
+    const pathBoards: Partial<Record<AdminKeySlot, express.Router>> = {};
+    for (const [slot, key] of [
+      ["current", config.BULL_AUTH_KEY],
+      ["previous", config.BULL_AUTH_KEY_PREVIOUS],
+    ] as const) {
+      if (!key) continue;
+      const board = new ExpressAdapter();
+      board.setBasePath(`/admin/${encodeURIComponent(key)}/queues`);
+      createBullBoard({ queues: bullBoardQueues, serverAdapter: board });
+      pathBoards[slot] = board.getRouter();
+    }
+    const queuesPathRouter = express.Router({ mergeParams: true });
+    queuesPathRouter.use(adminPathKeyAuth("queues"), (req, res, next) =>
+      pathBoards[res.locals.adminKeySlot as AdminKeySlot]!(req, res, next),
+    );
+    app.use("/admin/:adminKey/queues", queuesPathRouter);
+  }
 }
 
 app.get("/", (_, res) => {
@@ -253,14 +268,19 @@ async function startServer(port = DEFAULT_PORT) {
       logger.info("Server closed.");
       await drainZdrRequestLogs();
       nuqShutdown().finally(() => {
-        shutdownWebhookQueue().finally(() => {
-          shutdownIndexerQueue().finally(async () => {
-            await shutdownPubSubLogging();
-            await shutdownTracing();
-            logger.info("NUQ shutdown complete");
-            process.exit(0);
+        Promise.resolve()
+          .then(() => installedService()?.modules.webhooks.shutdown?.())
+          .catch(error => {
+            logger.warn("Error shutting down webhooks module", { error });
+          })
+          .finally(() => {
+            shutdownIndexerQueue().finally(async () => {
+              await shutdownPubSubLogging();
+              await shutdownTracing();
+              logger.info("NUQ shutdown complete");
+              process.exit(0);
+            });
           });
-        });
       });
     });
   };
@@ -365,13 +385,14 @@ app.use(
     }
 
     const id = uuidv7();
+    const path = redactAdminKey(req.path);
 
     logger.error(
-      "Error occurred in request! (" + req.path + ") -- ID " + id + " -- ",
+      "Error occurred in request! (" + path + ") -- ID " + id + " -- ",
       {
         error: err,
         errorId: id,
-        path: req.path,
+        path,
         teamId: req.acuc?.team_id,
         team_id: req.acuc?.team_id,
       },
@@ -379,7 +400,7 @@ app.use(
     res.status(500).json({
       success: false,
       code: "UNKNOWN_ERROR",
-      error: getErrorContactMessage(id),
+      error: service.modules.messages.errorContact(id),
     });
   },
 );

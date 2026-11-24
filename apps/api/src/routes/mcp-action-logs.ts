@@ -6,7 +6,7 @@ import express, {
   Response,
   Router,
 } from "express";
-import { config } from "../config";
+import { mcpLogsEnv } from "../lib/mcp-action-log-env";
 import {
   ingestMcpActionLogController,
   listMcpActionLogsController,
@@ -32,8 +32,8 @@ function requireWritesEnabled(
   next: NextFunction,
 ) {
   if (
-    !config.MCP_ACTION_LOG_STORAGE_ENABLED ||
-    !config.MCP_ACTION_LOG_WRITES_ENABLED
+    !mcpLogsEnv.MCP_ACTION_LOG_STORAGE_ENABLED ||
+    !mcpLogsEnv.MCP_ACTION_LOG_WRITES_ENABLED
   ) {
     return res
       .status(503)
@@ -46,7 +46,7 @@ function authenticate(req: Request, res: Response, next: NextFunction) {
   if (
     !timingSafeSecretEqual(
       bearerToken(req.headers.authorization),
-      config.MCP_ACTION_LOG_SECRET,
+      mcpLogsEnv.MCP_ACTION_LOG_SECRET,
     )
   ) {
     return res.status(401).json({ success: false, error: "Unauthorized" });
