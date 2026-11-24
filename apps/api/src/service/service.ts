@@ -17,6 +17,11 @@ import {
   type HookPoints,
   type Hooks,
 } from "./hooks";
+import {
+  buildLlmProviderRegistry,
+  type LlmProvider,
+  type LlmProviderRegistry,
+} from "./llm-providers";
 
 /**
  * The module slots: one implementation for each piece of behaviour the service
@@ -59,6 +64,11 @@ export interface Extension {
    * definition of the same feature name replaces an earlier one.
    */
   engineFeatures?: EngineFeatureMap;
+  /**
+   * LLM providers contributed by this extension. A later provider of the same
+   * name replaces an earlier one.
+   */
+  llmProviders?: readonly LlmProvider[];
   /** Process roles, by name. A later extension replaces a role of the same name. */
   workers?: Record<string, Worker>;
 }
@@ -91,6 +101,8 @@ export interface ServiceDescription {
   engines: Record<string, string>;
   /** For each registered scrape engine feature, its owner and scoring priority. */
   engineFeatures: Record<string, DescribedEngineFeature>;
+  /** For each registered LLM provider, the extension it comes from. */
+  llmProviders: Record<string, string>;
   /** For each process role, the extension it comes from. */
   roles: Record<string, string>;
   /**
@@ -111,6 +123,7 @@ export interface Service {
   readonly hooks: Hooks;
   readonly errors: ErrorRegistry;
   readonly engines: EngineRegistry;
+  readonly llmProviders: LlmProviderRegistry;
   readonly workers: Readonly<Record<string, Worker>>;
   /** What the service was made of when it was created, plus declared env owners. Each call returns a copy. */
   describe(): ServiceDescription;
@@ -155,6 +168,14 @@ export function createService(
       engineFeatures: extension.engineFeatures,
     })),
   );
+
+  const { registry: llmProviders, describedLlmProviders } =
+    buildLlmProviderRegistry(
+      extensions.map(extension => ({
+        owner: extension.name,
+        llmProviders: extension.llmProviders,
+      })),
+    );
 
   // Snapshot extension names and error sources at creation so mutating an
   // extension later cannot change what loads or is described, while keeping
@@ -216,6 +237,7 @@ export function createService(
     hooks: sortedByKey(handlerOwners),
     engines: describedEngines,
     engineFeatures: describedFeatures,
+    llmProviders: describedLlmProviders,
     roles: sortedByKey(roleOwners),
   };
 
@@ -226,6 +248,7 @@ export function createService(
       classFor: (code: string) => registeredErrors().get(code)?.errorClass,
     }),
     engines,
+    llmProviders,
     workers,
     describe(): ServiceDescription {
       // Built from entries, so that a code is listed whatever its name is.
@@ -240,6 +263,7 @@ export function createService(
         errors: sortedByKey(errors),
         engines: copy.engines,
         engineFeatures: copy.engineFeatures,
+        llmProviders: copy.llmProviders,
         roles: copy.roles,
         env: sortedByKey(describeEnv()),
       };
@@ -280,6 +304,9 @@ export const service: Service = {
   },
   get engines() {
     return current().engines;
+  },
+  get llmProviders() {
+    return current().llmProviders;
   },
   get workers() {
     return current().workers;

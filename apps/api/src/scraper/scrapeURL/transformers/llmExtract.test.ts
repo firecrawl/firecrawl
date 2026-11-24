@@ -17,10 +17,28 @@ import { performSummary } from "./llmExtract";
 import { performCleanContent } from "./llmExtract";
 import { encoding_for_model } from "@dqbd/tiktoken";
 import type { Mock } from "vitest";
+import { coreLlmProviders } from "../../../lib/generic-ai";
+import { createService, replaceService } from "../../../service/service";
 
 vi.mock("@dqbd/tiktoken", () => ({
   encoding_for_model: vi.fn(),
 }));
+
+beforeAll(() => {
+  replaceService(
+    createService(
+      { modules: {} },
+      {
+        core: { name: "core", llmProviders: coreLlmProviders },
+        logger: { error: vi.fn() },
+      },
+    ),
+  );
+});
+
+afterAll(() => {
+  replaceService(undefined);
+});
 
 describe("removeDefaultProperty", () => {
   it("should remove the default property from a simple object", () => {
