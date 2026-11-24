@@ -10,6 +10,7 @@ import type {
 import type { RequestContext } from "../../service/request-context";
 import { installedService } from "../../service/service";
 import type { Meta } from ".";
+import { bindScrapeMeta } from "./metaContext";
 
 export function scrapeHooks(): Hooks | undefined {
   return installedService()?.hooks;
@@ -28,6 +29,7 @@ export function toScrapeMeta(
       orgId: meta.internalOptions?.orgId,
     });
   const state = (meta.state ??= {});
+  bindScrapeMeta(state, meta);
   return {
     id: meta.id ?? "",
     url: meta.url,

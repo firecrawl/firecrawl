@@ -77,6 +77,13 @@ export interface HtmlCleaning {
 export interface EnginePlan {
   /** Candidate engines to try, best first. */
   candidates: EngineName[];
+  /** When true, resolved candidates carry no unsupported-feature warnings. */
+  suppressUnsupportedWarnings?: boolean;
+  /**
+   * On `scrape.engine.fallback`: when true, continue waterfalling to remaining
+   * candidates even when the failed engine's error would otherwise stop the loop.
+   */
+  continueWaterfall?: boolean;
 }
 
 /** HTTP refusal payload returned when a request is rejected. */
@@ -177,6 +184,12 @@ export interface HookPoints {
   "scrape.fetched": Transform<EngineScrapeResult, ScrapeMeta>;
   "scrape.html.clean": Transform<HtmlCleaning, ScrapeMeta>;
   "scrape.document.markdown": Transform<Document, ScrapeMeta>;
+  /**
+   * Runs after standard document derivation (markdown and metadata) completes.
+   * Internal sitemap fetches (`ctx.teamId === "sitemap"`) skip HTML/markdown
+   * derivation and invoke this hook with only `rawHtml` and `metadata.scrapeId`
+   * populated.
+   */
   "scrape.document.derived": Transform<Document, ScrapeMeta>;
   "scrape.document.extracted": Transform<Document, ScrapeMeta>;
   "scrape.document.final": Transform<Document, ScrapeMeta>;

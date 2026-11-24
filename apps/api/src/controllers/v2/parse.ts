@@ -27,6 +27,8 @@ import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
 import { service, type SettleOutcome } from "../../service";
+import type { EngineName } from "../../service/engines";
+import { installedService } from "../../service/service";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import path from "node:path";
@@ -131,7 +133,7 @@ function getSyntheticFilename(file: UploadedParseFile): string {
 
 function getParseForceEngine(
   kind: UploadedParseFileKind,
-): "fetch" | "pdf" | "document" | "image" {
+): EngineName | undefined {
   if (kind === "pdf") {
     return "pdf";
   }
@@ -141,7 +143,9 @@ function getParseForceEngine(
   }
 
   if (kind === "image") {
-    return "image";
+    return installedService()
+      ?.engines.enabled()
+      .find(engine => engine.features.image === true && !engine.cache)?.name;
   }
 
   return "fetch";
@@ -333,6 +337,20 @@ export async function parseController(
           success: false,
           code: "PARSE_UNSUPPORTED_OPTIONS",
           error: unsupportedOptionError,
+        });
+      }
+
+      const forceEngine = getParseForceEngine(req.body.file.kind!);
+      if (!forceEngine) {
+        const unsupportedFileError = `Unsupported upload type. Supported file extensions: ${getSupportedParseFileTypes(false)}`;
+        setSpanAttributes(span, {
+          "parse.status_code": 400,
+          "parse.error": unsupportedFileError,
+        });
+        return res.status(400).json({
+          success: false,
+          code: "UNSUPPORTED_FILE_TYPE",
+          error: unsupportedFileError,
         });
       }
 
@@ -549,7 +567,6 @@ export async function parseController(
             const { file, ...parseOptions } = req.body;
             const syntheticFilename = getSyntheticFilename(file);
             const syntheticUrl = `https://parse.firecrawl.dev/uploads/${encodeURIComponent(syntheticFilename)}`;
-            const forceEngine = getParseForceEngine(file.kind!);
 
             const doc = await withSpan(
               "api.parse.wait_for_job",

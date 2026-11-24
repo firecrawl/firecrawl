@@ -6,6 +6,7 @@ export type {
   TransportableErrorClass,
 } from "../lib/error";
 export type { SearchResultType, SearchV2Response } from "../lib/entities";
+export type { Meta } from "../scraper/scrapeURL";
 export type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 export { coreParts } from "./core-parts";
 export {
