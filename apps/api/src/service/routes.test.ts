@@ -1,32 +1,53 @@
-import express from "express";
+import Module from "node:module";
+import type express from "express";
 import request from "supertest";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildRouteRegistry,
   type RouteRegistrar,
   type Routers,
 } from "./routes";
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe("buildRouteRegistry", () => {
+  it("does not load express when no extension registers routes", async () => {
+    const requireSpy = vi.spyOn(Module.prototype, "require");
+    vi.resetModules();
+    const { buildRouteRegistry: freshBuildRouteRegistry } = await import(
+      "./routes.js"
+    );
+
+    const { describeRoutes } = freshBuildRouteRegistry([
+      { owner: "core", isCore: true },
+    ]);
+
+    expect(describeRoutes()).toEqual([]);
+    expect(requireSpy).not.toHaveBeenCalledWith("express");
+  });
+
   it("mounts non-core extension routes before core routes so extensions can shadow or call next()", async () => {
+    const { default: expressRuntime } = await import("express");
     const order: string[] = [];
 
-    const { mountRoutes } = buildRouteRegistry([
+    const { mountRoutes, describeRoutes } = buildRouteRegistry([
       {
         owner: "core",
         isCore: true,
         routes: ({ root, v2, admin }) => {
           order.push("core");
-          root.get("/status", (_req, res) => {
+          root.get("/status", function coreStatus(_req, res) {
             res.json({ from: "core-root" });
           });
-          v2.get("/shadowed", (_req, res) => {
+          v2.get("/shadowed", function coreShadowed(_req, res) {
             res.json({ from: "core-v2" });
           });
-          v2.get("/fallthrough", (_req, res) => {
+          v2.get("/fallthrough", function coreFallthrough(_req, res) {
             res.json({ from: "core-fallthrough", seen: res.locals.seen });
           });
-          admin.get("/admin/check", (_req, res) => {
+          admin.get("/admin/check", function coreAdminCheck(_req, res) {
             res.json({ from: "core-admin" });
           });
         },
@@ -35,46 +56,64 @@ describe("buildRouteRegistry", () => {
         owner: "first",
         routes: ({ v2, adminInternal }) => {
           order.push("first");
-          v2.get("/shadowed", (_req, res) => {
+          v2.get("/shadowed", function firstShadowed(_req, res) {
             res.json({ from: "first" });
           });
-          v2.get("/fallthrough", (_req, res, next) => {
+          v2.get("/fallthrough", function firstFallthrough(_req, res, next) {
             res.locals.seen = ["first"];
             next();
           });
-          adminInternal?.get("/admin/internal-ping", (_req, res) => {
-            res.json({ ok: true });
-          });
+          adminInternal?.get(
+            "/admin/internal-ping",
+            function internalPing(_req, res) {
+              res.json({ ok: true });
+            },
+          );
         },
       },
       {
         owner: "second",
         routes: ({ v2 }) => {
           order.push("second");
-          v2.get("/fallthrough", (_req, res, next) => {
+          v2.get("/fallthrough", function secondFallthrough(_req, res, next) {
             res.locals.seen = [...(res.locals.seen ?? []), "second"];
             next();
           });
-          v2.get("/only-second", (_req, res) => {
+          v2.get("/only-second", function onlySecond(_req, res) {
             res.json({ from: "second" });
           });
         },
       },
     ]);
 
-    const app = express();
-    const v2 = express.Router();
-    const admin = express.Router();
-    const adminInternal = express.Router();
+    const app = expressRuntime();
+    const v2 = expressRuntime.Router();
+    const admin = expressRuntime.Router();
+    const adminInternal = expressRuntime.Router();
 
     mountRoutes({ root: app, v2, admin, adminInternal });
     app.use("/v2", v2);
     app.use(admin);
 
-    const internalApp = express();
+    const internalApp = expressRuntime();
     internalApp.use(adminInternal);
 
     expect(order).toEqual(["first", "second", "core"]);
+
+    // describeRoutes reuses metadata captured during mountRoutes without re-running registrars.
+    const described = describeRoutes();
+    expect(order).toEqual(["first", "second", "core"]);
+    expect(described.map(r => `${r.owner}:${r.method}:${r.path}`)).toEqual([
+      "first:GET:/v2/shadowed",
+      "first:GET:/v2/fallthrough",
+      "first:GET:/admin/internal-ping",
+      "second:GET:/v2/fallthrough",
+      "second:GET:/v2/only-second",
+      "core:GET:/status",
+      "core:GET:/v2/shadowed",
+      "core:GET:/v2/fallthrough",
+      "core:GET:/admin/check",
+    ]);
 
     const shadowed = await request(app).get("/v2/shadowed");
     expect(shadowed.status).toBe(200);
@@ -104,7 +143,8 @@ describe("buildRouteRegistry", () => {
     expect(internalPing.body).toEqual({ ok: true });
   });
 
-  it("works when core has no routes and only extensions register routes", () => {
+  it("works when core has no routes and only extensions register routes", async () => {
+    const { default: expressRuntime } = await import("express");
     const order: string[] = [];
     const { mountRoutes } = buildRouteRegistry([
       { owner: "core", isCore: true },
@@ -123,16 +163,31 @@ describe("buildRouteRegistry", () => {
     ]);
 
     mountRoutes({
-      root: express.Router(),
-      v2: express.Router(),
-      admin: express.Router(),
+      root: expressRuntime.Router(),
+      v2: expressRuntime.Router(),
+      admin: expressRuntime.Router(),
     });
 
     expect(order).toEqual(["ext-a", "ext-b"]);
   });
 
-  it("describes routes in mount order with owner, router, method, path, and middleware names", () => {
+  it("describes routes in mount order including deeply nested routers, array prefixes, and regex middleware scopes", async () => {
+    const { default: expressRuntime } = await import("express");
     function authGuard(
+      _req: express.Request,
+      _res: express.Response,
+      next: express.NextFunction,
+    ) {
+      next();
+    }
+    function teamRegexGuard(
+      _req: express.Request,
+      _res: express.Response,
+      next: express.NextFunction,
+    ) {
+      next();
+    }
+    function outerGuard(
       _req: express.Request,
       _res: express.Response,
       next: express.NextFunction,
@@ -153,7 +208,13 @@ describe("buildRouteRegistry", () => {
     function createItem(_req: express.Request, res: express.Response) {
       res.end();
     }
-    function nestedHandler(_req: express.Request, res: express.Response) {
+    function deepLeaf(_req: express.Request, res: express.Response) {
+      res.end();
+    }
+    function teamUsage(_req: express.Request, res: express.Response) {
+      res.end();
+    }
+    function multiPing(_req: express.Request, res: express.Response) {
       res.end();
     }
     function coreScrape(_req: express.Request, res: express.Response) {
@@ -166,12 +227,21 @@ describe("buildRouteRegistry", () => {
 
         v2.use(authGuard);
         v2.use(ignoreError);
+        v2.use(/^\/team/, teamRegexGuard);
         v2.route("/items").get(listItems).post(createItem);
+        v2.get("/team/usage", teamUsage);
         v2.all("/wildcard", listItems);
 
-        const sub = express.Router();
-        sub.get("/nested", nestedHandler);
-        v2.use("/sub", sub);
+        const outer = expressRuntime.Router();
+        outer.use(outerGuard);
+        const inner = expressRuntime.Router();
+        inner.get("/leaf", deepLeaf);
+        outer.use("/inner", inner);
+        v2.use("/outer", outer);
+
+        const multi = expressRuntime.Router();
+        multi.get("/ping", multiPing);
+        v2.use(["/a", "/b"], multi);
 
         admin.post("/admin/ops/reload", authGuard, listItems);
         adminInternal?.get("/admin/internal-status", listItems);
@@ -221,6 +291,13 @@ describe("buildRouteRegistry", () => {
       {
         owner: "ext",
         router: "v2",
+        method: "GET",
+        path: "/v2/team/usage",
+        middleware: ["authGuard", "teamRegexGuard", "teamUsage"],
+      },
+      {
+        owner: "ext",
+        router: "v2",
         method: "ALL",
         path: "/v2/wildcard",
         middleware: ["authGuard", "listItems"],
@@ -229,8 +306,22 @@ describe("buildRouteRegistry", () => {
         owner: "ext",
         router: "v2",
         method: "GET",
-        path: "/v2/sub/nested",
-        middleware: ["authGuard", "nestedHandler"],
+        path: "/v2/outer/inner/leaf",
+        middleware: ["authGuard", "outerGuard", "deepLeaf"],
+      },
+      {
+        owner: "ext",
+        router: "v2",
+        method: "GET",
+        path: "/v2/a/ping",
+        middleware: ["authGuard", "multiPing"],
+      },
+      {
+        owner: "ext",
+        router: "v2",
+        method: "GET",
+        path: "/v2/b/ping",
+        middleware: ["authGuard", "multiPing"],
       },
       {
         owner: "ext",
@@ -267,52 +358,12 @@ describe("buildRouteRegistry", () => {
 
     const second = describeRoutes();
     expect(registrar).toHaveBeenCalledTimes(1);
-    expect(second).toHaveLength(8);
+    expect(second).toHaveLength(11);
     expect(second[0].middleware).toEqual(["<anonymous>"]);
   });
 
-  it("describes sub-routers mounted on multiple path prefixes", () => {
-    function ping(_req: express.Request, res: express.Response) {
-      res.end();
-    }
-    const { describeRoutes } = buildRouteRegistry([
-      {
-        owner: "ext",
-        routes: ({ v2 }) => {
-          const sub = express.Router();
-          sub.get("/ping", ping);
-          v2.use(["/a", "/b"], sub);
-        },
-      },
-    ]);
-
-    expect(describeRoutes()).toEqual([
-      {
-        owner: "ext",
-        router: "v2",
-        method: "GET",
-        path: "/v2/a/ping",
-        middleware: ["ping"],
-      },
-      {
-        owner: "ext",
-        router: "v2",
-        method: "GET",
-        path: "/v2/b/ping",
-        middleware: ["ping"],
-      },
-    ]);
-  });
-
-  it("returns an empty array without error when no extension registers routes", () => {
-    const { describeRoutes } = buildRouteRegistry([
-      { owner: "core", isCore: true },
-    ]);
-
-    expect(describeRoutes()).toEqual([]);
-  });
-
-  it("validates route registrars and router bags", () => {
+  it("validates route registrars and router bags", async () => {
+    const { default: expressRuntime } = await import("express");
     expect(() =>
       buildRouteRegistry([
         { owner: "bad", routes: "not-a-fn" as unknown as RouteRegistrar },
@@ -329,15 +380,15 @@ describe("buildRouteRegistry", () => {
     expect(() =>
       mountRoutes({
         root: null as unknown as express.Router,
-        v2: express.Router(),
-        admin: express.Router(),
+        v2: expressRuntime.Router(),
+        admin: expressRuntime.Router(),
       }),
     ).toThrow("Routers.root must be an Express router");
     expect(() =>
       mountRoutes({
-        root: express.Router(),
-        v2: express.Router(),
-        admin: express.Router(),
+        root: expressRuntime.Router(),
+        v2: expressRuntime.Router(),
+        admin: expressRuntime.Router(),
         adminInternal: null as unknown as express.Router,
       }),
     ).toThrow("Routers.adminInternal must be an Express router");

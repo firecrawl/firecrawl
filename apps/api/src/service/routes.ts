@@ -4,7 +4,7 @@
  * Non-core extensions mount before core's routes so a contributed route can
  * answer first or call `next()`. This file imports only Express types at top
  * level; `express` is loaded lazily only when `describeRoutes()` introspects
- * at least one registered route function.
+ * at least one registered route function without a prior live mount.
  */
 import type { Router } from "express";
 
@@ -23,7 +23,12 @@ export interface Routers {
   adminInternal?: Router;
 }
 
-/** Callback an extension supplies to mount its routes on the service's routers. */
+/**
+ * Callback an extension supplies to mount its routes on the service's routers.
+ *
+ * Registrars must be side-effect-free route wiring: `service.describe().routes`
+ * may invoke them on probe routers when no HTTP server has mounted routes yet.
+ */
 export type RouteRegistrar = (routers: Routers) => void;
 
 /** Description of a route registered by an extension in `ServiceDescription`. */
@@ -63,6 +68,16 @@ interface InternalExpressLayer {
   } | null;
 }
 
+type MountMatcher =
+  | { kind: "string"; path: string }
+  | { kind: "regex"; regex: RegExp; display: string };
+
+interface ScopedMiddleware {
+  matchers: readonly MountMatcher[];
+  scopeBase: string;
+  name: string;
+}
+
 const routerBasePaths: ReadonlyArray<readonly [RouterName, string]> = [
   ["root", ""],
   ["v2", "/v2"],
@@ -73,6 +88,31 @@ const routerBasePaths: ReadonlyArray<readonly [RouterName, string]> = [
 function isRouterLike(value: unknown): boolean {
   return (
     value !== null && (typeof value === "object" || typeof value === "function")
+  );
+}
+
+function getRouterStack(router: unknown): InternalExpressLayer[] | undefined {
+  if (!isRouterLike(router)) return undefined;
+  const candidate = router as {
+    stack?: unknown;
+    router?: { stack?: unknown };
+  };
+  if (Array.isArray(candidate.stack)) {
+    return candidate.stack as InternalExpressLayer[];
+  }
+  if (candidate.router && Array.isArray(candidate.router.stack)) {
+    return candidate.router.stack as InternalExpressLayer[];
+  }
+  return undefined;
+}
+
+function hasExpressStacks(routers: Routers): boolean {
+  return (
+    getRouterStack(routers.root) !== undefined &&
+    getRouterStack(routers.v2) !== undefined &&
+    getRouterStack(routers.admin) !== undefined &&
+    (routers.adminInternal === undefined ||
+      getRouterStack(routers.adminInternal) !== undefined)
   );
 }
 
@@ -106,6 +146,12 @@ function joinRoutePaths(base: string, segment: string | RegExp): string {
   return `${trimmedBase}${normalizedSegment}`;
 }
 
+function joinMatcher(base: string, matcher: MountMatcher): string {
+  return matcher.kind === "regex"
+    ? joinRoutePaths(base, matcher.regex)
+    : joinRoutePaths(base, matcher.path);
+}
+
 function prefixApplies(mountPath: string, fullPath: string): boolean {
   if (mountPath === "" || mountPath === "/") return true;
   const normalizedMount = mountPath.endsWith("/")
@@ -114,6 +160,39 @@ function prefixApplies(mountPath: string, fullPath: string): boolean {
   return (
     fullPath === normalizedMount || fullPath.startsWith(`${normalizedMount}/`)
   );
+}
+
+function relativeToScope(scopeBase: string, fullPath: string): string | null {
+  if (scopeBase === "" || scopeBase === "/") return fullPath;
+  const normalizedBase = scopeBase.endsWith("/")
+    ? scopeBase.slice(0, -1)
+    : scopeBase;
+  if (fullPath === normalizedBase) return "/";
+  if (fullPath.startsWith(`${normalizedBase}/`)) {
+    return fullPath.slice(normalizedBase.length);
+  }
+  return null;
+}
+
+function testStatelessRegex(regex: RegExp, input: string): boolean {
+  if (!regex.global && !regex.sticky) {
+    return regex.test(input);
+  }
+  const stateless = new RegExp(regex.source, regex.flags.replace(/[gy]/g, ""));
+  return stateless.test(input);
+}
+
+function middlewareApplies(entry: ScopedMiddleware, fullPath: string): boolean {
+  return entry.matchers.some(matcher => {
+    if (matcher.kind === "string") {
+      return prefixApplies(
+        joinRoutePaths(entry.scopeBase, matcher.path),
+        fullPath,
+      );
+    }
+    const rel = relativeToScope(entry.scopeBase, fullPath);
+    return rel !== null && testStatelessRegex(matcher.regex, rel);
+  });
 }
 
 function handlerName(
@@ -125,45 +204,60 @@ function handlerName(
   return "<anonymous>";
 }
 
-function createProbeRouter(
-  expressModule: typeof import("express"),
-  mountPaths: WeakMap<object, string[]>,
-): Router {
-  const router = expressModule.Router();
-  const originalUse = router.use.bind(router) as (...args: unknown[]) => Router;
-
-  router.use = function wrappedUse(...args: unknown[]): Router {
-    const stack = router.stack as unknown as InternalExpressLayer[] | undefined;
-    const before = stack ? stack.length : 0;
-    const first = args[0];
-    let paths: string[] = [""];
-    if (typeof first === "string") {
-      paths = [first];
-    } else if (first instanceof RegExp) {
-      paths = [String(first)];
-    } else if (Array.isArray(first)) {
-      const normalized = first
-        .filter(
-          (entry): entry is string | RegExp =>
-            typeof entry === "string" || entry instanceof RegExp,
-        )
-        .map(entry => (entry instanceof RegExp ? String(entry) : entry));
-      if (normalized.length > 0) paths = normalized;
+function parseMountMatchers(first: unknown): MountMatcher[] {
+  if (typeof first === "string") {
+    return [{ kind: "string", path: first }];
+  }
+  if (first instanceof RegExp) {
+    return [{ kind: "regex", regex: first, display: String(first) }];
+  }
+  if (Array.isArray(first)) {
+    const matchers: MountMatcher[] = [];
+    for (const item of first) {
+      if (typeof item === "string") {
+        matchers.push({ kind: "string", path: item });
+      } else if (item instanceof RegExp) {
+        matchers.push({ kind: "regex", regex: item, display: String(item) });
+      }
     }
+    if (matchers.length > 0) return matchers;
+  }
+  return [{ kind: "string", path: "" }];
+}
 
-    const result = originalUse(...args);
-    const updatedStack = router.stack as unknown as
-      | InternalExpressLayer[]
-      | undefined;
-    if (updatedStack) {
-      for (let i = before; i < updatedStack.length; i++) {
-        mountPaths.set(updatedStack[i], paths);
+/**
+ * Temporarily instruments `express.Router.prototype.use` so any `router.use`
+ * call, including inside nested routers created by a registrar, records its
+ * mount path matchers onto the newly added stack layers.
+ */
+function withMountTracking<T>(
+  expressModule: typeof import("express"),
+  mountPaths: WeakMap<object, MountMatcher[]>,
+  fn: () => T,
+): T {
+  const routerProto = expressModule.Router.prototype as {
+    use: (...args: unknown[]) => unknown;
+  };
+  const originalUse = routerProto.use;
+  routerProto.use = function trackedUse(
+    this: { stack?: InternalExpressLayer[] },
+    ...args: unknown[]
+  ) {
+    const before = Array.isArray(this.stack) ? this.stack.length : 0;
+    const matchers = parseMountMatchers(args[0]);
+    const result = originalUse.apply(this, args);
+    if (Array.isArray(this.stack)) {
+      for (let i = before; i < this.stack.length; i++) {
+        mountPaths.set(this.stack[i], matchers);
       }
     }
     return result;
-  } as typeof router.use;
-
-  return router;
+  };
+  try {
+    return fn();
+  } finally {
+    routerProto.use = originalUse;
+  }
 }
 
 function collectRoutesFromStack(
@@ -171,11 +265,11 @@ function collectRoutesFromStack(
   owner: string,
   routerName: RouterName,
   basePath: string,
-  inheritedMiddleware: readonly string[],
-  mountPaths: WeakMap<object, string[]>,
+  inheritedMiddleware: readonly ScopedMiddleware[],
+  mountPaths: WeakMap<object, MountMatcher[]>,
   out: DescribedRoute[],
 ): void {
-  const scopedMiddleware: Array<{ mountPath: string; name: string }> = [];
+  const scopedMiddleware: ScopedMiddleware[] = [...inheritedMiddleware];
 
   for (const layer of stack) {
     if (layer.route) {
@@ -195,7 +289,7 @@ function collectRoutesFromStack(
       for (const rawPath of paths) {
         const fullPath = joinRoutePaths(basePath, rawPath);
         const matchingScoped = scopedMiddleware
-          .filter(entry => prefixApplies(entry.mountPath, fullPath))
+          .filter(entry => middlewareApplies(entry, fullPath))
           .map(entry => entry.name);
 
         for (const method of methodsToEmit) {
@@ -213,34 +307,29 @@ function collectRoutesFromStack(
             router: routerName,
             method: method === "_all" ? "ALL" : method.toUpperCase(),
             path: fullPath,
-            middleware: [
-              ...inheritedMiddleware,
-              ...matchingScoped,
-              ...routeHandlers,
-            ],
+            middleware: [...matchingScoped, ...routeHandlers],
           });
         }
       }
       continue;
     }
 
-    const mountSegments = mountPaths.get(layer) ?? [""];
+    const mountMatchers = mountPaths.get(layer) ?? [
+      { kind: "string" as const, path: "" },
+    ];
 
     if (
       typeof layer.handle === "function" &&
       Array.isArray(layer.handle.stack)
     ) {
-      for (const mountSegment of mountSegments) {
-        const layerMountPath = joinRoutePaths(basePath, mountSegment);
-        const matchingScoped = scopedMiddleware
-          .filter(entry => prefixApplies(entry.mountPath, layerMountPath))
-          .map(entry => entry.name);
+      for (const matcher of mountMatchers) {
+        const layerMountPath = joinMatcher(basePath, matcher);
         collectRoutesFromStack(
           layer.handle.stack,
           owner,
           routerName,
           layerMountPath,
-          [...inheritedMiddleware, ...matchingScoped],
+          scopedMiddleware,
           mountPaths,
           out,
         );
@@ -249,13 +338,11 @@ function collectRoutesFromStack(
     }
 
     if (typeof layer.handle === "function" && layer.handle.length !== 4) {
-      const name = handlerName(layer.handle, layer.name);
-      for (const mountSegment of mountSegments) {
-        scopedMiddleware.push({
-          mountPath: joinRoutePaths(basePath, mountSegment),
-          name,
-        });
-      }
+      scopedMiddleware.push({
+        matchers: mountMatchers,
+        scopeBase: basePath,
+        name: handlerName(layer.handle, layer.name),
+      });
     }
   }
 }
@@ -296,22 +383,22 @@ export function buildRouteRegistry(sources: readonly RouteRegistrySource[]): {
 
     const expressModule = require("express") as typeof import("express");
     const collected: DescribedRoute[] = [];
+    const mountPaths = new WeakMap<object, MountMatcher[]>();
 
     for (const entry of ordered) {
-      const mountPaths = new WeakMap<object, string[]>();
       const probeRouters: Record<RouterName, Router> = {
-        root: createProbeRouter(expressModule, mountPaths),
-        v2: createProbeRouter(expressModule, mountPaths),
-        admin: createProbeRouter(expressModule, mountPaths),
-        adminInternal: createProbeRouter(expressModule, mountPaths),
+        root: expressModule.Router(),
+        v2: expressModule.Router(),
+        admin: expressModule.Router(),
+        adminInternal: expressModule.Router(),
       };
 
-      entry.register(probeRouters);
+      withMountTracking(expressModule, mountPaths, () => {
+        entry.register(probeRouters);
+      });
 
       for (const [routerName, basePath] of routerBasePaths) {
-        const stack = probeRouters[routerName].stack as unknown as
-          | InternalExpressLayer[]
-          | undefined;
+        const stack = getRouterStack(probeRouters[routerName]);
         if (!stack || stack.length === 0) continue;
         collectRoutesFromStack(
           stack,
@@ -332,9 +419,51 @@ export function buildRouteRegistry(sources: readonly RouteRegistrySource[]): {
   return {
     mountRoutes(routers: Routers): void {
       validateRouters(routers);
-      for (const entry of ordered) {
-        entry.register(routers);
+      if (ordered.length === 0) return;
+
+      if (!hasExpressStacks(routers)) {
+        for (const entry of ordered) {
+          entry.register(routers);
+        }
+        return;
       }
+
+      // Collect route metadata during the live mount so a later `describe()`
+      // does not execute registrars a second time or diverge from mounted routes.
+      const expressModule = require("express") as typeof import("express");
+      const mountPaths = new WeakMap<object, MountMatcher[]>();
+      const collected: DescribedRoute[] = [];
+
+      for (const entry of ordered) {
+        const startOffsets = new Map<RouterName, number>();
+        for (const [routerName] of routerBasePaths) {
+          const stack = getRouterStack(routers[routerName]);
+          if (stack) startOffsets.set(routerName, stack.length);
+        }
+
+        withMountTracking(expressModule, mountPaths, () => {
+          entry.register(routers);
+        });
+
+        for (const [routerName, basePath] of routerBasePaths) {
+          const stack = getRouterStack(routers[routerName]);
+          const offset = startOffsets.get(routerName);
+          if (!stack || offset === undefined || stack.length <= offset) {
+            continue;
+          }
+          collectRoutesFromStack(
+            stack.slice(offset),
+            entry.owner,
+            routerName,
+            basePath,
+            [],
+            mountPaths,
+            collected,
+          );
+        }
+      }
+
+      cachedDescription = collected;
     },
     describeRoutes,
   };

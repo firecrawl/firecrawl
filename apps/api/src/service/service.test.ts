@@ -1,3 +1,5 @@
+import express from "express";
+import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TransportableErrorClass } from "../lib/error";
 import type { Engine, EngineFeatureMap } from "./engines";
@@ -692,7 +694,7 @@ describe("service", () => {
 });
 
 describe("routes and roles integration", () => {
-  it("mounts extension routes before core routes and reports them in describe().routes", () => {
+  it("mounts extension routes before core routes through built.mountRoutes and reports them in describe().routes", async () => {
     const calls: string[] = [];
     const built = createService(
       {
@@ -702,8 +704,11 @@ describe("routes and roles integration", () => {
             name: "ext",
             routes: ({ v2 }) => {
               calls.push("ext");
+              v2.get("/shared", function extShared(_req, res) {
+                res.json({ from: "ext" });
+              });
               v2.get("/ext-ping", function extPing(_req, res) {
-                res.end();
+                res.json({ ok: "ext" });
               });
             },
             workers: { "ext-worker": worker() },
@@ -713,8 +718,11 @@ describe("routes and roles integration", () => {
       parts({
         routes: ({ v2 }) => {
           calls.push("core");
+          v2.get("/shared", function coreShared(_req, res) {
+            res.json({ from: "core" });
+          });
           v2.get("/core-ping", function corePing(_req, res) {
-            res.end();
+            res.json({ ok: "core" });
           });
         },
         workers: { api: worker() },
@@ -726,7 +734,35 @@ describe("routes and roles integration", () => {
     expect(built.roles.owner("api")).toBe("core");
     expect(built.roles.owner("ext-worker")).toBe("ext");
 
+    const app = express();
+    const v2 = express.Router();
+    const admin = express.Router();
+    built.mountRoutes({ root: app, v2, admin });
+    app.use("/v2", v2);
+    app.use(admin);
+
+    expect(calls).toEqual(["ext", "core"]);
+
+    const shared = await request(app).get("/v2/shared");
+    expect(shared.status).toBe(200);
+    expect(shared.body).toEqual({ from: "ext" });
+
+    const extPing = await request(app).get("/v2/ext-ping");
+    expect(extPing.status).toBe(200);
+    expect(extPing.body).toEqual({ ok: "ext" });
+
+    const corePing = await request(app).get("/v2/core-ping");
+    expect(corePing.status).toBe(200);
+    expect(corePing.body).toEqual({ ok: "core" });
+
     expect(built.describe().routes).toEqual([
+      {
+        owner: "ext",
+        router: "v2",
+        method: "GET",
+        path: "/v2/shared",
+        middleware: ["extShared"],
+      },
       {
         owner: "ext",
         router: "v2",
@@ -738,10 +774,18 @@ describe("routes and roles integration", () => {
         owner: "core",
         router: "v2",
         method: "GET",
+        path: "/v2/shared",
+        middleware: ["coreShared"],
+      },
+      {
+        owner: "core",
+        router: "v2",
+        method: "GET",
         path: "/v2/core-ping",
         middleware: ["corePing"],
       },
     ]);
+    // describe() reuses metadata captured during mountRoutes instead of calling registrars again.
     expect(calls).toEqual(["ext", "core"]);
   });
 
