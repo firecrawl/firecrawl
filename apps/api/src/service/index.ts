@@ -3,6 +3,7 @@ export type {
   ErrorCodes,
   TransportableErrorClass,
 } from "../lib/error";
+export type { SearchResultType, SearchV2Response } from "../lib/entities";
 export type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 export { coreParts } from "./core-parts";
 export { defaultModules, logsMessages, memoryUploads } from "./defaults";
@@ -55,6 +56,16 @@ export type {
   Caller,
   RequestContext,
 } from "./request-context";
+export { coreSearchProviderNames } from "./search-providers";
+export type {
+  CoreSearchProviderSpec,
+  DescribedSearchProvider,
+  SearchProvider,
+  SearchProviderName,
+  SearchProviderRegistry,
+  SearchProviders,
+  SearchQuery,
+} from "./search-providers";
 export { createService, run, service } from "./service";
 export type {
   CoreParts,
