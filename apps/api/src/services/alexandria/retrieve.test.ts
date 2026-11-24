@@ -1064,6 +1064,9 @@ describe("who repeats a request id", () => {
     [{ hostedMcp: true }, "mcp"],
     [{ clientOrigin: "js-sdk@4.52.0" }, "sdk"],
     [{ clientIntegration: "cli" }, "cli"],
+    [{ clientOrigin: "cli@1.30.0" }, "cli"],
+    [{ clientOrigin: "cli.codex@1.30.0" }, "cli"],
+    [{ clientOrigin: "client-app" }, "other"],
     [{ clientOrigin: "website" }, "other"],
   ])("counts a repeat sent as %o under client %s", async (named, client) => {
     await run();

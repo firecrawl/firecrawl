@@ -64,7 +64,8 @@ const clientKind = (input: {
   const origin = (input.clientOrigin ?? "").trim().toLowerCase();
   const integration = (input.clientIntegration ?? "").trim().toLowerCase();
   if (input.hostedMcp || origin.startsWith("mcp")) return "mcp";
-  if (integration === "cli" || origin === "cli") return "cli";
+  // "cli", "cli@1.2.3", "cli.codex@1.2.3": the name ends at the first non-word character.
+  if (integration === "cli" || /^cli\b/.test(origin)) return "cli";
   if (origin.includes("sdk")) return "sdk";
   // A request that names no origin is a plain API call.
   if (origin === "" || origin === "api") return "api";
