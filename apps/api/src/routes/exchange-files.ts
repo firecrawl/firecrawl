@@ -29,8 +29,8 @@ import { redisRateLimitClient } from "../services/rate-limiter";
 export const EXCHANGE_FILE_MAX_BYTES = 52_428_800;
 /** Exchange's token: a base64url payload and a base64url signature. */
 const FILE_TOKEN = /^[A-Za-z0-9_-]{16,2048}\.[A-Za-z0-9_-]{16,128}$/;
-// An upload's reply comes only after the whole body is stored, so it may take a while on a slow link.
-const UPLOAD_TIMEOUT_MS = 15 * 60_000;
+// Within the server's five-minute limit on receiving a request.
+const UPLOAD_TIMEOUT_MS = 4 * 60_000;
 const DOWNLOAD_TIMEOUT_MS = 15 * 60_000;
 const UPSTREAM_IDLE_MS = 60_000;
 const FILE_REQUESTS_PER_WINDOW = 600;
@@ -102,7 +102,6 @@ function filesRateLimit(keyPrefix: string): RequestHandler {
         keyPrefix,
         points: FILE_REQUESTS_PER_WINDOW,
         duration: FILE_WINDOW_SECONDS,
-        insuranceLimiter: memory,
       })
     : memory;
   return async (req, res, next) => {
@@ -195,6 +194,10 @@ function upstreamFailure(res: Response, route: string, error: unknown) {
 async function uploadController(req: Request, res: Response) {
   const route = "PUT /exchange/files/upload/:token";
   const contentType = req.headers["content-type"];
+  const abandoned = new AbortController();
+  res.on("close", () => {
+    if (!res.writableFinished) abandoned.abort();
+  });
   try {
     const upstream = await fetch(res.locals.fileUpstream, {
       method: "PUT",
@@ -208,7 +211,10 @@ async function uploadController(req: Request, res: Response) {
       body: req as unknown as AsyncIterable<Uint8Array>,
       duplex: "half",
       redirect: "manual",
-      signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+      signal: AbortSignal.any([
+        abandoned.signal,
+        AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+      ]),
       dispatcher: uploadDispatcher,
     });
     if (upstream.status >= 300 && upstream.status < 400) {
