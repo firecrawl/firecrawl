@@ -17,9 +17,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../../lib/crawl-redis", () => ({
   getCrawl: mocks.getCrawl,
 }));
-vi.mock("../../../lib/operational-job-access", () => ({
-  getCrawlJobAccess: vi.fn(),
-}));
 vi.mock("../../../services/worker/nuq-router", () => ({
   scrapeQueue: { getGroupJobs: mocks.getGroupJobs },
 }));

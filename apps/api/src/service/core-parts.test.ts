@@ -39,6 +39,14 @@ vi.mock("../lib/zdr-queue", () => {
   loadedSideEffectModules.push("zdr-queue");
   return {};
 });
+vi.mock("../services/worker/nuq-router", () => {
+  loadedSideEffectModules.push("nuq-router");
+  return {};
+});
+vi.mock("../lib/crawl-redis", () => {
+  loadedSideEffectModules.push("crawl-redis");
+  return {};
+});
 vi.mock("../services/redis", () => {
   loadedSideEffectModules.push("redis");
   return {};
@@ -292,6 +300,7 @@ describe("coreParts", () => {
       modules: [
         "blocklist",
         "idempotency",
+        "jobStore",
         "limits",
         "messages",
         "uploads",
@@ -467,6 +476,7 @@ describe("coreParts", () => {
     expect(built.describe().modules).toEqual([
       "blocklist",
       "idempotency",
+      "jobStore",
       "limits",
       "messages",
       "uploads",

@@ -44,11 +44,8 @@ import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
-import {
-  initializeRequestCredits,
-  requestCreditsShards,
-} from "../../lib/request-credits-store";
 import { currentLimits } from "../../lib/limits";
+import { service } from "../../service";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -205,6 +202,24 @@ export async function crawlController(
     account: req.account,
   });
 
+  const billing: BillingMetadata = {
+    endpoint: "crawl",
+    jobId: id,
+    externalRequestId: externalRequestId(req),
+    hostedMcp: req.auth.hostedMcp,
+  };
+  const ctx = requestContext({
+    teamId: req.auth.team_id,
+    zeroDataRetention,
+    flags: req.acuc?.flags ?? null,
+    orgId: req.acuc?.org_id ?? null,
+    apiKeyId: req.acuc?.api_key_id ?? null,
+    billing,
+    concurrencyLimit: req.acuc?.concurrency_limit,
+    rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
+  });
+  req.ctx = ctx;
+
   await logRequest({
     id,
     kind: "crawl",
@@ -216,9 +231,7 @@ export async function crawlController(
     target_hint: req.body.url,
     zeroDataRetention: zeroDataRetention || false,
     api_key_id: req.acuc?.api_key_id ?? null,
-    jobAccessExpiresAt: new Date(
-      Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
-    ),
+    skipJobStore: true,
   });
 
   // checkCreditsMiddleware (always runs before this controller) is the source
@@ -369,13 +382,22 @@ export async function crawlController(
     originalBodyLimit: preNormalizedBody.limit,
   });
 
-  const creditsShards = requestCreditsShards(finalCrawlerOptions.limit);
-  await initializeRequestCredits(id, creditsShards).catch(error => {
-    logger.warn("Failed to initialize Bigtable request credits", {
-      error,
-      shards: creditsShards,
+  await service.modules.jobStore
+    .register({
+      id,
+      kind: "crawl",
+      ctx,
+      expiresAtMs:
+        Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+      clientOrigin: req.body.origin ?? "api",
+      estimatedJobs: finalCrawlerOptions.limit,
+    })
+    .catch(error => {
+      logger.error("Failed to register crawl job", {
+        error,
+        estimatedJobs: finalCrawlerOptions.limit,
+      });
     });
-  });
 
   const effectiveConcurrency = await currentLimits().concurrency(ctx);
   const sc: StoredCrawl = {

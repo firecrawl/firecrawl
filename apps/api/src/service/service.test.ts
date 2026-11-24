@@ -411,6 +411,7 @@ describe("describe", () => {
       modules: [
         "blocklist",
         "idempotency",
+        "jobStore",
         "limits",
         "messages",
         "uploads",
@@ -562,6 +563,7 @@ describe("describe", () => {
       modules: [
         "blocklist",
         "idempotency",
+        "jobStore",
         "limits",
         "messages",
         "uploads",
@@ -676,6 +678,7 @@ describe("describe", () => {
       modules: [
         "blocklist",
         "idempotency",
+        "jobStore",
         "limits",
         "messages",
         "uploads",

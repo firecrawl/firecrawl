@@ -325,20 +325,36 @@ export async function scrapeController(
       let logRequestPromise: Promise<any> | undefined = undefined;
 
       if (!agentRequestId) {
-        logRequestPromise = logRequest({
-          id: jobId,
-          kind: "scrape",
-          api_version: "v2",
-          external_request_id: externalRequestId(req),
-          team_id: req.auth.team_id,
-          origin: req.body.origin ?? "api",
-          integration: req.body.integration,
-          target_hint: req.body.url,
-          zeroDataRetention: zeroDataRetention || false,
-          api_key_id: req.acuc?.api_key_id ?? null,
-        }).catch(err =>
-          logger.warn("Background request log failed", { error: err, jobId }),
-        );
+        logRequestPromise = Promise.all([
+          service.modules.jobStore
+            .register({
+              id: jobId,
+              kind: "scrape",
+              ctx,
+              clientOrigin: req.body.origin ?? "api",
+            })
+            .catch(err =>
+              logger.error("Background job registration failed", {
+                error: err,
+                jobId,
+              }),
+            ),
+          logRequest({
+            id: jobId,
+            kind: "scrape",
+            api_version: "v2",
+            external_request_id: externalRequestId(req),
+            team_id: req.auth.team_id,
+            origin: req.body.origin ?? "api",
+            integration: req.body.integration,
+            target_hint: req.body.url,
+            zeroDataRetention: zeroDataRetention || false,
+            api_key_id: req.acuc?.api_key_id ?? null,
+            skipJobStore: true,
+          }).catch(err =>
+            logger.warn("Background request log failed", { error: err, jobId }),
+          ),
+        ]);
       }
 
       setSpanAttributes(span, {

@@ -41,6 +41,7 @@ describe("testService", () => {
     expect(built.describe().modules).toEqual([
       "blocklist",
       "idempotency",
+      "jobStore",
       "limits",
       "messages",
       "uploads",

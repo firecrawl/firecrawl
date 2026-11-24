@@ -110,7 +110,7 @@ import {
   setSpanAttributes,
 } from "../../lib/otel-tracer";
 import { ScrapeUrlResponse } from "../../scraper/scrapeURL";
-import { logScrape, type ScrapeStateOutcome } from "../logging/log_job";
+import { logScrape } from "../logging/log_job";
 import { FeatureFlag } from "../../scraper/scrapeURL/engines";
 import {
   recordMonitorScrapeFailure,
@@ -122,6 +122,7 @@ import {
   type ExchangeScrapeMetadata,
 } from "../../lib/exchange";
 import { emitScrapeActivityEvent } from "../../lib/siem-logging";
+import { service } from "../../service";
 import {
   createScrapeFinishedEmitter,
   type ScrapeFinishedOutcome,
@@ -129,12 +130,6 @@ import {
 import type { JobKind } from "../../service/hooks";
 
 configDotenv();
-
-/**
- * How long a sync scrape waits for its Bigtable terminal state to be written
- * before answering anyway. A write normally takes a few milliseconds.
- */
-const SCRAPE_STATE_BARRIER_MS = 2_000;
 
 const jobLockExtendInterval = config.JOB_LOCK_EXTEND_INTERVAL;
 const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
@@ -980,10 +975,33 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
       doc.metadata.creditsUsed = credits_billed ?? undefined;
 
+      const requestId = job.data.requestId ?? job.data.crawl_id ?? job.id;
+      try {
+        await service.modules.jobStore.record(
+          {
+            id: job.id,
+            kind: "scrape",
+            ctx,
+            requestId,
+            url: job.data.url,
+            options: job.data.scrapeOptions,
+            creditsBilled: credits_billed ?? 0,
+            timeTakenSeconds: timeTakenInSeconds,
+            skipNuq: job.data.skipNuq ?? false,
+            isParse: Boolean(job.data.internalOptions?.isParse),
+          },
+          { state: "completed", document: doc },
+        );
+      } catch (error) {
+        logger.error("Failed to record completed scrape in job store", {
+          error,
+        });
+      }
+
       logger.debug("Logging job to DB...");
       await logScrape({
         id: job.id,
-        request_id: job.data.requestId ?? job.data.crawl_id ?? job.id,
+        request_id: requestId,
         url: job.data.url,
         is_successful: true,
         doc,
@@ -999,6 +1017,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         is_parse: Boolean(job.data.internalOptions?.isParse),
         monitor_id: job.data.monitoring?.monitorId,
         monitor_check_id: job.data.monitoring?.checkId,
+        skipJobStore: true,
       });
 
       trackScrape({
@@ -1091,41 +1110,56 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
       doc.metadata.creditsUsed = credits_billed ?? undefined;
 
-      let stateWritten: (outcome: ScrapeStateOutcome) => void = () => {};
-      const scrapeStateWritten = new Promise<ScrapeStateOutcome>(resolve => {
-        stateWritten = resolve;
+      const requestId = job.data.requestId ?? job.data.crawl_id ?? job.id;
+      const recordOutcomePromise = service.modules.jobStore
+        .record(
+          {
+            id: job.id,
+            kind: "scrape",
+            ctx,
+            requestId,
+            url: job.data.url,
+            options: job.data.scrapeOptions,
+            creditsBilled: credits_billed ?? 0,
+            timeTakenSeconds: timeTakenInSeconds,
+            skipNuq: job.data.skipNuq ?? false,
+            isParse: Boolean(job.data.internalOptions?.isParse),
+          },
+          { state: "completed", document: doc },
+        )
+        .then(() => true)
+        .catch(error => {
+          logger.error("Failed to record completed scrape in job store", {
+            error,
+          });
+          return false;
+        });
+
+      const logScrapePromise = logScrape({
+        id: job.id,
+        request_id: requestId,
+        url: job.data.url,
+        is_successful: true,
+        doc,
+        time_taken: timeTakenInSeconds,
+        team_id: job.data.team_id,
+        options: job.data.scrapeOptions,
+        cost_tracking: costTracking.toJSON(),
+        pdf_num_pages: doc.metadata.numPages,
+        content_type: doc.metadata.contentType,
+        credits_cost: credits_billed ?? 0,
+        zeroDataRetention: ctx.zeroDataRetention,
+        skipNuq: job.data.skipNuq ?? false,
+        is_parse: Boolean(job.data.internalOptions?.isParse),
+        monitor_id: job.data.monitoring?.monitorId,
+        monitor_check_id: job.data.monitoring?.checkId,
+        skipJobStore: true,
       });
-      const logScrapePromise = logScrape(
-        {
-          id: job.id,
-          request_id: job.data.requestId ?? job.data.crawl_id ?? job.id,
-          url: job.data.url,
-          is_successful: true,
-          doc,
-          time_taken: timeTakenInSeconds,
-          team_id: job.data.team_id,
-          options: job.data.scrapeOptions,
-          cost_tracking: costTracking.toJSON(),
-          pdf_num_pages: doc.metadata.numPages,
-          content_type: doc.metadata.contentType,
-          credits_cost: credits_billed ?? 0,
-          zeroDataRetention: ctx.zeroDataRetention,
-          skipNuq: job.data.skipNuq ?? false,
-          is_parse: Boolean(job.data.internalOptions?.isParse),
-          monitor_id: job.data.monitoring?.monitorId,
-          monitor_check_id: job.data.monitoring?.checkId,
-        },
-        { onStateWritten: stateWritten },
-      );
-      // Release the barrier if logging dies before the state write settles.
-      logScrapePromise.then(
-        () => stateWritten("failed"),
-        () => stateWritten("failed"),
-      );
+      logScrapePromise.catch(() => {});
 
       trackScrape({
         scrapeId: job.id,
-        requestId: job.data.requestId ?? job.data.crawl_id ?? job.id,
+        requestId,
         teamId: job.data.team_id,
         url: job.data.url,
         origin: job.data.origin,
@@ -1141,37 +1175,37 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       );
 
       if (job.data.skipNuq) {
-        // doesn't use GCS for result retrieval, safe to not await the rest
         logScrapePromise.catch(err =>
           logger.warn("Background scrape log failed", { error: err }),
         );
-        // ...but the terminal state must be readable before the sync response
-        // goes out: an interact call right after a fast scrape reads it for
-        // its replay context, and there is no NuQ job to fall back on. The
-        // wait is bounded so a Bigtable stall cannot hold every sync scrape.
-        let barrier: NodeJS.Timeout | undefined;
-        const outcome = await Promise.race([
-          scrapeStateWritten,
-          new Promise<"timed_out">(resolve => {
-            barrier = setTimeout(
-              () => resolve("timed_out"),
-              SCRAPE_STATE_BARRIER_MS,
-            );
-          }),
-        ]);
-        if (barrier !== undefined) clearTimeout(barrier);
-        if (outcome === "failed" || outcome === "timed_out") {
+        const SCRAPE_STATE_BARRIER_MS = 2_000;
+        let barrierTimer: ReturnType<typeof setTimeout> | undefined;
+        let recorded = false;
+        try {
+          recorded = await Promise.race([
+            recordOutcomePromise,
+            new Promise<false>(resolve => {
+              barrierTimer = setTimeout(
+                () => resolve(false),
+                SCRAPE_STATE_BARRIER_MS,
+              );
+            }),
+          ]);
+        } finally {
+          if (barrierTimer !== undefined) {
+            clearTimeout(barrierTimer);
+          }
+        }
+        if (!recorded) {
           logger.warn(
             "Sync scrape answered without a readable terminal state",
             {
-              outcome,
-              barrierMs: SCRAPE_STATE_BARRIER_MS,
+              scrapeId: job.id,
             },
           );
         }
       } else {
-        // v0 - must await because waitForJob reads from GCS
-        await logScrapePromise;
+        await Promise.all([recordOutcomePromise, logScrapePromise]);
       }
 
       finishedOutcome = {
@@ -1368,17 +1402,42 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         });
       }
 
+      const requestId = job.data.requestId ?? job.data.crawl_id ?? job.id;
+      const errorMessage =
+        typeof error === "string"
+          ? error
+          : (error.message ??
+            "Something went wrong... Contact help@mendable.ai");
+
+      try {
+        await service.modules.jobStore.record(
+          {
+            id: job.id,
+            kind: "scrape",
+            ctx,
+            requestId,
+            url: job.data.url,
+            options: job.data.scrapeOptions,
+            creditsBilled: credits_billed ?? 0,
+            timeTakenSeconds: timeTakenInSeconds,
+            skipNuq: job.data.skipNuq ?? false,
+            isParse: Boolean(job.data.internalOptions?.isParse),
+          },
+          { state: "failed", error: errorMessage },
+        );
+      } catch (recordError) {
+        logger.error("Failed to record failed scrape in job store", {
+          error: recordError,
+        });
+      }
+
       logger.debug("Logging job to DB...");
       await logScrape({
         id: job.id,
-        request_id: job.data.requestId ?? job.data.crawl_id ?? job.id,
+        request_id: requestId,
         url: job.data.url,
         is_successful: false,
-        error:
-          typeof error === "string"
-            ? error
-            : (error.message ??
-              "Something went wrong... Contact help@mendable.ai"),
+        error: errorMessage,
         error_code: isTransportableError(error) ? error.code : undefined,
         time_taken: timeTakenInSeconds,
         team_id: job.data.team_id,
@@ -1390,6 +1449,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         is_parse: Boolean(job.data.internalOptions?.isParse),
         monitor_id: job.data.monitoring?.monitorId,
         monitor_check_id: job.data.monitoring?.checkId,
+        skipJobStore: true,
       });
 
       trackScrape({
@@ -2097,11 +2157,14 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
             }
 
             try {
-              if (config.GCS_BUCKET_NAME && !job.data.skipNuq) {
-                logger.debug("Job succeeded -- putting null in Redis");
+              if (
+                service.modules.jobStore.storesResultsExternally?.() &&
+                !job.data.skipNuq
+              ) {
+                logger.debug("Job succeeded -- putting null in queue");
                 return null;
               } else {
-                logger.debug("Job succeeded -- putting result in Redis");
+                logger.debug("Job succeeded -- putting result in queue");
                 return result.document;
               }
             } catch (e) {}

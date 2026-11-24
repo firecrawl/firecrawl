@@ -13,12 +13,14 @@ import {
   memoryUploads,
   noBlocklist,
   noLimits,
+  queueJobStore,
   redisIdempotency,
 } from "./defaults";
 import { currentLimits, resolveJobPriority } from "../lib/limits";
 import type {
   BlocklistModule,
   IdempotencyModule,
+  JobStoreModule,
   LimitsModule,
   MessagesModule,
   Modules,
@@ -349,11 +351,13 @@ describe("service module slots", () => {
     expect(Object.isFrozen(built.modules.messages)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads.driver())).toBe(true);
+    expect(Object.isFrozen(built.modules.jobStore)).toBe(true);
     expect(Object.isFrozen(built.modules.idempotency)).toBe(true);
     expect(Object.isFrozen(built.modules.webhooks)).toBe(true);
     expect(built.describe().modules).toEqual([
       "blocklist",
       "idempotency",
+      "jobStore",
       "limits",
       "messages",
       "uploads",
@@ -374,6 +378,7 @@ describe("service module slots", () => {
       logsMessages().errorContact(),
     );
     expect(built.modules.uploads.driver().name).toBe("local");
+    expect(built.modules.jobStore.storesResultsExternally?.()).toBe(false);
   });
 
   it("keeps defaults for unspecified slots and snapshots provided modules and drivers", async () => {
@@ -406,6 +411,11 @@ describe("service module slots", () => {
       delete: async () => {},
     };
     const customUploads: UploadsModule = { driver: () => customDriver };
+    const customJobStore: JobStoreModule = {
+      ...queueJobStore(),
+      storesResultsExternally: () => true,
+      usage: async () => 42,
+    };
     const customIdempotency: IdempotencyModule = {
       claim: async key => key === "allow",
     };
@@ -422,6 +432,7 @@ describe("service module slots", () => {
           limits: customLimits,
           messages: customMessages,
           uploads: customUploads,
+          jobStore: customJobStore,
           idempotency: customIdempotency,
           webhooks: customWebhooks,
         },
@@ -442,6 +453,8 @@ describe("service module slots", () => {
       ...customDriver,
       name: "mutated",
     });
+    customJobStore.usage = async () => 999;
+    customJobStore.storesResultsExternally = () => false;
     customIdempotency.claim = async () => false;
     customWebhooks.signingSecret = async () => "mutated-secret";
     customWebhooks.deliver = async () => ({ delivered: true, queued: false });
@@ -478,6 +491,8 @@ describe("service module slots", () => {
     expect(built.modules.limits.queueBackend(ctx)).toBe("fdb");
     expect(built.modules.messages.errorContact("42")).toBe("custom:42");
     expect(built.modules.uploads.driver().name).toBe("custom");
+    expect(built.modules.jobStore.storesResultsExternally?.()).toBe(true);
+    expect(await built.modules.jobStore.usage("req-1")).toBe(42);
     const data = await built.modules.uploads.driver().read({
       uploadId: "u1",
       teamId: "t1",
@@ -589,6 +604,18 @@ describe("service module slots", () => {
     ).toThrow("Invalid uploads module");
     expect(() =>
       createService(
+        { modules: { jobStore: {} as unknown as JobStoreModule } },
+        parts,
+      ),
+    ).toThrow("Invalid jobStore module");
+    expect(() =>
+      createService(
+        { modules: { jobStore: null as unknown as JobStoreModule } },
+        parts,
+      ),
+    ).toThrow("Invalid jobStore module");
+    expect(() =>
+      createService(
         { modules: { idempotency: {} as unknown as IdempotencyModule } },
         parts,
       ),
@@ -611,6 +638,32 @@ describe("service module slots", () => {
         parts,
       ),
     ).toThrow("Invalid webhooks module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            jobStore: {
+              ...queueJobStore(),
+              readMany: "not-a-function",
+            } as unknown as JobStoreModule,
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid jobStore module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            jobStore: {
+              ...queueJobStore(),
+              storesResultsExternally: "not-a-function",
+            } as unknown as JobStoreModule,
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid jobStore module");
     expect(() =>
       createService(
         {

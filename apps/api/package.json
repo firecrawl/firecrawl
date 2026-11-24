@@ -32,6 +32,10 @@
       "types": "./src/services/autumn/autumn.service.ts",
       "default": "./dist/src/services/autumn/autumn.service.js"
     },
+    "./unstable/browser-options": {
+      "types": "./src/lib/browser-options.ts",
+      "default": "./dist/src/lib/browser-options.js"
+    },
     "./unstable/db": {
       "types": "./src/db/connection.ts",
       "default": "./dist/src/db/connection.js"
@@ -44,21 +48,61 @@
       "types": "./src/lib/exchange.ts",
       "default": "./dist/src/lib/exchange.js"
     },
+    "./unstable/gcs-jobs": {
+      "types": "./src/lib/gcs-jobs.ts",
+      "default": "./dist/src/lib/gcs-jobs.js"
+    },
+    "./unstable/job-access-store": {
+      "types": "./src/lib/job-access-store.ts",
+      "default": "./dist/src/lib/job-access-store.js"
+    },
     "./unstable/job-priority": {
       "types": "./src/lib/job-priority.ts",
       "default": "./dist/src/lib/job-priority.js"
+    },
+    "./unstable/job-state-store": {
+      "types": "./src/lib/job-state-store.ts",
+      "default": "./dist/src/lib/job-state-store.js"
+    },
+    "./unstable/keyless": {
+      "types": "./src/lib/keyless.ts",
+      "default": "./dist/src/lib/keyless.js"
     },
     "./unstable/keyless-team": {
       "types": "./src/lib/keyless-team.ts",
       "default": "./dist/src/lib/keyless-team.js"
     },
+    "./unstable/nuq-router": {
+      "types": "./src/services/worker/nuq-router.ts",
+      "default": "./dist/src/services/worker/nuq-router.js"
+    },
+    "./unstable/operational-job-access": {
+      "types": "./src/lib/operational-job-access.ts",
+      "default": "./dist/src/lib/operational-job-access.js"
+    },
     "./unstable/redis": {
       "types": "./src/services/redis.ts",
       "default": "./dist/src/services/redis.js"
     },
+    "./unstable/request-credits-analytics": {
+      "types": "./src/lib/request-credits-analytics.ts",
+      "default": "./dist/src/lib/request-credits-analytics.js"
+    },
+    "./unstable/request-credits-store": {
+      "types": "./src/lib/request-credits-store.ts",
+      "default": "./dist/src/lib/request-credits-store.js"
+    },
+    "./unstable/sanitize": {
+      "types": "./src/services/logging/sanitize.ts",
+      "default": "./dist/src/services/logging/sanitize.js"
+    },
     "./unstable/scrape-errors": {
       "types": "./src/scraper/scrapeURL/error.ts",
       "default": "./dist/src/scraper/scrapeURL/error.js"
+    },
+    "./unstable/scrape-replay": {
+      "types": "./src/lib/scrape-interact/scrape-replay.ts",
+      "default": "./dist/src/lib/scrape-interact/scrape-replay.js"
     },
     "./unstable/zdr-queue": {
       "types": "./src/lib/zdr-queue.ts",

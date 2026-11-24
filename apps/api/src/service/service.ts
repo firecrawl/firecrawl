@@ -201,6 +201,7 @@ export function createService(
         key !== "limits" &&
         key !== "messages" &&
         key !== "uploads" &&
+        key !== "jobStore" &&
         key !== "idempotency" &&
         key !== "webhooks"
       ) {
@@ -227,6 +228,10 @@ export function createService(
       config.modules?.uploads === undefined
         ? defaults.uploads
         : config.modules.uploads,
+    jobStore:
+      config.modules?.jobStore === undefined
+        ? defaults.jobStore
+        : config.modules.jobStore,
     idempotency:
       config.modules?.idempotency === undefined
         ? defaults.idempotency
