@@ -5,6 +5,7 @@ import type { ResolvedSafeMode } from "../../../lib/safe-mode";
 import { scrapeURL } from "../../../scraper/scrapeURL";
 import * as engines from "../../../scraper/scrapeURL/engines";
 import { PaywalledContentError } from "../../../scraper/scrapeURL/error";
+import { createService, replaceService } from "../../../service/service";
 import { scrapeTimeout } from "./lib";
 
 const URL_UNDER_TEST = "https://example.com/article";
@@ -31,6 +32,26 @@ const relaxedSafeMode = (respectPaywalls: boolean): ResolvedSafeMode => ({
 });
 
 describe("Safe Mode respectPaywalls", () => {
+  beforeAll(() => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            engines: engines.coreEngines,
+            engineFeatures: engines.coreEngineFeatures,
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+  });
+
+  afterAll(() => {
+    replaceService(undefined);
+  });
+
   beforeEach(() => {
     vi.spyOn(engines, "scrapeURLWithEngine");
   });

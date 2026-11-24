@@ -36,15 +36,15 @@ import { _addScrapeJobToBullMQ } from "../queue-jobs";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { crawlGroup, resolveNewGroupBackend } from "../worker/nuq-router";
 import { getACUCTeam } from "../../controllers/auth";
-import { processEngpickerJob } from "../../lib/engpicker";
 import { logRequest, shutdownPubSubLogging } from "../logging/log_job";
 import { startSiemLoggingConsumer } from "../siem-logging/worker";
 import { closeSiemLoggingTransport } from "../../lib/siem-logging/transport";
 import { requestCreditsShards } from "../../lib/request-credits-store";
 import { startRole } from "../../main";
+import { indexWorkerEnv } from "./index-worker-env";
 
-const workerLockDuration = config.WORKER_LOCK_DURATION;
-const workerStalledCheckInterval = config.WORKER_STALLED_CHECK_INTERVAL;
+const workerLockDuration = indexWorkerEnv.WORKER_LOCK_DURATION;
+const workerStalledCheckInterval = indexWorkerEnv.WORKER_STALLED_CHECK_INTERVAL;
 const jobLockExtendInterval = config.JOB_LOCK_EXTEND_INTERVAL;
 const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
 
@@ -168,7 +168,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
   const MIN_URLS_PER_DOMAIN = 10;
   const MAX_URLS_PER_DOMAIN = 50;
 
-  const teamId = config.PRECRAWL_TEAM_ID;
+  const teamId = indexWorkerEnv.PRECRAWL_TEAM_ID;
 
   try {
     await withSpan("precrawl.job", async span => {
@@ -715,7 +715,7 @@ export async function start() {
     processBillingJobInternal,
   );
 
-  const precrawlWorkerPromise = config.PRECRAWL_TEAM_ID
+  const precrawlWorkerPromise = indexWorkerEnv.PRECRAWL_TEAM_ID
     ? workerFun(getPrecrawlQueue(), processPrecrawlJob)
     : (async () => {
         logger.warn("PRECRAWL_TEAM_ID not set, skipping precrawl worker");
@@ -793,22 +793,6 @@ export async function start() {
   //   });
   // }, OMCE_INSERT_INTERVAL);
 
-  const engpickerPromise = (async () => {
-    if (config.DISABLE_ENGPICKER) {
-      logger.info("Engpicker is disabled, skipping");
-      return;
-    }
-
-    while (!isShuttingDown) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      try {
-        await processEngpickerJob();
-      } catch (e) {
-        logger.error("Error processing engpicker job", { error: e });
-      }
-    }
-  })();
-
   // Search indexing is now handled by separate search service
   // The search service has its own worker that processes the queue
   // This worker no longer needs to process search index jobs
@@ -831,11 +815,7 @@ export async function start() {
   }
 
   // Wait for all workers to complete (which should only happen on shutdown)
-  await Promise.all([
-    billingWorkerPromise,
-    precrawlWorkerPromise,
-    engpickerPromise,
-  ]);
+  await Promise.all([billingWorkerPromise, precrawlWorkerPromise]);
 
   clearInterval(indexInserterInterval);
   clearInterval(webhookInserterInterval);

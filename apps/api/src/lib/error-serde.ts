@@ -52,7 +52,7 @@ import { UnsafeDomainBlockedError } from "./threat-protection/error";
 import {
   ThirdPartyDataTermsRequiredError,
   ThirdPartyDataUnsupportedOptionError,
-} from "./exchange";
+} from "./exchange-errors";
 import { service } from "../service";
 
 /**
