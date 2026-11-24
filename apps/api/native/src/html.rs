@@ -407,8 +407,10 @@ const EMPTY_NON_MAIN_FRAMES: [&str; 3] = [
   "[data-original-tag=\"iframe\"][src*=\"youtube-nocookie.com/embed/\"]",
 ];
 
-const FORCE_INCLUDE_MAIN_TAGS: [&str; 13] = [
+const FORCE_INCLUDE_MAIN_TAGS: [&str; 15] = [
   "#main",
+  "#article-body",
+  "[itemprop=\"articleBody\"]",
   ".swoogo-cols",
   ".swoogo-text",
   ".swoogo-table-div",
