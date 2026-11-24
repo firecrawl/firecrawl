@@ -909,13 +909,17 @@ async function startServices(command?: string[]): Promise<Services> {
           },
         );
 
+  const indexWorkerRunner = /\.(?:[cm]?ts)$/i.test(roleEntry)
+    ? "pnpm exec tsx"
+    : "node";
+
   const indexWorker =
     config.USE_DB_AUTHENTICATION &&
     roleEntry &&
     installedService()?.roles.has("index-worker")
       ? execForward(
           "index-worker",
-          `node ${shellEscape(roleEntry)} index-worker`,
+          `${indexWorkerRunner} ${shellEscape(roleEntry)} index-worker`,
           {
             NUQ_REDUCE_NOISE: "true",
             NUQ_POD_NAME: "index-worker",
