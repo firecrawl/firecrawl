@@ -53,6 +53,7 @@ vi.mock("./record-options", () => ({
 }));
 
 import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
 import { feedbackController } from "./controller";
 import { issueFeedbackToken } from "../../../lib/alexandria-feedback-token";
 
@@ -731,7 +732,7 @@ it("rejects feedback outside the window after the team's last Alexandria call", 
   expect(response.body).toEqual({
     success: false,
     feedbackErrorCode: "FEEDBACK_WINDOW_EXPIRED",
-    error: `Alexandria feedback must be submitted within ${config.ALEXANDRIA_FEEDBACK_WINDOW_SEC} seconds of an Alexandria search, discovery, or execution, or name its calls with valid feedback tokens.`,
+    error: `Alexandria feedback must be submitted within ${feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC} seconds of an Alexandria search, discovery, or execution, or name its calls with valid feedback tokens.`,
   });
   expect(mocks.hasRecentAlexandriaActivity).toHaveBeenCalledWith(teamId);
   expect(mocks.transaction).not.toHaveBeenCalled();
@@ -887,8 +888,8 @@ describe("call attribution", () => {
   let originalWindow: number;
   let clock: { mockRestore: () => void };
   beforeEach(() => {
-    originalWindow = config.ALEXANDRIA_FEEDBACK_WINDOW_SEC;
-    config.ALEXANDRIA_FEEDBACK_WINDOW_SEC = 1200;
+    originalWindow = feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC;
+    feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC = 1200;
     config.EXCHANGE_INTERNAL_SECRET = "internal-secret";
     clock = vi.spyOn(Date, "now").mockReturnValue(now);
     mocks.getRecentAlexandriaCalls.mockResolvedValue([
@@ -900,7 +901,7 @@ describe("call attribution", () => {
     ]);
   });
   afterEach(() => {
-    config.ALEXANDRIA_FEEDBACK_WINDOW_SEC = originalWindow;
+    feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC = originalWindow;
     config.EXCHANGE_INTERNAL_SECRET = originalSecret;
     clock.mockRestore();
   });

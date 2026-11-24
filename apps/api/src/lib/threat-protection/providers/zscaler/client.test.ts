@@ -1,5 +1,5 @@
 import http from "http";
-import { config } from "../../../../config";
+import { threatProtectionEnv } from "../../env";
 import {
   toLookupUrl,
   ZscalerError,
@@ -66,15 +66,15 @@ beforeAll(async () => {
     throw new Error("Mock server did not bind");
   }
   const base = `http://127.0.0.1:${address.port}`;
-  originalTokenOverride = config.ZSCALER_TOKEN_URL_OVERRIDE;
-  originalApiOverride = config.ZSCALER_API_URL_OVERRIDE;
-  config.ZSCALER_TOKEN_URL_OVERRIDE = `${base}/oauth2/v1/token`;
-  config.ZSCALER_API_URL_OVERRIDE = base;
+  originalTokenOverride = threatProtectionEnv.ZSCALER_TOKEN_URL_OVERRIDE;
+  originalApiOverride = threatProtectionEnv.ZSCALER_API_URL_OVERRIDE;
+  threatProtectionEnv.ZSCALER_TOKEN_URL_OVERRIDE = `${base}/oauth2/v1/token`;
+  threatProtectionEnv.ZSCALER_API_URL_OVERRIDE = base;
 });
 
 afterAll(async () => {
-  config.ZSCALER_TOKEN_URL_OVERRIDE = originalTokenOverride;
-  config.ZSCALER_API_URL_OVERRIDE = originalApiOverride;
+  threatProtectionEnv.ZSCALER_TOKEN_URL_OVERRIDE = originalTokenOverride;
+  threatProtectionEnv.ZSCALER_API_URL_OVERRIDE = originalApiOverride;
   await new Promise(resolve => server.close(resolve));
 });
 

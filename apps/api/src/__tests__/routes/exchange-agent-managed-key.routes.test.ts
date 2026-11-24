@@ -77,6 +77,7 @@ vi.mock("undici", async importOriginal => ({
 }));
 
 import { config } from "../../config";
+import { feedbackEnv } from "../../lib/feedback-env";
 import { exchangeRouter } from "../../routes/exchange";
 import { redisRateLimitClient } from "../../services/rate-limiter";
 
@@ -296,7 +297,7 @@ describe("hosted MCP keys on the Exchange routes the agent calls", () => {
                 "alexandria:activity:team-mcp",
                 "1",
                 "EX",
-                config.ALEXANDRIA_FEEDBACK_WINDOW_SEC,
+                feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC,
               ],
             ]
           : [],

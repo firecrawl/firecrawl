@@ -39,8 +39,8 @@ import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { checkUrl } from "../../lib/threat-protection";
+import { getErrorHttpResponse } from "../../lib/error";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
-import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
@@ -69,6 +69,13 @@ export async function crawlController(
       code: safeMode.code,
       error: safeMode.error,
     });
+  }
+
+  if (
+    safeMode.safeMode?.lockdown &&
+    typeof preNormalizedBody?.scrapeOptions?.maxAge === "number"
+  ) {
+    req.body.scrapeOptions.maxAge = preNormalizedBody.scrapeOptions.maxAge;
   }
 
   // Safe Mode lockdown is cache-only, which implies zero data retention.
@@ -277,17 +284,21 @@ export async function crawlController(
         error: error.message,
         prompt: req.body.prompt,
       });
-      if (error instanceof UsOnlyUnavailableError) {
-        return res.status(403).json({
+      const httpResponse = getErrorHttpResponse(error);
+      if (httpResponse) {
+        return res.status(httpResponse.status).json({
+          ...httpResponse.extraFields,
           success: false,
-          code: error.code,
-          error: error.message,
+          ...(httpResponse.code ? { code: httpResponse.code } : {}),
+          error: httpResponse.message,
+          jobId: id,
         });
       }
       return res.status(400).json({
         success: false,
         error:
           "Failed to process natural language prompt. Please try rephrasing or use explicit crawler options.",
+        jobId: id,
       });
     }
   }
@@ -318,9 +329,11 @@ export async function crawlController(
   if (req.body.prompt) {
     const pathPatternIssues = collectPathPatternIssues(finalCrawlerOptions);
     if (pathPatternIssues.length > 0) {
-      return res
-        .status(400)
-        .json({ success: false, error: pathPatternIssues[0].message });
+      return res.status(400).json({
+        success: false,
+        error: pathPatternIssues[0].message,
+        jobId: id,
+      });
     }
   }
 

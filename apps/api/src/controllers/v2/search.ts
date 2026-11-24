@@ -23,7 +23,7 @@ import {
   logResearchEndpoint,
 } from "../../services/logging/log_job";
 import { logger as _logger } from "../../lib/logger";
-import { ScrapeJobTimeoutError } from "../../lib/error";
+import { getErrorHttpResponse, ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
 import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
@@ -78,8 +78,6 @@ import {
   toolFusionEnabled,
 } from "../../search/tool-intent";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
-import { UsOnlyUpstreamRefusalError } from "../../lib/research-upstream";
-import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
 const IMAGE_SEARCH_US_ONLY_MESSAGE =
   "Image search is not available for teams restricted to US-only processing.";
@@ -781,23 +779,14 @@ async function searchControllerInner(
       });
     }
 
-    if (error instanceof UsOnlyUnavailableError) {
-      setSpanAttributes(span, { "search.status_code": 403 });
-      return res.status(403).json({
+    const httpResponse = getErrorHttpResponse(error);
+    if (httpResponse) {
+      setSpanAttributes(span, { "search.status_code": httpResponse.status });
+      return res.status(httpResponse.status).json({
+        ...httpResponse.extraFields,
         success: false,
-        code: error.code,
-        error: error.message,
-      });
-    }
-
-    if (error instanceof UsOnlyUpstreamRefusalError) {
-      setSpanAttributes(span, { "search.status_code": error.status });
-      return res.status(error.status).json({
-        success: false,
-        ...(error.status === 403
-          ? { code: "US_ONLY_UNAVAILABLE" as const }
-          : {}),
-        error: error.message,
+        ...(httpResponse.code ? { code: httpResponse.code } : {}),
+        error: httpResponse.message,
       });
     }
 

@@ -14,7 +14,7 @@ import {
 } from "./types";
 import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
-import { isTransportableError } from "../../lib/error";
+import { getErrorHttpResponse, isTransportableError } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import { withSpan, setSpanAttributes, SpanKind } from "../../lib/otel-tracer";
@@ -25,7 +25,7 @@ import { getJobPriority } from "../../lib/job-priority";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
-import { getErrorContactMessage } from "../../lib/deployment";
+import { service } from "../../service";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
@@ -627,27 +627,16 @@ export async function parseController(
             });
           }
 
-          if (e.code === "SCRAPE_NO_CACHED_DATA") {
+          const httpResponse = getErrorHttpResponse(e);
+          if (httpResponse) {
             setSpanAttributes(span, {
-              "parse.status_code": 404,
+              "parse.status_code": httpResponse.status,
             });
-            return res.status(404).json({
+            return res.status(httpResponse.status).json({
+              ...httpResponse.extraFields,
               success: false,
               code: e.code,
               error: e.message,
-            });
-          }
-
-          if (e.code === "AGENT_INDEX_ONLY") {
-            setSpanAttributes(span, {
-              "parse.status_code": 403,
-            });
-            return res.status(403).json({
-              success: false,
-              code: e.code,
-              error: e.message,
-              sponsor_status: "pending",
-              login_url: "https://firecrawl.dev/signin",
             });
           }
 
@@ -656,20 +645,6 @@ export async function parseController(
               "parse.status_code": 400,
             });
             return res.status(400).json({
-              success: false,
-              code: e.code,
-              error: e.message,
-            });
-          }
-
-          if (
-            e.code === "US_ONLY_UNAVAILABLE" ||
-            e.code === "RESERVED_CAPACITY_UNAVAILABLE"
-          ) {
-            setSpanAttributes(span, {
-              "parse.status_code": 403,
-            });
-            return res.status(403).json({
               success: false,
               code: e.code,
               error: e.message,
@@ -701,7 +676,7 @@ export async function parseController(
           return res.status(500).json({
             success: false,
             code: "UNKNOWN_ERROR",
-            error: getErrorContactMessage(id),
+            error: service.modules.messages.errorContact(id),
           });
         }
       } finally {

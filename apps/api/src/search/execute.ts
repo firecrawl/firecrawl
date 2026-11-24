@@ -762,6 +762,8 @@ export async function executeSearch(
       team_id: teamId,
       org_id: orgId ?? null,
       origin,
+      zeroDataRetention,
+      safeMode: context.safeModeBypassed ? false : undefined,
     });
 
     if (itemsToScrape.length > 0) {

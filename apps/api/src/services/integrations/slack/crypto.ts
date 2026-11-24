@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { config } from "../../../config";
+import { notificationsEnv } from "../../notification/env";
 
 const PLAINTEXT_PREFIX = "plain:";
 const GCM_PREFIX = "gcm:";
@@ -8,7 +9,7 @@ const GCM_PREFIX = "gcm:";
 // key is unset. A key that is set but malformed throws, so a misconfiguration
 // never silently downgrades to plaintext storage.
 function getKey(): Buffer | null {
-  const raw = config.SLACK_TOKEN_ENCRYPTION_KEY?.trim();
+  const raw = notificationsEnv.SLACK_TOKEN_ENCRYPTION_KEY?.trim();
   if (!raw) return null;
 
   let key: Buffer | null = null;

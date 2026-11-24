@@ -1,5 +1,6 @@
 import type { AgentInteropStatus } from "../../lib/agent-interop";
 import type { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
+import type { ZDRPolicy } from "../../lib/zdr-policy";
 import { Request, Response } from "express";
 import { hasCategory } from "../../lib/search-query-builder";
 import { config } from "../../config";
@@ -41,6 +42,13 @@ import { ProductProfile } from "../../types/product";
 import { MenuProfile } from "../../types/menu";
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
 import { auditMetadataSchema } from "../../lib/siem-logging/types";
+import type {
+  RequestKind,
+  RequestSchemas,
+  ResolvedRequestContributions,
+  ScrapeOptions as ServiceScrapeOptions,
+  ScrapeOptionsRule,
+} from "../../service/request";
 
 // Base URL schema with common validation logic
 export const URL = z
@@ -879,7 +887,6 @@ const scrapeOptionFields = z.strictObject({
   __searchPreviewToken: z.string().optional(),
   __experimental_omce: z.boolean().prefault(false).optional(),
   __experimental_omceDomain: z.string().optional(),
-  __experimental_engpicker: z.boolean().prefault(false).optional(),
   __forceFirePDF: z.boolean().prefault(false).optional(),
 });
 
@@ -988,8 +995,12 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
     result = { ...result, timeout: 120000 };
   }
 
-  if (obj.lockdown && obj.maxAge === undefined) {
-    result = { ...result, maxAge: LOCKDOWN_DEFAULT_MAX_AGE_MS };
+  if (obj.lockdown) {
+    if (obj.maxAge === undefined) {
+      result = { ...result, maxAge: LOCKDOWN_DEFAULT_MAX_AGE_MS };
+    }
+  } else if (obj.maxAge !== undefined && obj.maxAge > MAX_SCRAPE_MAX_AGE_MS) {
+    result = { ...result, maxAge: MAX_SCRAPE_MAX_AGE_MS };
   }
 
   return result as T extends undefined ? undefined : T;
@@ -1658,6 +1669,8 @@ export type ErrorResponse = {
   replacement?: string;
   documentation_url?: string;
   retry_after_seconds?: number;
+  /** The job the failed request created, when it got far enough to have one. */
+  jobId?: string;
 };
 
 export type ScrapeResponse =
@@ -2130,6 +2143,7 @@ type Account = {
   remainingCredits: number;
 };
 
+export const MAX_SCRAPE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export const LOCKDOWN_DEFAULT_MAX_AGE_MS = 2 * 365 * 24 * 60 * 60 * 1000;
 
 export type TeamFlags = {
@@ -2229,6 +2243,7 @@ interface RequestWithMaybeACUC<
   ResBody = undefined,
 > extends Request<ReqParams, ReqBody, ResBody> {
   acuc?: AuthCreditUsageChunk;
+  zdrPolicy?: ZDRPolicy;
 }
 
 export interface RequestWithAuth<
@@ -2593,114 +2608,219 @@ const searchDomainSchema = z
     "Domain must be a valid hostname without protocol or path",
   );
 
-export const searchRequestSchema = z
-  .strictObject({
-    query: z.string(),
-    limit: z.int().positive().finite().max(100).prefault(10),
-    tbs: z.string().optional(),
-    filter: z.string().optional(),
-    sources: z
-      .union([
-        // Array of strings (simple format)
-        z.array(z.enum(["web", "images", "news", "alexandria", "skills"])),
-        // Array of objects (advanced format)
+const searchRequestSchemaBase = z.strictObject({
+  query: z.string(),
+  limit: z.int().positive().finite().max(100).prefault(10),
+  tbs: z.string().optional(),
+  filter: z.string().optional(),
+  sources: z
+    .union([
+      // Array of strings (simple format)
+      z.array(z.enum(["web", "images", "news", "alexandria", "skills"])),
+      // Array of objects (advanced format)
+      z.array(
+        z.union([
+          webSearchSourceOptions,
+          imagesSearchSourceOptions,
+          newsSearchSourceOptions,
+          z.strictObject({
+            type: z.literal("alexandria"),
+          }),
+          z.strictObject({
+            type: z.literal("skills"),
+          }),
+        ]),
+      ),
+    ])
+    .prefault(["web"]),
+  categories: z
+    .preprocess(
+      normalizeDeveloperCategoryAliases,
+      z.union([
+        z.array(z.enum(["research", "pdf", "developer", "gov"])),
         z.array(
           z.union([
-            webSearchSourceOptions,
-            imagesSearchSourceOptions,
-            newsSearchSourceOptions,
-            z.strictObject({
-              type: z.literal("alexandria"),
-            }),
-            z.strictObject({
-              type: z.literal("skills"),
-            }),
+            researchCategoryOptions,
+            pdfCategoryOptions,
+            developerCategoryOptions,
+            govCategoryOptions,
           ]),
         ),
-      ])
-      .prefault(["web"]),
-    categories: z
-      .preprocess(
-        normalizeDeveloperCategoryAliases,
-        z.union([
-          z.array(z.enum(["research", "pdf", "developer", "gov"])),
-          z.array(
-            z.union([
-              researchCategoryOptions,
-              pdfCategoryOptions,
-              developerCategoryOptions,
-              govCategoryOptions,
-            ]),
-          ),
-        ]),
-      )
-      .optional(),
-    includeDomains: z.array(searchDomainSchema).optional(),
-    excludeDomains: z.array(searchDomainSchema).optional(),
-    lang: z.string().prefault("en"),
-    safe: z.boolean().optional(),
-    enterprise: z.array(z.enum(["default", "anon", "zdr"])).optional(),
-    country: z.string().optional(),
-    location: z.string().optional(),
-    origin: z.string().prefault("api"),
-    integration: integrationSchema.optional().transform(val => val || null),
-    timeout: z.int().positive().finite().prefault(60000),
-    ignoreInvalidURLs: z.boolean().prefault(false),
-    asyncScraping: z.boolean().prefault(false),
-    // Replace each result's snippet with query-relevant highlights pulled from
-    // our index. When omitted, the caller integration and rollout cohort decide
-    // whether generated highlights are returned or only run in shadow mode.
-    highlights: z.boolean().optional(),
-    domainTools: z.boolean().optional(),
-    toolDetail: z.enum(["compact", "summary", "full"]).prefault("compact"),
-    __searchPreviewToken: z.string().optional(),
-    threatProtection: threatProtectionOverrideSchema.optional(),
-    scrapeOptions: baseScrapeOptions
-      .safeExtend({
-        formats: z
-          .preprocess(
-            val => {
-              if (!Array.isArray(val)) return val;
-              return val.map(format => {
-                if (typeof format === "string") {
-                  return { type: format };
-                }
-                return format;
-              });
-            },
-            z
-              .union([
-                z.strictObject({ type: z.literal("markdown") }),
-                z.strictObject({ type: z.literal("html") }),
-                z.strictObject({ type: z.literal("rawHtml") }),
-                z.strictObject({ type: z.literal("links") }),
-                z.strictObject({ type: z.literal("images") }),
-                z.strictObject({ type: z.literal("summary") }),
-                z.strictObject({ type: z.literal("product") }),
-                z.strictObject({ type: z.literal("menu") }),
-                jsonFormatWithOptions,
-                questionFormatWithOptions,
-                highlightsFormatWithOptions,
-                queryFormatWithOptions,
-                screenshotFormatWithOptions,
-              ])
-              .array()
-              .prefault([]),
-          )
-          .refine(x => {
-            return x.filter(f => f.type === "screenshot").length <= 1;
-          }, "You may only specify one screenshot format"),
-      })
-      .optional(),
-    __agentInterop: z
-      .object({
-        auth: z.string(),
-        requestId: z.string(),
-        shouldBill: z.boolean(),
-        hostedMcp: z.boolean().optional(),
-      })
-      .optional(),
-  })
+      ]),
+    )
+    .optional(),
+  includeDomains: z.array(searchDomainSchema).optional(),
+  excludeDomains: z.array(searchDomainSchema).optional(),
+  lang: z.string().prefault("en"),
+  safe: z.boolean().optional(),
+  enterprise: z.array(z.enum(["default", "anon", "zdr"])).optional(),
+  country: z.string().optional(),
+  location: z.string().optional(),
+  origin: z.string().prefault("api"),
+  integration: integrationSchema.optional().transform(val => val || null),
+  timeout: z.int().positive().finite().prefault(60000),
+  ignoreInvalidURLs: z.boolean().prefault(false),
+  asyncScraping: z.boolean().prefault(false),
+  // Replace each result's snippet with query-relevant highlights pulled from
+  // our index. When omitted, the caller integration and rollout cohort decide
+  // whether generated highlights are returned or only run in shadow mode.
+  highlights: z.boolean().optional(),
+  domainTools: z.boolean().optional(),
+  toolDetail: z.enum(["compact", "summary", "full"]).prefault("compact"),
+  __searchPreviewToken: z.string().optional(),
+  threatProtection: threatProtectionOverrideSchema.optional(),
+  scrapeOptions: baseScrapeOptions
+    .safeExtend({
+      formats: z
+        .preprocess(
+          val => {
+            if (!Array.isArray(val)) return val;
+            return val.map(format => {
+              if (typeof format === "string") {
+                return { type: format };
+              }
+              return format;
+            });
+          },
+          z
+            .union([
+              z.strictObject({ type: z.literal("markdown") }),
+              z.strictObject({ type: z.literal("html") }),
+              z.strictObject({ type: z.literal("rawHtml") }),
+              z.strictObject({ type: z.literal("links") }),
+              z.strictObject({ type: z.literal("images") }),
+              z.strictObject({ type: z.literal("summary") }),
+              z.strictObject({ type: z.literal("product") }),
+              z.strictObject({ type: z.literal("menu") }),
+              jsonFormatWithOptions,
+              questionFormatWithOptions,
+              highlightsFormatWithOptions,
+              queryFormatWithOptions,
+              screenshotFormatWithOptions,
+            ])
+            .array()
+            .prefault([]),
+        )
+        .refine(x => {
+          return x.filter(f => f.type === "screenshot").length <= 1;
+        }, "You may only specify one screenshot format"),
+    })
+    .optional(),
+  __agentInterop: z
+    .object({
+      auth: z.string(),
+      requestId: z.string(),
+      shouldBill: z.boolean(),
+      hostedMcp: z.boolean().optional(),
+    })
+    .optional(),
+});
+
+const transformSearchRequest = <
+  T extends z.infer<typeof searchRequestSchemaBase>,
+>(
+  x: T,
+) => {
+  // Providers read the country (gl) and the location separately and default
+  // each to the US, so fill in whichever one the caller left out. Georgia is
+  // never inferred because it is also a US state.
+  const locationCountry = x.location?.split(",").at(-1)?.trim().toLowerCase();
+  const country =
+    x.country ??
+    Object.entries(countries)
+      .find(
+        ([code, c]) =>
+          code !== "GE" && c.name.toLowerCase() === locationCountry,
+      )?.[0]
+      .toLowerCase() ??
+    (x.location ? undefined : "us");
+  const location =
+    x.location ??
+    Object.entries(countries).find(
+      ([code]) => code === x.country?.toUpperCase(),
+    )?.[1].name;
+
+  // Transform string array sources to object format
+  let sources = x.sources;
+  if (sources && Array.isArray(sources) && sources.length > 0) {
+    // Check if it's a string array by checking the first element
+    if (typeof sources[0] === "string") {
+      // It's a string array, transform to object array
+      sources = (sources as string[]).map(s => {
+        switch (s) {
+          case "web":
+            return {
+              type: "web" as const,
+              tbs: x.tbs,
+              filter: x.filter,
+              lang: x.lang,
+              country,
+              location,
+            };
+          case "images":
+            return {
+              type: "images" as const,
+              // Images don't inherit global params in the simple format
+            };
+          case "news":
+            return {
+              type: "news" as const,
+              tbs: x.tbs,
+              lang: x.lang,
+              country,
+              location,
+            };
+          default:
+            return { type: s as any };
+        }
+      });
+    }
+    // Otherwise it's already an object array, keep as is
+  }
+
+  // Transform string array categories to object format
+  let categories = x.categories;
+  if (categories && Array.isArray(categories) && categories.length > 0) {
+    // Check if it's a string array by checking the first element
+    if (typeof categories[0] === "string") {
+      // It's a string array, transform to object array
+      categories = (categories as string[]).map(c => {
+        switch (c) {
+          case "research":
+            return {
+              type: "research" as const,
+            };
+          case "pdf":
+            return {
+              type: "pdf" as const,
+            };
+          case "developer":
+            return {
+              type: "developer" as const,
+            };
+          case "gov":
+            return {
+              type: "gov" as const,
+            };
+          default:
+            return { type: c as any };
+        }
+      });
+    }
+    // Otherwise it's already an object array, keep as is
+  }
+
+  return {
+    ...x,
+    country,
+    location,
+    sources,
+    categories,
+    scrapeOptions: extractTransform(x.scrapeOptions),
+  };
+};
+
+export const searchRequestSchema = searchRequestSchemaBase
   .refine(
     x => !(x.includeDomains?.length && x.excludeDomains?.length),
     "includeDomains and excludeDomains cannot both be specified",
@@ -2714,105 +2834,7 @@ export const searchRequestSchema = z
     return !hasCategory(categories, "gov") || categories.length === 1;
   }, "the gov category cannot be combined with other categories")
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
-  .transform(x => {
-    // Providers read the country (gl) and the location separately and default
-    // each to the US, so fill in whichever one the caller left out. Georgia is
-    // never inferred because it is also a US state.
-    const locationCountry = x.location?.split(",").at(-1)?.trim().toLowerCase();
-    const country =
-      x.country ??
-      Object.entries(countries)
-        .find(
-          ([code, c]) =>
-            code !== "GE" && c.name.toLowerCase() === locationCountry,
-        )?.[0]
-        .toLowerCase() ??
-      (x.location ? undefined : "us");
-    const location =
-      x.location ??
-      Object.entries(countries).find(
-        ([code]) => code === x.country?.toUpperCase(),
-      )?.[1].name;
-
-    // Transform string array sources to object format
-    let sources = x.sources;
-    if (sources && Array.isArray(sources) && sources.length > 0) {
-      // Check if it's a string array by checking the first element
-      if (typeof sources[0] === "string") {
-        // It's a string array, transform to object array
-        sources = (sources as string[]).map(s => {
-          switch (s) {
-            case "web":
-              return {
-                type: "web" as const,
-                tbs: x.tbs,
-                filter: x.filter,
-                lang: x.lang,
-                country,
-                location,
-              };
-            case "images":
-              return {
-                type: "images" as const,
-                // Images don't inherit global params in the simple format
-              };
-            case "news":
-              return {
-                type: "news" as const,
-                tbs: x.tbs,
-                lang: x.lang,
-                country,
-                location,
-              };
-            default:
-              return { type: s as any };
-          }
-        });
-      }
-      // Otherwise it's already an object array, keep as is
-    }
-
-    // Transform string array categories to object format
-    let categories = x.categories;
-    if (categories && Array.isArray(categories) && categories.length > 0) {
-      // Check if it's a string array by checking the first element
-      if (typeof categories[0] === "string") {
-        // It's a string array, transform to object array
-        categories = (categories as string[]).map(c => {
-          switch (c) {
-            case "research":
-              return {
-                type: "research" as const,
-              };
-            case "pdf":
-              return {
-                type: "pdf" as const,
-              };
-            case "developer":
-              return {
-                type: "developer" as const,
-              };
-            case "gov":
-              return {
-                type: "gov" as const,
-              };
-            default:
-              return { type: c as any };
-          }
-        });
-      }
-      // Otherwise it's already an object array, keep as is
-    }
-
-    return {
-      ...x,
-      country,
-      location,
-      sources,
-      categories,
-      scrapeOptions: extractTransform(x.scrapeOptions),
-    };
-  });
+  .transform(transformSearchRequest);
 
 export type SearchRequest = z.infer<typeof searchRequestSchema>;
 export type SearchRequestInput = z.input<typeof searchRequestSchema>;
@@ -3120,3 +3142,428 @@ const generateLLMsTextRequestSchema = z.object({
 });
 
 type GenerateLLMsTextRequest = z.infer<typeof generateLLMsTextRequestSchema>;
+
+const coreScrapeFormatSchemas: Record<string, z.ZodType> = {
+  markdown: z.strictObject({ type: z.literal("markdown") }),
+  html: z.strictObject({ type: z.literal("html") }),
+  rawHtml: z.strictObject({ type: z.literal("rawHtml") }),
+  rawBase64: z.strictObject({ type: z.literal("rawBase64") }),
+  links: z.strictObject({ type: z.literal("links") }),
+  images: z.strictObject({ type: z.literal("images") }),
+  summary: z.strictObject({ type: z.literal("summary") }),
+  json: jsonFormatWithOptions,
+  deterministicJson: deterministicJsonFormatWithOptions,
+  changeTracking: changeTrackingFormatWithOptions,
+  screenshot: screenshotFormatWithOptions,
+  attributes: attributesFormatWithOptions,
+  branding: brandingFormatWithOptions,
+  product: z.strictObject({ type: z.literal("product") }),
+  menu: z.strictObject({ type: z.literal("menu") }),
+  question: questionFormatWithOptions,
+  highlights: highlightsFormatWithOptions,
+  query: queryFormatWithOptions,
+  audio: z.strictObject({ type: z.literal("audio") }),
+  video: z.strictObject({ type: z.literal("video") }),
+};
+
+const coreSearchFormatSchemas: Record<string, z.ZodType> = {
+  markdown: coreScrapeFormatSchemas.markdown,
+  html: coreScrapeFormatSchemas.html,
+  rawHtml: coreScrapeFormatSchemas.rawHtml,
+  links: coreScrapeFormatSchemas.links,
+  images: coreScrapeFormatSchemas.images,
+  summary: coreScrapeFormatSchemas.summary,
+  product: coreScrapeFormatSchemas.product,
+  menu: coreScrapeFormatSchemas.menu,
+  json: jsonFormatWithOptions,
+  question: questionFormatWithOptions,
+  highlights: highlightsFormatWithOptions,
+  query: queryFormatWithOptions,
+  screenshot: screenshotFormatWithOptions,
+};
+
+function createScrapeFormatsSchema(
+  extraFormats: Readonly<Record<string, z.ZodType>>,
+) {
+  const members = Object.values({
+    ...coreScrapeFormatSchemas,
+    ...extraFormats,
+  }) as [z.ZodType, z.ZodType, ...z.ZodType[]];
+
+  return z
+    .preprocess(
+      val => {
+        if (!Array.isArray(val)) return val;
+        return val.map(format => {
+          if (typeof format === "string") {
+            return { type: format };
+          }
+          return format;
+        });
+      },
+      z
+        .union(members)
+        .array()
+        .prefault([{ type: "markdown" }]),
+    )
+    .refine(x => {
+      return x.filter((f: any) => f.type === "screenshot").length <= 1;
+    }, "You may only specify one screenshot format")
+    .refine(x => {
+      const hasChangeTracking = x.find((f: any) => f.type === "changeTracking");
+      const hasMarkdown = x.find((f: any) => f.type === "markdown");
+      return !hasChangeTracking || hasMarkdown;
+    }, "The changeTracking format requires the markdown format to be specified as well")
+    .refine(x => {
+      const hasJson = x.some((f: any) => f.type === "json");
+      const hasDeterministicJson = x.some(
+        (f: any) => f.type === "deterministicJson",
+      );
+      return !(hasJson && hasDeterministicJson);
+    }, "Cannot specify both json and deterministicJson formats")
+    .refine(
+      x => !x.some((f: any) => f.type === "rawBase64") || x.length === 1,
+      "The rawBase64 format cannot be combined with other formats",
+    );
+}
+
+function createSearchFormatsSchema(
+  extraFormats: Readonly<Record<string, z.ZodType>>,
+) {
+  const members = Object.values({
+    ...coreSearchFormatSchemas,
+    ...extraFormats,
+  }) as [z.ZodType, z.ZodType, ...z.ZodType[]];
+
+  return z
+    .preprocess(val => {
+      if (!Array.isArray(val)) return val;
+      return val.map(format => {
+        if (typeof format === "string") {
+          return { type: format };
+        }
+        return format;
+      });
+    }, z.union(members).array().prefault([]))
+    .refine(x => {
+      return x.filter((f: any) => f.type === "screenshot").length <= 1;
+    }, "You may only specify one screenshot format");
+}
+
+function applyBaseScrapeOptionsRefines<T extends z.ZodType<any>>(schema: T) {
+  return schema
+    .refine((options: any) => !(options.profile && options.lockdown), {
+      message:
+        "Profiles require live browsing and cannot be used with lockdown.",
+      path: ["profile"],
+    })
+    .refine(
+      (options: any) =>
+        !(
+          options.checkPromptInjection &&
+          options.formats.some((f: any) => f.type === "rawBase64")
+        ),
+      {
+        message:
+          "checkPromptInjection scans page markdown and cannot be used with the rawBase64 format.",
+        path: ["checkPromptInjection"],
+      },
+    );
+}
+
+function applyScrapeOptionsRules<T extends Record<string, unknown>>(
+  value: T,
+  kind: RequestKind,
+  rules: readonly ScrapeOptionsRule[],
+  ctx: z.RefinementCtx,
+  pathPrefix: (string | number)[] = [],
+): T | typeof z.NEVER {
+  let current = value;
+  for (const rule of rules) {
+    const verdict = rule(current as unknown as ServiceScrapeOptions, { kind });
+    if (!verdict) continue;
+    if ("error" in verdict) {
+      ctx.addIssue({
+        code: "custom",
+        message: verdict.error,
+        ...(pathPrefix.length > 0 || verdict.path?.length
+          ? { path: [...pathPrefix, ...(verdict.path ?? [])] }
+          : {}),
+      });
+      return z.NEVER;
+    }
+    if ("set" in verdict && verdict.set) {
+      current = { ...current, ...verdict.set };
+    }
+  }
+  return current;
+}
+
+function assertNoCoreCollision(
+  bucket: string,
+  contributed: Readonly<Record<string, unknown>>,
+  coreShape: Record<string, unknown>,
+): void {
+  for (const key of Object.keys(contributed)) {
+    if (Object.hasOwn(coreShape, key)) {
+      throw new Error(
+        `Request "${bucket}.${key}" collides with a built-in field or format`,
+      );
+    }
+  }
+}
+
+/**
+ * Builds the five v2 request schemas with extension-contributed fields,
+ * formats, and cross-field scrape-options rules applied.
+ */
+export function buildV2RequestSchemas(
+  contributions: ResolvedRequestContributions,
+): RequestSchemas {
+  assertNoCoreCollision(
+    "formats",
+    contributions.formats,
+    coreScrapeFormatSchemas,
+  );
+  assertNoCoreCollision(
+    "scrapeOptions",
+    contributions.scrapeOptions,
+    scrapeOptionFields.shape,
+  );
+  assertNoCoreCollision(
+    "scrapeOptions",
+    contributions.scrapeOptions,
+    scrapeRequestSchemaBase.shape,
+  );
+  assertNoCoreCollision(
+    "scrapeOptions",
+    contributions.scrapeOptions,
+    parseRequestSchemaBase.shape,
+  );
+  assertNoCoreCollision(
+    "scrape",
+    contributions.scrape,
+    scrapeRequestSchemaBase.shape,
+  );
+  assertNoCoreCollision(
+    "parse",
+    contributions.parse,
+    parseRequestSchemaBase.shape,
+  );
+  assertNoCoreCollision(
+    "crawl",
+    contributions.crawl,
+    crawlRequestSchemaBase.shape,
+  );
+  assertNoCoreCollision("map", contributions.map, mapRequestSchemaBase.shape);
+  assertNoCoreCollision(
+    "search",
+    contributions.search,
+    searchRequestSchemaBase.shape,
+  );
+
+  const hasScrapeOptionsFields =
+    Object.keys(contributions.scrapeOptions).length > 0;
+  const hasScrapeFields = Object.keys(contributions.scrape).length > 0;
+  const hasParseFields = Object.keys(contributions.parse).length > 0;
+  const hasCrawlFields = Object.keys(contributions.crawl).length > 0;
+  const hasMapFields = Object.keys(contributions.map).length > 0;
+  const hasSearchFields = Object.keys(contributions.search).length > 0;
+  const hasFormats = Object.keys(contributions.formats).length > 0;
+  const hasRules = contributions.rules.length > 0;
+
+  if (
+    !hasScrapeOptionsFields &&
+    !hasScrapeFields &&
+    !hasParseFields &&
+    !hasCrawlFields &&
+    !hasMapFields &&
+    !hasSearchFields &&
+    !hasFormats &&
+    !hasRules
+  ) {
+    return {
+      scrape: scrapeRequestSchema,
+      parse: parseRequestSchema,
+      crawl: crawlRequestSchema,
+      map: mapRequestSchema,
+      search: searchRequestSchema,
+    } as unknown as RequestSchemas;
+  }
+
+  const scrapeOptionsShape: z.ZodRawShape = {
+    ...scrapeOptionFields.shape,
+    ...(hasFormats
+      ? { formats: createScrapeFormatsSchema(contributions.formats) }
+      : {}),
+    ...contributions.scrapeOptions,
+  };
+  const baseScrapeOpts =
+    hasFormats || hasScrapeOptionsFields
+      ? applyBaseScrapeOptionsRefines(z.strictObject(scrapeOptionsShape))
+      : baseScrapeOptions;
+
+  const scrape =
+    hasFormats || hasScrapeOptionsFields || hasScrapeFields || hasRules
+      ? applyBaseScrapeOptionsRefines(
+          z.strictObject({
+            ...scrapeRequestSchemaBase.shape,
+            ...scrapeOptionsShape,
+            ...contributions.scrape,
+          }),
+        )
+          .refine((x: any) => waitForRefine(x), waitForRefineOpts)
+          .transform((x: any, ctx) => {
+            const transformed = extractTransformRequired(x);
+            if (!hasRules) return transformed;
+            return applyScrapeOptionsRules(
+              transformed,
+              "scrape",
+              contributions.rules,
+              ctx,
+            );
+          })
+      : scrapeRequestSchema;
+
+  const parse =
+    hasFormats || hasScrapeOptionsFields || hasParseFields || hasRules
+      ? applyBaseScrapeOptionsRefines(
+          z.strictObject({
+            ...parseRequestSchemaBase.shape,
+            ...scrapeOptionsShape,
+            ...contributions.parse,
+          }),
+        )
+          .refine(
+            (x: any) =>
+              !x.formats.some((format: any) => format.type === "rawBase64"),
+            "The rawBase64 format is not supported for parse uploads",
+          )
+          .refine((x: any) => waitForRefine(x), waitForRefineOpts)
+          .transform((x: any, ctx) => {
+            const { file, ...scrapeLike } = x;
+            const transformed = extractTransformRequired(scrapeLike);
+            if (!hasRules) {
+              return { ...transformed, file };
+            }
+            const ruled = applyScrapeOptionsRules(
+              transformed,
+              "parse",
+              contributions.rules,
+              ctx,
+            );
+            if (ruled === z.NEVER) return z.NEVER;
+            return { ...ruled, file };
+          })
+      : parseRequestSchema;
+
+  const crawl =
+    hasFormats || hasScrapeOptionsFields || hasCrawlFields || hasRules
+      ? z
+          .strictObject({
+            ...crawlRequestSchemaBase.shape,
+            scrapeOptions: baseScrapeOpts.prefault(() =>
+              baseScrapeOpts.parse({}),
+            ),
+            ...contributions.crawl,
+          })
+          .superRefine((x: any, ctx) => {
+            addPathRegexIssues(x, ctx);
+          })
+          .refine((x: any) => waitForRefine(x.scrapeOptions), waitForRefineOpts)
+          .transform((x: any, ctx) => {
+            const scrapeOptionsValue =
+              x.scrapeOptions ?? baseScrapeOpts.parse({});
+            const transformed = extractTransformRequired(scrapeOptionsValue);
+            const ruled = hasRules
+              ? applyScrapeOptionsRules(
+                  transformed,
+                  "crawl",
+                  contributions.rules,
+                  ctx,
+                  ["scrapeOptions"],
+                )
+              : transformed;
+            if (ruled === z.NEVER) return z.NEVER;
+            return {
+              ...x,
+              url: x.url,
+              scrapeOptions: ruled,
+            };
+          })
+      : crawlRequestSchema;
+
+  const map = hasMapFields
+    ? z
+        .strictObject({
+          ...mapRequestSchemaBase.shape,
+          ...contributions.map,
+        })
+        .superRefine((x: any, ctx) => {
+          addPathRegexIssues(x, ctx);
+        })
+    : mapRequestSchema;
+
+  const searchScrapeOpts =
+    hasFormats || hasScrapeOptionsFields
+      ? applyBaseScrapeOptionsRefines(
+          z.strictObject({
+            ...scrapeOptionsShape,
+            formats: createSearchFormatsSchema(contributions.formats),
+          }),
+        )
+      : undefined;
+
+  const search =
+    hasFormats || hasScrapeOptionsFields || hasSearchFields || hasRules
+      ? z
+          .strictObject({
+            ...searchRequestSchemaBase.shape,
+            ...(searchScrapeOpts
+              ? { scrapeOptions: searchScrapeOpts.optional() }
+              : {}),
+            ...contributions.search,
+          })
+          .refine(
+            (x: any) => !(x.includeDomains?.length && x.excludeDomains?.length),
+            "includeDomains and excludeDomains cannot both be specified",
+          )
+          .refine((x: any) => {
+            const categories = x.categories ?? [];
+            return (
+              !hasCategory(categories, "developer") || categories.length === 1
+            );
+          }, "the developer category cannot be combined with other categories")
+          .refine((x: any) => {
+            const categories = x.categories ?? [];
+            return !hasCategory(categories, "gov") || categories.length === 1;
+          }, "the gov category cannot be combined with other categories")
+          .refine((x: any) => waitForRefine(x.scrapeOptions), waitForRefineOpts)
+          .transform((x: any, ctx) => {
+            const transformed = transformSearchRequest(x);
+            if (!hasRules || transformed.scrapeOptions === undefined) {
+              return transformed;
+            }
+            const ruled = applyScrapeOptionsRules(
+              transformed.scrapeOptions as unknown as Record<string, unknown>,
+              "search",
+              contributions.rules,
+              ctx,
+              ["scrapeOptions"],
+            );
+            if (ruled === z.NEVER) return z.NEVER;
+            return {
+              ...transformed,
+              scrapeOptions: ruled,
+            };
+          })
+      : searchRequestSchema;
+
+  return {
+    scrape,
+    parse,
+    crawl,
+    map,
+    search,
+  } as unknown as RequestSchemas;
+}

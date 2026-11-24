@@ -12,7 +12,7 @@ import {
   LIGHT_MODEL,
 } from "../config";
 import { type CacheBackend } from "../core/cache";
-import { modelPrices } from "../../extract/usage/model-prices";
+import { modelPrices } from "../../model-prices";
 import { ASK_LLM_SYSTEM, type ChatMessage } from "./prompts";
 import { errorMessage, log, sha } from "../core/util";
 

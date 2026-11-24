@@ -1,8 +1,8 @@
 import { computeRefundPolicy } from "./refund-policy";
 import type { FeedbackJobRow } from "./internal-types";
 
-vi.mock("../../../config", () => ({
-  config: { FEEDBACK_REFUND_ENABLED: true },
+vi.mock("../../../lib/feedback-env", () => ({
+  feedbackEnv: { FEEDBACK_REFUND_ENABLED: true },
 }));
 
 function job(refundClass: FeedbackJobRow["refund_class"]): FeedbackJobRow {

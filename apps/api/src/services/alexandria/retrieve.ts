@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { Counter, Histogram } from "prom-client";
 import { z } from "zod";
 import { config } from "../../config";
 import type { TeamFlags } from "../../controllers/v2/types";
@@ -24,6 +25,7 @@ import { getBillingQueue } from "../queue-service";
 import { redisRateLimitClient } from "../rate-limiter";
 import { authorizeProviders } from "./access";
 import { exchangeRequest } from "./client";
+import { cachedResponse } from "./response-cache";
 import { isUsOnly } from "../../lib/us-only";
 import { isAlexandriaVerified } from "../../lib/alexandria-verified";
 import { alexandriaFeedbackStorage } from "../../lib/alexandria-feedback-storage";
@@ -36,6 +38,21 @@ import {
 } from "./contracts";
 
 export { REQUEST_ID_PATTERN };
+/** Requests whose charge id already had a record, by how they were answered. */
+const repeatTotal = new Counter({
+  name: "firecrawl_alexandria_repeat_total",
+  help: "Requests whose x-request-id already had a record, by how they were answered",
+  // outcome: replayed|response_expired|response_withheld|duplicate_request|request_in_flight|request_unresolved
+  labelNames: ["outcome"] as const,
+});
+/** How long after a request completed its charge id was sent again. */
+const repeatAgeSeconds = new Histogram({
+  name: "firecrawl_alexandria_repeat_age_seconds",
+  help: "Seconds between a request completing and a repeat of its x-request-id",
+  // outcome: replayed|response_expired|response_withheld
+  labelNames: ["outcome"] as const,
+  buckets: [1, 5, 15, 60, 300, 900, 3600, 21600, 86400, 604800],
+});
 const RETENTION_SECONDS = 7 * 86400;
 const GRACE_MS = 30_000;
 const HOLD_GRACE_MS = 15 * 60_000;
@@ -57,6 +74,10 @@ type Retrieval = {
   scrapeId: string;
   lockId?: string;
   maximumCredits?: number;
+  // When the request completed. Absent on records written before it was recorded.
+  doneAt?: number;
+  // On a completed record that carries its response. One that does not has it in the
+  // response cache, for as long as the cache keeps it.
   response?: ExchangeResponse;
   // Set instead of response under zero data retention.
   responseWithheld?: boolean;
@@ -319,30 +340,61 @@ export async function retrieveProviders(input: {
   if (claimed !== "OK") {
     const raw = await redisRateLimitClient.get(key);
     const existing: Retrieval | null = raw ? JSON.parse(raw) : null;
+    const repeat = (outcome: string, response: ProviderRetrieval) => {
+      repeatTotal.labels(outcome).inc();
+      return response;
+    };
+    // A repeat of the request that completed, as opposed to another request under its id.
+    const repeatOfDone = (outcome: string, response: ProviderRetrieval) => {
+      if (existing?.doneAt !== undefined)
+        repeatAgeSeconds
+          .labels(outcome)
+          .observe((Date.now() - existing.doneAt) / 1000);
+      return repeat(outcome, response);
+    };
     if (
       existing?.phase === "done" &&
       existing.fingerprint === fingerprint &&
       existing.responseWithheld
     )
-      return notExecuted(
-        refusal(
-          409,
-          "This provider request already completed. Its response is not kept under zero data retention.",
-          { code: "response_not_retained", chargeId: id },
+      return repeatOfDone(
+        "response_withheld",
+        notExecuted(
+          refusal(
+            409,
+            "This provider request already completed. Its response is not kept under zero data retention.",
+            { code: "response_not_retained", chargeId: id },
+          ),
         ),
       );
-    if (existing?.phase === "done" && existing.fingerprint === fingerprint)
-      return {
-        ...existing.response!,
+    if (existing?.phase === "done" && existing.fingerprint === fingerprint) {
+      const response = existing.response ?? (await cachedResponse(id));
+      if (!response)
+        return repeatOfDone(
+          "response_expired",
+          notExecuted(
+            refusal(
+              409,
+              "This provider request already completed. Its response is no longer kept, so it cannot be returned again; a new x-request-id runs it again and is charged again.",
+              { code: "response_not_retained", chargeId: id },
+            ),
+          ),
+        );
+      return repeatOfDone("replayed", {
+        ...response,
         executed: false,
         scrapeId: existing.scrapeId ?? input.scrapeId,
-      };
+      });
+    }
     if (existing && existing.fingerprint !== fingerprint)
-      return notExecuted(
-        refusal(
-          409,
-          "This x-request-id already belongs to a different provider request.",
-          { code: "duplicate_request", chargeId: id },
+      return repeat(
+        "duplicate_request",
+        notExecuted(
+          refusal(
+            409,
+            "This x-request-id already belongs to a different provider request.",
+            { code: "duplicate_request", chargeId: id },
+          ),
         ),
       );
     if (
@@ -350,14 +402,17 @@ export async function retrieveProviders(input: {
       !existing.failure &&
       Date.now() <= existing.deadline + GRACE_MS
     )
-      return notExecuted(
-        refusal(
-          409,
-          "This provider request is still running. Retry with the same x-request-id once it has finished.",
-          { code: "request_in_flight", chargeId: id },
+      return repeat(
+        "request_in_flight",
+        notExecuted(
+          refusal(
+            409,
+            "This provider request is still running. Retry with the same x-request-id once it has finished.",
+            { code: "request_in_flight", chargeId: id },
+          ),
         ),
       );
-    return notExecuted(unresolved(id));
+    return repeat("request_unresolved", notExecuted(unresolved(id)));
   }
 
   // A catalogue read (the tool lookup or a library command) is free and idempotent, so once its
@@ -420,8 +475,13 @@ export async function retrieveProviders(input: {
       // so a repeat runs the read again rather than finding it stranded.
       await write(
         zeroDataRetention
-          ? { ...record, phase: "done", responseWithheld: true }
-          : { ...record, phase: "done", response: done },
+          ? {
+              ...record,
+              phase: "done",
+              doneAt: Date.now(),
+              responseWithheld: true,
+            }
+          : { ...record, phase: "done", doneAt: Date.now(), response: done },
       ).catch(async error => {
         logger.warn("Catalogue read answer was not recorded", {
           error,
@@ -765,10 +825,16 @@ export async function retrieveProviders(input: {
     const done: ExchangeResponse = { status: 200, body: answer };
     await write(
       zeroDataRetention
-        ? { ...record, phase: "done", responseWithheld: true }
+        ? {
+            ...record,
+            phase: "done",
+            doneAt: Date.now(),
+            responseWithheld: true,
+          }
         : {
             ...record,
             phase: "done",
+            doneAt: Date.now(),
             response: retainable(answer, input.calls),
           },
     );

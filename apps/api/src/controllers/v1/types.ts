@@ -1,5 +1,6 @@
 import type { AgentInteropStatus } from "../../lib/agent-interop";
 import type { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
+import type { ZDRPolicy } from "../../lib/zdr-policy";
 import { Request } from "express";
 import { config } from "../../config";
 import { z } from "zod";
@@ -30,6 +31,7 @@ import { threatProtectionOverrideSchema } from "../../lib/threat-protection/conf
 import { auditMetadataSchema } from "../../lib/siem-logging/types";
 import type { RateLimiterMode } from "../../types";
 import type { TeamPlanClass } from "../../lib/team-plan-class";
+import type { FreshFeedFilters, FreshFeedUpstream } from "../../lib/fresh-feed";
 
 type Format =
   | "markdown"
@@ -1398,6 +1400,9 @@ export type TeamFlags = {
   labsSearch?: boolean;
   freshFeed?: boolean;
   freshFeedCreditsPerRecord?: number;
+  freshFeedUpstream?: FreshFeedUpstream;
+  freshFeedCollection?: string;
+  freshFeedFilters?: FreshFeedFilters;
   exchangeRetrieve?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
   // The org's DPA (or partner amendment) restricts how its data may be
@@ -1456,6 +1461,7 @@ export interface RequestWithMaybeACUC<
   ResBody = undefined,
 > extends Request<ReqParams, ReqBody, ResBody> {
   acuc?: AuthCreditUsageChunk;
+  zdrPolicy?: ZDRPolicy;
 }
 
 export interface RequestWithAuth<

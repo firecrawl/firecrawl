@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { config } from "../../config";
+import { mcpLogsEnv } from "../../lib/mcp-action-log-env";
 import * as schema from "../../db/schema";
 import { authCreditUsageChunkFromTeam } from "../../db/rpc";
 import { clickhouseClient } from "../../lib/clickhouse-client";
@@ -101,7 +101,7 @@ function invalid(message: string): never {
 
 function isAcceptedResource(resource: string): boolean {
   if (RESOURCES.has(resource)) return true;
-  return (config.MCP_ACTION_LOG_RESOURCE_PREFIXES ?? "")
+  return (mcpLogsEnv.MCP_ACTION_LOG_RESOURCE_PREFIXES ?? "")
     .split(",")
     .map(prefix => prefix.trim())
     .some(

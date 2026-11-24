@@ -1,5 +1,6 @@
 import { v7 as uuidv7 } from "uuid";
 import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
 import { feedbackTrace } from "../../../lib/feedback-trace";
 import { logger as _logger } from "../../../lib/logger";
 import {
@@ -56,7 +57,7 @@ function normalizeFeedbackTeamId(teamId: string): string {
 }
 
 function dailyCapFor(options: FeedbackRecordOptions): number {
-  return options.dailyCapCredits ?? config.FEEDBACK_DAILY_CAP_CREDITS;
+  return options.dailyCapCredits ?? feedbackEnv.FEEDBACK_DAILY_CAP_CREDITS;
 }
 
 function feedbackFailure(
@@ -171,7 +172,7 @@ function validateJob(
 
   if (job.feedback_deadline_ms !== undefined) {
     if (job.feedback_deadline_ms > Date.now()) return null;
-    const maxAgeSec = options.maxAgeSec ?? config.FEEDBACK_MAX_AGE_SEC;
+    const maxAgeSec = options.maxAgeSec ?? feedbackEnv.FEEDBACK_MAX_AGE_SEC;
     return feedbackFailure(
       409,
       "FEEDBACK_WINDOW_EXPIRED",
@@ -180,7 +181,7 @@ function validateJob(
     );
   }
 
-  const maxAgeSec = options.maxAgeSec ?? config.FEEDBACK_MAX_AGE_SEC;
+  const maxAgeSec = options.maxAgeSec ?? feedbackEnv.FEEDBACK_MAX_AGE_SEC;
   const createdAtMs = new Date(job.created_at).getTime();
   if (Number.isNaN(createdAtMs)) {
     logger.warn("Job row had unparseable created_at", {

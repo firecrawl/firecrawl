@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { config } from "../../../config";
+import { threatProtectionEnv } from "../env";
 import type { RawVerdict, ThreatProvider } from "../types";
 import { generateUrlExpressions } from "./web-risk/canonicalize";
 import {
@@ -51,8 +51,8 @@ type HashesSearchResponse = {
 
 function isGoogleWebRiskConfigured(): boolean {
   return (
-    typeof config.GOOGLE_WEB_RISK_API_KEY === "string" &&
-    config.GOOGLE_WEB_RISK_API_KEY.trim().length > 0
+    typeof threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY === "string" &&
+    threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY.trim().length > 0
   );
 }
 
@@ -65,10 +65,10 @@ async function searchHashPrefix(
   for (const threatType of WEB_RISK_THREAT_TYPES) {
     params.append("threatTypes", threatType);
   }
-  params.append("key", config.GOOGLE_WEB_RISK_API_KEY!);
+  params.append("key", threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY!);
 
   const response = await fetch(
-    `${config.GOOGLE_WEB_RISK_API_URL}/v1/hashes:search?${params.toString()}`,
+    `${threatProtectionEnv.GOOGLE_WEB_RISK_API_URL}/v1/hashes:search?${params.toString()}`,
     { method: "GET", signal },
   );
   if (!response.ok) {
