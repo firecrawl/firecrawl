@@ -250,8 +250,9 @@ describe("scrapePDFWithParsePDF", () => {
 
     const result = await scrapePDFWithParsePDF(m, filePath, 100);
 
-    expect(result.markdown).toContain("\n\np1");
-    expect(result.markdown).toContain("\n\np40");
+    expect(result.markdown).toBe(
+      Array.from({ length: 40 }, (_, i) => `\n\np${i + 1}`).join(""),
+    );
     expect(result.pagesProcessed).toBe(40);
     expect(result.pageCount).toBe(40);
     // One bulk attempt plus one call per 32-page range.

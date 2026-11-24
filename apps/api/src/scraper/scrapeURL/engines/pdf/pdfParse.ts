@@ -61,9 +61,9 @@ export async function scrapePDFWithParsePDF(
       } catch (firstError) {
         // pdf-parse 1.x skipped a page that failed to render and kept the
         // rest; 2.x rejects the whole extraction. Retry in page ranges to
-        // keep that tolerance: a range that succeeds costs one call, a
+        // keep that tolerance: a range that succeeds costs one call, and a
         // range that fails is narrowed page by page only within itself, so
-        // every capped page is attempted exactly once.
+        // each page in a failed range gets a second attempt on its own.
         const cappedTotal = Math.min(total, max);
         pages = Array.from({ length: cappedTotal }, () => ({ text: "" }));
         let succeededPages = 0;
