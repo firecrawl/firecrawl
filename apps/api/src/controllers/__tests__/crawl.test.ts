@@ -1,11 +1,9 @@
-import type { Mock } from "vitest";
 import { crawlController } from "../v0/crawl";
 import { config } from "../../config";
 import { Request, Response } from "express";
-import { authenticateUser } from "../auth"; // Ensure this import is correct
-import { createIdempotencyKey } from "../../services/idempotency/create";
-import { validateIdempotencyKey } from "../../services/idempotency/validate";
 import { v7 as uuidv7 } from "uuid";
+import { defaultModules, type CoreParts } from "../../service";
+import { testService, withService } from "../../service/testing";
 
 vi.mock("../auth", () => ({
   authenticateUser: vi.fn().mockResolvedValue({
@@ -16,13 +14,14 @@ vi.mock("../auth", () => ({
   }),
   reduce: vi.fn(),
 }));
-vi.mock("../../services/idempotency/validate");
+
+const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
 
 describe("crawlController", () => {
   it("should prevent duplicate requests using the same idempotency key", async () => {
     const req = {
       headers: {
-        "x-idempotency-key": await uuidv7(),
+        "x-idempotency-key": uuidv7(),
         Authorization: `Bearer ${config.TEST_API_KEY}`,
       },
       body: {
@@ -34,20 +33,25 @@ describe("crawlController", () => {
       json: vi.fn(),
     } as unknown as Response;
 
-    // Mock the idempotency key validation to return false for the second call
-    (validateIdempotencyKey as Mock)
+    const claim = vi
+      .fn()
       .mockResolvedValueOnce(true)
       .mockResolvedValueOnce(false);
 
-    // First request should succeed
-    await crawlController(req, res);
-    expect(res.status).not.toHaveBeenCalledWith(409);
+    await withService(
+      testService(defaultModules(), parts, { idempotency: { claim } }),
+      async () => {
+        // First request should succeed
+        await crawlController(req, res);
+        expect(res.status).not.toHaveBeenCalledWith(409);
 
-    // Second request with the same key should fail
-    await crawlController(req, res);
-    expect(res.status).toHaveBeenCalledWith(409);
-    expect(res.json).toHaveBeenCalledWith({
-      error: "Idempotency key already used",
-    });
+        // Second request with the same key should fail
+        await crawlController(req, res);
+        expect(res.status).toHaveBeenCalledWith(409);
+        expect(res.json).toHaveBeenCalledWith({
+          error: "Idempotency key already used",
+        });
+      },
+    );
   });
 });

@@ -33,7 +33,7 @@ describe("buildSearchProviderRegistry", () => {
       enabled: () => secondEnabled,
     });
     const midSecond = makeProvider("custom-mid", { priority: 50 });
-    const high = makeProvider("fire-engine", {
+    const high = makeProvider("primary", {
       priority: 100,
       supportsUsOnly: true,
     });
@@ -49,23 +49,23 @@ describe("buildSearchProviderRegistry", () => {
     expect(registry.all().map(p => p.name)).toEqual([
       "duckduckgo",
       "searxng",
-      "fire-engine",
+      "primary",
       "custom-mid",
       "fallback",
     ]);
     expect(registry.enabled().map(p => p.name)).toEqual([
-      "fire-engine",
+      "primary",
       "custom-mid",
       "duckduckgo",
       "fallback",
     ]);
     expect(Object.isFrozen(registry.enabled())).toBe(true);
-    expect(registry.get("fire-engine")?.supportsUsOnly).toBe(true);
+    expect(registry.get("primary")?.supportsUsOnly).toBe(true);
     expect(registry.get("duckduckgo")?.supportsUsOnly).toBeUndefined();
 
     secondEnabled = true;
     expect(registry.enabled().map(p => p.name)).toEqual([
-      "fire-engine",
+      "primary",
       "searxng",
       "custom-mid",
       "duckduckgo",
@@ -75,7 +75,7 @@ describe("buildSearchProviderRegistry", () => {
       "custom-mid": { owner: "extra", priority: 50 },
       duckduckgo: { owner: "core", priority: 0 },
       fallback: { owner: "extra", priority: -10 },
-      "fire-engine": { owner: "core", priority: 100 },
+      primary: { owner: "core", priority: 100 },
       searxng: { owner: "core", priority: 50 },
     });
   });
@@ -160,7 +160,7 @@ describe("buildSearchProviderRegistry", () => {
       {
         owner: "core",
         searchProviders: [
-          makeProvider("fire-engine", { priority: 100 }),
+          makeProvider("primary", { priority: 100 }),
           makeProvider("searxng", { priority: 50 }),
           makeProvider("duckduckgo", { priority: 0 }),
         ],
@@ -172,13 +172,13 @@ describe("buildSearchProviderRegistry", () => {
     ]);
 
     expect(registry.all().map(p => p.name)).toEqual([
-      "fire-engine",
+      "primary",
       "searxng",
       "duckduckgo",
     ]);
     expect(registry.enabled().map(p => p.name)).toEqual([
       "duckduckgo",
-      "fire-engine",
+      "primary",
       "searxng",
     ]);
   });
@@ -343,14 +343,9 @@ describe("buildSearchProviderRegistry", () => {
   });
 
   it("lists all built-in search provider names and specs in default priority order", () => {
-    expect(coreSearchProviderNames).toEqual([
-      "fire-engine",
-      "searxng",
-      "duckduckgo",
-    ]);
+    expect(coreSearchProviderNames).toEqual(["searxng", "duckduckgo"]);
     expect(Object.isFrozen(coreSearchProviderNames)).toBe(true);
     expect(coreSearchProviderSpecs).toEqual([
-      { name: "fire-engine", priority: 100, supportsUsOnly: true },
       { name: "searxng", priority: 50 },
       { name: "duckduckgo", priority: 0 },
     ]);

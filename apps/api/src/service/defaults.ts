@@ -6,10 +6,12 @@
  */
 import type {
   FetchProxyFileKind,
+  IdempotencyModule,
   MessagesModule,
   Modules,
   UploadDriver,
   UploadsModule,
+  WebhooksModule,
 } from "./modules";
 
 /** Default user-facing messages that direct operators to local logs and config. */
@@ -132,10 +134,129 @@ export function memoryUploads(): UploadsModule {
   return { driver: () => driver };
 }
 
+const DEFAULT_IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60;
+const DEFAULT_IDEMPOTENCY_TIMEOUT_MS = 5_000;
+
+let idempotencyRedisPromise: Promise<import("ioredis").Redis> | undefined;
+
+function getIdempotencyRedis(): Promise<import("ioredis").Redis> {
+  if (!idempotencyRedisPromise) {
+    idempotencyRedisPromise = (async () => {
+      const [{ Redis }, { config }, { logger }] = await Promise.all([
+        import("ioredis"),
+        import("../config.js"),
+        import("../lib/logger.js"),
+      ]);
+      if (!config.REDIS_URL) {
+        throw new Error("REDIS_URL is not configured");
+      }
+      const client = new Redis(config.REDIS_URL, {
+        lazyConnect: true,
+        maxRetriesPerRequest: 3,
+        commandTimeout: DEFAULT_IDEMPOTENCY_TIMEOUT_MS,
+      });
+      client.on("error", error => {
+        logger.warn("Idempotency Redis error", { error });
+      });
+      return client;
+    })().catch(error => {
+      idempotencyRedisPromise = undefined;
+      throw error;
+    });
+  }
+  return idempotencyRedisPromise;
+}
+
+export interface RedisIdempotencyOptions {
+  /** Expiration in seconds for claimed keys. Defaults to 86400 (24 hours). */
+  ttlSeconds?: number;
+  /** Custom atomic set-if-absent backend; defaults to a fail-fast main Redis client. */
+  setIfAbsent?: (key: string, ttlSeconds: number) => Promise<boolean>;
+}
+
+/**
+ * Redis-backed idempotency module using atomic SET NX EX scoped by teamId.
+ * Loads the Redis client lazily on first claim so constructing defaults has
+ * no import-time side effects.
+ */
+export function redisIdempotency(
+  options: RedisIdempotencyOptions = {},
+): IdempotencyModule {
+  const ttlSeconds = options.ttlSeconds ?? DEFAULT_IDEMPOTENCY_TTL_SECONDS;
+  if (!Number.isInteger(ttlSeconds) || ttlSeconds <= 0) {
+    throw new Error("Invalid idempotency ttlSeconds");
+  }
+  if (
+    options.setIfAbsent !== undefined &&
+    typeof options.setIfAbsent !== "function"
+  ) {
+    throw new Error("Invalid idempotency setIfAbsent");
+  }
+
+  const setIfAbsent =
+    options.setIfAbsent ??
+    (async (key: string, ttl: number): Promise<boolean> => {
+      const client = await getIdempotencyRedis();
+      const result = await client.set(key, "1", "EX", ttl, "NX");
+      return result === "OK";
+    });
+
+  return {
+    claim(key, ctx) {
+      return setIfAbsent(`idempotency:${ctx.teamId}:${key}`, ttlSeconds);
+    },
+  };
+}
+
+export interface DirectWebhooksOptions {
+  /**
+   * Static secret or lazy secret resolver. When omitted, reads
+   * `SELF_HOSTED_WEBHOOK_HMAC_SECRET` from config at call time.
+   */
+  secret?: string | (() => string | undefined);
+}
+
+/**
+ * In-process webhook module that reads `SELF_HOSTED_WEBHOOK_HMAC_SECRET`
+ * lazily at call time and sends webhook deliveries directly over HTTP.
+ */
+export function directWebhooks(
+  options: DirectWebhooksOptions = {},
+): WebhooksModule {
+  if (
+    options.secret !== undefined &&
+    typeof options.secret !== "string" &&
+    typeof options.secret !== "function"
+  ) {
+    throw new Error("Invalid webhooks secret");
+  }
+  const hasExplicitSecret = Object.hasOwn(options, "secret");
+  const resolveSecret: () => Promise<string | undefined> | string | undefined =
+    typeof options.secret === "function"
+      ? options.secret
+      : hasExplicitSecret
+        ? () => options.secret as string | undefined
+        : async () =>
+            (await import("../config.js")).config
+              .SELF_HOSTED_WEBHOOK_HMAC_SECRET;
+
+  return {
+    async signingSecret() {
+      return resolveSecret();
+    },
+    async deliver(_ctx, _delivery, send) {
+      const res = await send();
+      return { delivered: res.ok, queued: false, statusCode: res.status };
+    },
+  };
+}
+
 /** Returns fresh instances of every default module slot. */
 export function defaultModules(): Modules {
   return {
     messages: logsMessages(),
     uploads: memoryUploads(),
+    idempotency: redisIdempotency(),
+    webhooks: directWebhooks(),
   };
 }

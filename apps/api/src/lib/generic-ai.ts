@@ -86,7 +86,7 @@ export function getModel(
     ? name
     : config.MODEL_NAME || name;
   const providerName: string =
-    provider ?? (config.OLLAMA_BASE_URL ? "ollama" : "openai");
+    provider ?? (config.OLLAMA_BASE_URL?.trim() ? "ollama" : "openai");
   const registered = service.llmProviders.get(providerName);
   if (!registered) {
     throw new Error(`LLM provider "${providerName}" is not registered`);

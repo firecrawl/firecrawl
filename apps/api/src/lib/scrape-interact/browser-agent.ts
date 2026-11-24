@@ -262,7 +262,11 @@ export function getBrowserAgentModel(
   if (service.llmProviders.get("google")?.enabled()) {
     return getModel("gemini-3.5-flash", "google", modelOptions);
   }
-  return getModel("gpt-4o-mini", undefined, modelOptions);
+  return getModel(
+    "gpt-4o-mini",
+    service.llmProviders.get("ollama")?.enabled() ? "ollama" : "openai",
+    modelOptions,
+  );
 }
 
 export async function executePromptViaBrowserAgent(

@@ -41,7 +41,12 @@ function hasGoogle(): boolean {
 }
 
 export function hasLlmProvider(): boolean {
-  return hasVertex() || hasGoogle();
+  return (
+    hasVertex() ||
+    hasGoogle() ||
+    service.llmProviders.get("openai")?.enabled() === true ||
+    service.llmProviders.get("ollama")?.enabled() === true
+  );
 }
 
 export function googleModel(
@@ -54,7 +59,11 @@ export function googleModel(
   if (hasGoogle()) {
     return getModel(modelId, "google", options);
   }
-  return getModel("gpt-4o-mini", undefined, options);
+  return getModel(
+    "gpt-4o-mini",
+    service.llmProviders.get("ollama")?.enabled() ? "ollama" : "openai",
+    options,
+  );
 }
 
 export function googleProviderOptions(

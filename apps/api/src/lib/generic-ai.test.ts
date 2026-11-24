@@ -84,6 +84,7 @@ describe("coreLlmProviders and getModel", () => {
     }
 
     vi.stubEnv("OPENAI_API_KEY", "   ");
+    vi.stubEnv("OLLAMA_BASE_URL", "   ");
     const whitespaceKey = await loadFresh();
     try {
       expect(
@@ -91,10 +92,19 @@ describe("coreLlmProviders and getModel", () => {
           .find(p => p.name === "openai")
           ?.enabled(),
       ).toBe(false);
+      expect(
+        whitespaceKey.coreLlmProviders
+          .find(p => p.name === "ollama")
+          ?.enabled(),
+      ).toBe(false);
+      expect(whitespaceKey.getModel("gpt-4o-mini").provider).toBe(
+        "openai.responses",
+      );
     } finally {
       whitespaceKey.cleanup();
     }
 
+    vi.stubEnv("OLLAMA_BASE_URL", "");
     vi.stubEnv("OPENAI_API_KEY", "test-openai-key");
     const apiKeyOnly = await loadFresh();
     try {

@@ -78,7 +78,9 @@ function resolveDeterministicModel(
       model: getModel(preferredModel, preferredProvider),
     };
   }
-  const provider = config.OLLAMA_BASE_URL?.trim() ? "ollama" : "openai";
+  const provider = service.llmProviders.get("ollama")?.enabled()
+    ? "ollama"
+    : "openai";
   const modelName = config.MODEL_NAME || FALLBACK_MODEL;
   return {
     provider,
@@ -231,11 +233,17 @@ export function makeAskLlm(
       return typeof value === "string" ? normalizePlainText(value) : value;
     };
 
-    const resolvedModelName = service.llmProviders.get("groq")?.enabled()
-      ? LIGHT_MODEL
-      : config.MODEL_NAME || FALLBACK_MODEL;
+    const resolvedProvider = service.llmProviders.get("groq")?.enabled()
+      ? "groq"
+      : service.llmProviders.get("ollama")?.enabled()
+        ? "ollama"
+        : "openai";
+    const resolvedModelName =
+      resolvedProvider === "groq"
+        ? LIGHT_MODEL
+        : config.MODEL_NAME || FALLBACK_MODEL;
     const cacheKey = sha(
-      `${resolvedModelName}\0${ASK_LLM_SYSTEM}\0${userContent}\0${structured ? "json" : "text"}`,
+      `${resolvedProvider}\0${resolvedModelName}\0${ASK_LLM_SYSTEM}\0${userContent}\0${structured ? "json" : "text"}`,
     );
     const cached = await cache.getLlm(cacheKey);
     if (cached) {

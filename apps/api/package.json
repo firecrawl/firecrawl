@@ -24,6 +24,18 @@
       "types": "./src/service/testing.ts",
       "default": "./dist/src/service/testing.js"
     },
+    "./unstable/db": {
+      "types": "./src/db/connection.ts",
+      "default": "./dist/src/db/connection.js"
+    },
+    "./unstable/db-schema": {
+      "types": "./src/db/schema/index.ts",
+      "default": "./dist/src/db/schema/index.js"
+    },
+    "./unstable/redis": {
+      "types": "./src/services/redis.ts",
+      "default": "./dist/src/services/redis.js"
+    },
     "./unstable/scrape-errors": {
       "types": "./src/scraper/scrapeURL/error.ts",
       "default": "./dist/src/scraper/scrapeURL/error.js"

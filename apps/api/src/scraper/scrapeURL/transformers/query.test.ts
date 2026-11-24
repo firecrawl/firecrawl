@@ -380,7 +380,7 @@ describe("performQuery freeform", () => {
       doc,
     );
 
-    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", undefined]]);
+    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", "openai"]]);
     expect(doc.highlights).toBe("hello world.");
   });
 

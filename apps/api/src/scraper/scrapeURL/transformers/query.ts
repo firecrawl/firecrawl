@@ -164,7 +164,9 @@ async function performDirectQuoteQuery(
     ? DIRECT_QUOTE_MODEL
     : {
         id: "gpt-4o-mini",
-        provider: undefined,
+        provider: service.llmProviders.get("ollama")?.enabled()
+          ? "ollama"
+          : "openai",
         contextTokens: modelPrices["gpt-4o-mini"]?.max_input_tokens ?? 128_000,
         pricedAs: "gpt-4o-mini",
       };
