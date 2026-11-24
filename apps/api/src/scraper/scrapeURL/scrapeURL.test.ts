@@ -7,6 +7,7 @@ config.ENV = "test";
 import { scrapeURL } from ".";
 import { scrapeOptions } from "../../controllers/v2/types";
 import { coreEngineFeatures, coreEngines, Engine } from "./engines";
+import { coreLlmProviders } from "../../lib/generic-ai";
 import { CostTracking } from "../../lib/cost-tracking";
 import { AgentIndexOnlyError, NoCachedDataError } from "./error";
 import { createService, replaceService } from "../../service/service";
@@ -45,6 +46,7 @@ describe("Standalone scrapeURL tests", () => {
             name: "core",
             engines: coreEngines,
             engineFeatures: coreEngineFeatures,
+            llmProviders: coreLlmProviders,
           },
           logger: { error: vi.fn() },
         },

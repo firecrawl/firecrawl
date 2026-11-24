@@ -28,6 +28,14 @@ export type {
 export { authenticate } from "./http";
 export type { RouteKind } from "./http";
 export type {
+  LlmModel,
+  LlmModelOptions,
+  LlmProvider,
+  LlmProviderName,
+  LlmProviderRegistry,
+  LlmProviders,
+} from "./llm-providers";
+export type {
   BaseCaller,
   BaseRequestContext,
   Caller,

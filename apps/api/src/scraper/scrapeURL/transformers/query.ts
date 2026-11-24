@@ -4,7 +4,7 @@ import { encoding_for_model } from "@dqbd/tiktoken";
 import { Document, FormatObject } from "../../../controllers/v2/types";
 import { Meta } from "..";
 import { getModel } from "../../../lib/generic-ai";
-import { config } from "../../../config";
+import { service } from "../../../service";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { isUsOnly } from "../../../lib/us-only";
 import { calculateCost } from "./llmExtract";
@@ -24,7 +24,7 @@ function escapePromptTags(text: string): string {
 // labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
 // aren't configured (e.g. self-hosted). Mirrors services/monitoring/search/tuning.ts.
 function hasVertex(): boolean {
-  return Boolean(config.VERTEX_CREDENTIALS) || config.VERTEX_USE_ADC;
+  return service.llmProviders.get("vertex")?.enabled() ?? false;
 }
 
 const DIRECT_QUOTE_MODEL = {

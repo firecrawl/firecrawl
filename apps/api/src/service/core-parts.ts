@@ -1,12 +1,14 @@
 /*
  * The service's own extension, applied first in every service: its process
- * roles, its scrape engines and feature priorities, and its error classes.
+ * roles, its scrape engines and feature priorities, its LLM providers, and its
+ * error classes.
  *
  * A role's module is loaded when the role runs and not before, so a process
  * loads only the code of the role it runs. For the same reason this file
- * imports only types and static engine metadata at the top: error classes are
- * loaded on the first error lookup, and engine implementations are loaded on
- * the first engine call (`enabled`, `scrape`, or `maxReasonableTime`).
+ * imports only types and static metadata at the top: error classes are loaded
+ * on the first error lookup, engine implementations are loaded on the first
+ * engine call (`enabled`, `scrape`, or `maxReasonableTime`), and LLM provider
+ * implementations are loaded on the first provider call (`enabled` or `model`).
  */
 import type { Meta } from "../scraper/scrapeURL";
 import {
@@ -15,6 +17,11 @@ import {
   type CoreEngineSpec,
 } from "../scraper/scrapeURL/engines/metadata";
 import type { Engine, EngineName } from "./engines";
+import {
+  coreLlmProviderNames,
+  type LlmProvider,
+  type LlmProviderName,
+} from "./llm-providers";
 import type { CoreParts, Worker } from "./service";
 
 const role = (load: () => { start: Worker["run"] }): Worker => ({
@@ -96,6 +103,28 @@ export function coreParts(): CoreParts {
     };
   };
 
+  let loadedLlmProviders: Map<LlmProviderName, LlmProvider> | undefined;
+  const loadCoreLlmProvider = (name: LlmProviderName): LlmProvider => {
+    if (!loadedLlmProviders) {
+      const { coreLlmProviders } =
+        require("../lib/generic-ai") as typeof import("../lib/generic-ai");
+      loadedLlmProviders = new Map(
+        coreLlmProviders.map(provider => [provider.name, provider]),
+      );
+    }
+    const provider = loadedLlmProviders.get(name);
+    if (!provider) {
+      throw new Error(`Built-in LLM provider "${name}" is not defined`);
+    }
+    return provider;
+  };
+
+  const lazyLlmProvider = (name: LlmProviderName): LlmProvider => ({
+    name,
+    enabled: () => loadCoreLlmProvider(name).enabled(),
+    model: (id, options) => loadCoreLlmProvider(name).model(id, options),
+  });
+
   return {
     core: {
       name: "core",
@@ -104,6 +133,7 @@ export function coreParts(): CoreParts {
           .coreErrors,
       engines: coreEngineSpecs.map(lazyEngine),
       engineFeatures: coreEngineFeatures,
+      llmProviders: coreLlmProviderNames.map(lazyLlmProvider),
       workers,
     },
     logger: {
