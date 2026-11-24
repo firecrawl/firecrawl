@@ -708,7 +708,7 @@ export async function executeSearch(
     }
 
     if (indexCategorySearch !== null) {
-      indexResults = nextIndex;
+      indexResults = nextIndex.slice(0, limit);
     }
     if (hadWeb || nextWeb.length > 0) {
       searchResponse.web = nextWeb.map((item, index) => ({

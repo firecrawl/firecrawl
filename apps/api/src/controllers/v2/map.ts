@@ -224,9 +224,11 @@ export async function mapController(
         hostedMcp: req.auth.hostedMcp,
       },
     ).catch(error => {
-      logger.error(
-        `Failed to bill team ${req.auth.team_id} for ${creditsCost} credits: ${error}`,
-      );
+      logger.error("Failed to bill team for map credits", {
+        teamId: req.auth.team_id,
+        creditsCost,
+        error,
+      });
     });
 
     logMap({
@@ -247,7 +249,11 @@ export async function mapController(
       credits_cost: creditsCost,
       zeroDataRetention,
     }).catch(error => {
-      logger.error(`Failed to log job for team ${req.auth.team_id}: ${error}`);
+      logger.error("Failed to log map job", {
+        teamId: req.auth.team_id,
+        mapId,
+        error,
+      });
     });
 
     const hooks = installedService()?.hooks;

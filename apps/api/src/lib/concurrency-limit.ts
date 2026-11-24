@@ -37,11 +37,8 @@ function scrapeJobKind(data: ScrapeJobData): JobKind {
   if (data.mode === "kickoff" || data.mode === "kickoff_sitemap") {
     return "crawl";
   }
-  if (data.crawlerOptions != null) {
-    return "crawl";
-  }
   if (data.crawl_id) {
-    return "batchScrape";
+    return data.crawlerOptions != null ? "crawl" : "batchScrape";
   }
   return "scrape";
 }

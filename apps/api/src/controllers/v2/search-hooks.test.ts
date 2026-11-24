@@ -130,7 +130,12 @@ vi.mock("../../search/tool-intent", () => ({
 }));
 
 vi.mock("../../search/developer", () => ({
-  wantsDeveloperCategory: () => false,
+  wantsDeveloperCategory: (categories?: Array<{ type: string } | string>) =>
+    Boolean(
+      categories?.some(c =>
+        typeof c === "string" ? c === "developer" : c.type === "developer",
+      ),
+    ),
   searchDeveloperCategory: mocks.searchDeveloperCategory,
 }));
 
@@ -209,6 +214,7 @@ describe("search lifecycle hooks", () => {
     mocks.projectSearchTotalCredits.mockReturnValue(0);
     mocks.reserveKeylessCredits.mockResolvedValue({ ok: true });
     mocks.searchGovIfRouted.mockResolvedValue(null);
+    mocks.searchDeveloperCategory.mockResolvedValue([]);
     mocks.discoverTools.mockResolvedValue({
       items: [],
       semanticMatches: 0,
@@ -734,5 +740,103 @@ describe("search lifecycle hooks", () => {
     await expect(executeSearch(baseOpts, baseCtx, logger)).rejects.toThrow(
       "results rejected",
     );
+  });
+
+  it("emits search.finished for v1 searches and caps index-category search.results additions to limit", async () => {
+    const v1Finished: any[] = [];
+    installHooks({
+      "search.finished": event => {
+        v1Finished.push(event);
+      },
+    });
+    mocks.search.mockResolvedValue({
+      web: [
+        {
+          url: "https://example.com/v1",
+          title: "V1",
+          description: "Hit",
+          position: 1,
+        },
+      ],
+    });
+
+    const v1Res = makeRes();
+    await v1SearchController(makeReq({ query: "cats", limit: 5 }), v1Res);
+    expect(v1Res.status).toHaveBeenCalledWith(200);
+    const v1Payload = v1Res.json.mock.calls[0][0];
+    expect(v1Finished[0]).toEqual({
+      id: v1Payload.id,
+      ctx: expect.objectContaining({
+        teamId: "11111111-1111-1111-1111-111111111111",
+      }),
+      results: 1,
+      charged: 2,
+    });
+
+    mocks.isSelfHosted.mockReturnValue(true);
+    const v1SelfHostedRes = makeRes();
+    await v1SearchController(
+      makeReq({ query: "cats", limit: 5 }),
+      v1SelfHostedRes,
+    );
+    expect(v1SelfHostedRes.status).toHaveBeenCalledWith(200);
+    expect(v1Finished[1]).toEqual(
+      expect.objectContaining({
+        results: 1,
+        charged: undefined,
+      }),
+    );
+
+    mocks.isSelfHosted.mockReturnValue(false);
+    mocks.searchDeveloperCategory.mockResolvedValue([
+      {
+        url: "https://docs.example.com/1",
+        title: "Dev 1",
+        description: "One",
+        position: 1,
+      },
+    ]);
+    installHooks({
+      "search.results": hits => [
+        ...hits,
+        { url: "https://docs.example.com/2", title: "Dev 2" },
+        { url: "https://docs.example.com/3", title: "Dev 3" },
+        { url: "https://docs.example.com/4", title: "Dev 4" },
+      ],
+    });
+
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    } as any;
+    const devResult = await executeSearch(
+      {
+        query: "sdk",
+        limit: 2,
+        sources: [{ type: "web" }],
+        categories: [{ type: "developer" }],
+        timeout: 5000,
+      },
+      {
+        teamId: "team-1",
+        origin: "api",
+        apiKeyId: 1,
+        flags: {},
+        teamPlanClass: undefined,
+        requestId: "req-dev",
+        jobId: "job-dev",
+        apiVersion: "v2",
+      },
+      logger,
+    );
+
+    expect(devResult.indexResultsCount).toBe(2);
+    expect(devResult.totalResultsCount).toBe(2);
+    expect(devResult.response.web?.map(item => item.url)).toEqual([
+      "https://docs.example.com/1",
+      "https://docs.example.com/2",
+    ]);
   });
 });

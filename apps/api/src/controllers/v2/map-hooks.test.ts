@@ -101,7 +101,8 @@ vi.mock("../../services/index", () => ({
   queryIndexAtSplitLevelWithMeta: mocks.queryIndexAtSplitLevelWithMeta,
 }));
 
-import { getMapResults } from "../../lib/map-utils";
+import { applyMapCollectHook, getMapResults } from "../../lib/map-utils";
+import { requestContext } from "../../lib/request-context";
 import type { HookHandlers } from "../../service/hooks";
 import { createService, replaceService } from "../../service/service";
 import { mapController } from "./map";
@@ -352,5 +353,61 @@ describe("map lifecycle hooks", () => {
         crawlerOptions: { sitemap: "skip" },
       }),
     ).rejects.toThrow("map vetoed");
+  });
+
+  it("reapplies map scope constraints to map.collect additions and preserves titled duplicates", async () => {
+    mocks.fireEngineMap.mockResolvedValue([
+      { url: "https://example.com/docs/intro", title: "Intro" },
+    ]);
+
+    installHooks({
+      "map.collect": () => [
+        "https://example.com/docs/intro/",
+        "https://example.com/docs/guide?ref=1",
+        "https://other.com/docs/external",
+        "https://sub.example.com/docs/sub",
+        "https://example.com/blog/post",
+        "javascript:alert(1)",
+      ],
+    });
+
+    const scoped = await getMapResults({
+      url: "https://example.com/docs",
+      limit: 5,
+      includeSubdomains: false,
+      filterByPath: true,
+      allowExternalLinks: false,
+      teamId: "team-map-1",
+      flags: null,
+      crawlerOptions: { sitemap: "skip", ignoreQueryParameters: true },
+    });
+
+    expect(scoped.mapResults).toEqual([
+      { url: "https://example.com/docs/intro", title: "Intro" },
+      { url: "https://example.com/docs/guide" },
+    ]);
+
+    installHooks({
+      "map.collect": urls => urls,
+    });
+
+    const deduped = await applyMapCollectHook(
+      [
+        { url: "https://example.com/dup" },
+        { url: "https://example.com/dup", title: "Titled" },
+      ],
+      {
+        ctx: requestContext({
+          teamId: "team-map-1",
+          zeroDataRetention: false,
+        }),
+        url: "https://example.com",
+        limit: 5,
+      },
+    );
+
+    expect(deduped).toEqual([
+      { url: "https://example.com/dup", title: "Titled" },
+    ]);
   });
 });

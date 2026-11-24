@@ -52,6 +52,7 @@ import {
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
+import { isSelfHosted } from "../../lib/deployment";
 import { teamPlanClass } from "../../lib/team-plan-class";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 
@@ -541,6 +542,19 @@ export async function searchController(
     }).catch(error => {
       logger.error("Failed to log search", { error, jobId });
     });
+
+    const hooks = installedService()?.hooks;
+    if (hooks?.has("search.finished")) {
+      hooks.observe("search.finished", {
+        id: jobId,
+        ctx,
+        results: responseData.data.length,
+        charged:
+          !isSelfHosted() && !isSearchPreview
+            ? result.searchCredits
+            : undefined,
+      });
+    }
 
     const totalRequestTime = new Date().getTime() - middlewareStartTime;
     const controllerTime = new Date().getTime() - controllerStartTime;

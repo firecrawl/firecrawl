@@ -243,6 +243,10 @@ describe("queue and concurrency hooks", () => {
     });
 
     await addScrapeJob(makeScrapeJob(), "job-scrape");
+    await addScrapeJob(
+      makeScrapeJob({ crawl_id: undefined, crawlerOptions: {} }),
+      "job-scrape-with-crawler-options",
+    );
     await addScrapeJobs([
       {
         jobId: "job-crawl",
@@ -258,6 +262,11 @@ describe("queue and concurrency hooks", () => {
 
     expect(events).toEqual([
       { jobId: "job-scrape", kind: "scrape", teamId: "team-1" },
+      {
+        jobId: "job-scrape-with-crawler-options",
+        kind: "scrape",
+        teamId: "team-1",
+      },
       { jobId: "job-crawl", kind: "crawl", teamId: "team-1" },
       { jobId: "job-batch", kind: "batchScrape", teamId: "team-1" },
     ]);

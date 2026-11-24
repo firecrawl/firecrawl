@@ -81,9 +81,68 @@ export async function queryIndex(
   return await queryIndexAtSplitLevelWithMeta(url, limit);
 }
 
+interface MapScopeOptions {
+  ignoreQueryParameters?: boolean;
+  includeSubdomains?: boolean;
+  filterByPath?: boolean;
+  allowExternalLinks?: boolean;
+}
+
+function applyMapScope(
+  documents: MapDocument[],
+  baseUrl: string,
+  {
+    ignoreQueryParameters = true,
+    includeSubdomains = true,
+    filterByPath = true,
+    allowExternalLinks = false,
+  }: MapScopeOptions = {},
+): MapDocument[] {
+  let scoped = documents
+    .map(x => {
+      try {
+        return {
+          ...x,
+          url: checkAndUpdateURLForMap(x.url, ignoreQueryParameters).url.trim(),
+        };
+      } catch (_) {
+        return null;
+      }
+    })
+    .filter((x): x is MapDocument => x !== null);
+
+  scoped = scoped.filter(x => isSameDomain(x.url, baseUrl));
+
+  if (!includeSubdomains) {
+    scoped = scoped.filter(x => isSameSubdomain(x.url, baseUrl));
+  }
+
+  if (filterByPath && !allowExternalLinks) {
+    try {
+      const urlObj = new URL(baseUrl);
+      const urlPath = urlObj.pathname;
+      if (urlPath && urlPath !== "/" && urlPath.length > 1) {
+        scoped = scoped.filter(x => {
+          try {
+            const linkObj = new URL(x.url);
+            return linkObj.pathname.startsWith(urlPath);
+          } catch {
+            return false;
+          }
+        });
+      }
+    } catch {
+      // If URL parsing fails, continue without path filtering
+    }
+  }
+
+  return dedupeMapDocumentArray(scoped);
+}
+
 /**
  * Applies registered `map.collect` hooks to candidate map documents,
- * preserving existing metadata, deduplicating, and slicing to `limit`.
+ * preserving existing metadata, reapplying map scope when provided,
+ * deduplicating, and slicing to `limit`.
  */
 export async function applyMapCollectHook(
   mapResults: MapDocument[],
@@ -91,33 +150,54 @@ export async function applyMapCollectHook(
     ctx,
     url,
     limit,
+    scope,
   }: {
     ctx: RequestContext;
     url: string;
     limit: number;
+    scope?: MapScopeOptions;
   },
 ): Promise<MapDocument[]> {
   const hooks = installedService()?.hooks;
   if (!hooks?.has("map.collect")) {
     return mapResults;
   }
-  const currentUrls = mapResults.map(doc => doc.url);
+  const deduped = dedupeMapDocumentArray(mapResults);
+  const currentUrls = deduped.map(doc => doc.url);
   const collectedUrls = await hooks.transform("map.collect", currentUrls, {
     ctx,
     url,
     limit,
   });
   const byUrl = new Map<string, MapDocument>();
-  for (const doc of mapResults) {
-    if (!byUrl.has(doc.url)) {
-      byUrl.set(doc.url, doc);
-    }
+  for (const doc of deduped) {
+    byUrl.set(doc.url, doc);
   }
-  return dedupeMapDocumentArray(
-    collectedUrls.map(
-      collectedUrl => byUrl.get(collectedUrl) ?? { url: collectedUrl },
-    ),
-  ).slice(0, limit);
+  const collectedDocs = collectedUrls.map(collectedUrl => {
+    const existing = byUrl.get(collectedUrl);
+    if (existing) {
+      return existing;
+    }
+    if (scope) {
+      try {
+        const normalized = checkAndUpdateURLForMap(
+          collectedUrl,
+          scope.ignoreQueryParameters ?? true,
+        ).url.trim();
+        const normalizedExisting = byUrl.get(normalized);
+        if (normalizedExisting) {
+          return normalizedExisting;
+        }
+      } catch {
+        // Invalid URL is dropped when applyMapScope runs below.
+      }
+    }
+    return { url: collectedUrl };
+  });
+  const finalDocs = scope
+    ? applyMapScope(collectedDocs, url, scope)
+    : dedupeMapDocumentArray(collectedDocs);
+  return finalDocs.slice(0, limit);
 }
 
 export async function getMapResults({
@@ -382,50 +462,13 @@ export async function getMapResults({
     }
   }
 
-  mapResults = mapResults
-    .map(x => {
-      try {
-        return {
-          ...x,
-          url: checkAndUpdateURLForMap(
-            x.url,
-            crawlerOptions.ignoreQueryParameters ?? true,
-          ).url.trim(),
-        };
-      } catch (_) {
-        return null;
-      }
-    })
-    .filter(x => x !== null) as MapDocument[];
-
-  mapResults = mapResults.filter(x => isSameDomain(x.url, url));
-
-  if (!includeSubdomains) {
-    mapResults = mapResults.filter(x => isSameSubdomain(x.url, url));
-  }
-
-  if (filterByPath && !allowExternalLinks) {
-    try {
-      const urlObj = new URL(url);
-      const urlPath = urlObj.pathname;
-      // Only apply path filtering if the URL has a significant path (not just '/' or empty)
-      // This means we only filter by path if the user has not selected a root domain
-      if (urlPath && urlPath !== "/" && urlPath.length > 1) {
-        mapResults = mapResults.filter(x => {
-          try {
-            const linkObj = new URL(x.url);
-            return linkObj.pathname.startsWith(urlPath);
-          } catch (e) {
-            return false;
-          }
-        });
-      }
-    } catch (e) {
-      // If URL parsing fails, continue without path filtering
-    }
-  }
-
-  mapResults = dedupeMapDocumentArray(mapResults);
+  const scope: MapScopeOptions = {
+    ignoreQueryParameters: crawlerOptions.ignoreQueryParameters ?? true,
+    includeSubdomains,
+    filterByPath,
+    allowExternalLinks,
+  };
+  mapResults = applyMapScope(mapResults, url, scope);
 
   const hooks = installedService()?.hooks;
   if (hooks?.has("map.collect")) {
@@ -441,6 +484,7 @@ export async function getMapResults({
       ctx: mapCtx,
       url,
       limit,
+      scope,
     });
   } else {
     mapResults = mapResults.slice(0, limit);
