@@ -1,0 +1,71 @@
+apps/api/src/__tests__/snips/v2/lib.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 1073-1074
+apps/api/src/scraper/scrapeURL/transformers/query.test.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 24
+apps/api/src/routes/admin.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 1-6,31,41-91,96-98,103,151-162
+  s_6a7201d5c4fd9c::t_461b45107ad2a7 163
+apps/api/src/service/hooks.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 3,5-9,11-12,14-28,33,38,46-165,167-230,233-234,237-238,242-246,249-257,261-263,266,268-270,272,274,276,278-279,281-283,289-350,353-373,375-379,381-382,384-440,444-476,478-507,509-514,516,521-524,529-530,535,541-559
+apps/api/src/scraper/scrapeURL/transformers/generateCompletions.test.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 26
+apps/api/src/service/index.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 1,23,26-29,31-33,36-40,42-53,55
+apps/api/src/lib/unhandled-error-handler.ts
+  s_6a7201d5c4fd9c::t_f1c6c8d38dcef8 7,58
+apps/api/src/service/service.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 15,184-188,255-258,268
+apps/api/src/lib/auth-denied-log.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 3,29
+apps/api/src/lib/extract/fire-0/llmExtract-f0.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 12
+apps/api/src/lib/http-metrics.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 3,37
+apps/api/src/lib/model-prices.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 1-22429
+apps/api/src/__tests__/routes/admin-routes.routes.test.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 1-249
+apps/api/src/service/service.test.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 130-131,134-144,146-149,151-187,189-192,194,198-263,338,345-349,369-375,379-382,408-410,428-432,468,484-487,490,501-503,515-523,539,607,620,631
+apps/api/src/lib/admin-auth.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 3,29-61,69,71,84,115-167
+apps/api/src/lib/extract/fire-0/usage/llm-cost-f0.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 4
+apps/api/src/__tests__/snips/v1/lib.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 609-610
+apps/api/src/lib/not-found.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 2,117,127,137
+apps/api/src/service/core-parts.test.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 18,383,386-398,400-402
+SELF_HOST.md
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 90,93-101,112-113
+apps/api/src/lib/deterministicJson/llm/client.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 15
+apps/api/src/index.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 19,121-147
+  s_6a7201d5c4fd9c::t_f1c6c8d38dcef8 20
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 12
+apps/api/src/scraper/scrapeURL/transformers/calculateCost.test.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 26
+apps/api/src/scraper/scrapeURL/transformers/query.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 11
+apps/api/src/service/hooks.test.ts
+  s_6a7201d5c4fd9c::t_c559dccaa397cd 1-14,16,18-69,72-77,80-82,88-100,102-106,109-230,234-267,270-273,276,278,280-286,294-295,298,300-302,306,309,312,314,316,328-335,341,344,346-349,352-353,355,358-368,373,375-380,383-414,416-419,422-425,427-440,446,449-484,486-489,492-493,495-498,501,503,505-509,516-571,573-587,592-597,599-606,609-635,637-643,646-647,649-651,657-662,665-668,671-676,679,682-731,733-737
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "86022324733b02d5a7cc44aaf996b7cbf86bbb2a",
+  "prompts": {},
+  "sessions": {
+    "s_6a7201d5c4fd9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc25e5bc-9ab3-420e-8413-1c98a5787305",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
