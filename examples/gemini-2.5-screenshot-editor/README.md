@@ -1,6 +1,6 @@
-# Firecrawl + Gemini 2.5 Flash Image CLI Editor 🎨🔥
+# Firecrawl + Gemini 3.1 Flash-Lite Image CLI Editor 🎨🔥
 
-A production-ready Python CLI that combines Firecrawl's powerful screenshot capabilities with Google's Gemini 2.5 Flash Image model for advanced AI-powered image editing, artistic style transfer, and creative transformations.
+A production-ready Python CLI that combines Firecrawl's powerful screenshot capabilities with Google's Gemini 3.1 Flash-Lite Image model (`gemini-3.1-flash-lite-image`) for advanced AI-powered image editing, artistic style transfer, and creative transformations.
 
 ## 🌟 Key Features
 
