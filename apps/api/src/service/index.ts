@@ -85,6 +85,12 @@ export type {
 } from "./request-context";
 export { coreSearchProviderNames } from "./search-providers";
 export type {
+  DescribedRoute,
+  RouteRegistrar,
+  RouterName,
+  Routers,
+} from "./routes";
+export type {
   CoreSearchProviderSpec,
   DescribedSearchProvider,
   SearchProvider,
@@ -98,6 +104,7 @@ export type {
   CoreParts,
   ErrorRegistry,
   Extension,
+  RoleRegistry,
   Service,
   ServiceConfig,
   ServiceDescription,

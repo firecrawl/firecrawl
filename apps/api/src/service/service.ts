@@ -20,23 +20,28 @@ import {
 } from "./llm-providers";
 import { freezeModules, type Modules } from "./modules";
 import {
+  buildRouteRegistry,
+  type DescribedRoute,
+  type RouteRegistrar,
+  type RouterName,
+  type Routers,
+} from "./routes";
+import {
   buildSearchProviderRegistry,
   type DescribedSearchProvider,
   type SearchProvider,
   type SearchProviderRegistry,
 } from "./search-providers";
+import { buildWorkerRegistry, type RoleRegistry, type Worker } from "./workers";
 
 export type { Modules } from "./modules";
-
-/** A process role: what one process of the service runs. */
-export interface Worker {
-  /**
-   * `entry` is the file that starts any role as `node <entry> <role>`. A role
-   * that starts other processes starts them through it, whichever file its own
-   * process was started from.
-   */
-  run(env: { entry: string }): void | Promise<void>;
-}
+export type {
+  DescribedRoute,
+  RouteRegistrar,
+  RouterName,
+  Routers,
+} from "./routes";
+export type { RoleRegistry, Worker } from "./workers";
 
 /**
  * A named bundle of everything that can be added to a service without the
@@ -73,6 +78,12 @@ export interface Extension {
    * name replaces an earlier one.
    */
   llmProviders?: readonly LlmProvider[];
+  /**
+   * Express routes contributed by this extension. Non-core extensions mount
+   * before core's routes so a contributed route can answer first or call
+   * `next()`.
+   */
+  routes?: RouteRegistrar;
   /** Process roles, by name. A later extension replaces a role of the same name. */
   workers?: Record<string, Worker>;
 }
@@ -110,6 +121,8 @@ export interface ServiceDescription {
   searchProviders: Record<string, DescribedSearchProvider>;
   /** For each registered LLM provider, the extension it comes from. */
   llmProviders: Record<string, string>;
+  /** Express routes registered by extensions, in mount order. */
+  routes: DescribedRoute[];
   /** For each process role, the extension it comes from. */
   roles: Record<string, string>;
   /**
@@ -132,7 +145,10 @@ export interface Service {
   readonly engines: EngineRegistry;
   readonly searchProviders: SearchProviderRegistry;
   readonly llmProviders: LlmProviderRegistry;
+  readonly roles: RoleRegistry;
   readonly workers: Readonly<Record<string, Worker>>;
+  /** Mounts every extension's Express routes onto `routers` in mount order. */
+  mountRoutes(routers: Routers): void;
   /** What the service was made of when it was created, plus declared env owners. Each call returns a copy. */
   describe(): ServiceDescription;
 }
@@ -175,10 +191,19 @@ export function createService(
         ? defaults.uploads
         : config.modules.uploads,
   });
-  const workers: Record<string, Worker> = Object.freeze(
-    Object.fromEntries(
-      extensions.flatMap(extension => Object.entries(extension.workers ?? {})),
-    ),
+  const { roles, workers, describedRoles } = buildWorkerRegistry(
+    extensions.map(extension => ({
+      owner: extension.name,
+      workers: extension.workers,
+    })),
+  );
+
+  const { mountRoutes, describeRoutes } = buildRouteRegistry(
+    extensions.map((extension, index) => ({
+      owner: extension.name,
+      isCore: index === 0,
+      routes: extension.routes,
+    })),
   );
 
   const { hooks, describedHooks } = buildHookRegistry(
@@ -252,16 +277,6 @@ export function createService(
     return byCode;
   };
 
-  // Worked out here, from the extensions as the roles above were just read
-  // from them, so it stays true to what the service runs whatever happens to
-  // an extension object later. The record has no prototype, so a name such as
-  // "constructor" is a key like any other.
-  const roleOwners: Record<string, string> = Object.create(null);
-  for (const extension of extensions) {
-    for (const role of Object.keys(extension.workers ?? {})) {
-      roleOwners[role] = extension.name;
-    }
-  }
   const baseDescription = {
     extensions: names,
     modules: Object.keys(modules).sort(),
@@ -270,7 +285,7 @@ export function createService(
     engineFeatures: describedFeatures,
     searchProviders: describedSearchProviders,
     llmProviders: describedLlmProviders,
-    roles: sortedByKey(roleOwners),
+    roles: describedRoles,
   };
 
   return Object.freeze({
@@ -282,7 +297,9 @@ export function createService(
     engines,
     searchProviders,
     llmProviders,
+    roles,
     workers,
+    mountRoutes,
     describe(): ServiceDescription {
       // Built from entries, so that a code is listed whatever its name is.
       const errors = Object.fromEntries(
@@ -298,6 +315,7 @@ export function createService(
         engineFeatures: copy.engineFeatures,
         searchProviders: copy.searchProviders,
         llmProviders: copy.llmProviders,
+        routes: describeRoutes(),
         roles: copy.roles,
         env: sortedByKey(describeEnv()),
       };
@@ -350,9 +368,13 @@ export const service: Service = {
   get llmProviders() {
     return current().llmProviders;
   },
+  get roles() {
+    return current().roles;
+  },
   get workers() {
     return current().workers;
   },
+  mountRoutes: (routers: Routers) => current().mountRoutes(routers),
   describe: () => current().describe(),
 };
 
@@ -382,9 +404,10 @@ export function replaceService(next: Service | undefined): Service | undefined {
  * throws does.
  */
 export function run(next: Service, role: string, entry: string): Promise<void> {
-  if (!Object.hasOwn(next.workers, role)) {
+  const worker = next.roles.get(role);
+  if (!worker) {
     throw new Error(
-      `Unknown role "${role}". Known roles: ${Object.keys(next.workers).sort().join(", ")}`,
+      `Unknown role "${role}". Known roles: ${next.roles.names().join(", ")}`,
     );
   }
   if (installed) {
@@ -393,5 +416,5 @@ export function run(next: Service, role: string, entry: string): Promise<void> {
   assertEnv();
   installed = next;
   startedRole = role;
-  return Promise.resolve(next.workers[role].run({ entry }));
+  return Promise.resolve(worker.run({ entry }));
 }

@@ -99,6 +99,7 @@ describe("createService", () => {
     expect(Object.isFrozen(built.engines)).toBe(true);
     expect(Object.isFrozen(built.searchProviders)).toBe(true);
     expect(Object.isFrozen(built.llmProviders)).toBe(true);
+    expect(Object.isFrozen(built.roles)).toBe(true);
     expect(Object.isFrozen(built.workers)).toBe(true);
   });
 
@@ -422,6 +423,7 @@ describe("describe", () => {
         zebra: { owner: "second", priority: 80 },
       },
       llmProviders: { alpha: "core", openai: "second", zebra: "second" },
+      routes: [],
       roles: { api: "second", "queue-worker": "core", zebra: "second" },
       env: {},
     });
@@ -542,6 +544,7 @@ describe("describe", () => {
       engineFeatures: { mineFlag: { owner: "mine", priority: 40 } },
       searchProviders: { "mine-search": { owner: "mine", priority: 60 } },
       llmProviders: { "mine-provider": "mine" },
+      routes: [],
       roles: { api: "mine" },
       env: {},
     });
@@ -634,6 +637,7 @@ describe("describe", () => {
       engineFeatures: { waitFor: { owner: "core", priority: 1 } },
       searchProviders: { searxng: { owner: "core", priority: 50 } },
       llmProviders: { openai: "core" },
+      routes: [],
       roles: { api: "core" },
       env: {},
     });
@@ -648,14 +652,23 @@ describe("service", () => {
     expect(() => service.engines).toThrow("No service is installed");
     expect(() => service.searchProviders).toThrow("No service is installed");
     expect(() => service.llmProviders).toThrow("No service is installed");
+    expect(() => service.roles).toThrow("No service is installed");
     expect(() => service.workers).toThrow("No service is installed");
+    expect(() =>
+      service.mountRoutes({
+        root: {} as never,
+        v2: {} as never,
+        admin: {} as never,
+      }),
+    ).toThrow("No service is installed");
     expect(() => service.describe()).toThrow("No service is installed");
   });
 
   it("reads the installed service", () => {
+    const mountSpy = vi.fn();
     const built = createService(
       { modules: {} },
-      parts({ workers: { api: worker() } }),
+      parts({ workers: { api: worker() }, routes: mountSpy }),
     );
     replaceService(built);
 
@@ -665,8 +678,92 @@ describe("service", () => {
     expect(service.engines).toBe(built.engines);
     expect(service.searchProviders).toBe(built.searchProviders);
     expect(service.llmProviders).toBe(built.llmProviders);
+    expect(service.roles).toBe(built.roles);
     expect(service.workers).toBe(built.workers);
+    const routers = {
+      root: {} as never,
+      v2: {} as never,
+      admin: {} as never,
+    };
+    service.mountRoutes(routers);
+    expect(mountSpy).toHaveBeenCalledWith(routers);
     expect(service.describe()).toEqual(built.describe());
+  });
+});
+
+describe("routes and roles integration", () => {
+  it("mounts extension routes before core routes and reports them in describe().routes", () => {
+    const calls: string[] = [];
+    const built = createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "ext",
+            routes: ({ v2 }) => {
+              calls.push("ext");
+              v2.get("/ext-ping", function extPing(_req, res) {
+                res.end();
+              });
+            },
+            workers: { "ext-worker": worker() },
+          },
+        ],
+      },
+      parts({
+        routes: ({ v2 }) => {
+          calls.push("core");
+          v2.get("/core-ping", function corePing(_req, res) {
+            res.end();
+          });
+        },
+        workers: { api: worker() },
+      }),
+    );
+
+    expect(calls).toEqual([]);
+    expect(built.roles.names()).toEqual(["api", "ext-worker"]);
+    expect(built.roles.owner("api")).toBe("core");
+    expect(built.roles.owner("ext-worker")).toBe("ext");
+
+    expect(built.describe().routes).toEqual([
+      {
+        owner: "ext",
+        router: "v2",
+        method: "GET",
+        path: "/v2/ext-ping",
+        middleware: ["extPing"],
+      },
+      {
+        owner: "core",
+        router: "v2",
+        method: "GET",
+        path: "/v2/core-ping",
+        middleware: ["corePing"],
+      },
+    ]);
+    expect(calls).toEqual(["ext", "core"]);
+  });
+
+  it("runs a worker role contributed by an extension", async () => {
+    const customRun = vi.fn();
+    const built = createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "custom",
+            workers: { "custom-worker": { run: customRun } },
+          },
+        ],
+      },
+      parts({ workers: { api: worker() } }),
+    );
+
+    await run(built, "custom-worker", "/app/main.js");
+
+    expect(customRun).toHaveBeenCalledWith({ entry: "/app/main.js" });
+    expect(processRole()).toBe("custom-worker");
   });
 });
 
