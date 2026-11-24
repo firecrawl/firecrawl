@@ -20,6 +20,13 @@ import {
 } from "./llm-providers";
 import { freezeModules, type Modules } from "./modules";
 import {
+  buildRequestSchemaRegistry,
+  type DescribedRequestSchemas,
+  type RequestContributions,
+  type RequestSchemaBuilder,
+  type RequestSchemas,
+} from "./request";
+import {
   buildSearchProviderRegistry,
   type DescribedSearchProvider,
   type SearchProvider,
@@ -73,6 +80,11 @@ export interface Extension {
    * name replaces an earlier one.
    */
   llmProviders?: readonly LlmProvider[];
+  /**
+   * Request-schema fields, formats, and cross-field scrape-option rules
+   * contributed by this extension.
+   */
+  request?: RequestContributions;
   /** Process roles, by name. A later extension replaces a role of the same name. */
   workers?: Record<string, Worker>;
 }
@@ -90,6 +102,8 @@ export interface CoreParts {
   core: Extension;
   /** Where the service reports a failure it does not pass on to a caller. */
   logger: { error(message: string, meta: Record<string, unknown>): void };
+  /** Builds compiled request schemas lazily on first `service.schemas` access. */
+  buildRequestSchemas?: RequestSchemaBuilder;
 }
 
 /** What a service is made of, as plain data that can be compared between builds. */
@@ -110,6 +124,8 @@ export interface ServiceDescription {
   searchProviders: Record<string, DescribedSearchProvider>;
   /** For each registered LLM provider, the extension it comes from. */
   llmProviders: Record<string, string>;
+  /** Contributed request fields, formats, and rules, by owner. */
+  request: DescribedRequestSchemas;
   /** For each process role, the extension it comes from. */
   roles: Record<string, string>;
   /**
@@ -132,6 +148,7 @@ export interface Service {
   readonly engines: EngineRegistry;
   readonly searchProviders: SearchProviderRegistry;
   readonly llmProviders: LlmProviderRegistry;
+  readonly schemas: RequestSchemas;
   readonly workers: Readonly<Record<string, Worker>>;
   /** What the service was made of when it was created, plus declared env owners. Each call returns a copy. */
   describe(): ServiceDescription;
@@ -158,7 +175,12 @@ export function createService(
       throw new Error("Invalid modules config");
     }
     for (const key of Object.keys(config.modules)) {
-      if (key !== "messages" && key !== "uploads") {
+      if (
+        key !== "messages" &&
+        key !== "uploads" &&
+        key !== "idempotency" &&
+        key !== "webhooks"
+      ) {
         throw new Error(`Unknown module slot "${key}"`);
       }
     }
@@ -174,6 +196,14 @@ export function createService(
       config.modules?.uploads === undefined
         ? defaults.uploads
         : config.modules.uploads,
+    idempotency:
+      config.modules?.idempotency === undefined
+        ? defaults.idempotency
+        : config.modules.idempotency,
+    webhooks:
+      config.modules?.webhooks === undefined
+        ? defaults.webhooks
+        : config.modules.webhooks,
   });
   const workers: Record<string, Worker> = Object.freeze(
     Object.fromEntries(
@@ -216,6 +246,14 @@ export function createService(
         llmProviders: extension.llmProviders,
       })),
     );
+
+  const { schemas, describedRequest } = buildRequestSchemaRegistry(
+    extensions.map(extension => ({
+      owner: extension.name,
+      request: extension.request,
+    })),
+    parts.buildRequestSchemas,
+  );
 
   // Snapshot extension names and error sources at creation so mutating an
   // extension later cannot change what loads or is described, while keeping
@@ -270,6 +308,7 @@ export function createService(
     engineFeatures: describedFeatures,
     searchProviders: describedSearchProviders,
     llmProviders: describedLlmProviders,
+    request: describedRequest,
     roles: sortedByKey(roleOwners),
   };
 
@@ -282,6 +321,7 @@ export function createService(
     engines,
     searchProviders,
     llmProviders,
+    schemas,
     workers,
     describe(): ServiceDescription {
       // Built from entries, so that a code is listed whatever its name is.
@@ -298,6 +338,7 @@ export function createService(
         engineFeatures: copy.engineFeatures,
         searchProviders: copy.searchProviders,
         llmProviders: copy.llmProviders,
+        request: copy.request,
         roles: copy.roles,
         env: sortedByKey(describeEnv()),
       };
@@ -366,6 +407,9 @@ export const service: Service = {
   },
   get llmProviders() {
     return current().llmProviders;
+  },
+  get schemas() {
+    return current().schemas;
   },
   get workers() {
     return current().workers;

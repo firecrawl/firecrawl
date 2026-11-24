@@ -1,7 +1,50 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { dbRr } from "../../db/connection";
+import { db, dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { logger as _logger } from "../../lib/logger";
+import { redisEvictConnection } from "../redis";
+
+const WEBHOOK_INSERT_QUEUE_KEY = "webhook-insert-queue";
+const WEBHOOK_INSERT_BATCH_SIZE = 1000;
+
+export async function getWebhookInsertQueueLength(): Promise<number> {
+  return (await redisEvictConnection.llen(WEBHOOK_INSERT_QUEUE_KEY)) ?? 0;
+}
+
+export async function processWebhookInsertJobs() {
+  const jobs =
+    (await redisEvictConnection.lpop(
+      WEBHOOK_INSERT_QUEUE_KEY,
+      WEBHOOK_INSERT_BATCH_SIZE,
+    )) ?? [];
+  if (jobs.length === 0) return;
+
+  const parsedJobs = jobs.flatMap(x => {
+    try {
+      return [JSON.parse(x)];
+    } catch (error) {
+      _logger.error("Webhook inserter skipped malformed job", { error });
+      return [];
+    }
+  });
+  if (parsedJobs.length === 0) return;
+
+  _logger.info("Webhook inserter found jobs to insert", {
+    jobCount: parsedJobs.length,
+  });
+
+  try {
+    await db.insert(schema.webhook_logs).values(parsedJobs);
+    _logger.info("Webhook inserter inserted jobs", {
+      jobCount: parsedJobs.length,
+    });
+  } catch (error) {
+    _logger.error("Webhook inserter failed to insert jobs", {
+      error,
+      jobCount: parsedJobs.length,
+    });
+  }
+}
 
 export type WebhookLogRow = {
   id: string;

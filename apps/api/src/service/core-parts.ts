@@ -180,5 +180,9 @@ export function coreParts(): CoreParts {
         ).logger.error(message, meta);
       },
     },
+    buildRequestSchemas: contributions =>
+      (
+        require("../controllers/v2/types") as typeof import("../controllers/v2/types")
+      ).buildV2RequestSchemas(contributions),
   };
 }
