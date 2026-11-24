@@ -24,6 +24,10 @@
       "types": "./src/service/testing.ts",
       "default": "./dist/src/service/testing.js"
     },
+    "./unstable/clickhouse-client": {
+      "types": "./src/lib/clickhouse-client.ts",
+      "default": "./dist/src/lib/clickhouse-client.js"
+    },
     "./unstable/db": {
       "types": "./src/db/connection.ts",
       "default": "./dist/src/db/connection.js"
@@ -31,6 +35,34 @@
     "./unstable/db-schema": {
       "types": "./src/db/schema/index.ts",
       "default": "./dist/src/db/schema/index.js"
+    },
+    "./unstable/gcs-jobs": {
+      "types": "./src/lib/gcs-jobs.ts",
+      "default": "./dist/src/lib/gcs-jobs.js"
+    },
+    "./unstable/index-worker-deps": {
+      "types": "./src/service/unstable/index-worker-deps.ts",
+      "default": "./dist/src/service/unstable/index-worker-deps.js"
+    },
+    "./unstable/nuq-fdb": {
+      "types": "./src/services/worker/nuq-fdb/index.ts",
+      "default": "./dist/src/services/worker/nuq-fdb/index.js"
+    },
+    "./unstable/nuq-router": {
+      "types": "./src/services/worker/nuq-router.ts",
+      "default": "./dist/src/services/worker/nuq-router.js"
+    },
+    "./unstable/otel": {
+      "types": "./src/otel.ts",
+      "default": "./dist/src/otel.js"
+    },
+    "./unstable/otel-tracer": {
+      "types": "./src/lib/otel-tracer.ts",
+      "default": "./dist/src/lib/otel-tracer.js"
+    },
+    "./unstable/queue-service": {
+      "types": "./src/services/queue-service.ts",
+      "default": "./dist/src/services/queue-service.js"
     },
     "./unstable/redis": {
       "types": "./src/services/redis.ts",
@@ -67,14 +99,8 @@
     "nuq-prefetch-worker:production": "node dist/src/main.js nuq-prefetch-worker",
     "nuq-reconciler-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js nuq-reconciler-worker\"",
     "nuq-reconciler-worker:production": "node dist/src/main.js nuq-reconciler-worker",
-    "cclog-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js cclog-worker\"",
-    "cclog-worker:production": "node dist/src/main.js cclog-worker",
     "extract-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js extract-worker\"",
     "extract-worker:production": "node dist/src/main.js extract-worker",
-    "index-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js index-worker\"",
-    "index-worker:production": "node dist/src/main.js index-worker",
-    "zdr-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js zdr-worker\"",
-    "zdr-worker:production": "node dist/src/main.js zdr-worker",
     "prepare": "cd ../.. && husky ./apps/api/.husky",
     "knip": "knip"
   },

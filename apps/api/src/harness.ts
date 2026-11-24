@@ -5,6 +5,7 @@ import * as net from "net";
 import { basename, join } from "path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
 import { startRole } from "./main";
+import { installedService } from "./service/service";
 
 const childProcesses = new Set<ChildProcess>();
 const stopping = new WeakSet<ChildProcess>(); // processes we're intentionally stopping
@@ -908,16 +909,19 @@ async function startServices(command?: string[]): Promise<Services> {
           },
         );
 
-  const indexWorker = config.USE_DB_AUTHENTICATION
-    ? execForward(
-        "index-worker",
-        roleCommand("index-worker", "index-worker:production"),
-        {
-          NUQ_REDUCE_NOISE: "true",
-          NUQ_POD_NAME: "index-worker",
-        },
-      )
-    : undefined;
+  const indexWorker =
+    config.USE_DB_AUTHENTICATION &&
+    roleEntry &&
+    installedService()?.roles.has("index-worker")
+      ? execForward(
+          "index-worker",
+          `node ${shellEscape(roleEntry)} index-worker`,
+          {
+            NUQ_REDUCE_NOISE: "true",
+            NUQ_POD_NAME: "index-worker",
+          },
+        )
+      : undefined;
 
   if (
     command &&
