@@ -115,10 +115,19 @@ import {
 import { searchController } from "./search";
 
 function installHooks(
-  hooks?: HookHandlers,
+  hooks?: HookHandlers | HookHandlers[],
   report = vi.fn(),
   request?: Extension["request"],
 ) {
+  const extensions: Extension[] = hooks
+    ? (Array.isArray(hooks) ? hooks : [hooks]).map((h, i) => ({
+        name: `test-hooks-${i}`,
+        hooks: h,
+      }))
+    : [];
+  if (request) {
+    extensions.push({ name: "test-request", request });
+  }
   replaceService(
     createService(
       {
@@ -128,16 +137,7 @@ function installHooks(
             charge: mocks.billingCharge,
           },
         },
-        extensions:
-          hooks || request
-            ? [
-                {
-                  name: "test-hooks",
-                  ...(hooks ? { hooks } : {}),
-                  ...(request ? { request } : {}),
-                },
-              ]
-            : [],
+        extensions,
       },
       {
         core: { name: "core" },
@@ -311,34 +311,27 @@ describe("search lifecycle hooks", () => {
     ]);
   });
 
-  it("reserves keyless credits against the planned limit, filters hook-added hits through threat and safe-search, and keeps URL-less positions", async () => {
-    installHooks({
-      "search.plan": plan => ({
-        ...plan,
-        limit: 40,
-      }),
-      "search.results": hits => [
-        ...hits,
-        { url: "https://evil.example.com/phish", title: "Phish" },
-        { url: "https://explicit.example.com/nsfw", title: "NSFW" },
-      ],
-    });
+  it("reserves keyless credits against the planned limit, chains search.results handlers, and keeps URL-less positions", async () => {
+    installHooks([
+      {
+        "search.plan": plan => ({
+          ...plan,
+          limit: 40,
+        }),
+        "search.results": hits => [
+          ...hits,
+          { url: "https://evil.example.com/phish", title: "Phish" },
+          { url: "https://explicit.example.com/nsfw", title: "NSFW" },
+        ],
+      },
+      {
+        "search.results": hits =>
+          hits.filter(hit => !hit.url.includes("evil.example.com")),
+      },
+    ]);
 
     mocks.projectSearchTotalCredits.mockImplementation(
       (input: { limit: number }) => Math.ceil(input.limit / 10) * 2,
-    );
-    mocks.resolveThreatProtection.mockResolvedValue({
-      policy: { mode: "block" },
-    });
-    mocks.checkUrlsAgainstThreatPolicy.mockImplementation(
-      async (urls: string[]) => ({
-        decisionsByUrl: new Map(
-          urls.map(url => [
-            url,
-            { allowed: !url.includes("evil.example.com") },
-          ]),
-        ),
-      }),
     );
     mocks.removeExplicitResults.mockImplementation(async (target: any) => {
       if (target.web) {

@@ -3,17 +3,14 @@ import type { Logger } from "winston";
 import { Document, ScrapeOptions, TeamFlags } from "../controllers/v2/types";
 import { CostTracking } from "../lib/cost-tracking";
 import { resolveJobPriority } from "../lib/limits";
-import { isLockdownZeroDataRetention } from "../lib/safe-mode";
 import { service } from "../service";
 import { NuQJob } from "../services/worker/nuq";
 import { processJobInternal } from "../services/worker/scrape-worker";
 import { ScrapeJobData } from "../types";
 import { SearchV2Response } from "../lib/entities";
 import type { BillingMetadata } from "../services/billing/types";
-import { getScrapeZDR } from "../lib/zdr-helpers";
 import { requestContext } from "../lib/request-context";
 import type { RequestContext } from "../service/request-context";
-import type { ThreatProtectionPolicy } from "../lib/threat-protection/types";
 
 export interface DocumentWithCostTracking {
   document: Document;
@@ -45,11 +42,10 @@ interface ScrapeSearchOptions {
   billing?: BillingMetadata;
   agentIndexOnly?: boolean;
   keylessReserved?: boolean;
-  threatProtectionPolicy?: ThreatProtectionPolicy | null;
-  safeModeBypassed?: boolean;
   workContactOnly?: boolean;
   concurrencyLimit?: number;
   rateLimitMultiplier?: number;
+  ctx?: RequestContext;
 }
 
 async function scrapeSearchResultDirect(
@@ -87,14 +83,13 @@ async function scrapeSearchResultDirect(
           maxAge: 3 * 24 * 60 * 60 * 1000, // 3 days
         } as ScrapeOptions,
         internalOptions: {
+          ctx,
           teamId: options.teamId,
           orgId: options.orgId ?? null,
           bypassBilling: options.bypassBilling ?? true,
-          zeroDataRetention,
+          zeroDataRetention: ctx.zeroDataRetention,
           teamFlags: flags,
           agentIndexOnly: options.agentIndexOnly ?? false,
-          threatProtection: options.threatProtectionPolicy ?? undefined,
-          safeModeBypassed: options.safeModeBypassed === true,
           ...(options.workContactOnly ? { workContactOnly: true } : {}),
         },
         skipNuq: true,
@@ -165,21 +160,18 @@ export function getItemsToScrape(
     origin?: string | null;
     zeroDataRetention?: boolean;
     safeMode?: boolean;
+    ctx?: RequestContext;
   },
 ): ScrapeItem[] {
   const items: ScrapeItem[] = [];
-  const blockCtx = requestContext({
-    teamId: context?.team_id ?? "",
-    zeroDataRetention:
-      context?.zeroDataRetention === true ||
-      getScrapeZDR(flags ?? undefined) === "forced" ||
-      isLockdownZeroDataRetention(
-        flags,
-        typeof context?.safeMode === "boolean" ? context.safeMode : undefined,
-      ),
-    flags,
-    orgId: context?.org_id ?? null,
-  });
+  const blockCtx =
+    context?.ctx ??
+    requestContext({
+      teamId: context?.team_id ?? "",
+      zeroDataRetention: context?.zeroDataRetention === true,
+      flags,
+      orgId: context?.org_id ?? null,
+    });
   const blockOptions =
     context === undefined
       ? { record: false }
@@ -254,18 +246,18 @@ export async function scrapeSearchResults(
     return [];
   }
 
-  const zeroDataRetention =
-    getScrapeZDR(flags) === "forced" || (options.zeroDataRetention ?? false);
-  const ctx = requestContext({
-    teamId: options.teamId,
-    zeroDataRetention,
-    flags,
-    orgId: options.orgId ?? null,
-    apiKeyId: options.apiKeyId,
-    billing: options.billing,
-    concurrencyLimit: options.concurrencyLimit,
-    rateLimitMultiplier: options.rateLimitMultiplier,
-  });
+  const ctx =
+    options.ctx ??
+    requestContext({
+      teamId: options.teamId,
+      zeroDataRetention: options.zeroDataRetention ?? false,
+      flags,
+      orgId: options.orgId ?? null,
+      apiKeyId: options.apiKeyId,
+      billing: options.billing,
+      concurrencyLimit: options.concurrencyLimit,
+      rateLimitMultiplier: options.rateLimitMultiplier,
+    });
 
   const jobPriority = await resolveJobPriority(ctx, 10, error => {
     logger.error("Failed to determine job priority", { error });

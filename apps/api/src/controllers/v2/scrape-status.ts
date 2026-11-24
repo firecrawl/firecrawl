@@ -1,4 +1,3 @@
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { service } from "../../service";
 
 export async function scrapeStatusController(req: any, res: any) {
@@ -11,7 +10,7 @@ export async function scrapeStatusController(req: any, res: any) {
     });
   }
 
-  if (getScrapeZDR(req.acuc?.flags) === "forced") {
+  if (req.ctx?.zeroDataRetention === true) {
     return res.status(400).json({
       success: false,
       error:

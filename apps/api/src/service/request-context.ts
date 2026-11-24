@@ -26,6 +26,7 @@ export interface BaseRequestContext {
    * absent value means the service's default.
    */
   checkRobotsOnScrape?: boolean;
+  ignoreRobotsTxt?: boolean;
   robotsUserAgent?: string;
   crawlTtlHours?: number;
   skipCountryCheck?: boolean;
@@ -53,7 +54,8 @@ declare global {
       requestId?: string;
       requestWarnings?: string[];
       requestDroppedUrls?: string[];
-      rawBody?: unknown;
+      requestBlocklistChecked?: boolean;
+      rawRequestBody?: unknown;
     }
   }
 }

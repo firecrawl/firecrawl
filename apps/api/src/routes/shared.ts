@@ -21,7 +21,11 @@ import {
   type BillingOperation,
   type Caller,
 } from "../service";
-import { sendRefusal } from "../service/http";
+import {
+  rejectRequest,
+  requestKindForPath,
+  sendRefusal,
+} from "../service/http";
 import type {} from "../lib/billing-state";
 import { validate as isUuid } from "uuid";
 
@@ -159,7 +163,12 @@ export function authMiddleware(
       const result = await service.modules.auth.authenticate(req, route);
 
       if (!result.ok) {
-        sendRefusal(res, result.refusal);
+        const requestKind = requestKindForPath(req.path);
+        if (requestKind) {
+          rejectRequest(req, res, requestKind, result.refusal);
+        } else {
+          sendRefusal(res, result.refusal);
+        }
         return;
       }
 

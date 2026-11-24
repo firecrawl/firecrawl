@@ -7,8 +7,6 @@ import {
   MAX_MAP_LIMIT,
 } from "../controllers/v2/types";
 import { crawlToCrawler, StoredCrawl } from "./crawl-redis";
-import { getScrapeZDR, getSearchForcedKind } from "./zdr-helpers";
-import { resolveSafeMode } from "./safe-mode";
 import {
   checkAndUpdateURLForMap,
   isSameDomain,
@@ -16,7 +14,6 @@ import {
   resolveRedirects,
 } from "./validateUrl";
 import { fireEngineMap } from "../search/fireEngine";
-import { isUsOnly } from "./us-only";
 import { redisEvictConnection } from "../services/redis";
 import {
   generateDomainSplits,
@@ -38,6 +35,7 @@ export interface MapResult {
   job_id: string;
   time_taken: number;
   mapResults: MapDocument[];
+  state?: Record<string, unknown>;
 }
 
 function dedupeMapDocumentArray(documents: MapDocument[]): MapDocument[] {
@@ -151,11 +149,31 @@ export async function applyMapCollectHook(
     url,
     limit,
     scope,
+    search,
+    includeSubdomains,
+    allowExternalLinks,
+    ignoreCache,
+    sitemap,
+    useIndex,
+    maxSearchResults,
+    abort,
+    state,
+    logger,
   }: {
     ctx: RequestContext;
     url: string;
     limit: number;
     scope?: MapScopeOptions;
+    search?: string;
+    includeSubdomains?: boolean;
+    allowExternalLinks?: boolean;
+    ignoreCache?: boolean;
+    sitemap?: "skip" | "include" | "only";
+    useIndex?: boolean;
+    maxSearchResults?: number;
+    abort?: AbortSignal;
+    state?: Record<string, unknown>;
+    logger?: Logger;
   },
 ): Promise<MapDocument[]> {
   const hooks = installedService()?.hooks;
@@ -164,17 +182,28 @@ export async function applyMapCollectHook(
   }
   const deduped = dedupeMapDocumentArray(mapResults);
   const currentUrls = deduped.map(doc => doc.url);
+  const documents = new Map<string, MapDocument>();
+  for (const doc of deduped) {
+    documents.set(doc.url, doc);
+  }
   const collectedUrls = await hooks.transform("map.collect", currentUrls, {
     ctx,
     url,
     limit,
+    ...(search !== undefined ? { search } : {}),
+    ...(includeSubdomains !== undefined ? { includeSubdomains } : {}),
+    ...(allowExternalLinks !== undefined ? { allowExternalLinks } : {}),
+    ...(ignoreCache !== undefined ? { ignoreCache } : {}),
+    ...(sitemap !== undefined ? { sitemap } : {}),
+    ...(useIndex !== undefined ? { useIndex } : {}),
+    ...(maxSearchResults !== undefined ? { maxSearchResults } : {}),
+    ...(abort !== undefined ? { abort } : {}),
+    documents,
+    ...(state !== undefined ? { state } : {}),
+    ...(logger !== undefined ? { logger } : {}),
   });
-  const byUrl = new Map<string, MapDocument>();
-  for (const doc of deduped) {
-    byUrl.set(doc.url, doc);
-  }
   const collectedDocs = collectedUrls.map(collectedUrl => {
-    const existing = byUrl.get(collectedUrl);
+    const existing = documents.get(collectedUrl);
     if (existing) {
       return existing;
     }
@@ -184,7 +213,7 @@ export async function applyMapCollectHook(
           collectedUrl,
           scope.ignoreQueryParameters ?? true,
         ).url.trim();
-        const normalizedExisting = byUrl.get(normalized);
+        const normalizedExisting = documents.get(normalized);
         if (normalizedExisting) {
           return normalizedExisting;
         }
@@ -194,9 +223,11 @@ export async function applyMapCollectHook(
     }
     return { url: collectedUrl };
   });
-  const finalDocs = scope
-    ? applyMapScope(collectedDocs, url, scope)
-    : dedupeMapDocumentArray(collectedDocs);
+  const skipScope = state?.skipScope === true;
+  const finalDocs =
+    scope && !skipScope
+      ? applyMapScope(collectedDocs, url, scope)
+      : dedupeMapDocumentArray(collectedDocs);
   return finalDocs.slice(0, limit);
 }
 
@@ -248,14 +279,8 @@ export async function getMapResults({
 }): Promise<MapResult> {
   const functionStartTime = Date.now();
 
-  // Safe Mode lockdown: serve links from the index only — skip live search +
-  // sitemap discovery. Derived here from the team flags so every caller
-  // (map, extract, llmstxt, prompt enhancement) honors it.
-  const indexOnly =
-    resolveSafeMode(flags, undefined, url).safeMode?.lockdown === true;
+  const indexOnly = ctx?.lockdown === true;
 
-  // Under lockdown (index-only) resolving redirects would HEAD/GET the target,
-  // which the zero-outbound guarantee forbids — use the URL as given.
   const resolvedUrl = indexOnly
     ? url
     : await resolveRedirects(url, abort, mock);
@@ -270,16 +295,21 @@ export async function getMapResults({
 
   const id = providedId ?? uuidv7();
   let mapResults: MapDocument[] = [];
-  // Lockdown (index-only) is cache-only, which implies zero data retention —
-  // and must never write its empty live-search result into the shared cache.
   const zeroDataRetention =
-    requestZeroDataRetention || getScrapeZDR(flags) === "forced" || indexOnly;
-  // The site search is a query sent to a search provider, so it also follows
-  // the team's search zero data retention.
-  const searchZeroDataRetention =
-    zeroDataRetention || getSearchForcedKind(flags) === "zdr";
+    ctx?.zeroDataRetention === true || requestZeroDataRetention || indexOnly;
+  const searchZeroDataRetention = zeroDataRetention;
+
+  const mapCtx: RequestContext =
+    ctx ??
+    requestContext({
+      teamId,
+      zeroDataRetention,
+      flags: flags ?? undefined,
+      orgId: orgId ?? null,
+    });
 
   const sc: StoredCrawl = {
+    ctx: mapCtx,
     originUrl: url,
     crawlerOptions: {
       ...crawlerOptions,
@@ -290,7 +320,7 @@ export async function getMapResults({
       ...(location ? { location } : {}),
       ...(headers ? { headers } : {}),
     }),
-    internalOptions: { teamId, orgId: orgId ?? null },
+    internalOptions: { ctx: mapCtx, teamId, orgId: orgId ?? null },
     team_id: teamId,
     createdAt: Date.now(),
     zeroDataRetention,
@@ -351,7 +381,7 @@ export async function getMapResults({
       Math.min(maxFireEngineResults, limit) / resultsPerPage,
     );
 
-    const usOnly = isUsOnly(flags);
+    const usOnly = mapCtx.usOnly === true || flags?.usOnly === true;
     const cacheKey = `fireEngineMap:${usOnly ? "us-only:" : ""}${mapUrl}`;
     const cachedResult = ignoreCache
       ? null
@@ -470,21 +500,23 @@ export async function getMapResults({
   };
   mapResults = applyMapScope(mapResults, url, scope);
 
+  const mapState: Record<string, unknown> = {};
   const hooks = installedService()?.hooks;
   if (hooks?.has("map.collect")) {
-    const mapCtx =
-      ctx ??
-      requestContext({
-        teamId,
-        zeroDataRetention,
-        flags: flags ?? undefined,
-        orgId: orgId ?? null,
-      });
     mapResults = await applyMapCollectHook(mapResults, {
       ctx: mapCtx,
       url,
       limit,
       scope,
+      search,
+      includeSubdomains,
+      allowExternalLinks,
+      ignoreCache,
+      sitemap: crawlerOptions.sitemap,
+      useIndex,
+      maxSearchResults: maxFireEngineResults,
+      abort,
+      state: mapState,
     });
   } else {
     mapResults = mapResults.slice(0, limit);
@@ -497,6 +529,7 @@ export async function getMapResults({
     mapResults,
     job_id: id,
     time_taken: totalTimeMs,
+    state: mapState,
   };
 }
 

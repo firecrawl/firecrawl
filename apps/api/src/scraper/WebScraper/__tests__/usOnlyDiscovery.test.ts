@@ -49,15 +49,15 @@ describe("crawl discovery for US-only teams", () => {
     expect(internalOptionsSent()).toEqual([
       expect.objectContaining({
         teamId: "robots-txt",
-        teamFlags: { usOnly: true },
+        ctx: expect.objectContaining({ teamId: "robots-txt", usOnly: true }),
       }),
     ]);
   });
 
-  it("fetches other teams' robots.txt without team flags", async () => {
+  it("fetches other teams' robots.txt without usOnly", async () => {
     await crawlToCrawler("crawl-1", storedCrawl(), null).getRobotsTxt();
     expect(internalOptionsSent()).toHaveLength(1);
-    expect(internalOptionsSent()[0]).not.toHaveProperty("teamFlags");
+    expect(internalOptionsSent()[0]?.ctx?.usOnly).toBeUndefined();
   });
 
   it("fetches nested sitemaps as US-only", async () => {
@@ -86,8 +86,12 @@ describe("crawl discovery for US-only teams", () => {
       "https://example.com/sitemap-posts.xml",
     ]);
     expect(internalOptionsSent()).toEqual([
-      expect.objectContaining({ teamFlags: { usOnly: true } }),
-      expect.objectContaining({ teamFlags: { usOnly: true } }),
+      expect.objectContaining({
+        ctx: expect.objectContaining({ teamId: "sitemap", usOnly: true }),
+      }),
+      expect.objectContaining({
+        ctx: expect.objectContaining({ teamId: "sitemap", usOnly: true }),
+      }),
     ]);
   });
 
@@ -117,11 +121,11 @@ describe("crawl discovery for US-only teams", () => {
     expect(internalOptionsSent()).toEqual([
       expect.objectContaining({
         teamId: "sitemap",
-        teamFlags: { usOnly: true },
+        ctx: expect.objectContaining({ teamId: "sitemap", usOnly: true }),
       }),
       expect.objectContaining({
         teamId: "sitemap",
-        teamFlags: { usOnly: true },
+        ctx: expect.objectContaining({ teamId: "sitemap", usOnly: true }),
       }),
     ]);
   });

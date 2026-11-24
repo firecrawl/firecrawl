@@ -18,13 +18,6 @@ import { _addScrapeJobToBullMQ } from "../../services/queue-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../../lib/cost-tracking";
-import { checkPermissions } from "../../lib/permissions";
-import { resolveSafeMode } from "../../lib/safe-mode";
-import {
-  actionTypesOf,
-  checkKeyFormatRestriction,
-  formatTypesOf,
-} from "../../lib/key-restriction";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
 import { collectPathPatternIssues } from "../../lib/crawl-regex";
 import {
@@ -35,160 +28,24 @@ import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import { service } from "../../service";
+import { finalizeResponse, service, type RequestContext } from "../../service";
 import type { BillingMetadata } from "../../services/billing/types";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
-import { resolveThreatProtection } from "../../lib/threat-protection/request";
-import { checkUrl } from "../../lib/threat-protection";
 import { getErrorHttpResponse } from "../../lib/error";
-import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
-import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { currentLimits } from "../../lib/limits";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
   res: Response<CrawlResponse>,
 ) {
-  const preNormalizedBody = req.body as Record<string, any>;
-  req.body = getV2RequestSchemas().crawl.parse(req.body);
-  const extScrapeOpts = req.body.scrapeOptions as Record<string, any>;
-  const id = uuidv7();
-
-  const safeMode = resolveSafeMode(
-    req.acuc?.flags,
-    extScrapeOpts?.safeMode,
-    req.body.url,
-  );
-  if (safeMode.error) {
-    return res.status(403).json({
-      success: false,
-      code: safeMode.code,
-      error: safeMode.error,
-    });
+  const preNormalizedBody =
+    (req.rawRequestBody as Partial<CrawlRequest> | undefined) ?? req.body;
+  if (!req.ctx) {
+    req.body = getV2RequestSchemas().crawl.parse(req.body);
   }
-
-  if (
-    safeMode.safeMode?.lockdown &&
-    typeof preNormalizedBody?.scrapeOptions?.maxAge === "number"
-  ) {
-    extScrapeOpts.maxAge = preNormalizedBody.scrapeOptions.maxAge;
-  }
-
-  // Safe Mode lockdown is cache-only, which implies zero data retention.
+  const id = req.requestId ?? uuidv7();
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
-    req.body.zeroDataRetention ||
-    (safeMode.safeMode?.lockdown ?? false);
-
-  const threatProtection = await resolveThreatProtection({
-    teamId: req.auth.team_id,
-    orgId: req.acuc?.org_id ?? null,
-    flags: req.acuc?.flags ?? null,
-    override: extScrapeOpts?.threatProtection,
-    force: safeMode.safeMode?.domainControls === true,
-  });
-  if (threatProtection.error) {
-    return res.status(403).json({
-      success: false,
-      error: threatProtection.error,
-    });
-  }
-
-  // Scrape params live under scrapeOptions; checkPermissions reads them
-  // top-level, so spread scrapeOptions while keeping the top-level fields it
-  // also reads (zeroDataRetention, crawlerOptions.ignoreRobotsTxt) and the
-  // nested scrapeOptions (location / threatProtection).
-  const permissions = checkPermissions(
-    {
-      ...req.body.scrapeOptions,
-      zeroDataRetention: req.body.zeroDataRetention,
-      crawlerOptions: req.body,
-      scrapeOptions: req.body.scrapeOptions,
-    },
-    req.acuc?.flags,
-    {
-      threatProtectionOrgConfig: threatProtection.orgConfig,
-      safeMode: safeMode.safeMode ?? null,
-    },
-  );
-  if (permissions.error) {
-    return res.status(403).json({
-      success: false,
-      code: permissions.code,
-      error: permissions.error,
-    });
-  }
-
-  // Threat protection: check the seed URL before kicking off the crawl.
-  // Blocked seed => request-level error. Discovered links are checked during
-  // link discovery in the workers (blocked ones are silently skipped).
-  if (threatProtection.policy) {
-    const decision = await checkUrl(req.body.url, threatProtection.policy, {
-      teamId: req.auth.team_id,
-    });
-    if (!decision.allowed) {
-      const blockedCtx = requestContext({
-        teamId: req.auth.team_id,
-        zeroDataRetention,
-        flags: req.acuc?.flags ?? null,
-        orgId: req.acuc?.org_id ?? null,
-        apiKeyId: req.acuc?.api_key_id ?? null,
-        billing: {
-          endpoint: "crawl",
-          externalRequestId: externalRequestId(req),
-          hostedMcp: req.auth.hostedMcp,
-        },
-      });
-      void service.modules.billing
-        .charge({
-          kind: "crawl",
-          ctx: blockedCtx,
-          requestId: id,
-          urls: 1,
-          state: { threatDecisions: [decision] },
-        })
-        .catch(error => {
-          _logger.error("Failed to bill team for rejected crawl seed", {
-            teamId: req.auth.team_id,
-            error,
-          });
-        });
-      const error = new UnsafeDomainBlockedError(req.body.url, decision);
-      emitRejectedScrapeActivityEvent({
-        scrapeId: uuidv7(),
-        requestId: id,
-        endpoint: "crawl",
-        teamId: req.auth.team_id,
-        apiKeyId: req.acuc?.api_key_id ?? null,
-        auditMetadata: extScrapeOpts?.auditMetadata,
-        url: req.body.url,
-        error,
-        threatDecisions: [decision],
-        origin: req.body.origin ?? "api",
-        integration: req.body.integration,
-        zeroDataRetention: zeroDataRetention ?? false,
-      });
-      return res.status(403).json({
-        success: false,
-        code: error.code,
-        error: error.message,
-      });
-    }
-  }
-
-  const keyRestriction = await checkKeyFormatRestriction(
-    formatTypesOf(req.body.scrapeOptions?.formats),
-    actionTypesOf(req.body.scrapeOptions?.actions),
-    req.acuc?.api_key_id,
-    req.acuc?.flags ?? null,
-  );
-  if (!keyRestriction.allowed) {
-    return res.status(keyRestriction.status).json({
-      success: false,
-      error: keyRestriction.error,
-    });
-  }
+    req.ctx?.zeroDataRetention ?? Boolean(req.body.zeroDataRetention);
 
   const logger = _logger.child({
     crawlId: id,
@@ -204,24 +61,26 @@ export async function crawlController(
     account: req.account,
   });
 
-  const billing: BillingMetadata = {
+  const billing: BillingMetadata = req.ctx?.billing ?? {
     endpoint: "crawl",
     jobId: id,
     externalRequestId: externalRequestId(req),
     hostedMcp: req.auth.hostedMcp,
   };
-  const ctx =
-    req.ctx ??
-    requestContext({
-      teamId: req.auth.team_id,
-      zeroDataRetention,
-      flags: req.acuc?.flags ?? null,
-      orgId: req.acuc?.org_id ?? null,
-      apiKeyId: req.acuc?.api_key_id ?? null,
-      billing,
-      concurrencyLimit: req.acuc?.concurrency_limit,
-      rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
-    });
+  const ctx: RequestContext = req.ctx
+    ? req.ctx.billing
+      ? req.ctx
+      : { ...req.ctx, billing }
+    : requestContext({
+        teamId: req.auth.team_id,
+        zeroDataRetention,
+        flags: req.acuc?.flags ?? null,
+        orgId: req.acuc?.org_id ?? null,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+        billing,
+        concurrencyLimit: req.acuc?.concurrency_limit,
+        rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
+      });
   req.ctx = ctx;
 
   await logRequest({
@@ -361,13 +220,13 @@ export async function crawlController(
     originalBodyLimit: preNormalizedBody.limit,
   });
 
+  const crawlTtlHours = ctx.crawlTtlHours ?? 24;
   await service.modules.jobStore
     .register({
       id,
       kind: "crawl",
       ctx,
-      expiresAtMs:
-        Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+      expiresAtMs: Date.now() + crawlTtlHours * 60 * 60 * 1000,
       clientOrigin: req.body.origin ?? "api",
       estimatedJobs: finalCrawlerOptions.limit,
     })
@@ -385,17 +244,14 @@ export async function crawlController(
     crawlerOptions: toV0CrawlerOptions(finalCrawlerOptions),
     scrapeOptions,
     internalOptions: {
+      ctx,
       disableSmartWaitCache: true,
       teamId: req.auth.team_id,
       orgId: req.acuc?.org_id ?? null,
       saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
       zeroDataRetention,
       agentIndexOnly: (req as any).agentIndexOnly ?? false,
-      threatProtection: threatProtection.policy ?? undefined,
-      // Safe Mode rides the crawl payload so every child scrape resolves it
-      // per-URL at the scrapeURL backstop (allowlist applies per child).
       teamFlags: req.acuc?.flags ?? null,
-      safeModeBypassed: safeMode.bypassed === true,
     },
     team_id: req.auth.team_id,
     createdAt: Date.now(),
@@ -426,16 +282,11 @@ export async function crawlController(
   }
 
   sc.queueBackend = await resolveNewGroupBackend(sc.team_id, ctx);
-  await crawlGroup.addGroup(
-    id,
-    sc.team_id,
-    (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
-    {
-      backend: sc.queueBackend,
-      maxConcurrency: sc.maxConcurrency,
-      delaySeconds: sc.crawlerOptions?.delay,
-    },
-  );
+  await crawlGroup.addGroup(id, sc.team_id, crawlTtlHours * 60 * 60 * 1000, {
+    backend: sc.queueBackend,
+    maxConcurrency: sc.maxConcurrency,
+    delaySeconds: sc.crawlerOptions?.delay,
+  });
 
   await saveCrawl(id, sc);
 
@@ -464,7 +315,7 @@ export async function crawlController(
 
   const protocol = req.protocol;
 
-  return res.status(200).json({
+  const payload = await finalizeResponse(req, "crawl", {
     success: true,
     id,
     url: `${protocol}://${req.host}/v2/crawl/${id}`,
@@ -473,4 +324,5 @@ export async function crawlController(
       finalCrawlerOptions: finalCrawlerOptions,
     }),
   });
+  return res.status(200).json(payload as CrawlResponse);
 }

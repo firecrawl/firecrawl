@@ -12,7 +12,8 @@
  * request schemas, scrape engines, configuration, or clients.
  */
 import type { Logger } from "winston";
-import type { Document } from "../controllers/v2/types";
+import type { Document, MapDocument } from "../controllers/v2/types";
+import type { SearchV2Response } from "../lib/entities";
 import type { ErrorCode } from "../lib/error";
 import type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 import type { EngineFeatureName, EngineName } from "./engines";
@@ -63,6 +64,12 @@ export interface ScrapePlan {
   needsMarkdown?: boolean;
   /** Top-level document keys kept during final format coercion. */
   keepDocumentFields?: Set<string>;
+  /** Optional rewritten URL to scrape (for example, stripped of embedded credentials). */
+  url?: string;
+  /** Optional rewritten unnormalized source URL. */
+  unnormalizedSourceURL?: string;
+  /** Optional override for whether robots.txt should be checked for this scrape. */
+  checkRobots?: boolean;
 }
 
 /**
@@ -131,6 +138,15 @@ export interface ScrapeFinished {
   /** Metered usage charged for this scrape, or undefined when unmetered. */
   charged: number | undefined;
   timeTakenMs: number;
+  startedAt?: number;
+  completedAt?: number;
+  origin?: string;
+  crawlId?: string;
+  skipNuq?: boolean;
+  isParse?: boolean;
+  costTracking?: Record<string, unknown>;
+  /** Opaque per-job metadata passed through to completion hooks. */
+  metadata?: Record<string, unknown>;
 }
 
 /** Completion payload delivered when a crawl or batch scrape finishes. */
@@ -140,6 +156,13 @@ export interface CrawlFinished {
   ctx: RequestContext;
   completed: number;
   cancelled: boolean;
+  requestId?: string;
+  origin?: string;
+  originUrl?: string;
+  crawlerOptions?: Record<string, unknown> | null;
+  charged?: number | null;
+  isV1?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 /** Plan transformed before executing a search request. */
@@ -176,6 +199,9 @@ export interface HookPoints {
     jobId: string;
     kind: JobKind;
     ctx: RequestContext;
+    url?: string;
+    options?: ScrapeOptions;
+    jobData?: unknown;
   }>;
   "concurrency.limited": Observe<{ ctx: RequestContext; limit: number }>;
   // scrape, in pipeline order
@@ -201,32 +227,87 @@ export interface HookPoints {
   // crawl
   "crawl.kickoff": Transform<
     string[],
-    { id: string; ctx: RequestContext; url: string }
+    {
+      id: string;
+      ctx: RequestContext;
+      url: string;
+      crawlerOptions?: Record<string, unknown>;
+    }
   >;
   "crawl.links": Transform<
     string[],
-    { id: string; ctx: RequestContext; from: string }
+    {
+      id: string;
+      ctx: RequestContext;
+      from: string;
+      crawlerOptions?: Record<string, unknown> | null;
+      bypassBilling?: boolean;
+    }
   >;
   "crawl.finished": Await<CrawlFinished>;
   // map and search
   "map.collect": Transform<
     string[],
-    { ctx: RequestContext; url: string; limit: number }
+    {
+      ctx: RequestContext;
+      url: string;
+      limit: number;
+      search?: string;
+      includeSubdomains?: boolean;
+      allowExternalLinks?: boolean;
+      ignoreCache?: boolean;
+      sitemap?: "skip" | "include" | "only";
+      useIndex?: boolean;
+      maxSearchResults?: number;
+      abort?: AbortSignal;
+      documents?: Map<string, MapDocument>;
+      state?: Record<string, unknown>;
+      logger?: Logger;
+    }
   >;
-  "map.finished": Observe<{ id: string; ctx: RequestContext; urls: number }>;
+  "map.finished": Observe<{
+    id: string;
+    ctx: RequestContext;
+    urls: number;
+    url?: string;
+    options?: Record<string, unknown>;
+    links?: MapDocument[];
+    charged?: number;
+    state?: Record<string, unknown>;
+  }>;
   "search.plan": Transform<
     SearchPlan,
-    { ctx: RequestContext; body: RequestBodies["search"] }
+    {
+      ctx: RequestContext;
+      body: RequestBodies["search"];
+      state?: Record<string, unknown>;
+      logger?: Logger;
+    }
   >;
   "search.results": Transform<
     SearchHit[],
-    { ctx: RequestContext; body: RequestBodies["search"] }
+    {
+      ctx: RequestContext;
+      body: RequestBodies["search"];
+      state?: Record<string, unknown>;
+      response?: SearchV2Response;
+      logger?: Logger;
+    }
   >;
   "search.finished": Observe<{
     id: string;
     ctx: RequestContext;
     results: number;
     charged: number | undefined;
+    body?: RequestBodies["search"];
+    response?: SearchV2Response;
+    timeTakenMs?: number;
+    resultCountsBySource?: Record<string, number>;
+    resultCategories?: Record<string, string[]>;
+    searchTypes?: string[];
+    scrapeFormats?: string[];
+    shouldScrape?: boolean;
+    state?: Record<string, unknown>;
   }>;
 }
 

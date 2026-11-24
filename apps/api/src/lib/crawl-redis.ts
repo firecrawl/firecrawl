@@ -8,9 +8,6 @@ import { logger as _logger } from "./logger";
 import { getAdjustedMaxDepth } from "../scraper/WebScraper/utils/maxDepthUtils";
 import type { Logger } from "winston";
 import { withSpan, setSpanAttributes } from "./otel-tracer";
-import { getScrapeZDR, getIgnoreRobots } from "./zdr-helpers";
-import { resolveSafeMode } from "./safe-mode";
-import { isUsOnly } from "./us-only";
 import { crawlContext } from "./request-context";
 import {
   firstPipelineError,
@@ -1025,20 +1022,11 @@ export async function lockURLsIndividually(
 export function crawlToCrawler(
   id: string,
   sc: StoredCrawl,
-  teamFlags: TeamFlags,
+  teamFlags?: TeamFlags,
   newBase?: string,
   crawlerOptions?: any,
 ): WebCrawler {
   const ctx = crawlContext(sc);
-  // Resolve the crawl's Safe Mode once (honoring a stored request bypass) to
-  // drive both lockdown and the robots override below.
-  const crawlerSafeMode = sc.internalOptions?.safeModeBypassed
-    ? undefined
-    : resolveSafeMode(
-        ctx.flags ?? teamFlags,
-        undefined,
-        sc.originUrl ?? undefined,
-      ).safeMode;
   const crawler = new WebCrawler({
     jobId: id,
     initialUrl: sc.originUrl!,
@@ -1060,23 +1048,20 @@ export function crawlToCrawler(
     allowExternalContentLinks:
       sc.crawlerOptions?.allowExternalContentLinks ?? false,
     allowSubdomains: sc.crawlerOptions?.allowSubdomains ?? false,
-    // Safe Mode enforceRobots overrides even a team's forced ignore-robots.
     ignoreRobotsTxt:
-      !crawlerSafeMode?.enforceRobots &&
-      (getIgnoreRobots(teamFlags) === "forced" ||
-        (getIgnoreRobots(teamFlags) === "allowed" &&
-          (sc.crawlerOptions?.ignoreRobotsTxt ?? false))),
+      ctx.ignoreRobotsTxt ?? sc.crawlerOptions?.ignoreRobotsTxt ?? false,
     regexOnFullURL: sc.crawlerOptions?.regexOnFullURL ?? false,
     maxDiscoveryDepth: sc.crawlerOptions?.maxDiscoveryDepth,
     currentDiscoveryDepth: crawlerOptions?.currentDiscoveryDepth ?? 0,
-    zeroDataRetention:
-      getScrapeZDR(teamFlags) === "forced" || ctx.zeroDataRetention,
-    usOnly: isUsOnly(ctx.flags) || isUsOnly(teamFlags),
+    zeroDataRetention: ctx.zeroDataRetention,
+    usOnly:
+      ctx.usOnly === true ||
+      ctx.flags?.usOnly === true ||
+      teamFlags?.usOnly === true,
     location: sc.scrapeOptions?.location,
     headers: sc.scrapeOptions?.headers,
-    robotsUserAgent: sc.crawlerOptions?.robotsUserAgent,
-    // Safe Mode lockdown: skip robots/sitemap discovery (outbound to target).
-    lockdown: crawlerSafeMode?.lockdown ?? false,
+    robotsUserAgent: ctx.robotsUserAgent ?? sc.crawlerOptions?.robotsUserAgent,
+    lockdown: ctx.lockdown ?? false,
   });
 
   if (sc.robots !== undefined) {

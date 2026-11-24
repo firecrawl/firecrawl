@@ -50,8 +50,6 @@ import {
   EngineUnsuccessfulError,
   ProxySelectionError,
   ScrapeRetryLimitError,
-  UsOnlyUnavailableError,
-  PaywalledContentError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
 import { executeTransformers } from "./transformers";
@@ -107,26 +105,12 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { type ExchangeScrapeMetadata } from "../../lib/exchange";
-import {
-  checkUrl,
-  type ThreatCheckDedup,
-  type ThreatDecision,
-  type ThreatProtectionPolicy,
+import type { ExchangeScrapeMetadata } from "../../lib/exchange";
+import type {
+  ThreatDecision,
+  ThreatProtectionPolicy,
 } from "../../lib/threat-protection";
-import {
-  type ResolvedSafeMode,
-  resolveSafeMode,
-  applySafeMode,
-  stripCredentialHeaders,
-  stripUrlUserinfo,
-  SAFE_MODE_LOGIN_ACTIONS,
-} from "../../lib/safe-mode";
-import { resolveThreatProtection } from "../../lib/threat-protection/request";
-import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
-import { isPaywalledByJsonLd } from "./lib/accessibleForFree";
-import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
-import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
+import type { ResolvedSafeMode } from "../../lib/safe-mode";
 import { requestContext } from "../../lib/request-context";
 import type { ScrapeState } from "../../service/hooks";
 import type { RequestContext } from "../../service/request-context";
@@ -1208,14 +1192,6 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     meta.winnerEngine = result.engine;
     let engineResult: EngineScrapeResult = result.result;
 
-    // Throws before the transformers, so a blocked page is never indexed.
-    if (
-      meta.internalOptions.safeMode?.respectPaywalls &&
-      isPaywalledByJsonLd(engineResult.html)
-    ) {
-      throw new PaywalledContentError();
-    }
-
     const hooks = scrapeHooks();
     if (hooks?.has("scrape.fetched")) {
       engineResult = await hooks.transform(
@@ -1309,81 +1285,13 @@ export async function scrapeURL(
   return withSpan(
     "scrape.pipeline",
     async span => {
-      // Safe Mode: the universal enforcement choke point. The controller
-      // pre-resolves safe mode for a single scrape, but jobs that carry only
-      // team flags (crawl children, search / extract URLs, allowlisted single
-      // scrapes) resolve here, per-URL, so the allowlist applies to each
-      // discovered URL. Runs before buildMetaObject so forced lockdown reaches
-      // feature-flag/engine selection, and covers every endpoint that stamps
-      // teamFlags onto its job payload.
-      if (
-        !internalOptions.safeMode &&
-        !internalOptions.safeModeBypassed &&
-        internalOptions.teamFlags
-      ) {
-        internalOptions.safeMode = resolveSafeMode(
-          internalOptions.teamFlags,
-          undefined,
-          url,
-        ).safeMode;
-      }
-      if (internalOptions.safeMode) {
-        applySafeMode(internalOptions.safeMode, options);
-        // Auth-path enforcement for every engine (not just fire-engine) and for
-        // inherited options a request-time gate never saw (crawl children etc.).
-        if (internalOptions.safeMode.disableAuthentication) {
-          options.headers = stripCredentialHeaders(options.headers);
-          if (options.actions) {
-            options.actions = options.actions.filter(
-              a => !SAFE_MODE_LOGIN_ACTIONS.includes(a.type),
-            );
-          }
-          (options as { profile?: unknown }).profile = undefined;
-          // Basic Auth embedded in the URL (user:pass@host) is another way to
-          // authenticate; strip the userinfo so no engine can use it, and from
-          // the preserved source URL so it isn't returned/persisted in metadata.
-          url = stripUrlUserinfo(url);
-          if (internalOptions.unnormalizedSourceURL) {
-            internalOptions.unnormalizedSourceURL = stripUrlUserinfo(
-              internalOptions.unnormalizedSourceURL,
-            );
-          }
-        }
-        if (
-          internalOptions.safeMode.domainControls &&
-          !internalOptions.threatProtection
-        ) {
-          const tp = await resolveThreatProtection({
-            teamId: internalOptions.teamId,
-            orgId: internalOptions.orgId,
-            flags: internalOptions.teamFlags ?? {},
-            force: true,
-          });
-          // Fail closed: domainControls must never silently disable itself.
-          if (tp.error) {
-            throw new Error(
-              `Safe Mode domain controls could not be resolved: ${tp.error}`,
-            );
-          }
-          internalOptions.threatProtection = tp.policy ?? undefined;
-        }
-      }
-
       // ZDR always verifies TLS, for every engine, even when the request asks
       // to skip verification.
-      if (internalOptions.zeroDataRetention) {
+      const zeroDataRetention =
+        internalOptions.ctx?.zeroDataRetention === true ||
+        internalOptions.zeroDataRetention === true;
+      if (zeroDataRetention) {
         options.skipTlsVerification = false;
-      }
-
-      const usOnlyLocationError = usOnlyLocationRefusal(
-        internalOptions.teamFlags ?? undefined,
-        options.location?.country,
-      );
-      if (usOnlyLocationError) {
-        return {
-          success: false,
-          error: new UsOnlyUnavailableError(usOnlyLocationError),
-        };
       }
 
       const meta = await buildMetaObject(
@@ -1402,7 +1310,7 @@ export async function scrapeURL(
         "scrape.url": url,
         "scrape.team_id": internalOptions.teamId,
         "scrape.crawl_id": internalOptions.crawlId,
-        "scrape.zero_data_retention": internalOptions.zeroDataRetention,
+        "scrape.zero_data_retention": zeroDataRetention,
         "scrape.force_engine": Array.isArray(internalOptions.forceEngine)
           ? internalOptions.forceEngine.join(",")
           : internalOptions.forceEngine,
@@ -1411,6 +1319,7 @@ export async function scrapeURL(
 
       meta.logger.info("scrapeURL entered");
 
+      let checkRobotsOverride: boolean | undefined;
       const hooks = scrapeHooks();
       if (hooks?.has("scrape.start")) {
         try {
@@ -1426,12 +1335,24 @@ export async function scrapeURL(
             toScrapeMeta(meta),
           );
           meta.abort.throwIfAborted();
+          if (plan.url && plan.url !== meta.url) {
+            meta.url = plan.url;
+            meta.rewrittenUrl = rewriteUrl(plan.url);
+          }
+          if (plan.unnormalizedSourceURL !== undefined) {
+            meta.internalOptions.unnormalizedSourceURL =
+              plan.unnormalizedSourceURL;
+          }
+          if (plan.checkRobots !== undefined) {
+            checkRobotsOverride = plan.checkRobots;
+          }
           meta.options = {
             ...plan.options,
-            skipTlsVerification: internalOptions.zeroDataRetention
-              ? false
-              : (plan.options.skipTlsVerification ??
-                meta.options.skipTlsVerification),
+            skipTlsVerification:
+              meta.ctx.zeroDataRetention || internalOptions.zeroDataRetention
+                ? false
+                : (plan.options.skipTlsVerification ??
+                  meta.options.skipTlsVerification),
           };
           if (meta.options.timeout !== previousTimeout) {
             if (meta.abortHandle !== undefined) {
@@ -1482,40 +1403,6 @@ export async function scrapeURL(
         }
       }
 
-      // Threat protection: check the target URL BEFORE any engine selection
-      // or outbound fetch. The policy is resolved at the controller layer and
-      // threaded through internalOptions; absent policy = zero overhead.
-      // The dedup map is scoped to this one scrape: the initial check and any
-      // redirect re-check on the same URL share a single scan (one fee); a
-      // redirect to a different URL is a second scan and bills a second fee
-      // (see calculateThreatScanCredits).
-      const threatPolicy = internalOptions.threatProtection;
-      const threatDedup: ThreatCheckDedup = new Map();
-      if (threatPolicy && threatPolicy.mode !== "off") {
-        const initialUrl = meta.rewrittenUrl ?? meta.url;
-        const decision = await checkUrl(initialUrl, threatPolicy, {
-          teamId: internalOptions.teamId,
-          dedup: threatDedup,
-        });
-        meta.threatDecisions.push(decision);
-        if (!decision.allowed) {
-          meta.logger.info("URL blocked by threat protection policy", {
-            url: initialUrl,
-            domain: decision.domain,
-            rule: decision.rule,
-          });
-          setSpanAttributes(span, {
-            "scrape.blocked_by_threat_protection": true,
-          });
-          return {
-            success: false,
-            error: new UnsafeDomainBlockedError(initialUrl, decision),
-            threatDecisions: meta.threatDecisions,
-            state: meta.state,
-          };
-        }
-      }
-
       if (meta.rewrittenUrl) {
         meta.logger.info("Rewriting URL");
         setSpanAttributes(span, {
@@ -1529,12 +1416,7 @@ export async function scrapeURL(
         });
       }
 
-      if (
-        shouldCheckRobots(
-          meta.options as { lockdown?: boolean },
-          internalOptions,
-        )
-      ) {
+      if (checkRobotsOverride ?? shouldCheckRobots(meta.options, meta.ctx)) {
         const result = await withSpan(
           "scrape.robots_check",
           async robotsSpan => {
@@ -1561,9 +1443,8 @@ export async function scrapeURL(
                   const { content } = await fetchRobotsTxt(
                     {
                       url: urlToCheck,
-                      zeroDataRetention:
-                        internalOptions.zeroDataRetention || false,
-                      usOnly: isUsOnly(internalOptions.teamFlags ?? undefined),
+                      zeroDataRetention: meta.ctx.zeroDataRetention,
+                      usOnly: meta.ctx.usOnly === true,
                       location: meta.options.location,
                       skipTlsVerification: meta.options.skipTlsVerification,
                     },
@@ -1578,6 +1459,9 @@ export async function scrapeURL(
                 const isAllowed = isUrlAllowedByRobots(
                   urlToCheck,
                   checker.robots,
+                  meta.ctx.robotsUserAgent
+                    ? [meta.ctx.robotsUserAgent]
+                    : undefined,
                 );
 
                 setSpanAttributes(robotsSpan, {
@@ -1830,40 +1714,6 @@ export async function scrapeURL(
           result.document.warning = result.document.warning
             ? `${result.document.warning} ${warning}`
             : warning;
-        }
-
-        // Threat protection: if the scrape ended up on a different URL than
-        // requested (redirect), re-check the destination URL. This closes the
-        // "clean URL redirects to a blocked URL" bypass vector — including
-        // same-domain redirects onto a flagged path.
-        if (threatPolicy && threatPolicy.mode !== "off" && result.success) {
-          const initialUrl = meta.rewrittenUrl ?? meta.url;
-          const finalUrl = result.document.metadata.url;
-          if (
-            finalUrl &&
-            canonicalizeUrl(finalUrl) !== canonicalizeUrl(initialUrl)
-          ) {
-            const decision = await checkUrl(finalUrl, threatPolicy, {
-              teamId: internalOptions.teamId,
-              dedup: threatDedup,
-            });
-            meta.threatDecisions.push(decision);
-            if (!decision.allowed) {
-              meta.logger.info(
-                "Redirect destination blocked by threat protection policy",
-                {
-                  url: finalUrl,
-                  domain: decision.domain,
-                  initialUrl,
-                  rule: decision.rule,
-                },
-              );
-              setSpanAttributes(span, {
-                "scrape.blocked_by_threat_protection": true,
-              });
-              throw new UnsafeDomainBlockedError(finalUrl, decision);
-            }
-          }
         }
 
         meta.logger.debug("scrapeURL metrics", {

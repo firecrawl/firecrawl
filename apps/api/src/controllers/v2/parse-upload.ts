@@ -10,7 +10,6 @@ import { getRedisConnection } from "../../services/queue-service";
 import { RequestWithAuth, UploadedParseFile } from "./types";
 import { detectUploadedFileKind, getSupportedParseFileTypes } from "./parse";
 import { isImageOcrEnabled } from "../../lib/image-ocr-gate";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { reportPipelineError } from "../../lib/redis-pipeline";
 import { service, type StoredUploadRef } from "../../service";
 
@@ -342,7 +341,7 @@ export async function parseUploadUrlController(
         },
       });
     },
-    { zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced" },
+    { zeroDataRetention: req.ctx?.zeroDataRetention === true },
   );
 }
 
