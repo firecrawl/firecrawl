@@ -101,6 +101,7 @@ describe("createService", () => {
     expect(Object.isFrozen(built.engines)).toBe(true);
     expect(Object.isFrozen(built.searchProviders)).toBe(true);
     expect(Object.isFrozen(built.llmProviders)).toBe(true);
+    expect(Object.isFrozen(built.schemas)).toBe(true);
     expect(Object.isFrozen(built.roles)).toBe(true);
     expect(Object.isFrozen(built.workers)).toBe(true);
   });
@@ -425,6 +426,16 @@ describe("describe", () => {
         zebra: { owner: "second", priority: 80 },
       },
       llmProviders: { alpha: "core", openai: "second", zebra: "second" },
+      request: {
+        scrapeOptions: {},
+        scrape: {},
+        parse: {},
+        crawl: {},
+        map: {},
+        search: {},
+        formats: {},
+        rules: [],
+      },
       routes: [],
       roles: { api: "second", "queue-worker": "core", zebra: "second" },
       env: {},
@@ -546,6 +557,16 @@ describe("describe", () => {
       engineFeatures: { mineFlag: { owner: "mine", priority: 40 } },
       searchProviders: { "mine-search": { owner: "mine", priority: 60 } },
       llmProviders: { "mine-provider": "mine" },
+      request: {
+        scrapeOptions: {},
+        scrape: {},
+        parse: {},
+        crawl: {},
+        map: {},
+        search: {},
+        formats: {},
+        rules: [],
+      },
       routes: [],
       roles: { api: "mine" },
       env: {},
@@ -628,6 +649,9 @@ describe("describe", () => {
     first.engineFeatures.waitFor.priority = 999;
     first.searchProviders.searxng.priority = 999;
     first.llmProviders.openai = "changed";
+    first.request.scrapeOptions.injected = "changed";
+    first.request.formats.injected = "changed";
+    first.request.rules.push("changed");
     first.roles.api = "changed";
 
     expect(built.describe()).toEqual({
@@ -639,6 +663,16 @@ describe("describe", () => {
       engineFeatures: { waitFor: { owner: "core", priority: 1 } },
       searchProviders: { searxng: { owner: "core", priority: 50 } },
       llmProviders: { openai: "core" },
+      request: {
+        scrapeOptions: {},
+        scrape: {},
+        parse: {},
+        crawl: {},
+        map: {},
+        search: {},
+        formats: {},
+        rules: [],
+      },
       routes: [],
       roles: { api: "core" },
       env: {},
@@ -654,6 +688,7 @@ describe("service", () => {
     expect(() => service.engines).toThrow("No service is installed");
     expect(() => service.searchProviders).toThrow("No service is installed");
     expect(() => service.llmProviders).toThrow("No service is installed");
+    expect(() => service.schemas).toThrow("No service is installed");
     expect(() => service.roles).toThrow("No service is installed");
     expect(() => service.workers).toThrow("No service is installed");
     expect(() =>
@@ -680,6 +715,7 @@ describe("service", () => {
     expect(service.engines).toBe(built.engines);
     expect(service.searchProviders).toBe(built.searchProviders);
     expect(service.llmProviders).toBe(built.llmProviders);
+    expect(service.schemas).toBe(built.schemas);
     expect(service.roles).toBe(built.roles);
     expect(service.workers).toBe(built.workers);
     const routers = {

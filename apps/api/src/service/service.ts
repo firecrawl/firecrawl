@@ -20,6 +20,13 @@ import {
 } from "./llm-providers";
 import { freezeModules, type Modules } from "./modules";
 import {
+  buildRequestSchemaRegistry,
+  type DescribedRequestSchemas,
+  type RequestContributions,
+  type RequestSchemaBuilder,
+  type RequestSchemas,
+} from "./request";
+import {
   buildRouteRegistry,
   type DescribedRoute,
   type RouteRegistrar,
@@ -84,6 +91,11 @@ export interface Extension {
    */
   llmProviders?: readonly LlmProvider[];
   /**
+   * Request-schema fields, formats, and cross-field scrape-option rules
+   * contributed by this extension.
+   */
+  request?: RequestContributions;
+  /**
    * Express routes contributed by this extension. Non-core extensions mount
    * before core's routes so a contributed route can answer first or call
    * `next()`.
@@ -106,6 +118,8 @@ export interface CoreParts {
   core: Extension;
   /** Where the service reports a failure it does not pass on to a caller. */
   logger: { error(message: string, meta: Record<string, unknown>): void };
+  /** Builds compiled request schemas lazily on first `service.schemas` access. */
+  buildRequestSchemas?: RequestSchemaBuilder;
 }
 
 /** What a service is made of, as plain data that can be compared between builds. */
@@ -126,6 +140,8 @@ export interface ServiceDescription {
   searchProviders: Record<string, DescribedSearchProvider>;
   /** For each registered LLM provider, the extension it comes from. */
   llmProviders: Record<string, string>;
+  /** Contributed request fields, formats, and rules, by owner. */
+  request: DescribedRequestSchemas;
   /** Express routes registered by extensions, in mount order. */
   routes: DescribedRoute[];
   /** For each process role, the extension it comes from. */
@@ -150,6 +166,7 @@ export interface Service {
   readonly engines: EngineRegistry;
   readonly searchProviders: SearchProviderRegistry;
   readonly llmProviders: LlmProviderRegistry;
+  readonly schemas: RequestSchemas;
   readonly roles: RoleRegistry;
   readonly workers: Readonly<Record<string, Worker>>;
   /** Mounts every extension's Express routes onto `routers` in mount order. */
@@ -260,6 +277,14 @@ export function createService(
       })),
     );
 
+  const { schemas, describedRequest } = buildRequestSchemaRegistry(
+    extensions.map(extension => ({
+      owner: extension.name,
+      request: extension.request,
+    })),
+    parts.buildRequestSchemas,
+  );
+
   // Snapshot extension names and error sources at creation so mutating an
   // extension later cannot change what loads or is described, while keeping
   // lazy error loaders deferred until first lookup.
@@ -303,6 +328,7 @@ export function createService(
     engineFeatures: describedFeatures,
     searchProviders: describedSearchProviders,
     llmProviders: describedLlmProviders,
+    request: describedRequest,
     roles: describedRoles,
   };
 
@@ -315,6 +341,7 @@ export function createService(
     engines,
     searchProviders,
     llmProviders,
+    schemas,
     roles,
     workers,
     mountRoutes,
@@ -333,6 +360,7 @@ export function createService(
         engineFeatures: copy.engineFeatures,
         searchProviders: copy.searchProviders,
         llmProviders: copy.llmProviders,
+        request: copy.request,
         routes: describeRoutes(),
         roles: copy.roles,
         env: sortedByKey(describeEnv()),
@@ -386,6 +414,9 @@ export const service: Service = {
   get llmProviders() {
     return current().llmProviders;
   },
+  get schemas() {
+    return current().schemas;
+  },
   get roles() {
     return current().roles;
   },
@@ -407,6 +438,12 @@ export function replaceService(next: Service | undefined): Service | undefined {
   return previous;
 }
 
+/** Optional execution controls for `run()`. */
+export interface RunOptions {
+  /** Abort signal forwarded to the worker's `run()` environment. */
+  signal?: AbortSignal;
+}
+
 /**
  * Starts one process role: checks the environment of every owner defined so
  * far, installs the service, then runs the role. The returned promise settles
@@ -421,12 +458,6 @@ export function replaceService(next: Service | undefined): Service | undefined {
  * rejection, so a process that cannot start fails the way a main module that
  * throws does.
  */
-/** Optional execution controls for `run()`. */
-export interface RunOptions {
-  /** Abort signal forwarded to the worker's `run()` environment. */
-  signal?: AbortSignal;
-}
-
 export function run(
   next: Service,
   role: string,

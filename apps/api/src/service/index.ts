@@ -1,4 +1,4 @@
-export type { Document, ScrapeOptions } from "../controllers/v2/types";
+export type { Document } from "../controllers/v2/types";
 export type {
   ErrorCode,
   ErrorCodes,
@@ -100,13 +100,46 @@ export type {
   Caller,
   RequestContext,
 } from "./request-context";
-export { coreSearchProviderNames } from "./search-providers";
+export {
+  buildRequestSchemas,
+  hasFormatOfType,
+  requestFieldBuckets,
+  requestKinds,
+} from "./request";
+export type {
+  CrawlRequest,
+  CrawlRequestFields,
+  DescribedRequestSchemas,
+  FieldSchemas,
+  Format,
+  FormatName,
+  Formats,
+  FormatSchemas,
+  MapRequest,
+  MapRequestFields,
+  ParseRequest,
+  ParseRequestFields,
+  RequestContributions,
+  RequestFieldBucket,
+  RequestSchemaBuilder,
+  RequestSchemas,
+  ResolvedRequestContributions,
+  ScrapeOptions,
+  ScrapeOptionsFields,
+  ScrapeOptionsRule,
+  ScrapeOptionsRuleResult,
+  ScrapeRequest,
+  ScrapeRequestFields,
+  SearchRequest,
+  SearchRequestFields,
+} from "./request";
 export type {
   DescribedRoute,
   RouteRegistrar,
   RouterName,
   Routers,
 } from "./routes";
+export { coreSearchProviderNames } from "./search-providers";
 export type {
   CoreSearchProviderSpec,
   DescribedSearchProvider,
