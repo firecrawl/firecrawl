@@ -23,7 +23,7 @@ import {
 } from "./llmExtract";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { coreLlmProviders } from "../../../lib/generic-ai";
-import { modelPrices } from "../../../lib/extract/usage/model-prices";
+import { modelPrices } from "../../../lib/model-prices";
 import { createService, replaceService } from "../../../service/service";
 
 const noopLogger = {
