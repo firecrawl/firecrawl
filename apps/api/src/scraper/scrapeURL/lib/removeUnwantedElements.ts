@@ -66,7 +66,7 @@ const emptyNonMainFrames = [
 const forceIncludeMainTags = [
   "#main",
   "#article-body",
-  '[itemprop="articleBody"]',
+  '[itemprop~="articleBody"]',
   ".swoogo-cols",
   ".swoogo-text",
   ".swoogo-table-div",
