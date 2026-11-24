@@ -52,6 +52,7 @@ export function bountyBlocklistMiddleware(
       zeroDataRetention:
         isAlexandriaZDRForced(request.acuc?.flags) ||
         isLockdownZeroDataRetention(request.acuc?.flags, undefined),
+      // Omit team flags so team unblockedDomains cannot permit public bounties.
       flags: null,
       orgId: request.acuc?.org_id ?? null,
     });

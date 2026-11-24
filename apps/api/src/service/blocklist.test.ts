@@ -1,16 +1,26 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const startupMocks = vi.hoisted(() => ({
+  initializeEngineForcing: vi.fn(),
+  warmExchangeCatalog: vi.fn(),
+}));
+
+vi.mock("../scraper/WebScraper/utils/engine-forcing", () => ({
+  initializeEngineForcing: startupMocks.initializeEngineForcing,
+}));
+
+vi.mock("../lib/exchange", () => ({
+  warmExchangeCatalog: startupMocks.warmExchangeCatalog,
+}));
+
+import { initializeApiStartupDependencies } from "../lib/api-startup";
+import { logger } from "../lib/logger";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
 import { bountyBlocklistMiddleware } from "../routes/exchange-blocklist";
 import { blocklistMiddleware } from "../routes/shared";
 import { defaultModules, noBlocklist } from "./defaults";
 import type { BlocklistModule } from "./modules";
-import {
-  createService,
-  replaceService,
-  run,
-  service,
-  type CoreParts,
-} from "./service";
+import { createService, replaceService, run, type CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
 const parts: CoreParts = {
@@ -18,8 +28,13 @@ const parts: CoreParts = {
   logger: { error: vi.fn() },
 };
 
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
 afterEach(() => {
   replaceService(undefined);
+  vi.restoreAllMocks();
 });
 
 function runBlocklistMiddleware(
@@ -231,8 +246,15 @@ describe("blocklist module integration", () => {
     );
   });
 
-  it("propagates startup blocklist.init() resolution and rejection through run()", async () => {
+  it("awaits blocklist.init() in initializeApiStartupDependencies() before starting other API dependencies", async () => {
     const order: string[] = [];
+    startupMocks.initializeEngineForcing.mockImplementation(() => {
+      order.push("engine-forcing");
+    });
+    startupMocks.warmExchangeCatalog.mockImplementation(() => {
+      order.push("exchange-catalog");
+    });
+
     const okService = createService(
       {
         modules: {
@@ -251,10 +273,7 @@ describe("blocklist module integration", () => {
           name: "core",
           workers: {
             api: {
-              async run() {
-                await service.modules.blocklist.init();
-                order.push("role:ready");
-              },
+              run: initializeApiStartupDependencies,
             },
           },
         },
@@ -265,17 +284,27 @@ describe("blocklist module integration", () => {
     await expect(
       run(okService, "api", "/app/main.js"),
     ).resolves.toBeUndefined();
-    expect(order).toEqual(["init:start", "init:done", "role:ready"]);
+    expect(order).toEqual([
+      "init:start",
+      "init:done",
+      "engine-forcing",
+      "exchange-catalog",
+    ]);
 
     replaceService(undefined);
+    vi.clearAllMocks();
 
+    const loggerErrorSpy = vi
+      .spyOn(logger, "error")
+      .mockImplementation(() => logger);
+    const initError = new Error("blocklist failed to load");
     const failingService = createService(
       {
         modules: {
           blocklist: {
             ...noBlocklist(),
             async init() {
-              throw new Error("blocklist failed to load");
+              throw initError;
             },
           },
         },
@@ -285,9 +314,7 @@ describe("blocklist module integration", () => {
           name: "core",
           workers: {
             api: {
-              async run() {
-                await service.modules.blocklist.init();
-              },
+              run: initializeApiStartupDependencies,
             },
           },
         },
@@ -298,5 +325,11 @@ describe("blocklist module integration", () => {
     await expect(run(failingService, "api", "/app/main.js")).rejects.toThrow(
       "blocklist failed to load",
     );
+    expect(loggerErrorSpy).toHaveBeenCalledWith(
+      "Failed to initialize API startup dependencies",
+      { error: initError },
+    );
+    expect(startupMocks.initializeEngineForcing).not.toHaveBeenCalled();
+    expect(startupMocks.warmExchangeCatalog).not.toHaveBeenCalled();
   });
 });

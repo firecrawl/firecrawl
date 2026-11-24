@@ -243,6 +243,7 @@ export async function calculateCreditsToBeBilled(
     document.metadata?.sourceURL,
   ].filter((u): u is string => !!u);
   if (exchangeCredits === null && urlsToCheck.length > 0) {
+    // Check global rules only (orgId: null) so org-scoped rules do not trigger the surcharge.
     const globalCtx = requestContext({
       teamId: "",
       zeroDataRetention: true,

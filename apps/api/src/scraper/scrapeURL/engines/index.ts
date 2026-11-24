@@ -319,7 +319,7 @@ export async function buildFallbackList(meta: Meta): Promise<
         requestContext({
           teamId: meta.internalOptions.teamId ?? "",
           zeroDataRetention: meta.internalOptions.zeroDataRetention ?? false,
-          flags: meta.internalOptions.teamFlags ?? null,
+          flags: meta.internalOptions.teamFlags,
           orgId: meta.internalOptions.orgId ?? null,
         }),
         {
