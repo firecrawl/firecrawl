@@ -33,7 +33,6 @@ import {
   CategoryOption,
 } from "../lib/search-query-builder";
 import { ScrapeOptions, TeamFlags } from "../controllers/v2/types";
-import type { SearchRequest } from "../service/request";
 import {
   getItemsToScrape,
   scrapeSearchResults,
@@ -72,6 +71,7 @@ import { isAlexandriaZDRForced } from "../lib/zdr-helpers";
 import { alexandriaFeedbackStorage } from "../lib/alexandria-feedback-storage";
 import { requestContext } from "../lib/request-context";
 import type { SearchHit } from "../service/hooks";
+import type { SearchRequest } from "../service/request";
 import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
 import { applySearchPlanHook } from "./plan-hook";
@@ -237,7 +237,7 @@ function buildSearchRequestFallback(
     highlights: options.highlights,
     domainTools: options.domainTools,
     toolDetail: options.toolDetail ?? "compact",
-    scrapeOptions: options.scrapeOptions as SearchRequest["scrapeOptions"],
+    scrapeOptions: options.scrapeOptions,
   };
 }
 
