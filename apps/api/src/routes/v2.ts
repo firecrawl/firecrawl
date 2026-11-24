@@ -1,21 +1,10 @@
 import express from "express";
 import multer from "multer";
-import { config } from "../config";
 import { RateLimiterMode } from "../types";
-import { registerMcpActionLogReadRoute } from "./mcp-action-logs";
-import { createFreshFeedRouter } from "./fresh-feed";
-import {
-  getFreshFeedUpstreams,
-  hasFreshFeedUpstreams,
-} from "../lib/fresh-feed";
 import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
 import { searchController } from "../controllers/v2/search";
 import { scrapeController } from "../controllers/v2/scrape";
-import {
-  alexandriaQueryBody,
-  providerScrapeController,
-} from "../controllers/v2/scrape-alexandria";
 import {
   parseController,
   parseMultipartPayloadMiddleware,
@@ -27,7 +16,6 @@ import {
   parseUploadUrlController,
 } from "../controllers/v2/parse-upload";
 import { parseFormatsController } from "../controllers/v2/parse-formats";
-import { configuredComputerSessionFiles } from "../controllers/v2/computer-session-files";
 import { batchScrapeController } from "../controllers/v2/batch-scrape";
 import { crawlController } from "../controllers/v2/crawl";
 import { crawlParamsPreviewController } from "../controllers/v2/crawl-params-preview";
@@ -53,14 +41,6 @@ import {
   inferIntegrationMiddleware,
 } from "./shared";
 import { queueStatusController } from "../controllers/v2/queue-status";
-import { removedEndpointHandler } from "../lib/deprecations";
-import { isResearchKeylessDisabled } from "../lib/research-keyless";
-import { supportProxyController } from "../controllers/v2/support-proxy";
-import {
-  createDeveloperRouter,
-  createGovRouter,
-  createResearchRouter,
-} from "../controllers/v2/research-proxy";
 
 // Every v2 route opts in to hosted MCP rate-limit minimums; /v1 routes do not.
 const authMiddleware: typeof sharedAuthMiddleware = (mode, options = {}) =>
@@ -126,11 +106,6 @@ const parsePayloadMiddleware: express.RequestHandler = (req, res, next) => {
 // Add timing middleware to all v2 routes
 v2Router.use(requestTimingMiddleware("v2"));
 
-registerMcpActionLogReadRoute(
-  v2Router,
-  authMiddleware(RateLimiterMode.Account),
-);
-
 v2Router.post(
   "/search",
   authMiddleware(RateLimiterMode.Search, {
@@ -166,33 +141,6 @@ v2Router.put(
   wrap(parseLocalUploadController),
 );
 
-// Files of hosted MCP shell sessions. Registered only on a deployment that
-// configures them, so the paths otherwise answer like an unknown route.
-const computerSessionFiles = configuredComputerSessionFiles();
-if (computerSessionFiles) {
-  v2Router.post(
-    "/computer/sessions",
-    authMiddleware(RateLimiterMode.Account),
-    wrap(computerSessionFiles.createSession),
-  );
-  v2Router.put(
-    "/computer/sessions/:sessionId/workspace",
-    authMiddleware(RateLimiterMode.Account),
-    wrap(computerSessionFiles.saveWorkspace),
-  );
-  v2Router.get(
-    "/computer/sessions/:sessionId/workspace",
-    authMiddleware(RateLimiterMode.Account),
-    wrap(computerSessionFiles.readWorkspace),
-  );
-  v2Router.post(
-    "/computer/sessions/:sessionId/links",
-    authMiddleware(RateLimiterMode.Account),
-    wrap(computerSessionFiles.createLink),
-  );
-  v2Router.get("/computer/links/:token", wrap(computerSessionFiles.openLink));
-}
-
 v2Router.post(
   "/parse",
   authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
@@ -214,25 +162,6 @@ v2Router.post(
   checkCreditsMiddleware(1, undefined, { mcpCredits: true }),
   scrapeBlocklistMiddleware,
   wrap(scrapeController),
-);
-
-// The provider call as the body: { provider, capability, options }.
-v2Router.post(
-  "/alexandria",
-  authMiddleware(RateLimiterMode.Exchange, { allowAgentManagedKey: true }),
-  inferIntegrationMiddleware,
-  wrap((req, res) => providerScrapeController(req as any, res, true)),
-);
-
-// The whole call in the URL: the capability in the path, its options in the query string.
-v2Router.get(
-  "/alexandria/:provider/*capability",
-  authMiddleware(RateLimiterMode.Exchange, { allowAgentManagedKey: true }),
-  (req, res, next) => {
-    alexandriaQueryBody(req, res, next).catch(next);
-  },
-  inferIntegrationMiddleware,
-  wrap((req, res) => providerScrapeController(req as any, res, true)),
 );
 
 v2Router.get(
@@ -359,69 +288,3 @@ v2Router.get(
   authMiddleware(RateLimiterMode.Account),
   wrap(queueStatusController),
 );
-
-// Support agent proxy — forwards to the support-agent service.
-v2Router.post(
-  "/support/ask",
-  authMiddleware(RateLimiterMode.SupportAsk),
-  wrap(supportProxyController),
-);
-v2Router.post(
-  "/support/docs-search",
-  authMiddleware(RateLimiterMode.SupportAsk),
-  wrap(supportProxyController),
-);
-
-// Outside the research proxy check so the 410 outlives the backend, and ahead of the research mounts' auth.
-v2Router.get(
-  ["/search/research/github", "/research/github"],
-  removedEndpointHandler("v2_research_github_search"),
-);
-
-if (config.RESEARCH_PROXY_URL) {
-  v2Router.use(
-    "/search/research",
-    authMiddleware(RateLimiterMode.Research, {
-      allowKeyless: req => !isResearchKeylessDisabled(req),
-    }),
-    createResearchRouter(),
-  );
-
-  v2Router.use(
-    "/research",
-    authMiddleware(RateLimiterMode.Research),
-    createResearchRouter({ legacy: true }),
-  );
-
-  // Canonical: developer search is a subset of search, so it lives under it.
-  v2Router.use(
-    "/search/developer",
-    authMiddleware(RateLimiterMode.DeveloperSearch, { allowKeyless: true }),
-    createDeveloperRouter({ root: true }),
-  );
-
-  // Compatibility only: the pre-GA path. Published CLI and MCP builds still
-  // call it. Delete once those ship on /search/developer. Not documented.
-  v2Router.use(
-    "/developer",
-    authMiddleware(RateLimiterMode.DeveloperSearch),
-    createDeveloperRouter(),
-  );
-
-  v2Router.use(
-    "/search/gov",
-    authMiddleware(RateLimiterMode.GovSearch, {
-      allowKeyless: true,
-    }),
-    createGovRouter(),
-  );
-}
-
-const freshFeedUpstreams = getFreshFeedUpstreams(config);
-if (hasFreshFeedUpstreams(freshFeedUpstreams)) {
-  v2Router.use(
-    "/fresh-vertical-feed",
-    authMiddleware(RateLimiterMode.FreshFeed),
-    createFreshFeedRouter(freshFeedUpstreams),
-  );
-}

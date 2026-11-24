@@ -1,5 +1,13 @@
 import type { Action } from "../controllers/v2/types";
-import type { SkillCard } from "../search/skill-cards";
+
+export type SkillCard = {
+  id: string;
+  name: string;
+  description: string;
+  source: "official" | "provider";
+  provider?: string;
+  similarity?: number;
+};
 
 export type PageOptions = {
   includeMarkdown?: boolean;

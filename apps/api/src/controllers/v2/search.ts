@@ -4,13 +4,8 @@ import { config } from "../../config";
 import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import { getV2RequestSchemas, RequestWithAuth, SearchResponse } from "./types";
 import type { SearchRequest } from "../../service/request";
-import { keylessProviderToolsBody } from "../../lib/keyless";
 import { v7 as uuidv7 } from "uuid";
-import {
-  logSearch,
-  logRequest,
-  logResearchEndpoint,
-} from "../../services/logging/log_job";
+import { logSearch, logRequest } from "../../services/logging/log_job";
 import { trackSearchRequest } from "../../lib/tracking";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
@@ -18,15 +13,11 @@ import { service, type SettleOutcome } from "../../service";
 import { logger as _logger } from "../../lib/logger";
 import { getErrorHttpResponse, ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
-import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
+import { CategoryOption } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
 import { applySearchPlanHook } from "../../search/plan-hook";
 import type { BillingMetadata } from "../../services/billing/types";
-import {
-  getSearchForcedKind,
-  getSearchZDR,
-  isAlexandriaZDRForced,
-} from "../../lib/zdr-helpers";
+import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
 import { teamPlanClass } from "../../lib/team-plan-class";
 import {
   withSpan,
@@ -35,12 +26,7 @@ import {
   SpanKind,
   type Span,
 } from "../../lib/otel-tracer";
-import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
-import {
-  isFreeCatalogueSearch,
-  isToolsOnlySearch,
-} from "../../search/alexandria";
 import {
   resolveSafeMode,
   isLockdownZeroDataRetention,
@@ -49,36 +35,15 @@ import {
 import { checkPermissions, ipWhitelistRefusal } from "../../lib/permissions";
 import {
   actionTypesOf,
-  checkKeyEndpointRestriction,
   checkKeyFormatRestriction,
   formatTypesOf,
 } from "../../lib/key-restriction";
-import { wantsDeveloperCategory } from "../../search/developer";
-import { wantsGovCategory } from "../../search/gov";
-import {
-  consumeIndexRateLimit,
-  indexDailyLimitRefusal,
-  reserveIndexCalls,
-} from "../../lib/index-daily-limit";
-import { requestOrigin } from "../../lib/request-origin";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
-import { markAlexandriaActivity } from "../../lib/alexandria-activity";
-import { recordDiscoveredTools } from "../../lib/alexandria-discovery";
-import { lineageIds } from "../../lib/feedback-trace";
-import {
-  autoToolsEnabled,
-  queryInferenceEnabled,
-  toolFusionEnabled,
-} from "../../search/tool-intent";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
-import { isSelfHosted } from "../../lib/deployment";
 import { installedService } from "../../service/service";
 
 const IMAGE_SEARCH_US_ONLY_MESSAGE =
   "Image search is not available for teams restricted to US-only processing.";
-
-const GITHUB_CATEGORY_REMOVED =
-  "The 'github' search category was removed. To search GitHub issues, pull requests and READMEs, send the 'developer' category on its own (it can't be combined with other categories), or call GET or POST /v2/search/developer (https://docs.firecrawl.dev/features/developer). To keep web results from github.com, use includeDomains: [\"github.com\"].";
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
@@ -173,67 +138,10 @@ async function searchControllerInner(
   };
 
   try {
-    const rawOrigin =
-      typeof req.body?.origin === "string" ? req.body.origin : undefined;
-    const headerOrigin = req.headers["x-origin"];
-    // A team held to Alexandria zero data retention names no session or conversation.
-    const lineage = isAlexandriaZDRForced(req.acuc?.flags ?? undefined)
-      ? {}
-      : lineageIds(req);
     const rawBody = req.body as unknown as Record<string, unknown> | undefined;
     delete rawBody?.objective;
     delete rawBody?.clientModel;
-    if (hasCategory(req.body?.categories, "github")) {
-      logger.warn("Removed search category requested", {
-        module: "deprecations",
-        category: "github",
-        origin: requestOrigin({ origin: rawOrigin }, req),
-      });
-      return res.status(400).json({
-        success: false,
-        code: "CATEGORY_REMOVED",
-        error: GITHUB_CATEGORY_REMOVED,
-        replacement: "developer",
-        documentation_url: "https://docs.firecrawl.dev/features/developer",
-      });
-    }
-    const sourcesOmitted = rawBody?.sources === undefined;
     req.body = getV2RequestSchemas().search.parse(req.body);
-
-    const wantsTools = (req.body.sources as Array<{ type: string }>).some(
-      source => source.type === "alexandria",
-    );
-    const wantsSkills = (req.body.sources as Array<{ type: string }>).some(
-      source => source.type === "skills",
-    );
-    if (
-      (wantsTools || wantsSkills || extBody().domainTools) &&
-      req.auth.team_id.startsWith("preview_keyless_")
-    ) {
-      applyAgentAuthDiscoveryHeader(res);
-      return res
-        .status(403)
-        .json(keylessProviderToolsBody(req.auth.team_id, req));
-    }
-    if ((wantsTools || wantsSkills) && !req.body.query.trim())
-      return res.status(400).json({
-        success: false,
-        error: wantsTools
-          ? "A query is required for tool search."
-          : "A query is required for skill search.",
-      });
-    if (
-      (wantsTools || wantsSkills || extBody().domainTools) &&
-      (teamForcedKind ||
-        (
-          extBody().enterprise as ("default" | "anon" | "zdr")[] | undefined
-        )?.some(mode => mode === "zdr" || mode === "anon"))
-    )
-      return res.status(403).json({
-        success: false,
-        error:
-          "Provider discovery requires access and does not support zero data retention.",
-      });
 
     const requestedFormats = formatTypesOf(req.body.scrapeOptions?.formats);
     const keyRestriction = await checkKeyFormatRestriction(
@@ -254,30 +162,6 @@ async function searchControllerInner(
     }
 
     const categories = req.body.categories as CategoryOption[];
-    // Index categories reach the same upstream as their dedicated endpoint, so
-    // they share its key restriction and its request ledger.
-    const indexCategory = wantsDeveloperCategory(categories)
-      ? { endpoint: "/v2/developer/search", table: "code_searches" as const }
-      : wantsGovCategory(categories)
-        ? {
-            endpoint: "/v2/search/gov",
-            table: "gov_searches" as const,
-          }
-        : null;
-
-    if (indexCategory) {
-      const indexRestriction = await checkKeyEndpointRestriction(
-        indexCategory.endpoint,
-        req.acuc?.api_key_id,
-        req.acuc?.flags ?? null,
-      );
-      if (!indexRestriction.allowed) {
-        return res.status(indexRestriction.status).json({
-          success: false,
-          error: indexRestriction.error,
-        });
-      }
-    }
 
     if (
       extBody().__agentInterop &&
@@ -306,7 +190,7 @@ async function searchControllerInner(
       req.body.sources = sources.filter(
         source => source.type !== "images",
       ) as SearchRequest["sources"];
-      if (req.body.sources.length === 0 && !indexCategory) {
+      if (req.body.sources.length === 0) {
         return res.status(403).json({
           success: false,
           code: "US_ONLY_UNAVAILABLE",
@@ -529,42 +413,6 @@ async function searchControllerInner(
         };
 
     if (planHooks?.has("search.plan")) {
-      const plannedWantsTools = planned.sources.some(
-        source => source.type === "alexandria",
-      );
-      const plannedWantsSkills = planned.sources.some(
-        source => source.type === "skills",
-      );
-      if (
-        (plannedWantsTools || plannedWantsSkills) &&
-        req.auth.team_id.startsWith("preview_keyless_")
-      ) {
-        applyAgentAuthDiscoveryHeader(res);
-        return res
-          .status(403)
-          .json(keylessProviderToolsBody(req.auth.team_id, req));
-      }
-      if ((plannedWantsTools || plannedWantsSkills) && !planned.query.trim()) {
-        return res.status(400).json({
-          success: false,
-          error: plannedWantsTools
-            ? "A query is required for tool search."
-            : "A query is required for skill search.",
-        });
-      }
-      if (
-        (plannedWantsTools || plannedWantsSkills) &&
-        (teamForcedKind ||
-          (
-            extBody().enterprise as ("default" | "anon" | "zdr")[] | undefined
-          )?.some(mode => mode === "zdr" || mode === "anon"))
-      ) {
-        return res.status(403).json({
-          success: false,
-          error:
-            "Provider discovery requires access and does not support zero data retention.",
-        });
-      }
       if (
         isUsOnly(req.acuc?.flags) &&
         planned.sources.some(source => source.type === "images")
@@ -572,7 +420,7 @@ async function searchControllerInner(
         planned.sources = planned.sources.filter(
           source => source.type !== "images",
         );
-        if (planned.sources.length === 0 && !indexCategory) {
+        if (planned.sources.length === 0) {
           return res.status(403).json({
             success: false,
             code: "US_ONLY_UNAVAILABLE",
@@ -580,32 +428,6 @@ async function searchControllerInner(
           });
         }
         usOnlyImagesWarning = IMAGE_SEARCH_US_ONLY_MESSAGE;
-      }
-    }
-
-    const toolsOnly = isToolsOnlySearch(planned.sources, req.body.categories);
-    const freeCatalogue = isFreeCatalogueSearch(
-      planned.sources,
-      req.body.categories,
-    );
-    const govSearch = wantsGovCategory(categories);
-
-    if (govSearch) {
-      const perMinute = await consumeIndexRateLimit(
-        "gov",
-        req.auth.team_id,
-        req.acuc?.rate_limit_multiplier ?? 1,
-        req.acuc?.flags,
-        1,
-      );
-      if (!perMinute.ok) {
-        res.setHeader("Retry-After", String(perMinute.retryAfterSeconds));
-        return res.status(429).json({
-          success: false,
-          error: perMinute.error,
-          retry_after_seconds: perMinute.retryAfterSeconds,
-          ...jobIdField,
-        });
       }
     }
 
@@ -619,8 +441,6 @@ async function searchControllerInner(
         req,
         shouldBill,
         isPreview: isSearchPreview,
-        freeCatalogue,
-        govSearch,
         hasScrapeFormats: requestedFormats.length > 0,
         limit: planned.limit,
         enterprise: extBody().enterprise as
@@ -653,25 +473,6 @@ async function searchControllerInner(
     }
     billingHandle = reservation.handle;
 
-    if (wantsGovCategory(categories)) {
-      const indexBudget = await reserveIndexCalls(
-        "gov",
-        req.auth.team_id,
-        req.acuc?.rate_limit_multiplier ?? 1,
-        1,
-      );
-      if (!indexBudget.ok) {
-        await settleBilling({ ok: false });
-        res.setHeader("Retry-After", String(indexBudget.retryAfterSeconds));
-        return res.status(429).json({
-          success: false,
-          code: "INDEX_DAILY_LIMIT",
-          ...indexDailyLimitRefusal("gov", req.auth.team_id, indexBudget),
-          ...jobIdField,
-        });
-      }
-    }
-
     const result = await executeSearch(
       {
         query: planned.query,
@@ -691,15 +492,6 @@ async function searchControllerInner(
           | undefined,
         scrapeOptions: req.body.scrapeOptions,
         highlights: extBody().highlights,
-        domainTools: extBody().domainTools,
-        toolDetail: extBody().toolDetail,
-        inferToolQuery: queryInferenceEnabled(),
-        toolFusion: toolFusionEnabled(req.acuc?.flags),
-        autoTools:
-          (sourcesOmitted || extBody().domainTools === true) &&
-          !req.auth.team_id.startsWith("preview_keyless_") &&
-          config.FIRE_EXCHANGE_URL !== undefined &&
-          autoToolsEnabled(req.acuc?.flags),
         timeout: req.body.timeout,
       },
       {
@@ -707,12 +499,6 @@ async function searchControllerInner(
         orgId: req.acuc?.org_id ?? null,
         origin: req.body.origin,
         integration: req.body.integration,
-        // The origin as the caller named it: the schema default would label every caller "api".
-        clientOrigin:
-          rawOrigin ??
-          (typeof headerOrigin === "string" ? headerOrigin : undefined),
-        clientSession: lineage.sessionId,
-        clientThread: lineage.threadId,
         apiKeyId: req.acuc?.api_key_id ?? null,
         flags: req.acuc?.flags ?? null,
         concurrencyLimit: req.acuc?.concurrency_limit,
@@ -737,45 +523,6 @@ async function searchControllerInner(
       },
       logger,
     );
-
-    if (toolsOnly && result.toolsUnavailable) {
-      await settleBilling({ ok: false });
-      const error =
-        "Tool discovery is temporarily unavailable. Retry the request.";
-      setSpanAttributes(span, { "search.status_code": 503 });
-      logSearch({
-        id: jobId,
-        request_id: agentRequestId ?? jobId,
-        query: req.body.query,
-        is_successful: false,
-        error,
-        results: result.response as any,
-        num_results: 0,
-        time_taken: (Date.now() - middlewareStartTime) / 1000,
-        team_id: req.auth.team_id,
-        options: req.body,
-        credits_cost: 0,
-        zeroDataRetention,
-      }).catch(error => {
-        logger.error("Failed to log search", { error, jobId });
-      });
-      const hooks = installedService()?.hooks;
-      if (hooks?.has("search.finished")) {
-        hooks.observe("search.finished", {
-          id: jobId,
-          ctx,
-          results: 0,
-          charged:
-            !isSelfHosted() && !isSearchPreview && shouldBill ? 0 : undefined,
-        });
-      }
-      return res.status(503).json({
-        success: false,
-        code: "TOOL_DISCOVERY_UNAVAILABLE",
-        error,
-        ...jobIdField,
-      });
-    }
 
     const scrapedDocuments = result.scrapedDocuments ?? [];
     const billableResultsCount =
@@ -863,33 +610,6 @@ async function searchControllerInner(
       logger.error("Failed to log search", { error, jobId });
     });
 
-    if (indexCategory) {
-      logResearchEndpoint({
-        table: indexCategory.table,
-        id: uuidv7(),
-        request_id: agentRequestId ?? jobId,
-        team_id: req.auth.team_id,
-        target: req.body.query,
-        options: {
-          origin: requestOrigin({ origin: rawOrigin }, req),
-          integration: req.body.integration ?? null,
-          api_version: "v2",
-          categories: req.body.categories,
-          via: "search_category",
-        },
-        response: null,
-        num_results: result.indexResultsCount,
-        time_taken: timeTakenInSeconds,
-        credits_cost: searchCredits ?? 0,
-        is_successful: true,
-        zeroDataRetention,
-      }).catch(ledgerError => {
-        logger.warn("Failed to log index category usage", {
-          error: ledgerError,
-        });
-      });
-    }
-
     const totalRequestTime = new Date().getTime() - middlewareStartTime;
     const controllerTime = new Date().getTime() - controllerStartTime;
 
@@ -908,19 +628,6 @@ async function searchControllerInner(
       scrapeful: result.shouldScrape,
     });
 
-    if (result.response.tools || result.skillsDiscovered) {
-      markAlexandriaActivity(req.auth.team_id);
-    }
-    if (result.response.tools) {
-      setSpanAttributes(span, { "search.tool_fusion": result.toolFusion });
-      recordDiscoveredTools(
-        req.auth.team_id,
-        result.toolsAuto ? "auto_search" : "search",
-        jobId,
-        result.response.tools,
-        lineage,
-      );
-    }
     const hooks = installedService()?.hooks;
     if (hooks?.has("search.finished")) {
       hooks.observe("search.finished", {
@@ -930,11 +637,7 @@ async function searchControllerInner(
         charged: searchCredits,
       });
     }
-    const warning = [
-      usOnlyImagesWarning,
-      result.usOnlyWarning,
-      result.toolsWarning,
-    ]
+    const warning = [usOnlyImagesWarning, result.usOnlyWarning]
       .filter(Boolean)
       .join(" ");
     await settleBilling({ ok: true, charged: totalCredits });
