@@ -3,6 +3,14 @@
  * config and read by the rest of the code.
  */
 import type { TransportableErrorClass } from "../lib/error";
+import { defaultModules } from "./defaults";
+import {
+  buildEngineRegistry,
+  type DescribedEngineFeature,
+  type Engine,
+  type EngineFeatureMap,
+  type EngineRegistry,
+} from "./engines";
 import { assertEnv, describeEnv } from "./env";
 import {
   buildHooks,
@@ -10,12 +18,14 @@ import {
   type HookPoints,
   type Hooks,
 } from "./hooks";
+import {
+  buildLlmProviderRegistry,
+  type LlmProvider,
+  type LlmProviderRegistry,
+} from "./llm-providers";
+import { freezeModules, type Modules } from "./modules";
 
-/**
- * The module slots: one implementation for each piece of behaviour the service
- * calls by name. A slot is added here together with the code that calls it.
- */
-export interface Modules {}
+export type { Modules } from "./modules";
 
 /** A process role: what one process of the service runs. */
 export interface Worker {
@@ -42,13 +52,29 @@ export interface Extension {
    * them when the service is built.
    */
   errors?: TransportableErrorClass[] | (() => TransportableErrorClass[]);
+  /**
+   * Scrape engines contributed by this extension. A later engine of the same
+   * name replaces an earlier one.
+   */
+  engines?: readonly Engine[];
+  /**
+   * Scrape engine feature priorities contributed by this extension. A later
+   * definition of the same feature name replaces an earlier one.
+   */
+  engineFeatures?: EngineFeatureMap;
+  /**
+   * LLM providers contributed by this extension. A later provider of the same
+   * name replaces an earlier one.
+   */
+  llmProviders?: readonly LlmProvider[];
   /** Process roles, by name. A later extension replaces a role of the same name. */
   workers?: Record<string, Worker>;
 }
 
 /** The whole config. Everything that is not a slot belongs to a named extension. */
 export interface ServiceConfig {
-  modules: Modules;
+  /** Module slots to override; omitted slots use the built-in defaults. */
+  modules?: Partial<Modules>;
   /** Applied in list order, after the service's own extension. */
   extensions?: Extension[];
 }
@@ -70,6 +96,12 @@ export interface ServiceDescription {
   hooks: Record<string, string[]>;
   /** For each error code with a class, the extension the class comes from. */
   errors: Record<string, string>;
+  /** For each registered scrape engine, the extension it comes from. */
+  engines: Record<string, string>;
+  /** For each registered scrape engine feature, its owner and scoring priority. */
+  engineFeatures: Record<string, DescribedEngineFeature>;
+  /** For each registered LLM provider, the extension it comes from. */
+  llmProviders: Record<string, string>;
   /** For each process role, the extension it comes from. */
   roles: Record<string, string>;
   /**
@@ -89,6 +121,8 @@ export interface Service {
   readonly modules: Readonly<Modules>;
   readonly hooks: Hooks;
   readonly errors: ErrorRegistry;
+  readonly engines: EngineRegistry;
+  readonly llmProviders: LlmProviderRegistry;
   readonly workers: Readonly<Record<string, Worker>>;
   /** What the service was made of when it was created, plus declared env owners. Each call returns a copy. */
   describe(): ServiceDescription;
@@ -110,7 +144,28 @@ export function createService(
     throw new Error(`Two extensions are named "${duplicate}"`);
   }
 
-  const modules = Object.freeze({ ...config.modules });
+  if (config.modules !== undefined) {
+    if (typeof config.modules !== "object" || config.modules === null) {
+      throw new Error("Invalid modules config");
+    }
+    for (const key of Object.keys(config.modules)) {
+      if (key !== "messages" && key !== "uploads") {
+        throw new Error(`Unknown module slot "${key}"`);
+      }
+    }
+  }
+
+  const defaults = defaultModules();
+  const modules = freezeModules({
+    messages:
+      config.modules?.messages === undefined
+        ? defaults.messages
+        : config.modules.messages,
+    uploads:
+      config.modules?.uploads === undefined
+        ? defaults.uploads
+        : config.modules.uploads,
+  });
   const workers: Record<string, Worker> = Object.freeze(
     Object.fromEntries(
       extensions.flatMap(extension => Object.entries(extension.workers ?? {})),
@@ -121,6 +176,26 @@ export function createService(
     extensions.flatMap(extension => extension.hooks ?? []),
     (hook, error) => parts.logger.error("Hook handler failed", { hook, error }),
   );
+
+  const {
+    registry: engines,
+    describedEngines,
+    describedFeatures,
+  } = buildEngineRegistry(
+    extensions.map(extension => ({
+      owner: extension.name,
+      engines: extension.engines,
+      engineFeatures: extension.engineFeatures,
+    })),
+  );
+
+  const { registry: llmProviders, describedLlmProviders } =
+    buildLlmProviderRegistry(
+      extensions.map(extension => ({
+        owner: extension.name,
+        llmProviders: extension.llmProviders,
+      })),
+    );
 
   // Snapshot extension names and error sources at creation so mutating an
   // extension later cannot change what loads or is described, while keeping
@@ -180,6 +255,9 @@ export function createService(
     extensions: names,
     modules: Object.keys(modules).sort(),
     hooks: sortedByKey(handlerOwners),
+    engines: describedEngines,
+    engineFeatures: describedFeatures,
+    llmProviders: describedLlmProviders,
     roles: sortedByKey(roleOwners),
   };
 
@@ -189,6 +267,8 @@ export function createService(
     errors: Object.freeze({
       classFor: (code: string) => registeredErrors().get(code)?.errorClass,
     }),
+    engines,
+    llmProviders,
     workers,
     describe(): ServiceDescription {
       // Built from entries, so that a code is listed whatever its name is.
@@ -201,6 +281,9 @@ export function createService(
         modules: copy.modules,
         hooks: copy.hooks,
         errors: sortedByKey(errors),
+        engines: copy.engines,
+        engineFeatures: copy.engineFeatures,
+        llmProviders: copy.llmProviders,
         roles: copy.roles,
         env: sortedByKey(describeEnv()),
       };
@@ -214,6 +297,11 @@ let startedRole: string | undefined;
 /** The role `run` started in this process, or undefined when it has started none. */
 export function processRole(): string | undefined {
   return startedRole;
+}
+
+/** The currently installed service, or undefined when none is installed. */
+export function installedService(): Service | undefined {
+  return installed;
 }
 
 function current(): Service {
@@ -238,6 +326,12 @@ export const service: Service = {
   },
   get errors() {
     return current().errors;
+  },
+  get engines() {
+    return current().engines;
+  },
+  get llmProviders() {
+    return current().llmProviders;
   },
   get workers() {
     return current().workers;

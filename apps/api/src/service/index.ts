@@ -3,7 +3,20 @@ export type {
   ErrorCodes,
   TransportableErrorClass,
 } from "../lib/error";
+export type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 export { coreParts } from "./core-parts";
+export { defaultModules, logsMessages, memoryUploads } from "./defaults";
+export type {
+  DescribedEngineFeature,
+  Engine,
+  EngineFeature,
+  EngineFeatureMap,
+  EngineFeatureName,
+  EngineFeatures,
+  EngineName,
+  EngineRegistry,
+  Engines,
+} from "./engines";
 export { assertEnv, defineEnv } from "./env";
 export type {
   Await,
@@ -16,6 +29,27 @@ export type {
 export { authenticate } from "./http";
 export type { RouteKind } from "./http";
 export type {
+  LlmModel,
+  LlmModelOptions,
+  LlmProvider,
+  LlmProviderName,
+  LlmProviderRegistry,
+  LlmProviders,
+} from "./llm-providers";
+export type {
+  DirectUploadInput,
+  DirectUploadResult,
+  FetchProxyFileKind,
+  MessagesModule,
+  Modules,
+  PrepareUploadInput,
+  PrepareUploadResult,
+  StoredUploadRef,
+  UploadDriver,
+  UploadsModule,
+  UploadTarget,
+} from "./modules";
+export type {
   BaseCaller,
   BaseRequestContext,
   Caller,
@@ -26,7 +60,6 @@ export type {
   CoreParts,
   ErrorRegistry,
   Extension,
-  Modules,
   Service,
   ServiceConfig,
   ServiceDescription,

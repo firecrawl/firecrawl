@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { config } from "../config";
+import { changeTrackingEnv } from "./change-tracking-env";
 import { getBigtableTable } from "./bigtable-client";
 import { setSpanAttributes, withSpan } from "./otel-tracer";
 
@@ -25,7 +25,8 @@ import { setSpanAttributes, withSpan } from "./otel-tracer";
 
 const FAMILY = "m";
 const QUALIFIER = "job";
-const TABLE_ID = config.BIGTABLE_CHANGE_TRACKING_TABLE || "change_tracking";
+const TABLE_ID =
+  changeTrackingEnv.BIGTABLE_CHANGE_TRACKING_TABLE || "change_tracking";
 
 function sha256(data: crypto.BinaryLike): Buffer {
   return crypto.createHash("sha256").update(data).digest();

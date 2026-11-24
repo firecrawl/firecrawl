@@ -5,6 +5,7 @@ import type { TeamFlags } from "../controllers/v1/types";
 import Redis from "ioredis";
 
 export const redisRateLimitClient = new Redis(config.REDIS_RATE_LIMIT_URL!, {
+  lazyConnect: true,
   enableAutoPipelining: true,
 });
 

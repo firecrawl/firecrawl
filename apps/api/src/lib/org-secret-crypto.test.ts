@@ -1,17 +1,19 @@
 import crypto from "crypto";
 import { afterEach, describe, expect, it } from "vitest";
-import { config } from "../config";
+import { siemEnv } from "./siem-logging/env";
 import { decryptOrgSecret, encryptOrgSecret } from "./org-secret-crypto";
 
-const originalKey = config.SIEM_LOGGING_ENCRYPTION_KEY;
+const originalKey = siemEnv.SIEM_LOGGING_ENCRYPTION_KEY;
 
 afterEach(() => {
-  config.SIEM_LOGGING_ENCRYPTION_KEY = originalKey;
+  siemEnv.SIEM_LOGGING_ENCRYPTION_KEY = originalKey;
 });
 
 describe("Org secret encryption", () => {
   it("round-trips with AES-256-GCM without storing plaintext", () => {
-    config.SIEM_LOGGING_ENCRYPTION_KEY = crypto.randomBytes(32).toString("hex");
+    siemEnv.SIEM_LOGGING_ENCRYPTION_KEY = crypto
+      .randomBytes(32)
+      .toString("hex");
     const encrypted = encryptOrgSecret("client-secret-value", "org-one");
 
     expect(encrypted).toMatch(/^gcm:/);
@@ -21,12 +23,12 @@ describe("Org secret encryption", () => {
   });
 
   it("refuses to store a secret without a valid external key", () => {
-    config.SIEM_LOGGING_ENCRYPTION_KEY = undefined;
+    siemEnv.SIEM_LOGGING_ENCRYPTION_KEY = undefined;
     expect(() => encryptOrgSecret("secret", "org-one")).toThrow(
       "SIEM_LOGGING_ENCRYPTION_KEY is not configured",
     );
 
-    config.SIEM_LOGGING_ENCRYPTION_KEY = "too-short";
+    siemEnv.SIEM_LOGGING_ENCRYPTION_KEY = "too-short";
     expect(() => encryptOrgSecret("secret", "org-one")).toThrow(
       "must be a 32-byte",
     );

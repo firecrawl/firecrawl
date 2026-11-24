@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { config } from "../../config";
+import { mcpLogsEnv } from "../../lib/mcp-action-log-env";
 
 const ch = vi.hoisted(() => ({
   client: { query: vi.fn() } as { query: ReturnType<typeof vi.fn> } | null,
@@ -103,14 +103,14 @@ describe("MCP action log contract", () => {
   });
 
   it("accepts a prefixed resource only under a configured prefix", () => {
-    const previous = config.MCP_ACTION_LOG_RESOURCE_PREFIXES;
+    const previous = mcpLogsEnv.MCP_ACTION_LOG_RESOURCE_PREFIXES;
     const refusal = "resource must be a canonical hosted MCP URL";
     const prefixed = "https://builds.example.com/build-1a2b3c4/v2/mcp-oauth";
     try {
-      config.MCP_ACTION_LOG_RESOURCE_PREFIXES = undefined;
+      mcpLogsEnv.MCP_ACTION_LOG_RESOURCE_PREFIXES = undefined;
       expect(() => input({ resource: prefixed })).toThrow(refusal);
 
-      config.MCP_ACTION_LOG_RESOURCE_PREFIXES =
+      mcpLogsEnv.MCP_ACTION_LOG_RESOURCE_PREFIXES =
         "https://builds.example.com/, https://other.example.com/mcp/";
       for (const resource of [
         prefixed,
@@ -138,7 +138,7 @@ describe("MCP action log contract", () => {
         expect(() => input({ resource })).toThrow(refusal);
       }
     } finally {
-      config.MCP_ACTION_LOG_RESOURCE_PREFIXES = previous;
+      mcpLogsEnv.MCP_ACTION_LOG_RESOURCE_PREFIXES = previous;
     }
   });
 

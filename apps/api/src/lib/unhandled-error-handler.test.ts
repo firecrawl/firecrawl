@@ -9,6 +9,7 @@ import type { TeamFlags } from "../controllers/v2/types";
 import { requestTimingMiddleware } from "../routes/shared";
 import { createTracerProvider, withSpan } from "./otel-tracer";
 import { unhandledErrorHandler } from "./unhandled-error-handler";
+import { createService, replaceService } from "../service/service";
 
 // Mirrors how src/index.ts mounts the handler: after the routers, as the
 // terminal error middleware.
@@ -69,9 +70,17 @@ describe("unhandledErrorHandler", () => {
     delete process.env.OTEL_RESOURCE_ATTRIBUTES;
     provider = createTracerProvider({ exporter, serviceName: "test-service" });
     provider.register();
+    // The 500 body's contact message comes from the installed service.
+    replaceService(
+      createService(
+        { modules: {} },
+        { core: { name: "core" }, logger: { error: vi.fn() } },
+      ),
+    );
   });
 
   afterAll(async () => {
+    replaceService(undefined);
     await provider.shutdown();
     trace.disable();
     context.disable();

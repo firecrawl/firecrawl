@@ -1,13 +1,13 @@
 import request from "supertest";
 import { and, eq, inArray } from "drizzle-orm";
 import { v7 as uuidv7 } from "uuid";
-import { config } from "../../../config";
+import { browserEnv } from "../../../lib/browser-env";
 import { describeIf, TEST_API_URL, TEST_PRODUCTION } from "../lib";
 import { idmux, Identity } from "./lib";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 
-describeIf(TEST_PRODUCTION && !!config.HANGAR_URL)(
+describeIf(TEST_PRODUCTION && !!browserEnv.HANGAR_URL)(
   "DELETE /v2/browser/profiles/:name",
   () => {
     let identity: Identity;

@@ -4,12 +4,12 @@ import type {
   ErrorResponse,
   RequestWithMaybeACUC,
 } from "../controllers/v1/types";
-import { getErrorContactMessage } from "./deployment";
 import { getRoutePattern } from "./http-metrics";
 import { logger } from "./logger";
 import { recordUnhandledException } from "./otel-tracer";
 import { isLockdownZeroDataRetention } from "./safe-mode";
 import { getScrapeZDR, getSearchForcedKind } from "./zdr-helpers";
+import { service } from "../service";
 
 /**
  * Terminal Express error handler: answers 500 with an error id, logs the
@@ -107,6 +107,6 @@ export function unhandledErrorHandler(
   res.status(500).json({
     success: false,
     code: "UNKNOWN_ERROR",
-    error: getErrorContactMessage(id),
+    error: service.modules.messages.errorContact(id),
   });
 }
