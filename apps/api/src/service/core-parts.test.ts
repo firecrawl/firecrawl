@@ -216,15 +216,16 @@ describe("coreParts", () => {
 
     // Creating the service, inspecting registered providers, and calling
     // describe() must not load the search provider implementations.
-    expect(built.searchProviders.all()).toHaveLength(
-      coreSearchProviderSpecs.length,
-    );
-    const fireEngineProvider = built.searchProviders.get("fire-engine");
-    expect(fireEngineProvider?.priority).toBe(100);
-    expect(fireEngineProvider?.supportsUsOnly).toBe(true);
+    expect(built.searchProviders.all().map(p => p.name)).toEqual([
+      "searxng",
+      "duckduckgo",
+    ]);
     const searxngProvider = built.searchProviders.get("searxng");
     expect(searxngProvider?.priority).toBe(50);
     expect(searxngProvider?.supportsUsOnly).toBeUndefined();
+    const duckduckgoProvider = built.searchProviders.get("duckduckgo");
+    expect(duckduckgoProvider?.priority).toBe(0);
+    expect(duckduckgoProvider?.supportsUsOnly).toBeUndefined();
     built.describe();
     expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
 
@@ -345,7 +346,6 @@ describe("coreParts", () => {
       },
       searchProviders: {
         duckduckgo: { owner: "core", priority: 0 },
-        "fire-engine": { owner: "core", priority: 100 },
         searxng: { owner: "core", priority: 50 },
       },
       llmProviders: {
@@ -401,5 +401,53 @@ describe("coreParts", () => {
     expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
     expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
     expect(loadedSideEffectModules).toEqual([]);
+  });
+
+  it("registers extension search providers alongside core SearXNG and DuckDuckGo without loading implementations", () => {
+    const required = answerRequire();
+    const customEnabled = vi.fn(() => true);
+    const customSearch = vi.fn(async () => ({ web: [] }));
+    const built = createService(
+      {
+        modules: defaultModules(),
+        extensions: [
+          {
+            name: "custom-search",
+            searchProviders: [
+              {
+                name: "custom-primary" as SearchProvider["name"],
+                priority: 100,
+                supportsUsOnly: true,
+                enabled: customEnabled,
+                search: customSearch,
+              },
+            ],
+          },
+        ],
+      },
+      coreParts(),
+    );
+
+    expect(built.searchProviders.all().map(p => p.name)).toEqual([
+      "searxng",
+      "duckduckgo",
+      "custom-primary",
+    ]);
+    expect(built.describe().searchProviders).toEqual({
+      "custom-primary": { owner: "custom-search", priority: 100 },
+      duckduckgo: { owner: "core", priority: 0 },
+      searxng: { owner: "core", priority: 50 },
+    });
+    expect(customEnabled).not.toHaveBeenCalled();
+    expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
+    expect(loadedSideEffectModules).toEqual([]);
+
+    expect(built.searchProviders.enabled().map(p => p.name)).toEqual([
+      "custom-primary",
+      "searxng",
+      "duckduckgo",
+    ]);
+    expect(customEnabled).toHaveBeenCalledTimes(1);
+    expect(required).toHaveBeenCalledWith(searchProvidersModule);
   });
 });
