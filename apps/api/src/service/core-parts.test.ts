@@ -255,7 +255,7 @@ describe("coreParts", () => {
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: ["messages", "uploads"],
+      modules: ["auth", "messages", "uploads"],
       hooks: {},
       errors: {
         AGENT_INDEX_ONLY: "core",

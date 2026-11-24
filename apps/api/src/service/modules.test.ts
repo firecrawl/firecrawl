@@ -6,8 +6,18 @@ import {
   PDFFetchProxyError,
   PDFPrefetchFailed,
 } from "../scraper/scrapeURL/error";
-import { defaultModules, logsMessages, memoryUploads } from "./defaults";
-import type { MessagesModule, Modules, UploadsModule } from "./modules";
+import {
+  defaultModules,
+  logsMessages,
+  memoryUploads,
+  openAuth,
+} from "./defaults";
+import type {
+  AuthModule,
+  MessagesModule,
+  Modules,
+  UploadsModule,
+} from "./modules";
 import { createService, replaceService, type CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
@@ -173,15 +183,40 @@ describe("memoryUploads", () => {
   });
 });
 
+describe("openAuth", () => {
+  it("admits requests under the bypass team by default and returns fresh caller objects", async () => {
+    const auth = openAuth();
+    const first = await auth.authenticate({} as never, { kind: "scrape" });
+    const second = await auth.authenticate({} as never, { kind: "crawl" });
+
+    expect(first).toEqual({ ok: true, caller: { teamId: "bypass" } });
+    expect(second).toEqual({ ok: true, caller: { teamId: "bypass" } });
+    if (first.ok && second.ok) {
+      expect(first.caller).not.toBe(second.caller);
+    }
+  });
+
+  it("uses the supplied team id", async () => {
+    const auth = openAuth("local-team");
+    const result = await auth.authenticate({} as never, { kind: "map" });
+
+    expect(result).toEqual({ ok: true, caller: { teamId: "local-team" } });
+  });
+});
+
 describe("service module slots", () => {
-  it("fills omitted module slots with built-in defaults", () => {
+  it("fills omitted module slots with built-in defaults", async () => {
     const built = createService({}, parts);
 
     expect(Object.isFrozen(built.modules)).toBe(true);
+    expect(Object.isFrozen(built.modules.auth)).toBe(true);
     expect(Object.isFrozen(built.modules.messages)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads.driver())).toBe(true);
-    expect(built.describe().modules).toEqual(["messages", "uploads"]);
+    expect(built.describe().modules).toEqual(["auth", "messages", "uploads"]);
+    await expect(
+      built.modules.auth.authenticate({} as never, { kind: "scrape" }),
+    ).resolves.toEqual({ ok: true, caller: { teamId: "bypass" } });
     expect(built.modules.messages.errorContact()).toBe(
       logsMessages().errorContact(),
     );
@@ -189,6 +224,12 @@ describe("service module slots", () => {
   });
 
   it("keeps defaults for unspecified slots and snapshots provided modules and drivers", async () => {
+    const customAuth: AuthModule = {
+      authenticate: async () => ({
+        ok: true,
+        caller: { teamId: "custom-team" },
+      }),
+    };
     const customMessages: MessagesModule = {
       ...logsMessages(),
       errorContact: id => `custom:${id ?? "none"}`,
@@ -206,10 +247,20 @@ describe("service module slots", () => {
     };
     const customUploads: UploadsModule = { driver: () => customDriver };
     const built = createService(
-      { modules: { messages: customMessages, uploads: customUploads } },
+      {
+        modules: {
+          auth: customAuth,
+          messages: customMessages,
+          uploads: customUploads,
+        },
+      },
       parts,
     );
 
+    customAuth.authenticate = async () => ({
+      ok: true,
+      caller: { teamId: "mutated" },
+    });
     customMessages.errorContact = () => "mutated";
     customDriver.read = async () => Buffer.from("mutated");
     customUploads.driver = () => ({
@@ -217,6 +268,9 @@ describe("service module slots", () => {
       name: "mutated",
     });
 
+    await expect(
+      built.modules.auth.authenticate({} as never, { kind: "scrape" }),
+    ).resolves.toEqual({ ok: true, caller: { teamId: "custom-team" } });
     expect(built.modules.messages.errorContact("42")).toBe("custom:42");
     expect(built.modules.uploads.driver().name).toBe("custom");
     const data = await built.modules.uploads.driver().read({
@@ -229,6 +283,15 @@ describe("service module slots", () => {
   });
 
   it("rejects invalid, null, or unknown module slots and malformed upload drivers at service creation", () => {
+    expect(() =>
+      createService({ modules: { auth: {} as unknown as AuthModule } }, parts),
+    ).toThrow("Invalid auth module");
+    expect(() =>
+      createService(
+        { modules: { auth: null as unknown as AuthModule } },
+        parts,
+      ),
+    ).toThrow("Invalid auth module");
     expect(() =>
       createService(
         { modules: { messages: {} as unknown as MessagesModule } },

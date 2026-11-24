@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { autumnService } from "../../services/autumn/autumn.service";
-import { authenticateUser } from "../auth";
+import { authenticateV0 } from "./auth";
 import { RateLimiterMode } from "../../../src/types";
 import { addScrapeJob } from "../../../src/services/queue-jobs";
 import { isUrlBlocked } from "../../../src/scraper/WebScraper/utils/blocklist";
@@ -47,18 +47,14 @@ import {
   getSafeMode,
   SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
-import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { requestCreditsShards } from "../../lib/request-credits-store";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
 import { ipWhitelistRefusal } from "../../lib/permissions";
 
 export async function crawlController(req: Request, res: Response) {
   try {
-    const auth = await authenticateUser(req, res, RateLimiterMode.Crawl);
-    if (!auth.success) {
-      if (auth.status === 401) applyAgentAuthDiscoveryHeader(res);
-      return res.status(auth.status).json({ error: auth.error });
-    }
+    const auth = await authenticateV0(req, res, RateLimiterMode.Crawl);
+    if (!auth) return;
 
     const { team_id, chunk } = auth;
 

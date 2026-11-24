@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { billTeam } from "../../services/billing/credit_billing";
 import { autumnService } from "../../services/autumn/autumn.service";
-import { authenticateUser } from "../auth";
+import { authenticateV0 } from "./auth";
 import { RateLimiterMode, ScrapeJobSingleUrls } from "../../types";
 import { logSearch, logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
@@ -31,7 +31,6 @@ import {
   getSafeMode,
   SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
-import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { isUsOnly } from "../../lib/us-only";
 import { ipWhitelistRefusal } from "../../lib/permissions";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
@@ -208,11 +207,8 @@ async function searchHelper(
 export async function searchController(req: Request, res: Response) {
   try {
     // make sure to authenticate user first, Bearer <token>
-    const auth = await authenticateUser(req, res, RateLimiterMode.Search);
-    if (!auth.success) {
-      if (auth.status === 401) applyAgentAuthDiscoveryHeader(res);
-      return res.status(auth.status).json({ error: auth.error });
-    }
+    const auth = await authenticateV0(req, res, RateLimiterMode.Search);
+    if (!auth) return;
     const { team_id, chunk } = auth;
 
     const v0SearchZDRMode = getSearchZDR(chunk?.flags);

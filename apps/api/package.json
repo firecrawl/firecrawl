@@ -24,6 +24,10 @@
       "types": "./src/service/testing.ts",
       "default": "./dist/src/service/testing.js"
     },
+    "./unstable/auth-deps": {
+      "types": "./src/service/unstable/auth-deps.ts",
+      "default": "./dist/src/service/unstable/auth-deps.js"
+    },
     "./unstable/zdr-queue": {
       "types": "./src/lib/zdr-queue.ts",
       "default": "./dist/src/lib/zdr-queue.js"

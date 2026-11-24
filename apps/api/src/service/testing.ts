@@ -1,18 +1,20 @@
 /*
  * Helpers for tests that need a service.
  */
+import type { BaseCaller, Caller } from "./request-context";
 import {
   createService,
   replaceService,
   type CoreParts,
   type Extension,
   type Modules,
+  type ModulesConfig,
   type Service,
 } from "./service";
 
 /** Builds a service from module defaults or a base set, with any of them replaced and any extension added. */
 export function testService(
-  base: Partial<Modules>,
+  base: BaseCaller extends Caller ? Partial<Modules> : Modules,
   parts: CoreParts,
   overrides: Partial<Modules> = {},
   extensions: Extension[] = [],
@@ -24,7 +26,7 @@ export function testService(
     }
   }
   return createService(
-    { modules: modules as Partial<Modules>, extensions },
+    { modules: modules as ModulesConfig, extensions },
     parts,
   );
 }

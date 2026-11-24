@@ -1,35 +1,51 @@
 /*
  * What a route asks of the service before its handler runs.
  *
- * The code that identifies a sender is loaded by the first request that
- * needs it and not before, so importing the package loads no route code. For
- * the same reason this file imports nothing at the top but types.
+ * This file imports nothing with a startup side effect, so importing the
+ * package loads no route handlers, configuration, or clients.
  */
-import type { RequestHandler } from "express";
-import type { RateLimiterMode } from "../types";
+import type { NextFunction, Request, RequestHandler, Response } from "express";
+import type { Refusal } from "./hooks";
+import type { AuthRoute, CoreRouteKind, RouteKind } from "./modules";
+import { service } from "./service";
 
-type AuthMiddleware = typeof import("../routes/shared").authMiddleware;
+export type { AuthRoute, CoreRouteKind, RouteKind };
 
-/** The kind of route a request arrived on. It decides how its sender is identified and limited. */
-export type RouteKind = `${RateLimiterMode}`;
+/** Sends a ready-made HTTP refusal if the response has not already been sent. */
+export function sendRefusal(res: Response, refusal: Refusal): void {
+  if (res.headersSent) return;
+  for (const [name, value] of Object.entries(refusal.headers ?? {})) {
+    res.setHeader(name, value);
+  }
+  res.status(refusal.status).json(refusal.body);
+}
 
 /**
- * Express middleware that identifies the sender of a request. A request it
- * lets through has `req.caller`; a request it refuses has been answered.
+ * Express middleware that identifies the sender of a request through the
+ * active service's auth module. A request it lets through has `req.caller`;
+ * a request it refuses has been answered.
  */
 export function authenticate(
   kind: RouteKind,
-  options?: Parameters<AuthMiddleware>[1],
+  options?: Omit<AuthRoute, "kind">,
 ): RequestHandler {
-  let middleware: Promise<RequestHandler> | undefined;
-  return (req, res, next) => {
-    middleware ??= import("../routes/shared.js").then(
-      shared =>
-        shared.authMiddleware(
-          kind as RateLimiterMode,
-          options,
-        ) as RequestHandler,
-    );
-    middleware.then(run => run(req, res, next), next);
+  return (req: Request, res: Response, next: NextFunction) => {
+    const route: AuthRoute = options ? { ...options, kind } : { kind };
+    Promise.resolve()
+      .then(() => service.modules.auth.authenticate(req, route))
+      .then(result => {
+        if (!result.ok) {
+          sendRefusal(res, result.refusal);
+          return;
+        }
+        if (!res.headersSent) {
+          for (const [name, value] of Object.entries(result.headers ?? {})) {
+            res.setHeader(name, value);
+          }
+        }
+        req.caller = result.caller;
+        next();
+      })
+      .catch(next);
   };
 }

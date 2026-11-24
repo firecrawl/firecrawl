@@ -19,6 +19,7 @@ import {
   type LlmProviderRegistry,
 } from "./llm-providers";
 import { freezeModules, type Modules } from "./modules";
+import type { BaseCaller, Caller } from "./request-context";
 import {
   buildSearchProviderRegistry,
   type DescribedSearchProvider,
@@ -77,13 +78,27 @@ export interface Extension {
   workers?: Record<string, Worker>;
 }
 
+/**
+ * Module slot configuration. When `Caller` is widened with required fields,
+ * `auth` must be supplied explicitly instead of falling back to `openAuth()`.
+ */
+export type ModulesConfig = BaseCaller extends Caller
+  ? Partial<Modules>
+  : Partial<Omit<Modules, "auth">> & Pick<Modules, "auth">;
+
 /** The whole config. Everything that is not a slot belongs to a named extension. */
-export interface ServiceConfig {
-  /** Module slots to override; omitted slots use the built-in defaults. */
-  modules?: Partial<Modules>;
+export type ServiceConfig = (BaseCaller extends Caller
+  ? {
+      /** Module slots to override; omitted slots use the built-in defaults. */
+      modules?: ModulesConfig;
+    }
+  : {
+      /** Module slots; `auth` is required because `Caller` has been widened. */
+      modules: ModulesConfig;
+    }) & {
   /** Applied in list order, after the service's own extension. */
   extensions?: Extension[];
-}
+};
 
 export interface CoreParts {
   /** The service's own extension, applied first. */
@@ -158,7 +173,7 @@ export function createService(
       throw new Error("Invalid modules config");
     }
     for (const key of Object.keys(config.modules)) {
-      if (key !== "messages" && key !== "uploads") {
+      if (key !== "auth" && key !== "messages" && key !== "uploads") {
         throw new Error(`Unknown module slot "${key}"`);
       }
     }
@@ -166,6 +181,8 @@ export function createService(
 
   const defaults = defaultModules();
   const modules = freezeModules({
+    auth:
+      config.modules?.auth === undefined ? defaults.auth : config.modules.auth,
     messages:
       config.modules?.messages === undefined
         ? defaults.messages

@@ -33,10 +33,6 @@ vi.mock("../../lib/http-metrics", () => ({
   getRoutePattern: vi.fn(() => "/v1/crawl"),
 }));
 
-vi.mock("../../controllers/auth", () => ({
-  authenticateUser: vi.fn(),
-}));
-
 vi.mock("../../services/idempotency/create", () => ({
   createIdempotencyKey: vi.fn(),
 }));

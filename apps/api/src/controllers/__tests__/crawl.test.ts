@@ -2,23 +2,22 @@ import type { Mock } from "vitest";
 import { crawlController } from "../v0/crawl";
 import { config } from "../../config";
 import { Request, Response } from "express";
-import { authenticateUser } from "../auth"; // Ensure this import is correct
-import { createIdempotencyKey } from "../../services/idempotency/create";
+import { coreParts, openAuth } from "../../service";
+import { replaceService } from "../../service/service";
+import { testService } from "../../service/testing";
 import { validateIdempotencyKey } from "../../services/idempotency/validate";
 import { v7 as uuidv7 } from "uuid";
 
-vi.mock("../auth", () => ({
-  authenticateUser: vi.fn().mockResolvedValue({
-    success: true,
-    team_id: "team123",
-    error: null,
-    status: 200,
-  }),
-  reduce: vi.fn(),
-}));
 vi.mock("../../services/idempotency/validate");
 
 describe("crawlController", () => {
+  beforeEach(() => {
+    replaceService(testService({}, coreParts(), { auth: openAuth("team123") }));
+  });
+
+  afterEach(() => {
+    replaceService(undefined);
+  });
   it("should prevent duplicate requests using the same idempotency key", async () => {
     const req = {
       headers: {

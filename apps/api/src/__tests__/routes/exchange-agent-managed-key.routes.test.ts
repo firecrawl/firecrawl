@@ -53,9 +53,6 @@ vi.mock("../../services/autumn/autumn.service", async importOriginal => {
     },
   };
 });
-vi.mock("../../services/agent-sponsor", () => ({
-  getAgentSponsorStatus: vi.fn().mockResolvedValue(null),
-}));
 vi.mock("../../services/queue-service", () => ({
   getRedisConnection: vi.fn(() => ({ sadd: vi.fn() })),
   getBillingQueue: vi.fn(() => ({ add: vi.fn() })),
@@ -79,7 +76,11 @@ vi.mock("undici", async importOriginal => ({
 import { config } from "../../config";
 import { feedbackEnv } from "../../lib/feedback-env";
 import { exchangeRouter } from "../../routes/exchange";
+import { coreParts } from "../../service";
+import { replaceService } from "../../service/service";
+import { testService } from "../../service/testing";
 import { redisRateLimitClient } from "../../services/rate-limiter";
+import { acucTestAuth } from "./test-auth";
 
 const MANAGED_KEY = "22222222-2222-4222-8222-222222222222";
 const SECRET = "agent-secret";
@@ -181,6 +182,7 @@ describe("hosted MCP keys on the Exchange routes the agent calls", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    replaceService(testService({}, coreParts(), { auth: acucTestAuth() }));
     config.USE_DB_AUTHENTICATION = true;
     config.AGENT_INTEROP_SECRET = SECRET;
     config.FIRE_EXCHANGE_URL = "https://exchange.test";
@@ -203,6 +205,7 @@ describe("hosted MCP keys on the Exchange routes the agent calls", () => {
   });
 
   afterEach(() => {
+    replaceService(undefined);
     Object.assign(config, original);
   });
 

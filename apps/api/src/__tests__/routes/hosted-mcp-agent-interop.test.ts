@@ -1,5 +1,3 @@
-const mocks = vi.hoisted(() => ({ authenticateUser: vi.fn() }));
-
 vi.mock("../../config", async importOriginal => {
   const actual = await importOriginal<typeof import("../../config")>();
   return {
@@ -7,9 +5,6 @@ vi.mock("../../config", async importOriginal => {
     config: { ...actual.config, AGENT_INTEROP_SECRET: "agent-secret" },
   };
 });
-vi.mock("../../controllers/auth", () => ({
-  authenticateUser: mocks.authenticateUser,
-}));
 vi.mock("ioredis", () => ({ default: class {} }));
 vi.mock("../../services/redis", () => ({
   getValue: vi.fn(),
@@ -18,6 +13,8 @@ vi.mock("../../services/redis", () => ({
 }));
 
 import { authMiddleware } from "../../routes/shared";
+import { coreParts, type AuthModule } from "../../service";
+import { testService, withService } from "../../service/testing";
 import { RateLimiterMode } from "../../types";
 
 async function authOf(
@@ -25,19 +22,27 @@ async function authOf(
   verified: boolean,
   headers: Record<string, string> = {},
 ) {
-  mocks.authenticateUser.mockResolvedValueOnce({
-    success: true,
-    team_id: "team-1",
-    org_id: "org-1",
-    chunk: null,
-    ...(verified ? { hostedMcp: true } : {}),
-  });
+  const auth: AuthModule = {
+    authenticate: async () => ({
+      ok: true,
+      caller: {
+        teamId: "team-1",
+        orgId: "org-1",
+        chunk: null,
+        ...(verified ? { hostedMcp: true } : {}),
+      } as never,
+    }),
+  };
   const req: any = { body, headers };
-  await new Promise<void>((resolve, reject) =>
-    authMiddleware(RateLimiterMode.Scrape)(req, {} as any, (error?: unknown) =>
-      error ? reject(error) : resolve(),
-    ),
-  );
+  await withService(testService({}, coreParts(), { auth }), async () => {
+    await new Promise<void>((resolve, reject) =>
+      authMiddleware(RateLimiterMode.Scrape)(
+        req,
+        {} as any,
+        (error?: unknown) => (error ? reject(error) : resolve()),
+      ),
+    );
+  });
   return req.auth;
 }
 

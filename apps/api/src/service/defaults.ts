@@ -5,12 +5,25 @@
  * describing a service never loads configuration, queues, or storage clients.
  */
 import type {
+  AuthModule,
   FetchProxyFileKind,
   MessagesModule,
   Modules,
   UploadDriver,
   UploadsModule,
 } from "./modules";
+import type { BaseCaller } from "./request-context";
+
+/**
+ * Default authentication module that admits every request under a single fixed
+ * team id. Typed on `BaseCaller` so widening `Caller` rejects it at compile
+ * time.
+ */
+export function openAuth(teamId = "bypass"): AuthModule<BaseCaller> {
+  return {
+    authenticate: async () => ({ ok: true, caller: { teamId } }),
+  };
+}
 
 /** Default user-facing messages that direct operators to local logs and config. */
 export function logsMessages(): MessagesModule {
@@ -132,9 +145,18 @@ export function memoryUploads(): UploadsModule {
   return { driver: () => driver };
 }
 
+/**
+ * The default slot table, with `auth` typed on `BaseCaller`. Assignable to
+ * `Modules` only when `Caller` has not been widened with required fields.
+ */
+export type DefaultModules = Omit<Modules, "auth"> & {
+  auth: AuthModule<BaseCaller>;
+};
+
 /** Returns fresh instances of every default module slot. */
-export function defaultModules(): Modules {
+export function defaultModules(): DefaultModules {
   return {
+    auth: openAuth(),
     messages: logsMessages(),
     uploads: memoryUploads(),
   };

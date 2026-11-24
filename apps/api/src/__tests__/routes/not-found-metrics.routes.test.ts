@@ -8,9 +8,6 @@ vi.mock("../../services/autumn/autumn.service", () => ({
 vi.mock("../../services/autumn/usage", () => ({
   getTeamBalance: vi.fn(),
 }));
-vi.mock("../../controllers/auth", () => ({
-  authenticateUser: vi.fn(),
-}));
 vi.mock("../../services/idempotency/create", () => ({
   createIdempotencyKey: vi.fn(),
 }));

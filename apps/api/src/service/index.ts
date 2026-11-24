@@ -7,7 +7,13 @@ export type {
 export type { SearchResultType, SearchV2Response } from "../lib/entities";
 export type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 export { coreParts } from "./core-parts";
-export { defaultModules, logsMessages, memoryUploads } from "./defaults";
+export {
+  defaultModules,
+  logsMessages,
+  memoryUploads,
+  openAuth,
+  type DefaultModules,
+} from "./defaults";
 export type {
   DescribedEngineFeature,
   Engine,
@@ -55,7 +61,7 @@ export type {
   ValueOf,
 } from "./hooks";
 export { authenticate } from "./http";
-export type { RouteKind } from "./http";
+export type { AuthRoute, CoreRouteKind, RouteKind } from "./http";
 export type {
   LlmModel,
   LlmModelOptions,
@@ -65,6 +71,8 @@ export type {
   LlmProviders,
 } from "./llm-providers";
 export type {
+  AuthModule,
+  AuthResult,
   DirectUploadInput,
   DirectUploadResult,
   FetchProxyFileKind,
@@ -98,6 +106,7 @@ export type {
   CoreParts,
   ErrorRegistry,
   Extension,
+  ModulesConfig,
   Service,
   ServiceConfig,
   ServiceDescription,

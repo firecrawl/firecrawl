@@ -1,14 +1,13 @@
 import { NextFunction, Request, Response } from "express";
 // import { crawlStatusController } from "../../src/controllers/v1/crawl-status";
 import {
+  AuthCreditUsageChunk,
   isAgentExtractModelValid,
   RequestWithAuth,
   RequestWithMaybeAuth,
   RequestWithMaybeACUC,
 } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
-import { authenticateUser } from "../controllers/auth";
-import { applyAgentAuthDiscoveryHeader } from "../lib/agent-auth-discovery";
 import { createIdempotencyKey } from "../services/idempotency/create";
 import { validateIdempotencyKey } from "../services/idempotency/validate";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
@@ -20,7 +19,8 @@ import {
 } from "../lib/http-metrics";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
 import * as geoip from "geoip-country";
-import { service } from "../service";
+import { service, type AuthRoute, type Caller } from "../service";
+import { sendRefusal } from "../service/http";
 import { validate as isUuid } from "uuid";
 
 import { config } from "../config";
@@ -377,6 +377,18 @@ export function checkCreditsMiddleware(
   };
 }
 
+type LegacyAuthRoute = AuthRoute & {
+  allowKeyless?: boolean;
+  allowAgentManagedKey?: boolean;
+  hostedMcpRateLimit?: boolean;
+};
+
+type LegacyCallerFields = {
+  orgId?: string | null;
+  chunk?: AuthCreditUsageChunk | null;
+  hostedMcp?: boolean;
+};
+
 export function authMiddleware(
   rateLimiterMode: RateLimiterMode,
   options: {
@@ -392,51 +404,48 @@ export function authMiddleware(
           ? options.allowKeyless(req)
           : options.allowKeyless;
 
-      const auth = await authenticateUser(req, res, rateLimiterMode, {
-        ...options,
-        allowKeyless,
-      });
+      const route: LegacyAuthRoute = {
+        kind: rateLimiterMode,
+        ...(allowKeyless !== undefined ? { allowKeyless } : {}),
+        ...(options.allowAgentManagedKey !== undefined
+          ? { allowAgentManagedKey: options.allowAgentManagedKey }
+          : {}),
+        ...(options.hostedMcpRateLimit !== undefined
+          ? { hostedMcpRateLimit: options.hostedMcpRateLimit }
+          : {}),
+      };
 
-      if (!auth.success) {
-        if (!res.headersSent) {
-          if (auth.status === 401 || auth.agentAuthDiscovery) {
-            applyAgentAuthDiscoveryHeader(res);
-          }
-          if (auth.retryAfterSeconds) {
-            res.setHeader("Retry-After", String(auth.retryAfterSeconds));
-          }
-          return res.status(auth.status).json({
-            success: false,
-            error: auth.error,
-            ...(auth.keylessReason ? { reason: auth.keylessReason } : {}),
-            ...(auth.retryAfterSeconds
-              ? { retry_after_seconds: auth.retryAfterSeconds }
-              : {}),
-            ...(auth.signupUrl ? { signup_url: auth.signupUrl } : {}),
-          });
-        } else {
-          return;
+      const result = await service.modules.auth.authenticate(req, route);
+
+      if (!result.ok) {
+        sendRefusal(res, result.refusal);
+        return;
+      }
+
+      if (!res.headersSent) {
+        for (const [name, value] of Object.entries(result.headers ?? {})) {
+          res.setHeader(name, value);
         }
       }
 
-      const { team_id, org_id, chunk } = auth;
+      const caller = result.caller as Caller & LegacyCallerFields;
       const agentInterop = agentInteropStatus(req);
       // An agent run started by a hosted MCP call makes its own calls under
       // the interop secret, and says so in the interop block. Only a trusted
       // block may say it: the run itself was verified when it started.
       const hostedMcp =
-        auth.hostedMcp ||
+        caller.hostedMcp === true ||
         (agentInterop === "trusted" &&
           (req.body as any)?.__agentInterop?.hostedMcp === true);
 
       req.auth = {
-        team_id,
-        org_id,
+        team_id: caller.teamId,
+        org_id: caller.orgId ?? null,
         agentInterop,
         ...(hostedMcp ? { hostedMcp: true } : {}),
       };
-      req.acuc = chunk ?? undefined;
-      req.caller = { teamId: team_id };
+      req.acuc = caller.chunk ?? undefined;
+      req.caller = result.caller;
       next();
     })().catch(err => next(err));
   };

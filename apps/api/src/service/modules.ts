@@ -4,6 +4,41 @@
  * This file imports only types so creating or describing a service never loads
  * implementations, configuration, or clients.
  */
+import type { Request } from "express";
+import type { RateLimiterMode } from "../types";
+import type { Refusal } from "./hooks";
+import type { BaseCaller, Caller } from "./request-context";
+
+/** Route kinds declared by the core API. */
+export type CoreRouteKind = `${RateLimiterMode}`;
+
+/**
+ * The kind of route a request arrived on. Extensions may pass any string for
+ * their own routes.
+ */
+export type RouteKind = CoreRouteKind | (string & {});
+
+/**
+ * Route metadata passed to `AuthModule.authenticate`. Extensions may add
+ * optional route options by declaration merging.
+ */
+export interface AuthRoute {
+  kind: RouteKind;
+}
+
+/** Outcome of authenticating a request. */
+export type AuthResult<C extends BaseCaller = Caller> =
+  | { ok: true; caller: C; headers?: Record<string, string> }
+  | { ok: false; refusal: Refusal };
+
+/**
+ * Identifies the sender of a request. The type parameter keeps `openAuth()`
+ * typed on `BaseCaller`, so widening `Caller` rejects the open default at
+ * compile time.
+ */
+export interface AuthModule<C extends BaseCaller = Caller> {
+  authenticate(req: Request, route: AuthRoute): Promise<AuthResult<C>>;
+}
 
 export type FetchProxyFileKind = "PDF" | "document";
 
@@ -109,6 +144,7 @@ export interface UploadsModule {
  * calls by name.
  */
 export interface Modules {
+  auth: AuthModule;
   messages: MessagesModule;
   uploads: UploadsModule;
 }
@@ -146,7 +182,14 @@ function freezeUploadDriver(driver: UploadDriver): Readonly<UploadDriver> {
  * later cannot alter the service.
  */
 export function freezeModules(modules: Modules): Readonly<Modules> {
-  const { messages, uploads } = modules;
+  const { auth, messages, uploads } = modules;
+  if (
+    typeof auth !== "object" ||
+    auth === null ||
+    typeof auth.authenticate !== "function"
+  ) {
+    throw new Error("Invalid auth module");
+  }
   if (
     typeof messages !== "object" ||
     messages === null ||
@@ -166,6 +209,9 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
     throw new Error("Invalid uploads module");
   }
 
+  const frozenAuth: AuthModule = Object.freeze({
+    authenticate: auth.authenticate.bind(auth),
+  });
   const frozenMessages: MessagesModule = Object.freeze({
     errorContact: messages.errorContact.bind(messages),
     restrictedCountryContact: messages.restrictedCountryContact.bind(messages),
@@ -180,6 +226,7 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
   });
 
   return Object.freeze({
+    auth: frozenAuth,
     messages: frozenMessages,
     uploads: frozenUploads,
   });

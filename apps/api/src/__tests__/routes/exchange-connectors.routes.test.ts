@@ -52,9 +52,6 @@ vi.mock("../../services/autumn/autumn.service", async importOriginal => {
     },
   };
 });
-vi.mock("../../services/agent-sponsor", () => ({
-  getAgentSponsorStatus: vi.fn().mockResolvedValue(null),
-}));
 vi.mock("../../services/queue-service", () => ({
   getRedisConnection: vi.fn(() => ({ sadd: vi.fn() })),
   getBillingQueue: vi.fn(() => ({ add: vi.fn() })),
@@ -70,6 +67,10 @@ vi.mock("undici", async importOriginal => ({
 
 import { config } from "../../config";
 import { exchangeRouter } from "../../routes/exchange";
+import { coreParts } from "../../service";
+import { replaceService } from "../../service/service";
+import { testService } from "../../service/testing";
+import { acucTestAuth } from "./test-auth";
 
 const KEY = "33333333-3333-4333-8333-333333333333";
 
@@ -109,6 +110,7 @@ describe("Alexandria connector routes on the Exchange proxy", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    replaceService(testService({}, coreParts(), { auth: acucTestAuth() }));
     config.USE_DB_AUTHENTICATION = true;
     config.FIRE_EXCHANGE_URL = "https://exchange.test";
     mocks.upstreamFetch.mockImplementation(
@@ -118,6 +120,7 @@ describe("Alexandria connector routes on the Exchange proxy", () => {
   });
 
   afterEach(() => {
+    replaceService(undefined);
     Object.assign(config, original);
   });
 

@@ -403,7 +403,7 @@ describe("describe", () => {
     expect(enabled).not.toHaveBeenCalled();
     expect(description).toEqual({
       extensions: ["core", "second", "third"],
-      modules: ["messages", "uploads"],
+      modules: ["auth", "messages", "uploads"],
       hooks: {
         "map.finished": ["second"],
         "process.stop": ["third", "second", "second", "core"],
