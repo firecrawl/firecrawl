@@ -1,0 +1,94 @@
+apps/api/src/controllers/v2/crawl-params-preview.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 11,155-158,160-161
+apps/api/src/lib/error.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 108-142,178-335
+  s_6a7201d5c4fd9c::t_8a708e7b78d02e 336
+apps/api/src/scraper/scrapeURL/index.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 82-83,86-90,112,994,1031-1033,1043,1536,1686-1688,1690-1693,1695-1696,1699-1701,1703,1708,1717-1718,1973-1996
+apps/api/src/lib/exchange-errors.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 62-75,134-136
+  s_6a7201d5c4fd9c::t_83aff2f78f2887 137
+apps/api/src/search/index.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 1,5,59-87,89-96,98-99
+apps/api/src/lib/research-upstream.test.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 17-21,74-91
+  s_6a7201d5c4fd9c::t_8561b8615c5ffc 92
+apps/api/src/search/providers.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 1-141
+apps/api/src/search/v2/index.test.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 18-21,33-49,54,58,171-285
+  s_6a7201d5c4fd9c::t_a535521d0fab59 286
+apps/api/src/scraper/scrapeURL/lib/jsonExtract.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 12-13,214
+apps/api/src/service/service.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 27-32,71-75,114-115,138,206-213,282,294,310,358-359
+  s_6a7201d5c4fd9c::t_98707737b7abba 360
+apps/api/src/controllers/v2/crawl.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 42,74-80,287-290,292-293
+apps/api/src/lib/threat-protection/error.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 1,32-46
+  s_6a7201d5c4fd9c::t_de885c4717c65d 47
+apps/api/src/lib/research-upstream.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 3,60-67
+apps/api/src/main/runWebScraper.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 1,128
+apps/api/src/search/index.test.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 2-5,7-8,13,16-17,20-22,24,32-54,56,121-218
+apps/api/src/controllers/v1/batch-scrape.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 356-360
+apps/api/src/controllers/v1/crawl.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 224-228
+apps/api/src/search/providers.test.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 1-179
+apps/api/src/service/search-providers.test.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 1-359
+apps/api/src/lib/error-traits.test.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 1-665
+apps/api/src/controllers/v2/search.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 26,782-786,788-789
+apps/api/src/__tests__/snips/v2/types-validation.test.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 10,777-788,2214-2221
+  s_6a7201d5c4fd9c::t_ef592ee0ef4017 2222-2223
+apps/api/src/controllers/v2/parse.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 17,630-631,633,635-636
+apps/api/src/search/v2/index.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 5,51-56,62-83,85-90
+apps/api/src/scraper/scrapeURL/error.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 1-6,22-25,36-47,70-77,137-140,154-157,163-166,222-237,254-257,320-323,352-363,399-402,425-428,458-461,489-492,516-519,546-549,581-584,609,614-617,623-630,655-658,710-713,766-769,796-799,849-863,914-917,970-984,1083,1089-1102,1119,1126-1129
+apps/api/src/service/core-parts.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 3-4,10-13,27-32,114-141,172
+apps/api/src/service/search-providers.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 1-245
+apps/api/src/service/service.test.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 6,71-87,104,243-246,264-267,293-297,318-322,350-351,360,373-374,385-387,398,416-419,433-434,447-450,468,480,491,505,522
+apps/api/src/controllers/v2/types.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 990-995,2138
+apps/api/src/service/core-parts.test.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 14-17,44,47-50,54,70-80,98,197-242,345-349,377
+apps/api/src/controllers/v2/batch-scrape.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 87-93
+apps/api/src/service/index.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 6,59-68
+apps/api/src/controllers/v1/scrape.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 205-209
+apps/api/src/controllers/v2/max-age-schema.test.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 1-188
+apps/api/src/controllers/v2/scrape.ts
+  s_6a7201d5c4fd9c::t_65aa509625217e 18,215-220,510-511,513,515-516,524-525,527,529
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b3455188c9c6d93b119b0f99bbf012ba74943b53",
+  "prompts": {},
+  "sessions": {
+    "s_6a7201d5c4fd9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc25e5bc-9ab3-420e-8413-1c98a5787305",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
