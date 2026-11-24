@@ -1,3 +1,5 @@
+import express from "express";
+import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TransportableErrorClass } from "../lib/error";
 import type { Engine, EngineFeatureMap } from "./engines";
@@ -9,6 +11,7 @@ import {
   processRole,
   replaceService,
   run,
+  runProcessStop,
   service,
   type CoreParts,
   type Extension,
@@ -99,6 +102,8 @@ describe("createService", () => {
     expect(Object.isFrozen(built.engines)).toBe(true);
     expect(Object.isFrozen(built.searchProviders)).toBe(true);
     expect(Object.isFrozen(built.llmProviders)).toBe(true);
+    expect(Object.isFrozen(built.schemas)).toBe(true);
+    expect(Object.isFrozen(built.roles)).toBe(true);
     expect(Object.isFrozen(built.workers)).toBe(true);
   });
 
@@ -403,7 +408,7 @@ describe("describe", () => {
     expect(enabled).not.toHaveBeenCalled();
     expect(description).toEqual({
       extensions: ["core", "second", "third"],
-      modules: ["idempotency", "messages", "uploads", "webhooks"],
+      modules: ["blocklist", "idempotency", "messages", "uploads", "webhooks"],
       hooks: {
         "map.finished": ["second"],
         "process.stop": ["third", "second", "second", "core"],
@@ -422,6 +427,18 @@ describe("describe", () => {
         zebra: { owner: "second", priority: 80 },
       },
       llmProviders: { alpha: "core", openai: "second", zebra: "second" },
+      request: {
+        scrapeOptions: {},
+        scrape: {},
+        parse: {},
+        crawl: {},
+        batchScrape: {},
+        map: {},
+        search: {},
+        formats: {},
+        rules: [],
+      },
+      routes: [],
       roles: { api: "second", "queue-worker": "core", zebra: "second" },
       env: {},
     });
@@ -535,13 +552,25 @@ describe("describe", () => {
     ]);
     expect(built.describe()).toEqual({
       extensions: ["core", "mine"],
-      modules: ["idempotency", "messages", "uploads", "webhooks"],
+      modules: ["blocklist", "idempotency", "messages", "uploads", "webhooks"],
       hooks: { "map.finished": ["mine"] },
       errors: { MINE: "mine" },
       engines: { "mine-engine": "mine" },
       engineFeatures: { mineFlag: { owner: "mine", priority: 40 } },
       searchProviders: { "mine-search": { owner: "mine", priority: 60 } },
       llmProviders: { "mine-provider": "mine" },
+      request: {
+        scrapeOptions: {},
+        scrape: {},
+        parse: {},
+        crawl: {},
+        batchScrape: {},
+        map: {},
+        search: {},
+        formats: {},
+        rules: [],
+      },
+      routes: [],
       roles: { api: "mine" },
       env: {},
     });
@@ -623,17 +652,32 @@ describe("describe", () => {
     first.engineFeatures.waitFor.priority = 999;
     first.searchProviders.searxng.priority = 999;
     first.llmProviders.openai = "changed";
+    first.request.scrapeOptions.injected = "changed";
+    first.request.formats.injected = "changed";
+    first.request.rules.push("changed");
     first.roles.api = "changed";
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: ["idempotency", "messages", "uploads", "webhooks"],
+      modules: ["blocklist", "idempotency", "messages", "uploads", "webhooks"],
       hooks: { "map.finished": ["core"] },
       errors: { TIMEOUT: "core" },
       engines: { fetch: "core" },
       engineFeatures: { waitFor: { owner: "core", priority: 1 } },
       searchProviders: { searxng: { owner: "core", priority: 50 } },
       llmProviders: { openai: "core" },
+      request: {
+        scrapeOptions: {},
+        scrape: {},
+        parse: {},
+        crawl: {},
+        batchScrape: {},
+        map: {},
+        search: {},
+        formats: {},
+        rules: [],
+      },
+      routes: [],
       roles: { api: "core" },
       env: {},
     });
@@ -648,14 +692,24 @@ describe("service", () => {
     expect(() => service.engines).toThrow("No service is installed");
     expect(() => service.searchProviders).toThrow("No service is installed");
     expect(() => service.llmProviders).toThrow("No service is installed");
+    expect(() => service.schemas).toThrow("No service is installed");
+    expect(() => service.roles).toThrow("No service is installed");
     expect(() => service.workers).toThrow("No service is installed");
+    expect(() =>
+      service.mountRoutes({
+        root: {} as never,
+        v2: {} as never,
+        admin: {} as never,
+      }),
+    ).toThrow("No service is installed");
     expect(() => service.describe()).toThrow("No service is installed");
   });
 
   it("reads the installed service", () => {
+    const mountSpy = vi.fn();
     const built = createService(
       { modules: {} },
-      parts({ workers: { api: worker() } }),
+      parts({ workers: { api: worker() }, routes: mountSpy }),
     );
     replaceService(built);
 
@@ -665,8 +719,158 @@ describe("service", () => {
     expect(service.engines).toBe(built.engines);
     expect(service.searchProviders).toBe(built.searchProviders);
     expect(service.llmProviders).toBe(built.llmProviders);
+    expect(service.schemas).toBe(built.schemas);
+    expect(service.roles).toBe(built.roles);
     expect(service.workers).toBe(built.workers);
+    const routers = {
+      root: {} as never,
+      v2: {} as never,
+      admin: {} as never,
+    };
+    service.mountRoutes(routers);
+    expect(mountSpy).toHaveBeenCalledWith(routers);
     expect(service.describe()).toEqual(built.describe());
+  });
+});
+
+describe("routes and roles integration", () => {
+  it("mounts extension routes before core routes through built.mountRoutes and reports them in describe().routes", async () => {
+    const calls: string[] = [];
+    const built = createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "ext",
+            routes: ({ v2 }) => {
+              calls.push("ext");
+              v2.get("/shared", function extShared(_req, res) {
+                res.json({ from: "ext" });
+              });
+              v2.get("/ext-ping", function extPing(_req, res) {
+                res.json({ ok: "ext" });
+              });
+            },
+            workers: { "ext-worker": worker() },
+          },
+        ],
+      },
+      parts({
+        routes: ({ v2 }) => {
+          calls.push("core");
+          v2.get("/shared", function coreShared(_req, res) {
+            res.json({ from: "core" });
+          });
+          v2.get("/core-ping", function corePing(_req, res) {
+            res.json({ ok: "core" });
+          });
+        },
+        workers: { api: worker() },
+      }),
+    );
+
+    expect(calls).toEqual([]);
+    expect(built.roles.names()).toEqual(["api", "ext-worker"]);
+    expect(built.roles.owner("api")).toBe("core");
+    expect(built.roles.owner("ext-worker")).toBe("ext");
+
+    const app = express();
+    const v2 = express.Router();
+    const admin = express.Router();
+    built.mountRoutes({ root: app, v2, admin });
+    app.use("/v2", v2);
+    app.use(admin);
+
+    expect(calls).toEqual(["ext", "core"]);
+
+    const shared = await request(app).get("/v2/shared");
+    expect(shared.status).toBe(200);
+    expect(shared.body).toEqual({ from: "ext" });
+
+    const extPing = await request(app).get("/v2/ext-ping");
+    expect(extPing.status).toBe(200);
+    expect(extPing.body).toEqual({ ok: "ext" });
+
+    const corePing = await request(app).get("/v2/core-ping");
+    expect(corePing.status).toBe(200);
+    expect(corePing.body).toEqual({ ok: "core" });
+
+    expect(built.describe().routes).toEqual([
+      {
+        owner: "ext",
+        router: "v2",
+        method: "GET",
+        path: "/v2/shared",
+        middleware: ["extShared"],
+      },
+      {
+        owner: "ext",
+        router: "v2",
+        method: "GET",
+        path: "/v2/ext-ping",
+        middleware: ["extPing"],
+      },
+      {
+        owner: "core",
+        router: "v2",
+        method: "GET",
+        path: "/v2/shared",
+        middleware: ["coreShared"],
+      },
+      {
+        owner: "core",
+        router: "v2",
+        method: "GET",
+        path: "/v2/core-ping",
+        middleware: ["corePing"],
+      },
+    ]);
+    // describe() reuses metadata captured during mountRoutes instead of calling registrars again.
+    expect(calls).toEqual(["ext", "core"]);
+  });
+
+  it("runs a worker role contributed by an extension and forwards an optional abort signal", async () => {
+    const controller = new AbortController();
+    let aborted = false;
+    const customRun = vi.fn(
+      ({ entry, signal }: { entry: string; signal?: AbortSignal }) => {
+        expect(entry).toBe("/app/main.js");
+        expect(signal).toBe(controller.signal);
+        return new Promise<void>(resolve => {
+          signal?.addEventListener("abort", () => {
+            aborted = true;
+            resolve();
+          });
+        });
+      },
+    );
+    const built = createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "custom",
+            workers: { "custom-worker": { run: customRun } },
+          },
+        ],
+      },
+      parts({ workers: { api: worker() } }),
+    );
+
+    const running = run(built, "custom-worker", "/app/main.js", {
+      signal: controller.signal,
+    });
+    expect(processRole()).toBe("custom-worker");
+    expect(aborted).toBe(false);
+
+    controller.abort();
+    await running;
+
+    expect(aborted).toBe(true);
+    expect(customRun).toHaveBeenCalledWith({
+      entry: "/app/main.js",
+      signal: controller.signal,
+    });
   });
 });
 
@@ -748,5 +952,214 @@ describe("run", () => {
     );
 
     await expect(run(built, "api", "/app/main.js")).rejects.toThrow("stopped");
+  });
+
+  it("awaits process.start hooks in order before running the role", async () => {
+    const events: string[] = [];
+    const api: Worker = {
+      run: vi.fn(() => {
+        events.push("worker:run");
+      }),
+    };
+    const built = createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "first",
+            hooks: {
+              "process.start": async ({ role }) => {
+                expect(processRole()).toBe("api");
+                expect(service.workers.api).toBe(api);
+                await Promise.resolve();
+                events.push(`start:first:${role}`);
+              },
+            },
+          },
+          {
+            name: "second",
+            hooks: {
+              "process.start": ({ role }) => {
+                events.push(`start:second:${role}`);
+              },
+            },
+          },
+        ],
+      },
+      parts({ workers: { api } }),
+    );
+
+    await run(built, "api", "/app/main.js");
+
+    expect(events).toEqual([
+      "start:first:api",
+      "start:second:api",
+      "worker:run",
+    ]);
+    expect(api.run).toHaveBeenCalledWith({ entry: "/app/main.js" });
+  });
+
+  it("does not start the role when a process.start hook rejects", async () => {
+    const api: Worker = { run: vi.fn() };
+    const built = createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "veto",
+            hooks: {
+              "process.start": async () => {
+                throw new Error("startup blocked");
+              },
+            },
+          },
+        ],
+      },
+      parts({ workers: { api } }),
+    );
+
+    await expect(run(built, "api", "/app/main.js")).rejects.toThrow(
+      "startup blocked",
+    );
+    expect(api.run).not.toHaveBeenCalled();
+  });
+
+  it("rejects when a role throws synchronously after a process.start hook runs", async () => {
+    const started: string[] = [];
+    const built = createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "boot",
+            hooks: {
+              "process.start": ({ role }) => {
+                started.push(role);
+              },
+            },
+          },
+        ],
+      },
+      parts({
+        workers: {
+          api: {
+            run() {
+              throw new Error("role load failed");
+            },
+          },
+        },
+      }),
+    );
+
+    await expect(run(built, "api", "/app/main.js")).rejects.toThrow(
+      "role load failed",
+    );
+    expect(started).toEqual(["api"]);
+  });
+});
+
+describe("runProcessStop", () => {
+  it("is a no-op when no service is installed or no handler is registered", async () => {
+    await expect(runProcessStop("api")).resolves.toBeUndefined();
+
+    const built = createService(
+      { modules: {} },
+      parts({ workers: { api: worker() } }),
+    );
+    await run(built, "api", "/app/main.js");
+
+    await expect(runProcessStop("api")).resolves.toBeUndefined();
+  });
+
+  it("runs process.stop hooks once in reverse order with the active role", async () => {
+    const events: string[] = [];
+    const built = createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "first",
+            hooks: {
+              "process.stop": async ({ role }) => {
+                await Promise.resolve();
+                events.push(`stop:first:${role}`);
+              },
+            },
+          },
+          {
+            name: "second",
+            hooks: {
+              "process.stop": async ({ role }) => {
+                await Promise.resolve();
+                events.push(`stop:second:${role}`);
+              },
+            },
+          },
+        ],
+      },
+      parts({ workers: { "queue-worker": worker() } }),
+    );
+
+    await run(built, "queue-worker", "/app/main.js");
+
+    await Promise.all([runProcessStop("fallback"), runProcessStop("fallback")]);
+    await runProcessStop("fallback");
+
+    expect(events).toEqual([
+      "stop:second:queue-worker",
+      "stop:first:queue-worker",
+    ]);
+  });
+
+  it("isolates errors and 10s timeouts across process.stop handlers", async () => {
+    vi.useFakeTimers();
+    try {
+      const errorLogger = vi.fn();
+      const events: string[] = [];
+      const built = createService(
+        {
+          modules: {},
+          extensions: [
+            {
+              name: "first",
+              hooks: {
+                "process.stop": ({ role }) => {
+                  events.push(`first:${role}`);
+                },
+              },
+            },
+            {
+              name: "slow",
+              hooks: {
+                "process.stop": () => new Promise<void>(() => {}),
+              },
+            },
+            {
+              name: "throwing",
+              hooks: {
+                "process.stop": () => {
+                  events.push("throwing");
+                  throw new Error("flush failed");
+                },
+              },
+            },
+          ],
+        },
+        {
+          core: { name: "core", workers: { api: worker() } },
+          logger: { error: errorLogger },
+        },
+      );
+      replaceService(built);
+
+      const pending = runProcessStop("api");
+      await vi.advanceTimersByTimeAsync(10_000);
+      await pending;
+
+      expect(events).toEqual(["throwing", "first:api"]);
+      expect(errorLogger).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

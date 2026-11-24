@@ -4,6 +4,7 @@ import { logger } from "../lib/logger";
 import { cleanZdrJob, sendZdrHeartbeat } from "../lib/zdrcleaner";
 import { consumeZdrCleanupJobs, shutdownZdrQueue } from "../lib/zdr-queue";
 import { startRole } from "../main";
+import { runProcessStop } from "../service/service";
 
 let isShuttingDown = false;
 
@@ -27,7 +28,11 @@ export async function start() {
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
 
-  await shutdownZdrQueue();
+  try {
+    await shutdownZdrQueue();
+  } finally {
+    await runProcessStop("zdr-worker");
+  }
   await shutdownTracing();
   logger.info("zdr-worker exiting");
   process.exit(0);

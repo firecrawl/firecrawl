@@ -56,6 +56,7 @@ const errorClassesModule = "../lib/error-serde";
 const enginesModule = "../scraper/scrapeURL/engines";
 const searchProvidersModule = "../search/providers";
 const llmProvidersModule = "../lib/generic-ai";
+const v2TypesModule = "../controllers/v2/types";
 
 // coreParts() loads its error classes, engine implementations, search provider
 // implementations, and LLM provider implementations with require() on first
@@ -102,6 +103,21 @@ function answerRequire(
           ),
         })),
       };
+  const v2TypesStub = {
+    buildV2RequestSchemas: vi.fn(() => {
+      const fakeSchema = { _zod: {}, safeParse: vi.fn() };
+      return {
+        scrape: fakeSchema,
+        parse: fakeSchema,
+        crawl: fakeSchema,
+        batchScrape: fakeSchema,
+        batchScrapeNoURLValidation: fakeSchema,
+        map: fakeSchema,
+        search: fakeSchema,
+        scrapeOptions: fakeSchema,
+      };
+    }),
+  };
   return vi.spyOn(Module.prototype, "require").mockImplementation(function (
     this: Module,
     id: string,
@@ -110,6 +126,7 @@ function answerRequire(
     if (id === enginesModule) return enginesStub;
     if (id === searchProvidersModule) return searchProvidersStub;
     if (id === llmProvidersModule) return llmProvidersStub;
+    if (id === v2TypesModule) return v2TypesStub;
     return load.call(this, id);
   });
 }
@@ -228,15 +245,16 @@ describe("coreParts", () => {
 
     // Creating the service, inspecting registered providers, and calling
     // describe() must not load the search provider implementations.
-    expect(built.searchProviders.all()).toHaveLength(
-      coreSearchProviderSpecs.length,
-    );
-    const fireEngineProvider = built.searchProviders.get("fire-engine");
-    expect(fireEngineProvider?.priority).toBe(100);
-    expect(fireEngineProvider?.supportsUsOnly).toBe(true);
+    expect(built.searchProviders.all().map(p => p.name)).toEqual([
+      "searxng",
+      "duckduckgo",
+    ]);
     const searxngProvider = built.searchProviders.get("searxng");
     expect(searxngProvider?.priority).toBe(50);
     expect(searxngProvider?.supportsUsOnly).toBeUndefined();
+    const duckduckgoProvider = built.searchProviders.get("duckduckgo");
+    expect(duckduckgoProvider?.priority).toBe(0);
+    expect(duckduckgoProvider?.supportsUsOnly).toBeUndefined();
     built.describe();
     expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
 
@@ -267,7 +285,7 @@ describe("coreParts", () => {
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: ["idempotency", "messages", "uploads", "webhooks"],
+      modules: ["blocklist", "idempotency", "messages", "uploads", "webhooks"],
       hooks: {},
       errors: {
         AGENT_INDEX_ONLY: "core",
@@ -357,20 +375,24 @@ describe("coreParts", () => {
       },
       searchProviders: {
         duckduckgo: { owner: "core", priority: 0 },
-        "fire-engine": { owner: "core", priority: 100 },
         searxng: { owner: "core", priority: 50 },
       },
       llmProviders: {
-        anthropic: "core",
-        deepinfra: "core",
-        fireworks: "core",
-        google: "core",
-        groq: "core",
         ollama: "core",
         openai: "core",
-        openrouter: "core",
-        vertex: "core",
       },
+      request: {
+        scrapeOptions: {},
+        scrape: {},
+        parse: {},
+        crawl: {},
+        batchScrape: {},
+        map: {},
+        search: {},
+        formats: {},
+        rules: [],
+      },
+      routes: [],
       roles: {
         api: "core",
         "cclog-worker": "core",
@@ -389,6 +411,27 @@ describe("coreParts", () => {
     expect(required).not.toHaveBeenCalledWith(enginesModule);
     expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
     expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
+    expect(required).not.toHaveBeenCalledWith(v2TypesModule);
+  });
+
+  it("loads v2 request schemas lazily on the first schemas access, and once", () => {
+    const required = answerRequire();
+    const built = createService({ modules: {} }, coreParts());
+
+    built.describe();
+    expect(required).not.toHaveBeenCalledWith(v2TypesModule);
+
+    expect(built.schemas.scrape).toBeDefined();
+    expect(built.schemas.parse).toBeDefined();
+    expect(built.schemas.crawl).toBeDefined();
+    expect(built.schemas.batchScrape).toBeDefined();
+    expect(built.schemas.batchScrapeNoURLValidation).toBeDefined();
+    expect(built.schemas.map).toBeDefined();
+    expect(built.schemas.search).toBeDefined();
+    expect(built.schemas.scrapeOptions).toBeDefined();
+    expect(
+      required.mock.calls.filter(([id]) => id === v2TypesModule),
+    ).toHaveLength(1);
   });
 
   it("loads core error classes and default modules without pulling in config, exchange, deployment, gcs, zdr, redis, or db", () => {
@@ -408,15 +451,102 @@ describe("coreParts", () => {
     expect(transformed instanceof Promise).toBe(false);
 
     expect(built.describe().hooks).toEqual({});
+    expect(built.describe().routes).toEqual([]);
+    expect(built.roles.names()).toHaveLength(11);
     expect(built.describe().modules).toEqual([
+      "blocklist",
       "idempotency",
       "messages",
       "uploads",
       "webhooks",
     ]);
+    expect(required).not.toHaveBeenCalledWith("express");
     expect(required).not.toHaveBeenCalledWith(enginesModule);
     expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
     expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
+    expect(required).not.toHaveBeenCalledWith(v2TypesModule);
     expect(loadedSideEffectModules).toEqual([]);
+  });
+
+  it("registers only openai and ollama in core and accepts extension-contributed LLM providers without side effects", () => {
+    const required = answerRequire();
+    const customModel = { modelId: "custom-model" } as unknown as LlmModel;
+    const customEnabled = vi.fn(() => true);
+    const customProvider = {
+      name: "custom-llm",
+      enabled: customEnabled,
+      model: vi.fn(() => customModel),
+    } as unknown as LlmProvider;
+
+    const built = createService(
+      {
+        modules: defaultModules(),
+        extensions: [{ name: "extra-llm", llmProviders: [customProvider] }],
+      },
+      coreParts(),
+    );
+
+    expect(built.describe().llmProviders).toEqual({
+      "custom-llm": "extra-llm",
+      ollama: "core",
+      openai: "core",
+    });
+    expect(built.llmProviders.all().map(p => p.name)).toEqual([
+      "openai",
+      "ollama",
+      "custom-llm",
+    ]);
+    expect(built.llmProviders.get("custom-llm")?.model("m")).toBe(customModel);
+    expect(customEnabled).not.toHaveBeenCalled();
+    expect(required).not.toHaveBeenCalledWith(llmProvidersModule);
+    expect(loadedSideEffectModules).toEqual([]);
+  });
+
+  it("registers extension search providers alongside core SearXNG and DuckDuckGo without loading implementations", () => {
+    const required = answerRequire();
+    const customEnabled = vi.fn(() => true);
+    const customSearch = vi.fn(async () => ({ web: [] }));
+    const built = createService(
+      {
+        modules: defaultModules(),
+        extensions: [
+          {
+            name: "custom-search",
+            searchProviders: [
+              {
+                name: "custom-primary" as SearchProvider["name"],
+                priority: 100,
+                supportsUsOnly: true,
+                enabled: customEnabled,
+                search: customSearch,
+              },
+            ],
+          },
+        ],
+      },
+      coreParts(),
+    );
+
+    expect(built.searchProviders.all().map(p => p.name)).toEqual([
+      "searxng",
+      "duckduckgo",
+      "custom-primary",
+    ]);
+    expect(built.describe().searchProviders).toEqual({
+      "custom-primary": { owner: "custom-search", priority: 100 },
+      duckduckgo: { owner: "core", priority: 0 },
+      searxng: { owner: "core", priority: 50 },
+    });
+    expect(customEnabled).not.toHaveBeenCalled();
+    expect(required).not.toHaveBeenCalledWith(searchProvidersModule);
+    expect(loadedSideEffectModules).toEqual([]);
+
+    expect(built.searchProviders.enabled().map(p => p.name)).toEqual([
+      "custom-primary",
+      "searxng",
+      "duckduckgo",
+    ]);
+    expect(customEnabled).toHaveBeenCalledTimes(1);
+    expect(required).toHaveBeenCalledWith(searchProvidersModule);
   });
 });

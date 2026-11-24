@@ -2,7 +2,9 @@ vi.mock("uuid", () => ({
   v7: vi.fn(() => "job-1"),
 }));
 
-import { scrapeSearchResults } from "./scrape";
+import { getItemsToScrape, scrapeSearchResults } from "./scrape";
+import { defaultModules, noBlocklist } from "../service/defaults";
+import { testService, withService } from "../service/testing";
 import { getJobPriority } from "../lib/job-priority";
 import { processJobInternal } from "../services/worker/scrape-worker";
 
@@ -97,6 +99,84 @@ describe("scrapeSearchResults", () => {
           }),
         }),
       }),
+    );
+  });
+});
+
+describe("getItemsToScrape", () => {
+  const parts = { core: { name: "core" }, logger: { error: vi.fn() } };
+  const sampleResults = {
+    web: [
+      { url: "https://allowed.example/a", title: "A", description: "a" },
+      { url: "https://blocked.example/b", title: "B", description: "b" },
+    ],
+    news: [
+      { url: "https://blocked.example/n", title: "N", snippet: "n" },
+      { url: "https://allowed.example/n", title: "N2", snippet: "n2" },
+    ],
+    images: [
+      { url: "https://allowed.example/i.png", title: "I" },
+      { url: "https://blocked.example/i.png", title: "I2" },
+    ],
+  };
+
+  it("keeps all items under noBlocklist()", async () => {
+    await withService(testService(defaultModules(), parts), async () => {
+      const items = getItemsToScrape(sampleResults as any, null, {
+        team_id: "team-1",
+        org_id: "org-1",
+        origin: "search",
+      });
+      expect(items.map(i => i.scrapeInput.url)).toEqual([
+        "https://allowed.example/a",
+        "https://blocked.example/b",
+        "https://blocked.example/n",
+        "https://allowed.example/n",
+        "https://allowed.example/i.png",
+        "https://blocked.example/i.png",
+      ]);
+    });
+  });
+
+  it("filters URLs blocked by the installed blocklist module and disables recording when context is omitted", async () => {
+    const isBlocked = vi.fn(
+      (url: string) => new URL(url).hostname === "blocked.example",
+    );
+
+    await withService(
+      testService(defaultModules(), parts, {
+        blocklist: { ...noBlocklist(), isBlocked },
+      }),
+      async () => {
+        const items = getItemsToScrape(sampleResults as any, null, {
+          team_id: "team-1",
+          org_id: "org-1",
+          origin: "search",
+        });
+        expect(items.map(i => i.scrapeInput.url)).toEqual([
+          "https://allowed.example/a",
+          "https://allowed.example/n",
+          "https://allowed.example/i.png",
+        ]);
+        expect(isBlocked).toHaveBeenCalledWith(
+          "https://blocked.example/b",
+          expect.objectContaining({ teamId: "team-1", orgId: "org-1" }),
+          { origin: "search" },
+        );
+
+        isBlocked.mockClear();
+        getItemsToScrape(
+          {
+            web: [{ url: "https://allowed.example/a", title: "A" }],
+          } as any,
+          null,
+        );
+        expect(isBlocked).toHaveBeenCalledWith(
+          "https://allowed.example/a",
+          expect.objectContaining({ teamId: "", orgId: null }),
+          { record: false },
+        );
+      },
     );
   });
 });

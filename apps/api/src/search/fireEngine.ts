@@ -8,47 +8,6 @@ function hasResults(results: unknown): results is SearchResult[] {
   return Array.isArray(results) && results.length > 0;
 }
 
-export async function fire_engine_search(
-  q: string,
-  options: {
-    tbs?: string;
-    filter?: string;
-    lang?: string;
-    country?: string;
-    location?: string;
-    numResults: number;
-    page?: number;
-    usOnly?: boolean;
-  },
-  abort?: AbortSignal,
-): Promise<SearchResult[]> {
-  if (!useFireEngine) {
-    return [];
-  }
-
-  const payload = {
-    query: q,
-    lang: options.lang,
-    country: options.country,
-    location: options.location,
-    tbs: options.tbs,
-    numResults: options.numResults,
-    page: options.page ?? 1,
-    ...(options.usOnly ? { usOnly: true } : {}),
-  };
-
-  const url = `${config.FIRE_ENGINE_BETA_URL}/search`;
-  const data = JSON.stringify(payload);
-
-  const result = await executeWithRetry<SearchResult[]>(
-    () => attemptRequest<SearchResult[]>(url, data, abort),
-    hasResults,
-    abort,
-  );
-
-  return result ?? [];
-}
-
 export async function fireEngineMap(
   q: string,
   options: {

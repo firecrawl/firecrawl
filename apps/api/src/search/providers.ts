@@ -6,11 +6,9 @@ import {
   type SearchProviderName,
   type SearchQuery,
 } from "../service/search-providers";
-import { fire_engine_search } from "./fireEngine";
 import { matchesDomains } from "./operators";
 import { searxng_search as searxng_search_legacy } from "./searxng";
 import { ddgSearch } from "./v2/ddgsearch";
-import { fire_engine_search_v2 } from "./v2/fireEngine-v2";
 import { searxng_search as searxng_search_v2 } from "./v2/searxng";
 
 function filterWebByDomains(
@@ -26,51 +24,6 @@ const providerImplementations: Record<
   SearchProviderName,
   Pick<SearchProvider, "enabled" | "search">
 > = {
-  "fire-engine": {
-    enabled: () => Boolean(config.FIRE_ENGINE_BETA_URL),
-    async search(query) {
-      query.logger?.info("Using fire engine search");
-      if (query.legacy) {
-        const results = await fire_engine_search(
-          query.query,
-          {
-            numResults: query.numResults,
-            tbs: query.tbs,
-            filter: query.filter,
-            lang: query.lang,
-            country: query.country,
-            location: query.location,
-            ...(query.page !== undefined ? { page: query.page } : {}),
-            usOnly: query.usOnly,
-          },
-          query.abort,
-        );
-        return { web: results };
-      }
-
-      return fire_engine_search_v2(
-        query.query,
-        {
-          requestId: query.requestId,
-          numResults: query.numResults,
-          tbs: query.tbs,
-          filter: query.filter,
-          lang: query.lang,
-          country: query.country,
-          location: query.location,
-          safe: query.safe,
-          ...(query.page !== undefined ? { page: query.page } : {}),
-          type: query.type,
-          enterprise: query.enterprise,
-          includeDomains: query.includeDomains,
-          excludeDomains: query.excludeDomains,
-          usOnly: query.usOnly,
-          teamPlanClass: query.teamPlanClass,
-        },
-        query.abort,
-      );
-    },
-  },
   searxng: {
     enabled: () => Boolean(config.SEARXNG_ENDPOINT),
     async search(query) {

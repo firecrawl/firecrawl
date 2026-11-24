@@ -30,6 +30,7 @@ import {
   type SearchProvider,
   type SearchProviderName,
 } from "./search-providers";
+import { defaultBuildRequestSchemas } from "./request";
 import type { CoreParts, Worker } from "./service";
 
 const role = (load: () => { start: Worker["run"] }): Worker => ({
@@ -180,5 +181,6 @@ export function coreParts(): CoreParts {
         ).logger.error(message, meta);
       },
     },
+    buildRequestSchemas: defaultBuildRequestSchemas,
   };
 }

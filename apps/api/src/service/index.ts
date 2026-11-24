@@ -1,4 +1,4 @@
-export type { Document, ScrapeOptions } from "../controllers/v2/types";
+export type { Document } from "../controllers/v2/types";
 export type {
   ErrorCode,
   ErrorCodes,
@@ -12,6 +12,7 @@ export {
   directWebhooks,
   logsMessages,
   memoryUploads,
+  noBlocklist,
   redisIdempotency,
 } from "./defaults";
 export type {
@@ -75,6 +76,8 @@ export type {
   LlmProviders,
 } from "./llm-providers";
 export type {
+  BlocklistCheckOptions,
+  BlocklistModule,
   DirectUploadInput,
   DirectUploadResult,
   FetchProxyFileKind,
@@ -100,6 +103,47 @@ export type {
   Caller,
   RequestContext,
 } from "./request-context";
+export {
+  buildRequestSchemas,
+  hasFormatOfType,
+  requestFieldBuckets,
+  requestKinds,
+} from "./request";
+export type {
+  BatchScrapeRequest,
+  BatchScrapeRequestFields,
+  CrawlRequest,
+  CrawlRequestFields,
+  DescribedRequestSchemas,
+  FieldSchemas,
+  Format,
+  FormatName,
+  Formats,
+  FormatSchemas,
+  MapRequest,
+  MapRequestFields,
+  ParseRequest,
+  ParseRequestFields,
+  RequestContributions,
+  RequestFieldBucket,
+  RequestSchemaBuilder,
+  RequestSchemas,
+  ResolvedRequestContributions,
+  ScrapeOptions,
+  ScrapeOptionsFields,
+  ScrapeOptionsRule,
+  ScrapeOptionsRuleResult,
+  ScrapeRequest,
+  ScrapeRequestFields,
+  SearchRequest,
+  SearchRequestFields,
+} from "./request";
+export type {
+  DescribedRoute,
+  RouteRegistrar,
+  RouterName,
+  Routers,
+} from "./routes";
 export { coreSearchProviderNames } from "./search-providers";
 export type {
   CoreSearchProviderSpec,
@@ -115,8 +159,11 @@ export type {
   CoreParts,
   ErrorRegistry,
   Extension,
+  RoleRegistry,
+  RunOptions,
   Service,
   ServiceConfig,
   ServiceDescription,
   Worker,
+  WorkerRunEnv,
 } from "./service";
