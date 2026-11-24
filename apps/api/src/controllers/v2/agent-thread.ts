@@ -1,10 +1,10 @@
 import { Response } from "express";
 import { config } from "../../config";
-import { ErrorCodes } from "../../lib/error";
+import { ErrorCode } from "../../lib/error";
 import { logger as _logger } from "../../lib/logger";
 import { AgentThread, AgentThreadResponse, RequestWithAuth } from "./types";
 
-const THREAD_ERRORS: Record<number, { code: ErrorCodes; error: string }> = {
+const THREAD_ERRORS: Record<number, { code: ErrorCode; error: string }> = {
   404: { code: "thread_not_found", error: "Agent thread not found" },
   409: {
     code: "thread_busy",

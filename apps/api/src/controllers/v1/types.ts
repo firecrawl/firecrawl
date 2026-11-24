@@ -1,5 +1,6 @@
 import type { AgentInteropStatus } from "../../lib/agent-interop";
 import type { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
+import type { ZDRPolicy } from "../../lib/zdr-policy";
 import { Request } from "express";
 import { config } from "../../config";
 import { z } from "zod";
@@ -19,7 +20,7 @@ import { InternalOptions } from "../../scraper/scrapeURL";
 import { getURLDepth } from "../../scraper/WebScraper/utils/maxDepthUtils";
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
-import { ErrorCodes } from "../../lib/error";
+import { ErrorCode } from "../../lib/error";
 import { integrationSchema } from "../../utils/integration";
 import { includesFormat } from "../../lib/format-utils";
 import { webhookSchema } from "../../services/webhook/schema";
@@ -29,6 +30,8 @@ import { MenuProfile } from "../../types/menu";
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
 import { auditMetadataSchema } from "../../lib/siem-logging/types";
 import type { RateLimiterMode } from "../../types";
+import type { TeamPlanClass } from "../../lib/team-plan-class";
+import type { FreshFeedFilters, FreshFeedUpstream } from "../../lib/fresh-feed";
 
 type Format =
   | "markdown"
@@ -274,22 +277,8 @@ const extractOptionsWithAgent = z
   })
   .transform(data => ({
     ...data,
-    systemPrompt: isAgentExtractModelValid(data.agent?.model)
-      ? `You are an expert web data extractor. Your task is to analyze the provided markdown content from a web page and generate a JSON object based *strictly* on the provided schema.
-
-Key Instructions:
-1.  **Schema Adherence:** Populate the JSON object according to the structure defined in the schema.
-2.  **Content Grounding:** Extract information *only* if it is explicitly present in the provided markdown. Do NOT infer or fabricate information.
-3.  **Missing Information:** If a piece of information required by the schema cannot be found in the markdown, use \`null\` for that field's value.
-4.  **SmartScrape Recommendation:**
-    *   Assess if the *full* required data seems unavailable in the current markdown likely because:
-        - Content requires user interaction to reveal (e.g., clicking buttons, hovering, scrolling)
-        - Content uses pagination (e.g., "Load More" buttons, numbered pagination, infinite scroll)
-        - Content is dynamically loaded after user actions
-    *   If the content requires user interaction or pagination to be fully accessible, set \`shouldUseSmartscrape\` to \`true\` in your response and provide a clear \`reasoning\` and \`prompt\` for the SmartScrape tool.
-    *   If the content is simply JavaScript rendered but doesn't require interaction, set \`shouldUseSmartscrape\` to \`false\`.
-5.  **Output Format:** Your final output MUST be a single, valid JSON object conforming precisely to the schema. Do not include any explanatory text outside the JSON structure.`
-      : "Based on the information on the page, extract all the information from the schema in JSON format. Try to extract all the fields even those that might not be marked as required.",
+    systemPrompt:
+      "Based on the information on the page, extract all the information from the schema in JSON format. Try to extract all the fields even those that might not be marked as required.",
   }));
 
 export type ExtractOptions = z.infer<typeof extractOptions>;
@@ -575,9 +564,9 @@ const baseScrapeOptions = z.strictObject({
   __forceFirePDF: z.boolean().prefault(false).optional(),
 });
 
-const fire1RefineOpts = {
+export const agentRemovedRefineOpts = {
   message:
-    "You may only specify the FIRE-1 model in agent or jsonOptions.agent, but not both.",
+    "The 'agent' option (FIRE-1) has been removed. Use /v2/agent for tasks that need navigation, or a 'json' format on /v2/scrape for structured data from a page. See https://docs.firecrawl.dev/features/agent.",
 } as const;
 
 const waitForRefineOpts = {
@@ -634,10 +623,6 @@ const extractTransform = (obj: ScrapeOptions) => {
     obj = { ...obj, timeout: 60000 };
   }
 
-  if ((obj as ScrapeOptions).agent) {
-    obj = { ...obj, timeout: 300000 };
-  }
-
   if (
     (obj.proxy === "stealth" ||
       obj.proxy === "enhanced" ||
@@ -677,15 +662,8 @@ const scrapeOptionsBase = baseScrapeOptions.extend({
 
 type ScrapeOptionsBase = z.infer<typeof scrapeOptionsBase>;
 
-const fire1Refine = (obj: ScrapeOptionsBase): boolean => {
-  if (
-    obj.agent?.model?.toLowerCase() === "fire-1" &&
-    obj.jsonOptions?.agent?.model?.toLowerCase() === "fire-1"
-  ) {
-    return false;
-  }
-  return true;
-};
+const agentRemovedRefine = (obj: ScrapeOptionsBase): boolean =>
+  !obj.agent && !obj.jsonOptions?.agent && !obj.extract?.agent;
 
 const waitForRefine = (obj?: ScrapeOptionsBase): boolean => {
   if (obj && obj.waitFor !== undefined && obj.timeout !== undefined) {
@@ -724,7 +702,7 @@ export const scrapeOptions = scrapeOptionsBase
     },
   )
   .refine(extractRefine, extractRefineOpts)
-  .refine(fire1Refine, fire1RefineOpts)
+  .refine(agentRemovedRefine, agentRemovedRefineOpts)
   .refine(waitForRefine, waitForRefineOpts)
   .transform(obj => {
     return extractTransform(obj) as typeof obj;
@@ -807,6 +785,10 @@ const extractV1Options = z
   .refine(obj => obj.urls || obj.prompt, {
     error: "Either 'urls' or 'prompt' must be provided.",
   })
+  .refine(
+    obj => !isAgentExtractModelValid(obj.agent?.model),
+    agentRemovedRefineOpts,
+  )
   .transform(obj => ({
     ...obj,
     allowExternalLinks: obj.allowExternalLinks || obj.enableWebSearch,
@@ -816,8 +798,8 @@ const extractV1Options = z
     extractRefineOpts,
   )
   .refine(
-    x => (x.scrapeOptions ? fire1Refine(x.scrapeOptions) : true),
-    fire1RefineOpts,
+    x => (x.scrapeOptions ? agentRemovedRefine(x.scrapeOptions) : true),
+    agentRemovedRefineOpts,
   )
   .refine(
     x => (x.scrapeOptions ? waitForRefine(x.scrapeOptions) : true),
@@ -857,7 +839,7 @@ const scrapeRequestSchemaBase = baseScrapeOptions
 
 export const scrapeRequestSchema = scrapeRequestSchemaBase
   .refine(extractRefine, extractRefineOpts)
-  .refine(fire1Refine, fire1RefineOpts)
+  .refine(agentRemovedRefine, agentRemovedRefineOpts)
   .refine(waitForRefine, waitForRefineOpts)
   .transform(obj => {
     return extractTransform(obj) as typeof obj;
@@ -880,7 +862,7 @@ const batchScrapeRequestSchemaBase = baseScrapeOptions.extend({
 export const batchScrapeRequestSchema = batchScrapeRequestSchemaBase
   .strict()
   .refine(extractRefine, extractRefineOpts)
-  .refine(fire1Refine, fire1RefineOpts)
+  .refine(agentRemovedRefine, agentRemovedRefineOpts)
   .refine(waitForRefine, waitForRefineOpts)
   .transform(obj => extractTransform(obj) as typeof obj);
 
@@ -899,7 +881,7 @@ export const batchScrapeRequestSchemaNoURLValidation =
   batchScrapeRequestSchemaNoURLValidationBase
     .strict()
     .refine(extractRefine, extractRefineOpts)
-    .refine(fire1Refine, fire1RefineOpts)
+    .refine(agentRemovedRefine, agentRemovedRefineOpts)
     .refine(waitForRefine, waitForRefineOpts)
     .transform(obj => extractTransform(obj) as typeof obj);
 
@@ -965,8 +947,8 @@ export const crawlRequestSchema = crawlRequestSchemaBase
     extractRefineOpts,
   )
   .refine(
-    x => (x.scrapeOptions ? fire1Refine(x.scrapeOptions) : true),
-    fire1RefineOpts,
+    x => (x.scrapeOptions ? agentRemovedRefine(x.scrapeOptions) : true),
+    agentRemovedRefineOpts,
   )
   .refine(
     x => (x.scrapeOptions ? waitForRefine(x.scrapeOptions) : true),
@@ -1169,7 +1151,7 @@ export type Document = {
 
 export type ErrorResponse = {
   success: false;
-  code?: ErrorCodes;
+  code?: ErrorCode;
   error: string;
   details?: any;
   sponsor_status?: string;
@@ -1207,7 +1189,7 @@ export interface URLTrace {
 
 export interface ExtractResponse {
   success: boolean;
-  code?: ErrorCodes;
+  code?: ErrorCode;
   error?: string;
   data?: any;
   scrape_id?: string;
@@ -1349,6 +1331,12 @@ export type AuthCreditUsageChunk = {
   concurrency_limit: number;
   rate_limit_multiplier: number;
   is_paid_plan: boolean;
+  // The team's plan class before team flags are applied (see teamPlanClass):
+  // what planClassOf made of the org's billing record, or the keyless class
+  // on the chunk keyless auth builds. Absent when billing did not answer or
+  // gave the org no class, when the chunk is any other mock, or when it was
+  // cached before this field.
+  plan_class?: TeamPlanClass;
 
   // Agent signup: populated when the key is agent-provisioned
   _agentSponsor?: {
@@ -1384,6 +1372,9 @@ export type TeamFlags = {
   forceZDR?: boolean;
   allowZDR?: boolean;
   scrapeZDR?: "disabled" | "allowed" | "forced";
+  // Zero data retention for Alexandria provider tools and the Exchange proxy.
+  // Forced scrape ZDR implies it. Exchange is told per call by header.
+  alexandriaZDR?: "disabled" | "allowed" | "forced";
   searchZDR?: "disabled" | "allowed" | "forced" | "forced-zdr" | "forced-anon";
   zdrCost?: number;
   /** How long an agent run's ZDR result is kept, in minutes. Unset is the default (24 hours). */
@@ -1408,6 +1399,10 @@ export type TeamFlags = {
   enrichBeta?: boolean;
   labsSearch?: boolean;
   freshFeed?: boolean;
+  freshFeedCreditsPerRecord?: number;
+  freshFeedUpstream?: FreshFeedUpstream;
+  freshFeedCollection?: string;
+  freshFeedFilters?: FreshFeedFilters;
   exchangeRetrieve?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
   // The org's DPA (or partner amendment) restricts how its data may be
@@ -1419,6 +1414,11 @@ export type TeamFlags = {
   // Every request is processed by US-based vendors only. A route with no US
   // vendor is refused or skipped with a warning.
   usOnly?: boolean;
+  // Staff-set: the org has a signed contract on file.
+  signedContract?: boolean;
+  // Staff-set: the date range of the org's enterprise pilot, as ISO 8601
+  // strings. No endDate means the pilot has no end.
+  enterprisePilot?: { startDate?: string; endDate?: string } | null;
   // PDF and image parsing runs only on reserved processing capacity. A parse
   // that cannot be kept there is refused.
   reservedCapacity?: boolean;
@@ -1461,6 +1461,7 @@ export interface RequestWithMaybeACUC<
   ResBody = undefined,
 > extends Request<ReqParams, ReqBody, ResBody> {
   acuc?: AuthCreditUsageChunk;
+  zdrPolicy?: ZDRPolicy;
 }
 
 export interface RequestWithAuth<
@@ -1700,7 +1701,7 @@ export const searchRequestSchema = z
       .prefault({}),
   })
   .refine(x => extractRefine(x.scrapeOptions), extractRefineOpts)
-  .refine(x => fire1Refine(x.scrapeOptions), fire1RefineOpts)
+  .refine(x => agentRemovedRefine(x.scrapeOptions), agentRemovedRefineOpts)
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => ({
     ...x,

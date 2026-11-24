@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { Counter, Histogram } from "prom-client";
 import { z } from "zod";
 import { config } from "../../config";
 import type { TeamFlags } from "../../controllers/v2/types";
@@ -24,8 +25,10 @@ import { getBillingQueue } from "../queue-service";
 import { redisRateLimitClient } from "../rate-limiter";
 import { authorizeProviders } from "./access";
 import { exchangeRequest } from "./client";
+import { cachedResponse } from "./response-cache";
 import { isUsOnly } from "../../lib/us-only";
 import { isAlexandriaVerified } from "../../lib/alexandria-verified";
+import { alexandriaFeedbackStorage } from "../../lib/alexandria-feedback-storage";
 import {
   answerSchema,
   refusal,
@@ -35,6 +38,39 @@ import {
 } from "./contracts";
 
 export { REQUEST_ID_PATTERN };
+/** Requests whose charge id already had a record, by how they were answered. */
+const repeatTotal = new Counter({
+  name: "firecrawl_alexandria_repeat_total",
+  help: "Requests whose x-request-id already had a record, by how they were answered",
+  // outcome: replayed|response_expired|response_withheld|duplicate_request|request_in_flight|request_unresolved
+  // client: mcp|cli|sdk|api|other
+  labelNames: ["outcome", "client"] as const,
+});
+/** How long after a request completed its charge id was sent again. */
+const repeatAgeSeconds = new Histogram({
+  name: "firecrawl_alexandria_repeat_age_seconds",
+  help: "Seconds between a request completing and a repeat of its x-request-id",
+  // outcome: replayed|response_expired|response_withheld
+  // client: mcp|cli|sdk|api|other
+  labelNames: ["outcome", "client"] as const,
+  buckets: [1, 5, 15, 60, 300, 900, 3600, 21600, 86400, 604800],
+});
+/** The kind of client a request came from, as far as it said: a fixed set, for labels. */
+const clientKind = (input: {
+  hostedMcp?: boolean;
+  clientOrigin?: string;
+  clientIntegration?: string;
+}) => {
+  const origin = (input.clientOrigin ?? "").trim().toLowerCase();
+  const integration = (input.clientIntegration ?? "").trim().toLowerCase();
+  if (input.hostedMcp || origin.startsWith("mcp")) return "mcp";
+  // "cli", "cli@1.2.3", "cli.codex@1.2.3": the name ends at the first non-word character.
+  if (integration === "cli" || /^cli\b/.test(origin)) return "cli";
+  if (origin.includes("sdk")) return "sdk";
+  // A request that names no origin is a plain API call.
+  if (origin === "" || origin === "api") return "api";
+  return "other";
+};
 const RETENTION_SECONDS = 7 * 86400;
 const GRACE_MS = 30_000;
 const HOLD_GRACE_MS = 15 * 60_000;
@@ -56,6 +92,10 @@ type Retrieval = {
   scrapeId: string;
   lockId?: string;
   maximumCredits?: number;
+  // When the request completed. Absent on records written before it was recorded.
+  doneAt?: number;
+  // On a completed record that carries its response. One that does not has it in the
+  // response cache, for as long as the cache keeps it.
   response?: ExchangeResponse;
   // Set instead of response under zero data retention.
   responseWithheld?: boolean;
@@ -86,8 +126,48 @@ const hash = (value: unknown) =>
 export const exchangeRequestId = (teamId: string, requestId: string) =>
   hash([teamId, requestId]);
 
+// The catalogue's own free reads: the tool lookup and the library shell.
+const CATALOGUE_READS = new Set(["find-tools", "library"]);
 const isCatalogueRead = (call: ProviderCall) =>
-  call.provider === "firecrawl" && call.capability === "find-tools";
+  call.provider === "firecrawl" && CATALOGUE_READS.has(call.capability);
+
+// Providers whose response bodies are not kept for replay. Matched on the exact provider slug.
+const UNRETAINED_PROVIDERS = new Set(["particle", "apollo"]);
+// Enrichment and people search can answer with records from those providers under the firecrawl
+// slug, so none of their results are kept.
+const isUnretained = (provider: string, capability: string) =>
+  UNRETAINED_PROVIDERS.has(provider) ||
+  (provider === "firecrawl" &&
+    (capability === "enrich" ||
+      capability.startsWith("enrich/") ||
+      capability === "search/auto"));
+
+/** The answer as recorded for replay: each result that may not be stored is kept as a coded
+ *  error, with no data, while every other result and the charge stay as they were. */
+const retainable = (
+  answer: z.infer<typeof answerSchema>,
+  calls: ProviderCall[],
+): ExchangeResponse => ({
+  status: 200,
+  body: {
+    ...answer,
+    results: answer.results.map((item, i) => {
+      const provider = item.provider ?? calls[i].provider;
+      const capability = item.capability ?? calls[i].capability;
+      if (!isUnretained(provider, capability)) return item;
+      return {
+        provider,
+        capability,
+        error: {
+          code: "response_not_retained",
+          message:
+            "This provider request already completed. Its response is not kept, so it cannot be returned again; a new x-request-id runs it again and is charged again.",
+          status: 409,
+        },
+      };
+    }),
+  },
+});
 
 const unresolved = (chargeId: string) =>
   refusal(
@@ -149,6 +229,14 @@ export async function retrieveProviders(input: {
   maxCredits?: number;
   /** Trusted internal marker for zero-priced provider lines, already verified by the caller. */
   ultrasearch?: boolean;
+  /** Leave personal email addresses and personal phone numbers out of provider results, and refuse lookups by phone number. */
+  workContactOnly?: boolean;
+  /** The caller's origin and integration, when the request named them. Labels only. */
+  clientOrigin?: string;
+  clientIntegration?: string;
+  /** The caller's session and conversation ids, when the request carried them. Labels only. */
+  clientSession?: string;
+  clientThread?: string;
 }): Promise<ProviderRetrieval> {
   const notExecuted = (response: ExchangeResponse): ProviderRetrieval => ({
     ...response,
@@ -220,6 +308,20 @@ export async function retrieveProviders(input: {
   const usOnly = isUsOnly(input.flags);
   const alexandriaVerified = isAlexandriaVerified(input.flags);
   const ultrasearch = input.ultrasearch === true;
+  const workContactOnly = input.workContactOnly === true;
+  const catalogueOnly = input.calls.every(isCatalogueRead);
+  // Sent with every execution. Outside the fingerprint, so a repeat of the id replays its answer.
+  const caller = {
+    feedbackStorage: alexandriaFeedbackStorage(input.teamId, input.flags),
+    ...(input.clientOrigin ? { clientOrigin: input.clientOrigin } : {}),
+    ...(input.clientIntegration
+      ? { clientIntegration: input.clientIntegration }
+      : {}),
+    ...(input.clientSession ? { clientSession: input.clientSession } : {}),
+    ...(input.clientThread ? { clientThread: input.clientThread } : {}),
+    // A request made only of catalogue reads is one on whichever path runs it.
+    ...(catalogueOnly ? { searchRoute: "catalogue" as const } : {}),
+  };
   const deadline = Date.now() + input.timeoutMs;
   // Appended only when set so existing fingerprints stay stable.
   const fingerprint = hash([
@@ -230,6 +332,7 @@ export async function retrieveProviders(input: {
     ...(usOnly ? [{ usOnly }] : []),
     ...(alexandriaVerified ? [{ alexandriaVerified }] : []),
     ...(ultrasearch ? [{ ultrasearch }] : []),
+    ...(workContactOnly ? [{ workContactOnly }] : []),
   ]);
   const record: Retrieval = {
     fingerprint,
@@ -255,30 +358,86 @@ export async function retrieveProviders(input: {
   if (claimed !== "OK") {
     const raw = await redisRateLimitClient.get(key);
     const existing: Retrieval | null = raw ? JSON.parse(raw) : null;
+    const client = clientKind(input);
+    const repeat = (
+      outcome: string,
+      response: ProviderRetrieval,
+      ageSeconds?: number,
+    ) => {
+      repeatTotal.labels(outcome, client).inc();
+      // Who sends an id again, and how long after: the metrics carry no team.
+      logger.info("Alexandria request repeated", {
+        chargeId: id,
+        teamId: input.teamId,
+        outcome,
+        client,
+        catalogueOnly,
+        ...(ageSeconds === undefined ? {} : { ageSeconds }),
+        ...(input.clientOrigin
+          ? { clientOrigin: input.clientOrigin.slice(0, 100) }
+          : {}),
+        ...(input.clientIntegration
+          ? { clientIntegration: input.clientIntegration.slice(0, 100) }
+          : {}),
+        calls: input.calls.map(call => `${call.provider}/${call.capability}`),
+        // The logger drops a line that carries this set, so such a request leaves no log.
+        zeroDataRetention,
+      });
+      return response;
+    };
+    // A repeat of the request that completed, as opposed to another request under its id.
+    const repeatOfDone = (outcome: string, response: ProviderRetrieval) => {
+      const ageSeconds =
+        existing?.doneAt === undefined
+          ? undefined
+          : (Date.now() - existing.doneAt) / 1000;
+      if (ageSeconds !== undefined)
+        repeatAgeSeconds.labels(outcome, client).observe(ageSeconds);
+      return repeat(outcome, response, ageSeconds);
+    };
     if (
       existing?.phase === "done" &&
       existing.fingerprint === fingerprint &&
       existing.responseWithheld
     )
-      return notExecuted(
-        refusal(
-          409,
-          "This provider request already completed. Its response is not kept under zero data retention.",
-          { code: "response_not_retained", chargeId: id },
+      return repeatOfDone(
+        "response_withheld",
+        notExecuted(
+          refusal(
+            409,
+            "This provider request already completed. Its response is not kept under zero data retention.",
+            { code: "response_not_retained", chargeId: id },
+          ),
         ),
       );
-    if (existing?.phase === "done" && existing.fingerprint === fingerprint)
-      return {
-        ...existing.response!,
+    if (existing?.phase === "done" && existing.fingerprint === fingerprint) {
+      const response = existing.response ?? (await cachedResponse(id));
+      if (!response)
+        return repeatOfDone(
+          "response_expired",
+          notExecuted(
+            refusal(
+              409,
+              "This provider request already completed. Its response is no longer kept, so it cannot be returned again; a new x-request-id runs it again and is charged again.",
+              { code: "response_not_retained", chargeId: id },
+            ),
+          ),
+        );
+      return repeatOfDone("replayed", {
+        ...response,
         executed: false,
         scrapeId: existing.scrapeId ?? input.scrapeId,
-      };
+      });
+    }
     if (existing && existing.fingerprint !== fingerprint)
-      return notExecuted(
-        refusal(
-          409,
-          "This x-request-id already belongs to a different provider request.",
-          { code: "duplicate_request", chargeId: id },
+      return repeat(
+        "duplicate_request",
+        notExecuted(
+          refusal(
+            409,
+            "This x-request-id already belongs to a different provider request.",
+            { code: "duplicate_request", chargeId: id },
+          ),
         ),
       );
     if (
@@ -286,24 +445,28 @@ export async function retrieveProviders(input: {
       !existing.failure &&
       Date.now() <= existing.deadline + GRACE_MS
     )
-      return notExecuted(
-        refusal(
-          409,
-          "This provider request is still running. Retry with the same x-request-id once it has finished.",
-          { code: "request_in_flight", chargeId: id },
+      return repeat(
+        "request_in_flight",
+        notExecuted(
+          refusal(
+            409,
+            "This provider request is still running. Retry with the same x-request-id once it has finished.",
+            { code: "request_in_flight", chargeId: id },
+          ),
         ),
       );
-    return notExecuted(unresolved(id));
+    return repeat("request_unresolved", notExecuted(unresolved(id)));
   }
 
-  // A catalogue read is free and idempotent, so once its request id is claimed it skips the
-  // agreement and quote lookups and the credit hold and goes to Exchange with a zero budget.
+  // A catalogue read (the tool lookup or a library command) is free and idempotent, so once its
+  // request id is claimed it skips the agreement and quote lookups and the credit hold and goes
+  // to Exchange with a zero budget.
   // Exchange quotes against that budget itself and refuses with credit_budget_exceeded should
   // the read ever carry a price, in which case the full path below runs under the same claim
   // and deadline. The answer is recorded like any other, so a repeat of the id replays it.
   const firecrawlAccess = input.flags?.organizationDataSourceAccess?.firecrawl;
   if (
-    input.calls.every(isCatalogueRead) &&
+    catalogueOnly &&
     (!firecrawlAccess || firecrawlAccess.status === "enabled")
   ) {
     const read = await exchangeRequest({
@@ -321,6 +484,8 @@ export async function retrieveProviders(input: {
       ...(zeroDataRetention ? { zeroDataRetention } : {}),
       ...(usOnly ? { usOnly } : {}),
       ...(alexandriaVerified ? { alexandriaVerified } : {}),
+      ...(workContactOnly ? { workContactOnly } : {}),
+      ...caller,
       maximumCredits: 0,
       retryConnection: true,
     }).catch(error => {
@@ -353,8 +518,13 @@ export async function retrieveProviders(input: {
       // so a repeat runs the read again rather than finding it stranded.
       await write(
         zeroDataRetention
-          ? { ...record, phase: "done", responseWithheld: true }
-          : { ...record, phase: "done", response: done },
+          ? {
+              ...record,
+              phase: "done",
+              doneAt: Date.now(),
+              responseWithheld: true,
+            }
+          : { ...record, phase: "done", doneAt: Date.now(), response: done },
       ).catch(async error => {
         logger.warn("Catalogue read answer was not recorded", {
           error,
@@ -501,6 +671,7 @@ export async function retrieveProviders(input: {
       ...(usOnly ? { usOnly } : {}),
       ...(alexandriaVerified ? { alexandriaVerified } : {}),
       ...(ultrasearch ? { ultrasearch } : {}),
+      ...(workContactOnly ? { workContactOnly } : {}),
     }).catch(error => {
       logger.warn("Provider quote unavailable", { error, chargeId: id });
       return undefined;
@@ -647,6 +818,8 @@ export async function retrieveProviders(input: {
       ...(usOnly ? { usOnly } : {}),
       ...(alexandriaVerified ? { alexandriaVerified } : {}),
       ...(ultrasearch ? { ultrasearch } : {}),
+      ...(workContactOnly ? { workContactOnly } : {}),
+      ...caller,
       maximumCredits,
     }).catch(error => {
       throw new Error(`Alexandria did not answer: ${error?.message ?? error}`);
@@ -695,8 +868,18 @@ export async function retrieveProviders(input: {
     const done: ExchangeResponse = { status: 200, body: answer };
     await write(
       zeroDataRetention
-        ? { ...record, phase: "done", responseWithheld: true }
-        : { ...record, phase: "done", response: done },
+        ? {
+            ...record,
+            phase: "done",
+            doneAt: Date.now(),
+            responseWithheld: true,
+          }
+        : {
+            ...record,
+            phase: "done",
+            doneAt: Date.now(),
+            response: retainable(answer, input.calls),
+          },
     );
     return { ...done, executed: true, scrapeId: input.scrapeId };
   } catch (error) {

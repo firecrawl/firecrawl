@@ -32,14 +32,14 @@ import { redisRateLimitClient } from "../services/rate-limiter";
 import { authMiddleware, wrap } from "./shared";
 import { isUsOnly } from "../lib/us-only";
 import { alexandriaVerifiedHeader } from "../lib/alexandria-verified";
-import { getScrapeZDR } from "../lib/zdr-helpers";
+import { isAlexandriaZDRForced } from "../lib/zdr-helpers";
 
 // Tells Exchange the team is held to zero data retention, so it only lists and runs
 // providers that support it.
 function zeroDataRetentionHeader(
-  flags: Parameters<typeof getScrapeZDR>[0],
+  flags: Parameters<typeof isAlexandriaZDRForced>[0],
 ): Record<string, string> {
-  return getScrapeZDR(flags) === "forced"
+  return isAlexandriaZDRForced(flags)
     ? { "x-exchange-zero-data-retention": "true" }
     : {};
 }
@@ -84,6 +84,7 @@ const FORWARDED_PATH_ROOTS = new Set([
   "discover",
   "enrichment",
   "ingest",
+  "onboarding",
   "platform",
   "provider-skills",
   "provider-terms",
@@ -866,6 +867,20 @@ exchangeRouter.post(
   "/records/fetch",
   authMiddleware(RateLimiterMode.Exchange),
   wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
+);
+
+// Provider onboarding: the dashboard's "Your APIs" list and key page. Team-scoped in Exchange;
+// the key the page posts is sealed there and never logged here.
+exchangeRouter.get(
+  "/onboarding{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/onboarding{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(INGEST_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
 exchangeRouter.get(

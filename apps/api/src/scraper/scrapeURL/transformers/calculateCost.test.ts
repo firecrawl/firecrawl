@@ -23,7 +23,7 @@ describe("calculateCost", () => {
   });
 
   it("falls back to the model price table for models not listed locally", () => {
-    // gpt-4.1-nano is only in lib/extract/usage/model-prices.ts.
+    // gpt-4.1-nano is only in lib/model-prices.ts.
     expect(calculateCost("gpt-4.1-nano", 1_000_000, 1_000_000)).toBeCloseTo(
       0.5,
       10,

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   generateObject: vi.fn(),
@@ -7,7 +7,6 @@ const mocks = vi.hoisted(() => ({
 }));
 
 const config = vi.hoisted(() => ({
-  ANTHROPIC_API_KEY: undefined as string | undefined,
   TYPESAFE_API_KEY: "key" as string | undefined,
   ALEXANDRIA_AUTO_TOOLS: false,
   ALEXANDRIA_TOOL_FUSION: false,
@@ -24,6 +23,8 @@ vi.mock("../services/rate-limiter", () => ({
   redisRateLimitClient: { get: mocks.get, set: mocks.set },
 }));
 
+import { createService, replaceService } from "../service/service";
+import type { LlmModel, LlmProvider } from "../service/llm-providers";
 import {
   autoToolsEnabled,
   inferToolIntent,
@@ -35,10 +36,40 @@ import {
 
 const logger = { warn: vi.fn() } as any;
 
+let anthropicEnabled = false;
+
 beforeEach(() => {
+  anthropicEnabled = false;
+  replaceService(
+    createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "extra-llm",
+            llmProviders: [
+              {
+                name: "anthropic",
+                enabled: () => anthropicEnabled,
+                model: (id: string) => ({ modelId: id }) as unknown as LlmModel,
+              } as unknown as LlmProvider,
+            ],
+          },
+        ],
+      },
+      {
+        core: { name: "core" },
+        logger: { error: vi.fn() },
+      },
+    ),
+  );
   vi.clearAllMocks();
   mocks.get.mockResolvedValue(null);
   mocks.set.mockResolvedValue("OK");
+});
+
+afterEach(() => {
+  replaceService(undefined);
 });
 
 describe("parseSearchQuery", () => {
@@ -113,12 +144,12 @@ describe("inferToolIntent", () => {
 });
 
 describe("feature gates", () => {
-  it("stay off without an Anthropic key, even for flagged teams", () => {
-    config.ANTHROPIC_API_KEY = undefined;
+  it("stay off without an enabled Anthropic provider, even for flagged teams", () => {
+    anthropicEnabled = false;
     const flags = { alexandriaAutoTools: true };
     expect(queryInferenceEnabled()).toBe(false);
     expect(autoToolsEnabled(flags)).toBe(false);
-    config.ANTHROPIC_API_KEY = "key";
+    anthropicEnabled = true;
     expect(queryInferenceEnabled()).toBe(true);
     expect(autoToolsEnabled(flags)).toBe(true);
     expect(autoToolsEnabled({})).toBe(false);

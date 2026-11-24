@@ -16,11 +16,13 @@ import { livenessController, readinessController } from "./controllers/health";
 import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
 import os from "os";
 import { logger } from "./lib/logger";
+import { adminInternalRouter, adminRouter } from "./routes/admin";
 import {
-  adminInternalRouter,
-  adminRouter,
-  countAdminPathRoute,
-} from "./routes/admin";
+  AdminKeySlot,
+  adminAuth,
+  adminPathKeyAuth,
+  redactAdminKey,
+} from "./lib/admin-auth";
 import http from "node:http";
 import https from "node:https";
 import { v1Router } from "./routes/v1";
@@ -32,17 +34,15 @@ import { v7 as uuidv7 } from "uuid";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
 import { exchangeRouter } from "./routes/exchange";
+import { registerExchangeFileRoutes } from "./routes/exchange-files";
 import { exchangeInternalRouter } from "./routes/exchange-internal";
 import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
-import { registerHostedBashRoute } from "./controllers/v2/bash";
 import { nuqShutdown } from "./services/worker/nuq";
-import { getErrorContactMessage } from "./lib/deployment";
-import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
-import { warmExchangeCatalog } from "./lib/exchange";
-import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
+import { service } from "./service";
+import { installedService, runProcessStop } from "./service/service";
+import { initializeApiStartupDependencies } from "./lib/api-startup";
 import responseTime from "response-time";
-import { shutdownWebhookQueue } from "./services/webhook";
 import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
 import { isKeylessConfigured } from "./lib/keyless";
 import {
@@ -50,6 +50,7 @@ import {
   shutdownPubSubLogging,
 } from "./services/logging/log_job";
 import { notFoundHandler } from "./lib/not-found";
+import { startRole } from "./main";
 
 const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
@@ -93,22 +94,21 @@ const captureRawBody = (
 };
 
 registerMcpActionLogIngestRoute(app);
-registerHostedBashRoute(app);
+// Marketplace file bytes stream through to Exchange untouched, so these come before the body
+// parsers, and carry their own CORS (the website only) before the catch-all one.
+app.use(responseTime());
+registerExchangeFileRoutes(app);
 
 app.use(bodyParser.urlencoded({ extended: true, verify: captureRawBody }));
 app.use(bodyParser.json({ limit: "10mb", verify: captureRawBody }));
 
 app.use(cors()); // Add this line to enable CORS
 
-app.use(responseTime());
-
 app.disable("x-powered-by");
 
 if (config.EXPRESS_TRUST_PROXY) {
   app.set("trust proxy", config.EXPRESS_TRUST_PROXY);
 }
-
-const serverAdapter = new ExpressAdapter();
 
 const bullBoardQueues = [
   new BullMQAdapter(getGenerateLlmsTxtQueue()),
@@ -120,21 +120,44 @@ const bullBoardQueues = [
   // management UI, not here.
 ];
 
-const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
-  queues: bullBoardQueues,
-  serverAdapter: serverAdapter,
-});
-
 if (!config.BULL_AUTH_KEY) {
   logger.warn("BULL_AUTH_KEY is not set; admin routes are disabled.");
-} else if (config.BULL_AUTH_KEY_PATH_ROUTES) {
-  serverAdapter.setBasePath(`/admin/${config.BULL_AUTH_KEY}/queues`);
-  app.use(
-    `/admin/${config.BULL_AUTH_KEY}/queues`,
-    countAdminPathRoute("queues"),
-    serverAdapter.getRouter(),
-  );
+} else {
+  // A browser cannot add the Authorization header by itself; use the internal
+  // listener's /admin/queues where possible.
+  const opsBullBoard = new ExpressAdapter();
+  opsBullBoard.setBasePath("/admin/ops/queues");
+  createBullBoard({ queues: bullBoardQueues, serverAdapter: opsBullBoard });
+  app.use("/admin/ops/queues", adminAuth, opsBullBoard.getRouter());
+
+  if (config.BULL_AUTH_KEY_PATH_ROUTES) {
+    // One board per accepted key, since the UI links to its own base path.
+    const pathBoards: Partial<Record<AdminKeySlot, express.Router>> = {};
+    for (const [slot, key] of [
+      ["current", config.BULL_AUTH_KEY],
+      ["previous", config.BULL_AUTH_KEY_PREVIOUS],
+    ] as const) {
+      if (!key) continue;
+      const board = new ExpressAdapter();
+      board.setBasePath(`/admin/${encodeURIComponent(key)}/queues`);
+      createBullBoard({ queues: bullBoardQueues, serverAdapter: board });
+      pathBoards[slot] = board.getRouter();
+    }
+    const queuesPathRouter = express.Router({ mergeParams: true });
+    queuesPathRouter.use(adminPathKeyAuth("queues"), (req, res, next) =>
+      pathBoards[res.locals.adminKeySlot as AdminKeySlot]!(req, res, next),
+    );
+    app.use("/admin/:adminKey/queues", queuesPathRouter);
+  }
 }
+
+const contributedRootRouter = express.Router();
+const contributedV2Router = express.Router();
+const contributedAdminRouter = express.Router();
+const contributedAdminInternalRouter = express.Router();
+let contributedRoutesMounted = false;
+
+app.use(contributedRootRouter);
 
 app.get("/", (_, res) => {
   res.json({
@@ -153,10 +176,12 @@ app.get("/health/readiness", readinessController);
 // register router
 app.use(v0Router);
 app.use("/v1", v1Router);
+app.use("/v2", contributedV2Router);
 app.use("/v2", v2Router);
 app.use("/labs", labsRouter);
 app.use("/exchange", exchangeRouter);
 app.use(exchangeInternalRouter);
+app.use(contributedAdminRouter);
 app.use(adminRouter);
 
 const DEFAULT_PORT = config.PORT;
@@ -176,6 +201,7 @@ function startAdminInternalServer(port: number) {
   });
   adminApp.use("/admin/queues", internalBullBoard.getRouter());
 
+  adminApp.use(contributedAdminInternalRouter);
   adminApp.use(adminInternalRouter);
   adminApp.use(notFoundHandler);
   adminApp.use(
@@ -209,15 +235,16 @@ function startAdminInternalServer(port: number) {
 
 async function startServer(port = DEFAULT_PORT) {
   startNodeRuntimeMetrics();
-  try {
-    await initializeBlocklist();
-    initializeEngineForcing();
-    warmExchangeCatalog();
-  } catch (error) {
-    logger.error("Failed to initialize API startup dependencies", {
-      error,
+  await initializeApiStartupDependencies();
+
+  if (!contributedRoutesMounted) {
+    installedService()?.mountRoutes({
+      root: contributedRootRouter,
+      v2: contributedV2Router,
+      admin: contributedAdminRouter,
+      adminInternal: contributedAdminInternalRouter,
     });
-    throw error;
+    contributedRoutesMounted = true;
   }
 
   const server = app.listen(Number(port), HOST, (error?: Error) => {
@@ -251,27 +278,34 @@ async function startServer(port = DEFAULT_PORT) {
       logger.info("Server closed.");
       await drainZdrRequestLogs();
       nuqShutdown().finally(() => {
-        shutdownWebhookQueue().finally(() => {
-          shutdownIndexerQueue().finally(async () => {
-            await shutdownPubSubLogging();
-            await shutdownTracing();
-            logger.info("NUQ shutdown complete");
-            process.exit(0);
+        Promise.resolve()
+          .then(() => installedService()?.modules.webhooks.shutdown?.())
+          .catch(error => {
+            logger.warn("Error shutting down webhooks module", { error });
+          })
+          .finally(() => {
+            shutdownIndexerQueue().finally(async () => {
+              try {
+                await shutdownPubSubLogging();
+              } finally {
+                await runProcessStop("api");
+                await shutdownTracing();
+              }
+              logger.info("NUQ shutdown complete");
+              process.exit(0);
+            });
           });
-        });
       });
     });
   };
 
-  if (require.main === module) {
-    process.on("SIGTERM", exitHandler);
-    process.on("SIGINT", exitHandler);
-  }
+  process.on("SIGTERM", exitHandler);
+  process.on("SIGINT", exitHandler);
   return server;
 }
 
-if (require.main === module) {
-  startServer().catch(error => {
+export async function start() {
+  await startServer().catch(error => {
     logger.error("Failed to start server", { error });
     process.exit(1);
   });
@@ -365,13 +399,14 @@ app.use(
     }
 
     const id = uuidv7();
+    const path = redactAdminKey(req.path);
 
     logger.error(
-      "Error occurred in request! (" + req.path + ") -- ID " + id + " -- ",
+      "Error occurred in request! (" + path + ") -- ID " + id + " -- ",
       {
         error: err,
         errorId: id,
-        path: req.path,
+        path,
         teamId: req.acuc?.team_id,
         team_id: req.acuc?.team_id,
       },
@@ -379,9 +414,13 @@ app.use(
     res.status(500).json({
       success: false,
       code: "UNKNOWN_ERROR",
-      error: getErrorContactMessage(id),
+      error: service.modules.messages.errorContact(id),
     });
   },
 );
 
 logger.info(`Worker ${process.pid} started`);
+
+if (require.main === module) {
+  void startRole("api");
+}

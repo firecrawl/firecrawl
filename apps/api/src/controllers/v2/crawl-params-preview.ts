@@ -5,18 +5,20 @@ import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../../lib/cost-tracking";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
+import { requestContext } from "../../lib/request-context";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { isLockdownZeroDataRetention } from "../../lib/safe-mode";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
-import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+import { getErrorHttpResponse } from "../../lib/error";
 
 // Define the request schema for params preview
 // Only url and prompt are required/relevant for preview
 const crawlParamsPreviewRequestSchema = z.object({
   url: z.url(),
   prompt: z.string().max(10000),
-  // Only keeps the preview's own LLM call out of traces, so unlike a crawl it
-  // needs no ZDR permission check.
+  // Only keeps the preview's site search and LLM call on the zero data
+  // retention path and out of traces, so unlike a crawl it needs no ZDR
+  // permission check.
   zeroDataRetention: z.boolean().optional(),
 });
 
@@ -75,6 +77,17 @@ export async function crawlParamsPreviewController(
       prompt: parsedBody.prompt,
     });
 
+    const ctx =
+      req.ctx ??
+      requestContext({
+        teamId: req.auth.team_id,
+        zeroDataRetention,
+        flags: req.acuc?.flags ?? null,
+        orgId: req.acuc?.org_id ?? null,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+      });
+    req.ctx = ctx;
+
     // The prompt and the discovered URLs end up in LLM telemetry, so keep
     // this whole step out of traces for zero data retention teams.
     const { extract, websiteUrls } = await withZeroDataRetention(
@@ -94,6 +107,8 @@ export async function crawlParamsPreviewController(
             allowExternalLinks: false,
             useIndex: true,
             maxFireEngineResults: 500,
+            zeroDataRetention,
+            ctx,
           });
 
         // Generate crawler options from enhanced prompt
@@ -150,11 +165,13 @@ export async function crawlParamsPreviewController(
       prompt: req.body.prompt,
     });
 
-    if (error instanceof UsOnlyUnavailableError) {
-      return res.status(403).json({
+    const httpResponse = getErrorHttpResponse(error);
+    if (httpResponse) {
+      return res.status(httpResponse.status).json({
+        ...httpResponse.extraFields,
         success: false,
-        code: error.code,
-        error: error.message,
+        ...(httpResponse.code ? { code: httpResponse.code } : {}),
+        error: httpResponse.message,
       });
     }
 

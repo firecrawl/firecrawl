@@ -3,6 +3,8 @@ import { shutdownTracing } from "../otel";
 import { logger } from "../lib/logger";
 import { cleanZdrJob, sendZdrHeartbeat } from "../lib/zdrcleaner";
 import { consumeZdrCleanupJobs, shutdownZdrQueue } from "../lib/zdr-queue";
+import { startRole } from "../main";
+import { runProcessStop } from "../service/service";
 
 let isShuttingDown = false;
 
@@ -16,7 +18,7 @@ process.on("SIGTERM", () => {
   isShuttingDown = true;
 });
 
-(async () => {
+export async function start() {
   await consumeZdrCleanupJobs(cleanZdrJob);
 
   // Cleanup is driven entirely by the delayed RabbitMQ queue; this loop only
@@ -26,8 +28,16 @@ process.on("SIGTERM", () => {
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
 
-  await shutdownZdrQueue();
+  try {
+    await shutdownZdrQueue();
+  } finally {
+    await runProcessStop("zdr-worker");
+  }
   await shutdownTracing();
   logger.info("zdr-worker exiting");
   process.exit(0);
-})();
+}
+
+if (require.main === module) {
+  void startRole("zdr-worker");
+}

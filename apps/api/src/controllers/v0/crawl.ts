@@ -3,9 +3,8 @@ import { autumnService } from "../../services/autumn/autumn.service";
 import { authenticateUser } from "../auth";
 import { RateLimiterMode } from "../../../src/types";
 import { addScrapeJob } from "../../../src/services/queue-jobs";
-import { isUrlBlocked } from "../../../src/scraper/WebScraper/utils/blocklist";
-import { validateIdempotencyKey } from "../../../src/services/idempotency/validate";
-import { createIdempotencyKey } from "../../../src/services/idempotency/create";
+import { requestContext } from "../../lib/request-context";
+import { service } from "../../service";
 import {
   defaultCrawlPageOptions,
   defaultCrawlerOptions,
@@ -13,6 +12,7 @@ import {
 } from "../../../src/lib/default-values";
 import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../../src/lib/logger";
+import { claimIdempotencyKey } from "../../lib/idempotency";
 import {
   addCrawlJob,
   addCrawlJobs,
@@ -45,6 +45,7 @@ import {
 } from "../../lib/threat-protection/request";
 import {
   getSafeMode,
+  isLockdownZeroDataRetention,
   SAFE_MODE_V0_UNSUPPORTED_MESSAGE,
 } from "../../lib/safe-mode";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
@@ -118,16 +119,11 @@ export async function crawlController(req: Request, res: Response) {
         }),
       );
 
-    if (req.headers["x-idempotency-key"]) {
-      const isIdempotencyValid = await validateIdempotencyKey(req);
-      if (!isIdempotencyValid) {
+    const rawIdempotencyKey = req.headers["x-idempotency-key"];
+    if (rawIdempotencyKey) {
+      const claimed = await claimIdempotencyKey(rawIdempotencyKey, team_id);
+      if (!claimed) {
         return res.status(409).json({ error: "Idempotency key already used" });
-      }
-      try {
-        createIdempotencyKey(req);
-      } catch (error) {
-        logger.error(error);
-        return res.status(500).json({ error: error.message });
       }
     }
 
@@ -207,11 +203,20 @@ export async function crawlController(req: Request, res: Response) {
     }
 
     if (
-      isUrlBlocked(url, auth.chunk?.flags ?? null, {
-        team_id: auth.chunk?.team_id ?? team_id,
-        org_id: auth.chunk?.org_id ?? null,
-        origin: req.body?.origin ?? null,
-      })
+      service.modules.blocklist.isBlocked(
+        url,
+        requestContext({
+          teamId: auth.chunk?.team_id ?? team_id,
+          zeroDataRetention:
+            getScrapeZDR(auth.chunk?.flags) === "forced" ||
+            isLockdownZeroDataRetention(auth.chunk?.flags, undefined),
+          flags: auth.chunk?.flags ?? null,
+          orgId: auth.chunk?.org_id ?? null,
+        }),
+        {
+          origin: req.body?.origin ?? null,
+        },
+      )
     ) {
       return res.status(403).json({
         error: UNSUPPORTED_SITE_MESSAGE,

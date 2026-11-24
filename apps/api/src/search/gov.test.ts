@@ -2,6 +2,7 @@
 const shared = vi.hoisted(() => ({
   fetch: vi.fn(),
   config: {
+    RESEARCH_PROXY_URL: "https://research.test/",
     SEARCH_PLATFORM_URL: "https://platform.test/",
     GOV_ROUTING_ENABLED: true,
     GOV_ROUTING_DECISION_TIMEOUT_MS: 100,
@@ -58,7 +59,7 @@ describe("searchGovCategory", () => {
     );
 
     const [url, init] = fetchMock.mock.calls[0] as any[];
-    expect(url).toBe("https://platform.test/api/v1/gov-search");
+    expect(url).toBe("https://research.test/api/v1/gov-search");
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body)).toEqual({
       query: "food labeling rules",
@@ -249,7 +250,7 @@ describe("searchGovIfRouted", () => {
     });
     expect(init.headers["firecrawl-zero-data-retention"]).toBe("false");
     const [webUrl, webInit] = fetchMock.mock.calls[1] as any[];
-    expect(webUrl).toBe("https://platform.test/api/v1/web-search");
+    expect(webUrl).toBe("https://research.test/api/v1/web-search");
     expect(JSON.parse(webInit.body)).toEqual({
       query: "fmla leave eligibility",
       top_k: 2,

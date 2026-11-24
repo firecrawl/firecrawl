@@ -10,7 +10,7 @@ import { createWebhookSender, WebhookEvent } from "./webhook";
 import Express from "express";
 import { startNodeRuntimeMetrics } from "../lib/node-runtime-metrics";
 import { getErrorContactMessage } from "../lib/deployment";
-import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
+import { service } from "../service";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 import {
   consumeExtractJobs,
@@ -21,6 +21,8 @@ import {
 import { logExtract, shutdownPubSubLogging } from "./logging/log_job";
 import { jobDurationSeconds } from "../lib/job-metrics";
 import { register } from "prom-client";
+import { startRole } from "../main";
+import { runProcessStop } from "../service/service";
 
 configDotenv();
 
@@ -205,14 +207,18 @@ app.listen(workerPort, (error?: Error) => {
 
 async function shutdown() {
   _logger.info("Shutting down extract worker...");
-  await shutdownExtractQueue();
-  await shutdownPubSubLogging();
+  try {
+    await shutdownExtractQueue();
+    await shutdownPubSubLogging();
+  } finally {
+    await runProcessStop("extract-worker");
+  }
   await shutdownTracing();
   _logger.info("Extract worker shut down");
   process.exit(0);
 }
 
-if (require.main === module) {
+export async function start() {
   process.on("SIGINT", () => {
     _logger.debug("Received SIGINT. Shutting down gracefully...");
     shutdown();
@@ -222,10 +228,8 @@ if (require.main === module) {
     _logger.debug("Received SIGTERM. Shutting down gracefully...");
     shutdown();
   });
-}
 
-(async () => {
-  await initializeBlocklist().catch(e => {
+  await service.modules.blocklist.init().catch(e => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);
   });
@@ -241,4 +245,8 @@ if (require.main === module) {
   ]);
 
   _logger.info("Extract worker started, consuming from RabbitMQ");
-})();
+}
+
+if (require.main === module) {
+  void startRole("extract-worker");
+}

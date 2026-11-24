@@ -4,6 +4,7 @@ import path from "path";
 import { tool, isStepCount, generateText as untracedGenerateText } from "ai";
 import { logger as _logger } from "../logger";
 import { getModel } from "../generic-ai";
+import { service } from "../../service";
 import { executeHangarBrowser, BrowserExecutionResult } from "../hangar";
 import { config } from "../../config";
 import type { TeamFlags } from "../../controllers/v2/types";
@@ -23,11 +24,9 @@ const MAX_STEPS = 25;
 const SNAPSHOT_TIMEOUT = 15;
 const SNAPSHOT_MAX_CHARS = 40_000;
 
-// Vertex is the preferred provider so usage is traceable via Vertex billing
-// labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
-// aren't configured (e.g. self-hosted). Mirrors services/monitoring/search/tuning.ts.
+// Prefer Vertex when registered and enabled, then Google, then core's default provider.
 function hasVertex(): boolean {
-  return Boolean(config.VERTEX_CREDENTIALS) || config.VERTEX_USE_ADC;
+  return service.llmProviders.get("vertex")?.enabled() ?? false;
 }
 
 // ---------------------------------------------------------------------------
@@ -44,6 +43,7 @@ const IS_PRODUCTION = config.IS_PRODUCTION === true;
 class AgentDebugLog {
   private filePath: string;
   private lines: string[] = [];
+  private pendingWrite = Promise.resolve();
   private enabled: boolean;
 
   constructor(browserId: string, zeroDataRetention = false) {
@@ -57,19 +57,24 @@ class AgentDebugLog {
     this.lines.push(text);
   }
 
-  async flush() {
+  flush() {
     if (!this.enabled || this.lines.length === 0) return;
-    try {
-      await fs.mkdir(AGENT_LOG_DIR, { recursive: true });
-      await fs.appendFile(this.filePath, this.lines.join("\n") + "\n");
-      this.lines = [];
-    } catch (err) {
-      _logger.error("AgentDebugLog flush failed", {
-        filePath: this.filePath,
-        agentLogDir: AGENT_LOG_DIR,
-        error: err,
-      });
-    }
+    // Take this batch before yielding. Overlapping flushes must not share a
+    // mutable buffer or write out of order, even at the end of the run.
+    const lines = this.lines;
+    this.lines = [];
+    this.pendingWrite = this.pendingWrite.then(async () => {
+      try {
+        await fs.mkdir(AGENT_LOG_DIR, { recursive: true });
+        await fs.appendFile(this.filePath, lines.join("\n") + "\n");
+      } catch (err) {
+        _logger.error("AgentDebugLog flush failed", {
+          filePath: this.filePath,
+          agentLogDir: AGENT_LOG_DIR,
+          error: err,
+        });
+      }
+    });
   }
 
   getPath() {
@@ -160,7 +165,7 @@ async function execInBrowser(
 
 async function getCurrentUrl(
   browserId: string,
-  timeout: number = SNAPSHOT_TIMEOUT,
+  timeout: number,
 ): Promise<string> {
   try {
     const result = await execInBrowser(
@@ -176,7 +181,7 @@ async function getCurrentUrl(
 
 async function takeSnapshot(
   browserId: string,
-  timeout: number = SNAPSHOT_TIMEOUT,
+  timeout: number,
 ): Promise<string> {
   try {
     const result = await execInBrowser(
@@ -191,17 +196,14 @@ async function takeSnapshot(
 }
 
 /** Align the CLI with the replay's page without discarding the user's other tabs. */
-export async function selectBrowserAgentTab(
+export function selectBrowserAgentTab(browserId: string): Promise<void> {
+  return selectBrowserAgentTabWithTimeout(browserId, () => 10);
+}
+
+async function selectBrowserAgentTabWithTimeout(
   browserId: string,
-  deadlineMs?: number,
+  timeoutFor: () => number,
 ): Promise<void> {
-  // Without a deadline each execution keeps its original 10s cap; with one,
-  // each execution gets at most the remaining budget, so tab re-selection
-  // cannot outrun the caller's timeout.
-  const timeoutFor = () =>
-    deadlineMs === undefined
-      ? 10
-      : Math.min(10, Math.max(1, Math.ceil((deadlineMs - Date.now()) / 1000)));
   const target = await executeHangarBrowser(browserId, {
     code: `await (async () => {
       for (const candidate of [page, ...context.pages().filter(p => p !== page)]) {
@@ -267,16 +269,23 @@ export function getBrowserAgentModel(
   trace?: Pick<BrowserAgentTraceContext, "zeroDataRetention" | "teamFlags">,
 ) {
   const modelOptions = { teamFlags: trace?.teamFlags, feature: "Interact" };
-  return trace?.zeroDataRetention === true
-    ? getModel("gpt-6-luna", "openai", {
-        ignoreModelOverride: true,
-        ...modelOptions,
-      })
-    : getModel(
-        "gemini-3.5-flash",
-        hasVertex() ? "vertex" : "google",
-        modelOptions,
-      );
+  if (trace?.zeroDataRetention === true) {
+    return getModel("gpt-6-luna", "openai", {
+      ignoreModelOverride: true,
+      ...modelOptions,
+    });
+  }
+  if (hasVertex()) {
+    return getModel("gemini-3.5-flash", "vertex", modelOptions);
+  }
+  if (service.llmProviders.get("google")?.enabled()) {
+    return getModel("gemini-3.5-flash", "google", modelOptions);
+  }
+  return getModel(
+    "gpt-4o-mini",
+    service.llmProviders.get("ollama")?.enabled() ? "ollama" : "openai",
+    modelOptions,
+  );
 }
 
 export async function executePromptViaBrowserAgent(
@@ -286,42 +295,34 @@ export async function executePromptViaBrowserAgent(
   logger: typeof _logger,
   trace?: BrowserAgentTraceContext,
 ): Promise<AgentResult> {
-  // The request timeout bounds the whole prompt execution, not each browser
-  // command: the endpoint documents it as "Execution timeout in seconds"
-  // and the SDKs abort around it, while stepTimeout × MAX_STEPS could
-  // otherwise stretch a single call far past the documented budget.
-  const deadlineMs = Date.now() + stepTimeout * 1000;
-  // Seconds left on the budget, floored at 1s so a browser command can
-  // still run when only a fraction of a second remains.
-  const remainingSecs = () =>
-    Math.max(1, Math.ceil((deadlineMs - Date.now()) / 1000));
+  // Use one execution budget for the prompt agent instead of giving every
+  // command the full request timeout. Controller work before this is separate.
+  const deadlineMs = performance.now() + stepTimeout * 1000;
+  const deadlineError = new DOMException(
+    `Prompt execution timed out after ${stepTimeout}s.`,
+    "TimeoutError",
+  );
+  const controller = new AbortController();
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const remainingMs = () => {
+    const remaining = deadlineMs - performance.now();
+    if (remaining <= 0 || controller.signal.aborted) {
+      controller.abort(deadlineError);
+      throw deadlineError;
+    }
+    return remaining;
+  };
+  // Hangar takes seconds. Round up while time remains, but never start a
+  // new call after expiry, including the second half of tab selection.
+  const remainingSeconds = (cap: number) =>
+    Math.min(cap, Math.ceil(remainingMs() / 1000));
 
   const zeroDataRetention = trace?.zeroDataRetention === true;
-  const untraced = isUntraced(trace);
-  const model = getBrowserAgentModel(trace);
   const debugLog = new AgentDebugLog(browserId, zeroDataRetention);
-  debugLog.add(`=== AGENT RUN ===`);
-  debugLog.add(`Time:    ${new Date().toISOString()}`);
-  debugLog.add(`Browser: ${browserId}`);
-  debugLog.add(`Prompt:  ${prompt}\n`);
-  logger.info("Agent debug log", { path: debugLog.getPath() });
 
-  await selectBrowserAgentTab(browserId, deadlineMs);
-
-  const [initialSnapshot, initialUrl] = await Promise.all([
-    takeSnapshot(browserId, Math.min(SNAPSHOT_TIMEOUT, remainingSecs())),
-    getCurrentUrl(browserId, Math.min(SNAPSHOT_TIMEOUT, remainingSecs())),
-  ]);
-
-  debugLog.add(`URL: ${initialUrl}`);
-  debugLog.add(
-    `Snapshot (${initialSnapshot.length} chars):\n${initialSnapshot || "(empty)"}\n`,
-  );
-  debugLog.flush();
-
+  let lastSnapshotResult = "";
   let toolCallCount = 0;
   const allOutputs: string[] = [];
-  let lastSnapshotResult = initialSnapshot;
   const actionLog: string[] = [];
 
   const browserTool = tool({
@@ -343,24 +344,13 @@ export async function executePromptViaBrowserAgent(
         return { error: msg };
       }
 
-      const remainingMs = deadlineMs - Date.now();
-      if (remainingMs <= 0) {
-        throw new Error(`Prompt execution timed out after ${stepTimeout}s.`);
-      }
-
       try {
-        const result = await execInBrowser(
-          browserId,
-          code,
-          Math.min(stepTimeout, remainingSecs()),
+        const result = await withinDeadline(() =>
+          execInBrowser(browserId, code, remainingSeconds(stepTimeout)),
         );
         const output = (result.stdout || result.result || "").trim();
 
-        // Re-align the tab only while the budget lasts: past the deadline
-        // re-selection would just add two executions the timeout bounds.
-        if (deadlineMs - Date.now() > 0) {
-          await selectBrowserAgentTab(browserId, deadlineMs);
-        }
+        await selectTab();
 
         const elapsed = Date.now() - start;
 
@@ -389,6 +379,8 @@ export async function executePromptViaBrowserAgent(
         }
         return { result: output || "(no output)" };
       } catch (err: unknown) {
+        // Deadline failures must break the whole run, not just this command.
+        if (err === deadlineError) throw err;
         const msg = err instanceof Error ? err.message : String(err);
         debugLog.add(`Error: ${msg}\n`);
         debugLog.flush();
@@ -400,47 +392,96 @@ export async function executePromptViaBrowserAgent(
     },
   });
 
-  const langsmith = trace
-    ? buildLangSmithProviderOptions(
-        {
-          thread_id: trace.sessionId,
-          session_id: trace.sessionId,
-          scrape_id: trace.scrapeId,
-          team_id: trace.teamId,
-          org_id: trace.orgId,
-          browser_id: browserId,
-          mode: "prompt",
-          zeroDataRetention: untraced,
-          scrape_url: trace.scrapeUrl,
-          target_url: trace.targetUrl,
-          scrape_wait_for_ms: trace.scrapeWaitForMs,
-          scrape_actions: trace.scrapeActions,
-          scrape_origin: trace.scrapeOrigin,
-        } satisfies InteractTraceMetadata,
-        {
-          name: "interact:prompt",
-          extra: { prompt_length: prompt.length },
-        },
-      )
-    : undefined;
-
-  try {
-    // A slow browser can spend the whole budget on the setup probes; report
-    // the timeout instead of handing the model a 1ms abort signal.
-    if (Date.now() >= deadlineMs) {
-      const expired = new Error(
-        `Prompt execution timed out after ${stepTimeout}s.`,
-      );
-      expired.name = "TimeoutError";
-      throw expired;
+  // The model signal is cooperative and Hangar's HTTP timeout includes
+  // extra transport time. Race their promises to stop waiting locally;
+  // an already-dispatched Hangar execution still has its own timeout.
+  const deadline = new Promise<never>((_, reject) => {
+    const checkDeadline = () => {
+      const remaining = deadlineMs - performance.now();
+      if (remaining > 0) {
+        deadlineTimer = setTimeout(checkDeadline, Math.ceil(remaining));
+        return;
+      }
+      reject(deadlineError);
+      controller.abort(deadlineError);
+    };
+    deadlineTimer = setTimeout(
+      checkDeadline,
+      Math.ceil(deadlineMs - performance.now()),
+    );
+  });
+  const withinDeadline = async <T>(start: () => Promise<T>): Promise<T> => {
+    remainingMs();
+    try {
+      return await Promise.race([start(), deadline]);
+    } finally {
+      // A settled operation must not win if the timer callback hasn't run yet.
+      remainingMs();
     }
+  };
+  const selectTab = () =>
+    withinDeadline(() =>
+      selectBrowserAgentTabWithTimeout(browserId, () => remainingSeconds(10)),
+    );
+
+  let modelDispatched = false;
+  try {
+    remainingMs();
+    const untraced = isUntraced(trace);
+    const model = getBrowserAgentModel(trace);
+    debugLog.add(`=== AGENT RUN ===`);
+    debugLog.add(`Time:    ${new Date().toISOString()}`);
+    debugLog.add(`Browser: ${browserId}`);
+    debugLog.add(`Prompt:  ${prompt}\n`);
+    logger.info("Agent debug log", { path: debugLog.getPath() });
+
+    await selectTab();
+    const [initialSnapshot, initialUrl] = await Promise.all([
+      withinDeadline(() =>
+        takeSnapshot(browserId, remainingSeconds(SNAPSHOT_TIMEOUT)),
+      ),
+      withinDeadline(() =>
+        getCurrentUrl(browserId, remainingSeconds(SNAPSHOT_TIMEOUT)),
+      ),
+    ]);
+    lastSnapshotResult = initialSnapshot;
+    debugLog.add(`URL: ${initialUrl}`);
+    debugLog.add(
+      `Snapshot (${initialSnapshot.length} chars):\n${initialSnapshot || "(empty)"}\n`,
+    );
+    debugLog.flush();
+
+    const langsmith = trace
+      ? buildLangSmithProviderOptions(
+          {
+            thread_id: trace.sessionId,
+            session_id: trace.sessionId,
+            scrape_id: trace.scrapeId,
+            team_id: trace.teamId,
+            org_id: trace.orgId,
+            browser_id: browserId,
+            mode: "prompt",
+            zeroDataRetention: untraced,
+            scrape_url: trace.scrapeUrl,
+            target_url: trace.targetUrl,
+            scrape_wait_for_ms: trace.scrapeWaitForMs,
+            scrape_actions: trace.scrapeActions,
+            scrape_origin: trace.scrapeOrigin,
+          } satisfies InteractTraceMetadata,
+          {
+            name: "interact:prompt",
+            extra: { prompt_length: prompt.length },
+          },
+        )
+      : undefined;
+
     // Bypass the LangSmith-wrapped SDK entirely for ZDR, even when tracing
     // is enabled globally. Use the same provider as ZDR JSON extraction.
     const generate = untraced ? untracedGenerateText : generateText;
-    const result = await generate({
+    const options = {
       model,
       telemetry: { isEnabled: false },
-      abortSignal: AbortSignal.timeout(Math.max(1, deadlineMs - Date.now())),
+      abortSignal: controller.signal,
       system: SYSTEM_PROMPT,
       messages: [
         {
@@ -472,7 +513,7 @@ export async function executePromptViaBrowserAgent(
         : langsmith
           ? { providerOptions: { langsmith } as Record<string, any> }
           : {}),
-      prepareStep: async ({ stepNumber, messages }) => {
+      prepareStep: async ({ messages }) => {
         if (actionLog.length === 0) return {};
         return {
           messages: [
@@ -495,32 +536,46 @@ export async function executePromptViaBrowserAgent(
         }
         if (text) debugLog.add(`Assistant: ${text}`);
       },
+    } satisfies Parameters<typeof generate>[0];
+
+    const output = await withinDeadline(async () => {
+      modelDispatched = true;
+      const result = await generate(options);
+      remainingMs();
+      return result.text || "";
     });
+    const stdout = allOutputs.join("\n");
+    remainingMs();
 
     debugLog.add(`\n=== END: completed (${toolCallCount} tool calls) ===\n`);
-    await debugLog.flush();
+    // Best-effort diagnostic I/O must not delay the execution result.
+    debugLog.flush();
 
     return {
-      output: result.text || "",
-      stdout: allOutputs.join("\n"),
+      output,
+      stdout,
       result: lastSnapshotResult,
       stderr: "",
       exitCode: 0,
       killed: false,
     };
   } catch (err: unknown) {
-    // AbortSignal.timeout rejects with a "TimeoutError" DOMException.
-    const isTimeout =
-      err instanceof Error &&
-      (err.name === "AbortError" || err.name === "TimeoutError");
-    const msg = isTimeout
-      ? `Prompt execution timed out after ${stepTimeout}s.`
-      : err instanceof Error
-        ? err.message
-        : String(err);
+    // Preserve setup rejections observed before the deadline. Synchronous
+    // preparation can throw after expiry, before the timer gets to run.
+    if (!modelDispatched && err !== deadlineError) {
+      if (performance.now() < deadlineMs) throw err;
+      controller.abort(deadlineError);
+      err = deadlineError;
+    }
+    const msg =
+      err === deadlineError
+        ? deadlineError.message
+        : err instanceof Error
+          ? err.message
+          : String(err);
     logger.error("Agent failed", { error: err });
     debugLog.add(`\n=== END: error — ${msg} ===\n`);
-    await debugLog.flush();
+    debugLog.flush();
 
     return {
       output: "",
@@ -530,6 +585,8 @@ export async function executePromptViaBrowserAgent(
       exitCode: 1,
       killed: false,
     };
+  } finally {
+    if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
   }
 }
 

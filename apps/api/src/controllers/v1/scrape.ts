@@ -12,7 +12,7 @@ import {
 import { v7 as uuidv7 } from "uuid";
 import { getJobPriority } from "../../lib/job-priority";
 import { fromV1ScrapeOptions } from "../v2/types";
-import { TransportableError } from "../../lib/error";
+import { isTransportableError } from "../../lib/error";
 import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
@@ -202,10 +202,11 @@ async function scrapeControllerInner(
     req.body.timeout,
     req.auth.team_id,
   );
-  // v1 prefaults maxAge (1 day), which would shadow the lockdown default —
-  // keep only a maxAge the request actually sent under forced lockdown.
-  if (safeMode.safeMode?.lockdown && preNormalizedBody.maxAge === undefined) {
-    scrapeOptions.maxAge = undefined;
+  if (safeMode.safeMode?.lockdown) {
+    scrapeOptions.maxAge =
+      typeof preNormalizedBody.maxAge === "number"
+        ? preNormalizedBody.maxAge
+        : undefined;
   }
   applySafeMode(safeMode.safeMode, scrapeOptions);
   const projectedKeylessCredits = !isDirectToBullMQ
@@ -333,10 +334,10 @@ async function scrapeControllerInner(
     }
 
     const timeoutErr =
-      e instanceof TransportableError &&
+      isTransportableError(e) &&
       (e.code === "SCRAPE_TIMEOUT" || e.code === "CONCURRENCY_QUEUE_TIMEOUT");
 
-    if (e instanceof TransportableError) {
+    if (isTransportableError(e)) {
       if (!timeoutErr) {
         logger.error(`Error in scrapeController`, {
           version: "v1",

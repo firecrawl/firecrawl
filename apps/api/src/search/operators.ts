@@ -139,6 +139,26 @@ function matchesSite(url: URL, site: string): boolean {
   return !path || url.pathname.toLowerCase().startsWith(path);
 }
 
+/** True when the URL's host is, or is under, an included domain and no excluded one. */
+export function matchesDomains(
+  url: string | undefined,
+  includeDomains: string[] = [],
+  excludeDomains: string[] = [],
+): boolean {
+  if (includeDomains.length === 0 && excludeDomains.length === 0) return true;
+  let parsed: URL;
+  try {
+    parsed = new URL(url ?? "");
+  } catch {
+    return false;
+  }
+  return (
+    !excludeDomains.some(domain => matchesSite(parsed, domain)) &&
+    (includeDomains.length === 0 ||
+      includeDomains.some(domain => matchesSite(parsed, domain)))
+  );
+}
+
 function decodedUrl(url: string): string {
   try {
     return decodeURI(url).toLowerCase();

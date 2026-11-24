@@ -53,6 +53,7 @@ vi.mock("./record-options", () => ({
 }));
 
 import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
 import { feedbackController } from "./controller";
 import { issueFeedbackToken } from "../../../lib/alexandria-feedback-token";
 
@@ -71,11 +72,12 @@ const jobId = "01933161-0000-7000-8000-000000000002";
 const originalDbAuthentication = config.USE_DB_AUTHENTICATION;
 let flags: Record<string, unknown>;
 let authTeam: string;
+let hostedMcp: boolean;
 const app = express();
 app.use(express.json());
 app.use((req, _res, next) => {
   Object.assign(req, {
-    auth: { team_id: authTeam },
+    auth: { team_id: authTeam, ...(hostedMcp ? { hostedMcp: true } : {}) },
     acuc: { api_key_id: 42, org_id: "org-1", flags },
   });
   next();
@@ -88,6 +90,7 @@ beforeEach(() => {
   config.USE_DB_AUTHENTICATION = true;
   authTeam = teamId;
   flags = {};
+  hostedMcp = false;
   mocks.transaction.mockImplementation(
     async (run: (tx: unknown) => Promise<void>) => run(tx),
   );
@@ -124,6 +127,7 @@ it.each(["good", "partial", "bad"])(
       orgId: "org-1",
       rating,
       requestedUrl: minimal.requestedWebsite.url,
+      calls: [],
     });
     expect(parentRows()).toEqual([
       {
@@ -140,6 +144,11 @@ it.each(["good", "partial", "bad"])(
         origin: "api",
         integration: null,
         schema_version: 2,
+        external_request_id: null,
+        session_id: null,
+        session_source: null,
+        thread_id: null,
+        thread_source: null,
       },
     ]);
     expect(providerRows()).toEqual([]);
@@ -147,6 +156,73 @@ it.each(["good", "partial", "bad"])(
     expect(callRows()).toEqual([]);
   },
 );
+
+describe("trace ids on the stored session", () => {
+  const lineage = {
+    session_id: "sess_01HZX",
+    session_source: "sse",
+    thread_id: "thread:42",
+    thread_source: "argument",
+    objective: "The objective the MCP server recorded for the call.",
+  };
+  const headers = {
+    "External-Request-Id": "0190a5d4-7b10-7cc3-98c4-0242ac120002",
+    "X-Firecrawl-Mcp-Lineage": Buffer.from(JSON.stringify(lineage)).toString(
+      "base64url",
+    ),
+  };
+  const { objective: _headerObjective, ...ids } = lineage;
+
+  it("stores the request id and the lineage of a hosted MCP call", async () => {
+    hostedMcp = true;
+    const response = await submit(minimal).set(headers);
+    expect(response.status).toBe(200);
+    expect(parentRows()).toEqual([
+      expect.objectContaining({
+        external_request_id: "0190a5d4-7b10-7cc3-98c4-0242ac120002",
+        ...ids,
+        // The objective of an Alexandria row is the one in the body.
+        objective: null,
+      }),
+    ]);
+  });
+
+  it("keeps the objective from the body over the one in the header", async () => {
+    hostedMcp = true;
+    await submit({ ...minimal, objective: "Bid on open IT contracts." }).set(
+      headers,
+    );
+    expect(parentRows()).toEqual([
+      expect.objectContaining({
+        ...ids,
+        objective: "Bid on open IT contracts.",
+      }),
+    ]);
+  });
+
+  it("stores only the request id for a caller that is not the hosted MCP server", async () => {
+    const response = await submit(minimal).set(headers);
+    expect(response.status).toBe(200);
+    expect(parentRows()).toEqual([
+      expect.objectContaining({
+        external_request_id: "0190a5d4-7b10-7cc3-98c4-0242ac120002",
+        session_id: null,
+        session_source: null,
+        thread_id: null,
+        thread_source: null,
+        objective: null,
+      }),
+    ]);
+  });
+
+  it("stores no trace under zero data retention", async () => {
+    hostedMcp = true;
+    flags = { scrapeZDR: "forced" };
+    const response = await submit(minimal).set(headers);
+    expect(response.status).toBe(200);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+});
 
 it("records the trimmed objective behind the session", async () => {
   const response = await submit({
@@ -612,6 +688,7 @@ it("applies the payload limit after normalizing feedback", async () => {
 it.each([
   { forceZDR: true },
   { scrapeZDR: "forced" },
+  { alexandriaZDR: "forced" },
   { searchZDR: "forced" },
   { searchZDR: "forced-zdr" },
   { searchZDR: "forced-anon" },
@@ -621,6 +698,9 @@ it.each([
   expect(response.status).toBe(200);
   expect(response.body.feedbackId).toBe("00000000-0000-0000-0000-000000000000");
   expect(response.body.creditsRefunded).toBe(0);
+  expect(response.body.message).toBe(
+    "Feedback accepted. No refund: feedback is not stored under zero data retention.",
+  );
   expect(mocks.transaction).not.toHaveBeenCalled();
   expect(mocks.refundAlexandriaFeedback).not.toHaveBeenCalled();
   expect(mocks.getRecentAlexandriaCalls).not.toHaveBeenCalled();
@@ -652,7 +732,7 @@ it("rejects feedback outside the window after the team's last Alexandria call", 
   expect(response.body).toEqual({
     success: false,
     feedbackErrorCode: "FEEDBACK_WINDOW_EXPIRED",
-    error: `Alexandria feedback must be submitted within ${config.ALEXANDRIA_FEEDBACK_WINDOW_SEC} seconds of an Alexandria search, discovery, or execution, or name its calls with valid feedback tokens.`,
+    error: `Alexandria feedback must be submitted within ${feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC} seconds of an Alexandria search, discovery, or execution, or name its calls with valid feedback tokens.`,
   });
   expect(mocks.hasRecentAlexandriaActivity).toHaveBeenCalledWith(teamId);
   expect(mocks.transaction).not.toHaveBeenCalled();
@@ -808,8 +888,8 @@ describe("call attribution", () => {
   let originalWindow: number;
   let clock: { mockRestore: () => void };
   beforeEach(() => {
-    originalWindow = config.ALEXANDRIA_FEEDBACK_WINDOW_SEC;
-    config.ALEXANDRIA_FEEDBACK_WINDOW_SEC = 1200;
+    originalWindow = feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC;
+    feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC = 1200;
     config.EXCHANGE_INTERNAL_SECRET = "internal-secret";
     clock = vi.spyOn(Date, "now").mockReturnValue(now);
     mocks.getRecentAlexandriaCalls.mockResolvedValue([
@@ -821,7 +901,7 @@ describe("call attribution", () => {
     ]);
   });
   afterEach(() => {
-    config.ALEXANDRIA_FEEDBACK_WINDOW_SEC = originalWindow;
+    feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC = originalWindow;
     config.EXCHANGE_INTERNAL_SECRET = originalSecret;
     clock.mockRestore();
   });
@@ -906,6 +986,45 @@ describe("call attribution", () => {
     expect(response.status).toBe(200);
     expect(response.body.rejectedTokens).toBe(1);
     expect(callRows().every(row => row.attribution === "window")).toBe(true);
+  });
+
+  it("never refunds against another team's call", async () => {
+    const foreign = token("req-9", "fred", {
+      team: "01933161-0000-7000-8000-00000000000f",
+    });
+    mocks.hasRecentAlexandriaActivity.mockResolvedValue(false);
+    const closed = await submit({ ...minimal, tokens: [foreign] });
+    expect(closed.status).toBe(409);
+    expect(mocks.refundAlexandriaFeedback).not.toHaveBeenCalled();
+    mocks.hasRecentAlexandriaActivity.mockResolvedValue(true);
+    const open = await submit({ ...minimal, tokens: [foreign] });
+    expect(open.status).toBe(200);
+    expect(open.body.rejectedTokens).toBe(1);
+    expect(
+      mocks.refundAlexandriaFeedback.mock.calls[0][0].calls.map(
+        (call: { requestId: string }) => call.requestId,
+      ),
+    ).toEqual(["req-3", "req-2", "req-2"]);
+  });
+
+  it("hands the refund the calls the feedback covers", async () => {
+    const response = await submit({
+      ...minimal,
+      tokens: [token("req-2", "fred")],
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.refundAlexandriaFeedback).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        calls: [
+          {
+            requestId: "req-2",
+            provider: "fred",
+            capability: "lookup",
+            rating: null,
+          },
+        ],
+      }),
+    );
   });
 
   it("falls back to the distinct calls inside the window", async () => {

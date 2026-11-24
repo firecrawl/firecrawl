@@ -21,6 +21,7 @@ import { search } from "./v2";
 import {
   SearchV2Response,
   SearchResultType,
+  WebSearchResult,
   SearchResultCountsBySource,
   SearchResultCategoriesBySource,
   countSearchResultsBySource,
@@ -31,7 +32,11 @@ import {
   getCategoryFromUrl,
   CategoryOption,
 } from "../lib/search-query-builder";
-import { ScrapeOptions, TeamFlags } from "../controllers/v2/types";
+import {
+  ScrapeOptions,
+  SearchRequest,
+  TeamFlags,
+} from "../controllers/v2/types";
 import {
   getItemsToScrape,
   scrapeSearchResults,
@@ -65,7 +70,14 @@ import { calculateThreatScanCredits } from "../lib/scrape-billing";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
 import { isUsOnly } from "../lib/us-only";
-import { getScrapeZDR } from "../lib/zdr-helpers";
+import type { TeamPlanClass } from "../lib/team-plan-class";
+import { isAlexandriaZDRForced } from "../lib/zdr-helpers";
+import { alexandriaFeedbackStorage } from "../lib/alexandria-feedback-storage";
+import { requestContext } from "../lib/request-context";
+import type { SearchHit } from "../service/hooks";
+import type { RequestContext } from "../service/request-context";
+import { installedService } from "../service/service";
+import { applySearchPlanHook } from "./plan-hook";
 
 interface SearchOptions {
   query: string;
@@ -99,8 +111,17 @@ interface SearchContext {
   orgId?: string | null;
   origin: string;
   integration?: string | null;
+  /** The origin as the caller named it, and its session and conversation ids. Labels for Exchange only. */
+  clientOrigin?: string;
+  clientSession?: string;
+  clientThread?: string;
   apiKeyId: number | null;
   flags: TeamFlags;
+  /**
+   * The team's plan class, stated on the web search call. Required so every
+   * caller decides; undefined states nothing. See teamPlanClass.
+   */
+  teamPlanClass: TeamPlanClass | undefined;
   requestId: string;
   jobId: string;
   apiVersion: string;
@@ -113,6 +134,11 @@ interface SearchContext {
   threatProtectionPolicy?: ThreatProtectionPolicy | null;
   /** Set when the request legitimately opted out of Safe Mode at the controller. */
   safeModeBypassed?: boolean;
+  /** Asks third-party data providers behind scraped results to leave personal email addresses and personal phone numbers out. */
+  workContactOnly?: boolean;
+  ctx?: RequestContext;
+  body?: SearchRequest;
+  planApplied?: boolean;
 }
 
 interface SearchExecuteResult {
@@ -188,12 +214,43 @@ function fuseRankings(
     .map(([, tool]) => tool);
 }
 
+function buildSearchRequestFallback(
+  options: SearchOptions,
+  context: SearchContext,
+): SearchRequest {
+  return {
+    query: options.query,
+    limit: options.limit,
+    tbs: options.tbs,
+    filter: options.filter,
+    sources: options.sources as SearchRequest["sources"],
+    categories: (options.categories ?? []) as SearchRequest["categories"],
+    includeDomains: options.includeDomains,
+    excludeDomains: options.excludeDomains,
+    lang: options.lang ?? "en",
+    safe: options.safe,
+    enterprise: options.enterprise,
+    country: options.country,
+    location: options.location,
+    origin: context.origin ?? "api",
+    integration: context.integration ?? null,
+    timeout: options.timeout,
+    ignoreInvalidURLs: false,
+    asyncScraping: false,
+    highlights: options.highlights,
+    domainTools: options.domainTools,
+    toolDetail: options.toolDetail ?? "compact",
+    scrapeOptions: options.scrapeOptions as SearchRequest["scrapeOptions"],
+  };
+}
+
 export async function executeSearch(
   options: SearchOptions,
   context: SearchContext,
   logger: Logger,
 ): Promise<SearchExecuteResult> {
-  const { query, limit, sources, categories, scrapeOptions } = options;
+  let { query, limit, sources } = options;
+  const { categories, scrapeOptions } = options;
   const {
     teamId,
     orgId,
@@ -206,11 +263,39 @@ export async function executeSearch(
     billing,
   } = context;
 
+  const hooks = installedService()?.hooks;
+  const shouldRunPlan = !context.planApplied && hooks?.has("search.plan");
+  const needSearchHookContext = shouldRunPlan || hooks?.has("search.results");
+  const searchCtx = needSearchHookContext
+    ? (context.ctx ??
+      requestContext({
+        teamId,
+        zeroDataRetention,
+        flags: flags ?? undefined,
+        orgId: orgId ?? null,
+        apiKeyId,
+        billing,
+      }))
+    : undefined;
+  const searchBody = needSearchHookContext
+    ? (context.body ?? buildSearchRequestFallback(options, context))
+    : undefined;
+
+  if (shouldRunPlan) {
+    const planned = await applySearchPlanHook(
+      { query, limit, sources },
+      { ctx: searchCtx!, body: searchBody! },
+    );
+    query = planned.query;
+    limit = planned.limit;
+    sources = planned.sources;
+  }
+
   const num_results_buffer = Math.floor(limit * 2);
   const usOnly = isUsOnly(flags);
-  // A team held to zero data retention for scrapes still gets tools, but only from providers
+  // A team held to zero data retention for scrapes or Alexandria still gets tools, but only from providers
   // that support it. Read from team flags only, never from the request.
-  const toolsZeroDataRetention = getScrapeZDR(flags) === "forced";
+  const toolsZeroDataRetention = isAlexandriaZDRForced(flags);
   const usOnlyWarnings: string[] = [];
 
   logger.info("Searching for results");
@@ -248,6 +333,20 @@ export async function executeSearch(
     raw: { prefix: `${context.jobId}:tools:raw`, sent: [] as string[] },
     rewrite: { prefix: `${context.jobId}:tools:rewrite`, sent: [] as string[] },
   };
+  // Tells Exchange who is searching and how; sent with each find-tools lookup.
+  const exchangeCaller = config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED
+    ? {
+        feedbackStorage: alexandriaFeedbackStorage(teamId, flags),
+        clientOrigin: context.clientOrigin,
+        clientIntegration: context.integration,
+        searchRoute: wantsTools
+          ? ("search_source" as const)
+          : ("search_auto" as const),
+        clientSession: context.clientSession,
+        clientThread: context.clientThread,
+        query,
+      }
+    : undefined;
   // Tools found only through the rewrite or inferred domains are added after Jev confirms they fit the query.
   const extraDiscovery = toolIntent
     ? toolIntent
@@ -270,6 +369,7 @@ export async function executeSearch(
                   : intent.domains.map(domain => `https://${domain}/`),
               timeoutMs: Math.min(options.timeout, 3000),
               exchangeRequestIds: toolRequestIds.rewrite,
+              exchangeCaller,
             },
             logger,
           );
@@ -321,6 +421,7 @@ export async function executeSearch(
                   }),
             timeoutMs: options.timeout,
             exchangeRequestIds: toolRequestIds.raw,
+            exchangeCaller,
           },
           logger,
         )
@@ -421,6 +522,7 @@ export async function executeSearch(
             ...operators.excludedSites.filter(site => !site.includes("/")),
           ]),
           usOnly,
+          teamPlanClass: context.teamPlanClass,
         });
   const indexResultsPromise = indexCategorySearch
     ? indexCategorySearch(indexSearchOptions, logger)
@@ -453,6 +555,180 @@ export async function executeSearch(
     keepOperatorMatches(
       indexResultsPromise ? await indexResultsPromise : undefined,
     ) ?? [];
+
+  if (hooks?.has("search.results")) {
+    type ResultEntry =
+      | { group: "index"; item: WebSearchResult }
+      | { group: "web"; item: WebSearchResult }
+      | { group: "news"; item: NonNullable<SearchV2Response["news"]>[number] }
+      | {
+          group: "images";
+          item: NonNullable<SearchV2Response["images"]>[number];
+        };
+
+    const hits: SearchHit[] = [];
+    const byRef = new Map<SearchHit, ResultEntry>();
+    const byUrl = new Map<string, ResultEntry[]>();
+    const newsWithoutUrl: Array<{
+      index: number;
+      item: NonNullable<SearchV2Response["news"]>[number];
+    }> = [];
+    const imagesWithoutUrl: Array<{
+      index: number;
+      item: NonNullable<SearchV2Response["images"]>[number];
+    }> = [];
+
+    const record = (hit: SearchHit, entry: ResultEntry) => {
+      hits.push(hit);
+      byRef.set(hit, entry);
+      const bucket = byUrl.get(hit.url);
+      if (bucket) {
+        bucket.push(entry);
+      } else {
+        byUrl.set(hit.url, [entry]);
+      }
+    };
+
+    const hadWeb = searchResponse.web !== undefined;
+    const hadNews = searchResponse.news !== undefined;
+    const hadImages = searchResponse.images !== undefined;
+
+    if (indexCategorySearch !== null) {
+      for (const item of indexResults) {
+        record(
+          { url: item.url, title: item.title, description: item.description },
+          { group: "index", item },
+        );
+      }
+    } else if (searchResponse.web) {
+      for (const item of searchResponse.web) {
+        record(
+          { url: item.url, title: item.title, description: item.description },
+          { group: "web", item },
+        );
+      }
+    }
+
+    if (searchResponse.news) {
+      for (let i = 0; i < searchResponse.news.length; i++) {
+        const item = searchResponse.news[i];
+        if (!item.url) {
+          newsWithoutUrl.push({ index: i, item });
+          continue;
+        }
+        record(
+          { url: item.url, title: item.title, description: item.snippet },
+          { group: "news", item },
+        );
+      }
+    }
+
+    if (searchResponse.images) {
+      for (let i = 0; i < searchResponse.images.length; i++) {
+        const item = searchResponse.images[i];
+        if (!item.url) {
+          imagesWithoutUrl.push({ index: i, item });
+          continue;
+        }
+        record({ url: item.url, title: item.title }, { group: "images", item });
+      }
+    }
+
+    const transformed = await hooks.transform("search.results", hits, {
+      ctx: searchCtx!,
+      body: searchBody!,
+    });
+
+    const nextIndex: WebSearchResult[] = [];
+    const nextWeb: WebSearchResult[] = [];
+    const nextNews: NonNullable<SearchV2Response["news"]> = [];
+    const nextImages: NonNullable<SearchV2Response["images"]> = [];
+    const consumed = new Set<ResultEntry>();
+
+    for (const hit of transformed) {
+      let entry = byRef.get(hit);
+      if (entry && consumed.has(entry)) {
+        entry = undefined;
+      }
+      if (!entry) {
+        const candidates = byUrl.get(hit.url);
+        if (candidates) {
+          entry = candidates.find(candidate => !consumed.has(candidate));
+        }
+      }
+      if (entry) {
+        consumed.add(entry);
+        if (entry.group === "index") {
+          nextIndex.push({
+            ...entry.item,
+            url: hit.url,
+            title: hit.title ?? entry.item.title,
+            description: hit.description ?? entry.item.description,
+          });
+        } else if (entry.group === "web") {
+          nextWeb.push({
+            ...entry.item,
+            url: hit.url,
+            title: hit.title ?? entry.item.title,
+            description: hit.description ?? entry.item.description,
+          });
+        } else if (entry.group === "news") {
+          nextNews.push({
+            ...entry.item,
+            url: hit.url,
+            title: hit.title ?? entry.item.title,
+            snippet: hit.description ?? entry.item.snippet,
+          });
+        } else {
+          nextImages.push({
+            ...entry.item,
+            url: hit.url,
+            title: hit.title ?? entry.item.title,
+          });
+        }
+      } else {
+        const added: WebSearchResult = {
+          url: hit.url,
+          title: hit.title ?? "",
+          description: hit.description ?? "",
+        };
+        if (indexCategorySearch !== null) {
+          nextIndex.push(added);
+        } else {
+          nextWeb.push(added);
+        }
+      }
+    }
+
+    for (const { index, item } of newsWithoutUrl) {
+      nextNews.splice(Math.min(index, nextNews.length), 0, item);
+    }
+    for (const { index, item } of imagesWithoutUrl) {
+      nextImages.splice(Math.min(index, nextImages.length), 0, item);
+    }
+
+    if (indexCategorySearch !== null) {
+      indexResults = nextIndex.slice(0, limit);
+    }
+    if (hadWeb || nextWeb.length > 0) {
+      searchResponse.web = nextWeb.map((item, index) => ({
+        ...item,
+        position: index + 1,
+      }));
+    }
+    if (hadNews || nextNews.length > 0) {
+      searchResponse.news = nextNews.map((item, index) => ({
+        ...item,
+        position: index + 1,
+      }));
+    }
+    if (hadImages || nextImages.length > 0) {
+      searchResponse.images = nextImages.map((item, index) => ({
+        ...item,
+        position: index + 1,
+      }));
+    }
+  }
 
   // Threat protection: remove blocked results entirely — before
   // slicing/counting, before scraping, and before returning. Checks are
@@ -732,6 +1008,8 @@ export async function executeSearch(
       team_id: teamId,
       org_id: orgId ?? null,
       origin,
+      zeroDataRetention,
+      safeMode: context.safeModeBypassed ? false : undefined,
     });
 
     if (itemsToScrape.length > 0) {
@@ -750,6 +1028,7 @@ export async function executeSearch(
         keylessReserved: context.keylessReserved,
         threatProtectionPolicy: threatPolicy ?? null,
         safeModeBypassed: context.safeModeBypassed ?? false,
+        ...(context.workContactOnly ? { workContactOnly: true } : {}),
       };
 
       const allDocsWithCostTracking = await scrapeSearchResults(
@@ -773,7 +1052,12 @@ export async function executeSearch(
   // Runs after scraping (mergeScrapedContent rebuilds the result objects, so
   // highlight mutations must come last to survive). Uses the user's original
   // query, not the domain-filtered upstream query.
-  if (zeroDataRetention !== true && !isZDR && highlightsEnvReady()) {
+  if (
+    zeroDataRetention !== true &&
+    !isZDR &&
+    flags?.skipSearchHighlights !== true &&
+    highlightsEnvReady()
+  ) {
     const mode = searchHighlightsMode({
       requested: options.highlights,
       origin: context.origin,

@@ -37,11 +37,11 @@ vi.mock("langsmith/traceable", () => ({
 describe("scrape-interact/langsmith (disabled — no API key)", () => {
   beforeEach(() => {
     vi.resetModules();
-    // Mock config to ensure LANGSMITH_API_KEY is unset regardless of what's
+    // Mock browserEnv to ensure LANGSMITH_API_KEY is unset regardless of what's
     // in the developer's local .env file — this keeps the disabled-path
     // tests hermetic.
-    vi.doMock("../../config", () => ({
-      config: {
+    vi.doMock("../browser-env", () => ({
+      browserEnv: {
         LANGSMITH_API_KEY: undefined,
         LANGSMITH_TRACING: undefined,
         LANGSMITH_PROJECT: undefined,
@@ -51,7 +51,7 @@ describe("scrape-interact/langsmith (disabled — no API key)", () => {
   });
 
   afterEach(() => {
-    vi.doUnmock("../../config");
+    vi.doUnmock("../browser-env");
   });
 
   it("reports disabled when LANGSMITH_API_KEY is unset", async () => {
@@ -103,8 +103,8 @@ describe("scrape-interact/langsmith (disabled — no API key)", () => {
 
   it("treats an API key alone (no LANGSMITH_TRACING) as disabled", async () => {
     vi.resetModules();
-    vi.doMock("../../config", () => ({
-      config: {
+    vi.doMock("../browser-env", () => ({
+      browserEnv: {
         LANGSMITH_API_KEY: "real-looking-key",
         LANGSMITH_TRACING: undefined,
         LANGSMITH_PROJECT: undefined,
@@ -117,8 +117,8 @@ describe("scrape-interact/langsmith (disabled — no API key)", () => {
 
   it("treats whitespace-only LANGSMITH_API_KEY as disabled", async () => {
     vi.resetModules();
-    vi.doMock("../../config", () => ({
-      config: {
+    vi.doMock("../browser-env", () => ({
+      browserEnv: {
         LANGSMITH_API_KEY: "   \t\n  ",
         LANGSMITH_TRACING: true,
         LANGSMITH_PROJECT: undefined,
@@ -193,8 +193,8 @@ describe("scrape-interact/langsmith (enabled — mocked SDK)", () => {
     // Mock config with only the fields the module reads so the test is
     // hermetic — it doesn't depend on the developer's local .env making it
     // through the zod schema at require time.
-    vi.doMock("../../config", () => ({
-      config: {
+    vi.doMock("../browser-env", () => ({
+      browserEnv: {
         LANGSMITH_API_KEY: "test-fake-key",
         LANGSMITH_TRACING: true,
         LANGSMITH_PROJECT: "test-project",
@@ -206,7 +206,7 @@ describe("scrape-interact/langsmith (enabled — mocked SDK)", () => {
   afterEach(() => {
     process.env = { ...ORIGINAL_ENV };
     sdkMocks.vercelThrows = false;
-    vi.doUnmock("../../config");
+    vi.doUnmock("../browser-env");
   });
 
   it.skip("reports enabled and swaps generateText for the wrapped fn", async () => {

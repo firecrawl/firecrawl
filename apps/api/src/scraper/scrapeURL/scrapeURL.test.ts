@@ -6,9 +6,11 @@ config.ENV = "test";
 
 import { scrapeURL } from ".";
 import { scrapeOptions } from "../../controllers/v2/types";
-import { Engine } from "./engines";
+import { coreEngineFeatures, coreEngines, Engine } from "./engines";
+import { coreLlmProviders } from "../../lib/generic-ai";
 import { CostTracking } from "../../lib/cost-tracking";
 import { AgentIndexOnlyError, NoCachedDataError } from "./error";
+import { createService, replaceService } from "../../service/service";
 
 // Mock parseMarkdown but delegate to real implementation for other tests
 vi.mock("../../lib/html-to-markdown", async importOriginal => {
@@ -35,6 +37,27 @@ const testEnginesScreenshot: (Engine | undefined)[] = [
 ];
 
 describe("Standalone scrapeURL tests", () => {
+  beforeAll(() => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            engines: coreEngines,
+            engineFeatures: coreEngineFeatures,
+            llmProviders: coreLlmProviders,
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+  });
+
+  afterAll(() => {
+    replaceService(undefined);
+  });
+
   it.each([
     ["https://example.com/raw", "text/html; charset=utf-8"],
     ["https://example.com/raw.pdf", "application/pdf"],

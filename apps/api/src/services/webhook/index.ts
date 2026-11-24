@@ -1,4 +1,3 @@
-import { logger as _logger } from "../../lib/logger";
 import { getWebhookConfig } from "./config";
 import { WebhookConfig } from "./types";
 import { WebhookSender } from "./delivery";
@@ -8,11 +7,13 @@ export async function createWebhookSender(params: {
   jobId: string;
   webhook?: WebhookConfig;
   v0: boolean;
+  zeroDataRetention?: boolean;
 }): Promise<WebhookSender | null> {
   const config = await getWebhookConfig(
     params.teamId,
     params.jobId,
     params.webhook,
+    Boolean(params.zeroDataRetention),
   );
   if (!config) {
     return null;
@@ -22,12 +23,9 @@ export async function createWebhookSender(params: {
     teamId: params.teamId,
     jobId: params.jobId,
     v0: params.v0,
+    zeroDataRetention: params.zeroDataRetention,
   });
 }
 
-export {
-  getWebhookInsertQueueLength,
-  processWebhookInsertJobs,
-} from "./delivery";
+export { getWebhookInsertQueueLength, processWebhookInsertJobs } from "./logs";
 export { WebhookEvent } from "./types";
-export { shutdownWebhookQueue } from "./queue";

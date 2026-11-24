@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { config } from "../../../config";
+import { notificationsEnv } from "../../notification/env";
 import { logger as _logger } from "../../../lib/logger";
 import {
   createMonitor,
@@ -46,7 +46,7 @@ type SlackSlashCommandInput = {
 const DEFAULT_WATCH_CRON = "0 9 * * *"; // daily at 09:00 UTC
 
 function dashboardUrl(path: string): string {
-  return new URL(path, config.FIRECRAWL_DASHBOARD_URL).toString();
+  return new URL(path, notificationsEnv.FIRECRAWL_DASHBOARD_URL).toString();
 }
 
 function ephemeral(text: string, blocks?: unknown[]): SlackCommandResponse {

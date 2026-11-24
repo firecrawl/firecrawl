@@ -4,6 +4,7 @@ import { Logger } from "winston";
 import { logger as _logger } from "../../../lib/logger";
 import { config } from "../../../config";
 import { QueueFullError } from "../../../lib/queue-full-error";
+import { storedZeroDataRetention } from "../../../lib/request-context";
 import { getNuqFdbDatabase } from "./client";
 import {
   NuqFdbKeyspace,
@@ -56,7 +57,7 @@ import {
 } from "./ops";
 import { NuqFdbGroupOps } from "./groups";
 
-const DATA_CHUNK_BYTES = 90 * 1024;
+export const DATA_CHUNK_BYTES = 90 * 1024;
 // FoundationDB caps transactions at 10,000,000 bytes of affected data. Keep
 // enqueue batches much smaller so large payloads cannot accidentally combine
 // into a commit-time transaction_too_large failure.
@@ -94,6 +95,8 @@ export type NuQFdbJob<Data = any, ReturnValue = any> = {
   leaseExpiresAt?: Date;
   ownerId?: string;
   groupId?: string;
+  /** In-memory limit of the gate that backlogged this job at enqueue time. */
+  backlogLimit?: number;
 };
 
 export type NuQFdbJobOptions = {
@@ -439,6 +442,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       // crawl gate state per distinct live group
       const groupMetas = new Map<string, GroupMeta | null>();
       const crawlFree = new Map<string, number>();
+      const crawlLimits = new Map<string, number>();
       if (this.options.hasGroups) {
         for (const j of jobs) {
           const gid = j.options.groupId;
@@ -450,6 +454,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
             if (effM !== undefined) {
               const cact = decodeI64(await tn.get(ks.groupCrawlActive(gid)));
               crawlFree.set(gid, effM - cact);
+              crawlLimits.set(gid, effM);
             }
           }
         }
@@ -476,7 +481,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         if (crawlGated) flags |= F_CRAWL_GATED;
         if (keyGated) flags |= F_KEY_GATED;
         if (j.options.listenable) flags |= F_LISTENABLE;
-        if ((j.data as any)?.zeroDataRetention) flags |= F_ZDR;
+        if (storedZeroDataRetention(j.data)) flags |= F_ZDR;
         if (countable) flags |= F_COUNTABLE;
         if (groupLive) flags |= F_GACC;
 
@@ -508,6 +513,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         );
 
         let placedStatus: NuqFdbJobStatus;
+        let backlogLimit: number | undefined;
         if (!gated) {
           pushReady(tn, ks, entry, txc);
           setStatusQueued(tn, ks, j.id);
@@ -516,6 +522,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           const loc = appendCrawlPending(tn, ks, entry);
           setStatusPending(tn, ks, j.id, loc);
           placedStatus = "pending";
+          backlogLimit = crawlLimits.get(gid!);
         } else if (keyGated && keyFree <= 0) {
           // holds the crawl slot (if any) while waiting in the key gate
           if (crawlGated) {
@@ -525,6 +532,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           const loc = appendKeyPending(tn, ks, entry);
           setStatusPending(tn, ks, j.id, loc);
           placedStatus = "pending";
+          backlogLimit = gate.key!.limit;
         } else {
           if (crawlGated) {
             crawlFree.set(gid!, crawlFree.get(gid!)! - 1);
@@ -544,6 +552,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
             const loc = appendTeamPending(tn, ks, entry);
             setStatusPending(tn, ks, j.id, loc);
             placedStatus = "pending";
+            backlogLimit = gate.teamLimit!;
           }
         }
 
@@ -561,6 +570,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           data: j.data,
           ownerId: entry.o || undefined,
           groupId: gid,
+          ...(backlogLimit !== undefined ? { backlogLimit } : {}),
         });
       }
 

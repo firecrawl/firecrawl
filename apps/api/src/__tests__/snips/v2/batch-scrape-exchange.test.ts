@@ -14,15 +14,6 @@ const mocks = vi.hoisted(() => ({
   emitRejectedScrapeActivityEvents: vi.fn(),
 }));
 
-vi.mock(
-  "../../../scraper/WebScraper/utils/blocklist",
-  async importOriginal => ({
-    ...(await importOriginal<
-      typeof import("../../../scraper/WebScraper/utils/blocklist")
-    >()),
-    isUrlBlocked: mocks.isUrlBlocked,
-  }),
-);
 vi.mock("../../../services/alexandria/client", async importOriginal => ({
   ...(await importOriginal<
     typeof import("../../../services/alexandria/client")
@@ -69,9 +60,41 @@ import {
 } from "../../../lib/exchange";
 import { UnsupportedSiteError } from "../../../lib/error";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../../lib/strings";
-import { buildFallbackList } from "../../../scraper/scrapeURL/engines";
+import {
+  buildFallbackList,
+  coreEngineFeatures,
+  coreEngines,
+} from "../../../scraper/scrapeURL/engines";
+import { noBlocklist } from "../../../service/defaults";
+import { createService, replaceService } from "../../../service/service";
 
 describe("v2 batch scrape of blocklisted URLs", () => {
+  beforeAll(() => {
+    replaceService(
+      createService(
+        {
+          modules: {
+            blocklist: {
+              ...noBlocklist(),
+              isBlocked: mocks.isUrlBlocked,
+            },
+          },
+        },
+        {
+          core: {
+            name: "core",
+            engines: coreEngines,
+            engineFeatures: coreEngineFeatures,
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+  });
+
+  afterAll(() => {
+    replaceService(undefined);
+  });
   const TERMS = { key: "acme", version: "2026-01-01" };
   const BLOCKED_URL = "https://profiles.example/person/example-person";
   const UNSERVED_URL = "https://blocked.example/person/example-person";

@@ -17,7 +17,7 @@ import { performGenerateLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt
 import { updateGeneratedLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt-redis";
 import Express from "express";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
-import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
+import { service } from "../service";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
@@ -32,6 +32,8 @@ import {
   consumeMonitorSearchCheckJobs,
 } from "./monitoring/queue";
 import { shutdownPubSubLogging } from "./logging/log_job";
+import { startRole } from "../main";
+import { runProcessStop } from "../service/service";
 
 configDotenv();
 
@@ -217,18 +219,6 @@ async function processFinishCrawlJobInternal(_job: NuQJob) {
 
 let isShuttingDown = false;
 let isWorkerStalled = false;
-
-if (require.main === module) {
-  process.on("SIGINT", () => {
-    _logger.debug("Received SIGINT. Shutting down gracefully...");
-    isShuttingDown = true;
-  });
-
-  process.on("SIGTERM", () => {
-    _logger.debug("Received SIGTERM. Shutting down gracefully...");
-    isShuttingDown = true;
-  });
-}
 
 let cantAcceptConnectionCount = 0;
 
@@ -436,8 +426,18 @@ app.listen(workerPort, (error?: Error) => {
   _logger.info(`Liveness endpoint is running on port ${workerPort}`);
 });
 
-(async () => {
-  await initializeBlocklist().catch(e => {
+export async function start() {
+  process.on("SIGINT", () => {
+    _logger.debug("Received SIGINT. Shutting down gracefully...");
+    isShuttingDown = true;
+  });
+
+  process.on("SIGTERM", () => {
+    _logger.debug("Received SIGTERM. Shutting down gracefully...");
+    isShuttingDown = true;
+  });
+
+  await service.modules.blocklist.init().catch(e => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);
   });
@@ -492,7 +492,15 @@ app.listen(workerPort, (error?: Error) => {
   }
 
   _logger.info("All jobs finished. Shutting down...");
-  await shutdownPubSubLogging();
+  try {
+    await shutdownPubSubLogging();
+  } finally {
+    await runProcessStop("queue-worker");
+  }
   await shutdownTracing();
   process.exit(0);
-})();
+}
+
+if (require.main === module) {
+  void startRole("queue-worker");
+}

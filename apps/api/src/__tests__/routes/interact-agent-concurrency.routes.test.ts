@@ -15,11 +15,13 @@ vi.mock("../../config", async importOriginal => {
     config: {
       ...actual.config,
       USE_DB_AUTHENTICATION: true,
-      HANGAR_URL: "http://hangar.test",
       AGENT_INTEROP_SECRET: "agent-secret",
     },
   };
 });
+vi.mock("../../lib/browser-env", () => ({
+  browserEnv: { HANGAR_URL: "http://hangar.test" },
+}));
 vi.mock("../../db/connection", () => ({ db: {}, dbRr: {}, dbIndex: {} }));
 vi.mock("../../db/rpc", () => ({
   authCreditUsageChunk: mocks.authChunk,

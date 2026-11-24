@@ -1,14 +1,15 @@
 import "dotenv/config";
 import { clickhouseClient } from "./clickhouse-client";
-import { removeJobFromGCS } from "./gcs-jobs";
+import { removeJobFromGCS, storage } from "./gcs-jobs";
 import { logger as _logger } from "./logger";
 import { config } from "../config";
 import { setSpanAttributes, withSpan } from "./otel-tracer";
 import type { ZdrCleanupJob } from "./zdr-queue";
+import { zdrWorkerEnv } from "./zdr-worker-env";
 
 export async function sendZdrHeartbeat() {
-  if (config.ZDRCLEANER_HEARTBEAT_URL) {
-    fetch(config.ZDRCLEANER_HEARTBEAT_URL).catch(() => {});
+  if (zdrWorkerEnv.ZDRCLEANER_HEARTBEAT_URL) {
+    fetch(zdrWorkerEnv.ZDRCLEANER_HEARTBEAT_URL).catch(() => {});
   }
 }
 
@@ -106,9 +107,25 @@ export async function cleanZdrRequest(requestId: string): Promise<void> {
   });
 }
 
+async function removeParseUpload(objectPath: string): Promise<void> {
+  if (!config.GCS_PARSE_UPLOAD_BUCKET_NAME) {
+    throw new Error(
+      "GCS_PARSE_UPLOAD_BUCKET_NAME is not configured; cannot delete parse upload",
+    );
+  }
+  await storage
+    .bucket(config.GCS_PARSE_UPLOAD_BUCKET_NAME)
+    .file(objectPath)
+    .delete({ ignoreNotFound: true });
+}
+
 export async function cleanZdrJob(job: ZdrCleanupJob): Promise<void> {
   if ("blobId" in job) {
     await removeJobFromGCS(job.blobId);
+    return;
+  }
+  if ("parseUploadPath" in job) {
+    await removeParseUpload(job.parseUploadPath);
     return;
   }
   await cleanZdrRequest(job.requestId);

@@ -1,8 +1,8 @@
 import { computeRefundPolicy } from "./refund-policy";
 import type { FeedbackJobRow } from "./internal-types";
 
-vi.mock("../../../config", () => ({
-  config: { FEEDBACK_REFUND_ENABLED: true },
+vi.mock("../../../lib/feedback-env", () => ({
+  feedbackEnv: { FEEDBACK_REFUND_ENABLED: true },
 }));
 
 function job(refundClass: FeedbackJobRow["refund_class"]): FeedbackJobRow {
@@ -36,4 +36,40 @@ describe("precomputed feedback refund classes", () => {
       policy: { matchedReason: "scrape_feedback" },
     });
   });
+});
+
+describe("interact and browser session feedback", () => {
+  it.each(["interact", "browser"] as const)(
+    "has no refund for %s feedback",
+    endpoint => {
+      const session = { ...job(undefined), endpoint, credits_cost: 0 };
+
+      for (const rating of ["good", "partial", "bad"] as const) {
+        expect(computeRefundPolicy(session, rating)).toMatchObject({
+          desiredRefund: 0,
+          policy: {
+            endpoint,
+            mode: "none",
+            matchedReason: "zero_billed_credits",
+          },
+        });
+      }
+    },
+  );
+
+  it.each(["interact", "browser"] as const)(
+    "has no refund for %s feedback even if a row carried billed credits",
+    endpoint => {
+      expect(
+        computeRefundPolicy({ ...job("scrape_basic"), endpoint }, "bad"),
+      ).toMatchObject({
+        desiredRefund: 0,
+        policy: {
+          endpoint,
+          mode: "none",
+          matchedReason: "endpoint_not_refundable",
+        },
+      });
+    },
+  );
 });

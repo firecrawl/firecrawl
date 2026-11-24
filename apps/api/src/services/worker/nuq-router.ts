@@ -7,6 +7,7 @@ import { DEFAULT_TEAM_LIMITS } from "../autumn/autumn.service";
 import { redisEvictConnection } from "../../services/redis";
 import { isSelfHosted } from "../../lib/deployment";
 import { getApiKeyConcurrencyLimit } from "../../lib/api-key-concurrency";
+import { jobContext } from "../../lib/request-context";
 import {
   getTeamQueueLimit,
   getConcurrencyLimitActiveJobsCount,
@@ -261,9 +262,10 @@ export async function fdbEnqueueScrapeJobs(
   teamId: string,
   options?: { bypassGate?: boolean },
 ): Promise<{
-  jobs: (NuQJob<ScrapeJobData> & { backend: "fdb" })[];
+  jobs: (NuQJob<ScrapeJobData> & { backend: "fdb"; backlogLimit?: number })[];
   backloggedCount: number;
   teamLimit: number | null;
+  backlogLimit: number | null;
 }> {
   let teamLimit: number | null = null;
   if (!isSelfHosted()) {
@@ -280,7 +282,7 @@ export async function fdbEnqueueScrapeJobs(
   // kickoff's apiKeyId) and that key has a limit configured.
   let keyGate: { id: string; limit: number } | null = null;
   if (teamLimit !== null) {
-    const keyIds = new Set(jobs.map(j => j.data.apiKeyId ?? null));
+    const keyIds = new Set(jobs.map(j => jobContext(j.data).apiKeyId ?? null));
     const apiKeyId = keyIds.size === 1 ? [...keyIds][0] : null;
     if (apiKeyId !== null) {
       const keyLimit = await getApiKeyConcurrencyLimit(apiKeyId);
@@ -311,7 +313,9 @@ export async function fdbEnqueueScrapeJobs(
     ),
   );
 
-  const tagged = results.map(r => tagFdbJob(r as NuQJob<ScrapeJobData>));
+  const tagged = results.map(r =>
+    tagFdbJob(r as NuQJob<ScrapeJobData> & { backlogLimit?: number }),
+  );
   const markerResults = await Promise.allSettled(
     tagged.map(job => markJobBackend(job.id, "fdb")),
   );
@@ -326,10 +330,12 @@ export async function fdbEnqueueScrapeJobs(
       errors: markerFailures.map(r => r.reason),
     });
   }
+  const backloggedJobs = tagged.filter(j => j.status === "backlog");
   return {
     jobs: tagged,
-    backloggedCount: tagged.filter(j => j.status === "backlog").length,
+    backloggedCount: backloggedJobs.length,
     teamLimit,
+    backlogLimit: backloggedJobs[0]?.backlogLimit ?? null,
   };
 }
 
