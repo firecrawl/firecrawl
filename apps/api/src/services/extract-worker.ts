@@ -207,9 +207,12 @@ app.listen(workerPort, (error?: Error) => {
 
 async function shutdown() {
   _logger.info("Shutting down extract worker...");
-  await shutdownExtractQueue();
-  await shutdownPubSubLogging();
-  await runProcessStop("extract-worker");
+  try {
+    await shutdownExtractQueue();
+    await shutdownPubSubLogging();
+  } finally {
+    await runProcessStop("extract-worker");
+  }
   await shutdownTracing();
   _logger.info("Extract worker shut down");
   process.exit(0);

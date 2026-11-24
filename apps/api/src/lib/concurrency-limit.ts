@@ -33,7 +33,7 @@ import type { ScrapeJobData } from "../types";
  */
 export const HOBBY_CONCURRENCY_LIMIT = 5;
 
-export function scrapeJobKind(data: ScrapeJobData): JobKind {
+function scrapeJobKind(data: ScrapeJobData): JobKind {
   if (data.mode === "kickoff" || data.mode === "kickoff_sitemap") {
     return "crawl";
   }
@@ -44,6 +44,17 @@ export function scrapeJobKind(data: ScrapeJobData): JobKind {
     return "batchScrape";
   }
   return "scrape";
+}
+
+/** Emits `job.enqueued` when a handler is registered on the active service. */
+export function observeJobEnqueued(jobId: string, data: ScrapeJobData): void {
+  const hooks = installedService()?.hooks;
+  if (!hooks?.has("job.enqueued")) return;
+  hooks.observe("job.enqueued", {
+    jobId,
+    kind: scrapeJobKind(data),
+    ctx: jobContext(data),
+  });
 }
 
 const constructKey = constructConcurrencyLimitKey;
@@ -398,14 +409,7 @@ export async function concurrentJobDone(job: NuQJob<any>) {
         )) !== null;
 
       if (promotedSuccessfully) {
-        const hooks = installedService()?.hooks;
-        if (hooks?.has("job.enqueued")) {
-          hooks.observe("job.enqueued", {
-            jobId: nextJob.job.id,
-            kind: scrapeJobKind(nextJob.job.data),
-            ctx: jobContext(nextJob.job.data),
-          });
-        }
+        observeJobEnqueued(nextJob.job.id, nextJob.job.data);
         logger.debug("Successfully promoted concurrent queued job", {
           teamId: job.data.team_id,
           jobId: nextJob.job.id,

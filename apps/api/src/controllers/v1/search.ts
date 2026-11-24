@@ -23,6 +23,10 @@ import type { Logger } from "winston";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
 import { executeSearch } from "../../search/execute";
+import { applySearchPlanHook } from "../../search/plan-hook";
+import { requestContext } from "../../lib/request-context";
+import { installedService } from "../../service/service";
+import type { SearchRequest as V2SearchRequest } from "../v2/types";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import {
   resolveSafeMode,
@@ -282,10 +286,56 @@ export async function searchController(
     const shouldScrape =
       req.body.scrapeOptions.formats &&
       req.body.scrapeOptions.formats.length > 0;
+    const ctx =
+      req.ctx ??
+      requestContext({
+        teamId: req.auth.team_id,
+        zeroDataRetention,
+        flags: req.acuc?.flags ?? null,
+        orgId: req.acuc?.org_id ?? null,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+      });
+    req.ctx = ctx;
+    const hookBody: V2SearchRequest = {
+      query: req.body.query,
+      limit: req.body.limit,
+      tbs: req.body.tbs,
+      filter: req.body.filter,
+      sources: [{ type: "web" }],
+      categories: [],
+      lang: req.body.lang ?? "en",
+      enterprise: teamEnterprise,
+      country: req.body.country,
+      location: req.body.location,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration ?? null,
+      timeout: req.body.timeout,
+      ignoreInvalidURLs: req.body.ignoreInvalidURLs ?? false,
+      asyncScraping: false,
+      toolDetail: "compact",
+      scrapeOptions: (shouldScrape
+        ? scrapeOptions
+        : undefined) as V2SearchRequest["scrapeOptions"],
+    };
+    const planHooks = installedService()?.hooks;
+    const planned = planHooks?.has("search.plan")
+      ? await applySearchPlanHook(
+          {
+            query: req.body.query,
+            limit: req.body.limit,
+            sources: [{ type: "web" }],
+          },
+          { ctx, body: hookBody },
+        )
+      : {
+          query: req.body.query,
+          limit: req.body.limit,
+          sources: [{ type: "web" }],
+        };
     const projectedKeylessCredits = !isSearchPreview
       ? projectSearchTotalCredits(
           {
-            limit: req.body.limit,
+            limit: planned.limit,
             enterprise: teamEnterprise,
             scrapeOptions: shouldScrape ? scrapeOptions : undefined,
           },
@@ -311,14 +361,14 @@ export async function searchController(
     // Execute search using v2 logic
     const result = await executeSearch(
       {
-        query: req.body.query,
-        limit: req.body.limit,
+        query: planned.query,
+        limit: planned.limit,
         tbs: req.body.tbs,
         filter: req.body.filter,
         lang: req.body.lang,
         country: req.body.country,
         location: req.body.location,
-        sources: [{ type: "web" }], // v1 only supports web
+        sources: planned.sources, // v1 defaults to web
         scrapeOptions: shouldScrape ? scrapeOptions : undefined,
         timeout: req.body.timeout,
         enterprise: teamEnterprise,
@@ -340,6 +390,9 @@ export async function searchController(
         keylessReserved: reservedKeylessCredits > 0,
         threatProtectionPolicy: threatProtection.policy,
         safeModeBypassed: safeMode.bypassed === true,
+        ctx,
+        body: hookBody,
+        planApplied: true,
       },
       logger,
     );

@@ -145,6 +145,49 @@ async function orgIdForJob(
   return orgIdFromJob ?? (await orgIdForTeam(teamId));
 }
 
+async function applyCrawlLinksHook(
+  links: string[],
+  {
+    crawlId,
+    ctx,
+    from,
+    crawler,
+    limit,
+    maxDepth,
+    fromMap = false,
+  }: {
+    crawlId: string;
+    ctx: RequestContext;
+    from: string;
+    crawler: WebCrawler;
+    limit: number;
+    maxDepth: number;
+    fromMap?: boolean;
+  },
+): Promise<string[]> {
+  const hooks = installedService()?.hooks;
+  if (!hooks?.has("crawl.links") || links.length === 0) {
+    return links;
+  }
+  const existing = new Set(links);
+  const transformed = await hooks.transform("crawl.links", links, {
+    id: crawlId,
+    ctx,
+    from,
+  });
+  if (transformed.every(url => existing.has(url))) {
+    return transformed;
+  }
+  const revalidated = await crawler.filterLinks(
+    transformed,
+    limit,
+    maxDepth,
+    fromMap,
+  );
+  await recordRobotsBlocked(crawlId, revalidated.robotsBlocked);
+  return revalidated.links;
+}
+
 async function billScrapeJob(
   job: NuQJob<any>,
   document: Document | null,
@@ -690,6 +733,17 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             // in-batch), so many links stay cheap on the check side; blocked
             // discoveries bill +2 per unique scanned URL.
             let discoveredLinks = links.links;
+            if (job.data.crawl_id) {
+              discoveredLinks = await applyCrawlLinksHook(discoveredLinks, {
+                crawlId: job.data.crawl_id,
+                ctx,
+                from:
+                  doc.metadata?.url ?? doc.metadata?.sourceURL ?? sc.originUrl!,
+                crawler,
+                limit: Infinity,
+                maxDepth: sc.crawlerOptions?.maxDepth ?? 10,
+              });
+            }
             const threatPolicy = job.data.internalOptions?.threatProtection;
             if (
               threatPolicy &&
@@ -748,26 +802,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                   },
                 );
               }
-            }
-
-            const hooks = installedService()?.hooks;
-            if (
-              job.data.crawl_id &&
-              hooks?.has("crawl.links") &&
-              discoveredLinks.length > 0
-            ) {
-              discoveredLinks = await hooks.transform(
-                "crawl.links",
-                discoveredLinks,
-                {
-                  id: job.data.crawl_id,
-                  ctx,
-                  from:
-                    doc.metadata?.url ??
-                    doc.metadata?.sourceURL ??
-                    sc.originUrl!,
-                },
-              );
             }
 
             // Hoisted: one ACUC read per job, not one per discovered link.
@@ -1528,6 +1562,16 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
       ctx,
     );
 
+    indexLinks = await applyCrawlLinksHook(indexLinks, {
+      crawlId: job.data.crawl_id,
+      ctx,
+      from: job.data.url,
+      crawler,
+      limit: sc.crawlerOptions.limit ?? 10000,
+      maxDepth: sc.crawlerOptions.maxDepth ?? 10,
+      fromMap: false,
+    });
+
     // Threat protection: skip blocked index-sourced discoveries (URL-level
     // checks; first-time blocks are recorded and billed, see below).
     const kickoffThreatPolicy = sc.internalOptions?.threatProtection;
@@ -1578,15 +1622,6 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
           logger,
         );
       }
-    }
-
-    const kickoffHooks = installedService()?.hooks;
-    if (kickoffHooks?.has("crawl.links") && indexLinks.length > 0) {
-      indexLinks = await kickoffHooks.transform("crawl.links", indexLinks, {
-        id: job.data.crawl_id,
-        ctx,
-        from: job.data.url,
-      });
     }
 
     if (indexLinks.length > 0) {
@@ -1710,7 +1745,15 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       false,
     );
     await recordRobotsBlocked(job.data.crawl_id, sitemapLinks.robotsBlocked);
-    let passingURLs = sitemapLinks.links;
+    let passingURLs = await applyCrawlLinksHook(sitemapLinks.links, {
+      crawlId: job.data.crawl_id,
+      ctx,
+      from: job.data.sitemapUrl,
+      crawler,
+      limit: Infinity,
+      maxDepth: sc.crawlerOptions.maxDepth ?? 10,
+      fromMap: false,
+    });
 
     // Threat protection: skip blocked sitemap entries — the crawl continues;
     // skipped URLs + decisions are recorded as crawl bookkeeping (which also
@@ -1760,15 +1803,6 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
           logger,
         );
       }
-    }
-
-    const sitemapHooks = installedService()?.hooks;
-    if (sitemapHooks?.has("crawl.links") && passingURLs.length > 0) {
-      passingURLs = await sitemapHooks.transform("crawl.links", passingURLs, {
-        id: job.data.crawl_id,
-        ctx,
-        from: job.data.sitemapUrl,
-      });
     }
 
     if (passingURLs.length > 0) {

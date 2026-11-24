@@ -81,6 +81,45 @@ export async function queryIndex(
   return await queryIndexAtSplitLevelWithMeta(url, limit);
 }
 
+/**
+ * Applies registered `map.collect` hooks to candidate map documents,
+ * preserving existing metadata, deduplicating, and slicing to `limit`.
+ */
+export async function applyMapCollectHook(
+  mapResults: MapDocument[],
+  {
+    ctx,
+    url,
+    limit,
+  }: {
+    ctx: RequestContext;
+    url: string;
+    limit: number;
+  },
+): Promise<MapDocument[]> {
+  const hooks = installedService()?.hooks;
+  if (!hooks?.has("map.collect")) {
+    return mapResults;
+  }
+  const currentUrls = mapResults.map(doc => doc.url);
+  const collectedUrls = await hooks.transform("map.collect", currentUrls, {
+    ctx,
+    url,
+    limit,
+  });
+  const byUrl = new Map<string, MapDocument>();
+  for (const doc of mapResults) {
+    if (!byUrl.has(doc.url)) {
+      byUrl.set(doc.url, doc);
+    }
+  }
+  return dedupeMapDocumentArray(
+    collectedUrls.map(
+      collectedUrl => byUrl.get(collectedUrl) ?? { url: collectedUrl },
+    ),
+  ).slice(0, limit);
+}
+
 export async function getMapResults({
   url,
   search,
@@ -398,26 +437,14 @@ export async function getMapResults({
         flags: flags ?? undefined,
         orgId: orgId ?? null,
       });
-    const currentUrls = mapResults.map(doc => doc.url);
-    const collectedUrls = await hooks.transform("map.collect", currentUrls, {
+    mapResults = await applyMapCollectHook(mapResults, {
       ctx: mapCtx,
       url,
       limit,
     });
-    const byUrl = new Map<string, MapDocument>();
-    for (const doc of mapResults) {
-      if (!byUrl.has(doc.url)) {
-        byUrl.set(doc.url, doc);
-      }
-    }
-    mapResults = dedupeMapDocumentArray(
-      collectedUrls.map(
-        collectedUrl => byUrl.get(collectedUrl) ?? { url: collectedUrl },
-      ),
-    );
+  } else {
+    mapResults = mapResults.slice(0, limit);
   }
-
-  mapResults = mapResults.slice(0, limit);
 
   const totalTimeMs = Date.now() - functionStartTime;
 
@@ -442,6 +469,7 @@ export async function buildPromptWithWebsiteStructure({
   useIndex = true,
   maxFireEngineResults = 500,
   zeroDataRetention = false,
+  ctx,
 }: {
   basePrompt: string;
   url: string;
@@ -455,6 +483,7 @@ export async function buildPromptWithWebsiteStructure({
   useIndex?: boolean;
   maxFireEngineResults?: number;
   zeroDataRetention?: boolean;
+  ctx?: RequestContext;
 }): Promise<{ prompt: string; websiteUrls: string[] }> {
   try {
     logger.debug("Getting website structure for prompt enhancement");
@@ -471,6 +500,7 @@ export async function buildPromptWithWebsiteStructure({
       useIndex,
       maxFireEngineResults,
       zeroDataRetention,
+      ctx,
     });
 
     const websiteUrls = mapResult.mapResults.map(doc => doc.url);

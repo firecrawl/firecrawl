@@ -10,7 +10,10 @@ const mocks = vi.hoisted(() => ({
   searchGovCategory: vi.fn(),
   searchGovIfRouted: vi.fn(),
   checkUrlsAgainstThreatPolicy: vi.fn(),
+  resolveThreatProtection: vi.fn(async (): Promise<any> => ({ policy: null })),
   removeExplicitResults: vi.fn(),
+  projectSearchTotalCredits: vi.fn((..._args: any[]) => 0),
+  reserveKeylessCredits: vi.fn(async (..._args: any[]) => ({ ok: true })),
   billTeam: vi.fn(async () => undefined),
   logRequest: vi.fn(async () => undefined),
   logSearch: vi.fn(async () => undefined),
@@ -34,15 +37,15 @@ vi.mock("../../lib/keyless", () => ({
   keylessLimitBody: vi.fn(async () => ({ success: false, error: "limit" })),
   keylessProviderToolsBody: vi.fn(() => ({ success: false, error: "auth" })),
   logKeylessCreditUsage: vi.fn(async () => undefined),
-  reserveKeylessCredits: vi.fn(async () => ({ ok: true })),
+  reserveKeylessCredits: mocks.reserveKeylessCredits,
 }));
 
 vi.mock("../../lib/keyless-credit-projection", () => ({
-  projectSearchTotalCredits: vi.fn(() => 0),
+  projectSearchTotalCredits: mocks.projectSearchTotalCredits,
 }));
 
 vi.mock("../../lib/threat-protection/request", () => ({
-  resolveThreatProtection: vi.fn(async () => ({ policy: null })),
+  resolveThreatProtection: mocks.resolveThreatProtection,
   checkUrlsAgainstThreatPolicy: mocks.checkUrlsAgainstThreatPolicy,
 }));
 
@@ -201,6 +204,9 @@ describe("search lifecycle hooks", () => {
     vi.clearAllMocks();
     replaceService(undefined);
     mocks.isSelfHosted.mockReturnValue(false);
+    mocks.resolveThreatProtection.mockResolvedValue({ policy: null });
+    mocks.projectSearchTotalCredits.mockReturnValue(0);
+    mocks.reserveKeylessCredits.mockResolvedValue({ ok: true });
     mocks.searchGovIfRouted.mockResolvedValue(null);
     mocks.discoverTools.mockResolvedValue({
       items: [],
@@ -244,11 +250,12 @@ describe("search lifecycle hooks", () => {
   it("runs search.plan -> search.results -> search.finished in order and applies transforms", async () => {
     const order: string[] = [];
     const finishedEvents: any[] = [];
+    let seenBodyQuery: string | undefined;
 
     installHooks({
       "search.plan": (plan, info) => {
         order.push(`plan:${info.ctx.teamId}:${plan.query}:${plan.limit}`);
-        expect(info.body.query).toBe("raw query");
+        seenBodyQuery = info.body.query;
         return {
           query: "planned query",
           limit: 3,
@@ -284,6 +291,7 @@ describe("search lifecycle hooks", () => {
       res,
     );
 
+    expect(seenBodyQuery).toBe("raw query");
     expect(res.status).toHaveBeenCalledWith(200);
     expect(mocks.search).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -305,6 +313,7 @@ describe("search lifecycle hooks", () => {
         url: "https://example.com/added",
         title: "Added",
         description: "Added by hook",
+        position: 2,
       }),
     ]);
     expect(payload.data.news).toEqual([
@@ -313,6 +322,7 @@ describe("search lifecycle hooks", () => {
         title: "News One",
         snippet: "Updated snippet",
         date: "2026-11-24",
+        position: 1,
       }),
     ]);
 
@@ -330,6 +340,91 @@ describe("search lifecycle hooks", () => {
         results: 3,
         charged: 2,
       },
+    ]);
+  });
+
+  it("reserves keyless credits against the planned limit, filters hook-added hits through threat and safe-search, and keeps URL-less positions", async () => {
+    installHooks({
+      "search.plan": plan => ({
+        ...plan,
+        limit: 40,
+      }),
+      "search.results": hits => [
+        ...hits,
+        { url: "https://evil.example.com/phish", title: "Phish" },
+        { url: "https://explicit.example.com/nsfw", title: "NSFW" },
+      ],
+    });
+
+    mocks.projectSearchTotalCredits.mockImplementation(
+      (input: { limit: number }) => Math.ceil(input.limit / 10) * 2,
+    );
+    mocks.resolveThreatProtection.mockResolvedValue({
+      policy: { mode: "block" },
+    });
+    mocks.checkUrlsAgainstThreatPolicy.mockImplementation(
+      async (urls: string[]) => ({
+        decisionsByUrl: new Map(
+          urls.map(url => [
+            url,
+            { allowed: !url.includes("evil.example.com") },
+          ]),
+        ),
+      }),
+    );
+    mocks.removeExplicitResults.mockImplementation(async (target: any) => {
+      if (target.web) {
+        target.web = target.web.filter(
+          (item: any) => !item.url.includes("explicit.example.com"),
+        );
+      }
+    });
+    mocks.search.mockResolvedValue({
+      web: [
+        {
+          url: "https://example.com/safe",
+          title: "Safe",
+          description: "Safe hit",
+          position: 1,
+        },
+      ],
+      news: [
+        { url: "https://news.example.com/a", title: "A", snippet: "first" },
+        { title: "URL-less middle", snippet: "middle" },
+        { url: "https://news.example.com/b", title: "B", snippet: "last" },
+      ],
+    });
+
+    const res = makeRes();
+    await searchController(
+      makeReq({
+        query: "test",
+        limit: 10,
+        sources: ["web", "news"],
+        safe: true,
+      }),
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mocks.projectSearchTotalCredits).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 40 }),
+      expect.anything(),
+      false,
+    );
+    expect(mocks.reserveKeylessCredits).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      8,
+    );
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.data.web.map((item: any) => item.url)).toEqual([
+      "https://example.com/safe",
+    ]);
+    expect(payload.data.news.map((item: any) => item.title)).toEqual([
+      "A",
+      "URL-less middle",
+      "B",
     ]);
   });
 

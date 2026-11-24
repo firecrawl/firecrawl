@@ -492,8 +492,11 @@ export async function start() {
   }
 
   _logger.info("All jobs finished. Shutting down...");
-  await shutdownPubSubLogging();
-  await runProcessStop("queue-worker");
+  try {
+    await shutdownPubSubLogging();
+  } finally {
+    await runProcessStop("queue-worker");
+  }
   await shutdownTracing();
   process.exit(0);
 }

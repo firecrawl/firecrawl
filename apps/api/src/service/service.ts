@@ -438,10 +438,10 @@ export function replaceService(next: Service | undefined): Service | undefined {
  * it runs can define an owner then, and that owner is checked where it is
  * defined.
  *
- * An unknown role, a second install, an environment with a problem and a role
- * that throws while it loads are thrown from this call and not turned into a
- * rejection, so a process that cannot start fails the way a main module that
- * throws does.
+ * An unknown role, a second install, and an environment with a problem are
+ * thrown synchronously from this call. A role that throws while it loads
+ * throws synchronously when no `process.start` hook is registered, and
+ * rejects the returned promise when `process.start` hooks run first.
  */
 export function run(next: Service, role: string, entry: string): Promise<void> {
   if (!Object.hasOwn(next.workers, role)) {

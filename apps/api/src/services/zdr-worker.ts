@@ -28,8 +28,11 @@ export async function start() {
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
 
-  await shutdownZdrQueue();
-  await runProcessStop("zdr-worker");
+  try {
+    await shutdownZdrQueue();
+  } finally {
+    await runProcessStop("zdr-worker");
+  }
   await shutdownTracing();
   logger.info("zdr-worker exiting");
   process.exit(0);

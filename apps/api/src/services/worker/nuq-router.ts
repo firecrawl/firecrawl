@@ -262,9 +262,10 @@ export async function fdbEnqueueScrapeJobs(
   teamId: string,
   options?: { bypassGate?: boolean },
 ): Promise<{
-  jobs: (NuQJob<ScrapeJobData> & { backend: "fdb" })[];
+  jobs: (NuQJob<ScrapeJobData> & { backend: "fdb"; backlogLimit?: number })[];
   backloggedCount: number;
   teamLimit: number | null;
+  backlogLimit: number | null;
 }> {
   let teamLimit: number | null = null;
   if (!isSelfHosted()) {
@@ -312,7 +313,9 @@ export async function fdbEnqueueScrapeJobs(
     ),
   );
 
-  const tagged = results.map(r => tagFdbJob(r as NuQJob<ScrapeJobData>));
+  const tagged = results.map(r =>
+    tagFdbJob(r as NuQJob<ScrapeJobData> & { backlogLimit?: number }),
+  );
   const markerResults = await Promise.allSettled(
     tagged.map(job => markJobBackend(job.id, "fdb")),
   );
@@ -327,10 +330,12 @@ export async function fdbEnqueueScrapeJobs(
       errors: markerFailures.map(r => r.reason),
     });
   }
+  const backloggedJobs = tagged.filter(j => j.status === "backlog");
   return {
     jobs: tagged,
-    backloggedCount: tagged.filter(j => j.status === "backlog").length,
+    backloggedCount: backloggedJobs.length,
     teamLimit,
+    backlogLimit: backloggedJobs[0]?.backlogLimit ?? null,
   };
 }
 

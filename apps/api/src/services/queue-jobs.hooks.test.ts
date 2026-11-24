@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
     zadd: vi.fn(async () => 1),
     zrem: vi.fn(async () => 1),
     zpopmin: vi.fn(async (): Promise<string[]> => []),
+    zscan: vi.fn(async (): Promise<[string, string[]]> => ["0", []]),
     get: vi.fn(async (): Promise<string | null> => null),
     del: vi.fn(async () => 1),
     pipeline: vi.fn(() => pipeline),
@@ -38,8 +39,11 @@ const mocks = vi.hoisted(() => {
       id,
       data,
     })),
+    getBackloggedJobIDsOfOwner: vi.fn(async (): Promise<string[]> => []),
+    getJobsFromBacklog: vi.fn(async (): Promise<any[]> => []),
+    getJobs: vi.fn(async (): Promise<any[]> => []),
     getACUCTeam: vi.fn(async () => ({ concurrency_limit: 2 })),
-    getCrawl: vi.fn(async () => null),
+    getCrawl: vi.fn(async (): Promise<any> => null),
     abTestJob: vi.fn(),
     shouldSendConcurrencyLimitNotification: vi.fn(async () => false),
     sendNotificationWithCustomDays: vi.fn(async () => undefined),
@@ -85,6 +89,9 @@ vi.mock("./worker/nuq", () => ({
     addJob: mocks.addJob,
     addJobs: mocks.addJobs,
     promoteJobFromBacklogOrAdd: mocks.promoteJobFromBacklogOrAdd,
+    getBackloggedJobIDsOfOwner: mocks.getBackloggedJobIDsOfOwner,
+    getJobsFromBacklog: mocks.getJobsFromBacklog,
+    getJobs: mocks.getJobs,
   },
 }));
 
@@ -143,6 +150,7 @@ vi.mock("./monitoring/stale", () => ({
 }));
 
 import { concurrentJobDone } from "../lib/concurrency-limit";
+import { reconcileConcurrencyQueue } from "../lib/concurrency-queue-reconciler";
 import { requestContext } from "../lib/request-context";
 import type { HookHandlers } from "../service/hooks";
 import { createService, replaceService } from "../service/service";
@@ -193,9 +201,13 @@ describe("queue and concurrency hooks", () => {
     mocks.redis.zrangebyscore.mockResolvedValue([]);
     mocks.redis.zcount.mockResolvedValue(0);
     mocks.redis.zpopmin.mockResolvedValue([]);
+    mocks.redis.zscan.mockResolvedValue(["0", []]);
     mocks.redis.get.mockResolvedValue(null);
     mocks.getACUCTeam.mockResolvedValue({ concurrency_limit: 2 });
     mocks.getCrawl.mockResolvedValue(null);
+    mocks.getBackloggedJobIDsOfOwner.mockResolvedValue([]);
+    mocks.getJobsFromBacklog.mockResolvedValue([]);
+    mocks.getJobs.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -320,20 +332,36 @@ describe("queue and concurrency hooks", () => {
     events.length = 0;
     mocks.resolveJobBackend.mockResolvedValue("fdb");
     mocks.fdbEnqueueScrapeJobs.mockResolvedValue({
-      jobs: [{ id: "fdb-1", data: makeScrapeJob() }],
+      jobs: [
+        {
+          id: "fdb-1",
+          status: "backlog",
+          data: makeScrapeJob(),
+          backlogLimit: 1,
+        },
+      ],
       backloggedCount: 1,
       teamLimit: 4,
+      backlogLimit: 1,
     });
 
     const fdbRes = await addScrapeJob(makeScrapeJob(), "fdb-1");
     expect(fdbRes).toBeNull();
-    expect(events).toEqual(["enqueued:fdb-1:scrape", "limited:team-1:4"]);
+    expect(events).toEqual(["enqueued:fdb-1:scrape", "limited:team-1:1"]);
 
     events.length = 0;
     mocks.fdbEnqueueScrapeJobs.mockResolvedValue({
-      jobs: [{ id: "fdb-b1", data: makeScrapeJob({ crawl_id: "batch-2" }) }],
+      jobs: [
+        {
+          id: "fdb-b1",
+          status: "backlog",
+          data: makeScrapeJob({ crawl_id: "batch-2" }),
+          backlogLimit: 6,
+        },
+      ],
       backloggedCount: 1,
       teamLimit: 6,
+      backlogLimit: 6,
     });
     await addScrapeJobs([
       {
@@ -343,5 +371,64 @@ describe("queue and concurrency hooks", () => {
       },
     ]);
     expect(events).toEqual(["enqueued:fdb-b1:batchScrape", "limited:team-1:6"]);
+  });
+
+  it("emits concurrency.limited for PG crawl-limit backlogs and job.enqueued for reconciler promotions", async () => {
+    const events: string[] = [];
+    installHooks({
+      "concurrency.limited": event => {
+        events.push(`limited:${event.ctx.teamId}:${event.limit}`);
+      },
+      "job.enqueued": event => {
+        events.push(`enqueued:${event.jobId}:${event.kind}`);
+      },
+    });
+
+    // PG single crawl-limited path ("yes-crawl")
+    mocks.getCrawl.mockResolvedValue({ maxConcurrency: 1 });
+    mocks.redis.zrangebyscore.mockResolvedValueOnce(["crawl-active-1"]);
+    const crawlJob = makeScrapeJob({
+      crawl_id: "crawl-cap",
+      crawlerOptions: {},
+    });
+    const singleRes = await addScrapeJob(crawlJob, "crawl-limited-1");
+    expect(singleRes).toBeNull();
+    expect(events).toEqual(["limited:team-1:1"]);
+
+    // PG batch crawl-limited path (jobsForcedToCQ)
+    events.length = 0;
+    mocks.redis.zrangebyscore
+      .mockResolvedValueOnce(["crawl-active-1"])
+      .mockResolvedValueOnce([]);
+    await addScrapeJobs([
+      { jobId: "crawl-limited-2", priority: 0, data: crawlJob },
+    ]);
+    expect(events).toEqual(["limited:team-1:1"]);
+
+    // Reconciler promotions (both drift recovery and queue drain)
+    events.length = 0;
+    mocks.redis.zrangebyscore.mockResolvedValue([]);
+    mocks.getBackloggedJobIDsOfOwner.mockResolvedValueOnce(["drift-job"]);
+    mocks.getJobsFromBacklog.mockResolvedValueOnce([
+      { id: "drift-job", data: makeScrapeJob(), priority: 0 },
+    ]);
+    mocks.redis.zpopmin.mockResolvedValueOnce([
+      "drain-job",
+      String(Date.now() + 60_000),
+    ]);
+    mocks.redis.get.mockResolvedValueOnce(
+      JSON.stringify({
+        id: "drain-job",
+        data: makeScrapeJob({ crawl_id: "batch-drain" }),
+        priority: 0,
+        listenable: false,
+      }),
+    );
+
+    await reconcileConcurrencyQueue({ teamId: "team-1" });
+    expect(events).toEqual([
+      "enqueued:drift-job:scrape",
+      "enqueued:drain-job:batchScrape",
+    ]);
   });
 });

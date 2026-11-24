@@ -27,6 +27,7 @@ import { getErrorHttpResponse, ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
 import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
+import { applySearchPlanHook } from "../../search/plan-hook";
 import type { BillingMetadata } from "../../services/billing/types";
 import {
   getSearchForcedKind,
@@ -471,28 +472,6 @@ async function searchControllerInner(
       logRequestPromise.catch(() => {});
     }
 
-    const toolsOnly = isToolsOnlySearch(req.body.sources, req.body.categories);
-    const freeCatalogue = isFreeCatalogueSearch(
-      req.body.sources,
-      req.body.categories,
-    );
-    const govSearch = wantsGovCategory(categories);
-    const projectedKeylessCredits =
-      !isSearchPreview &&
-      shouldBill &&
-      !freeCatalogue &&
-      (!govSearch || requestedFormats.length > 0)
-        ? projectSearchTotalCredits(
-            {
-              limit: req.body.limit,
-              enterprise: req.body.enterprise,
-              scrapeOptions: req.body.scrapeOptions,
-              freeSearch: govSearch,
-            },
-            req.acuc?.flags ?? null,
-            zeroDataRetention,
-          )
-        : 0;
     // The request must be on record before anything is reserved, runs, or
     // bills. A failed log fails the request here, ahead of the keyless
     // reservation and the search, so there is nothing to refund or unbill.
@@ -503,6 +482,45 @@ async function searchControllerInner(
       logger.warn("Had to wait for log request promise to complete", {
         timeMs: waited,
       });
+
+    const planHooks = installedService()?.hooks;
+    const planned = planHooks?.has("search.plan")
+      ? await applySearchPlanHook(
+          {
+            query: req.body.query,
+            limit: req.body.limit,
+            sources: req.body.sources as Array<{ type: string }>,
+          },
+          { ctx, body: req.body },
+        )
+      : {
+          query: req.body.query,
+          limit: req.body.limit,
+          sources: req.body.sources as Array<{ type: string }>,
+        };
+
+    const toolsOnly = isToolsOnlySearch(planned.sources, req.body.categories);
+    const freeCatalogue = isFreeCatalogueSearch(
+      planned.sources,
+      req.body.categories,
+    );
+    const govSearch = wantsGovCategory(categories);
+    const projectedKeylessCredits =
+      !isSearchPreview &&
+      shouldBill &&
+      !freeCatalogue &&
+      (!govSearch || requestedFormats.length > 0)
+        ? projectSearchTotalCredits(
+            {
+              limit: planned.limit,
+              enterprise: req.body.enterprise,
+              scrapeOptions: req.body.scrapeOptions,
+              freeSearch: govSearch,
+            },
+            req.acuc?.flags ?? null,
+            zeroDataRetention,
+          )
+        : 0;
 
     if (govSearch) {
       const perMinute = await consumeIndexRateLimit(
@@ -559,15 +577,15 @@ async function searchControllerInner(
 
     const result = await executeSearch(
       {
-        query: req.body.query,
-        limit: req.body.limit,
+        query: planned.query,
+        limit: planned.limit,
         tbs: req.body.tbs,
         filter: req.body.filter,
         lang: req.body.lang,
         country: req.body.country,
         location: req.body.location,
         safe: req.body.safe,
-        sources: req.body.sources as Array<{ type: string }>,
+        sources: planned.sources,
         categories: req.body.categories as CategoryOption[],
         includeDomains: req.body.includeDomains,
         excludeDomains: req.body.excludeDomains,
@@ -614,6 +632,7 @@ async function searchControllerInner(
           : {}),
         ctx,
         body: req.body,
+        planApplied: true,
       },
       logger,
     );

@@ -44,8 +44,11 @@ export async function start() {
 
   async function shutdown() {
     server.close();
-    await nuqShutdown();
-    await runProcessStop("nuq-prefetch-worker");
+    try {
+      await nuqShutdown();
+    } finally {
+      await runProcessStop("nuq-prefetch-worker");
+    }
     await shutdownTracing();
     process.exit(0);
   }

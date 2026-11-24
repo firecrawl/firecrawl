@@ -7,12 +7,12 @@ import {
   getCrawlConcurrencyLimitActiveJobs,
   getTeamQueueLimit,
   MAX_BACKLOG_TIMEOUT_MS,
+  observeJobEnqueued,
   pushConcurrencyLimitActiveJob,
   pushConcurrencyLimitedJob,
   pushConcurrencyLimitedJobs,
   pushCrawlConcurrencyLimitActiveJob,
   QueueFullError,
-  scrapeJobKind,
 } from "../lib/concurrency-limit";
 import { logger as _logger } from "../lib/logger";
 import { sendNotificationWithCustomDays } from "./notification/email_notification";
@@ -64,16 +64,6 @@ function isCrawlOrBatchScrape(options: {
   // If crawlerOptions exists, it's a crawl
   // If crawl_id exists but no crawlerOptions, it's a batch scrape
   return !!options.crawlerOptions || !!options.crawl_id;
-}
-
-function observeJobEnqueued(jobId: string, data: ScrapeJobData): void {
-  const hooks = installedService()?.hooks;
-  if (!hooks?.has("job.enqueued")) return;
-  hooks.observe("job.enqueued", {
-    jobId,
-    kind: scrapeJobKind(data),
-    ctx: jobContext(data),
-  });
 }
 
 function observeConcurrencyLimited(data: ScrapeJobData, limit: number): void {
@@ -310,25 +300,29 @@ async function addScrapeJobFdb(
     abTestJob(webScraperOptions);
   }
 
-  const { jobs, backloggedCount, teamLimit } = await fdbEnqueueScrapeJobs(
-    [
-      {
-        jobId,
-        data: webScraperOptions,
-        priority,
-        listenable,
-        backlogTimeoutMs: backlogTimeoutMs(webScraperOptions),
-      },
-    ],
-    webScraperOptions.team_id,
-    { bypassGate: directToBullMQ },
-  );
+  const { jobs, backloggedCount, teamLimit, backlogLimit } =
+    await fdbEnqueueScrapeJobs(
+      [
+        {
+          jobId,
+          data: webScraperOptions,
+          priority,
+          listenable,
+          backlogTimeoutMs: backlogTimeoutMs(webScraperOptions),
+        },
+      ],
+      webScraperOptions.team_id,
+      { bypassGate: directToBullMQ },
+    );
 
+  // FDB promotes backlogged jobs inside a transaction without loading job payloads,
+  // so enqueue time is the only point where RequestContext and kind are available.
   observeJobEnqueued(jobId, webScraperOptions);
 
   if (backloggedCount > 0) {
-    if (teamLimit !== null) {
-      observeConcurrencyLimited(webScraperOptions, teamLimit);
+    const limitedBy = backlogLimit ?? teamLimit;
+    if (limitedBy !== null) {
+      observeConcurrencyLimited(webScraperOptions, limitedBy);
     }
     await maybeSendConcurrencyNotificationFdb(
       webScraperOptions.team_id,
@@ -517,6 +511,11 @@ async function addScrapeJobRaw(
     );
     if (concurrencyLimited === "yes") {
       observeConcurrencyLimited(webScraperOptions, maxConcurrency);
+    } else if (
+      concurrencyLimited === "yes-crawl" &&
+      maxCrawlConcurrency !== null
+    ) {
+      observeConcurrencyLimited(webScraperOptions, maxCrawlConcurrency);
     }
     return null;
   } else {
@@ -602,7 +601,12 @@ export async function addScrapeJobs(
       j => backendByJob.get(j.jobId) === "fdb",
     );
     if (fdbJobs.length > 0) {
-      const { backloggedCount, teamLimit } = await fdbEnqueueScrapeJobs(
+      const {
+        jobs: enqueuedFdbJobs,
+        backloggedCount,
+        teamLimit,
+        backlogLimit,
+      } = await fdbEnqueueScrapeJobs(
         fdbJobs.map(job => ({
           jobId: job.jobId,
           data: { ...job.data, traceContext },
@@ -612,14 +616,24 @@ export async function addScrapeJobs(
         })),
         teamId,
       );
+      // FDB promotes backlogged jobs inside a transaction without loading job payloads,
+      // so enqueue time is the only point where RequestContext and kind are available.
       for (const job of fdbJobs) {
         observeJobEnqueued(job.jobId, { ...job.data, traceContext });
       }
       if (backloggedCount > 0) {
-        if (teamLimit !== null) {
+        const limitedBy = backlogLimit ?? teamLimit;
+        if (limitedBy !== null) {
+          const backloggedIdx = enqueuedFdbJobs?.findIndex(
+            j => j.status === "backlog",
+          );
+          const sample =
+            backloggedIdx !== undefined && backloggedIdx >= 0
+              ? fdbJobs[backloggedIdx]
+              : fdbJobs[0];
           observeConcurrencyLimited(
-            { ...fdbJobs[0].data, traceContext },
-            teamLimit,
+            { ...sample.data, traceContext },
+            limitedBy,
           );
         }
         await maybeSendConcurrencyNotificationFdb(
@@ -846,6 +860,17 @@ export async function addScrapeJobs(
         { ...jobsPotentiallyInCQ[countCanBeDirectlyAdded].data, traceContext },
         maxConcurrency,
       );
+    }
+    for (const crawlLimit of crawlConcurrencyLimits) {
+      const crawlSample = jobsForcedToCQ.find(
+        job => job.data.crawl_id === crawlLimit.crawlId,
+      );
+      if (crawlSample) {
+        observeConcurrencyLimited(
+          { ...crawlSample.data, traceContext },
+          crawlLimit.maxCrawlConcurrency,
+        );
+      }
     }
 
     await _addScrapeJobsToBullMQ(

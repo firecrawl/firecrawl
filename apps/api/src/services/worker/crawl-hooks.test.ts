@@ -61,6 +61,11 @@ const mocks = vi.hoisted(() => {
     logScrape: vi.fn(async () => undefined),
     createWebhookSender: vi.fn(async () => null),
     createInAppNotification: vi.fn(async () => true),
+    checkUrlsAgainstThreatPolicy: vi.fn(async (urls: string[]) => ({
+      allowedUrls: urls,
+      blocked: [] as any[],
+      decisionsByUrl: new Map(),
+    })),
     redisEvictConnection: {
       sadd: vi.fn(async () => 1),
       expire: vi.fn(async () => 1),
@@ -117,11 +122,7 @@ vi.mock("../../lib/crawl-redis", () => ({
 }));
 
 vi.mock("../../lib/threat-protection/request", () => ({
-  checkUrlsAgainstThreatPolicy: vi.fn(async (urls: string[]) => ({
-    allowedUrls: urls,
-    blocked: [],
-    decisionsByUrl: new Map(),
-  })),
+  checkUrlsAgainstThreatPolicy: mocks.checkUrlsAgainstThreatPolicy,
 }));
 
 vi.mock("../redis", () => ({
@@ -293,6 +294,13 @@ describe("crawl lifecycle hooks", () => {
     mocks.getDoneJobsOrderedLength.mockResolvedValue(3);
     mocks.getCrawlJobs.mockResolvedValue([]);
     mocks.getJobs.mockResolvedValue([]);
+    mocks.checkUrlsAgainstThreatPolicy.mockImplementation(
+      async (urls: string[]) => ({
+        allowedUrls: urls,
+        blocked: [],
+        decisionsByUrl: new Map(),
+      }),
+    );
   });
 
   afterEach(() => {
@@ -452,6 +460,66 @@ describe("crawl lifecycle hooks", () => {
     );
   });
 
+  it("revalidates hook-added crawl.links URLs against crawler scope and threat protection before queueing", async () => {
+    installHooks({
+      "crawl.links": links => [
+        ...links,
+        "https://out-of-scope.example.org/nope",
+        "https://example.com/malware",
+        "https://example.com/safe-added",
+      ],
+    });
+
+    mocks.getCrawl.mockResolvedValue({
+      ...baseStoredCrawl(),
+      internalOptions: {
+        zeroDataRetention: false,
+        threatProtection: { mode: "block" },
+      },
+    });
+    mocks.scrapeSitemap.mockResolvedValue({
+      urls: [{ href: "https://example.com/from-sitemap" }],
+      sitemaps: [],
+    });
+    mocks.crawler.filterLinks.mockImplementation(async (links: string[]) => ({
+      links: links.filter(url => url.startsWith("https://example.com/")),
+      robotsBlocked: [],
+      denialReasons: new Map(),
+    }));
+    mocks.checkUrlsAgainstThreatPolicy.mockImplementation(
+      async (urls: string[]) => ({
+        allowedUrls: urls.filter(url => !url.endsWith("/malware")),
+        blocked: [],
+        decisionsByUrl: new Map(),
+      }),
+    );
+
+    const sitemapJob = {
+      id: "sitemap-revalidate",
+      data: {
+        mode: "kickoff_sitemap",
+        crawl_id: "crawl-revalidate",
+        sitemapUrl: "https://example.com/sitemap.xml",
+        team_id: "team-1",
+        zeroDataRetention: false,
+        origin: "api",
+        v1: true,
+        apiKeyId: 1,
+        ctx: requestContext({ teamId: "team-1", zeroDataRetention: false }),
+      },
+    } as unknown as NuQJob<any>;
+
+    await processJobInternal(sitemapJob);
+
+    expect(mocks.addScrapeJobs).toHaveBeenCalledTimes(1);
+    expect(
+      mocks.addScrapeJobs.mock.calls[0][0].map((j: any) => j.data.url),
+    ).toEqual([
+      "https://example.com/from-sitemap",
+      "https://example.com/safe-added",
+    ]);
+  });
+
   it("awaits crawl.finished for both crawl and batchScrape (v1 and v0) and propagates rejections", async () => {
     const events: any[] = [];
     installHooks({
@@ -536,7 +604,7 @@ describe("crawl lifecycle hooks", () => {
     ).rejects.toThrow("finalize hook failed");
   });
 
-  it("leaves crawl kickoff and finalization unchanged with no service or no handlers", async () => {
+  it("leaves crawl kickoff, sitemap, page discovery, and finalization unchanged with no service or no handlers", async () => {
     mocks.getCrawl.mockResolvedValue(baseStoredCrawl());
     mocks.queryIndexAtSplitLevel.mockResolvedValue([
       "https://example.com/only-index",
@@ -563,7 +631,65 @@ describe("crawl lifecycle hooks", () => {
       mocks.addScrapeJobs.mock.calls[0][0].map((j: any) => j.data.url),
     ).toEqual(["https://example.com/only-index"]);
 
+    mocks.scrapeSitemap.mockResolvedValue({
+      urls: [{ href: "https://example.com/sitemap-plain" }],
+      sitemaps: [],
+    });
+    const sitemapJob = {
+      id: "sitemap-plain",
+      data: {
+        mode: "kickoff_sitemap",
+        crawl_id: "crawl-plain",
+        sitemapUrl: "https://example.com/sitemap.xml",
+        team_id: "team-1",
+        zeroDataRetention: false,
+        origin: "api",
+        v1: true,
+        apiKeyId: 1,
+      },
+    } as unknown as NuQJob<any>;
+    await processJobInternal(sitemapJob);
+    expect(
+      mocks.addScrapeJobs.mock.calls[1][0].map((j: any) => j.data.url),
+    ).toEqual(["https://example.com/sitemap-plain"]);
+
     installHooks();
+    mocks.startWebScraperPipeline.mockResolvedValue({
+      success: true,
+      document: {
+        markdown: "# Plain",
+        rawHtml: "<a href='/discovered'>Discovered</a>",
+        metadata: {
+          url: "https://example.com/page",
+          sourceURL: "https://example.com/page",
+          statusCode: 200,
+        },
+      },
+    });
+    mocks.crawler.extractLinksFromContent.mockResolvedValue([
+      "https://example.com/discovered",
+    ]);
+    await processJobInternal({
+      id: "scrape-plain",
+      data: {
+        mode: "single_urls",
+        url: "https://example.com/page",
+        crawl_id: "crawl-plain",
+        team_id: "team-1",
+        zeroDataRetention: false,
+        origin: "api",
+        v1: true,
+        apiKeyId: 1,
+        crawlerOptions: { limit: 100 },
+        scrapeOptions: { formats: [{ type: "markdown" }] },
+      },
+    } as unknown as NuQJob<any>);
+    expect(mocks.addScrapeJob).toHaveBeenLastCalledWith(
+      expect.objectContaining({ url: "https://example.com/discovered" }),
+      expect.any(String),
+      expect.any(Number),
+    );
+
     await expect(
       finishCrawlSuper({
         id: "fin-plain",

@@ -16,7 +16,11 @@ import {
   resolveSafeMode,
   isLockdownZeroDataRetention,
 } from "../../lib/safe-mode";
-import { getMapResults, MapResult } from "../../lib/map-utils";
+import {
+  applyMapCollectHook,
+  getMapResults,
+  MapResult,
+} from "../../lib/map-utils";
 import { v7 as uuidv7 } from "uuid";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
@@ -147,7 +151,12 @@ export async function mapController(
       : await resolveViaAvgrab(req.body.url, req.body.limit, logger);
 
     if (avgrabResults !== null) {
-      const creditsCost = avgrabResults.length;
+      const collectedResults = await applyMapCollectHook(avgrabResults, {
+        ctx,
+        url: req.body.url,
+        limit: req.body.limit,
+      });
+      const creditsCost = collectedResults.length;
 
       billTeam(
         req.auth.team_id,
@@ -183,7 +192,7 @@ export async function mapController(
           timeout: req.body.timeout,
           location: req.body.location,
         },
-        results: avgrabResults,
+        results: collectedResults,
         credits_cost: creditsCost,
         zeroDataRetention,
       }).catch(error => {
@@ -197,14 +206,14 @@ export async function mapController(
         hooks.observe("map.finished", {
           id: mapId,
           ctx,
-          urls: avgrabResults.length,
+          urls: collectedResults.length,
         });
       }
 
       return res.status(200).json({
         success: true,
         id: mapId,
-        links: avgrabResults,
+        links: collectedResults,
       });
     }
   } catch (error) {

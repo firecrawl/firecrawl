@@ -856,6 +856,39 @@ describe("run", () => {
     );
     expect(api.run).not.toHaveBeenCalled();
   });
+
+  it("rejects when a role throws synchronously after a process.start hook runs", async () => {
+    const started: string[] = [];
+    const built = createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "boot",
+            hooks: {
+              "process.start": ({ role }) => {
+                started.push(role);
+              },
+            },
+          },
+        ],
+      },
+      parts({
+        workers: {
+          api: {
+            run() {
+              throw new Error("role load failed");
+            },
+          },
+        },
+      }),
+    );
+
+    await expect(run(built, "api", "/app/main.js")).rejects.toThrow(
+      "role load failed",
+    );
+    expect(started).toEqual(["api"]);
+  });
 });
 
 describe("runProcessStop", () => {

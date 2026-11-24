@@ -681,8 +681,11 @@ const workerFun = async (
     await new Promise(resolve => setTimeout(resolve, 500));
   }
   logger.info("All jobs finished. Worker exiting!");
-  await shutdownPubSubLogging();
-  await runProcessStop("index-worker");
+  try {
+    await shutdownPubSubLogging();
+  } finally {
+    await runProcessStop("index-worker");
+  }
   await shutdownTracing();
   process.exit(0);
 };
@@ -824,7 +827,6 @@ export async function start() {
   clearInterval(browserActivityInterval);
   clearInterval(browserReconcileInterval);
   // clearInterval(omceInserterInterval);
-  await runProcessStop("index-worker");
   logger.info("All workers shut down, exiting process");
 }
 

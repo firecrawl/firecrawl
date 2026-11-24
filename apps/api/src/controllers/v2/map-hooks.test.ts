@@ -154,6 +154,7 @@ describe("map lifecycle hooks", () => {
 
   it("runs map.collect before map.finished, transforms URLs while keeping metadata, and slices to limit", async () => {
     const order: string[] = [];
+    let finishedId: string | undefined;
     installHooks({
       "map.collect": (urls, info) => {
         order.push(
@@ -167,7 +168,7 @@ describe("map lifecycle hooks", () => {
       },
       "map.finished": event => {
         order.push(`finished:${event.ctx.teamId}:${event.urls}`);
-        expect(event.id).toBeTruthy();
+        finishedId = event.id;
       },
     });
 
@@ -193,6 +194,7 @@ describe("map lifecycle hooks", () => {
     expect(res.status).toHaveBeenCalledWith(200);
     const body = res.json.mock.calls[0][0];
     expect(body.success).toBe(true);
+    expect(finishedId).toBe(body.id);
     expect(body.links).toEqual([
       {
         url: "https://example.com/keep",
@@ -209,9 +211,10 @@ describe("map lifecycle hooks", () => {
     ]);
   });
 
-  it("emits map.finished on the avgrab early-return path and isolates observer errors", async () => {
+  it("runs map.collect and map.finished on the avgrab early-return path and isolates observer errors", async () => {
     const seen: Array<{ id: string; urls: number; teamId: string }> = [];
     const report = installHooks({
+      "map.collect": urls => urls.filter(url => !url.endsWith("/fast-2")),
       "map.finished": event => {
         seen.push({
           id: event.id,
@@ -231,10 +234,19 @@ describe("map lifecycle hooks", () => {
     await mapController(makeReq({ url: "https://example.com" }), res);
 
     expect(res.status).toHaveBeenCalledWith(200);
+    const body = res.json.mock.calls[0][0];
+    expect(body.links).toEqual([{ url: "https://example.com/fast-1" }]);
+    expect(mocks.billTeam).toHaveBeenCalledWith(
+      "team-map-1",
+      "org-1",
+      1,
+      9,
+      expect.any(Object),
+    );
     expect(seen).toEqual([
       {
-        id: res.json.mock.calls[0][0].id,
-        urls: 2,
+        id: body.id,
+        urls: 1,
         teamId: "team-map-1",
       },
     ]);
