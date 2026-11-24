@@ -548,7 +548,7 @@ export async function searchController(
       hooks.observe("search.finished", {
         id: jobId,
         ctx,
-        results: responseData.data.length,
+        results: result.totalResultsCount,
         charged:
           !isSelfHosted() && !isSearchPreview
             ? result.searchCredits
