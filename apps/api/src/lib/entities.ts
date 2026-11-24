@@ -1,6 +1,5 @@
 import type { Action } from "../controllers/v1/types";
 import type { SkillCard } from "../search/skill-cards";
-import type { BrandingProfile } from "../types/branding";
 
 export type PageOptions = {
   includeMarkdown?: boolean;
@@ -78,7 +77,6 @@ export class Document {
     }[];
     pdfs?: string[];
   };
-  branding?: BrandingProfile;
 
   index?: number;
   linksOnPage?: string[]; // Add this new field as a separate property

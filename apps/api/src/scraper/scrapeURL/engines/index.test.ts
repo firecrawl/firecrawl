@@ -17,7 +17,7 @@ import {
 } from "./index";
 import { coreEngineSpecs } from "./metadata";
 import { getScrapeMeta } from "../metaContext";
-import { BrandingNotSupportedError } from "../error";
+import { FormatUnavailableError } from "../../../lib/error";
 import type { HookHandlers } from "../../../service/hooks";
 
 const makeMeta = (
@@ -347,8 +347,13 @@ describe("engine registry integration", () => {
     expect(fileOnlyStealth.map(e => e.engine)).toEqual(["browser;basic"]);
   });
 
-  it("keeps the branding capability gate active when suppressUnsupportedWarnings is set", async () => {
+  it("allows a follow-up scrape.engines.select hook to enforce a capability gate after suppressUnsupportedWarnings", async () => {
     let seenMeta: Meta | undefined;
+    class CustomFormatError extends FormatUnavailableError {
+      constructor(message: string) {
+        super("custom", "UNKNOWN_ERROR", message, message);
+      }
+    }
     install([makeEngine("fetch", { quality: 5 })], coreEngineFeatures, [
       {
         name: "selector",
@@ -362,14 +367,22 @@ describe("engine registry integration", () => {
           },
         },
       },
+      {
+        name: "gate",
+        hooks: {
+          "scrape.engines.select": () => {
+            throw new CustomFormatError("Format not supported");
+          },
+        },
+      },
     ]);
 
     const meta = makeMeta({
-      featureFlags: ["branding"],
-      formats: [{ type: "branding" }],
+      featureFlags: [],
+      formats: [{ type: "markdown" }],
     });
     await expect(buildFallbackList(meta)).rejects.toBeInstanceOf(
-      BrandingNotSupportedError,
+      CustomFormatError,
     );
     expect(seenMeta).toBe(meta);
   });

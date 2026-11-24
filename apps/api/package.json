@@ -44,14 +44,6 @@
       "types": "./src/services/billing/runtime.ts",
       "default": "./dist/src/services/billing/runtime.js"
     },
-    "./unstable/branding-jev": {
-      "types": "./src/lib/branding/jev.ts",
-      "default": "./dist/src/lib/branding/jev.js"
-    },
-    "./unstable/branding-metrics": {
-      "types": "./src/lib/branding/metrics.ts",
-      "default": "./dist/src/lib/branding/metrics.js"
-    },
     "./unstable/browser-options": {
       "types": "./src/lib/browser-options.ts",
       "default": "./dist/src/lib/browser-options.js"
@@ -322,7 +314,6 @@
     "@types/body-parser": "^1.19.2",
     "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.13",
-    "@types/culori": "^4.0.1",
     "@types/escape-html": "^1.0.4",
     "@types/express": "^5.0.6",
     "@types/express-ws": "^3.0.6",
@@ -375,7 +366,6 @@
     "cheerio": "^1.0.0-rc.12",
     "compression": "^1.8.2",
     "cors": "^2.8.5",
-    "culori": "^4.0.2",
     "diff": "^8.0.3",
     "dotenv": "^16.3.1",
     "drizzle-orm": "1.0.0-rc.3",

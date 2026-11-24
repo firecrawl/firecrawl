@@ -1,8 +1,15 @@
-export type { Document } from "../controllers/v2/types";
+export type { Document, DocumentMetadata } from "../controllers/v2/types";
 export type { CostTracking } from "../lib/cost-tracking";
+export {
+  FormatUnavailableError,
+  isFormatUnavailable,
+  isTransportableError,
+  TransportableError,
+} from "../lib/error";
 export type {
   ErrorCode,
   ErrorCodes,
+  ErrorScrapeLog,
   TransportableErrorClass,
 } from "../lib/error";
 export type { SearchResultType, SearchV2Response } from "../lib/entities";

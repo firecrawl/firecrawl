@@ -122,7 +122,6 @@ import {
 } from "../../lib/safe-mode";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
-import { loadFirstScreen } from "../../lib/branding/jev";
 import { isPaywalledByJsonLd } from "./lib/accessibleForFree";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
@@ -166,13 +165,9 @@ export type BrowserCookie = {
 };
 
 export type Meta = {
-  /** URL of the page's first screen captured for Jev's branding call (see
-   * the branding format's __experimental_screenshot and
-   * BRANDING_JEV_SCREENSHOT_PERCENT). Internal: never part of the document. */
-  brandingScreenshot?: string;
-  /** That screen's download, started as soon as the engine returns. */
-  brandingScreenshotImage?: ReturnType<typeof loadFirstScreen>;
   id: string;
+  needsMarkdown?: boolean;
+  keepDocumentFields?: Set<string>;
   url: string;
   rewrittenUrl?: string;
   ctx: RequestContext;
@@ -318,10 +313,6 @@ function buildFeatureFlags(
     } else {
       flags.add("screenshot");
     }
-  }
-
-  if (hasFormatOfType(options.formats, "branding")) {
-    flags.add("branding");
   }
 
   if (hasFormatOfType(options.formats, "audio")) {
@@ -748,6 +739,7 @@ async function scrapeURLLoopIter(
     const hasQuery = hasFormatOfType(meta.options.formats, "query");
     const hasRawBase64 = hasFormatOfType(meta.options.formats, "rawBase64");
     const needsMarkdown =
+      meta.needsMarkdown ||
       hasMarkdown ||
       hasChangeTracking ||
       hasJson ||
@@ -1289,7 +1281,6 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       rawBase64: engineResult.rawBase64,
       screenshot: engineResult.screenshot,
       actions: engineResult.actions,
-      branding: engineResult.branding,
       metadata: {
         sourceURL: meta.internalOptions.unnormalizedSourceURL ?? meta.url,
         url: engineResult.url,
@@ -1334,12 +1325,6 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
           : warning;
     }
 
-    meta.brandingScreenshot = engineResult.brandingScreenshot;
-    // Download it while the transformers before branding run. It never
-    // rejects: an unreadable screen leaves Jev answering from page data.
-    meta.brandingScreenshotImage = engineResult.brandingScreenshot
-      ? loadFirstScreen(engineResult.brandingScreenshot, meta.logger)
-      : undefined;
     document = await executeTransformers(meta, document);
 
     // Set final span attributes
@@ -1479,7 +1464,12 @@ export async function scrapeURL(
           const previousTimeout = meta.options.timeout;
           const plan = await hooks.transform(
             "scrape.start",
-            { options: meta.options, features: meta.featureFlags },
+            {
+              options: meta.options,
+              features: meta.featureFlags,
+              needsMarkdown: meta.needsMarkdown,
+              keepDocumentFields: meta.keepDocumentFields,
+            },
             toScrapeMeta(meta),
           );
           meta.abort.throwIfAborted();
@@ -1508,6 +1498,8 @@ export async function scrapeURL(
             meta.abort.throwIfAborted();
           }
           meta.featureFlags = plan.features;
+          meta.needsMarkdown = plan.needsMarkdown;
+          meta.keepDocumentFields = plan.keepDocumentFields;
           setSpanAttributes(span, {
             "scrape.features": Array.from(meta.featureFlags).join(","),
           });

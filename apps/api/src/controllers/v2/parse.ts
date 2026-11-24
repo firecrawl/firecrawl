@@ -183,10 +183,6 @@ function getUnsupportedParseOptionError(reqBody: ParseRequest): string | null {
     return "Parse uploads do not support screenshot output.";
   }
 
-  if (hasFormatOfType(reqBody.formats, "branding")) {
-    return "Parse uploads do not support branding output.";
-  }
-
   if (hasFormatOfType(reqBody.formats, "changeTracking")) {
     return "Parse uploads do not support change tracking.";
   }
