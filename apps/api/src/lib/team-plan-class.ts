@@ -1,4 +1,4 @@
-import type { AuthCreditUsageChunk, TeamFlags } from "../controllers/v1/types";
+import type { AuthCreditUsageChunk, TeamFlags } from "../controllers/v2/types";
 import { isUsOnly } from "./us-only";
 import {
   getAlexandriaZDR,

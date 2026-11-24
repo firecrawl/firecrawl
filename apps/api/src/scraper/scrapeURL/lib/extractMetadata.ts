@@ -1,5 +1,5 @@
 import { load } from "cheerio"; // rustified
-import { Document } from "../../../controllers/v1/types";
+import { Document } from "../../../controllers/v2/types";
 import { Meta } from "..";
 import { extractMetadata as _extractMetadata } from "@mendable/firecrawl-rs";
 

@@ -2,8 +2,6 @@ import { config } from "../../../config";
 import {
   ScrapeRequestInput,
   Document,
-  ExtractRequestInput,
-  ExtractResponse,
   CrawlRequestInput,
   CrawlResponse,
   CrawlStatusResponse,
@@ -27,14 +25,10 @@ import {
   idmux,
 } from "../lib";
 import { SearchV2Response } from "../../../lib/entities";
-import { sunsetOf } from "../../../lib/deprecations";
 
 // Re-export shared utilities for backwards compatibility
 export { scrapeTimeout, indexCooldown, Identity, idmux, TEST_API_URL };
 export default request;
-
-// From the extract sunset /v2/extract answers 410 instead of extracting.
-export const EXTRACT_LIVE = Date.now() < sunsetOf("v2_extract");
 
 const pollSleep = async () => new Promise(r => setTimeout(r, 50));
 
@@ -998,70 +992,6 @@ export async function batchScrapeWithConcurrencyTracking(
     batchScrape: x.body,
     concurrencies,
   };
-}
-
-// =========================================
-// Extract API
-// =========================================
-
-async function extractStart(body: ExtractRequestInput, identity: Identity) {
-  return await request(TEST_API_URL)
-    .post("/v2/extract")
-    .set("Authorization", `Bearer ${identity.apiKey}`)
-    .set("Content-Type", "application/json")
-    .send(body);
-}
-
-async function extractStatus(id: string, identity: Identity) {
-  return await request(TEST_API_URL)
-    .get("/v2/extract/" + encodeURIComponent(id))
-    .set("Authorization", `Bearer ${identity.apiKey}`)
-    .send();
-}
-
-function expectExtractStartToSucceed(
-  response: Awaited<ReturnType<typeof extractStart>>,
-) {
-  expect(response.statusCode).toBe(200);
-  expect(response.body.success).toBe(true);
-  expect(typeof response.body.id).toBe("string");
-}
-
-function expectExtractToSucceed(
-  response: Awaited<ReturnType<typeof extractStatus>>,
-) {
-  expect(response.statusCode).toBe(200);
-  expect(response.body.success).toBe(true);
-  expect(typeof response.body.status).toBe("string");
-  expect(response.body.status).toBe("completed");
-  expect(response.body).toHaveProperty("data");
-}
-
-export async function extract(
-  body: ExtractRequestInput,
-  identity: Identity,
-): Promise<ExtractResponse> {
-  const es = await extractStart(body, identity);
-  expectExtractStartToSucceed(es);
-
-  let x: Awaited<ReturnType<typeof extractStatus>> | undefined;
-
-  do {
-    if (x) await pollSleep();
-    x = await extractStatus(es.body.id, identity);
-    expect(x.statusCode).toBe(200);
-    expect(typeof x.body.status).toBe("string");
-  } while (x.body.status === "processing");
-
-  expectExtractToSucceed(x);
-  return x.body;
-}
-
-export async function extractRaw(
-  body: ExtractRequestInput,
-  identity: Identity,
-) {
-  return await extractStart(body, identity);
 }
 
 // =========================================

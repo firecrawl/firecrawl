@@ -4,7 +4,7 @@
  * or describing a service never loads these dependencies.
  */
 export { getACUCTeam } from "../../controllers/auth";
-export type { RequestWithAuth } from "../../controllers/v1/types";
+export type { RequestWithAuth } from "../../controllers/v2/types";
 export { providerScrapeController } from "../../controllers/v2/scrape-alexandria";
 export type { TeamFlags } from "../../controllers/v2/types";
 export { recordAlexandriaActivity } from "../../lib/alexandria-activity";

@@ -238,7 +238,7 @@ vi.mock("../../lib/request-credits-analytics", () => ({
   readRequestCreditsFromAnalytics: mocks.readRequestCreditsFromAnalytics,
 }));
 
-vi.mock("../../controllers/v1/crawl-status", () => ({
+vi.mock("../../controllers/v2/crawl-status", () => ({
   getJobs: mocks.getJobs,
 }));
 

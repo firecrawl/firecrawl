@@ -5,7 +5,7 @@ import {
   getDoneJobsOrderedLength,
 } from "../../lib/crawl-redis";
 import { getCrawl } from "../../lib/crawl-redis";
-import { getJobs } from "../../controllers/v1/crawl-status";
+import { getJobs } from "../../controllers/v2/crawl-status";
 import { logCrawl, logBatchScrape } from "../logging/log_job";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import type { NuQJob } from "./nuq";

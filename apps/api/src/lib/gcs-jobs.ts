@@ -1,6 +1,6 @@
 import { ApiError, Storage } from "@google-cloud/storage";
 import { logger } from "./logger";
-import { Document } from "../controllers/v1/types";
+import { Document } from "../controllers/v2/types";
 import { withSpan, setSpanAttributes } from "./otel-tracer";
 import type {
   LoggedDeepResearch,

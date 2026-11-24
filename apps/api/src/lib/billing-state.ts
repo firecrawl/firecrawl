@@ -2,7 +2,7 @@
  * Type augmentations for billing state carried between controllers, workers,
  * and custom billing module implementations. Imports only types.
  */
-import type { RequestWithAuth } from "../controllers/v1/types";
+import type { RequestWithAuth } from "../controllers/v2/types";
 import type { ScrapeOptions } from "../controllers/v2/types";
 import type { InternalOptions } from "../scraper/scrapeURL";
 import type { FeatureFlag } from "../scraper/scrapeURL/engines";

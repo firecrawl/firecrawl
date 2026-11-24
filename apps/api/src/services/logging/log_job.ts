@@ -23,7 +23,6 @@ import type {
 import type { CostTracking } from "../../lib/cost-tracking";
 import type { ErrorCode } from "../../lib/error";
 import type { Logger } from "winston";
-import { saveExtractResult } from "../../lib/extract/extract-redis";
 import { trackFirstSurfaceUse } from "../posthog";
 import { PubSub, type PublishOptions, type Topic } from "@google-cloud/pubsub";
 import { pubsubLogPublishTotal } from "../../lib/pubsub-log-metrics";
@@ -1296,13 +1295,8 @@ async function logExtractInternal(extract: LoggedExtract) {
     logger.error("Failed to write extract state to Bigtable", { error });
   }
 
-  if (extract.result) {
-    if (config.GCS_BUCKET_NAME) {
-      await saveExtractToGCS(extract, logger);
-    } else {
-      // Fallback: save result to Redis with 24h TTL when GCS is not configured
-      await saveExtractResult(extract.id, extract.result);
-    }
+  if (extract.result && config.GCS_BUCKET_NAME) {
+    await saveExtractToGCS(extract, logger);
   }
 }
 

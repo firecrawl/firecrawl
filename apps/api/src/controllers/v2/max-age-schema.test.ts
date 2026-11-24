@@ -5,14 +5,11 @@ import {
   batchScrapeRequestSchema,
   batchScrapeRequestSchemaNoURLValidation,
   crawlRequestSchema,
-  extractRequestSchema,
-  fromV1ScrapeOptions,
   parseRequestSchema,
   scrapeOptions,
   scrapeRequestSchema,
   searchRequestSchema,
 } from "./types";
-import { scrapeOptions as v1ScrapeOptions } from "../v1/types";
 
 const url = "https://example.com";
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -146,19 +143,6 @@ describe("v2 maxAge soft cap", () => {
       }).scrapeOptions?.maxAge,
     ).toBe(ONE_YEAR_MS);
 
-    expect(
-      extractRequestSchema.parse({
-        urls: [url],
-        scrapeOptions: { maxAge: ONE_YEAR_MS },
-      }).scrapeOptions?.maxAge,
-    ).toBe(SEVEN_DAYS_MS);
-    expect(
-      extractRequestSchema.parse({
-        urls: [url],
-        scrapeOptions: { lockdown: true, maxAge: ONE_YEAR_MS },
-      }).scrapeOptions?.maxAge,
-    ).toBe(ONE_YEAR_MS);
-
     const file = { buffer: Buffer.from("hello"), filename: "test.html" };
     expect(parseRequestSchema.parse({ file, maxAge: ONE_YEAR_MS }).maxAge).toBe(
       SEVEN_DAYS_MS,
@@ -170,19 +154,5 @@ describe("v2 maxAge soft cap", () => {
         maxAge: ONE_YEAR_MS,
       }).maxAge,
     ).toBe(ONE_YEAR_MS);
-  });
-
-  it("applies the cap when converting v1 scrape options", () => {
-    const v1 = v1ScrapeOptions.parse({
-      formats: ["markdown"],
-      maxAge: ONE_YEAR_MS,
-    });
-    const { scrapeOptions: converted } = fromV1ScrapeOptions(
-      v1,
-      undefined,
-      "team-id",
-    );
-
-    expect(converted.maxAge).toBe(SEVEN_DAYS_MS);
   });
 });

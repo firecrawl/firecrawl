@@ -5,7 +5,7 @@ import {
   Document as V2Document,
   TeamFlags,
 } from "./controllers/v2/types";
-import { AuthCreditUsageChunk } from "./controllers/v1/types";
+import { AuthCreditUsageChunk } from "./controllers/v2/types";
 import { ExtractorOptions } from "./lib/entities";
 import { InternalOptions } from "./scraper/scrapeURL";
 import type { CostTracking } from "./lib/cost-tracking";

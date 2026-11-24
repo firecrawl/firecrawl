@@ -4,7 +4,7 @@ import { dbRr } from "../db/connection";
 import * as schema from "../db/schema";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { logger } from "./logger";
-import type { TeamFlags } from "../controllers/v1/types";
+import type { TeamFlags } from "../controllers/v2/types";
 
 // Propagation delay for dashboard edits to ip_restriction_config.
 const ALLOWLIST_CACHE_TTL_SECONDS = 60;

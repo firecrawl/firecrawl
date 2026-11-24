@@ -1,4 +1,4 @@
-import type { Action } from "../controllers/v1/types";
+import type { Action } from "../controllers/v2/types";
 import type { SkillCard } from "../search/skill-cards";
 import type { BrandingProfile } from "../types/branding";
 

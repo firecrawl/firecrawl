@@ -79,7 +79,7 @@ import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { service } from "../../service";
 import { getACUCTeam } from "../../controllers/auth";
 import { isUsOnly } from "../../lib/us-only";
-import type { TeamFlags } from "../../controllers/v1/types";
+import type { TeamFlags } from "../../controllers/v2/types";
 import { orgIdForTeam } from "../../lib/team-org";
 import { requestContext } from "../../lib/request-context";
 import type { BillingMetadata } from "../billing/types";

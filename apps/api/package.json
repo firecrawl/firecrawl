@@ -128,6 +128,10 @@
       "types": "./src/lib/keyless-team.ts",
       "default": "./dist/src/lib/keyless-team.js"
     },
+    "./unstable/legacy-api-deps": {
+      "types": "./src/service/unstable/legacy-api-deps.ts",
+      "default": "./dist/src/service/unstable/legacy-api-deps.js"
+    },
     "./unstable/nuq-fdb": {
       "types": "./src/services/worker/nuq-fdb/index.ts",
       "default": "./dist/src/services/worker/nuq-fdb/index.js"
@@ -264,10 +268,6 @@
       "types": "./src/lib/us-only.ts",
       "default": "./dist/src/lib/us-only.js"
     },
-    "./unstable/v1-types": {
-      "types": "./src/controllers/v1/types.ts",
-      "default": "./dist/src/controllers/v1/types.js"
-    },
     "./unstable/v2-routes-deps": {
       "types": "./src/service/unstable/v2-routes-deps.ts",
       "default": "./dist/src/service/unstable/v2-routes-deps.js"
@@ -297,7 +297,7 @@
     "build": "tsc",
     "test": "vitest run",
     "test:prod": "vitest run --exclude='**/scraper/scrapeURL/**'",
-    "test:snips": "vitest run src/__tests__/snips/v1 src/__tests__/snips/v2",
+    "test:snips": "vitest run src/__tests__/snips/v2",
     "test:core": "vitest run --config vitest.core.config.ts",
     "harness": "tsx src/main.ts harness",
     "workers": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js queue-worker\"",
@@ -310,8 +310,6 @@
     "nuq-prefetch-worker:production": "node dist/src/main.js nuq-prefetch-worker",
     "nuq-reconciler-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js nuq-reconciler-worker\"",
     "nuq-reconciler-worker:production": "node dist/src/main.js nuq-reconciler-worker",
-    "extract-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js extract-worker\"",
-    "extract-worker:production": "node dist/src/main.js extract-worker",
     "prepare": "cd ../.. && husky ./apps/api/.husky",
     "knip": "knip"
   },
@@ -327,7 +325,6 @@
     "@types/express": "^5.0.6",
     "@types/express-ws": "^3.0.6",
     "@types/he": "^1.2.3",
-    "@types/lodash": "^4.17.14",
     "@types/multer": "^2.1.0",
     "@types/node": "^22.19.1",
     "@types/pdf-parse": "^1.1.4",
@@ -394,7 +391,6 @@
     "jsonrepair": "^3.14.0",
     "koffi": "^2.9.0",
     "langsmith": "^0.6.0",
-    "lodash": "^4.18.0",
     "marked": "^14.1.2",
     "multer": "^2.5.0",
     "ollama-ai-provider-v2": "^4.1.0",

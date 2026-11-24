@@ -1,7 +1,7 @@
 import { vi } from "vitest";
 import { config } from "../config";
 import { RateLimiterMode } from "../types";
-import type { TeamFlags } from "../controllers/v1/types";
+import type { TeamFlags } from "../controllers/v2/types";
 
 // The module builds a Redis client at import time. Stub ioredis so the limiter
 // can be constructed without a live server.

@@ -15,7 +15,7 @@ vi.mock("../../lib/crawl-redis", () => ({
   getDoneJobsOrderedLength: vi.fn(async () => 2),
 }));
 
-vi.mock("../../controllers/v1/crawl-status", () => ({
+vi.mock("../../controllers/v2/crawl-status", () => ({
   getJobs: vi.fn(async () => []),
 }));
 

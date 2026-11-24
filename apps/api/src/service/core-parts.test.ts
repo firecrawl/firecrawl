@@ -407,7 +407,6 @@ describe("coreParts", () => {
       routes: [],
       roles: {
         api: "core",
-        "extract-worker": "core",
         harness: "core",
         "nuq-fdb-worker": "core",
         "nuq-prefetch-worker": "core",
@@ -461,8 +460,9 @@ describe("coreParts", () => {
 
     expect(built.describe().hooks).toEqual({});
     expect(built.describe().routes).toEqual([]);
-    expect(built.roles.names()).toHaveLength(8);
+    expect(built.roles.names()).toHaveLength(7);
     expect(built.roles.has("cclog-worker")).toBe(false);
+    expect(built.roles.has("extract-worker")).toBe(false);
     expect(built.roles.has("index-worker")).toBe(false);
     expect(built.roles.has("zdr-worker")).toBe(false);
     expect(built.describe().modules).toEqual([
@@ -587,12 +587,12 @@ describe("coreParts", () => {
     expect(built.roles.has("custom-worker")).toBe(true);
     expect(built.roles.owner("custom-worker")).toBe("custom-workers");
     expect(built.roles.has("cclog-worker")).toBe(false);
+    expect(built.roles.has("extract-worker")).toBe(false);
     expect(built.roles.has("index-worker")).toBe(false);
     expect(built.roles.has("zdr-worker")).toBe(false);
     expect(built.describe().roles).toEqual({
       api: "core",
       "custom-worker": "custom-workers",
-      "extract-worker": "core",
       harness: "core",
       "nuq-fdb-worker": "core",
       "nuq-prefetch-worker": "core",

@@ -1,5 +1,5 @@
 import type { Request } from "express";
-import type { AuthCreditUsageChunk } from "../controllers/v1/types";
+import type { AuthCreditUsageChunk } from "../controllers/v2/types";
 import { redactAdminKey } from "./admin-auth";
 import { getRoutePattern } from "./http-metrics";
 import { logger } from "./logger";

@@ -3,19 +3,10 @@ import {
   agentRequestSchema,
   batchScrapeRequestSchema,
   crawlRequestSchema,
-  extractRequestSchema,
   mapRequestSchema,
   scrapeRequestSchema,
   searchRequestSchema,
 } from "./types";
-import {
-  batchScrapeRequestSchema as batchScrapeRequestSchemaV1,
-  crawlRequestSchema as crawlRequestSchemaV1,
-  extractRequestSchema as extractRequestSchemaV1,
-  mapRequestSchema as mapRequestSchemaV1,
-  scrapeRequestSchema as scrapeRequestSchemaV1,
-  searchRequestSchema as searchRequestSchemaV1,
-} from "../v1/types";
 import { siemLoggingConfigInputSchema } from "../../lib/siem-logging/types";
 
 const auditMetadata = {
@@ -45,12 +36,6 @@ describe("auditMetadata request validation", () => {
     expect(
       searchRequestSchema.parse({
         query: "example",
-        scrapeOptions: { auditMetadata },
-      }).scrapeOptions?.auditMetadata,
-    ).toEqual(auditMetadata);
-    expect(
-      extractRequestSchema.parse({
-        urls: ["https://example.com"],
         scrapeOptions: { auditMetadata },
       }).scrapeOptions?.auditMetadata,
     ).toEqual(auditMetadata);
@@ -87,45 +72,6 @@ describe("auditMetadata request validation", () => {
         auditMetadata: {},
       }),
     ).toThrow();
-  });
-
-  it("accepts audit metadata on the corresponding v1 request schemas", () => {
-    expect(
-      scrapeRequestSchemaV1.parse({
-        url: "https://example.com",
-        auditMetadata,
-      }).auditMetadata,
-    ).toEqual(auditMetadata);
-    expect(
-      batchScrapeRequestSchemaV1.parse({
-        urls: ["https://example.com"],
-        auditMetadata,
-      }).auditMetadata,
-    ).toEqual(auditMetadata);
-    expect(
-      crawlRequestSchemaV1.parse({
-        url: "https://example.com",
-        scrapeOptions: { auditMetadata },
-      }).scrapeOptions.auditMetadata,
-    ).toEqual(auditMetadata);
-    expect(
-      searchRequestSchemaV1.parse({
-        query: "example",
-        scrapeOptions: { auditMetadata },
-      }).scrapeOptions.auditMetadata,
-    ).toEqual(auditMetadata);
-    expect(
-      extractRequestSchemaV1.parse({
-        urls: ["https://example.com"],
-        scrapeOptions: { auditMetadata },
-      }).scrapeOptions?.auditMetadata,
-    ).toEqual(auditMetadata);
-    expect(
-      mapRequestSchemaV1.parse({
-        url: "https://example.com",
-        auditMetadata,
-      }).auditMetadata,
-    ).toEqual(auditMetadata);
   });
 });
 

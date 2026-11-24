@@ -27,7 +27,7 @@ import type {
   ResearchRequestKind,
   ResearchTableName,
 } from "../../services/logging/log_job";
-import type { RequestWithAuth } from "../v1/types";
+import type { RequestWithAuth } from "./types";
 import { checkCreditsMiddleware, wrap } from "../../routes/shared";
 import { SEARCH_CREDITS_FEATURE_ID } from "../../services/autumn/autumn.service";
 import { integrationSchema, resolveIntegration } from "../../utils/integration";

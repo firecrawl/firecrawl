@@ -1,7 +1,7 @@
 import { RateLimiterRedis } from "rate-limiter-flexible";
 import { config } from "../config";
 import { RateLimiterMode } from "../types";
-import type { TeamFlags } from "../controllers/v1/types";
+import type { TeamFlags } from "../controllers/v2/types";
 import Redis from "ioredis";
 
 export const redisRateLimitClient = new Redis(config.REDIS_RATE_LIMIT_URL!, {

@@ -17,7 +17,7 @@ import {
 import { logger as _logger } from "../lib/logger";
 import { sendNotificationWithCustomDays } from "./notification/email_notification";
 import { shouldSendConcurrencyLimitNotification } from "./notification/notification-check";
-import { Document } from "../controllers/v1/types";
+import { Document } from "../controllers/v2/types";
 import { service } from "../service";
 import { getCrawl } from "../lib/crawl-redis";
 import { currentLimits } from "../lib/limits";

@@ -5,13 +5,10 @@ import express, { NextFunction, Request, Response } from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
 import {
-  getGenerateLlmsTxtQueue,
-  getDeepResearchQueue,
   getBillingQueue,
   getPrecrawlQueue,
   getFirebillTrackRetryQueue,
 } from "./services/queue-service";
-import { v0Router } from "./routes/v0";
 import { livenessController, readinessController } from "./controllers/health";
 import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
 import os from "os";
@@ -25,9 +22,8 @@ import {
 } from "./lib/admin-auth";
 import http from "node:http";
 import https from "node:https";
-import { v1Router } from "./routes/v1";
 import expressWs from "express-ws";
-import { ErrorResponse, RequestWithMaybeACUC } from "./controllers/v1/types";
+import { ErrorResponse, RequestWithMaybeACUC } from "./controllers/v2/types";
 import { ZodError } from "zod";
 import { QueueFullError } from "./lib/queue-full-error";
 import { v7 as uuidv7 } from "uuid";
@@ -110,8 +106,6 @@ if (config.EXPRESS_TRUST_PROXY) {
 }
 
 const bullBoardQueues = [
-  new BullMQAdapter(getGenerateLlmsTxtQueue()),
-  new BullMQAdapter(getDeepResearchQueue()),
   new BullMQAdapter(getBillingQueue()),
   new BullMQAdapter(getPrecrawlQueue()),
   new BullMQAdapter(getFirebillTrackRetryQueue()),
@@ -167,8 +161,6 @@ app.get("/health/liveness", livenessController);
 app.get("/health/readiness", readinessController);
 
 // register router
-app.use(v0Router);
-app.use("/v1", v1Router);
 app.use("/v2", contributedV2Router);
 app.use("/v2", v2Router);
 app.use(contributedAdminRouter);

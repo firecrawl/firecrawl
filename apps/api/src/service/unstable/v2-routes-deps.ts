@@ -22,7 +22,7 @@ export { keylessClientIp } from "../../controllers/auth";
 export type {
   ErrorResponse as V1ErrorResponse,
   RequestWithAuth as V1RequestWithAuth,
-} from "../../controllers/v1/types";
+} from "../../controllers/v2/types";
 export {
   AGENT_DEFAULT_MAX_CREDITS,
   gateAgentCredits,

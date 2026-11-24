@@ -18,7 +18,8 @@ const {
   setSpanAttributes,
   spans,
   enqueueZdrCleanupJob,
-  saveExtractResult,
+  saveExtractToGCS,
+  mockConfig,
 } = vi.hoisted(() => {
   const logger: any = {
     info: vi.fn(),
@@ -63,7 +64,17 @@ const {
     setSpanAttributes: vi.fn(),
     spans,
     enqueueZdrCleanupJob: vi.fn(async () => {}),
-    saveExtractResult: vi.fn(async () => {}),
+    saveExtractToGCS: vi.fn(async () => {}),
+    mockConfig: {
+      GCS_BUCKET_NAME: undefined as string | undefined,
+      PUBSUB_CREDENTIALS: Buffer.from(
+        JSON.stringify({ project_id: "firecrawl" }),
+      ).toString("base64"),
+      USE_DB_AUTHENTICATION: true,
+      PUBSUB_MAX_OUTSTANDING_MESSAGES: 10_000,
+      PUBSUB_MAX_OUTSTANDING_BYTES: 64 * 1024 * 1024,
+      PUBSUB_TOPIC_PREFIX: "",
+    },
   };
 });
 
@@ -75,16 +86,7 @@ vi.mock("@google-cloud/pubsub", () => ({
 }));
 
 vi.mock("../../config", () => ({
-  config: {
-    GCS_BUCKET_NAME: undefined,
-    PUBSUB_CREDENTIALS: Buffer.from(
-      JSON.stringify({ project_id: "firecrawl" }),
-    ).toString("base64"),
-    USE_DB_AUTHENTICATION: true,
-    PUBSUB_MAX_OUTSTANDING_MESSAGES: 10_000,
-    PUBSUB_MAX_OUTSTANDING_BYTES: 64 * 1024 * 1024,
-    PUBSUB_TOPIC_PREFIX: "",
-  },
+  config: mockConfig,
 }));
 
 vi.mock("../../lib/logger", () => ({
@@ -117,7 +119,7 @@ vi.mock("../../lib/keyless", () => ({
 
 vi.mock("../../lib/gcs-jobs", () => ({
   saveDeepResearchToGCS: vi.fn(),
-  saveExtractToGCS: vi.fn(),
+  saveExtractToGCS,
   saveLlmsTxtToGCS: vi.fn(),
   saveMapToGCS: vi.fn(),
   saveScrapeToGCS: vi.fn(),
@@ -126,10 +128,6 @@ vi.mock("../../lib/gcs-jobs", () => ({
 
 vi.mock("../../lib/zdr-queue", () => ({
   enqueueZdrCleanupJob,
-}));
-
-vi.mock("../../lib/extract/extract-redis", () => ({
-  saveExtractResult,
 }));
 
 vi.mock("../posthog", () => ({
@@ -550,29 +548,34 @@ describe("operational job state logging", () => {
 
   it("writes extract state before result storage fails", async () => {
     const id = "019e6f45-7778-727d-adf0-0abe9d5062b6";
-    saveExtractResult.mockRejectedValueOnce(new Error("Redis unavailable"));
+    mockConfig.GCS_BUCKET_NAME = "test-bucket";
+    saveExtractToGCS.mockRejectedValueOnce(new Error("GCS unavailable"));
 
-    await expect(
-      logExtract({
+    try {
+      await expect(
+        logExtract({
+          id,
+          request_id: id,
+          urls: ["https://example.com"],
+          team_id: "team-id",
+          options: {},
+          model_kind: "fire-1",
+          credits_cost: 3,
+          is_successful: true,
+          result: { ok: true },
+        }),
+      ).rejects.toThrow("GCS unavailable");
+
+      expect(writeExtractJobState).toHaveBeenCalledWith(
         id,
-        request_id: id,
-        urls: ["https://example.com"],
-        team_id: "team-id",
-        options: {},
-        model_kind: "fire-1",
-        credits_cost: 3,
-        is_successful: true,
-        result: { ok: true },
-      }),
-    ).rejects.toThrow("Redis unavailable");
-
-    expect(writeExtractJobState).toHaveBeenCalledWith(
-      id,
-      expect.objectContaining({ status: "completed" }),
-    );
-    expect(writeExtractJobState.mock.invocationCallOrder[0]).toBeLessThan(
-      saveExtractResult.mock.invocationCallOrder[0],
-    );
+        expect.objectContaining({ status: "completed" }),
+      );
+      expect(writeExtractJobState.mock.invocationCallOrder[0]).toBeLessThan(
+        saveExtractToGCS.mock.invocationCallOrder[0],
+      );
+    } finally {
+      mockConfig.GCS_BUCKET_NAME = undefined;
+    }
   });
 });
 

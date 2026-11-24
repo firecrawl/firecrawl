@@ -858,15 +858,22 @@ async function startServices(command?: string[]): Promise<Services> {
     },
   );
 
-  const extractWorker = execForward(
-    "extract-worker",
-    roleCommand("extract-worker", "extract-worker:production"),
-    {
-      NUQ_REDUCE_NOISE: "true",
-      NUQ_POD_NAME: "extract-worker",
-      EXTRACT_WORKER_PORT: String(EXTRACT_WORKER_PORT),
-    },
-  );
+  const roleRunner = /\.(?:[cm]?ts)$/i.test(roleEntry)
+    ? "pnpm exec tsx"
+    : "node";
+
+  const extractWorker =
+    roleEntry && installedService()?.roles.has("extract-worker")
+      ? execForward(
+          "extract-worker",
+          `${roleRunner} ${shellEscape(roleEntry)} extract-worker`,
+          {
+            NUQ_REDUCE_NOISE: "true",
+            NUQ_POD_NAME: "extract-worker",
+            EXTRACT_WORKER_PORT: String(EXTRACT_WORKER_PORT),
+          },
+        )
+      : undefined;
 
   const nuqWorkers = Array.from({ length: NUQ_WORKER_COUNT }, (_, i) =>
     execForward(
@@ -910,17 +917,13 @@ async function startServices(command?: string[]): Promise<Services> {
           },
         );
 
-  const indexWorkerRunner = /\.(?:[cm]?ts)$/i.test(roleEntry)
-    ? "pnpm exec tsx"
-    : "node";
-
   const indexWorker =
     config.USE_DB_AUTHENTICATION &&
     roleEntry &&
     installedService()?.roles.has("index-worker")
       ? execForward(
           "index-worker",
-          `${indexWorkerRunner} ${shellEscape(roleEntry)} index-worker`,
+          `${roleRunner} ${shellEscape(roleEntry)} index-worker`,
           {
             NUQ_REDUCE_NOISE: "true",
             NUQ_POD_NAME: "index-worker",

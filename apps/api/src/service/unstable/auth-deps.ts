@@ -11,7 +11,7 @@ export {
 export type {
   AuthCreditUsageChunk,
   TeamFlags,
-} from "../../controllers/v1/types";
+} from "../../controllers/v2/types";
 export { db, dbRr } from "../../db/connection";
 export {
   agent_sponsors,

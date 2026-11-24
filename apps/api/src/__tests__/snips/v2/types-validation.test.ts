@@ -11,15 +11,12 @@ import {
   scrapeRequestSchema,
   parseRequestSchema,
   scrapeOptions,
-  extractRequestSchema,
   crawlRequestSchema,
   mapRequestSchema,
   batchScrapeRequestSchema,
   searchRequestSchema,
   ScrapeRequest,
   ScrapeRequestInput,
-  ExtractRequest,
-  ExtractRequestInput,
   CrawlRequest,
   CrawlRequestInput,
   MapRequest,
@@ -828,146 +825,6 @@ describe("V2 Types Validation", () => {
           },
         }),
       ).toThrow("The rawBase64 format is not supported for parse uploads");
-    });
-  });
-
-  describe("extractRequestSchema", () => {
-    it("should accept valid extract request with urls", () => {
-      const input: ExtractRequestInput = {
-        urls: ["https://example.com"],
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      const result = extractRequestSchema.parse(input);
-      expect(result.urls).toEqual(["https://example.com"]);
-      expect(result.origin).toBe("api");
-      expect(result.ignoreInvalidURLs).toBe(true); // v2 default is true
-    });
-
-    it("should accept valid extract request with prompt", () => {
-      const input: ExtractRequestInput = {
-        prompt: "Extract the title",
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      const result = extractRequestSchema.parse(input);
-      expect(result.prompt).toBe("Extract the title");
-    });
-
-    it("should accept an extract schema that uses standard string formats", () => {
-      const input: ExtractRequestInput = {
-        urls: ["https://example.com"],
-        schema: {
-          type: "object",
-          properties: {
-            contact: { type: "string", format: "email" },
-          },
-        },
-      };
-
-      const result = extractRequestSchema.parse(input);
-      expect(result.schema).toBeDefined();
-    });
-
-    it("should reject extract request without urls or prompt", () => {
-      const input = {
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      expect(() => extractRequestSchema.parse(input)).toThrow(
-        "Either 'urls' or 'prompt' must be provided",
-      );
-    });
-
-    it("should reject more than 10 URLs", () => {
-      const input: ExtractRequestInput = {
-        urls: Array.from({ length: 11 }, (_, i) => `https://example${i}.com`),
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      expect(() => extractRequestSchema.parse(input)).toThrow(
-        "Maximum of 10 URLs allowed per request while in beta",
-      );
-    });
-
-    it("should accept up to 10 URLs", () => {
-      const input: ExtractRequestInput = {
-        urls: Array.from({ length: 10 }, (_, i) => `https://example${i}.com`),
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      const result = extractRequestSchema.parse(input);
-      expect(result.urls).toHaveLength(10);
-    });
-
-    it("should reject JSON schemas structured outputs cannot express", () => {
-      const result = extractRequestSchema.safeParse({
-        urls: ["https://example.com"],
-        schema: {
-          type: "object",
-          properties: { events: { type: "array" } },
-        },
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error?.issues.map(issue => issue.message)).toContain(
-        'Invalid JSON schema at "properties.events": arrays must define "items".',
-      );
-    });
-
-    it("should reject invalid JSON schema", () => {
-      const input: ExtractRequestInput = {
-        urls: ["https://example.com"],
-        schema: {
-          type: "invalid-type",
-          properties: "not-an-object",
-        },
-      };
-
-      expect(() => extractRequestSchema.parse(input)).toThrow(
-        "Invalid JSON schema",
-      );
-    });
-
-    it("should transform allowExternalLinks when enableWebSearch is true", () => {
-      const input: ExtractRequestInput = {
-        urls: ["https://example.com"],
-        enableWebSearch: true,
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      const result = extractRequestSchema.parse(input);
-      expect(result.allowExternalLinks).toBe(true);
     });
   });
 
@@ -1855,20 +1712,6 @@ describe("V2 Types Validation", () => {
       expect(typeof result.url).toBe("string");
       expect(typeof result.origin).toBe("string");
       expect(Array.isArray(result.formats)).toBe(true);
-    });
-
-    it("should correctly infer ExtractRequest type", () => {
-      const result: ExtractRequest = extractRequestSchema.parse({
-        urls: ["https://example.com"],
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      });
-
-      expect(Array.isArray(result.urls)).toBe(true);
     });
 
     it("should correctly infer CrawlRequest type", () => {

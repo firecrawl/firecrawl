@@ -1,7 +1,21 @@
 import { z } from "zod";
 import { webhookSchema } from "./schema";
-import { ExtractResult } from "../../lib/extract/types";
 import { Document } from "../../controllers/v2/types";
+
+interface ExtractWebhookResult {
+  success: boolean;
+  data?: any;
+  extractId: string;
+  warning?: string;
+  urlTrace?: unknown[];
+  error?: string;
+  tokenUsageBreakdown?: unknown[];
+  llmUsage?: number;
+  totalUrlsScraped?: number;
+  sources?: Record<string, string[]>;
+  tokensBilled?: number;
+  creditsBilled?: number;
+}
 
 export enum WebhookEvent {
   CRAWL_STARTED = "crawl.started",
@@ -90,7 +104,7 @@ interface ExtractStartedData extends BaseWebhookData {
 
 interface ExtractCompletedData extends BaseWebhookData {
   success: true;
-  data: ExtractResult[];
+  data: ExtractWebhookResult[];
 }
 
 interface ExtractFailedData extends BaseWebhookData {
