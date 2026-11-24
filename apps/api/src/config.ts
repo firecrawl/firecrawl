@@ -115,7 +115,6 @@ const configSchema = z.object({
   FIRECRAWL_APP_PORT: z.string().default("3002"),
   FIRECRAWL_APP_SCHEME: z.string().default("http"),
   LOGGING_LEVEL: z.string().optional(),
-  FIRECRAWL_DASHBOARD_URL: z.url().default("https://www.firecrawl.dev"),
   SUPPORT_AGENT_URL: z.string().url().optional(),
   SUPPORT_AGENT_VERCEL_BYPASS_SECRET: z.string().optional(),
   FIREBRAIN_TRACKS_URL: z.preprocess(
@@ -247,43 +246,10 @@ const configSchema = z.object({
   ),
   OPENROUTER_API_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
-  RESEND_API_KEY: z.string().optional(),
   PREVIEW_TOKEN: z.string().optional(),
   SEARCH_PREVIEW_TOKEN: z.string().optional(),
-  SEARCH_FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(300),
-  SEARCH_FEEDBACK_DAILY_CAP_CREDITS: z.coerce
-    .number()
-    .int()
-    .nonnegative()
-    .default(100),
-  FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(120),
-  FEEDBACK_DAILY_CAP_CREDITS: z.coerce.number().int().nonnegative().default(50),
-  FEEDBACK_REFUND_ENABLED: z.stringbool().default(true),
-  // Feedback window for interact and browser sessions, from their last activity.
-  BROWSER_FEEDBACK_MAX_AGE_SEC: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(3600),
-  // Kill switch for the feedback next step on Alexandria answers.
-  ALEXANDRIA_FEEDBACK_HINT_ENABLED: z.stringbool().default(true),
   // Kill switch for search context sent to Exchange and search attribution on provider call logs.
   ALEXANDRIA_SEARCH_CONTEXT_ENABLED: z.stringbool().default(true),
-  ALEXANDRIA_FEEDBACK_WINDOW_SEC: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(1200),
-  ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS: z.coerce
-    .number()
-    .int()
-    .nonnegative()
-    .default(100),
-  ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS: z.coerce
-    .number()
-    .int()
-    .nonnegative()
-    .default(10),
 
   // Vercel Marketplace integration id (oac_...). Vercel OIDC resource tokens
   // (iss https://integrations.vercel.com/<id>) are accepted as bearer
@@ -409,7 +375,6 @@ const configSchema = z.object({
   BIGTABLE_INSTANCE_ID: z.string().optional(),
   BIGTABLE_APP_PROFILE_ID: z.string().optional(),
   BIGTABLE_JOB_ACCESS_TABLE: z.string().optional(),
-  BIGTABLE_FEEDBACK_JOBS_TABLE: z.string().optional(),
   BIGTABLE_SCRAPE_STATE_TABLE: z.string().optional(),
   BIGTABLE_EXTRACT_STATE_TABLE: z.string().optional(),
   BIGTABLE_REQUEST_CREDITS_TABLE: z.string().optional(),
@@ -637,30 +602,7 @@ const configSchema = z.object({
   // Webhooks
   SELF_HOSTED_WEBHOOK_URL: z.string().optional(),
   SELF_HOSTED_WEBHOOK_HMAC_SECRET: z.string().optional(),
-  SLACK_WEBHOOK_URL: z.string().optional(),
-  SLACK_ADMIN_WEBHOOK_URL: z.string().optional(),
   DISABLE_WEBHOOK_DELIVERY: z.stringbool().optional(),
-
-  // Slack integration ("Add to Slack" for monitor notifications + /monitor
-  // slash command). Credentials come from the Firecrawl Slack app.
-  SLACK_CLIENT_ID: z.string().optional(),
-  SLACK_CLIENT_SECRET: z.string().optional(),
-  SLACK_SIGNING_SECRET: z.string().optional(),
-  // Bot scopes requested during install. Override only if the Slack app manifest
-  // changes; keep in sync with slack-app-manifest.json.
-  SLACK_OAUTH_SCOPES: z
-    .string()
-    .default(
-      "chat:write,chat:write.public,commands,channels:read,groups:read,team:read,incoming-webhook",
-    ),
-  // Absolute URL Slack redirects back to after authorize. Must exactly match a
-  // Redirect URL configured on the Slack app (e.g.
-  // https://api.firecrawl.dev/v2/slack/oauth/callback).
-  SLACK_OAUTH_REDIRECT_URL: z.string().optional(),
-  // 32-byte key (hex or base64) used to AES-256-GCM encrypt stored bot tokens.
-  // Required when ENV=production. Elsewhere, if unset, tokens are stored with a
-  // `plain:` prefix.
-  SLACK_TOKEN_ENCRYPTION_KEY: z.string().optional(),
   ALLOW_LOCAL_WEBHOOKS: z.stringbool().optional(),
   WEBHOOK_USE_RABBITMQ: z.stringbool().optional(),
 
@@ -702,12 +644,6 @@ const configSchema = z.object({
   VERTEX_CREDENTIALS: z.string().optional(),
   // Uses Vertex with ambient credentials when VERTEX_CREDENTIALS is unset.
   VERTEX_USE_ADC: z.stringbool().default(false),
-
-  // LangSmith (tracing for interact agent)
-  LANGSMITH_API_KEY: z.string().optional(),
-  LANGSMITH_PROJECT: z.string().optional(),
-  LANGSMITH_ENDPOINT: z.string().optional(),
-  LANGSMITH_TRACING: z.stringbool().optional(),
 
   // Testing
   TEST_API_KEY: z.string().optional(),
@@ -787,9 +723,6 @@ const configSchema = z.object({
   // Wikipedia Enterprise API
   WIKIPEDIA_ENTERPRISE_USERNAME: z.string().optional(),
   WIKIPEDIA_ENTERPRISE_PASSWORD: z.string().optional(),
-
-  // Browser Service
-  HANGAR_URL: z.url().optional(),
 
   // Audio (avgrab)
   AVGRAB_SERVICE_URL: z.string().optional(),

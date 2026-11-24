@@ -70,6 +70,10 @@ vi.mock("uuid", () => ({
 vi.mock("../../../config", () => ({
   config: {
     USE_DB_AUTHENTICATION: true,
+  },
+}));
+vi.mock("../../../lib/browser-env", () => ({
+  browserEnv: {
     HANGAR_URL: "http://localhost:9000",
   },
 }));

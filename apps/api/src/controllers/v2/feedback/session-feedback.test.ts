@@ -60,9 +60,11 @@ vi.mock("../../../services/autumn/autumn.service", () => ({
 }));
 
 import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
 import { feedbackController } from "./controller";
 
 const original = { ...config };
+const originalFeedbackEnv = { ...feedbackEnv };
 const teamId = "01933161-0000-7000-8000-000000000001";
 const otherTeamId = "01933161-0000-7000-8000-000000000002";
 const scrapeId = "01933161-0000-7000-8000-000000000003";
@@ -144,6 +146,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   Object.assign(config, original, {
     USE_DB_AUTHENTICATION: true,
+  });
+  Object.assign(feedbackEnv, originalFeedbackEnv, {
     FEEDBACK_REFUND_ENABLED: true,
     FEEDBACK_MAX_AGE_SEC: 120,
     BROWSER_FEEDBACK_MAX_AGE_SEC: 3600,
@@ -159,6 +163,7 @@ beforeEach(() => {
 });
 afterAll(() => {
   Object.assign(config, original);
+  Object.assign(feedbackEnv, originalFeedbackEnv);
 });
 
 describe("feedback for interact and browser sessions", () => {
@@ -330,7 +335,7 @@ describe("feedback for interact and browser sessions", () => {
   it.each(endpoints)(
     "reads the %s window from BROWSER_FEEDBACK_MAX_AGE_SEC",
     async endpoint => {
-      config.BROWSER_FEEDBACK_MAX_AGE_SEC = 60;
+      feedbackEnv.BROWSER_FEEDBACK_MAX_AGE_SEC = 60;
       haveSession(endpoint, {
         updated_at: new Date(Date.now() - 90 * 1000).toISOString(),
       });

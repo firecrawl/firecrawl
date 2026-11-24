@@ -1,7 +1,7 @@
 import { and, eq, gte } from "drizzle-orm";
 import { db } from "../../db/connection";
 import * as schema from "../../db/schema";
-import { config } from "../../config";
+import { notificationsEnv } from "./env";
 import { withAuth } from "../../lib/withAuth";
 import { Resend } from "resend";
 import { NotificationType } from "../../types";
@@ -77,7 +77,7 @@ async function sendEmailNotification(
   notificationType: NotificationType,
   context: NotificationContext = {},
 ) {
-  const resend = new Resend(config.RESEND_API_KEY);
+  const resend = new Resend(notificationsEnv.RESEND_API_KEY);
 
   try {
     // Get user's email preferences
@@ -299,14 +299,14 @@ export async function sendNotificationWithCustomDays(
       }
 
       if (
-        config.SLACK_ADMIN_WEBHOOK_URL &&
+        notificationsEnv.SLACK_ADMIN_WEBHOOK_URL &&
         emails.length > 0 &&
         notificationType !== NotificationType.CONCURRENCY_LIMIT_REACHED
       ) {
         sendSlackWebhook(
           `${getNotificationString(notificationType)}: Team ${team_id}, with email ${emails[0].email}.`,
           false,
-          config.SLACK_ADMIN_WEBHOOK_URL,
+          notificationsEnv.SLACK_ADMIN_WEBHOOK_URL,
         ).catch(error => {
           logger.debug(`Error sending slack notification: ${error}`);
         });

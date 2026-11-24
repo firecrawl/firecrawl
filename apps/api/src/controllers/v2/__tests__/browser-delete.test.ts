@@ -10,13 +10,9 @@ const mocks = vi.hoisted(() => ({
   dbRows: [] as unknown[],
 }));
 
-vi.mock("../../../config", async importOriginal => {
-  const actual = await importOriginal<typeof import("../../../config")>();
-  return {
-    ...actual,
-    config: { ...actual.config, HANGAR_URL: "http://hangar.test" },
-  };
-});
+vi.mock("../../../lib/browser-env", () => ({
+  browserEnv: { HANGAR_URL: "http://hangar.test" },
+}));
 
 // Only the real getBrowserSessionFromScrape reaches this: it selects every
 // row for a scrape, newest first.

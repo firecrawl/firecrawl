@@ -1,4 +1,4 @@
-import { config } from "../config";
+import { browserEnv } from "./browser-env";
 import { type BrowserOptions, hangarBrowserOptions } from "./browser-options";
 
 export interface HangarBrowser {
@@ -55,7 +55,7 @@ async function request<T>(
     resource?: "browsers" | "profiles";
   },
 ): Promise<T> {
-  if (!config.HANGAR_URL)
+  if (!browserEnv.HANGAR_URL)
     throw new HangarError(
       503,
       "Browser feature is not configured (HANGAR_URL is missing).",
@@ -63,7 +63,7 @@ async function request<T>(
   let response: globalThis.Response;
   try {
     response = await fetch(
-      `${config.HANGAR_URL.replace(/\/$/, "")}/v1/${options?.resource ?? "browsers"}${path}`,
+      `${browserEnv.HANGAR_URL.replace(/\/$/, "")}/v1/${options?.resource ?? "browsers"}${path}`,
       {
         method,
         headers: {

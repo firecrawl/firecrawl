@@ -3,7 +3,7 @@ import { recordRequestCredits } from "./request-credits-store";
 import type { BrowserOptions } from "./browser-options";
 import { upsertBrowserProfile } from "./browser-sessions";
 import { v7 as uuidv7 } from "uuid";
-import { config } from "../config";
+import { browserEnv } from "./browser-env";
 import { RequestWithAuth } from "../controllers/v2/types";
 import {
   createHangarBrowser,
@@ -226,7 +226,7 @@ async function createBrowserSessionInternal(
   zeroDataRetention: boolean,
 ) {
   const logger = rootLogger.child({ zeroDataRetention });
-  if (!config.HANGAR_URL)
+  if (!browserEnv.HANGAR_URL)
     throw new HangarError(
       503,
       "Browser feature is not configured (HANGAR_URL is missing).",
@@ -630,7 +630,7 @@ async function stopBrowserSessionInternal(session: BrowserSessionRow) {
 
 let reconciling = false;
 export async function reconcileBrowserSessions() {
-  if (!config.HANGAR_URL || reconciling) return;
+  if (!browserEnv.HANGAR_URL || reconciling) return;
   reconciling = true;
   let acquired = false;
   try {
