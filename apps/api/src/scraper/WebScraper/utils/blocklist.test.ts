@@ -50,6 +50,67 @@ function ctx(org_id: string | null) {
   return { team_id: TEAM, org_id, origin: "test" };
 }
 
+function countCollectionEntries<T>(lookup: () => T) {
+  const collections = [[], new Set(), new Map()];
+  const iterators = collections.map(collection => {
+    const prototype = Object.getPrototypeOf(collection[Symbol.iterator]());
+    return { prototype, next: prototype.next };
+  });
+  const callbacks = collections.map(collection => {
+    const prototype = Object.getPrototypeOf(collection);
+    return { prototype, forEach: prototype.forEach };
+  });
+  const arrayPrototype = Object.getPrototypeOf([]);
+  const searches = ["find", "includes", "some"].map(name => ({
+    name,
+    method: arrayPrototype[name],
+  }));
+  let entries = 0;
+  try {
+    // Count consumed entries, including copies subsequently scanned with find/includes
+    // and equality-only loops. String-method call counts miss those linear lookups.
+    for (const { prototype, next } of iterators) {
+      prototype.next = function (this: Iterator<unknown>) {
+        const result = next.call(this) as IteratorResult<unknown>;
+        if (!result.done) entries++;
+        return result;
+      };
+    }
+    for (const { prototype, forEach } of callbacks) {
+      prototype.forEach = function (
+        this: unknown,
+        callback: (...args: unknown[]) => unknown,
+        thisArg?: unknown,
+      ) {
+        return forEach.call(this, (...args: unknown[]) => {
+          entries++;
+          return callback.apply(thisArg, args);
+        });
+      };
+    }
+    for (const { name, method } of searches) {
+      arrayPrototype[name] = function (this: unknown[], ...args: unknown[]) {
+        // Native array searches bypass iterators, including searches on an array
+        // cached at load time. Observe their actual indexed reads instead.
+        const measured = new Proxy(this, {
+          get(target, key, receiver) {
+            if (typeof key === "string" && /^\d+$/.test(key)) entries++;
+            return Reflect.get(target, key, receiver);
+          },
+        });
+        return method.apply(measured, args);
+      };
+    }
+    entries = 0;
+    const result = lookup();
+    return { result, entries };
+  } finally {
+    for (const { prototype, next } of iterators) prototype.next = next;
+    for (const { prototype, forEach } of callbacks) prototype.forEach = forEach;
+    for (const { name, method } of searches) arrayPrototype[name] = method;
+  }
+}
+
 describe("isUrlBlocked", () => {
   describe("global entries", () => {
     beforeAll(async () => {
@@ -262,6 +323,109 @@ describe("isUrlBlocked", () => {
       ];
       await expect(initializeBlocklist()).rejects.toThrow(
         "No global blocklist row",
+      );
+    });
+  });
+
+  describe("domain lookup work and exemptions", () => {
+    it("does not scan every entry when a URL is absent from a large list", async () => {
+      dbState.rows = [
+        {
+          org_id: null,
+          data: {
+            blocklist: Array.from(
+              { length: 2000 },
+              (_, i) => `blocked-${i}.com`,
+            ),
+            allowedKeywords: [],
+          },
+        },
+      ];
+      await initializeBlocklist();
+
+      const { result, entries } = countCollectionEntries(() =>
+        isUrlBlocked("https://unlisted.example.org/path", null),
+      );
+
+      expect(result).toBe(false);
+      expect(entries).toBeLessThan(100);
+    });
+
+    it("keeps another TLD blocked when only one entry is exempt", async () => {
+      dbState.rows = [
+        {
+          org_id: null,
+          data: {
+            blocklist: ["example.com", "example.net"],
+            allowedKeywords: [],
+          },
+        },
+      ];
+      await initializeBlocklist();
+
+      const oneExempt = { unblockedDomains: ["example.com"] } as TeamFlags;
+      expect(isUrlBlocked("https://example.com", oneExempt)).toBe(true);
+      expect(isUrlBlocked("https://example.org", oneExempt)).toBe(true);
+      const bothExempt = {
+        unblockedDomains: ["example.com", "example.net"],
+      } as TeamFlags;
+      expect(isUrlBlocked("https://example.org", bothExempt)).toBe(false);
+    });
+
+    it("preserves suffix matches and the short base-name restriction", async () => {
+      dbState.rows = [
+        {
+          org_id: null,
+          data: { blocklist: ["co.uk", "ab.com"], allowedKeywords: [] },
+        },
+      ];
+      await initializeBlocklist();
+
+      expect(isUrlBlocked("https://shop.example.co.uk", null)).toBe(true);
+      expect(
+        isUrlBlocked("https://shop.example.co.uk", {
+          unblockedDomains: ["co.uk"],
+        } as TeamFlags),
+      ).toBe(false);
+      expect(isUrlBlocked("https://ab.com", null)).toBe(true);
+      expect(isUrlBlocked("https://ab.net", null)).toBe(false);
+    });
+
+    it("replaces global and org lookup data on reload", async () => {
+      dbState.rows = [
+        GLOBAL_ROW,
+        {
+          org_id: ORG_A,
+          data: { blocklist: ["old-org.example"], allowedKeywords: [] },
+        },
+      ];
+      await initializeBlocklist();
+      expect(isUrlBlocked("https://old-org.example", null, ctx(ORG_A))).toBe(
+        true,
+      );
+
+      dbState.rows = [
+        {
+          org_id: null,
+          data: { blocklist: ["new-global.com"], allowedKeywords: [] },
+        },
+        {
+          org_id: ORG_A,
+          data: { blocklist: ["new-org.example"], allowedKeywords: [] },
+        },
+      ];
+      await initializeBlocklist();
+      expect(isUrlBlocked("https://facebook.com", null, ctx(ORG_A))).toBe(
+        false,
+      );
+      expect(isUrlBlocked("https://old-org.example", null, ctx(ORG_A))).toBe(
+        false,
+      );
+      expect(isUrlBlocked("https://new-global.com", null, ctx(ORG_A))).toBe(
+        true,
+      );
+      expect(isUrlBlocked("https://new-org.example", null, ctx(ORG_A))).toBe(
+        true,
       );
     });
   });

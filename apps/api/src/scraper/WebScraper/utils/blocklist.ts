@@ -18,6 +18,12 @@ type BlocklistBlob = {
   allowedKeywords: string[];
 };
 
+type LoadedBlocklist = {
+  blocklist: Set<string>;
+  baseDomains: Map<string, string[]>;
+  allowedKeywords: string[];
+};
+
 type BlockContext = {
   team_id?: string | null;
   org_id?: string | null;
@@ -129,8 +135,8 @@ function allowedKeywordMatches(url: string, allowedKeyword: string): boolean {
   return url.toLowerCase().includes(keyword.toLowerCase());
 }
 
-let blob: BlocklistBlob | null = null;
-let orgBlobs: Map<string, BlocklistBlob> = new Map();
+let blob: LoadedBlocklist | null = null;
+let orgBlobs: Map<string, LoadedBlocklist> = new Map();
 
 // Rows are written by ops directly, so reads must survive a missing or
 // partial document — a bad row must never take down startup. Blank entries
@@ -156,21 +162,35 @@ function mergeBlob(target: BlocklistBlob, source: BlocklistBlob): void {
   target.allowedKeywords.push(...source.allowedKeywords);
 }
 
-// Rows may repeat entries; the match loops scan linearly, so dedupe once at
-// load instead of paying for duplicates on every check.
-function dedupeBlob(blob: BlocklistBlob): BlocklistBlob {
+// Build the exact and same-base-domain lookups once per reload. Keep the
+// original entry strings so per-team exemptions retain their exact semantics.
+function compileBlob(blob: BlocklistBlob): LoadedBlocklist {
+  const blocklist = new Set(blob.blocklist);
+  const baseDomains = new Map<string, string[]>();
+  for (const entry of blocklist) {
+    const dot = entry.indexOf(".");
+    if (dot < 0) continue;
+    const base = entry.slice(0, dot);
+    let entries = baseDomains.get(base);
+    if (!entries) {
+      entries = [];
+      baseDomains.set(base, entries);
+    }
+    entries.push(entry);
+  }
   return {
-    blocklist: [...new Set(blob.blocklist)],
+    blocklist,
+    baseDomains,
     allowedKeywords: [...new Set(blob.allowedKeywords)],
   };
 }
 
 export async function initializeBlocklist() {
   if (config.USE_DB_AUTHENTICATION !== true || config.DISABLE_BLOCKLIST) {
-    blob = {
+    blob = compileBlob({
       blocklist: [],
       allowedKeywords: [],
-    };
+    });
     orgBlobs = new Map();
     return;
   }
@@ -208,37 +228,33 @@ export async function initializeBlocklist() {
       }
     }
   }
+  const loadedOrgs = new Map<string, LoadedBlocklist>();
   for (const [orgId, orgBlob] of perOrg) {
-    const deduped = dedupeBlob(orgBlob);
+    const loaded = compileBlob(orgBlob);
     // An org whose rows hold no blockable entries must not register as
     // org-scoped at all — hasOrgScopedBlocklist consumers would otherwise
     // pay cache opt-outs for an org that can never block anything.
-    if (deduped.blocklist.length === 0) {
-      perOrg.delete(orgId);
-    } else {
-      perOrg.set(orgId, deduped);
+    if (loaded.blocklist.size > 0) {
+      loadedOrgs.set(orgId, loaded);
     }
   }
-  blob = dedupeBlob(globalBlob);
-  orgBlobs = perOrg;
+  blob = compileBlob(globalBlob);
+  orgBlobs = loadedOrgs;
 }
 
 function findBlockedMatch(
   url: string,
   lowerCaseUrl: string,
-  blockedlist: string[],
-  allowedKeywords: string[],
+  list: LoadedBlocklist,
+  unblockedDomains: ReadonlySet<string>,
 ): string | null {
-  const decryptedUrl =
-    blockedlist.find(decrypted => lowerCaseUrl === decrypted) || lowerCaseUrl;
-
   // If the URL is empty or invalid, return no match
   let parsedUrl: any;
   try {
-    parsedUrl = parse(decryptedUrl);
+    parsedUrl = parse(lowerCaseUrl);
     // tldts doesn't percent-decode hosts the way fetchers do.
-    if (!parsedUrl.domain && URL.canParse(decryptedUrl)) {
-      parsedUrl = parse(new URL(decryptedUrl).hostname);
+    if (!parsedUrl.domain && URL.canParse(lowerCaseUrl)) {
+      parsedUrl = parse(new URL(lowerCaseUrl).hostname);
     }
   } catch {
     console.log("Error parsing URL:", url);
@@ -256,33 +272,39 @@ function findBlockedMatch(
   // Exchange claims (a profile slug, or a sub-page like /about) doesn't
   // exempt it: only the Exchange may serve those.
   if (
-    allowedKeywords.some(keyword => allowedKeywordMatches(url, keyword)) &&
+    list.allowedKeywords.some(keyword => allowedKeywordMatches(url, keyword)) &&
     !exchangeClaimsUrl(url)
   ) {
     return null;
   }
 
   // Block exact matches
-  if (blockedlist.includes(domain)) {
+  const matchesEntry = (entry: string) =>
+    list.blocklist.has(entry) && !unblockedDomains.has(entry);
+  if (matchesEntry(domain)) {
     return domain;
   }
 
   // Block subdomains
-  if (blockedlist.some(blocked => domain.endsWith(`.${blocked}`))) {
-    return domain;
+  for (
+    let dot = domain.indexOf(".");
+    dot >= 0;
+    dot = domain.indexOf(".", dot + 1)
+  ) {
+    if (matchesEntry(domain.slice(dot + 1))) {
+      return domain;
+    }
   }
 
   // Block different TLDs of the same base domain
   const baseDomain = domain.split(".")[0]; // Extract the base domain (e.g., "facebook" from "facebook.com")
 
-  if (
-    publicSuffix &&
-    baseDomain.length > 2 &&
-    blockedlist.some(
-      blocked => blocked.startsWith(baseDomain + ".") && blocked !== domain,
-    )
-  ) {
-    return domain;
+  if (publicSuffix && baseDomain.length > 2) {
+    for (const entry of list.baseDomains.get(baseDomain) ?? []) {
+      if (entry !== domain && !unblockedDomains.has(entry)) {
+        return domain;
+      }
+    }
   }
 
   return null;
@@ -313,19 +335,13 @@ export function isUrlBlocked(
 
   const lowerCaseUrl = url.trim().toLowerCase();
 
-  let blockedlist = [...blob.blocklist];
-
-  if (flags?.unblockedDomains) {
-    blockedlist = blockedlist.filter(
-      blocked => !flags.unblockedDomains!.includes(blocked),
-    );
-  }
+  const unblockedDomains = new Set(flags?.unblockedDomains);
 
   const globalMatch = findBlockedMatch(
     url,
     lowerCaseUrl,
-    blockedlist,
-    blob.allowedKeywords,
+    blob,
+    unblockedDomains,
   );
   if (globalMatch !== null) {
     recordHit(url, globalMatch, context);
@@ -335,17 +351,11 @@ export function isUrlBlocked(
   // The org blob's own allowedKeywords exempt URLs from the org list only.
   const orgBlob = context?.org_id ? orgBlobs.get(context.org_id) : undefined;
   if (orgBlob) {
-    let orgBlockedlist = orgBlob.blocklist;
-    if (flags?.unblockedDomains) {
-      orgBlockedlist = orgBlockedlist.filter(
-        blocked => !flags.unblockedDomains!.includes(blocked),
-      );
-    }
     const orgMatch = findBlockedMatch(
       url,
       lowerCaseUrl,
-      orgBlockedlist,
-      orgBlob.allowedKeywords,
+      orgBlob,
+      unblockedDomains,
     );
     if (orgMatch !== null) {
       recordHit(url, orgMatch, context);
