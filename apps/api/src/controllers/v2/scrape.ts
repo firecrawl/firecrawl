@@ -85,6 +85,7 @@ export async function scrapeController(
       const controllerStartTime = new Date().getTime();
 
       const jobId = uuidv7();
+      res.setHeader("X-Request-Id", jobId);
       const preNormalizedBody = { ...req.body };
 
       // Set initial span attributes
@@ -690,6 +691,7 @@ export async function scrapeController(
             success: false,
             code: e.code,
             error: e.message,
+            id: jobId,
             ...(processing && { details: processing }),
           });
         } else {
@@ -709,6 +711,7 @@ export async function scrapeController(
             success: false,
             code: "UNKNOWN_ERROR",
             error: getErrorContactMessage(id),
+            id: jobId,
           });
         }
       } finally {
