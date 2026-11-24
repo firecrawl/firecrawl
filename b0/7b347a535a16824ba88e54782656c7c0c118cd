@@ -1,0 +1,324 @@
+apps/api/src/controllers/v2/feedback/record-options.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1,10-14,18,23-26,44-47
+apps/api/src/scraper/scrapeURL/scrapeURL.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 9-10,13,40-60
+apps/api/src/service/core-parts.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 5,7-13,29-36,39-40,42-49,51-74,79-82,103-188,193,245-291,307-308,311,313,315
+apps/api/src/scraper/scrapeURL/transformers/sendToSearchIndex.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 13,73,96,111
+apps/api/src/controllers/v2/__tests__/parse-upload.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-402
+apps/api/src/__tests__/snips/v2/keyless.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2,742
+apps/api/src/services/integrations/slack/client.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1,62-63
+apps/api/src/__tests__/snips/v2/browser-location.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1,30
+apps/api/src/services/notification/monitoring_email.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 47,49,60-63,67
+apps/api/src/lib/threat-protection/providers/google-web-risk.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2,54-55,68,71
+apps/api/src/services/cclog-worker-env.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-10
+apps/api/src/lib/feedback-env.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-49
+apps/api/src/controllers/v2/feedback/feedback-store.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 3,279-280
+apps/api/src/controllers/v2/feedback/session-feedback.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 63,67,149-150,166,338
+apps/api/src/__tests__/snips/v2/browser-profiles.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 4,10
+apps/api/src/services/integrations/slack/crypto.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 3,12
+apps/api/src/lib/zdrcleaner.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 8,11-12
+apps/api/src/lib/zdr-worker-env.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-9
+apps/api/src/lib/org-secret-crypto.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 3,6,9,14-16,26,31
+apps/api/src/lib/ai-usage-telemetry.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 184,187-200,212
+apps/api/src/services/rate-limiter.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 8
+apps/api/src/lib/job-operational-stores.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 43
+apps/api/src/main.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 10,14-18
+apps/api/src/scraper/scrapeURL/engines/index.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 24,51-61,63,65,67,69,113,115-130,133-135,138-145,148-150,152-155,157-160,163-165,168-177,180-182,185-187,190-192,194-196,198-200,202-205,209-247,403-406,408,412-425,544-545,547-548,577-581,607,639-643,645-646,648-651,655-658,682,686,696,731-732,734,740,756
+apps/api/src/services/indexing/index-worker.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 44,46-47,171,718,818
+apps/api/src/lib/alexandria-activity.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 27,49-50,52-53,57-58,107-108,113
+apps/api/src/service/testing.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2-3,10-27,30-40
+  s_6a7201d5c4fd9c::t_1b85f2282b7361 41
+apps/api/src/lib/__tests__/map-utils-query-index.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-137
+apps/api/src/lib/browser-env.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-13
+apps/api/package.json
+  s_6a7201d5c4fd9c::t_c77724db096576 26-29
+apps/api/src/controllers/v2/parse-upload.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 15,35,105,270,273-278,281,285,293,298-313,323-330,335,337-339,350-351,372-375,386-392,394-395,407,436-438,441-447,458-461,463,483
+apps/api/src/service/service.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 3,5,31-69,85-86,203-204,216-227,236-244,251,254,260-266,276-290,310-314,319-321,330-334,340-345,348,351-353,365-370,379-384,387-398,408-414,419,421-423,428,431-433,445-446,461-462
+apps/api/src/lib/unhandled-error-handler.test.ts
+  s_6a7201d5c4fd9c::t_f15eac6e680940 12,73-79,83
+apps/api/src/service/defaults.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-141
+apps/api/src/services/notification/monitoring_email.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 4,151,162,313
+apps/api/src/__tests__/snips/v2/audio-routing.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 9-11,27,29-47,55,157-159
+apps/api/src/services/index.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 29,173-174
+apps/api/src/__tests__/snips/v2/browser-replay.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 4,43,151,227
+apps/api/src/service/llm-providers.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-237
+apps/api/src/lib/scrape-interact/langsmith.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 40,43-44,54,106-107,120-121,196-197,209
+apps/api/src/scraper/scrapeURL/error.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2-3,8-9,66,424-427,617,668-671,694
+apps/api/src/controllers/v2/scrape-alexandria.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 58-63,70,1426,1439,1546,1566,1740,1744
+apps/api/src/lib/alexandria-feedback-hint.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2,18,35
+apps/api/src/lib/generic-ai.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-259
+apps/api/src/lib/generic-ai.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 19-25,27-37,39-40,52,60-61,63,74-75,77-78,81-84,87-90,98,104-117,119-127,154-281,285,287,291-295,297-303
+apps/api/src/lib/threat-protection/providers/web-risk/sync.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 4,20-21,41-42,49-50
+apps/api/src/services/integrations/slack/slack.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 3,13-14,17-18,23-25,36,44-46,48,53,112
+apps/api/src/services/notification/env.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-32
+apps/api/src/service/core-parts.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 3-4,8-11,13-24,73-127,134-136
+apps/api/src/lib/siem-logging/env.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-13
+apps/api/src/lib/threat-protection/providers/web-risk/store.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1,299
+apps/api/src/lib/search-index-env.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-12
+apps/api/src/services/alerts/slack.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 4,8
+apps/api/src/lib/threat-protection/env.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-41
+apps/api/src/services/index-cache.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 13-16
+apps/api/src/scraper/scrapeURL/engines/index.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-277
+apps/api/src/__tests__/snips/v2/wikipedia-zdr-routing.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 8-10,25,27-43,56
+apps/api/src/controllers/v2/__tests__/browser-delete.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 13-15
+apps/api/src/lib/change-tracking-env.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-9
+apps/api/src/lib/org-secret-crypto.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2,12
+apps/api/src/__tests__/snips/v2/exchange-provider-metadata.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 6-9,11,123-135,139
+apps/api/src/lib/deployment.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2-5,12-14
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/indexPdfRefresh.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 7-12,14,34-52
+  s_6a7201d5c4fd9c::t_39223c28a20b3f 53
+apps/api/src/services/integrations/slack/signature.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2,15-16
+apps/api/src/services/notification/email_notification.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 4,80,302,309
+apps/api/src/config-helpers.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-4
+apps/api/src/controllers/v2/feedback/record-options.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1,34-36,56-57
+apps/api/src/routes/shared.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 23,624
+apps/api/src/controllers/v2/scrape.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 43,728
+apps/api/src/services/mcp/action-logs.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2,104
+apps/api/src/__tests__/snips/v2/batch-scrape-exchange.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 72-77,80-98
+apps/api/src/controllers/v2/feedback/alexandria.integration.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 86,117,143-145,152
+apps/api/src/controllers/v2/feedback/refund-policy.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1,57,144-145
+apps/api/src/lib/threat-protection/check-url.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 17,62-63,85-86,93-94
+apps/api/src/lib/siem-logging/azure-sentinel.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 9,55,58,60-61
+apps/api/src/__tests__/snips/v2/scrape-robots.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 8,16-35
+apps/api/src/controllers/v2/feedback/refund-policy.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 4-5
+apps/api/src/controllers/v2/crawl-status-ws.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 23,241
+apps/api/src/__tests__/routes/exchange-agent-managed-key.routes.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 80,300
+apps/api/src/service/index.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 6,8-19,31-51
+apps/api/src/lib/threat-protection/providers/zscaler/client.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 3,89,92,94-97,104,111
+apps/api/src/scraper/scrapeURL/engines/index/index.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 15,261-263
+apps/api/src/lib/hangar.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1,58,66
+apps/api/src/lib/threat-protection/providers/web-risk/store.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1,93-94,105
+apps/api/src/scraper/scrapeURL/transformers/query.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 7,27
+apps/api/src/lib/unhandled-error-handler.ts
+  s_6a7201d5c4fd9c::t_26b40d38123c88 12,110
+apps/api/src/controllers/v2/parse.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 28,704
+apps/api/src/lib/mcp-action-log-env.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-46
+apps/api/src/service/service.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 6-13,21-26,28,55-69,76-77,99-104,124-125,147-168,180-199,258-260,270-271,284-286,302-306,330-335
+apps/api/src/scraper/scrapeURL/transformers/__tests__/sendToSearchIndex.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 4,15-17,22-24,29-31
+apps/api/src/config.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 3-5
+apps/api/src/services/indexing/index-worker-env.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-11
+apps/api/src/services/redis.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 77
+apps/api/src/scraper/scrapeURL/transformers/generateCompletions.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 25,27,64-78
+  s_6a7201d5c4fd9c::t_71c8489feba11e 79
+apps/api/src/lib/feedback-job-store.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1,90,165,180-181
+apps/api/src/routes/mcp-action-logs.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 9,35-36,49
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 20-21,27-41
+  s_6a7201d5c4fd9c::t_dd15a528e77080 42
+apps/api/src/__tests__/routes/country-check.routes.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 42-44,72-76,131,140,142-147,149-150,152-156
+apps/api/src/controllers/v2/feedback/record.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 3,60,175,184
+apps/api/src/__tests__/snips/v2/alexandria-feedback.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 8,212-213
+apps/api/src/controllers/v2/__tests__/browser-mcp-credits.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 18-20
+apps/api/src/lib/scrape-interact/langsmith.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2,10,17,113-114,116-117,121
+apps/api/src/lib/change-tracking-store.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 5-6
+apps/api/src/lib/threat-protection/providers/zscaler/client.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2,69-72,76-77
+apps/api/src/services/alexandria/access.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 3-6
+apps/api/src/services/alexandria/access.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 3,170
+apps/api/src/__tests__/snips/v2/exchange-routing.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 29-31,64,66-82,114
+apps/api/src/lib/change-tracking-store.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2,28-29
+apps/api/src/lib/threat-protection/providers/web-risk/sync.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2,52-53,65,68,113-114,256,266-267
+apps/api/src/__tests__/routes/interact-agent-concurrency.routes.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 22-24
+apps/api/src/scraper/scrapeURL/transformers/query.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 23,25-26,86-87,89-107,109,115-118,257-275
+  s_6a7201d5c4fd9c::t_c82bffaf434514 276
+apps/api/src/lib/threat-protection/providers/providers.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 13,54-55,114-115,122-123,247,253
+apps/api/src/scraper/scrapeURL/engines/metadata.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-226
+apps/api/src/services/cclog-worker.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 12,28,30,53-62,64-68
+apps/api/src/controllers/v2/feedback/feedback-window.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 51,56,94-95,119-120,142
+apps/api/src/__tests__/snips/v2/scrape-browser.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 3,41
+apps/api/src/controllers/v2/mcp-action-logs.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2,74
+apps/api/src/controllers/v2/feedback/alexandria.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 56,735,891-892,904
+apps/api/src/__tests__/snips/v2/scrape-paywall.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 8,35-54
+apps/api/src/lib/search-index-client.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 9,90-92,324-325
+apps/api/src/lib/alexandria-activity.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1,26,67
+apps/api/src/controllers/v2/feedback/alexandria-refund.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 66,72-74,107-109,117-120,230,249,258
+apps/api/src/lib/browser-options.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 3-5
+apps/api/src/__tests__/snips/v2/stealth-routing.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 10-12,40,42-58,62
+apps/api/src/lib/exchange.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 5,18
+apps/api/src/lib/fresh-feed.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 15,87-96,104
+apps/api/src/service/engines.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-283
+apps/api/src/controllers/v2/feedback/alexandria.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 3,78,141,144
+apps/api/src/routes/exchange-files.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 55
+apps/api/src/service/engines.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-252
+apps/api/src/controllers/v2/__tests__/scrape-browser.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 73-76
+apps/api/src/services/integrations/slack/redirect.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1,14
+apps/api/src/services/mcp/action-logs-controller.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2,54,210
+apps/api/src/lib/map-utils.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 22,67-75,77-78
+apps/api/src/controllers/v2/slack.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 3,39-43,81-84,93-96,248,335
+apps/api/src/service/modules.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-350
+apps/api/src/lib/alexandria-feedback-hint.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1,5,7,10,77
+apps/api/src/db/env.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-17
+apps/api/src/__tests__/snips/v2/stealth-routing-fire-engine.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 10-12,40,42-58,62
+apps/api/src/services/integrations/slack/oauth.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2,29-31,62-67,145-149,154
+apps/api/src/controllers/v2/__tests__/browser-agent-concurrency.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 22-24
+apps/api/src/controllers/v2/feedback/alexandria-refund.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2,47,215-217,244
+apps/api/src/lib/browser-lifecycle.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 6,229,633
+apps/api/src/service/llm-providers.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-157
+apps/api/src/services/mcp/action-logs-http.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 5,65-67,73,83
+apps/api/src/lib/deterministicJson/config.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-2,4-17
+apps/api/src/db/connection.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 5,41,67,165,171,176-177
+apps/api/src/service/testing.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 13,15,20-25,27
+apps/api/src/services/mcp/action-logs.test.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 3,106,110,113,141
+apps/api/src/service/modules.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 1-186
+apps/api/src/services/integrations/slack/commands.ts
+  s_6a7201d5c4fd9c::t_c77724db096576 2,49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b07b347a535a16824ba88e54782656c7c0c118cd",
+  "prompts": {},
+  "sessions": {
+    "s_6a7201d5c4fd9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc25e5bc-9ab3-420e-8413-1c98a5787305",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
