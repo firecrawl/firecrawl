@@ -137,6 +137,12 @@ export type {
   SearchRequest,
   SearchRequestFields,
 } from "./request";
+export type {
+  DescribedRoute,
+  RouteRegistrar,
+  RouterName,
+  Routers,
+} from "./routes";
 export { coreSearchProviderNames } from "./search-providers";
 export type {
   CoreSearchProviderSpec,
@@ -153,8 +159,11 @@ export type {
   ErrorRegistry,
   Extension,
   ModulesConfig,
+  RoleRegistry,
+  RunOptions,
   Service,
   ServiceConfig,
   ServiceDescription,
   Worker,
+  WorkerRunEnv,
 } from "./service";

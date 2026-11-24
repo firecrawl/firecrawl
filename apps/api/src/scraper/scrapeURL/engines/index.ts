@@ -59,6 +59,7 @@ import {
   coreEngineSpecs,
   type CoreEngineName,
 } from "./metadata";
+import { scrapeHooks, toScrapeMeta } from "../hooks";
 
 export { coreEngineFeatures };
 
@@ -277,12 +278,94 @@ export function shouldUseIndex(meta: Meta) {
   );
 }
 
-export async function buildFallbackList(meta: Meta): Promise<
-  {
-    engine: Engine;
-    unsupportedFeatures: Set<FeatureFlag>;
-  }[]
-> {
+function isEngineAllowedByPolicy(meta: Meta, engine: Engine): boolean {
+  // Zero data retention scrapes never use the Wikipedia engine: they stay on
+  // the engines that fetch the page directly.
+  if (engine === "wikipedia" && meta.internalOptions.zeroDataRetention) {
+    return false;
+  }
+
+  // A profile must never fall back to fetching anonymous content. File parsers
+  // may consume bytes already fetched by the authenticated browser.
+  if (
+    meta.options.profile &&
+    !engine.includes("chrome-cdp") &&
+    !(engine === "pdf" && meta.pdfPrefetch) &&
+    !(engine === "document" && meta.documentPrefetch) &&
+    !(engine === "image" && meta.imagePrefetch)
+  ) {
+    return false;
+  }
+
+  if (
+    (meta.options.lockdown || meta.internalOptions.agentIndexOnly) &&
+    engine !== "index" &&
+    engine !== "index;documents"
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+export type FallbackEngineEntry = {
+  engine: Engine;
+  unsupportedFeatures: Set<FeatureFlag>;
+};
+
+export function resolveCandidateEngines(
+  meta: Meta,
+  candidates: readonly Engine[],
+  existing: ReadonlyMap<Engine, FallbackEngineEntry>,
+): FallbackEngineEntry[] {
+  const resolved: FallbackEngineEntry[] = [];
+  for (const engine of new Set(candidates)) {
+    if (!isEngineAllowedByPolicy(meta, engine)) {
+      continue;
+    }
+    const prior = existing.get(engine);
+    if (prior) {
+      resolved.push(prior);
+      continue;
+    }
+    const registered = service.engines.get(engine);
+    if (!registered) {
+      meta.logger.warn("Skipping unregistered engine", { engine });
+      continue;
+    }
+    if (!registered.enabled()) {
+      continue;
+    }
+    const unsupportedFeatures = new Set<FeatureFlag>();
+    for (const flag of meta.featureFlags) {
+      if (!hasFeature(registered.features, flag)) {
+        unsupportedFeatures.add(flag);
+      }
+    }
+    resolved.push({ engine, unsupportedFeatures });
+  }
+  return resolved;
+}
+
+export async function buildFallbackList(
+  meta: Meta,
+): Promise<FallbackEngineEntry[]> {
+  const selected = await selectFallbackList(meta);
+  const hooks = scrapeHooks();
+  if (!hooks?.has("scrape.engines.select")) {
+    return selected;
+  }
+
+  const plan = await hooks.transform(
+    "scrape.engines.select",
+    { candidates: selected.map(x => x.engine) },
+    toScrapeMeta(meta),
+  );
+  const byEngine = new Map(selected.map(x => [x.engine, x]));
+  return resolveCandidateEngines(meta, plan.candidates, byEngine);
+}
+
+async function selectFallbackList(meta: Meta): Promise<FallbackEngineEntry[]> {
   if (hasFormatOfType(meta.options.formats, "rawBase64")) {
     if (meta.internalOptions.agentIndexOnly) {
       throw new AgentIndexOnlyError();
@@ -620,21 +703,7 @@ export async function buildFallbackList(meta: Meta): Promise<
       : _engines;
 
   for (const engine of currentEngines) {
-    // Zero data retention scrapes, forced engines included, never use the
-    // Wikipedia engine: they stay on the engines that fetch the page directly.
-    if (engine === "wikipedia" && meta.internalOptions.zeroDataRetention)
-      continue;
-
-    // A profile must never fall back to fetching anonymous content. File parsers
-    // may consume bytes already fetched by the authenticated browser.
-    if (
-      meta.options.profile &&
-      !engine.includes("chrome-cdp") &&
-      !(engine === "pdf" && meta.pdfPrefetch) &&
-      !(engine === "document" && meta.documentPrefetch) &&
-      !(engine === "image" && meta.imagePrefetch)
-    )
-      continue;
+    if (!isEngineAllowedByPolicy(meta, engine)) continue;
 
     const registered = service.engines.get(engine);
     if (!registered) {
