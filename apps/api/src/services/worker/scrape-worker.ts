@@ -52,7 +52,7 @@ import {
   serpScrapeWarning,
   serpScrapeWarningEnabled,
 } from "../../lib/serp-url";
-import { getJobPriority } from "../../lib/job-priority";
+import { resolveJobPriority } from "../../lib/limits";
 import { Document, scrapeOptions, TeamFlags } from "../../controllers/v2/types";
 import { hasFormatOfType } from "../../lib/format-utils";
 import { getACUCTeam } from "../../controllers/auth";
@@ -848,11 +848,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               }
             }
 
-            // Hoisted: one ACUC read per job, not one per discovered link.
-            const crawlACUC =
-              discoveredLinks.length > 0
-                ? await getACUCTeam(sc.team_id).catch(() => null)
-                : null;
+            const discoveredPriorityCtx =
+              sc.team_id === ctx.teamId ? ctx : crawlContext(sc);
+            let discoveredJobPriority: number | undefined;
 
             const crawlLimit = sc.crawlerOptions?.limit;
             let remainingLimit =
@@ -867,12 +865,17 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               if (remainingLimit <= 0) break;
               if (await lockURL(job.data.crawl_id, sc, link)) {
                 remainingLimit--;
-                // This seems to work really welel
-                const jobPriority = await getJobPriority({
-                  team_id: sc.team_id,
-                  acuc: crawlACUC,
-                  basePriority: job.data.crawl_id ? 20 : 10,
-                });
+                const jobPriority =
+                  discoveredJobPriority ??
+                  (discoveredJobPriority = await resolveJobPriority(
+                    discoveredPriorityCtx,
+                    job.data.crawl_id ? 20 : 10,
+                    error => {
+                      logger.error("Failed to determine job priority", {
+                        error,
+                      });
+                    },
+                  ));
                 const jobId = uuidv7();
 
                 logger.debug(
@@ -1558,11 +1561,20 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
 
   try {
     const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
-    const crawler = crawlToCrawler(
-      job.data.crawl_id,
-      sc,
-      (await getACUCTeam(job.data.team_id))?.flags ?? null,
-    );
+    const acuc = await getACUCTeam(job.data.team_id);
+    const kickoffCtx = {
+      ...ctx,
+      ...(ctx.flags === undefined && acuc ? { flags: acuc.flags ?? null } : {}),
+      ...(ctx.concurrencyLimit === undefined &&
+      acuc?.concurrency_limit !== undefined
+        ? { concurrencyLimit: acuc.concurrency_limit }
+        : {}),
+      ...(ctx.rateLimitMultiplier === undefined &&
+      acuc?.rate_limit_multiplier !== undefined
+        ? { rateLimitMultiplier: acuc.rate_limit_multiplier }
+        : {}),
+    };
+    const crawler = crawlToCrawler(job.data.crawl_id, sc, acuc?.flags ?? null);
 
     logger.debug("Locking URL...");
     await lockURL(job.data.crawl_id, sc, job.data.url);
@@ -1592,9 +1604,8 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
           : undefined,
       },
       jobId,
-      await getJobPriority({
-        team_id: job.data.team_id,
-        basePriority: 15,
+      await resolveJobPriority(kickoffCtx, 15, error => {
+        logger.error("Failed to determine job priority", { error });
       }),
     );
     logger.debug("Adding scrape job to BullMQ...", { jobId });
@@ -1725,9 +1736,8 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         indexLinksLength: indexLinks.length,
       });
 
-      let jobPriority = await getJobPriority({
-        team_id: job.data.team_id,
-        basePriority: 21,
+      let jobPriority = await resolveJobPriority(kickoffCtx, 21, error => {
+        logger.error("Failed to determine job priority", { error });
       });
       logger.debug("Using job priority " + jobPriority, { jobPriority });
 
@@ -1817,11 +1827,20 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       return { success: false, error: "Crawl not found" };
     }
 
-    const crawler = crawlToCrawler(
-      job.data.crawl_id,
-      sc,
-      (await getACUCTeam(job.data.team_id))?.flags ?? null,
-    );
+    const acuc = await getACUCTeam(job.data.team_id);
+    const sitemapCtx = {
+      ...ctx,
+      ...(ctx.flags === undefined && acuc ? { flags: acuc.flags ?? null } : {}),
+      ...(ctx.concurrencyLimit === undefined &&
+      acuc?.concurrency_limit !== undefined
+        ? { concurrencyLimit: acuc.concurrency_limit }
+        : {}),
+      ...(ctx.rateLimitMultiplier === undefined &&
+      acuc?.rate_limit_multiplier !== undefined
+        ? { rateLimitMultiplier: acuc.rate_limit_multiplier }
+        : {}),
+    };
+    const crawler = crawlToCrawler(job.data.crawl_id, sc, acuc?.flags ?? null);
 
     const results = await scrapeSitemap({
       url: job.data.sitemapUrl,
@@ -1906,9 +1925,8 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
         urlsLength: passingURLs.length,
       });
 
-      const jobPriority = await getJobPriority({
-        team_id: job.data.team_id,
-        basePriority: 21,
+      const jobPriority = await resolveJobPriority(sitemapCtx, 21, error => {
+        logger.error("Failed to determine job priority", { error });
       });
 
       const jobs = passingURLs.map(url => ({

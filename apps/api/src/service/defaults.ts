@@ -8,6 +8,7 @@ import type {
   BlocklistModule,
   FetchProxyFileKind,
   IdempotencyModule,
+  LimitsModule,
   MessagesModule,
   Modules,
   UploadDriver,
@@ -21,6 +22,16 @@ export function noBlocklist(): BlocklistModule {
     async init() {},
     isBlocked: () => false,
     hasScopedRules: () => false,
+  };
+}
+
+/** Default limits module: unlimited concurrency, base priority, and configured queue backend. */
+export function noLimits(): LimitsModule {
+  return {
+    concurrency: async () => null,
+    teamConcurrency: async () => null,
+    jobPriority: async ({ base }) => base,
+    queueBackend: () => undefined,
   };
 }
 
@@ -265,6 +276,7 @@ export function directWebhooks(
 export function defaultModules(): Modules {
   return {
     blocklist: noBlocklist(),
+    limits: noLimits(),
     messages: logsMessages(),
     uploads: memoryUploads(),
     idempotency: redisIdempotency(),

@@ -1,12 +1,12 @@
 import { redisEvictConnection } from "../services/redis";
 import { logger } from "./logger";
-import { getACUCTeam } from "../controllers/auth";
-import { DEFAULT_TEAM_LIMITS } from "../services/autumn/autumn.service";
 import type { AuthCreditUsageChunkFromTeam } from "../controllers/v1/types";
-import { inferPlanPriorityFromMultiplier } from "../services/rate-limiter";
+import { resolveJobPriority } from "./limits";
+import { requestContext } from "./request-context";
 
 const SET_KEY_PREFIX = "limit_team_id:";
-export async function addJobPriority(team_id, job_id) {
+
+export async function addJobPriority(team_id: string, job_id: string) {
   try {
     const setKey = SET_KEY_PREFIX + team_id;
 
@@ -20,7 +20,7 @@ export async function addJobPriority(team_id, job_id) {
   }
 }
 
-export async function deleteJobPriority(team_id, job_id) {
+export async function deleteJobPriority(team_id: string, job_id: string) {
   try {
     const setKey = SET_KEY_PREFIX + team_id;
 
@@ -31,46 +31,36 @@ export async function deleteJobPriority(team_id, job_id) {
   }
 }
 
+/** Returns the count of recent jobs tracked for priority calculation for `team_id`. */
+export async function getJobPriorityActiveCount(
+  team_id: string,
+): Promise<number> {
+  return await redisEvictConnection.scard(SET_KEY_PREFIX + team_id);
+}
+
 export async function getJobPriority({
   team_id,
   acuc,
   basePriority = 10,
 }: {
   team_id: string;
-  /** The team's ACUC, when the caller holds one. Pass it on hot loops, which
-   * would otherwise read the team's ACUC once per call. */
+  /** The team's ACUC, when the caller holds one. */
   acuc?: AuthCreditUsageChunkFromTeam | null;
   basePriority?: number;
   from_extract?: boolean;
 }): Promise<number> {
-  if (team_id === "d97c4ceb-290b-4957-8432-2b2a02727d95") {
-    return 50;
-  }
-
-  try {
-    const setKey = SET_KEY_PREFIX + team_id;
-
-    // Get the length of the set
-    const setLength = await redisEvictConnection.scard(setKey);
-
-    // Plan priority is inferred from the team's Autumn rate-limit multiplier.
-    const multiplier =
-      (acuc ?? (await getACUCTeam(team_id)))?.rate_limit_multiplier ??
-      DEFAULT_TEAM_LIMITS.rate_limit_multiplier;
-    const { bucketLimit, planModifier } =
-      inferPlanPriorityFromMultiplier(multiplier);
-
-    // if length set is smaller than set, just return base priority
-    if (setLength <= bucketLimit) {
-      return basePriority;
-    } else {
-      // If not, we keep base priority + planModifier
-      return Math.ceil(
-        basePriority + Math.ceil((setLength - bucketLimit) * planModifier),
-      );
-    }
-  } catch (e) {
-    logger.error(`Get job priority failed: ${team_id}, ${basePriority}`);
-    return basePriority;
-  }
+  const ctx = requestContext({
+    teamId: team_id,
+    zeroDataRetention: false,
+    flags: acuc?.flags,
+    orgId: acuc?.org_id,
+    apiKeyId: acuc?.api_key_id,
+    concurrencyLimit: acuc?.concurrency_limit,
+    rateLimitMultiplier: acuc?.rate_limit_multiplier,
+  });
+  return await resolveJobPriority(ctx, basePriority, error => {
+    logger.error(`Get job priority failed: ${team_id}, ${basePriority}`, {
+      error,
+    });
+  });
 }

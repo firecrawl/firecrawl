@@ -43,6 +43,10 @@ vi.mock("../services/redis", () => {
   loadedSideEffectModules.push("redis");
   return {};
 });
+vi.mock("../controllers/auth", () => {
+  loadedSideEffectModules.push("auth");
+  return {};
+});
 vi.mock("../services/queue-service", () => {
   loadedSideEffectModules.push("queue-service");
   return {};
@@ -285,7 +289,14 @@ describe("coreParts", () => {
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: ["blocklist", "idempotency", "messages", "uploads", "webhooks"],
+      modules: [
+        "blocklist",
+        "idempotency",
+        "limits",
+        "messages",
+        "uploads",
+        "webhooks",
+      ],
       hooks: {},
       errors: {
         AGENT_INDEX_ONLY: "core",
@@ -456,6 +467,7 @@ describe("coreParts", () => {
     expect(built.describe().modules).toEqual([
       "blocklist",
       "idempotency",
+      "limits",
       "messages",
       "uploads",
       "webhooks",

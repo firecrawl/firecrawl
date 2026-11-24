@@ -13,6 +13,7 @@ export {
   logsMessages,
   memoryUploads,
   noBlocklist,
+  noLimits,
   redisIdempotency,
 } from "./defaults";
 export type {
@@ -78,15 +79,19 @@ export type {
 export type {
   BlocklistCheckOptions,
   BlocklistModule,
+  ConcurrencyKeyGate,
   DirectUploadInput,
   DirectUploadResult,
   FetchProxyFileKind,
   IdempotencyContext,
   IdempotencyModule,
+  JobPriorityInput,
+  LimitsModule,
   MessagesModule,
   Modules,
   PrepareUploadInput,
   PrepareUploadResult,
+  QueueBackendOverride,
   StoredUploadRef,
   UploadDriver,
   UploadsModule,
@@ -97,12 +102,7 @@ export type {
   WebhookResponse,
   WebhooksModule,
 } from "./modules";
-export type {
-  BaseCaller,
-  BaseRequestContext,
-  Caller,
-  RequestContext,
-} from "./request-context";
+export * from "./request-context";
 export {
   buildRequestSchemas,
   hasFormatOfType,

@@ -501,11 +501,15 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               storeInCache: true,
               onlyMainContent: false,
             });
+            const acuc = await getACUCTeam(teamId);
             const ctx = requestContext({
               teamId,
               zeroDataRetention: false,
+              flags: acuc?.flags ?? null,
               orgId: null,
               apiKeyId: null,
+              concurrencyLimit: acuc?.concurrency_limit,
+              rateLimitMultiplier: acuc?.rate_limit_multiplier,
             });
             const sc: StoredCrawl = {
               ctx,
@@ -526,14 +530,11 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               zeroDataRetention: false,
             };
 
-            sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
+            sc.queueBackend = await resolveNewGroupBackend(sc.team_id, ctx);
             await crawlGroup.addGroup(
               crawlId,
               sc.team_id,
-              ((await getACUCTeam(sc.team_id))?.flags?.crawlTtlHours ?? 24) *
-                60 *
-                60 *
-                1000,
+              (acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
               {
                 backend: sc.queueBackend,
                 maxConcurrency: sc.maxConcurrency,

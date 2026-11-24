@@ -790,7 +790,7 @@ async function enqueueMonitorCrawlTarget(params: {
     // Non-fatal robots fetch failure, same as the public crawl controller.
   }
 
-  sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
+  sc.queueBackend = await resolveNewGroupBackend(sc.team_id, ctx);
   await crawlGroup.addGroup(crawlId, sc.team_id, 24 * 60 * 60 * 1000, {
     backend: sc.queueBackend,
     maxConcurrency: sc.maxConcurrency,

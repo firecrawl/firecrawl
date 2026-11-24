@@ -34,6 +34,41 @@ export interface BlocklistModule {
   hasScopedRules(ctx: RequestContext): boolean;
 }
 
+export type QueueBackendOverride = "postgres" | "fdb";
+
+/** Secondary per-key concurrency gate for queue backends that enforce it. */
+export interface ConcurrencyKeyGate {
+  id: string;
+  limit: number;
+}
+
+/** Input passed when computing queue scheduling priority for a job. */
+export interface JobPriorityInput {
+  ctx: RequestContext;
+  base: number;
+}
+
+/**
+ * Concurrency limits, job scheduling priority, and queue backend selection.
+ */
+export interface LimitsModule {
+  /** Maximum concurrent jobs for a request. `null` means unlimited. */
+  concurrency(ctx: RequestContext): Promise<number | null>;
+  /** Maximum concurrent jobs for a team when only a team id is available. `null` means unlimited. */
+  teamConcurrency(teamId: string): Promise<number | null>;
+  /** Optional per-key concurrency gate for queue backends that enforce a secondary key cap. */
+  keyConcurrency?(ctx: RequestContext): Promise<ConcurrencyKeyGate | null>;
+  /** Queue priority for a new job. */
+  jobPriority(input: JobPriorityInput): Promise<number>;
+  /** Queue backend override for this request, or `undefined` to use the configured default. */
+  queueBackend(
+    ctx: RequestContext,
+  ):
+    | QueueBackendOverride
+    | undefined
+    | Promise<QueueBackendOverride | undefined>;
+}
+
 export type FetchProxyFileKind = "PDF" | "document";
 
 /**
@@ -202,6 +237,7 @@ export interface WebhooksModule {
  */
 export interface Modules {
   blocklist: BlocklistModule;
+  limits: LimitsModule;
   messages: MessagesModule;
   uploads: UploadsModule;
   idempotency: IdempotencyModule;
@@ -241,7 +277,8 @@ function freezeUploadDriver(driver: UploadDriver): Readonly<UploadDriver> {
  * later cannot alter the service.
  */
 export function freezeModules(modules: Modules): Readonly<Modules> {
-  const { blocklist, messages, uploads, idempotency, webhooks } = modules;
+  const { blocklist, limits, messages, uploads, idempotency, webhooks } =
+    modules;
   if (
     typeof blocklist !== "object" ||
     blocklist === null ||
@@ -250,6 +287,18 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
     typeof blocklist.hasScopedRules !== "function"
   ) {
     throw new Error("Invalid blocklist module");
+  }
+  if (
+    typeof limits !== "object" ||
+    limits === null ||
+    typeof limits.concurrency !== "function" ||
+    typeof limits.teamConcurrency !== "function" ||
+    (limits.keyConcurrency !== undefined &&
+      typeof limits.keyConcurrency !== "function") ||
+    typeof limits.jobPriority !== "function" ||
+    typeof limits.queueBackend !== "function"
+  ) {
+    throw new Error("Invalid limits module");
   }
   if (
     typeof messages !== "object" ||
@@ -291,6 +340,15 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
     isBlocked: blocklist.isBlocked.bind(blocklist),
     hasScopedRules: blocklist.hasScopedRules.bind(blocklist),
   });
+  const frozenLimits: LimitsModule = Object.freeze({
+    concurrency: limits.concurrency.bind(limits),
+    teamConcurrency: limits.teamConcurrency.bind(limits),
+    ...(limits.keyConcurrency !== undefined
+      ? { keyConcurrency: limits.keyConcurrency.bind(limits) }
+      : {}),
+    jobPriority: limits.jobPriority.bind(limits),
+    queueBackend: limits.queueBackend.bind(limits),
+  });
   const frozenMessages: MessagesModule = Object.freeze({
     errorContact: messages.errorContact.bind(messages),
     restrictedCountryContact: messages.restrictedCountryContact.bind(messages),
@@ -316,6 +374,7 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
 
   return Object.freeze({
     blocklist: frozenBlocklist,
+    limits: frozenLimits,
     messages: frozenMessages,
     uploads: frozenUploads,
     idempotency: frozenIdempotency,

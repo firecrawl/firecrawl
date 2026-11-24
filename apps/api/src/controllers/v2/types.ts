@@ -2069,7 +2069,7 @@ export type ConcurrencyCheckResponse =
   | {
       success: true;
       concurrency: number;
-      maxConcurrency: number;
+      maxConcurrency: number | null;
     };
 
 export type CrawlStatusResponse =

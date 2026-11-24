@@ -152,7 +152,7 @@ vi.mock("../../services/billing/credit_billing", () => ({
 import { authMiddleware } from "../../routes/shared";
 import { RateLimiterMode } from "../../types";
 import { scrapeInteractController } from "../../controllers/v2/scrape-browser";
-import { HOBBY_CONCURRENCY_LIMIT } from "../../lib/concurrency-limit";
+import { HOBBY_CONCURRENCY_LIMIT } from "../../lib/browser-lifecycle";
 import { getBrowserSessionFromScrape } from "../../lib/browser-sessions";
 import { executeCodeViaBrowserSession } from "../../lib/scrape-interact/browser-agent";
 

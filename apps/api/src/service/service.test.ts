@@ -408,7 +408,14 @@ describe("describe", () => {
     expect(enabled).not.toHaveBeenCalled();
     expect(description).toEqual({
       extensions: ["core", "second", "third"],
-      modules: ["blocklist", "idempotency", "messages", "uploads", "webhooks"],
+      modules: [
+        "blocklist",
+        "idempotency",
+        "limits",
+        "messages",
+        "uploads",
+        "webhooks",
+      ],
       hooks: {
         "map.finished": ["second"],
         "process.stop": ["third", "second", "second", "core"],
@@ -552,7 +559,14 @@ describe("describe", () => {
     ]);
     expect(built.describe()).toEqual({
       extensions: ["core", "mine"],
-      modules: ["blocklist", "idempotency", "messages", "uploads", "webhooks"],
+      modules: [
+        "blocklist",
+        "idempotency",
+        "limits",
+        "messages",
+        "uploads",
+        "webhooks",
+      ],
       hooks: { "map.finished": ["mine"] },
       errors: { MINE: "mine" },
       engines: { "mine-engine": "mine" },
@@ -659,7 +673,14 @@ describe("describe", () => {
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: ["blocklist", "idempotency", "messages", "uploads", "webhooks"],
+      modules: [
+        "blocklist",
+        "idempotency",
+        "limits",
+        "messages",
+        "uploads",
+        "webhooks",
+      ],
       hooks: { "map.finished": ["core"] },
       errors: { TIMEOUT: "core" },
       engines: { fetch: "core" },

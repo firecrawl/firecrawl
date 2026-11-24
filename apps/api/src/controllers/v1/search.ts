@@ -435,6 +435,8 @@ export async function searchController(
         integration: req.body.integration,
         apiKeyId: req.acuc?.api_key_id ?? null,
         flags: req.acuc?.flags ?? null,
+        concurrencyLimit: req.acuc?.concurrency_limit,
+        rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
         teamPlanClass: teamPlanClass(req.acuc),
         requestId: jobId,
         jobId,

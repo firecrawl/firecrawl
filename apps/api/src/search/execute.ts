@@ -117,6 +117,8 @@ interface SearchContext {
   clientThread?: string;
   apiKeyId: number | null;
   flags: TeamFlags;
+  concurrencyLimit?: number;
+  rateLimitMultiplier?: number;
   /**
    * The team's plan class, stated on the web search call. Required so every
    * caller decides; undefined states nothing. See teamPlanClass.
@@ -1029,6 +1031,12 @@ export async function executeSearch(
         threatProtectionPolicy: threatPolicy ?? null,
         safeModeBypassed: context.safeModeBypassed ?? false,
         ...(context.workContactOnly ? { workContactOnly: true } : {}),
+        ...(context.concurrencyLimit !== undefined
+          ? { concurrencyLimit: context.concurrencyLimit }
+          : {}),
+        ...(context.rateLimitMultiplier !== undefined
+          ? { rateLimitMultiplier: context.rateLimitMultiplier }
+          : {}),
       };
 
       const allDocsWithCostTracking = await scrapeSearchResults(

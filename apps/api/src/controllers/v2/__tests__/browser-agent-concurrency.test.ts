@@ -87,7 +87,7 @@ vi.mock("../../../services/logging/log_job", () => ({
 }));
 
 import { browserCreateController } from "../browser";
-import { HOBBY_CONCURRENCY_LIMIT } from "../../../lib/concurrency-limit";
+import { HOBBY_CONCURRENCY_LIMIT } from "../../../lib/browser-lifecycle";
 import { agentInteropStatus } from "../../../lib/agent-interop";
 
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";

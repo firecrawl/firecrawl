@@ -24,6 +24,14 @@
       "types": "./src/service/testing.ts",
       "default": "./dist/src/service/testing.js"
     },
+    "./unstable/auth": {
+      "types": "./src/controllers/auth.ts",
+      "default": "./dist/src/controllers/auth.js"
+    },
+    "./unstable/autumn": {
+      "types": "./src/services/autumn/autumn.service.ts",
+      "default": "./dist/src/services/autumn/autumn.service.js"
+    },
     "./unstable/db": {
       "types": "./src/db/connection.ts",
       "default": "./dist/src/db/connection.js"
@@ -35,6 +43,10 @@
     "./unstable/exchange": {
       "types": "./src/lib/exchange.ts",
       "default": "./dist/src/lib/exchange.js"
+    },
+    "./unstable/job-priority": {
+      "types": "./src/lib/job-priority.ts",
+      "default": "./dist/src/lib/job-priority.js"
     },
     "./unstable/keyless-team": {
       "types": "./src/lib/keyless-team.ts",
