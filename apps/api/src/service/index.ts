@@ -1,4 +1,5 @@
 export type { Document } from "../controllers/v2/types";
+export type { CostTracking } from "../lib/cost-tracking";
 export type {
   ErrorCode,
   ErrorCodes,
@@ -17,6 +18,7 @@ export {
   openAuth,
   queueJobStore,
   redisIdempotency,
+  unmeteredBilling,
 } from "./defaults";
 export type {
   DefaultModules,
@@ -82,9 +84,16 @@ export type {
 export type {
   AuthModule,
   AuthResult,
+  Authorization,
+  AuthorizeInput,
+  AuthorizeState,
+  BillingModule,
+  BillingOperation,
   BlocklistCheckOptions,
   BlocklistModule,
+  ChargeEvent,
   ConcurrencyKeyGate,
+  CrawlChargeState,
   DirectUploadInput,
   DirectUploadResult,
   FetchProxyFileKind,
@@ -97,11 +106,14 @@ export type {
   JobStoreModule,
   JobUsageOptions,
   LimitsModule,
+  MapChargeState,
   MessagesModule,
   Modules,
   PrepareUploadInput,
   PrepareUploadResult,
   QueueBackendOverride,
+  SearchChargeState,
+  SettleOutcome,
   StoredJob,
   StoredUploadRef,
   UploadDriver,

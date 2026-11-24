@@ -153,6 +153,7 @@ import { concurrentJobDone } from "../lib/concurrency-limit";
 import { reconcileConcurrencyQueue } from "../lib/concurrency-queue-reconciler";
 import { requestContext } from "../lib/request-context";
 import type { HookHandlers } from "../service/hooks";
+import { noLimits } from "../service/defaults";
 import { createService, replaceService } from "../service/service";
 import { addScrapeJob, addScrapeJobs } from "./queue-jobs";
 
@@ -160,7 +161,15 @@ function installHooks(hooks?: HookHandlers, report = vi.fn()) {
   replaceService(
     createService(
       {
-        modules: {},
+        modules: {
+          limits: {
+            ...noLimits(),
+            concurrency: async () =>
+              mocks.isSelfHosted()
+                ? null
+                : ((await mocks.getACUCTeam())?.concurrency_limit ?? 2),
+          },
+        },
         extensions: hooks ? [{ name: "test-hooks", hooks }] : [],
       },
       {

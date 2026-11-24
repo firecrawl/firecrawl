@@ -16,10 +16,12 @@ import {
   openAuth,
   queueJobStore,
   redisIdempotency,
+  unmeteredBilling,
 } from "./defaults";
 import { currentLimits, resolveJobPriority } from "../lib/limits";
 import type {
   AuthModule,
+  BillingModule,
   BlocklistModule,
   IdempotencyModule,
   JobStoreModule,
@@ -370,6 +372,7 @@ describe("service module slots", () => {
 
     expect(Object.isFrozen(built.modules)).toBe(true);
     expect(Object.isFrozen(built.modules.auth)).toBe(true);
+    expect(Object.isFrozen(built.modules.billing)).toBe(true);
     expect(Object.isFrozen(built.modules.blocklist)).toBe(true);
     expect(Object.isFrozen(built.modules.limits)).toBe(true);
     expect(Object.isFrozen(built.modules.messages)).toBe(true);
@@ -380,6 +383,7 @@ describe("service module slots", () => {
     expect(Object.isFrozen(built.modules.webhooks)).toBe(true);
     expect(built.describe().modules).toEqual([
       "auth",
+      "billing",
       "blocklist",
       "idempotency",
       "jobStore",
@@ -391,6 +395,20 @@ describe("service module slots", () => {
     await expect(
       built.modules.auth.authenticate({} as never, { kind: "scrape" }),
     ).resolves.toEqual({ ok: true, caller: { teamId: "bypass" } });
+    await expect(
+      built.modules.billing.authorize({
+        caller: { teamId: "t1" },
+        operation: "scrape",
+      }),
+    ).resolves.toEqual({ ok: true });
+    await expect(
+      built.modules.billing.charge({
+        kind: "map",
+        ctx: { teamId: "t1", zeroDataRetention: false },
+        requestId: "map-1",
+        urls: 5,
+      }),
+    ).resolves.toBeUndefined();
     expect(built.modules.blocklist.isBlocked("https://example.com", ctx)).toBe(
       false,
     );
@@ -415,6 +433,11 @@ describe("service module slots", () => {
         ok: true,
         caller: { teamId: "custom-team" },
       }),
+    };
+    const customBilling: BillingModule = {
+      authorize: async () => ({ ok: true, maxUnits: 12 }),
+      charge: async () => 3,
+      settle: async () => {},
     };
     const initSpy = vi.fn(async () => {});
     const customBlocklist: BlocklistModule = {
@@ -463,6 +486,7 @@ describe("service module slots", () => {
       {
         modules: {
           auth: customAuth,
+          billing: customBilling,
           blocklist: customBlocklist,
           limits: customLimits,
           messages: customMessages,
@@ -479,6 +503,11 @@ describe("service module slots", () => {
       ok: true,
       caller: { teamId: "mutated" },
     });
+    customBilling.authorize = async () => ({
+      ok: false,
+      refusal: { status: 402, body: { success: false, error: "mutated" } },
+    });
+    customBilling.charge = async () => 999;
     customBlocklist.init = async () => {
       throw new Error("mutated");
     };
@@ -531,6 +560,20 @@ describe("service module slots", () => {
     await expect(
       built.modules.auth.authenticate({} as never, { kind: "scrape" }),
     ).resolves.toEqual({ ok: true, caller: { teamId: "custom-team" } });
+    await expect(
+      built.modules.billing.authorize({
+        caller: { teamId: "t1" },
+        operation: "crawl",
+      }),
+    ).resolves.toEqual({ ok: true, maxUnits: 12 });
+    await expect(
+      built.modules.billing.charge({
+        kind: "map",
+        ctx: { teamId: "t1", zeroDataRetention: false },
+        requestId: "m1",
+        urls: 2,
+      }),
+    ).resolves.toBe(3);
     expect(built.modules.messages.errorContact("42")).toBe("custom:42");
     expect(built.modules.uploads.driver().name).toBe("custom");
     expect(built.modules.jobStore.storesResultsExternally?.()).toBe(true);
@@ -629,6 +672,31 @@ describe("service module slots", () => {
         parts,
       ),
     ).toThrow("Invalid limits module");
+    expect(() =>
+      createService(
+        { modules: { billing: {} as unknown as BillingModule } },
+        parts,
+      ),
+    ).toThrow("Invalid billing module");
+    expect(() =>
+      createService(
+        { modules: { billing: null as unknown as BillingModule } },
+        parts,
+      ),
+    ).toThrow("Invalid billing module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            billing: {
+              ...unmeteredBilling(),
+              settle: "not-a-function",
+            } as unknown as BillingModule,
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid billing module");
     expect(() =>
       createService(
         { modules: { messages: {} as unknown as MessagesModule } },

@@ -56,7 +56,6 @@ vi.mock("./scrape", () => ({
   getItemsToScrape: vi.fn(() => []),
   scrapeSearchResults: vi.fn(),
   mergeScrapedContent: vi.fn(),
-  calculateScrapeCredits: vi.fn(() => 0),
 }));
 vi.mock("./highlights", () => ({
   highlightsEnvReady: () => false,
@@ -64,14 +63,10 @@ vi.mock("./highlights", () => ({
   searchHighlightsMode: vi.fn(),
 }));
 vi.mock("../lib/tracking", () => ({
-  trackSearchRequest: vi.fn(async () => {}),
   trackSearchResults: vi.fn(async () => {}),
 }));
 vi.mock("../lib/threat-protection/request", () => ({
   checkUrlsAgainstThreatPolicy: mocks.checkUrlsAgainstThreatPolicy,
-}));
-vi.mock("../lib/scrape-billing", () => ({
-  calculateThreatScanCredits: vi.fn(() => 0),
 }));
 vi.mock("./safe-search", () => ({
   removeExplicitResults: mocks.removeExplicitResults,
@@ -135,14 +130,14 @@ beforeEach(() => {
   mocks.verifyTools.mockImplementation(async (_query, items) => items);
 });
 
-it("tool-only search never runs or bills SERP", async () => {
+it("tool-only search never runs SERP or counts billable results", async () => {
   const result = await executeSearch(
     { ...options([]), sources: [{ type: "alexandria" }] },
     { ...context, flags: { exchangeRetrieve: true } },
     logger,
   );
   expect(mocks.search).not.toHaveBeenCalled();
-  expect(result.searchCredits).toBe(0);
+  expect(result.billableResultsCount).toBe(0);
   expect(result.response.tools).toEqual([{ id: "fred/series/observations" }]);
 });
 
@@ -161,7 +156,7 @@ it("passes through unavailable tool discovery", async () => {
   expect(result.response.tools).toEqual([]);
 });
 
-it("mixed search bills only normal web results", async () => {
+it("mixed search counts only normal web results as billable", async () => {
   mocks.search.mockResolvedValue({ web: [developerResult] });
   const result = await executeSearch(
     { ...options([]), sources: [{ type: "web" }, { type: "alexandria" }] },
@@ -171,7 +166,7 @@ it("mixed search bills only normal web results", async () => {
   expect(mocks.search).toHaveBeenCalledWith(
     expect.objectContaining({ type: ["web"] }),
   );
-  expect(result.searchCredits).toBe(2);
+  expect(result.billableResultsCount).toBe(1);
   expect(result.response.tools).toHaveLength(1);
 });
 
@@ -265,7 +260,7 @@ describe("executeSearch tool intent", () => {
     );
     expect(result.toolsAuto).toBe(true);
     expect(result.response.tools).toEqual([{ id: "fred/series/observations" }]);
-    expect(result.searchCredits).toBe(2);
+    expect(result.billableResultsCount).toBe(1);
   });
 
   it("warns a US-only team about tools hidden from automatic discovery", async () => {
@@ -683,8 +678,7 @@ describe("executeSearch safe search", () => {
     );
     expect(result.response.web?.map(x => x.url)).toEqual(safe.map(x => x.url));
     expect(result.totalResultsCount).toBe(10);
-    // 11 results would bill 4 credits; the 10 kept bill 2.
-    expect(result.searchCredits).toBe(2);
+    expect(result.billableResultsCount).toBe(10);
   });
 
   it("skips the Jev filter when safe is off or data must not be retained", async () => {
@@ -711,7 +705,7 @@ describe("executeSearch safe search", () => {
   });
 });
 
-describe("executeSearch zero data retention rate", () => {
+describe("executeSearch billable result counts", () => {
   const results = (count: number) =>
     Array.from({ length: count }, (_, index) => ({
       url: `https://result${index}.example/`,
@@ -720,33 +714,27 @@ describe("executeSearch zero data retention rate", () => {
     }));
 
   it.each([
-    { name: "a default search", enterprise: undefined, ten: 2, eleven: 4 },
-    {
-      name: "an enterprise anon search",
-      enterprise: ["anon"],
-      ten: 2,
-      eleven: 4,
+    { name: "a default search", enterprise: undefined },
+    { name: "an enterprise anon search", enterprise: ["anon"] as const },
+    { name: "an enterprise zdr search", enterprise: ["zdr"] as const },
+  ])(
+    "reports exact billable result counts for $name",
+    async ({ enterprise }) => {
+      for (const count of [10, 11]) {
+        mocks.search.mockResolvedValue({ web: results(count) });
+        const result = await executeSearch(
+          {
+            ...options([]),
+            limit: 20,
+            enterprise: enterprise ? [...enterprise] : undefined,
+          },
+          context,
+          logger,
+        );
+        expect(result.billableResultsCount).toBe(count);
+      }
     },
-    {
-      name: "an enterprise zdr search",
-      enterprise: ["zdr"],
-      ten: 10,
-      eleven: 20,
-    },
-  ])("bills $name per ten results", async ({ enterprise, ten, eleven }) => {
-    for (const [count, credits] of [
-      [10, ten],
-      [11, eleven],
-    ]) {
-      mocks.search.mockResolvedValue({ web: results(count) });
-      const result = await executeSearch(
-        { ...options([]), limit: 20, enterprise },
-        context,
-        logger,
-      );
-      expect(result.searchCredits).toBe(credits);
-    }
-  });
+  );
 });
 
 describe("executeSearch developer category", () => {
@@ -930,7 +918,7 @@ describe("executeSearch gov category", () => {
     );
     expect(result.response).toEqual({ web: [govResult] });
     expect(result.indexResultsCount).toBe(1);
-    expect(result.searchCredits).toBe(0);
+    expect(result.billableResultsCount).toBe(0);
   });
 });
 
@@ -967,7 +955,7 @@ describe("executeSearch gov routing", () => {
     expect(mocks.searchGovCategory).not.toHaveBeenCalled();
     expect(mocks.search).not.toHaveBeenCalled();
     expect(result.response).toEqual({ web: [govResult] });
-    expect(result.searchCredits).toBe(2);
+    expect(result.billableResultsCount).toBe(1);
   });
 
   it("starts the regular web search only after the routing decision and serves it when the search is not routed", async () => {
@@ -1103,7 +1091,7 @@ describe("executeSearch query operators", () => {
 
     expect(result.response.web).toEqual([]);
     expect(result.totalResultsCount).toBe(0);
-    expect(result.searchCredits).toBe(0);
+    expect(result.billableResultsCount).toBe(0);
   });
 
   it("applies both intitle: and site: to news results", async () => {
@@ -1271,7 +1259,7 @@ describe("executeSearch skill cards", () => {
 
     expect(mocks.discoverSkills).not.toHaveBeenCalled();
     expect(result.response).not.toHaveProperty("skills");
-    expect(result.searchCredits).toBe(2);
+    expect(result.billableResultsCount).toBe(1);
   });
 
   it("starts skill discovery before the web search and maps the cards", async () => {
@@ -1318,7 +1306,7 @@ describe("executeSearch skill cards", () => {
     expect(result.response.skills).toEqual([card]);
     expect(result.skillsDiscovered).toBe(true);
     expect(result.response.web).toHaveLength(1);
-    expect(result.searchCredits).toBe(2);
+    expect(result.billableResultsCount).toBe(1);
   });
 
   it("keeps web results and returns no cards when skill discovery fails", async () => {
@@ -1337,10 +1325,10 @@ describe("executeSearch skill cards", () => {
     expect(result.response.web).toHaveLength(1);
     expect(result.response.skills).toEqual([]);
     expect(result.skillsDiscovered).toBe(false);
-    expect(result.searchCredits).toBe(2);
+    expect(result.billableResultsCount).toBe(1);
   });
 
-  it("does not run or bill web search for a skills-only request", async () => {
+  it("does not run or count billable web results for a skills-only request", async () => {
     mocks.discoverSkills.mockResolvedValue({
       skills: [card],
       succeeded: true,
@@ -1355,8 +1343,8 @@ describe("executeSearch skill cards", () => {
     expect(mocks.search).not.toHaveBeenCalled();
     expect(result.response.skills).toEqual([card]);
     expect(result.skillsDiscovered).toBe(true);
-    expect(result.searchCredits).toBe(0);
-    expect(result.totalCredits).toBe(0);
+    expect(result.billableResultsCount).toBe(0);
+    expect(result.totalResultsCount).toBe(0);
   });
 
   it.each([

@@ -78,19 +78,7 @@ vi.mock("../../../lib/logger", () => ({
 import { searchController } from "../search";
 import { markAlexandriaActivity } from "../../../lib/alexandria-activity";
 import { createService, replaceService } from "../../../service/service";
-
-beforeAll(() => {
-  replaceService(
-    createService(
-      { modules: {} },
-      { core: { name: "core" }, logger: { error: vi.fn() } },
-    ),
-  );
-});
-
-afterAll(() => {
-  replaceService(undefined);
-});
+import type { BillingModule } from "../../../service/modules";
 
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 
@@ -112,13 +100,16 @@ const developerResults = [
 ];
 
 function executeResult(overrides: Record<string, any> = {}) {
+  const totalResultsCount = overrides.totalResultsCount ?? 2;
   return {
     response: { web: developerResults },
-    totalResultsCount: 2,
+    totalResultsCount,
+    billableResultsCount: overrides.billableResultsCount ?? totalResultsCount,
     indexResultsCount: 2,
-    searchCredits: 2,
-    scrapeCredits: 0,
-    totalCredits: 2,
+    threatDecisions: [],
+    scrapedDocuments: [],
+    searchTypes: ["web"],
+    scrapeFormats: [],
     shouldScrape: false,
     ...overrides,
   };
@@ -160,6 +151,55 @@ beforeEach(() => {
     reason: "credits",
   });
   mockProjectSearchTotalCredits.mockReturnValue(0);
+
+  const testBilling: BillingModule = {
+    async authorize(input) {
+      if (input.stage !== "reserve") return { ok: true };
+      const st = input.state;
+      const projected =
+        !st?.isPreview &&
+        (st?.shouldBill ?? true) &&
+        !st?.freeCatalogue &&
+        (!st?.govSearch || st?.hasScrapeFormats)
+          ? mockProjectSearchTotalCredits()
+          : 0;
+      if (projected > 0) {
+        const res = await mockReserveKeylessCredits(
+          input.caller.teamId,
+          projected,
+        );
+        if (!res.ok) {
+          return {
+            ok: false,
+            refusal: {
+              status: 429,
+              body: await mockKeylessLimitBody(
+                input.caller.teamId,
+                st?.endpoint ?? "v2_search",
+                st?.req,
+              ),
+            },
+          };
+        }
+        return { ok: true, handle: { teamId: input.caller.teamId, projected } };
+      }
+      return { ok: true };
+    },
+    async charge(event) {
+      if (event.kind !== "search") return undefined;
+      return Math.ceil(event.results / 10) * 2;
+    },
+  };
+  replaceService(
+    createService(
+      { modules: { billing: testBilling } },
+      { core: { name: "core" }, logger: { error: vi.fn() } },
+    ),
+  );
+});
+
+afterEach(() => {
+  replaceService(undefined);
 });
 
 describe("developer category code_searches ledger", () => {
@@ -391,9 +431,8 @@ describe("tool discovery availability", () => {
   const unavailable = executeResult({
     response: { tools: [] },
     totalResultsCount: 0,
+    billableResultsCount: 0,
     indexResultsCount: 0,
-    searchCredits: 0,
-    totalCredits: 0,
     toolsWarning: "Some tool discovery results are unavailable.",
     toolsUnavailable: true,
   });
@@ -424,6 +463,7 @@ describe("tool discovery availability", () => {
       ...unavailable,
       response: { web: developerResults, tools: [] },
       totalResultsCount: 2,
+      billableResultsCount: 2,
     });
     const res = makeRes();
 
@@ -460,9 +500,8 @@ describe("skill discovery source", () => {
         response: { skills: [card] },
         skillsDiscovered: true,
         totalResultsCount: 0,
+        billableResultsCount: 0,
         indexResultsCount: 0,
-        searchCredits: 0,
-        totalCredits: 0,
       }),
     );
     const res = makeRes();
@@ -497,9 +536,8 @@ describe("skill discovery source", () => {
         response: { skills: [] },
         skillsDiscovered: false,
         totalResultsCount: 0,
+        billableResultsCount: 0,
         indexResultsCount: 0,
-        searchCredits: 0,
-        totalCredits: 0,
         toolsUnavailable: true,
       }),
     );
@@ -523,9 +561,8 @@ describe("skill discovery source", () => {
         response: { skills: [] },
         skillsDiscovered: true,
         totalResultsCount: 0,
+        billableResultsCount: 0,
         indexResultsCount: 0,
-        searchCredits: 0,
-        totalCredits: 0,
       }),
     );
     const res = makeRes();

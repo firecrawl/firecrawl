@@ -213,6 +213,7 @@ export function createService(
     for (const key of Object.keys(config.modules)) {
       if (
         key !== "auth" &&
+        key !== "billing" &&
         key !== "blocklist" &&
         key !== "limits" &&
         key !== "messages" &&
@@ -232,6 +233,10 @@ export function createService(
       config.modules?.auth === undefined
         ? (defaults.auth as Modules["auth"])
         : config.modules.auth,
+    billing:
+      config.modules?.billing === undefined
+        ? defaults.billing
+        : config.modules.billing,
     blocklist:
       config.modules?.blocklist === undefined
         ? defaults.blocklist

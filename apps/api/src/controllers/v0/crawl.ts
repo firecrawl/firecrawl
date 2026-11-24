@@ -38,7 +38,6 @@ import {
 } from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
-import { requestContext } from "../../lib/request-context";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
   isThreatProtectionForced,

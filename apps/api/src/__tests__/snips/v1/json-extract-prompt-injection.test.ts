@@ -53,7 +53,11 @@ describeV1(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
         );
 
         expect(response.json).toBeDefined();
-        expect(response.metadata.creditsUsed).toBe(5);
+        if (TEST_PRODUCTION) {
+          expect(response.metadata.creditsUsed).toBe(5);
+        } else {
+          expect(response.metadata.creditsUsed).toBeUndefined();
+        }
       },
       scrapeTimeout,
     );
@@ -72,7 +76,11 @@ describeV1(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
         );
 
         expect(response.json).toBeDefined();
-        expect(response.metadata.creditsUsed).toBe(9);
+        if (TEST_PRODUCTION) {
+          expect(response.metadata.creditsUsed).toBe(9);
+        } else {
+          expect(response.metadata.creditsUsed).toBeUndefined();
+        }
       },
       scrapeTimeout,
     );

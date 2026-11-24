@@ -511,7 +511,7 @@ async function addScrapeJobRaw(
       priority,
       listenable,
     );
-    if (concurrencyLimited === "yes") {
+    if (concurrencyLimited === "yes" && maxConcurrency !== null) {
       observeConcurrencyLimited(webScraperOptions, maxConcurrency);
     } else if (
       concurrencyLimited === "yes-crawl" &&
@@ -855,6 +855,7 @@ export async function addScrapeJobs(
     );
     if (
       !isSelfHosted() &&
+      maxConcurrency !== null &&
       jobsPotentiallyInCQ.length > countCanBeDirectlyAdded
     ) {
       observeConcurrencyLimited(

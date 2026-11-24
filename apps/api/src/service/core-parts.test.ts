@@ -299,6 +299,7 @@ describe("coreParts", () => {
       extensions: ["core"],
       modules: [
         "auth",
+        "billing",
         "blocklist",
         "idempotency",
         "jobStore",
@@ -476,6 +477,7 @@ describe("coreParts", () => {
     expect(built.roles.names()).toHaveLength(11);
     expect(built.describe().modules).toEqual([
       "auth",
+      "billing",
       "blocklist",
       "idempotency",
       "jobStore",

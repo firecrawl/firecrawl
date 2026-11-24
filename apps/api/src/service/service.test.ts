@@ -410,6 +410,7 @@ describe("describe", () => {
       extensions: ["core", "second", "third"],
       modules: [
         "auth",
+        "billing",
         "blocklist",
         "idempotency",
         "jobStore",
@@ -563,6 +564,7 @@ describe("describe", () => {
       extensions: ["core", "mine"],
       modules: [
         "auth",
+        "billing",
         "blocklist",
         "idempotency",
         "jobStore",
@@ -679,6 +681,7 @@ describe("describe", () => {
       extensions: ["core"],
       modules: [
         "auth",
+        "billing",
         "blocklist",
         "idempotency",
         "jobStore",

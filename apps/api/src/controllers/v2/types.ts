@@ -2847,14 +2847,14 @@ export type SearchResponse =
       success: true;
       warning?: string;
       data: Document[];
-      creditsUsed: number;
+      creditsUsed?: number;
       id: string;
     }
   | {
       success: true;
       warning?: string;
       data: import("../../lib/entities").SearchV2Response;
-      creditsUsed: number;
+      creditsUsed?: number;
       id: string;
     }
   | {
@@ -2866,7 +2866,7 @@ export type SearchResponse =
         news?: string[];
         images?: string[];
       };
-      creditsUsed: number;
+      creditsUsed?: number;
       id: string;
     };
 

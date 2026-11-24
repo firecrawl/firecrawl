@@ -1,4 +1,4 @@
-import type { SearchRequest } from "../controllers/v2/types";
+import type { SearchRequest } from "../service/request";
 import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
 

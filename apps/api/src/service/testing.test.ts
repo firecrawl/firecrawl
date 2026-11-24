@@ -44,6 +44,7 @@ describe("testService", () => {
     expect(built.modules.uploads.driver().name).toBe("base-uploads");
     expect(built.describe().modules).toEqual([
       "auth",
+      "billing",
       "blocklist",
       "idempotency",
       "jobStore",

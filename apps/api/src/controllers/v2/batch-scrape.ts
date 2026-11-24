@@ -38,6 +38,7 @@ import {
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
+import type {} from "../../lib/billing-state";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
@@ -46,8 +47,6 @@ import {
 } from "../../lib/threat-protection/request";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
-import { calculateThreatScanCredits } from "../../lib/scrape-billing";
-import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { UnsupportedSiteError } from "../../lib/error";
 import {
@@ -55,7 +54,6 @@ import {
   ThirdPartyDataUnsupportedOptionError,
 } from "../../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../../lib/exchange-request";
-import { service } from "../../service";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -308,37 +306,41 @@ export async function batchScrapeController(
       { teamId: req.auth.team_id },
     );
     if (blocked.length > 0) {
-      // Consulted decisions bill the scan fee (+2 per unique scanned URL) —
-      // the scans already happened. With ignoreInvalidURLs the allowed URLs
-      // proceed to scrape jobs that bill their own scans, so only blocked
-      // ones bill here; when the whole request is rejected below, no scrape
-      // jobs will ever run, so every scanned URL bills here.
-      const threatScanCredits = calculateThreatScanCredits(
-        req.body.ignoreInvalidURLs
-          ? blocked.map(x => x.decision)
-          : decisionsByUrl.values(),
+      const blockedSet = new Set(blocked.map(x => x.url));
+      const batchWillPersist = Boolean(
+        req.body.ignoreInvalidURLs &&
+          !req.body.appendToId &&
+          urls.some(u => !blockedSet.has(u)),
       );
-      if (
-        threatScanCredits > 0 &&
-        (req.body.__agentInterop?.shouldBill ?? true)
-      ) {
-        billTeam(
-          req.auth.team_id,
-          req.acuc?.org_id ?? null,
-          threatScanCredits,
-          req.acuc?.api_key_id ?? null,
-          {
-            ...billing,
-            // Appends reuse the batch id but each append's threat scans are a
-            // fresh charge — a shared key would underbill them. Appends stay
-            // keyless (per-request UUID in firebill).
-            ...(req.body.appendToId ? {} : { chargeId: `${id}:threat` }),
-          },
-        ).catch(error => {
-          logger.error(
-            `Failed to bill team ${req.auth.team_id} for ${threatScanCredits} threat scan credit(s): ${error}`,
-          );
+      if (req.body.__agentInterop?.shouldBill ?? true) {
+        const threatDecisions = req.body.ignoreInvalidURLs
+          ? blocked.map(x => x.decision)
+          : [...decisionsByUrl.values()];
+        const blockedCtx = requestContext({
+          teamId: req.auth.team_id,
+          zeroDataRetention,
+          flags: req.acuc?.flags ?? null,
+          orgId: req.acuc?.org_id ?? null,
+          apiKeyId: req.acuc?.api_key_id ?? null,
+          billing,
         });
+        void service.modules.billing
+          .charge({
+            kind: "crawl",
+            ctx: blockedCtx,
+            requestId: id,
+            urls: threatDecisions.length,
+            state: {
+              threatDecisions,
+              ...(batchWillPersist ? { chargeId: `${id}:threat` } : {}),
+            },
+          })
+          .catch(error => {
+            logger.error("Failed to bill team for rejected batch URLs", {
+              teamId: req.auth.team_id,
+              error,
+            });
+          });
       }
       emitRejectedScrapeActivityEvents(
         blocked.map(blockedUrl => ({
@@ -360,7 +362,6 @@ export async function batchScrapeController(
         })),
       );
       if (req.body.ignoreInvalidURLs) {
-        const blockedSet = new Set(blocked.map(x => x.url));
         const keptUnnormalized: string[] = [];
         const keptUrls: string[] = [];
         urls.forEach((u, i) => {

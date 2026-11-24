@@ -33,15 +33,6 @@ import { checkUrlsAgainstThreatPolicy } from "../../lib/threat-protection/reques
 import type { ThreatDecision } from "../../lib/threat-protection/types";
 import { redisEvictConnection } from "../redis";
 import {
-  resolveBillingMetadata,
-  toAutumnBillingProperties,
-  type BillingMetadata,
-} from "../billing/types";
-import {
-  autumnService,
-  featureIdForBillingEndpoint,
-} from "../autumn/autumn.service";
-import {
   _addScrapeJobToBullMQ,
   addScrapeJob,
   addScrapeJobs,
@@ -56,7 +47,6 @@ import { resolveJobPriority } from "../../lib/limits";
 import { Document, scrapeOptions, TeamFlags } from "../../controllers/v2/types";
 import { hasFormatOfType } from "../../lib/format-utils";
 import { getACUCTeam } from "../../controllers/auth";
-import { orgIdForTeam } from "../../lib/team-org";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
 import {
@@ -64,24 +54,17 @@ import {
   jobContext,
   requestContext,
 } from "../../lib/request-context";
-import type { RequestContext } from "../../service/request-context";
+import type {} from "../../lib/billing-state";
+import { service, type RequestContext } from "../../service";
 import { installedService } from "../../service/service";
 import { CostTracking } from "../../lib/cost-tracking";
-import { chargeKeylessCredits } from "../../lib/keyless";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
 import { isLockdownZeroDataRetention } from "../../lib/safe-mode";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
-import { service } from "../../service";
 
 import { generateURLSplits, queryIndexAtSplitLevel } from "../index";
 import { DenialReason, WebCrawler } from "../../scraper/WebScraper/crawler";
-import {
-  calculateCreditsToBeBilled,
-  calculateThreatScanCredits,
-} from "../../lib/scrape-billing";
 import { getCrawlScope } from "../../lib/crawl-scope";
-import { billTeam } from "../billing/credit_billing";
-import { getBillingQueue } from "../queue-service";
 import type { Logger } from "winston";
 import {
   CrawlDenialError,
@@ -122,7 +105,6 @@ import {
   type ExchangeScrapeMetadata,
 } from "../../lib/exchange";
 import { emitScrapeActivityEvent } from "../../lib/siem-logging";
-import { service } from "../../service";
 import {
   createScrapeFinishedEmitter,
   type ScrapeFinishedOutcome,
@@ -138,17 +120,6 @@ if (require.main === module) {
   cacheableLookup.install(http.globalAgent);
   cacheableLookup.install(https.globalAgent);
   warmExchangeCatalog();
-}
-
-// The org for a job's billing. It rides the job payload, snapshotted from the
-// request ACUC at acceptance; the ACUC answers only for a job enqueued without
-// one (monitor jobs null it deliberately, since the field also gates blocklist
-// enforcement).
-async function orgIdForJob(
-  orgIdFromJob: string | null | undefined,
-  teamId: string,
-): Promise<string | null> {
-  return orgIdFromJob ?? (await orgIdForTeam(teamId));
 }
 
 async function applyCrawlLinksHook(
@@ -197,235 +168,67 @@ async function applyCrawlLinksHook(
 async function billScrapeJob(
   job: NuQJob<any>,
   document: Document | null,
-  logger: Logger,
   costTracking: CostTracking,
-  flags: TeamFlags,
   error?: Error | null,
   unsupportedFeatures?: Set<FeatureFlag>,
   exchange?: ExchangeScrapeMetadata,
   threatDecisions?: ThreatDecision[],
-) {
-  let creditsToBeBilled: number | null = null;
-  const ctx = jobContext(job.data);
-  const billing = resolveBillingMetadata({
-    billing: ctx.billing,
-    crawlId: job.data.crawl_id,
-    crawlerOptions: job.data.crawlerOptions,
-  });
-  const autumnProperties = {
-    source: "billScrapeJob",
-    ...toAutumnBillingProperties(billing),
-    apiKeyId: ctx.apiKeyId,
-  };
-  // Scrapes initiated by a search (billing.endpoint === "search", e.g. search +
-  // scrapeOptions) are metered against SEARCH_CREDITS, matching the search
-  // request's own credits. Standalone scrapes stay on CREDITS.
-  const featureId = billing.hostedMcp
-    ? await autumnService.hostedMcpFeatureId(
-        job.data.team_id,
-        featureIdForBillingEndpoint(billing.endpoint),
-      )
-    : featureIdForBillingEndpoint(billing.endpoint);
-  let trackedInRequest = false;
+): Promise<number | undefined> {
+  if (job.data.is_scrape === true || job.data.internalOptions?.bypassBilling) {
+    return undefined;
+  }
 
-  if (job.data.is_scrape !== true && !job.data.internalOptions?.bypassBilling) {
-    creditsToBeBilled = await calculateCreditsToBeBilled(
-      job.data.scrapeOptions,
-      job.data.internalOptions,
-      document,
-      costTracking,
-      flags,
-      error,
+  const ctx = jobContext(job.data);
+  return service.modules.billing.charge({
+    kind: "scrape",
+    ctx,
+    jobId: job.id,
+    requestId: job.data.requestId ?? job.data.crawl_id,
+    options: job.data.scrapeOptions,
+    document,
+    costTracking,
+    state: {
+      internalOptions: job.data.internalOptions,
+      crawlId: job.data.crawl_id,
+      crawlerOptions: job.data.crawlerOptions,
+      keylessReserved: job.data.keylessReserved,
+      error: error ?? null,
       unsupportedFeatures,
       exchange,
       threatDecisions,
-    );
-
-    // Charge the keyless free tier's per-IP daily credit budget unless this
-    // request reserved credits in the controller and will reconcile there.
-    if (!job.data.keylessReserved) {
-      await chargeKeylessCredits(job.data.team_id, creditsToBeBilled);
-    }
-
-    if (
-      job.data.team_id !== config.BACKGROUND_INDEX_TEAM_ID! &&
-      config.USE_DB_AUTHENTICATION
-    ) {
-      // The org rides the job payload, snapshotted from the request ACUC at
-      // acceptance. The ACUC answers only for a job enqueued without one —
-      // the same lookup the billing service used to make on every charge.
-      const orgId = await orgIdForJob(ctx.orgId, job.data.team_id);
-
-      try {
-        trackedInRequest = orgId
-          ? await autumnService.trackCredits({
-              teamId: job.data.team_id,
-              orgId,
-              value: creditsToBeBilled,
-              properties: autumnProperties,
-              featureId,
-              // The worker job id is the one identity that is unique per charge
-              // (a crawl id is shared by every page — keying on it would collapse
-              // a crawl's pages into one billed event) AND survives a stall
-              // requeue, which re-runs the job under the same id: with this key,
-              // the re-run dedupes instead of double-billing.
-              idempotencyKey: `fc:track:${billing.endpoint}:${job.id}`,
-              // The caller's own operation id, carried on the charge so
-              // firebill reports it without a request lookup.
-              externalRequestId: billing.externalRequestId ?? undefined,
-            })
-          : false;
-        // The ledger enqueue must be idempotent by the originating job: a
-        // stalled job reruns under the same job.id, the track dedupes in
-        // firebill, and a fresh random billing job id would debit the ledger
-        // twice (the same pattern monitors already use with their
-        // deterministic monitor-bill-{id}).
-        const billingJobId = `bill-${job.id}`;
-        logger.debug(
-          `Adding billing job to queue for team ${job.data.team_id}`,
-          {
-            billingJobId,
-            billing,
-            credits: creditsToBeBilled,
-            is_extract: false,
-          },
-        );
-
-        // Add directly to the billing queue - the billing worker will handle
-        // the rest, including confirming the Exchange access event once the
-        // debit actually commits. A failed commit leaves the event pending
-        // for reconciliation - it is never voided on an ambiguous outcome.
-        //
-        // The enqueue is retried a few times before giving up: the Autumn
-        // charge is durable and will not be refunded (see the catch below),
-        // so a dropped enqueue would leave the ledger permanently
-        // un-debited. Retries are safe BECAUSE the job id is deterministic —
-        // a duplicate add dedupes in BullMQ.
-        const enqueueAttempts = 3;
-        for (let attempt = 1; ; attempt++) {
-          try {
-            await getBillingQueue().add(
-              "bill_team",
-              {
-                team_id: job.data.team_id,
-                org_id: orgId,
-                credits: creditsToBeBilled,
-                billing,
-                is_extract: false,
-                timestamp: new Date().toISOString(),
-                originating_job_id: job.id,
-                api_key_id: ctx.apiKeyId ?? null,
-                autumnTrackInRequest: trackedInRequest,
-                ...(exchange?.accessEventId === undefined
-                  ? {}
-                  : { exchangeAccessEventId: exchange.accessEventId }),
-              },
-              {
-                jobId: billingJobId,
-                priority: 10,
-              },
-            );
-            break;
-          } catch (enqueueError) {
-            if (attempt >= enqueueAttempts) throw enqueueError;
-            logger.warn("billing enqueue failed; retrying", {
-              attempt,
-              billingJobId,
-              error: enqueueError,
-            });
-            await new Promise(resolve => setTimeout(resolve, 250 * attempt));
-          }
-        }
-
-        return creditsToBeBilled;
-      } catch (error) {
-        logger.error(
-          `Failed to add billing job to queue for team ${job.data.team_id} for ${creditsToBeBilled} credits`,
-          { error },
-        );
-        if (trackedInRequest) {
-          // No compensating refund: the tracked charge is durable and correct
-          // (the scrape ran), and refunding it here poisons any rerun — its
-          // track would dedupe against the intent row (no new charge) while
-          // the enqueue succeeds, leaving Autumn net-zero for work the ledger
-          // billed. Reaching this line means the bounded enqueue retries above
-          // were exhausted: the ledger is un-debited for this charge until
-          // reconciliation (or a stall rerun's deterministic bill-{job.id}
-          // enqueue) repairs it — hence error level, with everything needed
-          // to replay by hand.
-          logger.error(
-            "billing enqueue failed after retries; charge stands, ledger un-debited pending reconciliation",
-            {
-              jobId: job.id,
-              teamId: job.data.team_id,
-              credits: creditsToBeBilled,
-              billing,
-            },
-          );
-        }
-        // The billing operation never reached the queue, so no debit will
-        // commit and no confirmation will ever arrive: void the Exchange
-        // access event instead of leaving it dangling. If the enqueue
-        // actually succeeded and only the acknowledgement was lost, the
-        // eventual confirmation repairs the void (void -> confirmed is
-        // legal on the Exchange). Fire-and-forget.
-        if (exchange?.accessEventId !== undefined) {
-          void reportExchangeBilling({
-            accessEventId: exchange.accessEventId,
-            status: "void",
-          });
-        }
-        return creditsToBeBilled;
-      }
-    }
-  }
-
-  return creditsToBeBilled;
+    },
+  });
 }
 
-/**
- * Bills threat protection scan fees for crawl-discovered URLs that were
- * blocked by the policy and therefore never become scrape jobs. Only blocked
- * decisions bill here: allowed discoveries are billed by their own scrape
- * job, which performs its own scan. Only decisions that consulted the
- * classifier carry a fee (+2 per unique scanned URL) — local-only blocks
- * (e.g. blacklist) are free. Callers pass only FIRST-TIME blocks for this
- * crawl (recordThreatBlocked's HSETNX return), so a blocked URL rediscovered
- * by many page jobs bills once per crawl.
- */
 function billThreatBlockedDiscoveries(
   args: {
-    teamId: string;
-    /** Snapshotted onto the job at acceptance; see InternalOptions.orgId. */
-    orgId: string | null;
-    apiKeyId: number | null;
-    billing: BillingMetadata;
+    ctx: RequestContext;
+    crawlId?: string;
+    crawlerOptions?: unknown;
     bypassBilling: boolean;
   },
   blocked: { domain: string; decision: ThreatDecision }[],
   logger: Logger,
 ) {
-  if (args.bypassBilling) return;
-  const threatScanCredits = calculateThreatScanCredits(
-    blocked.map(x => x.decision),
-  );
-  if (threatScanCredits <= 0) return;
-  // Deliberately no chargeId: MULTIPLE legitimate charges share this exact
-  // billing metadata (each page job that discovers new blocked URLs bills its
-  // own batch under the same crawl id) — a shared key would collapse them
-  // into one charge, i.e. underbill. Keyless until per-batch identity exists.
-  billTeam(
-    args.teamId,
-    args.orgId,
-    threatScanCredits,
-    args.apiKeyId,
-    args.billing,
-  ).catch(error => {
-    logger.error(
-      `Failed to bill team ${args.teamId} for ${threatScanCredits} threat scan credit(s)`,
-      { error },
-    );
-  });
+  if (args.bypassBilling || blocked.length === 0) return;
+  void service.modules.billing
+    .charge({
+      kind: "crawl",
+      ctx: args.ctx,
+      requestId: args.crawlId,
+      urls: blocked.length,
+      state: {
+        crawlerOptions: args.crawlerOptions,
+        resolveOrgFromTeam: true,
+        threatDecisions: blocked.map(x => x.decision),
+      },
+    })
+    .catch(error => {
+      logger.error(
+        `Failed to bill team ${args.ctx.teamId} for blocked crawl discoveries`,
+        { error },
+      );
+    });
 }
 
 async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
@@ -813,19 +616,12 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               if (blocked.length > 0) {
                 billThreatBlockedDiscoveries(
                   {
-                    teamId: job.data.team_id,
-                    // A null org here would drop a real charge, so this falls
-                    // through the payload, the stored crawl, then the ACUC.
-                    orgId: await orgIdForJob(
-                      ctx.orgId ?? crawlContext(sc).orgId,
-                      job.data.team_id,
-                    ),
-                    apiKeyId: ctx.apiKeyId ?? null,
-                    billing: resolveBillingMetadata({
-                      billing: ctx.billing,
-                      crawlId: job.data.crawl_id,
-                      crawlerOptions: job.data.crawlerOptions,
-                    }),
+                    ctx: {
+                      ...ctx,
+                      orgId: ctx.orgId ?? crawlContext(sc).orgId,
+                    },
+                    crawlId: job.data.crawl_id,
+                    crawlerOptions: job.data.crawlerOptions,
                     bypassBilling:
                       job.data.internalOptions?.bypassBilling ?? false,
                   },
@@ -964,16 +760,16 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       const credits_billed = await billScrapeJob(
         job,
         doc,
-        logger,
         costTracking,
-        (await getACUCTeam(job.data.team_id))?.flags ?? null,
         undefined,
         pipeline.unsupportedFeatures,
         pipeline.exchange,
         pipeline.threatDecisions,
       );
 
-      doc.metadata.creditsUsed = credits_billed ?? undefined;
+      if (credits_billed !== undefined) {
+        doc.metadata.creditsUsed = credits_billed;
+      }
 
       const requestId = job.data.requestId ?? job.data.crawl_id ?? job.id;
       try {
@@ -1099,16 +895,16 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       const credits_billed = await billScrapeJob(
         job,
         doc,
-        logger,
         costTracking,
-        (await getACUCTeam(job.data.team_id))?.flags ?? null,
         undefined,
         pipeline.unsupportedFeatures,
         pipeline.exchange,
         pipeline.threatDecisions,
       );
 
-      doc.metadata.creditsUsed = credits_billed ?? undefined;
+      if (credits_billed !== undefined) {
+        doc.metadata.creditsUsed = credits_billed;
+      }
 
       const requestId = job.data.requestId ?? job.data.crawl_id ?? job.id;
       const recordOutcomePromise = service.modules.jobStore
@@ -1379,9 +1175,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       credits_billed = await billScrapeJob(
         job,
         null,
-        logger,
         costTracking,
-        (await getACUCTeam(job.data.team_id))?.flags ?? null,
         error instanceof Error ? error : null,
         undefined,
         undefined,
@@ -1770,19 +1564,12 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
       if (blocked.length > 0) {
         billThreatBlockedDiscoveries(
           {
-            teamId: job.data.team_id,
-            // Kickoff jobs may carry no internalOptions; the stored crawl and
-            // then the ACUC answer, since a null org would drop a real charge.
-            orgId: await orgIdForJob(
-              ctx.orgId ?? crawlContext(sc).orgId,
-              job.data.team_id,
-            ),
-            apiKeyId: ctx.apiKeyId ?? null,
-            billing: resolveBillingMetadata({
-              billing: ctx.billing,
-              crawlId: job.data.crawl_id,
-              crawlerOptions: sc.crawlerOptions,
-            }),
+            ctx: {
+              ...ctx,
+              orgId: ctx.orgId ?? crawlContext(sc).orgId,
+            },
+            crawlId: job.data.crawl_id,
+            crawlerOptions: sc.crawlerOptions,
             bypassBilling: sc.internalOptions?.bypassBilling ?? false,
           },
           newlyBlocked,
@@ -1962,16 +1749,12 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       if (blocked.length > 0) {
         billThreatBlockedDiscoveries(
           {
-            teamId: job.data.team_id,
-            // Same as the other kickoff path: the ACUC answers when the crawl
-            // names no org, so a real charge is not dropped.
-            orgId: await orgIdForJob(crawlContext(sc).orgId, job.data.team_id),
-            apiKeyId: ctx.apiKeyId ?? null,
-            billing: resolveBillingMetadata({
-              billing: ctx.billing,
-              crawlId: job.data.crawl_id,
-              crawlerOptions: sc.crawlerOptions,
-            }),
+            ctx: {
+              ...ctx,
+              orgId: crawlContext(sc).orgId,
+            },
+            crawlId: job.data.crawl_id,
+            crawlerOptions: sc.crawlerOptions,
             bypassBilling: sc.internalOptions?.bypassBilling ?? false,
           },
           newlyBlocked,

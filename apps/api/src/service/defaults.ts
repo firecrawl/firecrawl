@@ -7,6 +7,7 @@
 import type { JobKind } from "./hooks";
 import type {
   AuthModule,
+  BillingModule,
   BlocklistModule,
   FetchProxyFileKind,
   IdempotencyModule,
@@ -52,6 +53,18 @@ export function noLimits(): LimitsModule {
     teamConcurrency: async () => null,
     jobPriority: async ({ base }) => base,
     queueBackend: () => undefined,
+  };
+}
+
+/** Default billing module: authorizes every request and records no charges. */
+export function unmeteredBilling(): BillingModule {
+  return {
+    async authorize() {
+      return { ok: true };
+    },
+    async charge() {
+      return undefined;
+    },
   };
 }
 
@@ -403,6 +416,7 @@ export type DefaultModules = Omit<Modules, "auth"> & {
 export function defaultModules(): DefaultModules {
   return {
     auth: openAuth(),
+    billing: unmeteredBilling(),
     blocklist: noBlocklist(),
     limits: noLimits(),
     messages: logsMessages(),
