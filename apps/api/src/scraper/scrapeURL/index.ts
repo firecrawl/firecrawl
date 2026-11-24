@@ -10,9 +10,9 @@ import {
   applyScrapeOptionsDefaults,
   type Document,
   scrapeOptions,
-  type ScrapeOptions,
   type TeamFlags,
 } from "../../controllers/v2/types";
+import type { ScrapeOptions } from "../../service/request";
 import { logger as _logger } from "../../lib/logger";
 import {
   buildFallbackList,
