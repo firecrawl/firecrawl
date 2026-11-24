@@ -486,7 +486,7 @@ export function idempotencyMiddleware(
             .json({ success: false, error: "Idempotency key already used" });
         }
       }
-      createIdempotencyKey(req);
+      await createIdempotencyKey(req);
     }
     next();
   })().catch(err => next(err));
