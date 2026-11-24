@@ -8,7 +8,7 @@ import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { isLockdownZeroDataRetention } from "../../lib/safe-mode";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
-import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+import { getErrorHttpResponse } from "../../lib/error";
 
 // Define the request schema for params preview
 // Only url and prompt are required/relevant for preview
@@ -152,11 +152,13 @@ export async function crawlParamsPreviewController(
       prompt: req.body.prompt,
     });
 
-    if (error instanceof UsOnlyUnavailableError) {
-      return res.status(403).json({
+    const httpResponse = getErrorHttpResponse(error);
+    if (httpResponse) {
+      return res.status(httpResponse.status).json({
+        ...httpResponse.extraFields,
         success: false,
-        code: error.code,
-        error: error.message,
+        ...(httpResponse.code ? { code: httpResponse.code } : {}),
+        error: httpResponse.message,
       });
     }
 
