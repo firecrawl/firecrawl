@@ -353,10 +353,11 @@ export async function batchScrapeController(
     req.body.timeout,
     req.auth.team_id,
   );
-  // v1 prefaults maxAge (1 day), which would shadow the lockdown default the
-  // scrape backstop applies — keep only a maxAge the request actually sent.
-  if (safeMode.safeMode?.lockdown && preNormalizedBody.maxAge === undefined) {
-    scrapeOptions.maxAge = undefined;
+  if (safeMode.safeMode?.lockdown) {
+    scrapeOptions.maxAge =
+      typeof preNormalizedBody.maxAge === "number"
+        ? preNormalizedBody.maxAge
+        : undefined;
   }
 
   const sc: StoredCrawl = appendTarget

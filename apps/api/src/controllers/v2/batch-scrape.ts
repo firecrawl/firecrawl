@@ -84,6 +84,13 @@ export async function batchScrapeController(
     });
   }
 
+  if (
+    safeMode.safeMode?.lockdown &&
+    typeof preNormalizedBody.maxAge === "number"
+  ) {
+    req.body.maxAge = preNormalizedBody.maxAge;
+  }
+
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
     orgId: req.acuc?.org_id ?? null,

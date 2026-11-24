@@ -15,11 +15,11 @@ import {
 import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
 import {
+  getErrorHttpResponse,
   getTimeoutProcessingDetails,
   isTransportableError,
   TransportableError,
 } from "../../lib/error";
-import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import {
@@ -212,6 +212,12 @@ export async function scrapeController(
         });
       }
 
+      if (
+        safeMode.safeMode?.lockdown &&
+        typeof preNormalizedBody.maxAge === "number"
+      ) {
+        req.body.maxAge = preNormalizedBody.maxAge;
+      }
       applySafeMode(safeMode.safeMode, req.body);
 
       const zeroDataRetention =
@@ -501,6 +507,20 @@ export async function scrapeController(
               error: e,
             });
           }
+          const httpResponse = getErrorHttpResponse(e);
+          if (httpResponse) {
+            setSpanAttributes(span, {
+              "scrape.status_code": httpResponse.status,
+            });
+            return res.status(httpResponse.status).json({
+              ...httpResponse.extraFields,
+              success: false,
+              code: e.code,
+              error: e.message,
+              ...jobIdField,
+            });
+          }
+
           // DNS resolution errors should return 200 with success: false
           if (e.code === "SCRAPE_DNS_RESOLUTION_ERROR") {
             setSpanAttributes(span, {
@@ -511,44 +531,6 @@ export async function scrapeController(
               code: e.code,
               error: e.message,
               ...jobIdField,
-            });
-          }
-
-          if (e.code === "SCRAPE_NO_CACHED_DATA") {
-            setSpanAttributes(span, {
-              "scrape.status_code": 404,
-            });
-            return res.status(404).json({
-              success: false,
-              code: e.code,
-              error: e.message,
-              ...jobIdField,
-            });
-          }
-
-          if (e.code === "SCRAPE_LOCKDOWN_CACHE_MISS") {
-            setSpanAttributes(span, {
-              "scrape.status_code": 404,
-            });
-            return res.status(404).json({
-              success: false,
-              code: e.code,
-              error: e.message,
-              ...jobIdField,
-            });
-          }
-
-          if (e.code === "AGENT_INDEX_ONLY") {
-            setSpanAttributes(span, {
-              "scrape.status_code": 403,
-            });
-            return res.status(403).json({
-              success: false,
-              code: e.code,
-              error: e.message,
-              ...jobIdField,
-              sponsor_status: "pending",
-              login_url: "https://firecrawl.dev/signin",
             });
           }
 
@@ -564,35 +546,7 @@ export async function scrapeController(
             });
           }
 
-          if (
-            e.code === "unsafe_domain_blocked" ||
-            e.code === "US_ONLY_UNAVAILABLE" ||
-            e.code === "RESERVED_CAPACITY_UNAVAILABLE"
-          ) {
-            setSpanAttributes(span, {
-              "scrape.status_code": 403,
-            });
-            return res.status(403).json({
-              success: false,
-              code: e.code,
-              error: e.message,
-              ...jobIdField,
-            });
-          }
-
           if (e.code === "UNSUPPORTED_SITE") {
-            setSpanAttributes(span, {
-              "scrape.status_code": 403,
-            });
-            return res.status(403).json({
-              success: false,
-              code: e.code,
-              error: e.message,
-              ...jobIdField,
-            });
-          }
-
-          if (e.code === "SCRAPE_MEDIA_ACCESS_DENIED") {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });
@@ -616,68 +570,7 @@ export async function scrapeController(
             });
           }
 
-          if (e.code === "SCRAPE_PAYWALLED_CONTENT") {
-            setSpanAttributes(span, {
-              "scrape.status_code": 403,
-            });
-            return res.status(403).json({
-              success: false,
-              code: e.code,
-              error: e.message,
-              ...jobIdField,
-            });
-          }
-
           if (e.code === "SCRAPE_JSON_CONTENT_TOO_LARGE") {
-            setSpanAttributes(span, {
-              "scrape.status_code": 400,
-            });
-            return res.status(400).json({
-              success: false,
-              code: e.code,
-              error: e.message,
-              ...jobIdField,
-            });
-          }
-
-          if (e instanceof ThirdPartyDataTermsRequiredError) {
-            setSpanAttributes(span, {
-              "scrape.status_code": 403,
-            });
-            return res.status(403).json({ ...e.response(), ...jobIdField });
-          }
-
-          if (
-            e.code === "THIRD_PARTY_DATA_NOT_ENABLED" ||
-            e.code === "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED"
-          ) {
-            setSpanAttributes(span, {
-              "scrape.status_code": 403,
-            });
-            return res.status(403).json({
-              success: false,
-              code: e.code,
-              error: e.message,
-              ...jobIdField,
-            });
-          }
-
-          if (e.code === "THIRD_PARTY_DATA_NOT_FOUND") {
-            setSpanAttributes(span, {
-              "scrape.status_code": 404,
-            });
-            return res.status(404).json({
-              success: false,
-              code: e.code,
-              error: e.message,
-              ...jobIdField,
-            });
-          }
-
-          if (
-            e.code === "THIRD_PARTY_DATA_UNSUPPORTED_URL" ||
-            e.code === "THIRD_PARTY_DATA_UNSUPPORTED_OPTION"
-          ) {
             setSpanAttributes(span, {
               "scrape.status_code": 400,
             });

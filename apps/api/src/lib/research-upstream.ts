@@ -1,5 +1,6 @@
 import { Agent, fetch, type Response } from "undici";
 import { config } from "../config";
+import type { ErrorCode } from "./error";
 
 const TIMEOUT_MS = 120_000;
 const CONNECT_TIMEOUT_MS = 10_000;
@@ -55,6 +56,14 @@ export class UsOnlyUpstreamRefusalError extends Error {
     message: string,
   ) {
     super(message);
+  }
+
+  get httpStatus(): number {
+    return this.status;
+  }
+
+  get code(): ErrorCode | undefined {
+    return this.status === 403 ? "US_ONLY_UNAVAILABLE" : undefined;
   }
 }
 
