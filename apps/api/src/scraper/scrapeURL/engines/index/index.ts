@@ -12,16 +12,14 @@ import {
   addIndexInsertJob,
   generateDomainSplits,
 } from "../../../../services";
-import { queryMaxAge, indexGetRecent5 } from "../../../../db/rpc";
+import { indexGetRecent5 } from "../../../../db/rpc";
 import {
   deleteCachedIndexEntry,
   deriveIndexVariantKey,
   filterIndexEntries,
   getCachedIndexEntries,
-  getCachedMaxAge,
   getCachedNegative,
   isNegativeStillValid,
-  setCachedMaxAge,
   setCachedNegative,
   upsertCachedIndexEntries,
   useIndexCache,
@@ -260,73 +258,9 @@ export async function scrapeURLWithIndex(
   const urlHash = hashURL(normalizedURL);
 
   const defaultMaxAge = 2 * 24 * 60 * 60 * 1000; // 2 days
-
-  type MaxAgeSource = "explicit" | "dynamic_cached" | "dynamic_db" | "default";
-  let maxAge: number;
-  let maxAgeSource: MaxAgeSource = "default";
-  if (meta.options.maxAge !== undefined) {
-    maxAge = meta.options.maxAge;
-    maxAgeSource = "explicit";
-  } else {
-    const domainSplitsHash = generateDomainSplits(
-      new URL(meta.url).hostname,
-    ).map(x => hashURL(x));
-    const level = domainSplitsHash.length - 1;
-
-    if (
-      domainSplitsHash.length === 0 ||
-      config.FIRECRAWL_INDEX_WRITE_ONLY ||
-      config.USE_DB_AUTHENTICATION !== true
-    ) {
-      maxAge = defaultMaxAge;
-    } else {
-      try {
-        const resolved = await Promise.race([
-          (async (): Promise<{
-            value: number;
-            source: MaxAgeSource;
-          }> => {
-            try {
-              const domainHash = domainSplitsHash[level];
-              if (useIndexCache) {
-                const cached = await getCachedMaxAge(domainHash, meta.logger);
-                if (cached !== null) {
-                  return {
-                    value: cached.maxAge ?? defaultMaxAge,
-                    source: "dynamic_cached",
-                  };
-                }
-              }
-              const data = await queryMaxAge(domainHash);
-              const value =
-                !data || data.length === 0 ? null : (data[0].max_age ?? null);
-              if (useIndexCache) {
-                setCachedMaxAge(domainHash, value, meta.logger).catch(() => {});
-              }
-              return { value: value ?? defaultMaxAge, source: "dynamic_db" };
-            } catch (error) {
-              meta.logger.warn("Failed to get max age from DB", { error });
-              return { value: defaultMaxAge, source: "default" };
-            }
-          })(),
-          new Promise<{ value: number; source: MaxAgeSource }>(resolve =>
-            setTimeout(() => {
-              resolve({ value: defaultMaxAge, source: "default" });
-            }, 200),
-          ),
-        ]);
-        maxAge = resolved.value;
-        maxAgeSource = resolved.source;
-      } catch (e) {
-        meta.logger.warn("Failed to get max age from DB", {
-          error: e,
-        });
-        maxAge = defaultMaxAge;
-      }
-    }
-  }
-
-  const checkpoint1 = Date.now();
+  const maxAge = meta.options.maxAge ?? defaultMaxAge;
+  const maxAgeSource: "explicit" | "default" =
+    meta.options.maxAge !== undefined ? "explicit" : "default";
 
   const variantKey = deriveIndexVariantKey({
     urlHash,
@@ -377,7 +311,6 @@ export async function scrapeURLWithIndex(
       maxAge,
       maxAgeSource,
       minAge: meta.options.minAge ?? null,
-      timingsMaxAge: checkpoint1 - startTime,
       timingsCache,
       timingsDb,
       timingsFull: Date.now() - startTime,
