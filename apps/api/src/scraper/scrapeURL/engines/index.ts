@@ -59,6 +59,7 @@ import {
   coreEngineSpecs,
   type CoreEngineName,
 } from "./metadata";
+import { scrapeHooks, toScrapeMeta } from "../hooks";
 
 export { coreEngineFeatures };
 
@@ -277,12 +278,58 @@ export function shouldUseIndex(meta: Meta) {
   );
 }
 
-export async function buildFallbackList(meta: Meta): Promise<
-  {
-    engine: Engine;
-    unsupportedFeatures: Set<FeatureFlag>;
-  }[]
-> {
+export type FallbackEngineEntry = {
+  engine: Engine;
+  unsupportedFeatures: Set<FeatureFlag>;
+};
+
+export function resolveCandidateEngines(
+  meta: Meta,
+  candidates: readonly Engine[],
+  existing: ReadonlyMap<Engine, FallbackEngineEntry>,
+): FallbackEngineEntry[] {
+  const resolved: FallbackEngineEntry[] = [];
+  for (const engine of candidates) {
+    const prior = existing.get(engine);
+    if (prior) {
+      resolved.push(prior);
+      continue;
+    }
+    const registered = service.engines.get(engine);
+    if (!registered) {
+      meta.logger.warn("Skipping unregistered engine", { engine });
+      continue;
+    }
+    const unsupportedFeatures = new Set<FeatureFlag>();
+    for (const flag of meta.featureFlags) {
+      if (!hasFeature(registered.features, flag)) {
+        unsupportedFeatures.add(flag);
+      }
+    }
+    resolved.push({ engine, unsupportedFeatures });
+  }
+  return resolved;
+}
+
+export async function buildFallbackList(
+  meta: Meta,
+): Promise<FallbackEngineEntry[]> {
+  const selected = await selectFallbackList(meta);
+  const hooks = scrapeHooks();
+  if (!hooks?.has("scrape.engines.select")) {
+    return selected;
+  }
+
+  const plan = await hooks.transform(
+    "scrape.engines.select",
+    { candidates: selected.map(x => x.engine) },
+    toScrapeMeta(meta),
+  );
+  const byEngine = new Map(selected.map(x => [x.engine, x]));
+  return resolveCandidateEngines(meta, plan.candidates, byEngine);
+}
+
+async function selectFallbackList(meta: Meta): Promise<FallbackEngineEntry[]> {
   if (hasFormatOfType(meta.options.formats, "rawBase64")) {
     if (meta.internalOptions.agentIndexOnly) {
       throw new AgentIndexOnlyError();

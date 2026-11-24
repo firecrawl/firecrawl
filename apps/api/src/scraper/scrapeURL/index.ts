@@ -22,6 +22,7 @@ import {
   EngineScrapeResult,
   FeatureFlag,
   getEngineMaxReasonableTime,
+  resolveCandidateEngines,
   scrapeURLWithEngine,
   shouldUseIndex,
 } from "./engines";
@@ -130,6 +131,10 @@ import { loadFirstScreen } from "../../lib/branding/jev";
 import { isPaywalledByJsonLd } from "./lib/accessibleForFree";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
+import { requestContext } from "../../lib/request-context";
+import type { ScrapeState } from "../../service/hooks";
+import type { RequestContext } from "../../service/request-context";
+import { scrapeHooks, toScrapeMeta } from "./hooks";
 
 export type ScrapeUrlResponse =
   | {
@@ -144,11 +149,13 @@ export type ScrapeUrlResponse =
        * layer. Only set when a threat protection policy was active.
        */
       threatDecisions?: ThreatDecision[];
+      state?: ScrapeState;
     }
   | {
       success: false;
       error: any;
       threatDecisions?: ThreatDecision[];
+      state?: ScrapeState;
     };
 
 export type BrowserCookie = {
@@ -173,6 +180,8 @@ export type Meta = {
   id: string;
   url: string;
   rewrittenUrl?: string;
+  ctx: RequestContext;
+  state: ScrapeState;
   options: ScrapeOptions & { skipTlsVerification: boolean };
   internalOptions: InternalOptions;
   logger: Logger;
@@ -561,10 +570,21 @@ async function buildMetaObject(
     imageExtensionFromUrlPath(new URL(url).pathname) !== null &&
     (await imageOcrEnabled());
 
+  const ctx =
+    internalOptions.ctx ??
+    requestContext({
+      teamId: internalOptions.teamId,
+      zeroDataRetention: internalOptions.zeroDataRetention,
+      flags: internalOptions.teamFlags,
+      orgId: internalOptions.orgId,
+    });
+
   return {
     id,
     url,
     rewrittenUrl: rewriteUrl(url),
+    ctx,
+    state: {},
     options: effectiveOptions,
     internalOptions,
     logger,
@@ -608,6 +628,7 @@ export type InternalOptions = {
   teamId: string;
   crawlId?: string;
   origin?: string;
+  ctx?: RequestContext;
 
   priority?: number; // Passed along to fire-engine
   forceEngine?: Engine | Engine[];
@@ -1070,6 +1091,31 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               x => x.engine !== error.engine,
             );
 
+            const hooks = scrapeHooks();
+            if (hooks?.has("scrape.engine.fallback")) {
+              const existing = new Map(
+                [...fallbackList, ...remainingEngines].map(entry => [
+                  entry.engine,
+                  entry,
+                ]),
+              );
+              const nextPlan = await hooks.transform(
+                "scrape.engine.fallback",
+                { candidates: remainingEngines.map(entry => entry.engine) },
+                {
+                  ...toScrapeMeta(meta),
+                  failed: error.engine,
+                  error: error.error,
+                },
+              );
+              const resolved = resolveCandidateEngines(
+                meta,
+                nextPlan.candidates,
+                existing,
+              );
+              remainingEngines.splice(0, remainingEngines.length, ...resolved);
+            }
+
             // If we don't have any engines waterfalled, let's waterfall the next engine
             if (enginePromises.length === 0) {
               break;
@@ -1183,6 +1229,15 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       isPaywalledByJsonLd(engineResult.html)
     ) {
       throw new PaywalledContentError();
+    }
+
+    const hooks = scrapeHooks();
+    if (hooks?.has("scrape.fetched")) {
+      engineResult = await hooks.transform(
+        "scrape.fetched",
+        engineResult,
+        toScrapeMeta(meta),
+      );
     }
 
     let document: Document = {
@@ -1378,6 +1433,39 @@ export async function scrapeURL(
 
       meta.logger.info("scrapeURL entered");
 
+      const hooks = scrapeHooks();
+      if (hooks?.has("scrape.start")) {
+        try {
+          const plan = await hooks.transform(
+            "scrape.start",
+            { options: meta.options, features: meta.featureFlags },
+            toScrapeMeta(meta),
+          );
+          meta.options = {
+            ...plan.options,
+            skipTlsVerification:
+              plan.options.skipTlsVerification ??
+              meta.options.skipTlsVerification,
+          };
+          meta.featureFlags = plan.features;
+          setSpanAttributes(span, {
+            "scrape.features": Array.from(meta.featureFlags).join(","),
+          });
+        } catch (error) {
+          if (error instanceof AbortManagerThrownError) {
+            throw error.inner;
+          }
+          return {
+            success: false,
+            error,
+            ...(meta.threatDecisions.length > 0
+              ? { threatDecisions: meta.threatDecisions }
+              : {}),
+            state: meta.state,
+          };
+        }
+      }
+
       // Threat protection: check the target URL BEFORE any engine selection
       // or outbound fetch. The policy is resolved at the controller layer and
       // threaded through internalOptions; absent policy = zero overhead.
@@ -1407,6 +1495,7 @@ export async function scrapeURL(
             success: false,
             error: new UnsafeDomainBlockedError(initialUrl, decision),
             threatDecisions: meta.threatDecisions,
+            state: meta.state,
           };
         }
       }
@@ -1424,7 +1513,7 @@ export async function scrapeURL(
         });
       }
 
-      if (shouldCheckRobots(options, internalOptions)) {
+      if (shouldCheckRobots(meta.options, internalOptions)) {
         const result = await withSpan(
           "scrape.robots_check",
           async robotsSpan => {
@@ -1454,8 +1543,8 @@ export async function scrapeURL(
                       zeroDataRetention:
                         internalOptions.zeroDataRetention || false,
                       usOnly: isUsOnly(internalOptions.teamFlags ?? undefined),
-                      location: options.location,
-                      skipTlsVerification: options.skipTlsVerification,
+                      location: meta.options.location,
+                      skipTlsVerification: meta.options.skipTlsVerification,
                     },
                     id,
                     meta.logger,
@@ -1515,6 +1604,7 @@ export async function scrapeURL(
           return {
             ...result,
             threatDecisions: meta.threatDecisions,
+            state: meta.state,
           };
         }
       }
@@ -1804,9 +1894,13 @@ export async function scrapeURL(
             result.success && result.document.metadata.cacheState === "hit",
         });
 
-        return meta.threatDecisions.length > 0
-          ? { ...result, threatDecisions: meta.threatDecisions }
-          : result;
+        return {
+          ...result,
+          ...(meta.threatDecisions.length > 0
+            ? { threatDecisions: meta.threatDecisions }
+            : {}),
+          state: meta.state,
+        };
       } catch (error) {
         // if (Object.values(meta.results).length > 0 && Object.values(meta.results).every(x => x.state === "error" && x.error instanceof FEPageLoadFailed)) {
         //   throw new FEPageLoadFailed();
@@ -2010,6 +2104,7 @@ export async function scrapeURL(
           ...(meta.threatDecisions.length > 0
             ? { threatDecisions: meta.threatDecisions }
             : {}),
+          state: meta.state,
         };
       }
     },

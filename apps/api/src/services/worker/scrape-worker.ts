@@ -114,6 +114,8 @@ import {
   type ExchangeScrapeMetadata,
 } from "../../lib/exchange";
 import { emitScrapeActivityEvent } from "../../lib/siem-logging";
+import type { JobKind } from "../../service/hooks";
+import { installedService } from "../../service/service";
 
 configDotenv();
 
@@ -409,6 +411,36 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
   // Hoisted above the try so the catch path can read pipeline.threatDecisions
   // for billing/logging even when the scrape failed.
   let pipeline: ScrapeUrlResponse | null = null;
+  const scrapeKind: JobKind = job.data.crawl_id
+    ? job.data.crawlerOptions !== null
+      ? "crawl"
+      : "batchScrape"
+    : "scrape";
+  let scrapeFinishedEmitted = false;
+  const emitScrapeFinished = async (params: {
+    document: Document | null;
+    error?: unknown;
+    charged: number | undefined;
+    timeTakenMs: number;
+  }) => {
+    if (scrapeFinishedEmitted) return;
+    scrapeFinishedEmitted = true;
+    const hooks = installedService()?.hooks;
+    if (!hooks?.has("scrape.finished")) return;
+    await hooks.run("scrape.finished", {
+      jobId: job.id,
+      requestId: job.data.requestId,
+      kind: scrapeKind,
+      ctx,
+      url: job.data.url,
+      options: job.data.scrapeOptions,
+      state: pipeline?.state ?? {},
+      document: params.document,
+      error: params.error,
+      charged: params.charged,
+      timeTakenMs: params.timeTakenMs,
+    });
+  };
 
   try {
     if (remainingTime !== undefined && remainingTime < 0) {
@@ -944,6 +976,12 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
       await recordMonitorScrapeSuccess(job, doc);
 
+      await emitScrapeFinished({
+        document: doc,
+        charged: credits_billed ?? undefined,
+        timeTakenMs: end - start,
+      });
+
       logger.debug("Declaring job as done...");
       try {
         await addCrawlJobDone(job.data.crawl_id, job.id, true, logger);
@@ -1064,6 +1102,12 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         // v0 - must await because waitForJob reads from GCS
         await logScrapePromise;
       }
+
+      await emitScrapeFinished({
+        document: doc,
+        charged: credits_billed ?? undefined,
+        timeTakenMs: end - start,
+      });
     }
 
     emitScrapeActivityEvent(job.id, job.data, {
@@ -1280,6 +1324,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
 
     await recordMonitorScrapeFailure(job, error);
+
+    await emitScrapeFinished({
+      document: null,
+      error,
+      charged: credits_billed ?? undefined,
+      timeTakenMs: end - start,
+    });
 
     return data;
   } finally {

@@ -83,10 +83,11 @@ export const htmlTransform = async (
   html: string,
   url: string,
   scrapeOptions: ScrapeOptions,
+  dropSignatures?: string[],
 ) => {
-  let omceSignatures: string[] | undefined = undefined;
+  let omceSignatures: string[] | undefined = dropSignatures;
 
-  if (scrapeOptions.__experimental_omce) {
+  if (omceSignatures === undefined && scrapeOptions.__experimental_omce) {
     try {
       const hostname =
         scrapeOptions.__experimental_omceDomain || new URL(url).hostname;
