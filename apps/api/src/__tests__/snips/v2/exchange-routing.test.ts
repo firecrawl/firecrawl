@@ -26,6 +26,9 @@ vi.mock("../../../services/alexandria/client", () => ({
 
 describe("Exchange routing", () => {
   let buildFallbackList: typeof import("../../../scraper/scrapeURL/engines/index.js").buildFallbackList;
+  let replaceService:
+    | typeof import("../../../service/service.js").replaceService
+    | undefined;
   let scrapeURLWithExchange: typeof import("../../../scraper/scrapeURL/engines/exchange.js").scrapeURLWithExchange;
   let scrapeBlocklistMiddleware: typeof import("../../../routes/shared.js").scrapeBlocklistMiddleware;
   let exchange: typeof import("../../../lib/exchange.js");
@@ -58,9 +61,25 @@ describe("Exchange routing", () => {
 
     // Re-import so modules read the env vars set above at eval time.
     vi.resetModules();
-    ({ buildFallbackList } = await import(
+    const enginesModule = await import(
       "../../../scraper/scrapeURL/engines/index.js"
-    ));
+    );
+    const serviceModule = await import("../../../service/service.js");
+    buildFallbackList = enginesModule.buildFallbackList;
+    replaceService = serviceModule.replaceService;
+    replaceService(
+      serviceModule.createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            engines: enginesModule.coreEngines,
+            engineFeatures: enginesModule.coreEngineFeatures,
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
     ({ scrapeURLWithExchange } = await import(
       "../../../scraper/scrapeURL/engines/exchange.js"
     ));
@@ -92,6 +111,7 @@ describe("Exchange routing", () => {
   });
 
   afterAll(() => {
+    replaceService?.(undefined);
     if (originalFireEngineUrl === undefined) {
       delete process.env.FIRE_ENGINE_BETA_URL;
     } else {

@@ -6,7 +6,7 @@ import {
   type Dispatcher,
   type Response,
 } from "undici";
-import { config } from "../../config";
+import { siemEnv } from "./env";
 import { logger as _logger } from "../logger";
 import {
   siemLoggingDeliveryBatchesTotal,
@@ -52,13 +52,13 @@ let proxyDispatcherUrl: string | undefined;
 
 function getDispatcher(deps: SenderDependencies): Dispatcher | undefined {
   if (deps.dispatcher) return deps.dispatcher;
-  if (!config.PARTNER_EGRESS_PROXY_URL) return undefined;
+  if (!siemEnv.PARTNER_EGRESS_PROXY_URL) return undefined;
   if (
     !proxyDispatcher ||
-    proxyDispatcherUrl !== config.PARTNER_EGRESS_PROXY_URL
+    proxyDispatcherUrl !== siemEnv.PARTNER_EGRESS_PROXY_URL
   ) {
-    proxyDispatcher = new ProxyAgent(config.PARTNER_EGRESS_PROXY_URL);
-    proxyDispatcherUrl = config.PARTNER_EGRESS_PROXY_URL;
+    proxyDispatcher = new ProxyAgent(siemEnv.PARTNER_EGRESS_PROXY_URL);
+    proxyDispatcherUrl = siemEnv.PARTNER_EGRESS_PROXY_URL;
   }
   return proxyDispatcher;
 }

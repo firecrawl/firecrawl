@@ -111,15 +111,6 @@ export function queryOmceSignatures(
   );
 }
 
-export function queryEngpickerVerdict(
-  i_domain_hash: Buffer,
-): Promise<{ verdict: string }[]> {
-  return execRows(
-    dbIndex,
-    sql`select * from query_engpicker_verdict(i_domain_hash => ${i_domain_hash})`,
-  );
-}
-
 export function queryIndexAtSplitLevelWithMeta(
   i_level: number,
   i_url_hash: Buffer,
@@ -155,27 +146,6 @@ export function queryDomainPriority(
   return execRows(
     dbIndex,
     sql`select * from query_domain_priority(p_min_total => ${p_min_total}, p_min_priority => ${p_min_priority}, p_lim => ${p_lim}, p_time => ${p_time}::timestamptz)`,
-  );
-}
-
-export function queryIndexAtDomainSplitLevelOmce<T = Record<string, any>>(
-  i_level: number,
-  i_domain_hash: Buffer,
-  i_newer_than: string,
-  limit?: number,
-): Promise<T[]> {
-  return execRows(
-    dbIndex,
-    sql`select * from query_index_at_domain_split_level_omce(i_level => ${i_level}, i_domain_hash => ${i_domain_hash}, i_newer_than => ${i_newer_than}::timestamptz)${limit !== undefined ? sql` limit ${limit}` : sql``}`,
-  );
-}
-
-export function queryMaxAge(
-  i_domain_hash: Buffer,
-): Promise<{ max_age: number | null }[]> {
-  return execRows(
-    dbIndex,
-    sql`select * from query_max_age(i_domain_hash => ${i_domain_hash})`,
   );
 }
 

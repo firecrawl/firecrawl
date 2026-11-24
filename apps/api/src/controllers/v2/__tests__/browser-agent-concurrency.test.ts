@@ -15,11 +15,13 @@ vi.mock("../../../config", async importOriginal => {
     ...actual,
     config: {
       ...actual.config,
-      HANGAR_URL: "http://hangar.test",
       AGENT_INTEROP_SECRET: "agent-secret",
     },
   };
 });
+vi.mock("../../../lib/browser-env", () => ({
+  browserEnv: { HANGAR_URL: "http://hangar.test" },
+}));
 
 vi.mock("../../../lib/logger", () => {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };

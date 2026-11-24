@@ -5,10 +5,11 @@ import { logger as _logger } from "./logger";
 import { config } from "../config";
 import { setSpanAttributes, withSpan } from "./otel-tracer";
 import type { ZdrCleanupJob } from "./zdr-queue";
+import { zdrWorkerEnv } from "./zdr-worker-env";
 
 export async function sendZdrHeartbeat() {
-  if (config.ZDRCLEANER_HEARTBEAT_URL) {
-    fetch(config.ZDRCLEANER_HEARTBEAT_URL).catch(() => {});
+  if (zdrWorkerEnv.ZDRCLEANER_HEARTBEAT_URL) {
+    fetch(zdrWorkerEnv.ZDRCLEANER_HEARTBEAT_URL).catch(() => {});
   }
 }
 

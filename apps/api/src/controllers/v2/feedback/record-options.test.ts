@@ -1,4 +1,4 @@
-import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
 import { SEARCH_CREDITS_FEATURE_ID } from "../../../services/autumn/autumn.service";
 import { endpointFeedbackSchema, searchFeedbackSchema } from "../types";
 import {
@@ -7,22 +7,23 @@ import {
 } from "./record-options";
 
 const originalConfig = {
-  SEARCH_FEEDBACK_MAX_AGE_SEC: config.SEARCH_FEEDBACK_MAX_AGE_SEC,
-  SEARCH_FEEDBACK_DAILY_CAP_CREDITS: config.SEARCH_FEEDBACK_DAILY_CAP_CREDITS,
-  FEEDBACK_MAX_AGE_SEC: config.FEEDBACK_MAX_AGE_SEC,
-  FEEDBACK_DAILY_CAP_CREDITS: config.FEEDBACK_DAILY_CAP_CREDITS,
+  SEARCH_FEEDBACK_MAX_AGE_SEC: feedbackEnv.SEARCH_FEEDBACK_MAX_AGE_SEC,
+  SEARCH_FEEDBACK_DAILY_CAP_CREDITS:
+    feedbackEnv.SEARCH_FEEDBACK_DAILY_CAP_CREDITS,
+  FEEDBACK_MAX_AGE_SEC: feedbackEnv.FEEDBACK_MAX_AGE_SEC,
+  FEEDBACK_DAILY_CAP_CREDITS: feedbackEnv.FEEDBACK_DAILY_CAP_CREDITS,
 };
 
 afterEach(() => {
-  Object.assign(config, originalConfig);
+  Object.assign(feedbackEnv, originalConfig);
 });
 
 describe("feedback record options", () => {
   it("applies the search feedback policy to legacy search feedback", () => {
-    config.SEARCH_FEEDBACK_MAX_AGE_SEC = 17;
-    config.SEARCH_FEEDBACK_DAILY_CAP_CREDITS = 3;
-    config.FEEDBACK_MAX_AGE_SEC = 999;
-    config.FEEDBACK_DAILY_CAP_CREDITS = 999;
+    feedbackEnv.SEARCH_FEEDBACK_MAX_AGE_SEC = 17;
+    feedbackEnv.SEARCH_FEEDBACK_DAILY_CAP_CREDITS = 3;
+    feedbackEnv.FEEDBACK_MAX_AGE_SEC = 999;
+    feedbackEnv.FEEDBACK_DAILY_CAP_CREDITS = 999;
 
     const options = searchFeedbackRecordOptions({
       jobId: "01933161-0000-7000-8000-000000000001",
@@ -40,10 +41,10 @@ describe("feedback record options", () => {
   });
 
   it("applies the search feedback policy to generic search feedback", () => {
-    config.SEARCH_FEEDBACK_MAX_AGE_SEC = 29;
-    config.SEARCH_FEEDBACK_DAILY_CAP_CREDITS = 7;
-    config.FEEDBACK_MAX_AGE_SEC = 999;
-    config.FEEDBACK_DAILY_CAP_CREDITS = 999;
+    feedbackEnv.SEARCH_FEEDBACK_MAX_AGE_SEC = 29;
+    feedbackEnv.SEARCH_FEEDBACK_DAILY_CAP_CREDITS = 7;
+    feedbackEnv.FEEDBACK_MAX_AGE_SEC = 999;
+    feedbackEnv.FEEDBACK_DAILY_CAP_CREDITS = 999;
 
     const options = endpointFeedbackRecordOptions({
       endpoint: "search",

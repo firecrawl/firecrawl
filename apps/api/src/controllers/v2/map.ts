@@ -196,6 +196,7 @@ export async function mapController(
         id: mapId,
         code: error.code,
         error: error.message,
+        jobId: mapId,
       });
     }
     logger.warn("avgrab resolve failed, falling back to standard map", {
@@ -250,6 +251,7 @@ export async function mapController(
         success: false,
         code: error.code,
         error: error.message,
+        jobId: mapId,
       });
     } else {
       throw error;

@@ -1,4 +1,4 @@
-import { config } from "../config";
+import { feedbackEnv } from "./feedback-env";
 import { redisRateLimitClient } from "../services/rate-limiter";
 import { logger } from "./logger";
 
@@ -23,7 +23,7 @@ export async function recordAlexandriaActivity(teamId: string): Promise<void> {
       activityKey(teamId),
       "1",
       "EX",
-      config.ALEXANDRIA_FEEDBACK_WINDOW_SEC,
+      feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC,
     );
   } catch (error) {
     logger.warn("Failed to record Alexandria activity", { error, teamId });
@@ -64,7 +64,7 @@ export async function recordAlexandriaCalls(
         ),
       )
       .ltrim(key, 0, RECENT_CALLS_LIMIT - 1)
-      .expire(key, config.ALEXANDRIA_FEEDBACK_WINDOW_SEC)
+      .expire(key, feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC)
       .exec();
     const commandError = results?.find(([error]) => error)?.[0];
     if (commandError) throw commandError;

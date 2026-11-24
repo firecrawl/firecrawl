@@ -9,8 +9,6 @@ import {
 import { RateLimiterMode } from "../types";
 import { authenticateUser } from "../controllers/auth";
 import { applyAgentAuthDiscoveryHeader } from "../lib/agent-auth-discovery";
-import { createIdempotencyKey } from "../services/idempotency/create";
-import { validateIdempotencyKey } from "../services/idempotency/validate";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { logger } from "../lib/logger";
 import { logAuthDenied } from "../lib/auth-denied-log";
@@ -20,7 +18,8 @@ import {
 } from "../lib/http-metrics";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
 import * as geoip from "geoip-country";
-import { isSelfHosted } from "../lib/deployment";
+import { claimIdempotencyKey } from "../lib/idempotency";
+import { service } from "../service";
 import { validate as isUuid } from "uuid";
 
 import { config } from "../config";
@@ -43,6 +42,7 @@ import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
 import { isFreeCatalogueSearch } from "../search/alexandria";
 import { wantsGovCategory } from "../search/gov";
 import { getScrapeZDR, getThreatProtection } from "../lib/zdr-helpers";
+import { resolveZDRPolicy } from "../lib/zdr-policy";
 import { getSafeMode, isLockdownZeroDataRetention } from "../lib/safe-mode";
 import {
   agentInteropStatus,
@@ -437,6 +437,7 @@ export function authMiddleware(
       };
       req.acuc = chunk ?? undefined;
       req.caller = { teamId: team_id };
+      req.zdrPolicy = resolveZDRPolicy(chunk?.flags ?? undefined);
       next();
     })().catch(err => next(err));
   };
@@ -477,16 +478,22 @@ export function idempotencyMiddleware(
   next: NextFunction,
 ) {
   (async () => {
-    if (req.headers["x-idempotency-key"]) {
-      const isIdempotencyValid = await validateIdempotencyKey(req);
-      if (!isIdempotencyValid) {
+    const rawHeader = req.headers["x-idempotency-key"];
+    if (rawHeader) {
+      const teamId =
+        req.ctx?.teamId ??
+        req.caller?.teamId ??
+        (req as RequestWithMaybeAuth).auth?.team_id ??
+        "bypass";
+      const claimed = await claimIdempotencyKey(rawHeader, teamId);
+      if (!claimed) {
         if (!res.headersSent) {
           return res
             .status(409)
             .json({ success: false, error: "Idempotency key already used" });
         }
+        return;
       }
-      createIdempotencyKey(req);
     }
     next();
   })().catch(err => next(err));
@@ -530,6 +537,9 @@ function blocklistGate(
         team_id: req.acuc?.team_id ?? null,
         org_id: req.acuc?.org_id ?? null,
         origin: typeof req.body.origin === "string" ? req.body.origin : null,
+        zeroDataRetention:
+          req.body.zeroDataRetention === true || req.body.lockdown === true,
+        safeMode: req.body.safeMode,
       })
     ) {
       return next();
@@ -618,9 +628,7 @@ export function countryCheck(
     });
     return res.status(403).json({
       success: false,
-      error: isSelfHosted()
-        ? "Use of headers, actions, the agent, and browser/interact sessions is not allowed by default in your country. Please check your server configuration."
-        : "Use of headers, actions, the agent, and browser/interact sessions is not allowed by default in your country. Please contact us at help@firecrawl.com",
+      error: `Use of headers, actions, the agent, and browser/interact sessions is not allowed by default in your country. ${service.modules.messages.restrictedCountryContact()}`,
     });
   }
 

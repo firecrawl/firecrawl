@@ -19,6 +19,7 @@ import { fireEngineMap } from "../search/fireEngine";
 import { isUsOnly } from "./us-only";
 import { redisEvictConnection } from "../services/redis";
 import {
+  generateDomainSplits,
   generateURLSplits,
   queryIndexAtDomainSplitLevelWithMeta,
   queryIndexAtSplitLevelWithMeta,
@@ -63,22 +64,18 @@ export async function queryIndex(
   }
 
   const urlSplits = generateURLSplits(url);
-  if (urlSplits.length === 1) {
-    const urlObj = new URL(url);
-    const hostname = urlObj.hostname;
-
-    // TEMP: this should be altered on June 15th 2025 7AM PT - mogery
-    const [domainLinks, splitLinks] = await Promise.all([
-      includeSubdomains
-        ? queryIndexAtDomainSplitLevelWithMeta(hostname, limit)
-        : [],
-      queryIndexAtSplitLevelWithMeta(url, limit),
-    ]);
-
-    return dedupeMapDocumentArray([...domainLinks, ...splitLinks]);
-  } else {
-    return await queryIndexAtSplitLevelWithMeta(url, limit);
+  if (urlSplits.length === 1 && includeSubdomains) {
+    const hostname = new URL(urlSplits[0]).hostname;
+    const domainSplits = generateDomainSplits(hostname);
+    // domain_splits_0..4_hash cover hosts with a registrable domain up to 5
+    // levels (excluding experimental __experimental_omceDomain overrides);
+    // IP literals, localhost, and deeper subdomains fall back to url_split_0_hash.
+    if (domainSplits.length > 0 && domainSplits.length <= 5) {
+      return await queryIndexAtDomainSplitLevelWithMeta(hostname, limit);
+    }
   }
+
+  return await queryIndexAtSplitLevelWithMeta(url, limit);
 }
 
 export async function getMapResults({

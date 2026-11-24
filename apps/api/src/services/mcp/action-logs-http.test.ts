@@ -2,7 +2,7 @@ import bodyParser from "body-parser";
 import express, { NextFunction, Request, Response } from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { config } from "../../config";
+import { mcpLogsEnv } from "../../lib/mcp-action-log-env";
 
 const { ingest, list } = vi.hoisted(() => ({
   ingest: vi.fn(async (_req: Request, res: Response) =>
@@ -62,15 +62,15 @@ function readApp() {
 
 describe("MCP action log ingest route", () => {
   beforeEach(() => {
-    config.MCP_ACTION_LOG_SECRET = "test-secret";
-    config.MCP_ACTION_LOG_STORAGE_ENABLED = true;
-    config.MCP_ACTION_LOG_WRITES_ENABLED = true;
+    mcpLogsEnv.MCP_ACTION_LOG_SECRET = "test-secret";
+    mcpLogsEnv.MCP_ACTION_LOG_STORAGE_ENABLED = true;
+    mcpLogsEnv.MCP_ACTION_LOG_WRITES_ENABLED = true;
     ingest.mockClear();
     list.mockClear();
   });
 
   it("is disabled by default through an explicit write flag", async () => {
-    config.MCP_ACTION_LOG_WRITES_ENABLED = false;
+    mcpLogsEnv.MCP_ACTION_LOG_WRITES_ENABLED = false;
     const response = await request(app())
       .post("/v2/mcp/action-logs")
       .set("Authorization", "Bearer test-secret")
@@ -80,7 +80,7 @@ describe("MCP action log ingest route", () => {
   });
 
   it("defensively rejects writes when storage is disabled", async () => {
-    config.MCP_ACTION_LOG_STORAGE_ENABLED = false;
+    mcpLogsEnv.MCP_ACTION_LOG_STORAGE_ENABLED = false;
     const response = await request(app())
       .post("/v2/mcp/action-logs")
       .set("Authorization", "Bearer test-secret")

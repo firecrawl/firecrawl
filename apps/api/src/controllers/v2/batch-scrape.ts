@@ -84,6 +84,13 @@ export async function batchScrapeController(
     });
   }
 
+  if (
+    safeMode.safeMode?.lockdown &&
+    typeof preNormalizedBody.maxAge === "number"
+  ) {
+    req.body.maxAge = preNormalizedBody.maxAge;
+  }
+
   const threatProtection = await resolveThreatProtection({
     teamId: req.auth.team_id,
     orgId: req.acuc?.org_id ?? null,
@@ -187,6 +194,9 @@ export async function batchScrapeController(
         team_id: req.auth.team_id,
         org_id: req.acuc?.org_id ?? null,
         origin: req.body.origin ?? null,
+        zeroDataRetention:
+          zeroDataRetention || appendTarget?.zeroDataRetention === true,
+        safeMode: req.body.safeMode,
       })
     ) {
       return null;

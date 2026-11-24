@@ -9,7 +9,7 @@ import {
 } from "../../../controllers/v1/types";
 import { Logger } from "winston";
 import { logger } from "../../../lib/logger";
-import { modelPrices } from "../../../lib/extract/usage/model-prices";
+import { modelPrices } from "../../../lib/model-prices";
 import { generateObject, generateText, LanguageModel } from "ai";
 import { jsonSchema } from "ai";
 import { getModel } from "../../../lib/generic-ai";
