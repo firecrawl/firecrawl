@@ -730,5 +730,70 @@ describe("request-schemas", () => {
       expect(observedKinds).toContain("crawl");
       expect(observedKinds).toContain("search");
     });
+
+    it("rejects contributions that collide with built-in fields or formats", () => {
+      const cases: Array<{
+        contribution: Record<string, unknown>;
+        expected: string;
+      }> = [
+        {
+          contribution: { scrape: { url: z.string() } },
+          expected:
+            'Request "scrape.url" collides with a built-in field or format',
+        },
+        {
+          contribution: { scrapeOptions: { waitFor: z.string() } },
+          expected:
+            'Request "scrapeOptions.waitFor" collides with a built-in field or format',
+        },
+        {
+          contribution: { scrapeOptions: { url: z.string() } },
+          expected:
+            'Request "scrapeOptions.url" collides with a built-in field or format',
+        },
+        {
+          contribution: { scrapeOptions: { file: z.string() } },
+          expected:
+            'Request "scrapeOptions.file" collides with a built-in field or format',
+        },
+        {
+          contribution: { parse: { file: z.string() } },
+          expected:
+            'Request "parse.file" collides with a built-in field or format',
+        },
+        {
+          contribution: { crawl: { scrapeOptions: z.string() } },
+          expected:
+            'Request "crawl.scrapeOptions" collides with a built-in field or format',
+        },
+        {
+          contribution: { map: { url: z.string() } },
+          expected:
+            'Request "map.url" collides with a built-in field or format',
+        },
+        {
+          contribution: { search: { query: z.number() } },
+          expected:
+            'Request "search.query" collides with a built-in field or format',
+        },
+        {
+          contribution: {
+            formats: {
+              markdown: z.strictObject({ type: z.literal("markdown") }),
+            },
+          },
+          expected:
+            'Request "formats.markdown" collides with a built-in field or format',
+        },
+      ];
+
+      for (const { contribution, expected } of cases) {
+        const { schemas } = buildRequestSchemaRegistry(
+          [{ owner: "ext", request: asRequest(contribution) }],
+          buildV2RequestSchemas,
+        );
+        expect(() => schemas.scrape).toThrow(expected);
+      }
+    });
   });
 });

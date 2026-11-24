@@ -3297,6 +3297,20 @@ function applyScrapeOptionsRules<T extends Record<string, unknown>>(
   return current;
 }
 
+function assertNoCoreCollision(
+  bucket: string,
+  contributed: Readonly<Record<string, unknown>>,
+  coreShape: Record<string, unknown>,
+): void {
+  for (const key of Object.keys(contributed)) {
+    if (Object.hasOwn(coreShape, key)) {
+      throw new Error(
+        `Request "${bucket}.${key}" collides with a built-in field or format`,
+      );
+    }
+  }
+}
+
 /**
  * Builds the five v2 request schemas with extension-contributed fields,
  * formats, and cross-field scrape-options rules applied.
@@ -3304,6 +3318,48 @@ function applyScrapeOptionsRules<T extends Record<string, unknown>>(
 export function buildV2RequestSchemas(
   contributions: ResolvedRequestContributions,
 ): RequestSchemas {
+  assertNoCoreCollision(
+    "formats",
+    contributions.formats,
+    coreScrapeFormatSchemas,
+  );
+  assertNoCoreCollision(
+    "scrapeOptions",
+    contributions.scrapeOptions,
+    scrapeOptionFields.shape,
+  );
+  assertNoCoreCollision(
+    "scrapeOptions",
+    contributions.scrapeOptions,
+    scrapeRequestSchemaBase.shape,
+  );
+  assertNoCoreCollision(
+    "scrapeOptions",
+    contributions.scrapeOptions,
+    parseRequestSchemaBase.shape,
+  );
+  assertNoCoreCollision(
+    "scrape",
+    contributions.scrape,
+    scrapeRequestSchemaBase.shape,
+  );
+  assertNoCoreCollision(
+    "parse",
+    contributions.parse,
+    parseRequestSchemaBase.shape,
+  );
+  assertNoCoreCollision(
+    "crawl",
+    contributions.crawl,
+    crawlRequestSchemaBase.shape,
+  );
+  assertNoCoreCollision("map", contributions.map, mapRequestSchemaBase.shape);
+  assertNoCoreCollision(
+    "search",
+    contributions.search,
+    searchRequestSchemaBase.shape,
+  );
+
   const hasScrapeOptionsFields =
     Object.keys(contributions.scrapeOptions).length > 0;
   const hasScrapeFields = Object.keys(contributions.scrape).length > 0;
