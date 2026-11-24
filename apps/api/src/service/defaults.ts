@@ -135,11 +135,39 @@ export function memoryUploads(): UploadsModule {
 }
 
 const DEFAULT_IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60;
+const DEFAULT_IDEMPOTENCY_TIMEOUT_MS = 5_000;
+
+let idempotencyRedisPromise: Promise<import("ioredis").Redis> | undefined;
+
+function getIdempotencyRedis(): Promise<import("ioredis").Redis> {
+  if (!idempotencyRedisPromise) {
+    idempotencyRedisPromise = (async () => {
+      const [{ Redis }, { config }] = await Promise.all([
+        import("ioredis"),
+        import("../config.js"),
+      ]);
+      if (!config.REDIS_URL) {
+        throw new Error("REDIS_URL is not configured");
+      }
+      const client = new Redis(config.REDIS_URL, {
+        lazyConnect: true,
+        maxRetriesPerRequest: 3,
+        commandTimeout: DEFAULT_IDEMPOTENCY_TIMEOUT_MS,
+      });
+      client.on("error", () => {});
+      return client;
+    })().catch(error => {
+      idempotencyRedisPromise = undefined;
+      throw error;
+    });
+  }
+  return idempotencyRedisPromise;
+}
 
 export interface RedisIdempotencyOptions {
   /** Expiration in seconds for claimed keys. Defaults to 86400 (24 hours). */
   ttlSeconds?: number;
-  /** Custom atomic set-if-absent backend; defaults to the shared Redis client. */
+  /** Custom atomic set-if-absent backend; defaults to a fail-fast main Redis client. */
   setIfAbsent?: (key: string, ttlSeconds: number) => Promise<boolean>;
 }
 
@@ -165,10 +193,8 @@ export function redisIdempotency(
   const setIfAbsent =
     options.setIfAbsent ??
     (async (key: string, ttl: number): Promise<boolean> => {
-      const { getRedisConnection } = await import(
-        "../services/queue-service.js"
-      );
-      const result = await getRedisConnection().set(key, "1", "EX", ttl, "NX");
+      const client = await getIdempotencyRedis();
+      const result = await client.set(key, "1", "EX", ttl, "NX");
       return result === "OK";
     });
 
