@@ -36,6 +36,10 @@
       "types": "./src/services/redis.ts",
       "default": "./dist/src/services/redis.js"
     },
+    "./unstable/scrape-errors": {
+      "types": "./src/scraper/scrapeURL/error.ts",
+      "default": "./dist/src/scraper/scrapeURL/error.js"
+    },
     "./unstable/zdr-queue": {
       "types": "./src/lib/zdr-queue.ts",
       "default": "./dist/src/lib/zdr-queue.js"
@@ -107,16 +111,9 @@
     "vitest": "^4.1.12"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.105",
-    "@ai-sdk/deepinfra": "^3.0.93",
-    "@ai-sdk/fireworks": "^3.0.96",
-    "@ai-sdk/google": "^4.0.121",
-    "@ai-sdk/google-vertex": "^5.0.141",
-    "@ai-sdk/groq": "^4.0.84",
     "@ai-sdk/openai": "4.0.118",
     "@ai-sdk/otel": "^1.0.173",
     "@ai-sdk/xai": "^5.0.46",
-    "@anthropic-ai/sdk": "^1.8.0",
     "@bull-board/api": "^6.21.3",
     "@bull-board/express": "^6.21.3",
     "@clickhouse/client": "^1.8.1",
@@ -125,7 +122,6 @@
     "@google-cloud/pubsub": "^6.0.1",
     "@google-cloud/storage": "^7.21.0",
     "@mendable/firecrawl-rs": "workspace:*",
-    "@openrouter/ai-sdk-provider": "^3.1.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.222.0",
     "@opentelemetry/resources": "^2.11.0",
@@ -170,7 +166,6 @@
     "marked": "^14.1.2",
     "multer": "^2.5.0",
     "ollama-ai-provider-v2": "^4.1.0",
-    "openai": "7.57.0",
     "parse-diff": "^0.11.1",
     "pdf-parse": "^1.1.1",
     "pg": "^8.16.3",
