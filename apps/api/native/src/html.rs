@@ -521,9 +521,17 @@ const PROTECTED_CONTENT_SELECTORS: [&str; 5] = [
 ];
 
 fn lang_from_url(url: &Url) -> &'static str {
-  let path = url.path();
-  let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-  match ext.as_str() {
+  let filename = url
+    .path()
+    .rsplit('/')
+    .next()
+    .unwrap_or("")
+    .to_ascii_lowercase();
+  if filename == "dockerfile" || filename.starts_with("dockerfile.") {
+    return "dockerfile";
+  }
+  let ext = filename.rsplit_once('.').map(|(_, e)| e).unwrap_or("");
+  match ext {
     "rs" => "rust",
     "py" => "python",
     "ts" | "mts" | "cts" => "typescript",
@@ -625,7 +633,7 @@ fn has_gutter_class(class_str: &str) -> bool {
       || tok == "hljs-ln-n"
       || tok.contains("linenum")
       || tok.contains("line-num")
-      || tok.contains("line-number")
+      || tok.contains("line-gutter")
   })
 }
 
@@ -818,7 +826,7 @@ fn normalize_code_blocks(document: &NodeRef, url: &Url) {
     let textareas: Vec<_> = textareas.collect();
     for ta in textareas {
       let code_text = ta.as_node().text_contents();
-      if code_text.trim().len() < 20 {
+      if code_text.trim().is_empty() {
         continue;
       }
       let lang = lang_from_url(url);
@@ -2053,7 +2061,7 @@ pub async fn extract_images(html: String, base_url: String) -> napi::Result<Vec<
 fn parse_fence_line(line: &str) -> Option<(u8, usize, &str)> {
   let bytes = line.as_bytes();
   let mut i = 0;
-  while i < bytes.len() && i < 3 && bytes[i] == b' ' {
+  while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
     i += 1;
   }
   if i >= bytes.len() || (bytes[i] != b'`' && bytes[i] != b'~') {
@@ -2319,11 +2327,13 @@ mod tests {
 
   #[test]
   fn post_process_preserves_multiline_brackets_in_fenced_and_inline_code() {
-    let md = "Intro [multi\nline](https://example.com) and `[a\nb]`.\n\n```json\n{\n  \"items\": [\n    \"one\",\n    \"two\"\n  ]\n}\n```\n";
+    let md = "Intro [multi\nline](https://example.com) and `[a\nb]`.\n\n```json\n{\n  \"items\": [\n    \"one\",\n    \"two\"\n  ]\n}\n```\n\n1. Nested in list:\n\n    ```json\n    {\n      \"nested\": [\n        \"a\",\n        \"b\"\n      ]\n    }\n    ```\n";
     let out = post_process_markdown_text(md);
     assert!(out.contains("[multi\\\nline](https://example.com)"));
     assert!(out.contains("```json\n{\n  \"items\": [\n    \"one\",\n    \"two\"\n  ]\n}\n```"));
     assert!(!out.contains("\"one\",\\"));
+    assert!(out.contains("    ```json\n    {\n      \"nested\": [\n        \"a\",\n        \"b\"\n      ]\n    }\n    ```"));
+    assert!(!out.contains("\"a\",\\"));
   }
 
   #[test]
@@ -2356,6 +2366,16 @@ mod tests {
     let out_sh = run_transform(sh, "https://example.com/post", true);
     assert!(out_sh.contains("<pre><code>let x = 1;\n  return x;</code></pre>"));
     assert!(!out_sh.contains("01"));
+
+    let line_gutter = r#"<html><body><table>
+      <tr><td class="code-block-line-gutter">1</td><td class="code">const a = 1;</td></tr>
+      <tr><td class="code-block-line-gutter">2</td><td class="code">const b = 2;</td></tr>
+    </table></body></html>"#;
+    let out_lg = run_transform(line_gutter, "https://example.com/app.ts", true);
+    assert!(out_lg.contains(
+      "<pre><code class=\"language-typescript\">const a = 1;\nconst b = 2;</code></pre>"
+    ));
+    assert!(!out_lg.contains("<table"));
   }
 
   #[test]
@@ -2378,16 +2398,14 @@ mod tests {
     assert!(!out_enlighter.contains("enlighter-default"));
 
     let blob = r#"<html><body>
-      <textarea id="read-only-cursor-text-area">fn main() {
-    println!("hello world");
-}</textarea>
+      <textarea id="read-only-cursor-text-area">FROM alpine:3.20</textarea>
     </body></html>"#;
     let out_blob = run_transform(
       blob,
-      "https://github.com/org/repo/blob/main/src/main.rs",
+      "https://github.com/org/repo/blob/main/Dockerfile",
       true,
     );
-    assert!(out_blob.contains("<pre data-fc-code-viewer=\"1\"><code class=\"language-rust\">fn main() {\n    println!(\"hello world\");\n}</code></pre>"));
+    assert!(out_blob.contains("<pre data-fc-code-viewer=\"1\"><code class=\"language-dockerfile\">FROM alpine:3.20</code></pre>"));
     assert!(!out_blob.contains("<textarea"));
   }
 
