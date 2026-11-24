@@ -17,7 +17,9 @@ describe("testService", () => {
     ]);
 
     expect(built.modules.messages.errorContact()).toBe("Custom contact.");
-    expect(built.modules.uploads.driver()).toBe(base.uploads.driver());
+    expect(built.modules.uploads.driver().name).toBe(
+      base.uploads.driver().name,
+    );
     expect(built.describe().modules).toEqual(["messages", "uploads"]);
     expect(built.describe().extensions).toEqual(["core", "extra"]);
   });

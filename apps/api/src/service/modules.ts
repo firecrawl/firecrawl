@@ -113,9 +113,37 @@ export interface Modules {
   uploads: UploadsModule;
 }
 
+function freezeUploadDriver(driver: UploadDriver): Readonly<UploadDriver> {
+  if (
+    typeof driver !== "object" ||
+    driver === null ||
+    typeof driver.name !== "string" ||
+    driver.name.trim().length === 0 ||
+    typeof driver.prepareUpload !== "function" ||
+    typeof driver.read !== "function" ||
+    typeof driver.delete !== "function" ||
+    (driver.receiveUpload !== undefined &&
+      typeof driver.receiveUpload !== "function")
+  ) {
+    throw new Error("Invalid uploads driver");
+  }
+
+  const frozen: UploadDriver = {
+    name: driver.name,
+    prepareUpload: driver.prepareUpload.bind(driver),
+    read: driver.read.bind(driver),
+    delete: driver.delete.bind(driver),
+    ...(driver.receiveUpload !== undefined
+      ? { receiveUpload: driver.receiveUpload.bind(driver) }
+      : {}),
+  };
+  return Object.freeze(frozen);
+}
+
 /**
  * Validates and freezes a resolved module slot table along with each slot's
- * bound methods, so mutating the input objects later cannot alter the service.
+ * bound methods and resolved upload driver, so mutating the input objects
+ * later cannot alter the service.
  */
 export function freezeModules(modules: Modules): Readonly<Modules> {
   const { messages, uploads } = modules;
@@ -146,8 +174,9 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
     filePrefetchFailedContact:
       messages.filePrefetchFailedContact.bind(messages),
   });
+  const frozenDriver = freezeUploadDriver(uploads.driver());
   const frozenUploads: UploadsModule = Object.freeze({
-    driver: uploads.driver.bind(uploads),
+    driver: () => frozenDriver,
   });
 
   return Object.freeze({

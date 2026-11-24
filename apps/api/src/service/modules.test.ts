@@ -7,7 +7,7 @@ import {
   PDFPrefetchFailed,
 } from "../scraper/scrapeURL/error";
 import { defaultModules, logsMessages, memoryUploads } from "./defaults";
-import type { MessagesModule, UploadsModule } from "./modules";
+import type { MessagesModule, Modules, UploadsModule } from "./modules";
 import { createService, replaceService, type CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
@@ -180,6 +180,7 @@ describe("service module slots", () => {
     expect(Object.isFrozen(built.modules)).toBe(true);
     expect(Object.isFrozen(built.modules.messages)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads)).toBe(true);
+    expect(Object.isFrozen(built.modules.uploads.driver())).toBe(true);
     expect(built.describe().modules).toEqual(["messages", "uploads"]);
     expect(built.modules.messages.errorContact()).toBe(
       logsMessages().errorContact(),
@@ -187,23 +188,47 @@ describe("service module slots", () => {
     expect(built.modules.uploads.driver().name).toBe("local");
   });
 
-  it("keeps defaults for unspecified slots and snapshots provided modules", () => {
+  it("keeps defaults for unspecified slots and snapshots provided modules and drivers", async () => {
     const customMessages: MessagesModule = {
       ...logsMessages(),
       errorContact: id => `custom:${id ?? "none"}`,
     };
+    const customDriver = {
+      name: "custom",
+      prepareUpload: async () => ({
+        ok: false as const,
+        status: 503 as const,
+        code: "PARSE_UPLOAD_STORAGE_DISABLED" as const,
+        error: "disabled",
+      }),
+      read: async () => Buffer.from("original"),
+      delete: async () => {},
+    };
+    const customUploads: UploadsModule = { driver: () => customDriver };
     const built = createService(
-      { modules: { messages: customMessages } },
+      { modules: { messages: customMessages, uploads: customUploads } },
       parts,
     );
 
     customMessages.errorContact = () => "mutated";
+    customDriver.read = async () => Buffer.from("mutated");
+    customUploads.driver = () => ({
+      ...customDriver,
+      name: "mutated",
+    });
 
     expect(built.modules.messages.errorContact("42")).toBe("custom:42");
-    expect(built.modules.uploads.driver().name).toBe("local");
+    expect(built.modules.uploads.driver().name).toBe("custom");
+    const data = await built.modules.uploads.driver().read({
+      uploadId: "u1",
+      teamId: "t1",
+      objectPath: "p1",
+      maxBytes: 100,
+    });
+    expect(data.toString("utf8")).toBe("original");
   });
 
-  it("rejects invalid or null module implementations at service creation", () => {
+  it("rejects invalid, null, or unknown module slots and malformed upload drivers at service creation", () => {
     expect(() =>
       createService(
         { modules: { messages: {} as unknown as MessagesModule } },
@@ -228,6 +253,52 @@ describe("service module slots", () => {
         parts,
       ),
     ).toThrow("Invalid uploads module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            uploads: {
+              driver: () => ({ name: "broken" }) as unknown as never,
+            },
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid uploads driver");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            uploads: {
+              driver: () =>
+                ({
+                  name: "broken",
+                  prepareUpload: async () => ({
+                    ok: false,
+                    status: 503,
+                    code: "PARSE_UPLOAD_STORAGE_DISABLED",
+                    error: "disabled",
+                  }),
+                  read: async () => Buffer.alloc(0),
+                  delete: async () => {},
+                  receiveUpload: "not-a-function",
+                }) as unknown as never,
+            },
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid uploads driver");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            upload: memoryUploads(),
+          } as unknown as Partial<Modules>,
+        },
+        parts,
+      ),
+    ).toThrow('Unknown module slot "upload"');
   });
 });
 

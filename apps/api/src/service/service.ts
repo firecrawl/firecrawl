@@ -144,6 +144,17 @@ export function createService(
     throw new Error(`Two extensions are named "${duplicate}"`);
   }
 
+  if (config.modules !== undefined) {
+    if (typeof config.modules !== "object" || config.modules === null) {
+      throw new Error("Invalid modules config");
+    }
+    for (const key of Object.keys(config.modules)) {
+      if (key !== "messages" && key !== "uploads") {
+        throw new Error(`Unknown module slot "${key}"`);
+      }
+    }
+  }
+
   const defaults = defaultModules();
   const modules = freezeModules({
     messages:

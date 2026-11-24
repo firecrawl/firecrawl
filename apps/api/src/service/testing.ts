@@ -17,14 +17,16 @@ export function testService(
   overrides: Partial<Modules> = {},
   extensions: Extension[] = [],
 ): Service {
-  const modules: Partial<Modules> = { ...base };
-  if (overrides.messages !== undefined) {
-    modules.messages = overrides.messages;
+  const modules: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value !== undefined) {
+      modules[key] = value;
+    }
   }
-  if (overrides.uploads !== undefined) {
-    modules.uploads = overrides.uploads;
-  }
-  return createService({ modules, extensions }, parts);
+  return createService(
+    { modules: modules as Partial<Modules>, extensions },
+    parts,
+  );
 }
 
 /**
