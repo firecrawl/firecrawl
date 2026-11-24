@@ -13,9 +13,13 @@ const mocks = vi.hoisted(() => {
     logMap: vi.fn(async () => undefined),
     logRequest: vi.fn(async () => undefined),
     resolveViaAvgrab: vi.fn(async (): Promise<any[] | null> => null),
-    resolveThreatProtection: vi.fn(async () => ({ policy: null })),
-    checkUrlsAgainstThreatPolicy: vi.fn(async () => ({
-      decisionsByUrl: new Map(),
+    resolveThreatProtection: vi.fn(
+      async (): Promise<any> => ({
+        policy: null,
+      }),
+    ),
+    checkUrlsAgainstThreatPolicy: vi.fn(async (..._args: any[]) => ({
+      decisionsByUrl: new Map<string, any>(),
     })),
     checkPermissions: vi.fn(() => ({})),
     fireEngineMap: vi.fn(async () => [] as any[]),
@@ -142,6 +146,10 @@ describe("map lifecycle hooks", () => {
     vi.clearAllMocks();
     replaceService(undefined);
     mocks.resolveViaAvgrab.mockResolvedValue(null);
+    mocks.resolveThreatProtection.mockResolvedValue({ policy: null });
+    mocks.checkUrlsAgainstThreatPolicy.mockResolvedValue({
+      decisionsByUrl: new Map(),
+    });
     mocks.fireEngineMap.mockResolvedValue([]);
     mocks.queryIndexAtDomainSplitLevelWithMeta.mockResolvedValue([]);
     mocks.queryIndexAtSplitLevelWithMeta.mockResolvedValue([]);
@@ -251,6 +259,58 @@ describe("map lifecycle hooks", () => {
       },
     ]);
     expect(report).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates avgrab map.collect errors without falling back and filters collected URLs against threat policy", async () => {
+    let collectCalls = 0;
+    installHooks({
+      "map.collect": () => {
+        collectCalls += 1;
+        throw new Error("avgrab collect rejected");
+      },
+    });
+    mocks.resolveViaAvgrab.mockResolvedValue([
+      { url: "https://example.com/av-1" },
+    ]);
+
+    await expect(
+      mapController(makeReq({ url: "https://example.com" }), makeRes()),
+    ).rejects.toThrow("avgrab collect rejected");
+    expect(collectCalls).toBe(1);
+    expect(mocks.fireEngineMap).not.toHaveBeenCalled();
+
+    const finished: number[] = [];
+    installHooks({
+      "map.collect": urls => [...urls, "https://blocked.example/malware"],
+      "map.finished": event => {
+        finished.push(event.urls);
+      },
+    });
+    mocks.resolveThreatProtection.mockResolvedValue({
+      policy: { mode: "block" },
+    });
+    mocks.checkUrlsAgainstThreatPolicy.mockResolvedValue({
+      decisionsByUrl: new Map([
+        ["https://example.com/av-1", { allowed: true }],
+        ["https://blocked.example/malware", { allowed: false }],
+      ]),
+    });
+
+    const res = makeRes();
+    await mapController(makeReq({ url: "https://example.com" }), res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json.mock.calls[0][0].links).toEqual([
+      { url: "https://example.com/av-1" },
+    ]);
+    expect(mocks.billTeam).toHaveBeenCalledWith(
+      "team-map-1",
+      "org-1",
+      1,
+      9,
+      expect.any(Object),
+    );
+    expect(finished).toEqual([1]);
   });
 
   it("propagates map.collect errors and preserves identical output when unregistered", async () => {

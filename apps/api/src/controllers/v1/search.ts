@@ -45,6 +45,7 @@ import { fromV1ScrapeOptions } from "../v2/types";
 import {
   adjustKeylessCredits,
   keylessLimitBody,
+  keylessProviderToolsBody,
   logKeylessCreditUsage,
   reserveKeylessCredits,
 } from "../../lib/keyless";
@@ -262,19 +263,6 @@ export async function searchController(
       }
     }
 
-    await logRequest({
-      id: jobId,
-      kind: "search",
-      api_version: "v1",
-      external_request_id: externalRequestId(req),
-      team_id: req.auth.team_id,
-      origin: req.body.origin ?? "api",
-      integration: req.body.integration,
-      target_hint: req.body.query,
-      zeroDataRetention,
-      api_key_id: req.acuc?.api_key_id ?? null,
-    });
-
     // Convert v1 scrape options to v2 format
     const { scrapeOptions } = fromV1ScrapeOptions(
       req.body.scrapeOptions,
@@ -332,6 +320,68 @@ export async function searchController(
           limit: req.body.limit,
           sources: [{ type: "web" }],
         };
+
+    if (planHooks?.has("search.plan")) {
+      const plannedWantsTools = planned.sources.some(
+        source => source.type === "alexandria",
+      );
+      const plannedWantsSkills = planned.sources.some(
+        source => source.type === "skills",
+      );
+      if (
+        (plannedWantsTools || plannedWantsSkills) &&
+        req.auth.team_id.startsWith("preview_keyless_")
+      ) {
+        applyAgentAuthDiscoveryHeader(res);
+        return res
+          .status(403)
+          .json(keylessProviderToolsBody(req.auth.team_id, req));
+      }
+      if ((plannedWantsTools || plannedWantsSkills) && !planned.query.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: plannedWantsTools
+            ? "A query is required for tool search."
+            : "A query is required for skill search.",
+        });
+      }
+      if ((plannedWantsTools || plannedWantsSkills) && zeroDataRetention) {
+        return res.status(403).json({
+          success: false,
+          error:
+            "Provider discovery requires access and does not support zero data retention.",
+        });
+      }
+      if (
+        isUsOnly(req.acuc?.flags) &&
+        planned.sources.some(source => source.type === "images")
+      ) {
+        planned.sources = planned.sources.filter(
+          source => source.type !== "images",
+        );
+        if (planned.sources.length === 0) {
+          return res.status(403).json({
+            success: false,
+            code: "US_ONLY_UNAVAILABLE",
+            error:
+              "Image search is not available for teams restricted to US-only processing.",
+          });
+        }
+      }
+    }
+
+    await logRequest({
+      id: jobId,
+      kind: "search",
+      api_version: "v1",
+      external_request_id: externalRequestId(req),
+      team_id: req.auth.team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: req.body.query,
+      zeroDataRetention,
+      api_key_id: req.acuc?.api_key_id ?? null,
+    });
     const projectedKeylessCredits = !isSearchPreview
       ? projectSearchTotalCredits(
           {

@@ -449,6 +449,75 @@ async function searchControllerInner(
       });
     req.ctx = ctx;
 
+    const planHooks = installedService()?.hooks;
+    const planned = planHooks?.has("search.plan")
+      ? await applySearchPlanHook(
+          {
+            query: req.body.query,
+            limit: req.body.limit,
+            sources: req.body.sources as Array<{ type: string }>,
+          },
+          { ctx, body: req.body },
+        )
+      : {
+          query: req.body.query,
+          limit: req.body.limit,
+          sources: req.body.sources as Array<{ type: string }>,
+        };
+
+    if (planHooks?.has("search.plan")) {
+      const plannedWantsTools = planned.sources.some(
+        source => source.type === "alexandria",
+      );
+      const plannedWantsSkills = planned.sources.some(
+        source => source.type === "skills",
+      );
+      if (
+        (plannedWantsTools || plannedWantsSkills) &&
+        req.auth.team_id.startsWith("preview_keyless_")
+      ) {
+        applyAgentAuthDiscoveryHeader(res);
+        return res
+          .status(403)
+          .json(keylessProviderToolsBody(req.auth.team_id, req));
+      }
+      if ((plannedWantsTools || plannedWantsSkills) && !planned.query.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: plannedWantsTools
+            ? "A query is required for tool search."
+            : "A query is required for skill search.",
+        });
+      }
+      if (
+        (plannedWantsTools || plannedWantsSkills) &&
+        (teamForcedKind ||
+          req.body.enterprise?.some(mode => mode === "zdr" || mode === "anon"))
+      ) {
+        return res.status(403).json({
+          success: false,
+          error:
+            "Provider discovery requires access and does not support zero data retention.",
+        });
+      }
+      if (
+        isUsOnly(req.acuc?.flags) &&
+        planned.sources.some(source => source.type === "images")
+      ) {
+        planned.sources = planned.sources.filter(
+          source => source.type !== "images",
+        );
+        if (planned.sources.length === 0 && !indexCategory) {
+          return res.status(403).json({
+            success: false,
+            code: "US_ONLY_UNAVAILABLE",
+            error: IMAGE_SEARCH_US_ONLY_MESSAGE,
+          });
+        }
+        usOnlyImagesWarning = IMAGE_SEARCH_US_ONLY_MESSAGE;
+      }
+    }
+
     // Kick off the `requests` row insert without blocking: it queues on the
     // Postgres pool and can take seconds under pool pressure. We only need it
     // committed before the child-row writes (logSearch et al. below) to keep
@@ -482,22 +551,6 @@ async function searchControllerInner(
       logger.warn("Had to wait for log request promise to complete", {
         timeMs: waited,
       });
-
-    const planHooks = installedService()?.hooks;
-    const planned = planHooks?.has("search.plan")
-      ? await applySearchPlanHook(
-          {
-            query: req.body.query,
-            limit: req.body.limit,
-            sources: req.body.sources as Array<{ type: string }>,
-          },
-          { ctx, body: req.body },
-        )
-      : {
-          query: req.body.query,
-          limit: req.body.limit,
-          sources: req.body.sources as Array<{ type: string }>,
-        };
 
     const toolsOnly = isToolsOnlySearch(planned.sources, req.body.categories);
     const freeCatalogue = isFreeCatalogueSearch(

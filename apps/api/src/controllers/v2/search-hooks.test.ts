@@ -428,6 +428,68 @@ describe("search lifecycle hooks", () => {
     ]);
   });
 
+  it("revalidates planned sources against preview-keyless, ZDR, and US-only policies before billing and execution", async () => {
+    installHooks({
+      "search.plan": plan => ({
+        ...plan,
+        sources: [...plan.sources, "alexandria"],
+      }),
+    });
+
+    const keylessReq = makeReq({ query: "weather", sources: ["web"] });
+    keylessReq.auth.team_id = "preview_keyless_abc";
+    const keylessRes = makeRes();
+    await searchController(keylessReq, keylessRes);
+    expect(keylessRes.status).toHaveBeenCalledWith(403);
+    expect(mocks.discoverTools).not.toHaveBeenCalled();
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(mocks.reserveKeylessCredits).not.toHaveBeenCalled();
+
+    const zdrReq = makeReq({
+      query: "weather",
+      sources: ["web"],
+      enterprise: ["zdr"],
+    });
+    zdrReq.acuc.flags = { searchZDR: "allowed" };
+    const zdrRes = makeRes();
+    await searchController(zdrReq, zdrRes);
+    expect(zdrRes.status).toHaveBeenCalledWith(403);
+    expect(mocks.discoverTools).not.toHaveBeenCalled();
+    expect(mocks.search).not.toHaveBeenCalled();
+
+    installHooks({
+      "search.plan": plan => ({
+        ...plan,
+        sources: [...plan.sources, "images"],
+      }),
+    });
+    const usOnlyMixedReq = makeReq({ query: "cats", sources: ["web"] });
+    usOnlyMixedReq.acuc.flags = { usOnly: true };
+    const usOnlyMixedRes = makeRes();
+    await searchController(usOnlyMixedReq, usOnlyMixedRes);
+    expect(usOnlyMixedRes.status).toHaveBeenCalledWith(200);
+    expect(usOnlyMixedRes.json.mock.calls[0][0].warning).toContain("US-only");
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(mocks.search.mock.calls[0][0].type).toEqual(["web"]);
+
+    mocks.search.mockClear();
+    installHooks({
+      "search.plan": plan => ({
+        ...plan,
+        sources: ["images"],
+      }),
+    });
+    const usOnlyImagesReq = makeReq({ query: "cats", sources: ["web"] });
+    usOnlyImagesReq.acuc.flags = { usOnly: true };
+    const usOnlyImagesRes = makeRes();
+    await searchController(usOnlyImagesReq, usOnlyImagesRes);
+    expect(usOnlyImagesRes.status).toHaveBeenCalledWith(403);
+    expect(usOnlyImagesRes.json.mock.calls[0][0].code).toBe(
+      "US_ONLY_UNAVAILABLE",
+    );
+    expect(mocks.search).not.toHaveBeenCalled();
+  });
+
   it("omits charged when self-hosted and emits search.finished with 0 on tools-unavailable 503", async () => {
     const events: any[] = [];
     const report = installHooks({
