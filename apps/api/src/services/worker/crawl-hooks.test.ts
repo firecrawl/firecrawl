@@ -328,9 +328,6 @@ describe("crawl lifecycle hooks", () => {
     });
 
     mocks.getCrawl.mockResolvedValue(baseStoredCrawl());
-    mocks.queryIndexAtSplitLevel.mockResolvedValue([
-      "https://example.com/from-index",
-    ]);
 
     const kickoffJob = {
       id: "kickoff-1",
@@ -359,10 +356,7 @@ describe("crawl lifecycle hooks", () => {
     const queuedUrls = mocks.addScrapeJobs.mock.calls[0][0].map(
       (job: any) => job.data.url,
     );
-    expect(queuedUrls).toEqual([
-      "https://example.com/from-index",
-      "https://example.com/seeded-keep",
-    ]);
+    expect(queuedUrls).toEqual(["https://example.com/seeded-keep"]);
   });
 
   it("transforms sitemap links through crawl.links with sitemapUrl as from", async () => {
@@ -568,7 +562,7 @@ describe("crawl lifecycle hooks", () => {
     } as unknown as NuQJob<any>);
 
     expect(events).toEqual([
-      {
+      expect.objectContaining({
         id: "crawl-v1",
         kind: "crawl",
         ctx: expect.objectContaining({
@@ -577,8 +571,8 @@ describe("crawl lifecycle hooks", () => {
         }),
         completed: 4,
         cancelled: false,
-      },
-      {
+      }),
+      expect.objectContaining({
         id: "batch-v0",
         kind: "batchScrape",
         ctx: expect.objectContaining({
@@ -587,7 +581,7 @@ describe("crawl lifecycle hooks", () => {
         }),
         completed: 1,
         cancelled: true,
-      },
+      }),
     ]);
 
     // Handler rejection propagates (await semantics)
@@ -609,9 +603,6 @@ describe("crawl lifecycle hooks", () => {
 
   it("leaves crawl kickoff, sitemap, page discovery, and finalization unchanged with no service or no handlers", async () => {
     mocks.getCrawl.mockResolvedValue(baseStoredCrawl());
-    mocks.queryIndexAtSplitLevel.mockResolvedValue([
-      "https://example.com/only-index",
-    ]);
 
     const kickoffJob = {
       id: "kickoff-plain",
@@ -630,9 +621,7 @@ describe("crawl lifecycle hooks", () => {
     } as unknown as NuQJob<any>;
 
     await processJobInternal(kickoffJob);
-    expect(
-      mocks.addScrapeJobs.mock.calls[0][0].map((j: any) => j.data.url),
-    ).toEqual(["https://example.com/only-index"]);
+    expect(mocks.addScrapeJobs).not.toHaveBeenCalled();
 
     mocks.scrapeSitemap.mockResolvedValue({
       urls: [{ href: "https://example.com/sitemap-plain" }],
@@ -653,7 +642,7 @@ describe("crawl lifecycle hooks", () => {
     } as unknown as NuQJob<any>;
     await processJobInternal(sitemapJob);
     expect(
-      mocks.addScrapeJobs.mock.calls[1][0].map((j: any) => j.data.url),
+      mocks.addScrapeJobs.mock.calls[0][0].map((j: any) => j.data.url),
     ).toEqual(["https://example.com/sitemap-plain"]);
 
     installHooks();

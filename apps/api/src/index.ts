@@ -34,12 +34,6 @@ import { service } from "./service";
 import { installedService, runProcessStop } from "./service/service";
 import { initializeApiStartupDependencies } from "./lib/api-startup";
 import responseTime from "response-time";
-import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
-import { isKeylessConfigured } from "./lib/keyless";
-import {
-  drainZdrRequestLogs,
-  shutdownPubSubLogging,
-} from "./services/logging/log_job";
 import { notFoundHandler } from "./lib/not-found";
 import { startRole } from "./main";
 
@@ -53,12 +47,6 @@ logger.info(`Number of CPUs: ${numCPUs} available`);
 logger.info("Network info dump", {
   networkInterfaces: os.networkInterfaces(),
 });
-
-if (isKeylessConfigured() && !config.KEYLESS_CONVERSION_HMAC_SECRET) {
-  logger.warn(
-    "Keyless conversion cohort logging is disabled: set KEYLESS_CONVERSION_HMAC_SECRET to enable privacy-safe quota-to-account measurement",
-  );
-}
 
 // Install cacheable lookup for all other requests
 cacheableLookup.install(http.globalAgent);
@@ -259,24 +247,20 @@ async function startServer(port = DEFAULT_PORT) {
     server.close(async () => {
       await adminInternalClosed;
       logger.info("Server closed.");
-      await drainZdrRequestLogs();
       nuqShutdown().finally(() => {
         Promise.resolve()
           .then(() => installedService()?.modules.webhooks.shutdown?.())
           .catch(error => {
             logger.warn("Error shutting down webhooks module", { error });
           })
-          .finally(() => {
-            shutdownIndexerQueue().finally(async () => {
-              try {
-                await shutdownPubSubLogging();
-              } finally {
-                await runProcessStop("api");
-                await shutdownTracing();
-              }
-              logger.info("NUQ shutdown complete");
-              process.exit(0);
-            });
+          .finally(async () => {
+            try {
+              await runProcessStop("api");
+            } finally {
+              await shutdownTracing();
+            }
+            logger.info("NUQ shutdown complete");
+            process.exit(0);
           });
       });
     });

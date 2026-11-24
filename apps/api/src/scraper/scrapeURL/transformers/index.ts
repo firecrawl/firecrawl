@@ -15,11 +15,7 @@ import { performQuery } from "./query";
 import { removeBase64Images } from "./removeBase64Images";
 import { performAttributes } from "./performAttributes";
 import { performPromptInjectionGuard } from "./promptInjectionGuard";
-import { useSearchIndex } from "../../../services/index";
-import { sendDocumentToSearchIndex } from "./sendToSearchIndex";
 import { hasFormatOfType } from "../../../lib/format-utils";
-import { indexerQueue } from "../../../services/indexing/indexer-queue";
-import { config } from "../../../config";
 import { scrapeHooks, toScrapeMeta } from "../hooks";
 
 type Transformer = (
@@ -212,23 +208,9 @@ async function deriveLinksFromHTML(
     );
   }
 
-  const rate = config.INDEXER_TRAFFIC_SHARE
-    ? Math.max(0, Math.min(1, Number(config.INDEXER_TRAFFIC_SHARE)))
-    : 0;
-
-  const shouldForwardTraffic =
-    rate > 0 && Math.random() <= rate && !!config.INDEXER_RABBITMQ_URL;
-
-  const forwardToIndexer =
-    !meta.internalOptions.isParse &&
-    !!meta.internalOptions.teamId &&
-    !meta.internalOptions.teamId?.includes("robots-txt") &&
-    !meta.internalOptions.teamId?.includes("sitemap") &&
-    shouldForwardTraffic;
-
   const requiresLinks = !!hasFormatOfType(meta.options.formats, "links");
 
-  if (!forwardToIndexer && !requiresLinks) {
+  if (!requiresLinks) {
     return document;
   }
 
@@ -242,42 +224,6 @@ async function deriveLinksFromHTML(
       meta.url,
     document.metadata.contentType,
   );
-
-  if (forwardToIndexer) {
-    try {
-      let linksDeduped: Set<string> = new Set();
-      if (!!document.links) {
-        linksDeduped = new Set([...document.links]);
-      }
-
-      indexerQueue
-        .sendToWorker({
-          id: meta.id,
-          type: "links",
-          discovery_url:
-            document.metadata.url ??
-            document.metadata.sourceURL ??
-            meta.rewrittenUrl ??
-            meta.url,
-          urls: [...linksDeduped],
-        })
-        .catch(error => {
-          meta.logger.error("Failed to queue links for indexing", {
-            error: (error as Error)?.message,
-            url: meta.url,
-          });
-        });
-    } catch (error) {
-      meta.logger.error("Failed to queue links for indexing", {
-        error: (error as Error)?.message,
-        url: meta.url,
-      });
-    }
-  }
-
-  if (!requiresLinks) {
-    delete document.links;
-  }
 
   return document;
 }
@@ -493,7 +439,6 @@ const transformerStack: TransformerStep[] = [
   deriveImagesFromHTML,
   deriveMetadataFromRawHTML,
   { hook: "scrape.document.derived" },
-  ...(useSearchIndex ? [sendDocumentToSearchIndex] : []), // Add to search index for real-time search
   performLLMExtract,
   performSummary,
   performQuery,

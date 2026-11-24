@@ -48,6 +48,10 @@ export interface ScrapeFinishedJobInfo {
   ctx: RequestContext;
   url: string;
   options: ScrapeOptions;
+  origin?: string;
+  crawlId?: string;
+  skipNuq?: boolean;
+  isParse?: boolean;
   getState: () => ScrapeState | undefined;
 }
 
@@ -56,6 +60,10 @@ export interface ScrapeFinishedOutcome {
   error?: unknown;
   charged: number | undefined;
   timeTakenMs: number;
+  startedAt?: number;
+  completedAt?: number;
+  costTracking?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -81,6 +89,20 @@ export function createScrapeFinishedEmitter(job: ScrapeFinishedJobInfo) {
       error: outcome.error,
       charged: outcome.charged,
       timeTakenMs: outcome.timeTakenMs,
+      ...(outcome.startedAt !== undefined
+        ? { startedAt: outcome.startedAt }
+        : {}),
+      ...(outcome.completedAt !== undefined
+        ? { completedAt: outcome.completedAt }
+        : {}),
+      ...(job.origin !== undefined ? { origin: job.origin } : {}),
+      ...(job.crawlId !== undefined ? { crawlId: job.crawlId } : {}),
+      ...(job.skipNuq !== undefined ? { skipNuq: job.skipNuq } : {}),
+      ...(job.isParse !== undefined ? { isParse: job.isParse } : {}),
+      ...(outcome.costTracking !== undefined
+        ? { costTracking: outcome.costTracking }
+        : {}),
+      ...(outcome.metadata !== undefined ? { metadata: outcome.metadata } : {}),
     });
   };
 }

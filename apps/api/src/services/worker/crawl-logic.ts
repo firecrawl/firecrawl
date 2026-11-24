@@ -6,16 +6,11 @@ import {
 } from "../../lib/crawl-redis";
 import { getCrawl } from "../../lib/crawl-redis";
 import { getJobs } from "../../controllers/v2/crawl-status";
-import { logCrawl, logBatchScrape } from "../logging/log_job";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import type { NuQJob } from "./nuq";
 import { crawlContext, jobContext } from "../../lib/request-context";
 import type { RequestContext } from "../../service/request-context";
 import { installedService } from "../../service/service";
-import {
-  createInAppNotification,
-  isDashboardOrigin,
-} from "../notification/in_app";
 import { service } from "../../service";
 
 export async function finishCrawlSuper(job: NuQJob<any>) {
@@ -82,37 +77,10 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       )
       .filter(x => x !== null);
 
-    if (sc.crawlerOptions !== null) {
-      await logCrawl({
-        id: crawlId,
-        request_id: requestId,
-        url: sc.originUrl!,
-        team_id: teamId,
-        options: sc.crawlerOptions,
-        num_docs: fullDocs.length,
-        credits_cost: fullDocs.reduce(
-          (acc, doc) => acc + (doc?.metadata?.creditsUsed ?? 0),
-          0,
-        ),
-        zeroDataRetention,
-        cancelled: sc.cancelled ?? false,
-        monitor_id: monitoring?.monitorId,
-        monitor_check_id: monitoring?.checkId,
-      });
-    } else {
-      await logBatchScrape({
-        id: crawlId,
-        request_id: requestId,
-        team_id: teamId,
-        num_docs: fullDocs.length,
-        credits_cost: fullDocs.reduce(
-          (acc, doc) => acc + (doc?.metadata?.creditsUsed ?? 0),
-          0,
-        ),
-        zeroDataRetention,
-        cancelled: sc.cancelled ?? false,
-      });
-    }
+    const totalCredits = fullDocs.reduce(
+      (acc, doc) => acc + (doc?.metadata?.creditsUsed ?? 0),
+      0,
+    );
 
     const hooks = installedService()?.hooks;
     if (hooks?.has("crawl.finished")) {
@@ -122,6 +90,13 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
         ctx,
         completed: fullDocs.length,
         cancelled: sc.cancelled ?? false,
+        requestId,
+        origin: sc.origin ?? data?.origin,
+        originUrl: sc.originUrl,
+        crawlerOptions: sc.crawlerOptions,
+        charged: totalCredits,
+        isV1: false,
+        ...(monitoring ? { metadata: { monitoring } } : {}),
       });
     }
 
@@ -193,55 +168,6 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       });
     }
 
-    if (sc.crawlerOptions !== null) {
-      await logCrawl({
-        id: crawlId,
-        request_id: requestId,
-        url: sc.originUrl!,
-        team_id: teamId,
-        options: sc.crawlerOptions,
-        num_docs: num_docs,
-        credits_cost: credits_billed ?? 0,
-        zeroDataRetention,
-        cancelled: sc.cancelled ?? false,
-        monitor_id: monitoring?.monitorId,
-        monitor_check_id: monitoring?.checkId,
-      });
-    } else {
-      await logBatchScrape({
-        id: crawlId,
-        request_id: requestId,
-        team_id: teamId,
-        num_docs: num_docs,
-        credits_cost: credits_billed ?? 0,
-        zeroDataRetention,
-        cancelled: sc.cancelled ?? false,
-      });
-    }
-
-    // The origin is client-supplied, so this only scopes which of the caller's
-    // own jobs reach their team's feed. Runs with no successful page are not
-    // reported as completed.
-    if (
-      !sc.cancelled &&
-      num_docs > 0 &&
-      isDashboardOrigin(sc.origin ?? data?.origin)
-    ) {
-      const isCrawl = sc.crawlerOptions !== null;
-      await createInAppNotification(
-        teamId,
-        isCrawl ? "crawlCompleted" : "batchScrapeCompleted",
-        {
-          jobId: crawlId,
-          url: isCrawl && !zeroDataRetention ? (sc.originUrl ?? null) : null,
-          completed: num_docs,
-          creditsUsed: credits_billed,
-          link: `/app/logs?q=${encodeURIComponent(crawlId)}`,
-        },
-        { dedupeKey: crawlId },
-      );
-    }
-
     const hooks = installedService()?.hooks;
     if (hooks?.has("crawl.finished")) {
       await hooks.run("crawl.finished", {
@@ -250,6 +176,13 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
         ctx,
         completed: num_docs,
         cancelled: sc.cancelled ?? false,
+        requestId,
+        origin: sc.origin ?? data?.origin,
+        originUrl: sc.originUrl,
+        crawlerOptions: sc.crawlerOptions,
+        charged: credits_billed,
+        isV1: true,
+        ...(monitoring ? { metadata: { monitoring } } : {}),
       });
     }
 

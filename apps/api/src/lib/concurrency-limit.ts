@@ -1,7 +1,6 @@
 import { getRedisConnection } from "../services/queue-service";
 import { getCrawl, StoredCrawl } from "./crawl-redis";
 import { logger } from "./logger";
-import { abTestJob } from "../services/ab-test";
 import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
 export { QueueFullError } from "./queue-full-error";
 export {
@@ -43,6 +42,8 @@ export function observeJobEnqueued(jobId: string, data: ScrapeJobData): void {
     jobId,
     kind: scrapeJobKind(data),
     ctx: jobContext(data),
+    ...(data.mode === "single_urls" ? { url: data.url } : {}),
+    jobData: data,
   });
 }
 
@@ -394,8 +395,6 @@ export async function concurrentJobDone(job: NuQJob<any>) {
           );
         }
       }
-
-      abTestJob(nextJob.job.data);
 
       const promotedSuccessfully =
         (await scrapeQueue.promoteJobFromBacklogOrAdd(

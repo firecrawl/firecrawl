@@ -1416,7 +1416,10 @@ export async function scrapeURL(
         });
       }
 
-      if (checkRobotsOverride ?? shouldCheckRobots(meta.options, meta.ctx)) {
+      if (
+        checkRobotsOverride ??
+        shouldCheckRobots(meta.options as { lockdown?: boolean }, meta.ctx)
+      ) {
         const result = await withSpan(
           "scrape.robots_check",
           async robotsSpan => {

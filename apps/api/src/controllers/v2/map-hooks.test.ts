@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => {
   const crawler = {
     getRobotsTxt: vi.fn(async () => ""),
     importRobotsTxt: vi.fn(),
-    tryGetSitemap: vi.fn(async () => 0),
+    tryGetSitemap: vi.fn(async (..._args: any[]) => 0),
   };
 
   return {
@@ -12,30 +12,8 @@ const mocks = vi.hoisted(() => {
     billingCharge: vi.fn(
       async (..._args: any[]): Promise<number | undefined> => undefined,
     ),
-    logMap: vi.fn(async () => undefined),
-    logRequest: vi.fn(async () => undefined),
-    resolveViaAvgrab: vi.fn(async (): Promise<any[] | null> => null),
-    resolveThreatProtection: vi.fn(
-      async (): Promise<any> => ({
-        policy: null,
-      }),
-    ),
-    checkUrlsAgainstThreatPolicy: vi.fn(async (..._args: any[]) => ({
-      decisionsByUrl: new Map<string, any>(),
-    })),
-    checkPermissions: vi.fn(() => ({})),
-    fireEngineMap: vi.fn(async () => [] as any[]),
-    queryIndexAtDomainSplitLevelWithMeta: vi.fn(async () => [] as any[]),
-    queryIndexAtSplitLevelWithMeta: vi.fn(async () => [] as any[]),
-    redisGet: vi.fn(async (): Promise<string | null> => null),
-    redisSet: vi.fn(async () => "OK"),
   };
 });
-
-vi.mock("../../services/logging/log_job", () => ({
-  logMap: mocks.logMap,
-  logRequest: mocks.logRequest,
-}));
 
 vi.mock("../../lib/logger", () => ({
   logger: {
@@ -45,27 +23,6 @@ vi.mock("../../lib/logger", () => ({
     debug: vi.fn(),
     child: vi.fn().mockReturnThis(),
   },
-}));
-
-vi.mock("../../lib/permissions", () => ({
-  checkPermissions: mocks.checkPermissions,
-}));
-
-vi.mock("../../lib/avgrab-resolve", () => ({
-  AvgrabResolveError: class AvgrabResolveError extends Error {
-    upstreamStatus = 502;
-    code = "AVGRAB_ERROR";
-  },
-  resolveViaAvgrab: mocks.resolveViaAvgrab,
-}));
-
-vi.mock("../../lib/threat-protection/request", () => ({
-  resolveThreatProtection: mocks.resolveThreatProtection,
-  checkUrlsAgainstThreatPolicy: mocks.checkUrlsAgainstThreatPolicy,
-}));
-
-vi.mock("../../lib/scrape-billing", () => ({
-  calculateThreatScanCredits: vi.fn(() => 0),
 }));
 
 vi.mock("../../lib/crawl-redis", () => ({
@@ -79,25 +36,6 @@ vi.mock("../../lib/validateUrl", async importOriginal => {
     resolveRedirects: vi.fn(async (url: string) => url),
   };
 });
-
-vi.mock("../../search/fireEngine", () => ({
-  fireEngineMap: mocks.fireEngineMap,
-}));
-
-vi.mock("../../services/redis", () => ({
-  redisEvictConnection: {
-    get: mocks.redisGet,
-    set: mocks.redisSet,
-  },
-}));
-
-vi.mock("../../services/index", () => ({
-  generateDomainSplits: vi.fn((host: string) => [host]),
-  generateURLSplits: vi.fn((url: string) => [url]),
-  queryIndexAtDomainSplitLevelWithMeta:
-    mocks.queryIndexAtDomainSplitLevelWithMeta,
-  queryIndexAtSplitLevelWithMeta: mocks.queryIndexAtSplitLevelWithMeta,
-}));
 
 import { applyMapCollectHook, getMapResults } from "../../lib/map-utils";
 import { requestContext } from "../../lib/request-context";
@@ -155,14 +93,6 @@ describe("map lifecycle hooks", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     replaceService(undefined);
-    mocks.resolveViaAvgrab.mockResolvedValue(null);
-    mocks.resolveThreatProtection.mockResolvedValue({ policy: null });
-    mocks.checkUrlsAgainstThreatPolicy.mockResolvedValue({
-      decisionsByUrl: new Map(),
-    });
-    mocks.fireEngineMap.mockResolvedValue([]);
-    mocks.queryIndexAtDomainSplitLevelWithMeta.mockResolvedValue([]);
-    mocks.queryIndexAtSplitLevelWithMeta.mockResolvedValue([]);
     mocks.crawler.tryGetSitemap.mockResolvedValue(0);
   });
 
@@ -173,33 +103,41 @@ describe("map lifecycle hooks", () => {
   it("runs map.collect before map.finished, transforms URLs while keeping metadata, and slices to limit", async () => {
     const order: string[] = [];
     let finishedId: string | undefined;
-    installHooks({
-      "map.collect": (urls, info) => {
-        order.push(
-          `collect:${info.ctx.teamId}:${info.url}:${info.limit}:${urls.length}`,
-        );
-        return [
-          ...urls.filter(u => !u.endsWith("/drop")),
-          "https://example.com/added-1",
-          "https://example.com/added-2",
-        ];
-      },
-      "map.finished": event => {
-        order.push(`finished:${event.ctx.teamId}:${event.urls}`);
-        finishedId = event.id;
-      },
-    });
-
-    mocks.fireEngineMap.mockResolvedValue([
+    installHooks([
       {
-        url: "https://example.com/keep",
-        title: "Keep Title",
-        description: "Keep Desc",
+        "map.collect": (urls, info) => {
+          info.documents?.set("https://example.com/keep", {
+            url: "https://example.com/keep",
+            title: "Keep Title",
+            description: "Keep Desc",
+          });
+          info.documents?.set("https://example.com/drop", {
+            url: "https://example.com/drop",
+            title: "Drop Title",
+            description: "Drop Desc",
+          });
+          return [
+            ...urls,
+            "https://example.com/keep",
+            "https://example.com/drop",
+          ];
+        },
       },
       {
-        url: "https://example.com/drop",
-        title: "Drop Title",
-        description: "Drop Desc",
+        "map.collect": (urls, info) => {
+          order.push(
+            `collect:${info.ctx.teamId}:${info.url}:${info.limit}:${urls.length}`,
+          );
+          return [
+            ...urls.filter(u => !u.endsWith("/drop")),
+            "https://example.com/added-1",
+            "https://example.com/added-2",
+          ];
+        },
+        "map.finished": event => {
+          order.push(`finished:${event.ctx.teamId}:${event.urls}`);
+          finishedId = event.id;
+        },
       },
     ]);
 
@@ -229,80 +167,18 @@ describe("map lifecycle hooks", () => {
     ]);
   });
 
-  it("runs map.collect and map.finished on the avgrab early-return path and isolates observer errors", async () => {
-    const seen: Array<{ id: string; urls: number; teamId: string }> = [];
-    const report = installHooks({
-      "map.collect": urls => urls.filter(url => !url.endsWith("/fast-2")),
-      "map.finished": event => {
-        seen.push({
-          id: event.id,
-          urls: event.urls,
-          teamId: event.ctx.teamId,
-        });
-        throw new Error("observer failed");
-      },
-    });
-
-    mocks.resolveViaAvgrab.mockResolvedValue([
-      { url: "https://example.com/fast-1" },
-      { url: "https://example.com/fast-2" },
-    ]);
-
-    const res = makeRes();
-    await mapController(makeReq({ url: "https://example.com" }), res);
-
-    expect(res.status).toHaveBeenCalledWith(200);
-    const body = res.json.mock.calls[0][0];
-    expect(body.links).toEqual([{ url: "https://example.com/fast-1" }]);
-    expect(mocks.billingCharge).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: "map",
-        urls: 1,
-        ctx: expect.objectContaining({
-          teamId: "team-map-1",
-          orgId: "org-1",
-          apiKeyId: 9,
-        }),
-        state: expect.objectContaining({
-          perUrl: true,
-          chargeId: `${body.id}:avgrab`,
-        }),
-      }),
-    );
-    expect(seen).toEqual([
-      {
-        id: body.id,
-        urls: 1,
-        teamId: "team-map-1",
-      },
-    ]);
-    expect(report).toHaveBeenCalledTimes(1);
-  });
-
-  it("propagates avgrab map.collect errors without falling back and filters collected URLs against threat policy", async () => {
-    let collectCalls = 0;
-    installHooks({
-      "map.collect": () => {
-        collectCalls += 1;
-        throw new Error("avgrab collect rejected");
-      },
-    });
-    mocks.resolveViaAvgrab.mockResolvedValue([
-      { url: "https://example.com/av-1" },
-    ]);
-
-    await expect(
-      mapController(makeReq({ url: "https://example.com" }), makeRes()),
-    ).rejects.toThrow("avgrab collect rejected");
-    expect(collectCalls).toBe(1);
-    expect(mocks.fireEngineMap).not.toHaveBeenCalled();
-
+  it("forwards map.collect state to billing.charge and isolates map.finished observer errors", async () => {
     const finished: number[] = [];
-    installHooks([
+    const report = installHooks([
       {
-        "map.collect": urls => [...urls, "https://blocked.example/malware"],
+        "map.collect": urls => [
+          ...urls,
+          "https://example.com/safe-1",
+          "https://blocked.example/malware",
+        ],
         "map.finished": event => {
           finished.push(event.urls);
+          throw new Error("observer failed");
         },
       },
       {
@@ -322,7 +198,7 @@ describe("map lifecycle hooks", () => {
 
     expect(res.status).toHaveBeenCalledWith(200);
     const body = res.json.mock.calls[0][0];
-    expect(body.links).toEqual([{ url: "https://example.com/av-1" }]);
+    expect(body.links).toEqual([{ url: "https://example.com/safe-1" }]);
     expect(mocks.billingCharge).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: "map",
@@ -333,26 +209,28 @@ describe("map lifecycle hooks", () => {
           apiKeyId: 9,
         }),
         state: expect.objectContaining({
-          perUrl: true,
-          chargeId: `${body.id}:avgrab`,
           threatDecisions: [{ allowed: true }, { allowed: false }],
         }),
       }),
     );
     expect(finished).toEqual([1]);
+    expect(report).toHaveBeenCalledTimes(1);
   });
 
   it("propagates map.collect errors and preserves identical output when unregistered", async () => {
-    mocks.fireEngineMap.mockResolvedValue([
-      { url: "https://example.com/a", title: "A", description: "Desc A" },
-    ]);
+    mocks.crawler.tryGetSitemap.mockImplementation(
+      async (cb: (urls: string[]) => void) => {
+        cb(["https://example.com/a"]);
+        return 1;
+      },
+    );
 
     const withoutService = await getMapResults({
       url: "https://example.com",
       limit: 5,
       teamId: "team-map-1",
       flags: null,
-      crawlerOptions: { sitemap: "skip" },
+      crawlerOptions: { sitemap: "include" },
     });
 
     installHooks();
@@ -361,7 +239,7 @@ describe("map lifecycle hooks", () => {
       limit: 5,
       teamId: "team-map-1",
       flags: null,
-      crawlerOptions: { sitemap: "skip" },
+      crawlerOptions: { sitemap: "include" },
     });
 
     expect(withoutHandlers.mapResults).toEqual(withoutService.mapResults);
@@ -378,26 +256,33 @@ describe("map lifecycle hooks", () => {
         limit: 5,
         teamId: "team-map-1",
         flags: null,
-        crawlerOptions: { sitemap: "skip" },
+        crawlerOptions: { sitemap: "include" },
       }),
     ).rejects.toThrow("map vetoed");
   });
 
   it("reapplies map scope constraints to map.collect additions and preserves titled duplicates", async () => {
-    mocks.fireEngineMap.mockResolvedValue([
-      { url: "https://example.com/docs/intro", title: "Intro" },
+    installHooks([
+      {
+        "map.collect": (urls, info) => {
+          info.documents?.set("https://example.com/docs/intro", {
+            url: "https://example.com/docs/intro",
+            title: "Intro",
+          });
+          return [...urls, "https://example.com/docs/intro"];
+        },
+      },
+      {
+        "map.collect": () => [
+          "https://example.com/docs/intro/",
+          "https://example.com/docs/guide?ref=1",
+          "https://other.com/docs/external",
+          "https://sub.example.com/docs/sub",
+          "https://example.com/blog/post",
+          "javascript:alert(1)",
+        ],
+      },
     ]);
-
-    installHooks({
-      "map.collect": () => [
-        "https://example.com/docs/intro/",
-        "https://example.com/docs/guide?ref=1",
-        "https://other.com/docs/external",
-        "https://sub.example.com/docs/sub",
-        "https://example.com/blog/post",
-        "javascript:alert(1)",
-      ],
-    });
 
     const scoped = await getMapResults({
       url: "https://example.com/docs",

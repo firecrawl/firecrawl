@@ -13,22 +13,13 @@ import {
   isSameSubdomain,
   resolveRedirects,
 } from "./validateUrl";
-import { fireEngineMap } from "../search/fireEngine";
-import { redisEvictConnection } from "../services/redis";
-import {
-  generateDomainSplits,
-  generateURLSplits,
-  queryIndexAtDomainSplitLevelWithMeta,
-  queryIndexAtSplitLevelWithMeta,
-} from "../services/index";
 import { performCosineSimilarityV2 } from "./map-cosine";
 import { Logger } from "winston";
 import { requestContext } from "./request-context";
 import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
 
-// Max Links that "Smart /map" can return
-const MAX_FIRE_ENGINE_RESULTS = 100;
+const MAX_SEARCH_RESULTS = 100;
 
 export interface MapResult {
   success: boolean;
@@ -52,31 +43,6 @@ function dedupeMapDocumentArray(documents: MapDocument[]): MapDocument[] {
   }
 
   return Array.from(urlMap.values());
-}
-
-export async function queryIndex(
-  url: string,
-  limit: number,
-  useIndex: boolean,
-  includeSubdomains: boolean,
-): Promise<MapDocument[]> {
-  if (!useIndex) {
-    return [];
-  }
-
-  const urlSplits = generateURLSplits(url);
-  if (urlSplits.length === 1 && includeSubdomains) {
-    const hostname = new URL(urlSplits[0]).hostname;
-    const domainSplits = generateDomainSplits(hostname);
-    // domain_splits_0..4_hash cover hosts with a registrable domain up to 5
-    // levels (excluding experimental __experimental_omceDomain overrides);
-    // IP literals, localhost, and deeper subdomains fall back to url_split_0_hash.
-    if (domainSplits.length > 0 && domainSplits.length <= 5) {
-      return await queryIndexAtDomainSplitLevelWithMeta(hostname, limit);
-    }
-  }
-
-  return await queryIndexAtSplitLevelWithMeta(url, limit);
 }
 
 interface MapScopeOptions {
@@ -224,10 +190,13 @@ export async function applyMapCollectHook(
     return { url: collectedUrl };
   });
   const skipScope = state?.skipScope === true;
-  const finalDocs =
+  let finalDocs =
     scope && !skipScope
       ? applyMapScope(collectedDocs, url, scope)
       : dedupeMapDocumentArray(collectedDocs);
+  if (search && state?.skipCosine !== true) {
+    finalDocs = performCosineSimilarityV2(finalDocs, search.toLowerCase());
+  }
   return finalDocs.slice(0, limit);
 }
 
@@ -248,7 +217,7 @@ export async function getMapResults({
   ignoreCache = false,
   location,
   headers,
-  maxFireEngineResults = MAX_FIRE_ENGINE_RESULTS,
+  maxFireEngineResults = MAX_SEARCH_RESULTS,
   id: providedId,
   zeroDataRetention: requestZeroDataRetention = false,
   ctx,
@@ -367,128 +336,25 @@ export async function getMapResults({
         })
         .filter(x => x !== null) as MapDocument[];
     }
-  } else {
-    let urlWithoutWww = url.replace("www.", "");
-    let mapUrl =
-      search && allowExternalLinks
-        ? `${search} ${urlWithoutWww}`
-        : search
-          ? `${search} site:${urlWithoutWww}`
-          : `site:${url}`;
-
-    const resultsPerPage = 100;
-    const maxPages = Math.ceil(
-      Math.min(maxFireEngineResults, limit) / resultsPerPage,
-    );
-
-    const usOnly = mapCtx.usOnly === true || flags?.usOnly === true;
-    const cacheKey = `fireEngineMap:${usOnly ? "us-only:" : ""}${mapUrl}`;
-    const cachedResult = ignoreCache
-      ? null
-      : await redisEvictConnection.get(cacheKey);
-
-    const fetchPage = async (page: number) => {
-      return await fireEngineMap(
-        mapUrl,
-        {
-          numResults: resultsPerPage,
-          page,
-          usOnly,
-          zeroDataRetention: searchZeroDataRetention,
+  } else if (crawlerOptions.sitemap === "include" && !indexOnly) {
+    try {
+      await crawler.tryGetSitemap(
+        urls => {
+          mapResults.push(
+            ...urls.map(x => ({
+              url: x,
+            })),
+          );
         },
+        true,
+        false,
+        crawlerOptions.timeout ?? 30000,
         abort,
+        undefined,
+        ignoreCache ? 0 : undefined,
       );
-    };
-
-    const fetchAllPages = async (): Promise<any[]> => {
-      if (indexOnly) {
-        // Lockdown: no live search discovery, serve from the index only.
-        return [];
-      }
-      if (cachedResult) {
-        return JSON.parse(cachedResult);
-      }
-      // if page 1 has no results, don't fetch remaining pages
-      const page1Result = await fetchPage(1);
-      if (!page1Result || page1Result.length === 0 || maxPages === 1) {
-        return [page1Result];
-      }
-      const remainingPages = await Promise.all(
-        Array.from({ length: maxPages - 1 }, (_, i) => fetchPage(i + 2)),
-      );
-      return [page1Result, ...remainingPages];
-    };
-
-    const [indexResults, searchResults] = await Promise.all([
-      queryIndex(url, limit, useIndex, includeSubdomains),
-      fetchAllPages(),
-    ]);
-
-    if (!searchZeroDataRetention) {
-      await redisEvictConnection.set(
-        cacheKey,
-        JSON.stringify(searchResults),
-        "EX",
-        48 * 60 * 60,
-      ); // Cache for 48 hours
-    }
-
-    if (indexResults.length > 0) {
-      mapResults.push(...indexResults);
-    }
-
-    if (crawlerOptions.sitemap === "include" && !indexOnly) {
-      try {
-        await crawler.tryGetSitemap(
-          urls => {
-            mapResults.push(
-              ...urls.map(x => ({
-                url: x,
-              })),
-            );
-          },
-          true,
-          false,
-          crawlerOptions.timeout ?? 30000,
-          abort,
-          undefined,
-          ignoreCache ? 0 : undefined,
-        );
-      } catch (e) {
-        // Silently handle sitemap errors
-      }
-    }
-
-    if (search) {
-      mapResults = searchResults
-        .flat()
-        .map<MapDocument>(
-          x =>
-            ({
-              url: x.url,
-              title: x.title,
-              description: x.description,
-            }) satisfies MapDocument,
-        )
-        .concat(mapResults);
-    } else {
-      mapResults = mapResults.concat(
-        searchResults.flat().map(x => ({
-          url: x.url,
-          title: x.title,
-          description: x.description,
-        })),
-      );
-    }
-
-    const minimumCutoff = Math.min(MAX_MAP_LIMIT, limit);
-    if (mapResults.length > minimumCutoff) {
-      mapResults = mapResults.slice(0, minimumCutoff);
-    }
-
-    if (search) {
-      const searchQuery = search.toLowerCase();
-      mapResults = performCosineSimilarityV2(mapResults, searchQuery);
+    } catch (e) {
+      // Silently handle sitemap errors
     }
   }
 
@@ -519,6 +385,9 @@ export async function getMapResults({
       state: mapState,
     });
   } else {
+    if (search) {
+      mapResults = performCosineSimilarityV2(mapResults, search.toLowerCase());
+    }
     mapResults = mapResults.slice(0, limit);
   }
 

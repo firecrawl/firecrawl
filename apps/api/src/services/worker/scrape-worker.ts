@@ -18,7 +18,6 @@ import {
   crawlToCrawler,
   queueCrawlJobDoneRepair,
   recordRobotsBlocked,
-  recordThreatBlocked,
   finishCrawlKickoff,
   generateURLPermutations,
   getCrawl,
@@ -29,8 +28,6 @@ import {
   setCrawlError,
   StoredCrawl,
 } from "../../lib/crawl-redis";
-import { checkUrlsAgainstThreatPolicy } from "../../lib/threat-protection/request";
-import type { ThreatDecision } from "../../lib/threat-protection/types";
 import { redisEvictConnection } from "../redis";
 import {
   _addScrapeJobToBullMQ,
@@ -44,29 +41,18 @@ import {
   serpScrapeWarningEnabled,
 } from "../../lib/serp-url";
 import { resolveJobPriority } from "../../lib/limits";
-import {
-  Document,
-  getV2RequestSchemas,
-  TeamFlags,
-} from "../../controllers/v2/types";
+import { Document, getV2RequestSchemas } from "../../controllers/v2/types";
 import { hasFormatOfType } from "../../lib/format-utils";
 import { getACUCTeam } from "../../controllers/auth";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
-import {
-  crawlContext,
-  jobContext,
-  requestContext,
-} from "../../lib/request-context";
+import { crawlContext, jobContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
 import { service, type RequestContext } from "../../service";
 import { installedService } from "../../service/service";
 import { CostTracking } from "../../lib/cost-tracking";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
-import { isLockdownZeroDataRetention } from "../../lib/safe-mode";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 
-import { generateURLSplits, queryIndexAtSplitLevel } from "../index";
 import { DenialReason, WebCrawler } from "../../scraper/WebScraper/crawler";
 import { getCrawlScope } from "../../lib/crawl-scope";
 import type { Logger } from "winston";
@@ -75,13 +61,10 @@ import {
   JobCancelledError,
   RacedRedirectError,
   ScrapeJobTimeoutError,
-  isTransportableError,
   SitemapError,
   UnsupportedSiteError,
 } from "../../lib/error";
 import { serializeThrownError } from "../../lib/error-serde";
-import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
-import { trackScrape } from "../../lib/tracking";
 import type { NuQJob } from "./nuq";
 import {
   ScrapeJobData,
@@ -97,18 +80,7 @@ import {
   setSpanAttributes,
 } from "../../lib/otel-tracer";
 import { ScrapeUrlResponse } from "../../scraper/scrapeURL";
-import { logScrape } from "../logging/log_job";
 import { FeatureFlag } from "../../scraper/scrapeURL/engines";
-import {
-  recordMonitorScrapeFailure,
-  recordMonitorScrapeSuccess,
-} from "../monitoring/results";
-import {
-  reportExchangeBilling,
-  warmExchangeCatalog,
-  type ExchangeScrapeMetadata,
-} from "../../lib/exchange";
-import { emitScrapeActivityEvent } from "../../lib/siem-logging";
 import {
   createScrapeFinishedEmitter,
   type ScrapeFinishedOutcome,
@@ -123,7 +95,6 @@ const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
 if (require.main === module) {
   cacheableLookup.install(http.globalAgent);
   cacheableLookup.install(https.globalAgent);
-  warmExchangeCatalog();
 }
 
 async function applyCrawlLinksHook(
@@ -136,6 +107,8 @@ async function applyCrawlLinksHook(
     limit,
     maxDepth,
     fromMap = false,
+    crawlerOptions,
+    bypassBilling,
   }: {
     crawlId: string;
     ctx: RequestContext;
@@ -144,6 +117,8 @@ async function applyCrawlLinksHook(
     limit: number;
     maxDepth: number;
     fromMap?: boolean;
+    crawlerOptions?: Record<string, unknown> | null;
+    bypassBilling?: boolean;
   },
 ): Promise<string[]> {
   const hooks = installedService()?.hooks;
@@ -155,6 +130,8 @@ async function applyCrawlLinksHook(
     id: crawlId,
     ctx,
     from,
+    ...(crawlerOptions !== undefined ? { crawlerOptions } : {}),
+    ...(bypassBilling !== undefined ? { bypassBilling } : {}),
   });
   if (transformed.every(url => existing.has(url))) {
     return transformed;
@@ -175,8 +152,8 @@ async function billScrapeJob(
   costTracking: CostTracking,
   error?: Error | null,
   unsupportedFeatures?: Set<FeatureFlag>,
-  exchange?: ExchangeScrapeMetadata,
-  threatDecisions?: ThreatDecision[],
+  exchange?: unknown,
+  threatDecisions?: unknown[],
 ): Promise<number | undefined> {
   if (job.data.is_scrape === true || job.data.internalOptions?.bypassBilling) {
     return undefined;
@@ -198,41 +175,10 @@ async function billScrapeJob(
       keylessReserved: job.data.keylessReserved,
       error: error ?? null,
       unsupportedFeatures,
-      exchange,
-      threatDecisions,
+      exchange: exchange as any,
+      threatDecisions: threatDecisions as any,
     },
   });
-}
-
-function billThreatBlockedDiscoveries(
-  args: {
-    ctx: RequestContext;
-    crawlId?: string;
-    crawlerOptions?: unknown;
-    bypassBilling: boolean;
-  },
-  blocked: { domain: string; decision: ThreatDecision }[],
-  logger: Logger,
-) {
-  if (args.bypassBilling || blocked.length === 0) return;
-  void service.modules.billing
-    .charge({
-      kind: "crawl",
-      ctx: args.ctx,
-      requestId: args.crawlId,
-      urls: blocked.length,
-      state: {
-        crawlerOptions: args.crawlerOptions,
-        resolveOrgFromTeam: true,
-        threatDecisions: blocked.map(x => x.decision),
-      },
-    })
-    .catch(error => {
-      logger.error("Failed to bill team for blocked crawl discoveries", {
-        teamId: args.ctx.teamId,
-        error,
-      });
-    });
 }
 
 async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
@@ -274,11 +220,15 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     : "scrape";
   const emitScrapeFinished = createScrapeFinishedEmitter({
     jobId: job.id,
-    requestId: job.data.requestId,
+    requestId: job.data.requestId ?? job.data.crawl_id ?? job.id,
     kind: scrapeKind,
     ctx,
     url: job.data.url,
     options: job.data.scrapeOptions,
+    origin: job.data.origin,
+    crawlId: job.data.crawl_id,
+    skipNuq: job.data.skipNuq ?? false,
+    isParse: Boolean(job.data.internalOptions?.isParse),
     getState: () => pipeline?.state,
   });
   let finishedOutcome: ScrapeFinishedOutcome | null = null;
@@ -370,36 +320,12 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       !job.data.internalOptions?.isParse &&
       doc.metadata.url !== undefined &&
       doc.metadata.sourceURL !== undefined &&
-      canonicalizeUrl(doc.metadata.url) !==
-        canonicalizeUrl(doc.metadata.sourceURL)
+      doc.metadata.url !== doc.metadata.sourceURL &&
+      service.modules.blocklist.isBlocked(doc.metadata.url, ctx, {
+        origin: job.data.origin ?? null,
+      })
     ) {
-      let teamFlags = ctx.flags ?? null;
-      let orgId = ctx.orgId ?? null;
-      if (ctx.flags === undefined) {
-        const teamChunk = await getACUCTeam(job.data.team_id);
-        teamFlags = teamChunk?.flags ?? null;
-        orgId = orgId ?? teamChunk?.org_id ?? null;
-      }
-      const blockCtx = requestContext({
-        teamId: job.data.team_id,
-        zeroDataRetention:
-          ctx.zeroDataRetention === true ||
-          job.data.zeroDataRetention === true ||
-          getScrapeZDR(teamFlags ?? undefined) === "forced" ||
-          isLockdownZeroDataRetention(
-            teamFlags,
-            job.data.internalOptions?.safeModeBypassed ? false : undefined,
-          ),
-        flags: teamFlags,
-        orgId,
-      });
-      if (
-        service.modules.blocklist.isBlocked(doc.metadata.url, blockCtx, {
-          origin: job.data.origin ?? null,
-        })
-      ) {
-        throw new UnsupportedSiteError();
-      }
+      throw new UnsupportedSiteError();
     }
 
     const rawHtml = doc.rawHtml ?? "";
@@ -574,75 +500,22 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
             await recordRobotsBlocked(job.data.crawl_id, links.robotsBlocked);
 
-            // Threat protection: silently skip blocked discovered links
-            // (cross-domain links included) — the crawl continues. Skipped
-            // URLs + decisions are recorded for crawl bookkeeping. Checks
-            // are URL-level against the local hash-prefix lists (deduped
-            // in-batch), so many links stay cheap on the check side; blocked
-            // discoveries bill +2 per unique scanned URL.
             let discoveredLinks = links.links;
             if (job.data.crawl_id) {
               discoveredLinks = await applyCrawlLinksHook(discoveredLinks, {
                 crawlId: job.data.crawl_id,
-                ctx,
+                ctx: {
+                  ...ctx,
+                  orgId: ctx.orgId ?? crawlContext(sc).orgId,
+                },
                 from:
                   doc.metadata?.url ?? doc.metadata?.sourceURL ?? sc.originUrl!,
                 crawler,
                 limit: Infinity,
                 maxDepth: sc.crawlerOptions?.maxDepth ?? 10,
+                crawlerOptions: job.data.crawlerOptions,
+                bypassBilling: job.data.internalOptions?.bypassBilling ?? false,
               });
-            }
-            const threatPolicy = job.data.internalOptions?.threatProtection;
-            if (
-              threatPolicy &&
-              threatPolicy.mode !== "off" &&
-              discoveredLinks.length > 0
-            ) {
-              const { allowedUrls, blocked } =
-                await checkUrlsAgainstThreatPolicy(
-                  discoveredLinks,
-                  threatPolicy,
-                  { teamId: job.data.team_id },
-                );
-              discoveredLinks = allowedUrls;
-              const newlyBlocked: typeof blocked = [];
-              for (const blockedUrl of blocked) {
-                if (
-                  await recordThreatBlocked(
-                    job.data.crawl_id,
-                    // Key on the canonical URL so raw spelling variants of
-                    // one URL dedupe to a single fee, matching billing.
-                    blockedUrl.decision.url ?? blockedUrl.url,
-                    blockedUrl.decision,
-                  )
-                ) {
-                  newlyBlocked.push(blockedUrl);
-                }
-              }
-              if (blocked.length > 0) {
-                billThreatBlockedDiscoveries(
-                  {
-                    ctx: {
-                      ...ctx,
-                      orgId: ctx.orgId ?? crawlContext(sc).orgId,
-                    },
-                    crawlId: job.data.crawl_id,
-                    crawlerOptions: job.data.crawlerOptions,
-                    bypassBilling:
-                      job.data.internalOptions?.bypassBilling ?? false,
-                  },
-                  newlyBlocked,
-                  logger,
-                );
-                logger.info(
-                  "Skipped " +
-                    blocked.length +
-                    " discovered link(s) blocked by threat protection",
-                  {
-                    blockedDomains: [...new Set(blocked.map(x => x.domain))],
-                  },
-                );
-              }
             }
 
             const discoveredPriorityCtx =
@@ -803,41 +676,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         });
       }
 
-      logger.debug("Logging job to DB...");
-      await logScrape({
-        id: job.id,
-        request_id: requestId,
-        url: job.data.url,
-        is_successful: true,
-        doc,
-        time_taken: timeTakenInSeconds,
-        team_id: job.data.team_id,
-        options: job.data.scrapeOptions,
-        cost_tracking: costTracking.toJSON(),
-        pdf_num_pages: doc.metadata.numPages,
-        content_type: doc.metadata.contentType,
-        credits_cost: credits_billed ?? 0,
-        zeroDataRetention: ctx.zeroDataRetention,
-        skipNuq: job.data.skipNuq ?? false,
-        is_parse: Boolean(job.data.internalOptions?.isParse),
-        monitor_id: job.data.monitoring?.monitorId,
-        monitor_check_id: job.data.monitoring?.checkId,
-        skipJobStore: true,
-      });
-
-      trackScrape({
-        scrapeId: job.id,
-        requestId: job.data.requestId ?? job.data.crawl_id ?? job.id,
-        teamId: job.data.team_id,
-        url: job.data.url,
-        origin: job.data.origin,
-        kind: ctx.billing?.endpoint ?? "unknown",
-        isSuccessful: true,
-        creditsCost: credits_billed ?? 0,
-        timeTaken: timeTakenInSeconds,
-        zeroDataRetention: ctx.zeroDataRetention,
-      }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
-
       if (job.data.v1) {
         const sender = await createWebhookSender({
           teamId: job.data.team_id,
@@ -869,13 +707,11 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         }
       }
 
-      await recordMonitorScrapeSuccess(job, doc);
-
       logger.debug("Declaring job as done...");
       try {
         await addCrawlJobDone(job.data.crawl_id, job.id, true, logger);
       } catch (e) {
-        // The scrape succeeded and its success webhook already went out —
+        // The scrape succeeded and its success webhook already went out:
         // a bookkeeping failure must not route this job through the
         // failure path (contradictory failure webhook, misrecorded job).
         // Already logged canonically inside addCrawlJobDone.
@@ -893,6 +729,14 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         document: doc,
         charged: credits_billed ?? undefined,
         timeTakenMs: end - start,
+        startedAt: start,
+        completedAt: Date.now(),
+        costTracking: costTracking.toJSON(),
+        metadata: {
+          jobData: job.data,
+          exchange: pipeline.exchange,
+          threatDecisions: pipeline.threatDecisions,
+        },
       };
     } else {
       try {
@@ -940,49 +784,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           return false;
         });
 
-      const logScrapePromise = logScrape({
-        id: job.id,
-        request_id: requestId,
-        url: job.data.url,
-        is_successful: true,
-        doc,
-        time_taken: timeTakenInSeconds,
-        team_id: job.data.team_id,
-        options: job.data.scrapeOptions,
-        cost_tracking: costTracking.toJSON(),
-        pdf_num_pages: doc.metadata.numPages,
-        content_type: doc.metadata.contentType,
-        credits_cost: credits_billed ?? 0,
-        zeroDataRetention: ctx.zeroDataRetention,
-        skipNuq: job.data.skipNuq ?? false,
-        is_parse: Boolean(job.data.internalOptions?.isParse),
-        monitor_id: job.data.monitoring?.monitorId,
-        monitor_check_id: job.data.monitoring?.checkId,
-        skipJobStore: true,
-      });
-      logScrapePromise.catch(() => {});
-
-      trackScrape({
-        scrapeId: job.id,
-        requestId,
-        teamId: job.data.team_id,
-        url: job.data.url,
-        origin: job.data.origin,
-        kind: ctx.billing?.endpoint ?? "unknown",
-        isSuccessful: true,
-        creditsCost: credits_billed ?? 0,
-        timeTaken: timeTakenInSeconds,
-        zeroDataRetention: ctx.zeroDataRetention,
-      }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
-
-      await recordMonitorScrapeSuccess(job, doc).catch(error =>
-        logger.warn("Failed to record monitor scrape result", { error }),
-      );
-
       if (job.data.skipNuq) {
-        logScrapePromise.catch(err =>
-          logger.warn("Background scrape log failed", { error: err }),
-        );
         const SCRAPE_STATE_BARRIER_MS = 2_000;
         let barrierTimer: ReturnType<typeof setTimeout> | undefined;
         let recorded = false;
@@ -1011,27 +813,23 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         }
         externalResultStored = recorded;
       } else {
-        const [recorded] = await Promise.all([
-          recordOutcomePromise,
-          logScrapePromise,
-        ]);
-        externalResultStored = recorded;
+        externalResultStored = await recordOutcomePromise;
       }
 
       finishedOutcome = {
         document: doc,
         charged: credits_billed ?? undefined,
         timeTakenMs: end - start,
+        startedAt: start,
+        completedAt: Date.now(),
+        costTracking: costTracking.toJSON(),
+        metadata: {
+          jobData: job.data,
+          exchange: pipeline.exchange,
+          threatDecisions: pipeline.threatDecisions,
+        },
       };
     }
-
-    emitScrapeActivityEvent(job.id, job.data, {
-      success: true,
-      document: doc,
-      threatDecisions: pipeline.threatDecisions,
-      startedAt: start,
-      completedAt: Date.now(),
-    });
 
     logger.info(`🐂 Job done ${job.id}`);
     resultData = { ...data, externalResultStored };
@@ -1039,14 +837,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     let credits_billed: number | null | undefined;
     let failureEnd: number | undefined;
     try {
-      emitScrapeActivityEvent(job.id, job.data, {
-        success: false,
-        error,
-        threatDecisions: pipeline?.threatDecisions,
-        startedAt: start,
-        completedAt: Date.now(),
-      });
-
       // Record top-level robots.txt rejections so crawl status can warn
       try {
         if (
@@ -1196,20 +986,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         pipeline?.threatDecisions,
       );
 
-      // The Exchange delivered this access but the scrape ultimately failed,
-      // so the customer was never billed for it - void the access event so
-      // the Exchange ledger reconciles. Fire-and-forget. If billing was in
-      // fact queued before a later step failed, the billing worker's
-      // confirmation authoritatively repairs this void (void -> confirmed is
-      // legal on the Exchange; confirmed -> void is not), so a paid access
-      // can never end up voided.
-      if (pipeline?.success && pipeline.exchange?.accessEventId !== undefined) {
-        void reportExchangeBilling({
-          accessEventId: pipeline.exchange.accessEventId,
-          status: "void",
-        });
-      }
-
       const requestId = job.data.requestId ?? job.data.crawl_id ?? job.id;
       const errorMessage =
         typeof error === "string"
@@ -1239,52 +1015,25 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         });
       }
 
-      logger.debug("Logging job to DB...");
-      await logScrape({
-        id: job.id,
-        request_id: requestId,
-        url: job.data.url,
-        is_successful: false,
-        error: errorMessage,
-        error_code: isTransportableError(error) ? error.code : undefined,
-        time_taken: timeTakenInSeconds,
-        team_id: job.data.team_id,
-        options: job.data.scrapeOptions,
-        cost_tracking: costTracking.toJSON(),
-        credits_cost: credits_billed ?? 0,
-        zeroDataRetention: ctx.zeroDataRetention,
-        skipNuq: job.data.skipNuq ?? false,
-        is_parse: Boolean(job.data.internalOptions?.isParse),
-        monitor_id: job.data.monitoring?.monitorId,
-        monitor_check_id: job.data.monitoring?.checkId,
-        skipJobStore: true,
-      });
-
-      trackScrape({
-        scrapeId: job.id,
-        requestId: job.data.requestId ?? job.data.crawl_id ?? job.id,
-        teamId: job.data.team_id,
-        url: job.data.url,
-        origin: job.data.origin,
-        kind: ctx.billing?.endpoint ?? "unknown",
-        isSuccessful: false,
-        creditsCost: credits_billed ?? 0,
-        timeTaken: timeTakenInSeconds,
-        zeroDataRetention: ctx.zeroDataRetention,
-      }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
-
-      await recordMonitorScrapeFailure(job, error);
-
       resultData = data;
     } catch (cleanupError) {
       failureCleanupError = cleanupError;
       hasFailureCleanupError = true;
     } finally {
+      const completedAt = failureEnd ?? Date.now();
       finishedOutcome = {
         document: null,
         error,
         charged: credits_billed ?? undefined,
-        timeTakenMs: (failureEnd ?? Date.now()) - start,
+        timeTakenMs: completedAt - start,
+        startedAt: start,
+        completedAt,
+        costTracking: costTracking.toJSON(),
+        metadata: {
+          jobData: job.data,
+          exchange: pipeline?.success ? pipeline.exchange : undefined,
+          threatDecisions: pipeline?.threatDecisions,
+        },
       };
     }
   } finally {
@@ -1321,15 +1070,7 @@ async function kickoffGetIndexLinks(
     return [];
   }
 
-  const trimmedURL = new URL(url);
-  trimmedURL.search = "";
-
-  let index = await queryIndexAtSplitLevel(
-    sc.crawlerOptions.allowBackwardCrawling
-      ? generateURLSplits(trimmedURL.href)[0]
-      : trimmedURL.href,
-    sc.crawlerOptions.limit ?? 10000,
-  );
+  let index: string[] = [];
 
   const hooks = installedService()?.hooks;
   if (hooks?.has("crawl.kickoff")) {
@@ -1337,7 +1078,12 @@ async function kickoffGetIndexLinks(
       id: crawlId,
       ctx,
       url,
+      crawlerOptions: sc.crawlerOptions,
     });
+  }
+
+  if (index.length === 0) {
+    return [];
   }
 
   const { links, robotsBlocked } = await crawler.filterLinks(
@@ -1541,58 +1287,18 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
 
     indexLinks = await applyCrawlLinksHook(indexLinks, {
       crawlId: job.data.crawl_id,
-      ctx,
+      ctx: {
+        ...ctx,
+        orgId: ctx.orgId ?? crawlContext(sc).orgId,
+      },
       from: job.data.url,
       crawler,
       limit: sc.crawlerOptions.limit ?? 10000,
       maxDepth: sc.crawlerOptions.maxDepth ?? 10,
       fromMap: false,
+      crawlerOptions: sc.crawlerOptions,
+      bypassBilling: sc.internalOptions?.bypassBilling ?? false,
     });
-
-    // Threat protection: skip blocked index-sourced discoveries (URL-level
-    // checks; first-time blocks are recorded and billed, see below).
-    const kickoffThreatPolicy = sc.internalOptions?.threatProtection;
-    if (
-      kickoffThreatPolicy &&
-      kickoffThreatPolicy.mode !== "off" &&
-      indexLinks.length > 0
-    ) {
-      const { allowedUrls, blocked } = await checkUrlsAgainstThreatPolicy(
-        indexLinks,
-        kickoffThreatPolicy,
-        { teamId: job.data.team_id },
-      );
-      indexLinks = allowedUrls;
-      const newlyBlocked: typeof blocked = [];
-      for (const blockedUrl of blocked) {
-        if (
-          await recordThreatBlocked(
-            job.data.crawl_id,
-            // Key on the canonical URL so raw spelling variants of one URL
-            // dedupe to a single fee, matching billing.
-            blockedUrl.decision.url ?? blockedUrl.url,
-            blockedUrl.decision,
-          )
-        ) {
-          newlyBlocked.push(blockedUrl);
-        }
-      }
-      if (blocked.length > 0) {
-        billThreatBlockedDiscoveries(
-          {
-            ctx: {
-              ...ctx,
-              orgId: ctx.orgId ?? crawlContext(sc).orgId,
-            },
-            crawlId: job.data.crawl_id,
-            crawlerOptions: sc.crawlerOptions,
-            bypassBilling: sc.internalOptions?.bypassBilling ?? false,
-          },
-          newlyBlocked,
-          logger,
-        );
-      }
-    }
 
     if (indexLinks.length > 0) {
       logger.debug("Using index links of length " + indexLinks.length, {
@@ -1723,61 +1429,20 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       false,
     );
     await recordRobotsBlocked(job.data.crawl_id, sitemapLinks.robotsBlocked);
-    let passingURLs = await applyCrawlLinksHook(sitemapLinks.links, {
+    const passingURLs = await applyCrawlLinksHook(sitemapLinks.links, {
       crawlId: job.data.crawl_id,
-      ctx,
+      ctx: {
+        ...ctx,
+        orgId: ctx.orgId ?? crawlContext(sc).orgId,
+      },
       from: job.data.sitemapUrl,
       crawler,
       limit: Infinity,
       maxDepth: sc.crawlerOptions.maxDepth ?? 10,
       fromMap: false,
+      crawlerOptions: sc.crawlerOptions,
+      bypassBilling: sc.internalOptions?.bypassBilling ?? false,
     });
-
-    // Threat protection: skip blocked sitemap entries — the crawl continues;
-    // skipped URLs + decisions are recorded as crawl bookkeeping (which also
-    // dedups the scan fee per crawl).
-    const sitemapThreatPolicy = sc.internalOptions?.threatProtection;
-    if (
-      sitemapThreatPolicy &&
-      sitemapThreatPolicy.mode !== "off" &&
-      passingURLs.length > 0
-    ) {
-      const { allowedUrls, blocked } = await checkUrlsAgainstThreatPolicy(
-        passingURLs,
-        sitemapThreatPolicy,
-        { teamId: job.data.team_id },
-      );
-      passingURLs = allowedUrls;
-      const newlyBlocked: typeof blocked = [];
-      for (const blockedUrl of blocked) {
-        if (
-          await recordThreatBlocked(
-            job.data.crawl_id,
-            // Key on the canonical URL so raw spelling variants of one URL
-            // dedupe to a single fee, matching billing.
-            blockedUrl.decision.url ?? blockedUrl.url,
-            blockedUrl.decision,
-          )
-        ) {
-          newlyBlocked.push(blockedUrl);
-        }
-      }
-      if (blocked.length > 0) {
-        billThreatBlockedDiscoveries(
-          {
-            ctx: {
-              ...ctx,
-              orgId: crawlContext(sc).orgId,
-            },
-            crawlId: job.data.crawl_id,
-            crawlerOptions: sc.crawlerOptions,
-            bypassBilling: sc.internalOptions?.bypassBilling ?? false,
-          },
-          newlyBlocked,
-          logger,
-        );
-      }
-    }
 
     if (passingURLs.length > 0) {
       logger.debug("Using urls of length " + passingURLs.length, {

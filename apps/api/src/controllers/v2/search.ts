@@ -1,12 +1,9 @@
 import { Response } from "express";
-import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
 import { timingSafeSecretEqual } from "../../lib/secret-compare";
 import { getV2RequestSchemas, RequestWithAuth, SearchResponse } from "./types";
 import type { SearchRequest } from "../../service/request";
 import { v7 as uuidv7 } from "uuid";
-import { logSearch, logRequest } from "../../services/logging/log_job";
-import { trackSearchRequest } from "../../lib/tracking";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
 import {
@@ -131,7 +128,6 @@ async function searchControllerInner(
       ...(extBody().__agentInterop
         ? { endpoint: "agent" as const, jobId }
         : { endpoint: "search" as const, jobId }),
-      externalRequestId: externalRequestId(req),
       hostedMcp: req.auth.hostedMcp,
     };
 
@@ -166,40 +162,6 @@ async function searchControllerInner(
           billing,
         });
     req.ctx = ctx;
-
-    // Kick off the `requests` row insert without blocking: it queues on the
-    // Postgres pool and can take seconds under pool pressure. We only need it
-    // committed before the child-row writes (logSearch et al. below) to keep
-    // the request_id FK ordering — same pattern as the scrape controllers.
-    let logRequestPromise: Promise<void> | undefined;
-    if (!agentRequestId) {
-      logRequestPromise = logRequest({
-        id: jobId,
-        kind: "search",
-        api_version: "v2",
-        external_request_id: externalRequestId(req),
-        team_id: req.auth.team_id,
-        origin: req.body.origin ?? "api",
-        integration: req.body.integration,
-        target_hint: req.body.query,
-        zeroDataRetention,
-        api_key_id: req.acuc?.api_key_id ?? null,
-      });
-      // The rejection is surfaced where the promise is awaited below; this
-      // only stops it counting as unhandled until then.
-      logRequestPromise.catch(() => {});
-    }
-
-    // The request must be on record before anything is reserved, runs, or
-    // bills. A failed log fails the request here, ahead of the reservation and
-    // the search, so there is nothing to refund or unbill.
-    const logStart = Date.now();
-    await logRequestPromise;
-    const waited = Date.now() - logStart;
-    if (waited >= 5)
-      logger.warn("Had to wait for log request promise to complete", {
-        timeMs: waited,
-      });
     if (!agentRequestId) jobIdField = { jobId };
 
     const searchState: Record<string, unknown> = {};
@@ -371,53 +333,8 @@ async function searchControllerInner(
         ? (searchCredits ?? 0) + (scrapeCredits ?? 0)
         : undefined;
     const endTime = new Date().getTime();
-    const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
-
-    trackSearchRequest({
-      searchId: jobId,
-      requestId: agentRequestId ?? jobId,
-      teamId: req.auth.team_id,
-      query: req.body.query,
-      origin: req.body.origin,
-      kind: billing.endpoint,
-      apiVersion: "v2",
-      lang: req.body.lang,
-      country: req.body.country,
-      sources: result.searchTypes ?? [],
-      numResults: result.totalResultsCount,
-      searchCredits: searchCredits ?? 0,
-      scrapeCredits: scrapeCredits ?? 0,
-      totalCredits: totalCredits ?? 0,
-      hasScrapeFormats: result.shouldScrape,
-      scrapeFormats: result.scrapeFormats ?? [],
-      isSuccessful: true,
-      timeTaken: timeTakenInSeconds,
-      zeroDataRetention,
-    }).catch(err =>
-      logger.warn("Search request tracking failed", { error: err }),
-    );
-
-    logSearch({
-      id: jobId,
-      request_id: agentRequestId ?? jobId,
-      query: req.body.query,
-      is_successful: true,
-      error: undefined,
-      results: result.response as any,
-      num_results: result.totalResultsCount,
-      num_results_by_source: result.resultCountsBySource,
-      result_categories: result.resultCategories,
-      time_taken: timeTakenInSeconds,
-      team_id: req.auth.team_id,
-      options: req.body,
-      credits_cost: searchCredits ?? 0,
-      zeroDataRetention,
-    }).catch(error => {
-      logger.error("Failed to log search", { error, jobId });
-    });
-
-    const totalRequestTime = new Date().getTime() - middlewareStartTime;
-    const controllerTime = new Date().getTime() - controllerStartTime;
+    const totalRequestTime = endTime - middlewareStartTime;
+    const controllerTime = endTime - controllerStartTime;
 
     logger.info("Request metrics", {
       version: "v2",
@@ -438,9 +355,21 @@ async function searchControllerInner(
     if (hooks?.has("search.finished")) {
       hooks.observe("search.finished", {
         id: jobId,
+        requestId: agentRequestId ?? jobId,
         ctx,
         results: result.totalResultsCount,
         charged: searchCredits,
+        scrapeCredits,
+        totalCredits,
+        body: req.body,
+        response: result.response,
+        timeTakenMs: totalRequestTime,
+        resultCountsBySource: result.resultCountsBySource,
+        resultCategories: result.resultCategories,
+        searchTypes: result.searchTypes,
+        scrapeFormats: result.scrapeFormats,
+        shouldScrape: result.shouldScrape,
+        state: searchState,
       });
     }
     const warning = [

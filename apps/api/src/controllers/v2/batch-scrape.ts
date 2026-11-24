@@ -28,8 +28,6 @@ import {
   crawlGroup,
   resolveNewGroupBackend,
 } from "../../services/worker/nuq-router";
-import { logRequest } from "../../services/logging/log_job";
-import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
 import type { BillingMetadata } from "../../services/billing/types";
@@ -69,7 +67,6 @@ export async function batchScrapeController(
     ...(extBody.__agentInterop
       ? { endpoint: "agent" as const, jobId: id }
       : { endpoint: "batch_scrape" as const, jobId: id }),
-    externalRequestId: externalRequestId(req),
     hostedMcp: req.auth.hostedMcp,
   };
   const ctx: RequestContext = req.ctx
@@ -222,19 +219,6 @@ export async function batchScrapeController(
           estimatedJobs: urls.length,
         });
       });
-    await logRequest({
-      id,
-      kind: "batch_scrape",
-      api_version: "v2",
-      external_request_id: externalRequestId(req),
-      team_id: req.auth.team_id,
-      origin: req.body.origin ?? "api",
-      integration: req.body.integration,
-      target_hint: urls[0] ?? "",
-      zeroDataRetention: zeroDataRetention || false,
-      api_key_id: req.acuc?.api_key_id ?? null,
-      skipJobStore: true,
-    });
   } else if (!req.body.appendToId) {
     // An agent-started batch is recorded under the parent request rather than
     // as a request of its own, so initialize usage tracking for both ids

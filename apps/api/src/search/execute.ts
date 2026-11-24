@@ -20,22 +20,13 @@ import {
   scrapeSearchResults,
   mergeScrapedContent,
 } from "./scrape";
-import { removeExplicitResults } from "./safe-search";
 import {
   matchesQueryOperators,
   planOperatorQuery,
   siteHostnames,
 } from "./operators";
-import {
-  highlightsEnvReady,
-  runIndexedSearchHighlights,
-  searchHighlightsMode,
-} from "./highlights";
-import { trackSearchResults } from "../lib/tracking";
 import type { BillingMetadata } from "../services/billing/types";
 import type { ThreatDecision } from "../lib/threat-protection/types";
-import { config } from "../config";
-import { logger as rootLogger } from "../lib/logger";
 import type { TeamPlanClass } from "../lib/team-plan-class";
 import { requestContext } from "../lib/request-context";
 import type { SearchHit } from "../service/hooks";
@@ -434,14 +425,6 @@ export async function executeSearch(
     ? (searchState.threatDecisions as ThreatDecision[])
     : [];
 
-  if (
-    options.safe &&
-    !zeroDataRetention &&
-    !options.enterprise?.some(mode => mode === "zdr" || mode === "anon")
-  ) {
-    await removeExplicitResults(searchResponse, limit, logger, teamId);
-  }
-
   if (searchResponse.web && searchResponse.web.length > 0) {
     searchResponse.web = searchResponse.web.map(result => ({
       ...result,
@@ -481,7 +464,6 @@ export async function executeSearch(
     totalResultsCount += searchResponse.news.length;
   }
 
-  const isZDR = options.enterprise?.includes("zdr");
   const billableResultsCount = totalResultsCount;
   let scrapedDocuments: Document[] = [];
 
@@ -537,61 +519,11 @@ export async function executeSearch(
     }
   }
 
-  if (
-    zeroDataRetention !== true &&
-    !isZDR &&
-    flags?.skipSearchHighlights !== true &&
-    highlightsEnvReady()
-  ) {
-    const mode = searchHighlightsMode({
-      requested: options.highlights,
-      origin: context.origin,
-      integration: context.integration,
-      cohortKey:
-        context.apiKeyId !== null
-          ? `api-key:${context.apiKeyId}`
-          : `team:${context.teamId}`,
-      rolloutPercent: config.HIGHLIGHT_ROLLOUT_PERCENT,
-    });
-    const highlightRun = runIndexedSearchHighlights(
-      searchResponse,
-      query,
-      logger,
-      {
-        mode,
-        requestId: context.requestId,
-        teamId: context.teamId,
-      },
-    );
-
-    if (mode === "apply") {
-      await highlightRun;
-    } else {
-      void highlightRun.catch(error => {
-        rootLogger.warn("Search highlights shadow failed", {
-          canonicalLog: "search/highlights",
-          mode,
-          requestId: context.requestId,
-          teamId: context.teamId,
-          errorType: error instanceof Error ? error.name : "unknown",
-        });
-      });
-    }
-  }
-
   const scrapeFormats = scrapeOptions?.formats
     ? scrapeOptions.formats.map((f: any) =>
         typeof f === "string" ? f : f.type,
       )
     : [];
-
-  trackSearchResults({
-    searchId: context.jobId,
-    teamId,
-    response: searchResponse,
-    zeroDataRetention: zeroDataRetention ?? false,
-    hasScrapeFormats: shouldScrape ?? false,
-  }).catch(err => logger.warn("Search tracking failed", { error: err }));
 
   return {
     response: searchResponse,

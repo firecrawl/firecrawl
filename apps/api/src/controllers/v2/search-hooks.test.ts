@@ -94,17 +94,6 @@ vi.mock("../../search/scrape", () => ({
   calculateScrapeCredits: vi.fn(() => 0),
 }));
 
-vi.mock("../../search/highlights", () => ({
-  highlightsEnvReady: () => false,
-  runIndexedSearchHighlights: vi.fn(),
-  searchHighlightsMode: vi.fn(),
-}));
-
-vi.mock("../../search/safe-search", () => ({
-  removeExplicitResults: mocks.removeExplicitResults,
-}));
-
-import { z } from "zod";
 import { executeSearch } from "../../search/execute";
 import type { HookHandlers } from "../../service/hooks";
 import {
@@ -300,14 +289,14 @@ describe("search lifecycle hooks", () => {
       "finished:11111111-1111-1111-1111-111111111111:3",
     ]);
     expect(finishedEvents).toEqual([
-      {
+      expect.objectContaining({
         id: payload.id,
         ctx: expect.objectContaining({
           teamId: "11111111-1111-1111-1111-111111111111",
         }),
         results: 3,
         charged: 2,
-      },
+      }),
     ]);
   });
 
@@ -326,20 +315,17 @@ describe("search lifecycle hooks", () => {
       },
       {
         "search.results": hits =>
-          hits.filter(hit => !hit.url.includes("evil.example.com")),
+          hits.filter(
+            hit =>
+              !hit.url.includes("evil.example.com") &&
+              !hit.url.includes("explicit.example.com"),
+          ),
       },
     ]);
 
     mocks.projectSearchTotalCredits.mockImplementation(
       (input: { limit: number }) => Math.ceil(input.limit / 10) * 2,
     );
-    mocks.removeExplicitResults.mockImplementation(async (target: any) => {
-      if (target.web) {
-        target.web = target.web.filter(
-          (item: any) => !item.url.includes("explicit.example.com"),
-        );
-      }
-    });
     mocks.search.mockResolvedValue({
       web: [
         {

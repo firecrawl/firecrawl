@@ -24,8 +24,6 @@ import {
   crawlGroup,
   resolveNewGroupBackend,
 } from "../../services/worker/nuq-router";
-import { logRequest } from "../../services/logging/log_job";
-import { externalRequestId } from "../../lib/external-request-id";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
 import { finalizeResponse, service, type RequestContext } from "../../service";
@@ -64,7 +62,6 @@ export async function crawlController(
   const billing: BillingMetadata = req.ctx?.billing ?? {
     endpoint: "crawl",
     jobId: id,
-    externalRequestId: externalRequestId(req),
     hostedMcp: req.auth.hostedMcp,
   };
   const ctx: RequestContext = req.ctx
@@ -82,20 +79,6 @@ export async function crawlController(
         rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
       });
   req.ctx = ctx;
-
-  await logRequest({
-    id,
-    kind: "crawl",
-    api_version: "v2",
-    external_request_id: externalRequestId(req),
-    team_id: req.auth.team_id,
-    origin: req.body.origin ?? "api",
-    integration: req.body.integration,
-    target_hint: req.body.url,
-    zeroDataRetention: zeroDataRetention || false,
-    api_key_id: req.acuc?.api_key_id ?? null,
-    skipJobStore: true,
-  });
 
   // checkCreditsMiddleware sets req.account.remainingCredits from billing.authorize.
   // Default to no cap when unset.

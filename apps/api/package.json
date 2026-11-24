@@ -44,10 +44,6 @@
       "types": "./src/services/autumn/autumn.service.ts",
       "default": "./dist/src/services/autumn/autumn.service.js"
     },
-    "./unstable/avgrab-resolve": {
-      "types": "./src/lib/avgrab-resolve.ts",
-      "default": "./dist/src/lib/avgrab-resolve.js"
-    },
     "./unstable/bigtable-client": {
       "types": "./src/lib/bigtable-client.ts",
       "default": "./dist/src/lib/bigtable-client.js"

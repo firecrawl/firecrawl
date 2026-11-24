@@ -140,6 +140,7 @@ export {
   httpRequestDurationSeconds,
 } from "../../lib/http-metrics";
 export {
+  consumeIndexRateLimit,
   indexDailyLimitRefusal,
   reserveIndexCalls,
   type IndexName,
@@ -394,5 +395,188 @@ export {
   type WebhookLogRow,
 } from "../../services/webhook/logs";
 export { scrapeQueue } from "../../services/worker/nuq-router";
+
+// Additional shared primitives for policy, hook, and route extensions.
+export { getACUCTeam } from "../../controllers/auth";
+export {
+  getV2RequestSchemas,
+  parseBatchScrapeRequest,
+  scrapeOptions,
+  type MapDocument,
+} from "../../controllers/v2/types";
+export { indexGetRecent5 } from "../../db/rpc";
+export {
+  AGENT_INTEROP_HEADER,
+  agentInteropStatus,
+  isTrustedAgentInteropRequest,
+  type AgentInteropStatus,
+} from "../../lib/agent-interop";
+export {
+  crawlToCrawler,
+  getCrawl,
+  recordThreatBlocked,
+  type StoredCrawl,
+} from "../../lib/crawl-redis";
+export {
+  MapFailedError,
+  TransportableError,
+  UnsupportedSiteError,
+  getErrorHttpResponse,
+  isTransportableError,
+} from "../../lib/error";
+export { mapController } from "../../controllers/v2/map";
+export {
+  ThirdPartyDataTermsRequiredError,
+  ThirdPartyDataUnsupportedOptionError,
+  canUseExchangeForRequest,
+  exchangeClaimsUrl,
+  getExchangeAccessForRequest,
+  getExchangeRequestLogContext,
+  getExchangeResponseLogContext,
+  getExchangeSuccessCredits,
+  getUnsupportedExchangeFormat,
+  isSuccessfulExchangeStatusCode,
+  reportExchangeBilling,
+  reportExchangeUsageBilling,
+  resolveExchangeProvider,
+  warmExchangeCatalog,
+  type ExchangeAccess,
+  type ExchangeScrapeMetadata,
+} from "../../lib/exchange";
+export { hasFormatOfType } from "../../lib/format-utils";
+export { inferIntegration } from "../../lib/infer-integration";
+export {
+  actionTypesOf,
+  checkKeyEndpointRestriction,
+  formatTypesOf,
+} from "../../lib/key-restriction";
+export {
+  adjustKeylessCredits,
+  consumeKeylessRequest,
+  isKeylessConfigured,
+  isKeylessTeamId,
+  keylessTeamId,
+  logKeylessCreditUsage,
+  reserveKeylessCredits,
+} from "../../lib/keyless";
+export { applyMapCollectHook } from "../../lib/map-utils";
+export { queryIndex } from "../../lib/map-query-index";
+export { checkPermissions, ipWhitelistRefusal } from "../../lib/permissions";
+export { jobContext, requestContext } from "../../lib/request-context";
+export { sampled } from "../../lib/rollout";
+export {
+  SAFE_MODE_CREDENTIAL_HEADERS,
+  SAFE_MODE_LOGIN_ACTIONS,
+  applySafeMode,
+  isLockdownZeroDataRetention,
+  resolveSafeMode,
+  stripCredentialHeaders,
+  stripUrlUserinfo,
+  type ResolvedSafeMode,
+  type SafeModeConfig,
+} from "../../lib/safe-mode";
+export {
+  getSearchIndexClient,
+  indexDocumentIfEnabled,
+} from "../../lib/search-index-client";
+export { searchIndexEnv } from "../../lib/search-index-env";
+export {
+  emitRejectedScrapeActivityEvent,
+  emitScrapeActivityEvent,
+} from "../../lib/siem-logging/index";
+export { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
+export {
+  KEYLESS_PLAN_CLASS,
+  planClassOf,
+  teamPlanClass,
+  type TeamPlanClass,
+} from "../../lib/team-plan-class";
+export { checkUrl } from "../../lib/threat-protection/index";
+export { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
+export {
+  THREAT_PROTECTION_CANNOT_DISABLE_MESSAGE,
+  THREAT_PROTECTION_NOT_ENABLED_MESSAGE,
+  THREAT_PROTECTION_OVERRIDES_DISABLED_MESSAGE,
+  isThreatProtectionForced,
+} from "../../lib/threat-protection/request";
+export type {
+  ThreatDecision,
+  ThreatProtectionPolicy,
+} from "../../lib/threat-protection/types";
+export {
+  trackScrape,
+  trackSearchRequest,
+  trackSearchResults,
+} from "../../lib/tracking";
+export { US_DATA_REGION, usOnlyLocationRefusal } from "../../lib/us-only";
+export { checkAndUpdateURLForMap } from "../../lib/validateUrl";
+export {
+  getAlexandriaZDR,
+  getCustomRobotsAgent,
+  getIgnoreRobots,
+  getSearchForcedKind,
+  isDpaRestricted,
+} from "../../lib/zdr-helpers";
+export {
+  PaywalledContentError,
+  SiteRestrictionError,
+} from "../../scraper/scrapeURL/error";
+export { isPaywalledByJsonLd } from "../../scraper/scrapeURL/lib/accessibleForFree";
+export { extractLinks } from "../../scraper/scrapeURL/lib/extractLinks";
+export { isMarkdownContentType } from "../../scraper/scrapeURL/lib/extractLinksFromMarkdown";
+export { robustFetch } from "../../scraper/scrapeURL/lib/fetch";
+export { fireEngineMap } from "../../search/fireEngine";
+export {
+  firebillConfigured,
+  processFirebillTrackRetry,
+} from "../../services/autumn/firebill";
+export {
+  generateDomainSplits,
+  generateURLSplits,
+  getIndexFromGCS,
+  hashURL,
+  normalizeURLForIndex,
+  queryIndexAtDomainSplitLevelWithMeta,
+  queryIndexAtSplitLevel,
+  queryIndexAtSplitLevelWithMeta,
+  queryOMCESignatures,
+  useIndex,
+  useSearchIndex,
+} from "../../services/index";
+export {
+  drainZdrRequestLogs,
+  logBatchScrape,
+  logCrawl,
+  logMap,
+  logScrape,
+  logSearch,
+  shutdownPubSubLogging,
+} from "../../services/logging/log_job";
+export {
+  consumeMonitorCheckJobs,
+  consumeMonitorSearchCheckJobs,
+} from "../../services/monitoring/queue";
+export {
+  recordMonitorScrapeFailure,
+  recordMonitorScrapeSuccess,
+} from "../../services/monitoring/results";
+export {
+  processMonitorCheckJob,
+  reconcileRunningMonitorChecks,
+} from "../../services/monitoring/runner";
+export { enqueueDueMonitorChecks } from "../../services/monitoring/scheduler";
+export { sendNotificationWithCustomDays } from "../../services/notification/email_notification";
+export {
+  createInAppNotification,
+  isDashboardOrigin,
+} from "../../services/notification/in_app";
+export { shouldSendConcurrencyLimitNotification } from "../../services/notification/notification-check";
+export { startBullmqQueueMetrics } from "../../services/queue-metrics";
+export {
+  getFirebillTrackRetryQueue,
+  getRedisConnection,
+} from "../../services/queue-service";
+export { redisEvictConnection } from "../../services/redis";
+export { NotificationType, type ScrapeJobData } from "../../types";
 
 export { integrationSchema, resolveIntegration } from "../../utils/integration";

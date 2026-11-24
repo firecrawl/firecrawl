@@ -12,20 +12,6 @@ vi.mock("./scrape", () => ({
   scrapeSearchResults: vi.fn(),
   mergeScrapedContent: vi.fn(),
 }));
-vi.mock("./highlights", () => ({
-  highlightsEnvReady: () => false,
-  runIndexedSearchHighlights: vi.fn(),
-  searchHighlightsMode: vi.fn(),
-}));
-vi.mock("../lib/tracking", () => ({
-  trackSearchResults: vi.fn(async () => {}),
-}));
-vi.mock("../lib/threat-protection/request", () => ({
-  checkUrlsAgainstThreatPolicy: mocks.checkUrlsAgainstThreatPolicy,
-}));
-vi.mock("./safe-search", () => ({
-  removeExplicitResults: mocks.removeExplicitResults,
-}));
 
 import { executeSearch } from "./execute";
 

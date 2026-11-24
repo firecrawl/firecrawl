@@ -688,6 +688,7 @@ async function enqueueMonitorScrapeTarget(params: {
         billing,
         zeroDataRetention: false,
         apiKeyId: null,
+        backlogTimeoutMs: MONITOR_CHECK_STALE_TIMEOUT_MS,
         monitoring: {
           monitorId: params.monitor.id,
           checkId: params.check.id,
@@ -814,6 +815,7 @@ async function enqueueMonitorCrawlTarget(params: {
       v1: true,
       zeroDataRetention: false,
       apiKeyId: null,
+      backlogTimeoutMs: MONITOR_CHECK_STALE_TIMEOUT_MS,
       monitoring: {
         monitorId: params.monitor.id,
         checkId: params.check.id,
