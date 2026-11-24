@@ -449,9 +449,8 @@ const EXCLUDE_NON_MAIN_TAGS: [&str; 97] = [
   "[data-original-tag=\"iframe\"][src*=\"hcaptcha.com\"]",
 ];
 
-const EXCLUDE_ALWAYS_CHROME_SELECTORS: [&str; 37] = [
+const EXCLUDE_ALWAYS_CHROME_SELECTORS: [&str; 36] = [
   "dialog",
-  "svg",
   "tool-tip",
   "[role=\"dialog\"]",
   "[role=\"alertdialog\"]",
@@ -518,6 +517,14 @@ const PROTECTED_CONTENT_SELECTORS: [&str; 5] = [
   "[role=\"main\"]",
   ".entry-content",
   ".post-body",
+];
+
+const PROTECTED_PAGE_SELECTORS: [&str; 5] = [
+  "main",
+  "[role=\"main\"]",
+  ".entry-content",
+  ".post-body",
+  "h1",
 ];
 
 fn lang_from_url(url: &Url) -> &'static str {
@@ -656,6 +663,34 @@ fn has_ancestor_tag(node: &NodeRef, tag_name: &str) -> bool {
   while let Some(p) = cur {
     if let Some(el) = p.as_element() {
       if el.name.local.as_ref().eq_ignore_ascii_case(tag_name) {
+        return true;
+      }
+    }
+    cur = p.parent();
+  }
+  false
+}
+
+fn has_math_or_diagram_ancestor(node: &NodeRef) -> bool {
+  let mut cur = node.parent();
+  while let Some(p) = cur {
+    if let Some(el) = p.as_element() {
+      let tag = el.name.local.as_ref();
+      if tag.eq_ignore_ascii_case("math")
+        || tag.eq_ignore_ascii_case("mjx-container")
+        || tag.eq_ignore_ascii_case("figure")
+      {
+        return true;
+      }
+      if el.attributes.borrow().get("class").is_some_and(|c| {
+        let l = c.to_ascii_lowercase();
+        l.contains("katex")
+          || l.contains("mathjax")
+          || l.contains("mjx")
+          || l.contains("mermaid")
+          || l.contains("diagram")
+          || l.contains("chart")
+      }) {
         return true;
       }
     }
@@ -1407,6 +1442,11 @@ pub fn transform_document(
         .iter()
         .any(|sel| node.select(sel).is_ok_and(|mut it| it.next().is_some()))
     };
+    let has_protected_page_content = |node: &NodeRef| -> bool {
+      PROTECTED_PAGE_SELECTORS
+        .iter()
+        .any(|sel| node.select(sel).is_ok_and(|mut it| it.next().is_some()))
+    };
 
     for sel in EXCLUDE_ALWAYS_CHROME_SELECTORS.iter() {
       let matches: Vec<_> = document
@@ -1419,6 +1459,30 @@ pub fn transform_document(
           continue;
         }
         if !has_force_include(node) && !has_protected_content(node) {
+          node.detach();
+        }
+      }
+    }
+
+    if let Ok(svgs) = document.select("svg") {
+      let svgs: Vec<_> = svgs.collect();
+      for svg in svgs {
+        let node = svg.as_node();
+        if node.parent().is_none()
+          || has_ancestor_tag(node, "pre")
+          || has_math_or_diagram_ancestor(node)
+        {
+          continue;
+        }
+        let has_diagram_text = !has_ancestor_tag(node, "a")
+          && !has_ancestor_tag(node, "button")
+          && svg
+            .attributes
+            .borrow()
+            .get("aria-hidden")
+            .is_none_or(|v| !v.eq_ignore_ascii_case("true"))
+          && node.select("text").is_ok_and(|mut it| it.next().is_some());
+        if !has_diagram_text && !has_force_include(node) && !has_protected_content(node) {
           node.detach();
         }
       }
@@ -1469,6 +1533,7 @@ pub fn transform_document(
           || has_ancestor_tag(node, "pre")
           || has_ancestor_tag(node, "code")
           || has_ancestor_tag(node, "math")
+          || is_collapsible_or_tabpanel(node)
         {
           continue;
         }
@@ -1545,6 +1610,20 @@ pub fn transform_document(
         .map_err(|_| "Failed to select tags")?
         .collect();
       let is_structural = matches!(*sel, "footer" | "nav" | "aside");
+      let is_card_list_chrome = matches!(
+        *sel,
+        ".related-posts"
+          | ".related-articles"
+          | ".related-content"
+          | ".recommended-posts"
+          | ".popular-posts"
+          | "#related-posts"
+          | ".PopularPosts"
+          | ".comments-area"
+          | "#substack-comments"
+          | "#wpdcom"
+          | "article section#comments"
+      );
       for tag in matches {
         let node = tag.as_node();
         if node.parent().is_none() || has_ancestor_tag(node, "pre") {
@@ -1562,7 +1641,12 @@ pub fn transform_document(
           continue;
         }
         if !is_structural {
-          if has_protected_content(node) {
+          let is_protected = if is_card_list_chrome {
+            has_protected_page_content(node)
+          } else {
+            has_protected_content(node)
+          };
+          if is_protected {
             continue;
           }
           if body_len_after_forms >= 400 && non_ws_len(node) * 100 >= body_len_after_forms * 40 {
@@ -2420,7 +2504,11 @@ mod tests {
           <p>Main article body with enough words to exceed the minimum length threshold for scoping cleanly in tests and real pages alike. Adding more text here so the article dominates the page comfortably.</p>
           <details><div style="display: none"><p>Hidden flag details inside collapsible section.</p></div></details>
           <div role="tabpanel" hidden><p>Inactive tab panel documentation.</p></div>
+          <div role="tabpanel" aria-hidden="true"><p>Aria-hidden tab panel documentation.</p></div>
+          <svg><text>Request Flow</text></svg>
+          <mjx-container><svg><path d="M0 0"></path></svg></mjx-container>
         </article>
+        <div class="related-posts"><article><h3>Recommended Card</h3></article></div>
         <section><h2>Related Posts</h2><a href="/other">Other</a></section>
       </main>
     </body></html>"#;
@@ -2428,6 +2516,10 @@ mod tests {
     assert!(out.contains("<h1>Guide Title</h1>"));
     assert!(out.contains("Hidden flag details inside collapsible section."));
     assert!(out.contains("Inactive tab panel documentation."));
+    assert!(out.contains("Aria-hidden tab panel documentation."));
+    assert!(out.contains("Request Flow"));
+    assert!(out.contains("<mjx-container><svg>"));
+    assert!(!out.contains("Recommended Card"));
     assert!(!out.contains("Cookie Preferences"));
     assert!(!out.contains("Related Posts"));
     assert!(!out.contains("Home"));
