@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => {
     getCrawl: vi.fn(),
     crawlToCrawler: vi.fn(() => crawler),
     lockURL: vi.fn(async () => true),
+    tryLockURL: vi.fn(async () => "locked" as const),
     lockURLsIndividually: vi.fn(
       async (
         _crawlId: string,
@@ -109,6 +110,7 @@ vi.mock("../../lib/crawl-redis", () => ({
   generateURLPermutations: (url: string) => [new URL(url)],
   getCrawl: mocks.getCrawl,
   lockURL: mocks.lockURL,
+  tryLockURL: mocks.tryLockURL,
   lockURLsIndividually: mocks.lockURLsIndividually,
   normalizeURL: (url: string) => url,
   saveCrawl: mocks.saveCrawl,
