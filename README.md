@@ -89,7 +89,7 @@ Pages that need JavaScript render in the Chrome or Chromium already on your mach
 
 ### Add it to your AI agent
 
-`init` finds Claude Code, Claude Desktop, Cursor, Windsurf, Gemini CLI and Codex on your machine and adds Firecrawl Local to each one as an MCP server. It backs up every config file first, and the MCP server itself needs Node.js 22 or newer.
+`init` finds Claude Code, Claude Desktop, Cursor, Windsurf, Gemini CLI, Antigravity and Codex on your machine and adds Firecrawl Local to each one as an MCP server. It backs up every config file first, and the MCP server itself needs Node.js 22 or newer.
 
 ```bash
 firecrawl-local init

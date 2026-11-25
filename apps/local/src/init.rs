@@ -40,6 +40,21 @@ struct Target {
   kind: Kind,
 }
 
+impl Target {
+  fn is_installed(&self, home: &Path) -> bool {
+    if !home.join(self.marker).exists() {
+      return false;
+    }
+    // Antigravity lives under ~/.gemini/config, so an Antigravity-only install
+    // always has the ~/.gemini parent directory. Skip auto-detecting Gemini CLI
+    // when Antigravity is present unless Gemini CLI's own config already exists.
+    if self.name == "gemini" && home.join(".gemini/config").exists() {
+      return home.join(self.config).exists();
+    }
+    true
+  }
+}
+
 fn targets() -> Vec<Target> {
   vec![
     Target {
@@ -214,7 +229,7 @@ pub fn run(opts: &InitOptions) -> Report {
       continue;
     }
     let explicitly_asked = opts.only.iter().any(|o| o == target.name);
-    if !explicitly_asked && !opts.home.join(target.marker).exists() {
+    if !explicitly_asked && !target.is_installed(&opts.home) {
       continue;
     }
     let path = opts.home.join(target.config);
@@ -370,7 +385,7 @@ mod tests {
     .unwrap();
 
     let opts = InitOptions {
-      only: vec!["antigravity".to_string()],
+      only: Vec::new(),
       dry_run: false,
       home: home.clone(),
       binary: bin(),
@@ -393,11 +408,27 @@ mod tests {
     assert!(home
       .join(".gemini/config/mcp_config.json.firecrawl-bak")
       .exists());
+    // An Antigravity-only install should not auto-create Gemini CLI's settings.json.
+    assert!(!home.join(".gemini/settings.json").exists());
 
     // Running again is a no-op.
     let second = run(&opts);
     assert_eq!(second.configured, 1);
     assert!(second.lines.iter().any(|l| l.contains("already set up")));
+
+    // Explicit `--agent gemini` still works even when Antigravity is present.
+    let explicit_gemini = run(&InitOptions {
+      only: vec!["gemini".to_string()],
+      dry_run: false,
+      home: home.clone(),
+      binary: bin(),
+    });
+    assert_eq!(explicit_gemini.configured, 1, "{:?}", explicit_gemini.lines);
+    assert!(home.join(".gemini/settings.json").exists());
+
+    // When both configs exist, auto-detection configures both.
+    let both = run(&opts);
+    assert_eq!(both.configured, 2, "{:?}", both.lines);
     let _ = fs::remove_dir_all(&home);
   }
 
