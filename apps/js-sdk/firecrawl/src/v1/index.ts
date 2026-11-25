@@ -5,6 +5,7 @@ import { TypedEventTarget } from "./typed-event-target";
 import type { RequiresAction } from "../v2/types";
 import { pinToApiOrigin } from "../utils/apiOrigin";
 import { detectCallerPackage } from "../utils/callerOrigin";
+import { getVersion } from "../v2/utils/getVersion";
 
 /**
  * Configuration interface for FirecrawlApp.
@@ -668,35 +669,12 @@ export interface TokenUsageHistoricalResponseV1 {
 export default class FirecrawlApp {
   public apiKey: string;
   public apiUrl: string;
-  public version: string =  "1.25.1";
+  public version: string = getVersion();
   private readonly clientOrigin?: string;
   private readonly callerPackage: string | null;
   
   private isCloudService(url: string): boolean {
     return url.includes('api.firecrawl.dev');
-  }
-
-  private async getVersion(): Promise<string> {
-    try {
-      // Prefer env-provided version when available (works well in test runners)
-      if (typeof process !== 'undefined' && process.env && process.env.npm_package_version) {
-        return process.env.npm_package_version as string;
-      }
-      const packageJson = await import('../../package.json', { assert: { type: 'json' } });
-      return packageJson.default.version;
-    } catch (error) {
-      // Suppress noisy logs under test environments
-      const isTest = typeof process !== 'undefined' && !!process.env && process.env.NODE_ENV === 'test';
-      if (!isTest) {
-        // eslint-disable-next-line no-console
-        console.error("Error getting version:", error);
-      }
-      return  "1.25.1";
-    }
-  }
-
-  private async init() {
-    this.version = await this.getVersion();
   }
 
   /**
@@ -714,7 +692,6 @@ export default class FirecrawlApp {
     this.apiUrl = baseUrl;
     this.clientOrigin = origin || undefined;
     this.callerPackage = this.clientOrigin ? null : detectCallerPackage();
-    this.init();
   }
 
   private resolveOrigin(params?: any): string {
