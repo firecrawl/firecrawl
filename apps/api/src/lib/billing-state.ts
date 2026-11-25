@@ -32,6 +32,12 @@ declare module "../service/modules" {
     hasScrapeFormats?: boolean;
     /** Requested result count for search reservations. */
     limit?: number;
+    /** Requested search categories for search reservations. */
+    categories?: unknown[];
+    /** Requested search sources for search reservations. */
+    sources?: unknown[];
+    /** Whether domain tool discovery was requested for search reservations. */
+    domainTools?: boolean;
     /** Enterprise search modes requested. */
     enterprise?: ("default" | "anon" | "zdr")[];
     /** Scrape options for scrape, parse, or scrapeful search reservations. */
@@ -43,6 +49,7 @@ declare module "../service/modules" {
   interface SearchChargeState {
     enterprise?: ("default" | "anon" | "zdr")[];
     threatDecisions?: unknown[];
+    [key: string]: unknown;
   }
 
   interface MapChargeState {

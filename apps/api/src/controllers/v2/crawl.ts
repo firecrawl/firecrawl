@@ -23,7 +23,10 @@ import {
   crawlGroup,
   resolveNewGroupBackend,
 } from "../../services/worker/nuq-router";
-import { requestContext } from "../../lib/request-context";
+import {
+  contextThreatProtection,
+  requestContext,
+} from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
 import { finalizeResponse, service, type RequestContext } from "../../service";
 import type { BillingMetadata } from "../../lib/billing-types";
@@ -220,6 +223,7 @@ export async function crawlController(
     });
 
   const effectiveConcurrency = await currentLimits().concurrency(ctx);
+  const threatProtection = contextThreatProtection(ctx);
   const sc: StoredCrawl = {
     ctx,
     originUrl: req.body.url,
@@ -233,6 +237,8 @@ export async function crawlController(
       zeroDataRetention,
       agentIndexOnly: (req as any).agentIndexOnly ?? false,
       teamFlags: req.acuc?.flags ?? null,
+      // Rolling-deploy compatibility dual-write alongside the ctx fallback.
+      ...(threatProtection !== undefined ? { threatProtection } : {}),
     },
     team_id: req.auth.team_id,
     createdAt: Date.now(),

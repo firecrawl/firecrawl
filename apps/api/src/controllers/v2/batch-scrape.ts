@@ -27,7 +27,10 @@ import {
   crawlGroup,
   resolveNewGroupBackend,
 } from "../../services/worker/nuq-router";
-import { requestContext } from "../../lib/request-context";
+import {
+  contextThreatProtection,
+  requestContext,
+} from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
 import type { BillingMetadata } from "../../lib/billing-types";
 
@@ -160,6 +163,7 @@ export async function batchScrapeController(
 
   const workContactOnly =
     req.headers["x-firecrawl-work-contact-only"] === "true";
+  const threatProtection = contextThreatProtection(ctx);
   const sc: StoredCrawl = appendTarget
     ? appendTarget
     : {
@@ -176,6 +180,8 @@ export async function batchScrapeController(
           bypassBilling: !(extBody.__agentInterop?.shouldBill ?? true),
           agentIndexOnly: (req as any).agentIndexOnly ?? false,
           teamFlags: req.acuc?.flags ?? null,
+          // Rolling-deploy compatibility dual-write alongside the ctx fallback.
+          ...(threatProtection !== undefined ? { threatProtection } : {}),
         }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
         team_id: req.auth.team_id,
         createdAt: Date.now(),
@@ -190,6 +196,8 @@ export async function batchScrapeController(
   if (req.body.appendToId) {
     sc.ctx = blockCtx;
     sc.internalOptions.ctx = blockCtx;
+    // Rolling-deploy compatibility dual-write alongside the ctx fallback.
+    sc.internalOptions.threatProtection = contextThreatProtection(blockCtx);
     sc.internalOptions.bypassBilling = !(
       extBody.__agentInterop?.shouldBill ?? true
     );

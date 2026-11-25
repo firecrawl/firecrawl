@@ -9,7 +9,10 @@ import { processJobInternal } from "../services/worker/scrape-worker";
 import { ScrapeJobData } from "../types";
 import { SearchV2Response } from "../lib/entities";
 import type { BillingMetadata } from "../lib/billing-types";
-import { requestContext } from "../lib/request-context";
+import {
+  contextThreatProtection,
+  requestContext,
+} from "../lib/request-context";
 import type { RequestContext } from "../service/request-context";
 
 export interface DocumentWithCostTracking {
@@ -58,6 +61,7 @@ async function scrapeSearchResultDirect(
 ): Promise<DocumentWithCostTracking> {
   const jobId = uuidv7();
   const zeroDataRetention = ctx.zeroDataRetention;
+  const threatProtection = contextThreatProtection(ctx);
 
   logger.debug("Starting direct scrape for search result", {
     scrapeId: jobId,
@@ -91,6 +95,8 @@ async function scrapeSearchResultDirect(
           teamFlags: flags,
           agentIndexOnly: options.agentIndexOnly ?? false,
           ...(options.workContactOnly ? { workContactOnly: true } : {}),
+          // Rolling-deploy compatibility dual-write alongside the ctx fallback.
+          ...(threatProtection !== undefined ? { threatProtection } : {}),
         },
         skipNuq: true,
         origin: options.origin,
@@ -151,6 +157,15 @@ async function scrapeSearchResultDirect(
   }
 }
 
+function hasForcedScrapeZdr(flags: TeamFlags | null | undefined): boolean {
+  const raw = flags as Record<string, unknown> | null | undefined;
+  return (
+    raw?.scrapeZDR === "forced" ||
+    raw?.forceZDR === true ||
+    raw?.allowZDR === "forced"
+  );
+}
+
 export function getItemsToScrape(
   searchResponse: SearchV2Response,
   flags: TeamFlags,
@@ -164,14 +179,21 @@ export function getItemsToScrape(
   },
 ): ScrapeItem[] {
   const items: ScrapeItem[] = [];
-  const blockCtx =
-    context?.ctx ??
-    requestContext({
-      teamId: context?.team_id ?? "",
-      zeroDataRetention: context?.zeroDataRetention === true,
-      flags,
-      orgId: context?.org_id ?? null,
-    });
+  const forcedScrapeZdr = hasForcedScrapeZdr(context?.ctx?.flags ?? flags);
+  const blockZeroDataRetention =
+    (context?.ctx?.zeroDataRetention ?? false) ||
+    context?.zeroDataRetention === true ||
+    forcedScrapeZdr;
+  const blockCtx = context?.ctx
+    ? blockZeroDataRetention === context.ctx.zeroDataRetention
+      ? context.ctx
+      : { ...context.ctx, zeroDataRetention: blockZeroDataRetention }
+    : requestContext({
+        teamId: context?.team_id ?? "",
+        zeroDataRetention: blockZeroDataRetention,
+        flags,
+        orgId: context?.org_id ?? null,
+      });
   const blockOptions =
     context === undefined
       ? { record: false }
@@ -246,7 +268,7 @@ export async function scrapeSearchResults(
     return [];
   }
 
-  const ctx =
+  const parentCtx =
     options.ctx ??
     requestContext({
       teamId: options.teamId,
@@ -258,8 +280,16 @@ export async function scrapeSearchResults(
       concurrencyLimit: options.concurrencyLimit,
       rateLimitMultiplier: options.rateLimitMultiplier,
     });
+  const childZeroDataRetention =
+    parentCtx.zeroDataRetention ||
+    Boolean(options.zeroDataRetention) ||
+    hasForcedScrapeZdr(parentCtx.flags ?? flags);
+  const childCtx: RequestContext =
+    childZeroDataRetention === parentCtx.zeroDataRetention
+      ? parentCtx
+      : { ...parentCtx, zeroDataRetention: childZeroDataRetention };
 
-  const jobPriority = await resolveJobPriority(ctx, 10, error => {
+  const jobPriority = await resolveJobPriority(childCtx, 10, error => {
     logger.error("Failed to determine job priority", { error });
   });
 
@@ -267,7 +297,14 @@ export async function scrapeSearchResults(
 
   const results = await Promise.all(
     items.map(item =>
-      scrapeSearchResultDirect(item, options, logger, flags, ctx, jobPriority),
+      scrapeSearchResultDirect(
+        item,
+        options,
+        logger,
+        flags,
+        childCtx,
+        jobPriority,
+      ),
     ),
   );
 

@@ -171,6 +171,28 @@ describe("checkCreditsMiddleware", () => {
     expect(req.body.limit).toBe(25);
   });
 
+  it("runs billing.authorize preflight on /agent routes", async () => {
+    const authorize = vi.fn().mockResolvedValue({ ok: true as const });
+    const billing: BillingModule = {
+      authorize,
+      charge: vi.fn().mockResolvedValue(undefined),
+    };
+    const req = buildReq({ path: "/agent", body: { prompt: "find pricing" } });
+
+    const { nextCalled } = await withService(
+      testService(defaultModules(), parts, { billing }),
+      () => runMiddleware(req),
+    );
+
+    expect(nextCalled).toBe(true);
+    expect(authorize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "other",
+        stage: "preflight",
+      }),
+    );
+  });
+
   it("returns the billing module refusal status, headers, and body without calling next", async () => {
     const billing: BillingModule = {
       authorize: vi.fn().mockResolvedValue({

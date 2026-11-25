@@ -69,11 +69,6 @@ export function checkCreditsMiddleware(
         }
       }
 
-      // The agent controller gates credits itself after consuming a free request.
-      if (req.path.startsWith("/agent")) {
-        return next();
-      }
-
       const authz = await service.modules.billing.authorize({
         caller: req.caller ?? { teamId: req.auth.team_id },
         operation: billingOperationForPath(req.path),

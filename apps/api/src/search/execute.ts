@@ -248,6 +248,13 @@ export async function executeSearch(
       ? ({} as SearchV2Response)
       : ((await webSearchPromise) as SearchV2Response);
 
+  if (Array.isArray(searchState.routedResults)) {
+    const routedWeb = searchState.routedResults as WebSearchResult[];
+    searchResponse.web = searchResponse.web
+      ? [...routedWeb, ...searchResponse.web]
+      : [...routedWeb];
+  }
+
   const keepOperatorMatches = <
     T extends { url?: string; title?: string; position?: number },
   >(
@@ -303,7 +310,13 @@ export async function executeSearch(
     if (searchResponse.web) {
       for (const item of searchResponse.web) {
         record(
-          { url: item.url, title: item.title, description: item.description },
+          {
+            url: item.url,
+            title: item.title,
+            description: item.description,
+            group: "web",
+            ...(item.category !== undefined ? { category: item.category } : {}),
+          },
           { group: "web", item },
         );
       }
@@ -317,7 +330,14 @@ export async function executeSearch(
           continue;
         }
         record(
-          { url: item.url, title: item.title, description: item.snippet },
+          {
+            url: item.url,
+            title: item.title,
+            description: item.snippet,
+            group: "news",
+            ...(item.category !== undefined ? { category: item.category } : {}),
+            ...(item.imageUrl !== undefined ? { imageUrl: item.imageUrl } : {}),
+          },
           { group: "news", item },
         );
       }
@@ -330,7 +350,21 @@ export async function executeSearch(
           imagesWithoutUrl.push({ index: i, item });
           continue;
         }
-        record({ url: item.url, title: item.title }, { group: "images", item });
+        record(
+          {
+            url: item.url,
+            title: item.title,
+            group: "images",
+            ...(item.imageUrl !== undefined ? { imageUrl: item.imageUrl } : {}),
+            ...(item.imageWidth !== undefined
+              ? { imageWidth: item.imageWidth }
+              : {}),
+            ...(item.imageHeight !== undefined
+              ? { imageHeight: item.imageHeight }
+              : {}),
+          },
+          { group: "images", item },
+        );
       }
     }
 
@@ -355,7 +389,14 @@ export async function executeSearch(
       if (!entry) {
         const candidates = byUrl.get(hit.url);
         if (candidates) {
-          entry = candidates.find(candidate => !consumed.has(candidate));
+          entry =
+            (hit.group
+              ? candidates.find(
+                  candidate =>
+                    !consumed.has(candidate) && candidate.group === hit.group,
+                )
+              : undefined) ??
+            candidates.find(candidate => !consumed.has(candidate));
         }
       }
       if (entry) {
@@ -366,6 +407,7 @@ export async function executeSearch(
             url: hit.url,
             title: hit.title ?? entry.item.title,
             description: hit.description ?? entry.item.description,
+            ...(hit.category !== undefined ? { category: hit.category } : {}),
           });
         } else if (entry.group === "news") {
           nextNews.push({
@@ -373,19 +415,49 @@ export async function executeSearch(
             url: hit.url,
             title: hit.title ?? entry.item.title,
             snippet: hit.description ?? entry.item.snippet,
+            ...(hit.category !== undefined ? { category: hit.category } : {}),
+            ...(hit.imageUrl !== undefined ? { imageUrl: hit.imageUrl } : {}),
           });
         } else {
           nextImages.push({
             ...entry.item,
             url: hit.url,
             title: hit.title ?? entry.item.title,
+            ...(hit.imageUrl !== undefined ? { imageUrl: hit.imageUrl } : {}),
+            ...(hit.imageWidth !== undefined
+              ? { imageWidth: hit.imageWidth }
+              : {}),
+            ...(hit.imageHeight !== undefined
+              ? { imageHeight: hit.imageHeight }
+              : {}),
           });
         }
+      } else if (hit.group === "news") {
+        nextNews.push({
+          url: hit.url,
+          title: hit.title ?? "",
+          snippet: hit.description ?? "",
+          ...(hit.category !== undefined ? { category: hit.category } : {}),
+          ...(hit.imageUrl !== undefined ? { imageUrl: hit.imageUrl } : {}),
+        });
+      } else if (hit.group === "images") {
+        nextImages.push({
+          url: hit.url,
+          title: hit.title ?? "",
+          ...(hit.imageUrl !== undefined ? { imageUrl: hit.imageUrl } : {}),
+          ...(hit.imageWidth !== undefined
+            ? { imageWidth: hit.imageWidth }
+            : {}),
+          ...(hit.imageHeight !== undefined
+            ? { imageHeight: hit.imageHeight }
+            : {}),
+        });
       } else {
         const added: WebSearchResult = {
           url: hit.url,
           title: hit.title ?? "",
           description: hit.description ?? "",
+          ...(hit.category !== undefined ? { category: hit.category } : {}),
         };
         nextWeb.push(added);
       }
@@ -425,16 +497,16 @@ export async function executeSearch(
   if (searchResponse.web && searchResponse.web.length > 0) {
     searchResponse.web = searchResponse.web.map(result => ({
       ...result,
-      category: getCategoryFromUrl(result.url, categoryMap),
+      category: result.category ?? getCategoryFromUrl(result.url, categoryMap),
     }));
   }
 
   if (searchResponse.news && searchResponse.news.length > 0) {
     searchResponse.news = searchResponse.news.map(result => ({
       ...result,
-      category: result.url
-        ? getCategoryFromUrl(result.url, categoryMap)
-        : undefined,
+      category:
+        result.category ??
+        (result.url ? getCategoryFromUrl(result.url, categoryMap) : undefined),
     }));
   }
 
@@ -461,7 +533,16 @@ export async function executeSearch(
     totalResultsCount += searchResponse.news.length;
   }
 
-  const billableResultsCount = totalResultsCount;
+  const nonBillableResultsCount =
+    typeof searchState.nonBillableResultsCount === "number" &&
+    Number.isFinite(searchState.nonBillableResultsCount) &&
+    searchState.nonBillableResultsCount > 0
+      ? Math.floor(searchState.nonBillableResultsCount)
+      : 0;
+  const billableResultsCount = Math.max(
+    0,
+    totalResultsCount - nonBillableResultsCount,
+  );
   let scrapedDocuments: Document[] = [];
 
   const shouldScrape =
@@ -529,7 +610,12 @@ export async function executeSearch(
     billableResultsCount,
     resultCountsBySource: countSearchResultsBySource(searchResponse),
     resultCategories: collectSearchResultCategories(searchResponse),
-    indexResultsCount: 0,
+    indexResultsCount:
+      typeof searchState.indexResultsCount === "number" &&
+      Number.isFinite(searchState.indexResultsCount) &&
+      searchState.indexResultsCount >= 0
+        ? Math.floor(searchState.indexResultsCount)
+        : 0,
     threatDecisions,
     scrapedDocuments,
     searchTypes,

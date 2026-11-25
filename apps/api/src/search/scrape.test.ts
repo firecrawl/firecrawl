@@ -121,6 +121,57 @@ describe("scrapeSearchResults", () => {
       }),
     );
   });
+  it("enforces forced scrape ZDR and dual-writes threatProtection on child scrapes", async () => {
+    const parentCtx = {
+      teamId: "team-zdr",
+      zeroDataRetention: false,
+      flags: { scrapeZDR: "forced" },
+      orgId: "org-zdr",
+      apiKeyId: 55,
+      billing: { endpoint: "search" as const, jobId: "search-1" },
+      policy: { threatProtection: { mode: "block" } },
+    } as any;
+
+    await scrapeSearchResults(
+      [
+        {
+          url: "https://example.com",
+          title: "Example",
+          description: "Desc",
+        },
+      ],
+      {
+        teamId: "team-zdr",
+        orgId: "org-zdr",
+        origin: "api",
+        timeout: 60_000,
+        scrapeOptions: {} as any,
+        apiKeyId: 55,
+        zeroDataRetention: false,
+        billing: { endpoint: "search", jobId: "search-1" },
+        ctx: parentCtx,
+      },
+      { debug: vi.fn(), info: vi.fn(), error: vi.fn() } as any,
+      { scrapeZDR: "forced" } as any,
+    );
+
+    expect(processJobInternal).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          zeroDataRetention: true,
+          ctx: expect.objectContaining({
+            teamId: "team-zdr",
+            zeroDataRetention: true,
+            billing: { endpoint: "search", jobId: "search-1" },
+          }),
+          internalOptions: expect.objectContaining({
+            zeroDataRetention: true,
+            threatProtection: { mode: "block" },
+          }),
+        }),
+      }),
+    );
+  });
 });
 
 describe("getItemsToScrape", () => {

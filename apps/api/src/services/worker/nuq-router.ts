@@ -359,9 +359,13 @@ export async function fdbEnqueueScrapeJobs(
 }> {
   const limits = currentLimits();
   const firstCtx = jobs.length > 0 ? jobContext(jobs[0].data) : null;
+  const liveFirstCtx =
+    firstCtx && firstCtx.concurrencyLimit !== undefined
+      ? { ...firstCtx, concurrencyLimit: undefined }
+      : firstCtx;
   const teamLimit =
-    firstCtx && firstCtx.teamId === teamId
-      ? await limits.concurrency(firstCtx)
+    liveFirstCtx && liveFirstCtx.teamId === teamId
+      ? await limits.concurrency(liveFirstCtx)
       : await limits.teamConcurrency(teamId);
 
   const queueCap =

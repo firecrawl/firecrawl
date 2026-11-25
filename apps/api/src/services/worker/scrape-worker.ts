@@ -237,11 +237,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           links: Array<{ content: Document; source: string; id: string }>;
         };
         document: Document | null;
-        externalResultStored?: boolean;
         error?: Error;
       }
     | undefined;
-  let externalResultStored = false;
   let failureCleanupError: unknown;
   let hasFailureCleanupError = false;
 
@@ -664,6 +662,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       }
 
       const requestId = job.data.requestId ?? job.data.crawl_id ?? job.id;
+      const storesExternally =
+        Boolean(service.modules.jobStore.storesResultsExternally?.()) &&
+        !job.data.skipNuq;
       try {
         await service.modules.jobStore.record(
           {
@@ -680,11 +681,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           },
           { state: "completed", document: doc },
         );
-        externalResultStored = true;
       } catch (error) {
         logger.error("Failed to record completed scrape in job store", {
           error,
         });
+        if (storesExternally) {
+          throw error;
+        }
       }
 
       if (job.data.v1) {
@@ -771,31 +774,34 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       }
 
       const requestId = job.data.requestId ?? job.data.crawl_id ?? job.id;
-      const recordOutcomePromise = service.modules.jobStore
-        .record(
-          {
-            id: job.id,
-            kind: "scrape",
-            ctx,
-            requestId,
-            url: job.data.url,
-            options: job.data.scrapeOptions,
-            creditsBilled: credits_billed ?? 0,
-            timeTakenSeconds: timeTakenInSeconds,
-            skipNuq: job.data.skipNuq ?? false,
-            isParse: Boolean(job.data.internalOptions?.isParse),
-          },
-          { state: "completed", document: doc },
-        )
-        .then(() => true)
-        .catch(error => {
-          logger.error("Failed to record completed scrape in job store", {
-            error,
-          });
-          return false;
-        });
+      const storesExternally =
+        Boolean(service.modules.jobStore.storesResultsExternally?.()) &&
+        !job.data.skipNuq;
+      const recordPromise = service.modules.jobStore.record(
+        {
+          id: job.id,
+          kind: "scrape",
+          ctx,
+          requestId,
+          url: job.data.url,
+          options: job.data.scrapeOptions,
+          creditsBilled: credits_billed ?? 0,
+          timeTakenSeconds: timeTakenInSeconds,
+          skipNuq: job.data.skipNuq ?? false,
+          isParse: Boolean(job.data.internalOptions?.isParse),
+        },
+        { state: "completed", document: doc },
+      );
 
       if (job.data.skipNuq) {
+        const recordOutcomePromise = recordPromise
+          .then(() => true)
+          .catch(error => {
+            logger.error("Failed to record completed scrape in job store", {
+              error,
+            });
+            return false;
+          });
         const SCRAPE_STATE_BARRIER_MS = 2_000;
         let barrierTimer: ReturnType<typeof setTimeout> | undefined;
         let recorded = false;
@@ -822,9 +828,17 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             },
           );
         }
-        externalResultStored = recorded;
       } else {
-        externalResultStored = await recordOutcomePromise;
+        try {
+          await recordPromise;
+        } catch (error) {
+          logger.error("Failed to record completed scrape in job store", {
+            error,
+          });
+          if (storesExternally) {
+            throw error;
+          }
+        }
       }
 
       finishedOutcome = {
@@ -843,7 +857,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     }
 
     logger.info(`🐂 Job done ${job.id}`);
-    resultData = { ...data, externalResultStored };
+    resultData = data;
   } catch (error) {
     let credits_billed: number | null | undefined;
     let failureEnd: number | undefined;
@@ -1646,19 +1660,15 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
               logger.warn("Failed to set most recent success", { error: e });
             }
 
-            try {
-              if (
-                service.modules.jobStore.storesResultsExternally?.() &&
-                result.externalResultStored &&
-                !job.data.skipNuq
-              ) {
-                logger.debug("Job succeeded -- putting null in queue");
-                return null;
-              } else {
-                logger.debug("Job succeeded -- putting result in queue");
-                return result.document;
-              }
-            } catch (e) {}
+            if (
+              service.modules.jobStore.storesResultsExternally?.() &&
+              !job.data.skipNuq
+            ) {
+              logger.debug("Job succeeded -- putting null in queue");
+              return null;
+            }
+            logger.debug("Job succeeded -- putting result in queue");
+            return result.document;
           } else {
             throw (result as any).error;
           }

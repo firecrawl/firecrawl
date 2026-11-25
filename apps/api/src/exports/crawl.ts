@@ -9,6 +9,6 @@ export {
   pathPatternsSchema,
 } from "../lib/crawl-regex";
 export { getURLDepth } from "../scraper/WebScraper/utils/maxDepthUtils";
-export { applyMapCollectHook } from "../lib/map-utils";
+export { applyMapCollectHook, applyMapFilterHook } from "../lib/map-utils";
 export { performCosineSimilarity } from "../lib/map-cosine";
 export { mapController } from "../controllers/v2/map";

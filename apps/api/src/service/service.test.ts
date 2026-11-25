@@ -1160,7 +1160,7 @@ describe("runProcessStop", () => {
     ]);
   });
 
-  it("isolates errors and 10s timeouts across process.stop handlers", async () => {
+  it("isolates errors and 45s timeouts across process.stop handlers", async () => {
     vi.useFakeTimers();
     try {
       const errorLogger = vi.fn();
@@ -1202,7 +1202,7 @@ describe("runProcessStop", () => {
       replaceService(built);
 
       const pending = runProcessStop("api");
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(45_000);
       await pending;
 
       expect(events).toEqual(["throwing", "first:api"]);

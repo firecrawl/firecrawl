@@ -21,7 +21,10 @@ import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { currentLimits, resolveJobPriority } from "../../lib/limits";
-import { requestContext } from "../../lib/request-context";
+import {
+  contextThreatProtection,
+  requestContext,
+} from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
 import {
   finalizeResponse,
@@ -512,6 +515,7 @@ export async function parseController(
                   "wait.job_id": jobId,
                 });
 
+                const threatProtection = contextThreatProtection(ctx);
                 const job: NuQJob<ScrapeJobData> = {
                   id: jobId,
                   status: "active",
@@ -541,6 +545,10 @@ export async function parseController(
                       forceEngine,
                       isParse: true,
                       agentIndexOnly: (req as any).agentIndexOnly ?? false,
+                      // Rolling-deploy compatibility dual-write alongside the ctx fallback.
+                      ...(threatProtection !== undefined
+                        ? { threatProtection }
+                        : {}),
                     },
                     skipNuq: true,
                     origin,

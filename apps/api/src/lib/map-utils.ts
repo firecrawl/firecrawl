@@ -104,9 +104,43 @@ function applyMapScope(
 }
 
 /**
+ * Applies registered `map.filter` hooks to scoped, sorted, and limit-sliced
+ * map documents.
+ */
+export async function applyMapFilterHook(
+  mapResults: MapDocument[],
+  {
+    ctx,
+    url,
+    limit,
+    state,
+    logger,
+  }: {
+    ctx: RequestContext;
+    url: string;
+    limit: number;
+    state?: Record<string, unknown>;
+    logger?: Logger;
+  },
+): Promise<MapDocument[]> {
+  const hooks = installedService()?.hooks;
+  if (!hooks?.has("map.filter")) {
+    return mapResults;
+  }
+  return await hooks.transform("map.filter", mapResults, {
+    ctx,
+    url,
+    limit,
+    ...(state !== undefined ? { state } : {}),
+    ...(logger !== undefined ? { logger } : {}),
+  });
+}
+
+/**
  * Applies registered `map.collect` hooks to candidate map documents,
  * preserving existing metadata, reapplying map scope when provided,
- * deduplicating, and slicing to `limit`.
+ * deduplicating, slicing to `limit`, and applying registered `map.filter`
+ * hooks post-scope and post-limit.
  */
 export async function applyMapCollectHook(
   mapResults: MapDocument[],
@@ -143,61 +177,75 @@ export async function applyMapCollectHook(
   },
 ): Promise<MapDocument[]> {
   const hooks = installedService()?.hooks;
-  if (!hooks?.has("map.collect")) {
+  const skipDiscovery = state?.skipDiscovery === true;
+  const runCollect = Boolean(hooks?.has("map.collect")) && !skipDiscovery;
+  if (!runCollect && !hooks?.has("map.filter") && !skipDiscovery) {
     return mapResults;
   }
-  const deduped = dedupeMapDocumentArray(mapResults);
-  const currentUrls = deduped.map(doc => doc.url);
-  const documents = new Map<string, MapDocument>();
-  for (const doc of deduped) {
-    documents.set(doc.url, doc);
-  }
-  const collectedUrls = await hooks.transform("map.collect", currentUrls, {
-    ctx,
-    url,
-    limit,
-    ...(search !== undefined ? { search } : {}),
-    ...(includeSubdomains !== undefined ? { includeSubdomains } : {}),
-    ...(allowExternalLinks !== undefined ? { allowExternalLinks } : {}),
-    ...(ignoreCache !== undefined ? { ignoreCache } : {}),
-    ...(sitemap !== undefined ? { sitemap } : {}),
-    ...(useIndex !== undefined ? { useIndex } : {}),
-    ...(maxSearchResults !== undefined ? { maxSearchResults } : {}),
-    ...(abort !== undefined ? { abort } : {}),
-    documents,
-    ...(state !== undefined ? { state } : {}),
-    ...(logger !== undefined ? { logger } : {}),
-  });
-  const collectedDocs = collectedUrls.map(collectedUrl => {
-    const existing = documents.get(collectedUrl);
-    if (existing) {
-      return existing;
+
+  let candidateDocs = mapResults;
+  if (runCollect) {
+    const deduped = dedupeMapDocumentArray(mapResults);
+    const currentUrls = deduped.map(doc => doc.url);
+    const documents = new Map<string, MapDocument>();
+    for (const doc of deduped) {
+      documents.set(doc.url, doc);
     }
-    if (scope) {
-      try {
-        const normalized = checkAndUpdateURLForMap(
-          collectedUrl,
-          scope.ignoreQueryParameters ?? true,
-        ).url.trim();
-        const normalizedExisting = documents.get(normalized);
-        if (normalizedExisting) {
-          return normalizedExisting;
-        }
-      } catch {
-        // Invalid URL is dropped when applyMapScope runs below.
+    const collectedUrls = await hooks!.transform("map.collect", currentUrls, {
+      ctx,
+      url,
+      limit,
+      ...(search !== undefined ? { search } : {}),
+      ...(includeSubdomains !== undefined ? { includeSubdomains } : {}),
+      ...(allowExternalLinks !== undefined ? { allowExternalLinks } : {}),
+      ...(ignoreCache !== undefined ? { ignoreCache } : {}),
+      ...(sitemap !== undefined ? { sitemap } : {}),
+      ...(useIndex !== undefined ? { useIndex } : {}),
+      ...(maxSearchResults !== undefined ? { maxSearchResults } : {}),
+      ...(abort !== undefined ? { abort } : {}),
+      documents,
+      ...(state !== undefined ? { state } : {}),
+      ...(logger !== undefined ? { logger } : {}),
+    });
+    candidateDocs = collectedUrls.map(collectedUrl => {
+      const existing = documents.get(collectedUrl);
+      if (existing) {
+        return existing;
       }
-    }
-    return { url: collectedUrl };
-  });
+      if (scope) {
+        try {
+          const normalized = checkAndUpdateURLForMap(
+            collectedUrl,
+            scope.ignoreQueryParameters ?? true,
+          ).url.trim();
+          const normalizedExisting = documents.get(normalized);
+          if (normalizedExisting) {
+            return normalizedExisting;
+          }
+        } catch {
+          // Invalid URL is dropped when applyMapScope runs below.
+        }
+      }
+      return { url: collectedUrl };
+    });
+  }
+
   const skipScope = state?.skipScope === true;
   let finalDocs =
     scope && !skipScope
-      ? applyMapScope(collectedDocs, url, scope)
-      : dedupeMapDocumentArray(collectedDocs);
+      ? applyMapScope(candidateDocs, url, scope)
+      : dedupeMapDocumentArray(candidateDocs);
   if (search && state?.skipCosine !== true) {
     finalDocs = performCosineSimilarityV2(finalDocs, search.toLowerCase());
   }
-  return finalDocs.slice(0, limit);
+  const sliced = finalDocs.slice(0, limit);
+  return await applyMapFilterHook(sliced, {
+    ctx,
+    url,
+    limit,
+    state,
+    logger,
+  });
 }
 
 export async function getMapResults({
@@ -389,6 +437,14 @@ export async function getMapResults({
       mapResults = performCosineSimilarityV2(mapResults, search.toLowerCase());
     }
     mapResults = mapResults.slice(0, limit);
+    if (hooks?.has("map.filter")) {
+      mapResults = await applyMapFilterHook(mapResults, {
+        ctx: mapCtx,
+        url,
+        limit,
+        state: mapState,
+      });
+    }
   }
 
   const totalTimeMs = Date.now() - functionStartTime;

@@ -37,7 +37,11 @@ vi.mock("../../lib/validateUrl", async importOriginal => {
   };
 });
 
-import { applyMapCollectHook, getMapResults } from "../../lib/map-utils";
+import {
+  applyMapCollectHook,
+  applyMapFilterHook,
+  getMapResults,
+} from "../../lib/map-utils";
 import { requestContext } from "../../lib/request-context";
 import type { HookHandlers } from "../../service/hooks";
 import { createService, replaceService } from "../../service/service";
@@ -322,5 +326,79 @@ describe("map lifecycle hooks", () => {
     expect(deduped).toEqual([
       { url: "https://example.com/dup", title: "Titled" },
     ]);
+  });
+
+  it("runs map.filter after scope and limit slicing, supports skipDiscovery, and runs direct applyMapFilterHook", async () => {
+    const seenByFilter: string[][] = [];
+    const collectSpy = vi.fn((urls: string[]) => [
+      ...urls,
+      "https://example.com/docs/a",
+      "https://example.com/docs/b",
+      "https://example.com/docs/c",
+      "https://other.com/docs/out-of-scope",
+    ]);
+    installHooks({
+      "map.collect": collectSpy,
+      "map.filter": (docs, info) => {
+        seenByFilter.push(docs.map(d => d.url));
+        if (info.state) {
+          info.state.filtered = true;
+        }
+        return docs.filter(d => !d.url.endsWith("/b"));
+      },
+    });
+
+    const res = await getMapResults({
+      url: "https://example.com/docs",
+      limit: 2,
+      includeSubdomains: false,
+      filterByPath: true,
+      allowExternalLinks: false,
+      teamId: "team-map-filter",
+      flags: null,
+      crawlerOptions: { sitemap: "skip" },
+    });
+
+    expect(seenByFilter[0]).toEqual([
+      "https://example.com/docs/a",
+      "https://example.com/docs/b",
+    ]);
+    expect(res.mapResults).toEqual([{ url: "https://example.com/docs/a" }]);
+    expect(res.state).toEqual({ filtered: true });
+
+    collectSpy.mockClear();
+    const skipped = await applyMapCollectHook(
+      [
+        { url: "https://example.com/docs/a" },
+        { url: "https://example.com/docs/b" },
+      ],
+      {
+        ctx: requestContext({
+          teamId: "team-map-filter",
+          zeroDataRetention: false,
+        }),
+        url: "https://example.com/docs",
+        limit: 5,
+        state: { skipDiscovery: true },
+      },
+    );
+    expect(collectSpy).not.toHaveBeenCalled();
+    expect(skipped).toEqual([{ url: "https://example.com/docs/a" }]);
+
+    const direct = await applyMapFilterHook(
+      [
+        { url: "https://example.com/docs/a", title: "A" },
+        { url: "https://example.com/docs/b", title: "B" },
+      ],
+      {
+        ctx: requestContext({
+          teamId: "team-map-filter",
+          zeroDataRetention: false,
+        }),
+        url: "https://example.com/docs",
+        limit: 5,
+      },
+    );
+    expect(direct).toEqual([{ url: "https://example.com/docs/a", title: "A" }]);
   });
 });

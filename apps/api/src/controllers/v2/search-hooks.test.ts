@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   projectSearchTotalCredits: vi.fn((..._args: any[]) => 0),
   reserveKeylessCredits: vi.fn(async (..._args: any[]) => ({ ok: true })),
   billingAuthorize: vi.fn(async (..._args: any[]) => ({ ok: true as const })),
+  billingSettle: vi.fn(async (..._args: any[]) => undefined),
   billingCharge: vi.fn(
     async (..._args: any[]): Promise<number | undefined> => undefined,
   ),
@@ -75,6 +76,7 @@ function installHooks(
         modules: {
           billing: {
             authorize: mocks.billingAuthorize,
+            settle: mocks.billingSettle,
             charge: mocks.billingCharge,
           },
         },
@@ -252,13 +254,21 @@ describe("search lifecycle hooks", () => {
     ]);
   });
 
-  it("reserves keyless credits against the planned limit, chains search.results handlers, and keeps URL-less positions", async () => {
+  it("reserves credits before search.plan runs, chains search.results handlers, and keeps URL-less positions", async () => {
+    const order: string[] = [];
+    mocks.billingAuthorize.mockImplementation(async () => {
+      order.push("reserve");
+      return { ok: true as const };
+    });
     installHooks([
       {
-        "search.plan": plan => ({
-          ...plan,
-          limit: 40,
-        }),
+        "search.plan": plan => {
+          order.push("plan");
+          return {
+            ...plan,
+            limit: 40,
+          };
+        },
         "search.results": hits => [
           ...hits,
           { url: "https://evil.example.com/phish", title: "Phish" },
@@ -306,13 +316,17 @@ describe("search lifecycle hooks", () => {
     );
 
     expect(res.status).toHaveBeenCalledWith(200);
+    expect(order).toEqual(["reserve", "plan"]);
     expect(mocks.billingAuthorize).toHaveBeenCalledWith(
       expect.objectContaining({
         caller: { teamId: "11111111-1111-1111-1111-111111111111" },
         operation: "search",
         stage: "reserve",
-        requestedUnits: 40,
-        state: expect.objectContaining({ limit: 40 }),
+        requestedUnits: 10,
+        state: expect.objectContaining({
+          limit: 10,
+          sources: [{ type: "web" }, { type: "news" }],
+        }),
       }),
     );
 
@@ -483,6 +497,134 @@ describe("search lifecycle hooks", () => {
     expect(devResult.response.web?.map(item => item.url)).toEqual([
       "https://docs.example.com/1",
       "https://docs.example.com/2",
+    ]);
+  });
+
+  it("merges routedResults before operator filtering, preserves categories and multi-source image metadata, and excludes non-billable hits", async () => {
+    installHooks({
+      "search.plan": (plan, info) => {
+        if (info.state) {
+          info.state.indexCategory = "docs";
+          info.state.nonBillableResultsCount = 1;
+          info.state.routedResults = [
+            {
+              url: "https://docs.example.com/guide",
+              title: "Guide",
+              description: "Official guide",
+              category: "developer",
+            },
+            {
+              url: "https://other.example.org/skip",
+              title: "Skip",
+              description: "Filtered by site operator",
+              category: "developer",
+            },
+          ];
+        }
+        return { ...plan, sources: ["images"] };
+      },
+      "search.results": hits =>
+        hits.map(hit =>
+          hit.group === "images" ? { ...hit, title: `img:${hit.title}` } : hit,
+        ),
+    });
+
+    mocks.search.mockResolvedValue({
+      images: [
+        {
+          url: "https://docs.example.com/guide",
+          title: "Diagram",
+          imageUrl: "https://cdn.example.com/diagram.png",
+          imageWidth: 800,
+          imageHeight: 600,
+          position: 1,
+        },
+      ],
+    });
+
+    const res = makeRes();
+    await searchController(
+      makeReq({
+        query: "site:docs.example.com guide",
+        limit: 5,
+        sources: ["web", "images"],
+      }),
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.data.web).toEqual([
+      expect.objectContaining({
+        url: "https://docs.example.com/guide",
+        category: "developer",
+        position: 1,
+      }),
+    ]);
+    expect(payload.data.images).toEqual([
+      expect.objectContaining({
+        url: "https://docs.example.com/guide",
+        title: "img:Diagram",
+        imageUrl: "https://cdn.example.com/diagram.png",
+        imageWidth: 800,
+        imageHeight: 600,
+        position: 1,
+      }),
+    ]);
+    expect(mocks.billingCharge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "search",
+        results: 1,
+        state: expect.objectContaining({
+          indexCategory: "docs",
+          nonBillableResultsCount: 1,
+        }),
+      }),
+    );
+  });
+
+  it("keeps empty web array for empty routedResults and returns 503 with reservation release when tools-only discovery is unavailable", async () => {
+    const finishedEvents: any[] = [];
+    mocks.billingAuthorize.mockResolvedValue({
+      ok: true as const,
+      handle: "reservation-handle",
+    } as any);
+    installHooks({
+      "search.plan": (plan, info) => {
+        if (info.state) {
+          info.state.routedResults = [];
+          info.state.toolsOnly = true;
+          info.state.toolsUnavailable = true;
+        }
+        return { ...plan, sources: [] };
+      },
+      "search.finished": event => {
+        finishedEvents.push(event);
+      },
+    });
+
+    const res = makeRes();
+    await searchController(makeReq({ query: "tools", limit: 5 }), res);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        code: "TOOL_DISCOVERY_UNAVAILABLE",
+        error: "Tool discovery is temporarily unavailable. Retry the request.",
+      }),
+    );
+    expect(mocks.billingSettle).toHaveBeenCalledWith("reservation-handle", {
+      ok: false,
+    });
+    expect(mocks.billingCharge).not.toHaveBeenCalled();
+    expect(finishedEvents).toEqual([
+      expect.objectContaining({
+        results: 0,
+        charged: 0,
+        isSuccessful: false,
+        response: expect.objectContaining({ web: [] }),
+      }),
     ]);
   });
 });

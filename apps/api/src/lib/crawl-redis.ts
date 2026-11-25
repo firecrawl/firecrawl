@@ -1027,6 +1027,41 @@ export function crawlToCrawler(
   crawlerOptions?: any,
 ): WebCrawler {
   const ctx = crawlContext(sc);
+  const effectiveFlags = (ctx.flags ?? teamFlags) as
+    | Record<string, unknown>
+    | null
+    | undefined;
+  const safeModeConfig =
+    effectiveFlags?.safeModeConfig &&
+    typeof effectiveFlags.safeModeConfig === "object"
+      ? (effectiveFlags.safeModeConfig as Record<string, unknown>)
+      : undefined;
+  const safeModeActive =
+    Boolean(effectiveFlags?.safeMode) && !sc.internalOptions?.safeModeBypassed;
+  const forcedScrapeZdr =
+    effectiveFlags?.scrapeZDR === "forced" ||
+    effectiveFlags?.forceZDR === true ||
+    effectiveFlags?.allowZDR === "forced";
+
+  const lockdown =
+    ctx.lockdown !== undefined
+      ? ctx.lockdown
+      : (sc.scrapeOptions as Record<string, unknown> | undefined)?.lockdown ===
+          true ||
+        (safeModeActive && safeModeConfig?.lockdown === true);
+
+  const ignoreRobotsTxt =
+    ctx.ignoreRobotsTxt !== undefined
+      ? ctx.ignoreRobotsTxt
+      : effectiveFlags
+        ? !(safeModeActive && safeModeConfig?.enforceRobots === true) &&
+          (effectiveFlags.ignoreRobots === "forced" ||
+            (effectiveFlags.ignoreRobots === "allowed" &&
+              (sc.crawlerOptions?.ignoreRobotsTxt ?? false)))
+        : (sc.crawlerOptions?.ignoreRobotsTxt ?? false);
+
+  const zeroDataRetention = ctx.zeroDataRetention || forcedScrapeZdr;
+
   const crawler = new WebCrawler({
     jobId: id,
     initialUrl: sc.originUrl!,
@@ -1048,12 +1083,11 @@ export function crawlToCrawler(
     allowExternalContentLinks:
       sc.crawlerOptions?.allowExternalContentLinks ?? false,
     allowSubdomains: sc.crawlerOptions?.allowSubdomains ?? false,
-    ignoreRobotsTxt:
-      ctx.ignoreRobotsTxt ?? sc.crawlerOptions?.ignoreRobotsTxt ?? false,
+    ignoreRobotsTxt,
     regexOnFullURL: sc.crawlerOptions?.regexOnFullURL ?? false,
     maxDiscoveryDepth: sc.crawlerOptions?.maxDiscoveryDepth,
     currentDiscoveryDepth: crawlerOptions?.currentDiscoveryDepth ?? 0,
-    zeroDataRetention: ctx.zeroDataRetention,
+    zeroDataRetention,
     usOnly:
       ctx.usOnly === true ||
       ctx.flags?.usOnly === true ||
@@ -1061,7 +1095,7 @@ export function crawlToCrawler(
     location: sc.scrapeOptions?.location,
     headers: sc.scrapeOptions?.headers,
     robotsUserAgent: ctx.robotsUserAgent ?? sc.crawlerOptions?.robotsUserAgent,
-    lockdown: ctx.lockdown ?? false,
+    lockdown,
   });
 
   if (sc.robots !== undefined) {

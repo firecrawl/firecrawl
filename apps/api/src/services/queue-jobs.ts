@@ -395,8 +395,11 @@ async function addScrapeJobRaw(
       }
     }
 
+    const ctx = jobContext(webScraperOptions);
     maxConcurrency = await currentLimits().concurrency(
-      jobContext(webScraperOptions),
+      ctx.concurrencyLimit !== undefined
+        ? { ...ctx, concurrencyLimit: undefined }
+        : ctx,
     );
 
     if (concurrencyLimited === null) {
@@ -690,9 +693,13 @@ export async function addScrapeJobs(
     jobsPotentiallyInCQ.push(...jobsWithoutCrawlID);
 
     const firstCtx = teamJobs.length > 0 ? jobContext(teamJobs[0].data) : null;
+    const liveFirstCtx =
+      firstCtx && firstCtx.concurrencyLimit !== undefined
+        ? { ...firstCtx, concurrencyLimit: undefined }
+        : firstCtx;
     const maxConcurrency =
-      firstCtx && firstCtx.teamId === teamId
-        ? await currentLimits().concurrency(firstCtx)
+      liveFirstCtx && liveFirstCtx.teamId === teamId
+        ? await currentLimits().concurrency(liveFirstCtx)
         : await currentLimits().teamConcurrency(teamId);
 
     let addToBull: typeof jobsPotentiallyInCQ;

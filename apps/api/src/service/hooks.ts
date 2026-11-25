@@ -177,10 +177,15 @@ export interface SearchHit {
   url: string;
   title?: string;
   description?: string;
+  group?: "web" | "news" | "images";
+  category?: string;
+  imageUrl?: string;
+  imageWidth?: number;
+  imageHeight?: number;
 }
 
 /**
- * The service's 25 typed hook points, grouped by lifecycle area.
+ * The service's 26 typed hook points, grouped by lifecycle area.
  */
 export interface HookPoints {
   // process
@@ -270,6 +275,16 @@ export interface HookPoints {
       logger?: Logger;
     }
   >;
+  "map.filter": Transform<
+    MapDocument[],
+    {
+      ctx: RequestContext;
+      url: string;
+      limit: number;
+      state?: Record<string, unknown>;
+      logger?: Logger;
+    }
+  >;
   "map.finished": Observe<{
     id: string;
     requestId?: string;
@@ -317,6 +332,8 @@ export interface HookPoints {
     searchTypes?: string[];
     scrapeFormats?: string[];
     shouldScrape?: boolean;
+    isSuccessful?: boolean;
+    error?: string;
     state?: Record<string, unknown>;
   }>;
 }
@@ -392,7 +409,7 @@ const rawHookPoints: {
   "process.start": Object.freeze({ kind: "await" }),
   "process.stop": Object.freeze({
     kind: "await",
-    timeoutMs: 10_000,
+    timeoutMs: 45_000,
     isolate: true,
     reverse: true,
   }),
@@ -415,6 +432,7 @@ const rawHookPoints: {
   "crawl.links": Object.freeze({ kind: "transform" }),
   "crawl.finished": Object.freeze({ kind: "await" }),
   "map.collect": Object.freeze({ kind: "transform" }),
+  "map.filter": Object.freeze({ kind: "transform" }),
   "map.finished": Object.freeze({ kind: "observe" }),
   "search.plan": Object.freeze({ kind: "transform" }),
   "search.results": Object.freeze({ kind: "transform" }),

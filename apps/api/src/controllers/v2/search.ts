@@ -160,52 +160,20 @@ async function searchControllerInner(
     if (!agentRequestId) jobIdField = { jobId };
 
     const searchState: Record<string, unknown> = {};
-    const planHooks = installedService()?.hooks;
-    const planned = planHooks?.has("search.plan")
-      ? await applySearchPlanHook(
-          {
-            query: req.body.query,
-            limit: req.body.limit,
-            sources: req.body.sources as Array<{ type: string }>,
-          },
-          { ctx, body: req.body, state: searchState, logger },
-        )
-      : {
-          query: req.body.query,
-          limit: req.body.limit,
-          sources: req.body.sources as Array<{ type: string }>,
-        };
-
-    if (planHooks?.has("search.plan")) {
-      if (
-        (ctx.usOnly || ctx.flags?.usOnly) &&
-        planned.sources.some(source => source.type === "images")
-      ) {
-        planned.sources = planned.sources.filter(
-          source => source.type !== "images",
-        );
-        if (planned.sources.length === 0) {
-          return res.status(403).json({
-            success: false,
-            code: "US_ONLY_UNAVAILABLE",
-            error: IMAGE_SEARCH_US_ONLY_MESSAGE,
-          });
-        }
-        usOnlyImagesWarning = IMAGE_SEARCH_US_ONLY_MESSAGE;
-      }
-    }
-
     const reservation = await service.modules.billing.authorize({
       caller: req.caller ?? { teamId: req.auth.team_id },
       operation: "search",
       stage: "reserve",
-      requestedUnits: planned.limit,
+      requestedUnits: req.body.limit,
       ctx,
       state: {
         req,
         shouldBill,
         hasScrapeFormats: requestedFormats.length > 0,
-        limit: planned.limit,
+        limit: req.body.limit,
+        categories: req.body.categories,
+        sources: req.body.sources,
+        domainTools: extBody().domainTools,
         enterprise: extBody().enterprise as
           | ("default" | "anon" | "zdr")[]
           | undefined,
@@ -235,6 +203,45 @@ async function searchControllerInner(
         .json(body as SearchResponse);
     }
     billingHandle = reservation.handle;
+
+    const planHooks = installedService()?.hooks;
+    const planned = planHooks?.has("search.plan")
+      ? await applySearchPlanHook(
+          {
+            query: req.body.query,
+            limit: req.body.limit,
+            sources: req.body.sources as Array<{ type: string }>,
+          },
+          { ctx, body: req.body, state: searchState, logger },
+        )
+      : {
+          query: req.body.query,
+          limit: req.body.limit,
+          sources: req.body.sources as Array<{ type: string }>,
+        };
+
+    if (planHooks?.has("search.plan")) {
+      if (
+        (ctx.usOnly || ctx.flags?.usOnly) &&
+        planned.sources.some(source => source.type === "images")
+      ) {
+        planned.sources = planned.sources.filter(
+          source => source.type !== "images",
+        );
+        if (
+          planned.sources.length === 0 &&
+          !Array.isArray(searchState.routedResults)
+        ) {
+          await settleBilling({ ok: false });
+          return res.status(403).json({
+            success: false,
+            code: "US_ONLY_UNAVAILABLE",
+            error: IMAGE_SEARCH_US_ONLY_MESSAGE,
+          });
+        }
+        usOnlyImagesWarning = IMAGE_SEARCH_US_ONLY_MESSAGE;
+      }
+    }
 
     const result = await executeSearch(
       {
@@ -287,6 +294,40 @@ async function searchControllerInner(
       logger,
     );
 
+    if (
+      searchState.toolsOnly === true &&
+      searchState.toolsUnavailable === true
+    ) {
+      const error =
+        "Tool discovery is temporarily unavailable. Retry the request.";
+      setSpanAttributes(span, { "search.status_code": 503 });
+      const totalRequestTime = Date.now() - middlewareStartTime;
+      const hooks = installedService()?.hooks;
+      if (hooks?.has("search.finished")) {
+        hooks.observe("search.finished", {
+          id: jobId,
+          requestId: agentRequestId ?? jobId,
+          ctx,
+          results: 0,
+          charged:
+            reservation.bypassBilling !== true && shouldBill ? 0 : undefined,
+          body: req.body,
+          response: result.response,
+          timeTakenMs: totalRequestTime,
+          isSuccessful: false,
+          error,
+          state: searchState,
+        });
+      }
+      await settleBilling({ ok: false });
+      return res.status(503).json({
+        success: false,
+        code: "TOOL_DISCOVERY_UNAVAILABLE",
+        error,
+        ...jobIdField,
+      });
+    }
+
     const scrapedDocuments = result.scrapedDocuments ?? [];
     const billableResultsCount =
       result.billableResultsCount ?? result.totalResultsCount;
@@ -301,6 +342,7 @@ async function searchControllerInner(
               results: billableResultsCount,
               documents: scrapedDocuments,
               state: {
+                ...searchState,
                 enterprise: extBody().enterprise as
                   | ("default" | "anon" | "zdr")[]
                   | undefined,

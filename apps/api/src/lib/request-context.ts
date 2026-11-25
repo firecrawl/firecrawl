@@ -95,6 +95,16 @@ export function storedZeroDataRetention(stored: unknown): boolean | undefined {
   return shape?.ctx?.zeroDataRetention ?? shape?.zeroDataRetention;
 }
 
+/**
+ * Reads an optional threat protection policy attached to a request context by
+ * a policy module, without coupling core's base context type to a specific
+ * policy shape.
+ */
+export function contextThreatProtection(ctx: RequestContext): unknown {
+  return (ctx as { policy?: { threatProtection?: unknown } | null }).policy
+    ?.threatProtection;
+}
+
 /** The context a crawl runs under, with the same fallback as `jobContext`. */
 export function crawlContext(crawl: StoredCrawl): RequestContext {
   return (
