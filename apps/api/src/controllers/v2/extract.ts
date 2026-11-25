@@ -29,7 +29,6 @@ import { UnsupportedSiteError } from "../../lib/error";
 import { ipWhitelistRefusal } from "../../lib/permissions";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import { checkExtractAvailable } from "../../lib/extract/fire-0/extraction-service-f0";
-import { withWebhookSummaryForLog } from "../../services/webhook/log";
 
 /**
  * Extracts data from the provided URLs based on the request parameters.
@@ -78,8 +77,8 @@ export async function extractController(
   const extractId = uuidv7();
   const createdAt = Date.now();
   _logger.info("Extract starting...", {
-    request: withWebhookSummaryForLog(req.body),
-    originalRequest: withWebhookSummaryForLog(originalRequest),
+    request: req.body,
+    originalRequest,
     teamId: req.auth.team_id,
     team_id: req.auth.team_id,
     extractId,

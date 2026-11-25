@@ -60,7 +60,6 @@ import {
   initializeRequestCredits,
   requestCreditsShards,
 } from "../../lib/request-credits-store";
-import { summarizeWebhookForLog } from "../../services/webhook/log";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -588,7 +587,7 @@ export async function batchScrapeController(
 
   if (req.body.webhook) {
     logger.debug("Calling webhook with batch_scrape.started...", {
-      webhook: summarizeWebhookForLog(req.body.webhook),
+      webhook: req.body.webhook,
     });
     const sender = await createWebhookSender({
       teamId: req.auth.team_id,

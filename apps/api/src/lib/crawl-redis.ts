@@ -17,7 +17,6 @@ import {
   reportPipelineError,
   REDIS_COMMAND_ARG_CHUNK_SIZE,
 } from "./redis-pipeline";
-import { withWebhookSummaryForLog } from "../services/webhook/log";
 
 export type StoredCrawl = {
   /**
@@ -64,7 +63,7 @@ export async function saveCrawl(id: string, crawl: StoredCrawl) {
       });
 
       _logger.debug("Saving crawl " + id + " to Redis...", {
-        crawl: withWebhookSummaryForLog(crawl),
+        crawl,
         module: "crawl-redis",
         method: "saveCrawl",
         crawlId: id,

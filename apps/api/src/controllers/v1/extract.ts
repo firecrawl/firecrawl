@@ -40,7 +40,6 @@ import { UnsupportedSiteError } from "../../lib/error";
 import { ipWhitelistRefusal } from "../../lib/permissions";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import { isSdkOrigin } from "../../lib/sdk-origin";
-import { withWebhookSummaryForLog } from "../../services/webhook/log";
 async function oldExtract(
   req: RequestWithAuth<{}, ExtractResponse, ExtractRequest>,
   res: Response<ExtractResponse>,
@@ -281,8 +280,8 @@ export async function extractController(
   }
 
   _logger.info("Extract starting...", {
-    request: withWebhookSummaryForLog(req.body),
-    originalRequest: withWebhookSummaryForLog(originalRequest),
+    request: req.body,
+    originalRequest,
     teamId: req.auth.team_id,
     team_id: req.auth.team_id,
     extractId,
