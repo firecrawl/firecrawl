@@ -10,6 +10,8 @@ import { service } from "../service";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
+import { getCrawl } from "../lib/crawl-redis";
+import { recordCrawlStateMissing } from "../lib/crawl-state-metrics";
 import { startRole } from "../main";
 import { runProcessStop } from "../service/service";
 
@@ -33,6 +35,12 @@ async function processFinishCrawlJobInternal(_job: NuQJob) {
   const anyJob = await scrapeQueue.getGroupAnyJob(job.groupId, job.ownerId);
 
   if (!anyJob) {
+    if (!(await getCrawl(job.groupId))) {
+      recordCrawlStateMissing("finalizer", job.groupId, _logger, {
+        jobId: job.id,
+        recoverable: false,
+      });
+    }
     throw new Error("crawlFinish couldn't find anyJob");
   }
 
