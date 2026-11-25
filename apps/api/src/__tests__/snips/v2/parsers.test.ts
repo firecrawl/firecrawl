@@ -1,5 +1,6 @@
 import {
   ALLOW_TEST_SUITE_WEBSITE,
+  concurrentIf,
   describeIf,
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
@@ -370,7 +371,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
       scrapeTimeout,
     );
 
-    it.concurrent(
+    concurrentIf(TEST_PRODUCTION)(
       "rejects non-boolean pages",
       async () => {
         const raw = await scrapeRaw(

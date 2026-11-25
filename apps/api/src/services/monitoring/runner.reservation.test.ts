@@ -68,6 +68,11 @@ vi.mock("../../lib/crawl-redis", () => ({}));
 vi.mock("../queue-jobs", () => ({ addScrapeJob: vi.fn() }));
 vi.mock("../../controllers/v2/types", () => ({
   scrapeRequestSchema: { parse: (value: unknown) => value },
+  getV2RequestSchemas: () => ({
+    scrape: { parse: (value: unknown) => value },
+    crawl: { parse: (value: unknown) => value },
+    scrapeOptions: { parse: (value: unknown) => value },
+  }),
 }));
 vi.mock("../webhook", () => ({}));
 vi.mock("./results", () => ({}));

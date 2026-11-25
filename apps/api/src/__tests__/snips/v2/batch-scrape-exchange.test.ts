@@ -219,16 +219,14 @@ describe("v2 batch scrape of blocklisted URLs", () => {
         {
           urls: [OPEN_URL, BLOCKED_URL],
           ignoreInvalidURLs: false,
-          redactPII: true,
+          actions: [{ type: "wait", milliseconds: 100 }],
         },
         ACCEPTED_FLAGS,
       );
 
       expect(result).toEqual({
         status: 400,
-        body: new ThirdPartyDataUnsupportedOptionError(
-          "`redactPII`",
-        ).response(),
+        body: new ThirdPartyDataUnsupportedOptionError("`actions`").response(),
       });
       expect(result.body.code).toBe("THIRD_PARTY_DATA_UNSUPPORTED_OPTION");
       expect(enqueuedJobs()).toEqual([]);

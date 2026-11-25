@@ -63,7 +63,7 @@ COPY . .
 RUN rm -rf dist && pnpm run build
 ARG GIT_SHA=unknown
 RUN test -s dist/src/harness.js && \
-    test -s dist/src/controllers/v0/crawl-status.js && \
+    test -s dist/src/controllers/v2/crawl-status.js && \
     printf '%s\n' "$GIT_SHA" > BUILD_SHA
 
 # Remove dev dependencies
@@ -101,6 +101,6 @@ COPY --from=build /app/BUILD_SHA ./BUILD_SHA
 # Copy Go shared library
 COPY --from=go-build /app/sharedLibs/go-html-to-md/libhtml-to-markdown.so ./sharedLibs/go-html-to-md/
 
-RUN node -e 'const fs = require("fs"); for (const p of ["dist/src/harness.js", "dist/src/controllers/v0/crawl-status.js", "BUILD_SHA"]) { if (!fs.statSync(p).size) throw new Error(`${p} missing or empty`); }'
+RUN node -e 'const fs = require("fs"); for (const p of ["dist/src/harness.js", "dist/src/controllers/v2/crawl-status.js", "BUILD_SHA"]) { if (!fs.statSync(p).size) throw new Error(`${p} missing or empty`); }'
 
 CMD ["node", "dist/src/harness.js", "--start-docker"]

@@ -167,12 +167,21 @@ vi.mock("../../search/safe-search", () => ({
   removeExplicitResults: mocks.removeExplicitResults,
 }));
 
+import { z } from "zod";
 import { executeSearch } from "../../search/execute";
 import type { HookHandlers } from "../../service/hooks";
-import { createService, replaceService } from "../../service/service";
+import {
+  createService,
+  replaceService,
+  type Extension,
+} from "../../service/service";
 import { searchController } from "./search";
 
-function installHooks(hooks?: HookHandlers, report = vi.fn()) {
+function installHooks(
+  hooks?: HookHandlers,
+  report = vi.fn(),
+  request?: Extension["request"],
+) {
   replaceService(
     createService(
       {
@@ -182,7 +191,16 @@ function installHooks(hooks?: HookHandlers, report = vi.fn()) {
             charge: mocks.billingCharge,
           },
         },
-        extensions: hooks ? [{ name: "test-hooks", hooks }] : [],
+        extensions:
+          hooks || request
+            ? [
+                {
+                  name: "test-hooks",
+                  ...(hooks ? { hooks } : {}),
+                  ...(request ? { request } : {}),
+                },
+              ]
+            : [],
       },
       {
         core: { name: "core" },
@@ -452,12 +470,20 @@ describe("search lifecycle hooks", () => {
   });
 
   it("revalidates planned sources against preview-keyless, ZDR, and US-only policies before billing and execution", async () => {
-    installHooks({
-      "search.plan": plan => ({
-        ...plan,
-        sources: [...plan.sources, "alexandria"],
-      }),
-    });
+    installHooks(
+      {
+        "search.plan": plan => ({
+          ...plan,
+          sources: [...plan.sources, "alexandria"],
+        }),
+      },
+      vi.fn(),
+      {
+        search: {
+          enterprise: z.array(z.enum(["default", "anon", "zdr"])).optional(),
+        },
+      },
+    );
 
     const keylessReq = makeReq({ query: "weather", sources: ["web"] });
     keylessReq.auth.team_id = "preview_keyless_abc";
@@ -515,12 +541,22 @@ describe("search lifecycle hooks", () => {
 
   it("omits charged when self-hosted and emits search.finished with 0 on tools-unavailable 503", async () => {
     const events: any[] = [];
-    const report = installHooks({
-      "search.finished": event => {
-        events.push(event);
-        throw new Error("observer failure");
+    const report = installHooks(
+      {
+        "search.finished": event => {
+          events.push(event);
+          throw new Error("observer failure");
+        },
       },
-    });
+      vi.fn(),
+      {
+        search: {
+          sources: z
+            .array(z.enum(["web", "images", "news", "alexandria"]))
+            .prefault(["web"]),
+        },
+      },
+    );
 
     // Self-hosted: charged is undefined; observer error is isolated
     mocks.isSelfHosted.mockReturnValue(true);

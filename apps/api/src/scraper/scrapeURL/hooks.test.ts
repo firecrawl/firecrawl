@@ -588,10 +588,12 @@ describe("scrape pipeline hook points", () => {
     const profileResult = await scrapeURL(
       "scrape-profile-policy",
       "https://example.com/profile",
-      scrapeOptions.parse({
-        formats: ["markdown"],
+      {
+        ...scrapeOptions.parse({
+          formats: ["markdown"],
+        }),
         profile: { name: "user-profile", saveChanges: false },
-      }),
+      } as any,
       { teamId: "team-profile", orgId: null },
       new CostTracking(),
     );

@@ -299,13 +299,13 @@ describe("engine registry integration", () => {
     const cached = await buildFallbackList(makeMeta({ maxAge: 60000 }));
     expect(cached.map(e => e.engine)).toEqual(["custom;cache", "fetch"]);
 
-    const changeTracking = await buildFallbackList(
+    const customScreenshot = await buildFallbackList(
       makeMeta({
         maxAge: 60000,
-        formats: [{ type: "markdown" }, { type: "changeTracking" }],
+        formats: [{ type: "screenshot", quality: 80 }],
       }),
     );
-    expect(changeTracking.map(e => e.engine)).toEqual(["fetch"]);
+    expect(customScreenshot.map(e => e.engine)).toEqual(["fetch"]);
 
     const lockedDown = await buildFallbackList(
       makeMeta({ maxAge: 0, lockdown: true }),

@@ -1,6 +1,10 @@
 import robotsParser, { Robot } from "robots-parser";
 import { Logger } from "winston";
-import { ScrapeOptions, scrapeOptions } from "../controllers/v2/types";
+import {
+  getV2RequestSchemas,
+  ScrapeOptions,
+  scrapeOptions,
+} from "../controllers/v2/types";
 import { scrapeURL } from "../scraper/scrapeURL";
 import { Engine } from "../scraper/scrapeURL/engines";
 import { CostTracking } from "./cost-tracking";
@@ -44,14 +48,19 @@ export async function fetchRobotsTxt(
   const response = await scrapeURL(
     "robots-txt;" + scrapeId,
     robotsTxtUrl,
-    scrapeOptions.parse({
-      formats: ["rawHtml"],
-      timeout: 8000,
-      ...(skipCache ? { maxAge: 0 } : { maxAge: ROBOTS_MAX_AGE }),
-      ...(location ? { location } : {}),
-      ...(headers ? { headers } : {}),
-      ...(skipTlsVerification ? { skipTlsVerification } : {}),
-    }),
+    (() => {
+      const schema = getV2RequestSchemas().scrapeOptions;
+      return schema.parse({
+        formats: ["rawHtml"],
+        timeout: 8000,
+        ...(schema !== scrapeOptions
+          ? { maxAge: skipCache ? 0 : ROBOTS_MAX_AGE }
+          : {}),
+        ...(location ? { location } : {}),
+        ...(headers ? { headers } : {}),
+        ...(skipTlsVerification ? { skipTlsVerification } : {}),
+      });
+    })(),
     {
       forceEngine,
       v0DisableJsDom: true,
