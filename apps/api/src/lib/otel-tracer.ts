@@ -1,6 +1,7 @@
 import {
   context,
   createContextKey,
+  diag,
   isSpanContextValid,
   propagation,
   SpanKind,
@@ -192,11 +193,17 @@ class ZeroDataRetentionSpanProcessor implements SpanProcessor {
  * `parentbased_always_on`; a missing or invalid ratio means 1.
  */
 export function samplerFromEnv(name?: string, arg?: string): Sampler {
-  const parsedRatio =
-    arg === undefined || arg.trim() === "" ? NaN : Number(arg);
-  const ratio = Number.isFinite(parsedRatio) ? parsedRatio : 1;
+  const hasArg = arg !== undefined && arg.trim() !== "";
+  const parsedRatio = hasArg ? Number(arg) : NaN;
+  const validRatio =
+    Number.isFinite(parsedRatio) && parsedRatio >= 0 && parsedRatio <= 1;
+  if (hasArg && !validRatio) {
+    diag.warn(`Invalid OTEL_TRACES_SAMPLER_ARG "${arg}", using 1`);
+  }
+  const ratio = validRatio ? parsedRatio : 1;
 
-  switch (name?.trim().toLowerCase()) {
+  const normalized = name?.trim().toLowerCase();
+  switch (normalized) {
     case "always_on":
       return new AlwaysOnSampler();
     case "always_off":
@@ -210,6 +217,11 @@ export function samplerFromEnv(name?: string, arg?: string): Sampler {
         root: new TraceIdRatioBasedSampler(ratio),
       });
     default:
+      if (normalized && normalized !== "parentbased_always_on") {
+        diag.warn(
+          `Unknown OTEL_TRACES_SAMPLER "${name}", using parentbased_always_on`,
+        );
+      }
       return new ParentBasedSampler({ root: new AlwaysOnSampler() });
   }
 }

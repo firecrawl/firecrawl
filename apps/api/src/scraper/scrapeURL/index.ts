@@ -1035,270 +1035,278 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     let result: EngineScrapeResultWithContext | null = null;
 
-    while (remainingEngines.length > 0) {
-      const { engine, unsupportedFeatures } = remainingEngines.shift()!;
-      enginesAttempted.push(engine);
-      const attempt = enginesAttempted.length;
+    try {
+      while (remainingEngines.length > 0) {
+        const { engine, unsupportedFeatures } = remainingEngines.shift()!;
+        enginesAttempted.push(engine);
+        const attempt = enginesAttempted.length;
 
-      const waitUntilWaterfall =
-        getEngineMaxReasonableTime(meta, engine) +
-        config.SCRAPEURL_ENGINE_WATERFALL_DELAY_MS;
+        const waitUntilWaterfall =
+          getEngineMaxReasonableTime(meta, engine) +
+          config.SCRAPEURL_ENGINE_WATERFALL_DELAY_MS;
 
-      if (
-        !isFinite(waitUntilWaterfall) ||
-        isNaN(waitUntilWaterfall) ||
-        waitUntilWaterfall <= 0
-      ) {
-        meta.logger.warn("Invalid waitUntilWaterfall value", {
+        if (
+          !isFinite(waitUntilWaterfall) ||
+          isNaN(waitUntilWaterfall) ||
+          waitUntilWaterfall <= 0
+        ) {
+          meta.logger.warn("Invalid waitUntilWaterfall value", {
+            waitUntilWaterfall,
+            timeout: meta.options.timeout,
+            actions: !!meta.options.actions,
+            hasJson: !!meta.options.formats?.find(x => x.type === "json"),
+            remainingEngines: remainingEngines.length,
+          });
+        }
+
+        meta.logger.info("Scraping via " + engine + "...", {
           waitUntilWaterfall,
-          timeout: meta.options.timeout,
-          actions: !!meta.options.actions,
-          hasJson: !!meta.options.formats?.find(x => x.type === "json"),
-          remainingEngines: remainingEngines.length,
         });
-      }
 
-      meta.logger.info("Scraping via " + engine + "...", {
-        waitUntilWaterfall,
-      });
-
-      enginePromises.push({
-        engine,
-        unsupportedFeatures,
-        promise: (async () => {
-          try {
-            return {
-              engine,
-              unsupportedFeatures,
-              result: await scrapeURLLoopIter(
-                meta,
+        enginePromises.push({
+          engine,
+          unsupportedFeatures,
+          promise: (async () => {
+            try {
+              return {
                 engine,
-                attempt,
-                snipeAbort,
-              ),
-            };
-          } catch (error) {
-            throw new WrappedEngineError(engine, error);
-          }
-        })(),
-      });
-
-      while (true) {
-        let timeouts: NodeJS.Timeout[] = [];
-        try {
-          result = await Promise.race([
-            ...enginePromises.map(x => x.promise),
-            ...(remainingEngines.length > 0
-              ? [
-                  new Promise<EngineScrapeResultWithContext>((_, reject) => {
-                    timeouts.push(
-                      setTimeout(() => {
-                        reject(new WaterfallNextEngineSignal());
-                      }, waitUntilWaterfall),
-                    );
-                  }),
-                ]
-              : []),
-            new Promise<EngineScrapeResultWithContext>((_, reject) => {
-              timeouts.push(
-                setTimeout(() => {
-                  try {
-                    meta.abort.throwIfAborted();
-
-                    // Fallback error if above doesn't throw
-                    const usingDefaultTimeout =
-                      meta.abort.scrapeTimeout() === undefined;
-                    throw new ScrapeJobTimeoutError(
-                      usingDefaultTimeout
-                        ? "Scrape timed out due to maximum length of 5 minutes"
-                        : "Scrape timed out",
-                    );
-                  } catch (error) {
-                    reject(error);
-                  }
-                }, meta.abort.scrapeTimeout() ?? 300000),
-              );
-            }),
-          ]);
-          break;
-        } catch (error) {
-          if (error instanceof WrappedEngineError) {
-            if (abortsEngineRace(error.error)) {
-              // Another engine or exit doesn't get past it either (the engine
-              // has logged the block); end the scrape the usual way instead of
-              // trying them, and stop the engines still racing.
-              snipeAbortController.abort();
-              setSpanAttributes(span, {
-                "engine.no_engines_left": true,
-                "engine.engines_attempted": enginesAttempted.join(","),
-              });
-              throw new NoEnginesLeftError(enginesAttempted);
+                unsupportedFeatures,
+                result: await scrapeURLLoopIter(
+                  meta,
+                  engine,
+                  attempt,
+                  snipeAbort,
+                ),
+              };
+            } catch (error) {
+              throw new WrappedEngineError(engine, error);
             }
-            const nextEngine = remainingEngines[0]?.engine;
-            const experiment = waterfallExperimentFor(
-              error.engine,
-              error.error,
-              nextEngine,
-            );
-            if (experiment) {
-              const testArm = inWaterfallExperimentArm(meta.id, experiment);
-              meta.logger.info("Waterfall experiment decision", {
-                experiment,
-                arm: testArm ? "test" : "control",
-                engine: error.engine,
-                nextEngine,
-                error: error.error,
-              });
-              if (testArm) {
-                enginePromises = enginePromises.filter(
-                  x => x.engine !== error.engine,
+          })(),
+        });
+
+        while (true) {
+          let timeouts: NodeJS.Timeout[] = [];
+          try {
+            result = await Promise.race([
+              ...enginePromises.map(x => x.promise),
+              ...(remainingEngines.length > 0
+                ? [
+                    new Promise<EngineScrapeResultWithContext>((_, reject) => {
+                      timeouts.push(
+                        setTimeout(() => {
+                          reject(new WaterfallNextEngineSignal());
+                        }, waitUntilWaterfall),
+                      );
+                    }),
+                  ]
+                : []),
+              new Promise<EngineScrapeResultWithContext>((_, reject) => {
+                timeouts.push(
+                  setTimeout(() => {
+                    try {
+                      meta.abort.throwIfAborted();
+
+                      // Fallback error if above doesn't throw
+                      const usingDefaultTimeout =
+                        meta.abort.scrapeTimeout() === undefined;
+                      throw new ScrapeJobTimeoutError(
+                        usingDefaultTimeout
+                          ? "Scrape timed out due to maximum length of 5 minutes"
+                          : "Scrape timed out",
+                      );
+                    } catch (error) {
+                      reject(error);
+                    }
+                  }, meta.abort.scrapeTimeout() ?? 300000),
                 );
-                if (enginePromises.length === 0) {
-                  break;
-                }
-                continue;
-              }
-            }
-            if (error.error instanceof EngineError) {
-              meta.logger.warn(error.error.formatEngineLog(error.engine), {
-                error: error.error,
-              });
-            } else if (error.error instanceof EngineUnsuccessfulError) {
-              // Deliberately silent. An engine declining the page is a normal
-              // waterfall outcome and is already recorded elsewhere: the
-              // success-factor check logs "deemed unsuccessful" with its reasoning,
-              // and engines that recognise the body as none of their business
-              // (pdf/document finding HTML) are preceded by "Scraping via X...".
-              // Logging again only duplicated that, ~48k lines/hour across all
-              // engines. Recognised here purely so it doesn't fall through to the
-              // catch-all branch and get reported as an unexpected error.
-            } else if (endsEngineLoop(error.error)) {
-              throw error.error;
-            } else if (error.error instanceof LLMRefusalError) {
-              meta.logger.warn("LLM refusal encountered", {
-                error: error.error,
-              });
-              throw error.error;
-            } else if (error.error instanceof AbortManagerThrownError) {
-              if (error.error.tier === "engine") {
-                meta.logger.warn(
-                  "Engine " + error.engine + " timed out while scraping.",
-                  { error: error.error },
-                );
-              } else {
-                throw error.error;
-              }
-            } else {
-              meta.logger.warn(
-                "An unexpected error happened while scraping with " +
-                  error.engine +
-                  ".",
-                { error },
-              );
-            }
-
-            // Filter out the failed engine
-            enginePromises = enginePromises.filter(
-              x => x.engine !== error.engine,
-            );
-
-            const hooks = scrapeHooks();
-            if (hooks?.has("scrape.engine.fallback")) {
-              const existing = new Map(
-                [...fallbackList, ...remainingEngines].map(entry => [
-                  entry.engine,
-                  entry,
-                ]),
-              );
-              const nextPlan = await hooks.transform(
-                "scrape.engine.fallback",
-                { candidates: remainingEngines.map(entry => entry.engine) },
-                {
-                  ...toScrapeMeta(meta),
-                  failed: error.engine,
-                  error: error.error,
-                },
-              );
-              const attempted = new Set<Engine>([
-                ...enginesAttempted,
-                ...enginePromises.map(x => x.engine),
-              ]);
-              const eligibleCandidates = nextPlan.candidates.filter(
-                engine => !attempted.has(engine),
-              );
-              const resolved = resolveCandidateEngines(
-                meta,
-                eligibleCandidates,
-                existing,
-              );
-              remainingEngines.splice(0, remainingEngines.length, ...resolved);
-              const attemptedEntries = fallbackList.filter(entry =>
-                attempted.has(entry.engine),
-              );
-              fallbackList.splice(
-                0,
-                fallbackList.length,
-                ...attemptedEntries,
-                ...resolved,
-              );
-            }
-
-            // If we don't have any engines waterfalled, let's waterfall the next engine
-            if (enginePromises.length === 0) {
-              break;
-            }
-
-            // Otherwise, just keep racing
-          } else if (
-            error instanceof AddFeatureError ||
-            error instanceof RemoveFeatureError
-          ) {
-            throw error;
-          } else if (error instanceof WaterfallNextEngineSignal) {
-            // It's time to waterfall the next engine
+              }),
+            ]);
             break;
-          } else if (error instanceof ScrapeJobTimeoutError) {
-            throw error;
-          } else if (error instanceof AbortManagerThrownError) {
-            if (error.tier === "engine") {
-              meta.logger.warn(
-                "Engine-scoped timeout error received here. Weird!",
-                { error },
+          } catch (error) {
+            if (error instanceof WrappedEngineError) {
+              if (abortsEngineRace(error.error)) {
+                // Another engine or exit doesn't get past it either (the engine
+                // has logged the block); end the scrape the usual way instead of
+                // trying them, and stop the engines still racing.
+                snipeAbortController.abort();
+                setSpanAttributes(span, {
+                  "engine.no_engines_left": true,
+                  "engine.engines_attempted": enginesAttempted.join(","),
+                });
+                throw new NoEnginesLeftError(enginesAttempted);
+              }
+              const nextEngine = remainingEngines[0]?.engine;
+              const experiment = waterfallExperimentFor(
+                error.engine,
+                error.error,
+                nextEngine,
               );
-            }
+              if (experiment) {
+                const testArm = inWaterfallExperimentArm(meta.id, experiment);
+                meta.logger.info("Waterfall experiment decision", {
+                  experiment,
+                  arm: testArm ? "test" : "control",
+                  engine: error.engine,
+                  nextEngine,
+                  error: error.error,
+                });
+                if (testArm) {
+                  enginePromises = enginePromises.filter(
+                    x => x.engine !== error.engine,
+                  );
+                  if (enginePromises.length === 0) {
+                    break;
+                  }
+                  continue;
+                }
+              }
+              if (error.error instanceof EngineError) {
+                meta.logger.warn(error.error.formatEngineLog(error.engine), {
+                  error: error.error,
+                });
+              } else if (error.error instanceof EngineUnsuccessfulError) {
+                // Deliberately silent. An engine declining the page is a normal
+                // waterfall outcome and is already recorded elsewhere: the
+                // success-factor check logs "deemed unsuccessful" with its reasoning,
+                // and engines that recognise the body as none of their business
+                // (pdf/document finding HTML) are preceded by "Scraping via X...".
+                // Logging again only duplicated that, ~48k lines/hour across all
+                // engines. Recognised here purely so it doesn't fall through to the
+                // catch-all branch and get reported as an unexpected error.
+              } else if (endsEngineLoop(error.error)) {
+                throw error.error;
+              } else if (error.error instanceof LLMRefusalError) {
+                meta.logger.warn("LLM refusal encountered", {
+                  error: error.error,
+                });
+                throw error.error;
+              } else if (error.error instanceof AbortManagerThrownError) {
+                if (error.error.tier === "engine") {
+                  meta.logger.warn(
+                    "Engine " + error.engine + " timed out while scraping.",
+                    { error: error.error },
+                  );
+                } else {
+                  throw error.error;
+                }
+              } else {
+                meta.logger.warn(
+                  "An unexpected error happened while scraping with " +
+                    error.engine +
+                    ".",
+                  { error },
+                );
+              }
 
-            throw error;
-          } else {
-            meta.logger.warn("Unexpected error while racing engines", {
-              error,
-            });
-            throw error;
-          }
-        } finally {
-          for (const to of timeouts) {
-            clearTimeout(to);
+              // Filter out the failed engine
+              enginePromises = enginePromises.filter(
+                x => x.engine !== error.engine,
+              );
+
+              const hooks = scrapeHooks();
+              if (hooks?.has("scrape.engine.fallback")) {
+                const existing = new Map(
+                  [...fallbackList, ...remainingEngines].map(entry => [
+                    entry.engine,
+                    entry,
+                  ]),
+                );
+                const nextPlan = await hooks.transform(
+                  "scrape.engine.fallback",
+                  { candidates: remainingEngines.map(entry => entry.engine) },
+                  {
+                    ...toScrapeMeta(meta),
+                    failed: error.engine,
+                    error: error.error,
+                  },
+                );
+                const attempted = new Set<Engine>([
+                  ...enginesAttempted,
+                  ...enginePromises.map(x => x.engine),
+                ]);
+                const eligibleCandidates = nextPlan.candidates.filter(
+                  engine => !attempted.has(engine),
+                );
+                const resolved = resolveCandidateEngines(
+                  meta,
+                  eligibleCandidates,
+                  existing,
+                );
+                remainingEngines.splice(
+                  0,
+                  remainingEngines.length,
+                  ...resolved,
+                );
+                const attemptedEntries = fallbackList.filter(entry =>
+                  attempted.has(entry.engine),
+                );
+                fallbackList.splice(
+                  0,
+                  fallbackList.length,
+                  ...attemptedEntries,
+                  ...resolved,
+                );
+              }
+
+              // If we don't have any engines waterfalled, let's waterfall the next engine
+              if (enginePromises.length === 0) {
+                break;
+              }
+
+              // Otherwise, just keep racing
+            } else if (
+              error instanceof AddFeatureError ||
+              error instanceof RemoveFeatureError
+            ) {
+              throw error;
+            } else if (error instanceof WaterfallNextEngineSignal) {
+              // It's time to waterfall the next engine
+              break;
+            } else if (error instanceof ScrapeJobTimeoutError) {
+              throw error;
+            } else if (error instanceof AbortManagerThrownError) {
+              if (error.tier === "engine") {
+                meta.logger.warn(
+                  "Engine-scoped timeout error received here. Weird!",
+                  { error },
+                );
+              }
+
+              throw error;
+            } else {
+              meta.logger.warn("Unexpected error while racing engines", {
+                error,
+              });
+              throw error;
+            }
+          } finally {
+            for (const to of timeouts) {
+              clearTimeout(to);
+            }
           }
         }
-      }
 
-      if (result === null) {
-        meta.logger.info("Waterfalling to next engine...", {
-          waitUntilWaterfall,
+        if (result === null) {
+          meta.logger.info("Waterfalling to next engine...", {
+            waitUntilWaterfall,
+          });
+        } else {
+          break;
+        }
+      }
+    } finally {
+      if (enginesAttempted.some(isIndexEngine)) {
+        setSpanAttributes(span, {
+          "engine.cache_hit": result !== null && isIndexEngine(result.engine),
         });
-      } else {
-        break;
       }
     }
-
     snipeAbortController.abort();
 
     if (result === null) {
       setSpanAttributes(span, {
         "engine.no_engines_left": true,
         "engine.engines_attempted": enginesAttempted.join(","),
-        "engine.cache_hit": enginesAttempted.some(isIndexEngine)
-          ? false
-          : undefined,
       });
       if (meta.options.lockdown) {
         throw new LockdownMissError();
@@ -1310,9 +1318,6 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     setSpanAttributes(span, {
       "engine.winner": result.engine,
       "engine.engines_attempted": enginesAttempted.join(","),
-      "engine.cache_hit": enginesAttempted.some(isIndexEngine)
-        ? isIndexEngine(result.engine)
-        : undefined,
       "engine.unsupported_features":
         result.unsupportedFeatures.size > 0
           ? Array.from(result.unsupportedFeatures).join(",")
