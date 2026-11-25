@@ -28,13 +28,17 @@ function remapKeys(value: unknown, schema: unknown): unknown {
   if (!props) return value;
 
   const canonical = new Map(Object.keys(props).map(k => [normalizeKey(k), k]));
-  const out: JsonObject = {};
-  for (const [key, v] of Object.entries(value)) {
-    const target =
-      key in props ? key : (canonical.get(normalizeKey(key)) ?? key);
-    out[target] = remapKeys(v, props[target]);
-  }
-  return out;
+  // JSON names such as "__proto__" are data. Define own properties rather
+  // than invoking Object.prototype setters while rebuilding objects.
+  return Object.fromEntries(
+    Object.entries(value).map(([key, v]) => {
+      const target = Object.hasOwn(props, key)
+        ? key
+        : (canonical.get(normalizeKey(key)) ?? key);
+      const sub = Object.hasOwn(props, target) ? props[target] : undefined;
+      return [target, remapKeys(v, sub)];
+    }),
+  );
 }
 
 function schemaAllowsNull(schema: JsonObject): boolean {
@@ -73,13 +77,15 @@ function typeDefault(schema: JsonObject): unknown {
       return [];
     case "object": {
       const props = (schema.properties ?? {}) as JsonObject;
-      const out: JsonObject = {};
-      for (const key of (schema.required as string[] | undefined) ?? []) {
-        const sub = props[key];
-        out[key] =
-          isObject(sub) && !schemaAllowsNull(sub) ? typeDefault(sub) : null;
-      }
-      return out;
+      return Object.fromEntries(
+        ((schema.required as string[] | undefined) ?? []).map(key => {
+          const sub = Object.hasOwn(props, key) ? props[key] : undefined;
+          return [
+            key,
+            isObject(sub) && !schemaAllowsNull(sub) ? typeDefault(sub) : null,
+          ];
+        }),
+      );
     }
     default:
       return null;
@@ -115,10 +121,10 @@ function coerceNulls(
     const requiredKeys = new Set(
       (schema as { required?: string[] }).required ?? [],
     );
-    const out: JsonObject = {};
+    const out = new Map<string, unknown>();
     for (const [key, v] of Object.entries(value)) {
-      if (!(key in props)) {
-        out[key] = v;
+      if (!Object.hasOwn(props, key)) {
+        out.set(key, v);
         continue;
       }
       const sub = props[key];
@@ -131,16 +137,16 @@ function coerceNulls(
       ) {
         continue;
       }
-      out[key] = coerceNulls(v, sub, requiredKeys.has(key));
+      out.set(key, coerceNulls(v, sub, requiredKeys.has(key)));
     }
     // Fill in required keys the model omitted entirely.
     for (const key of requiredKeys) {
-      if (!(key in out))
-        out[key] = isObject(props[key])
-          ? typeDefault(props[key] as JsonObject)
-          : null;
+      if (!out.has(key)) {
+        const sub = Object.hasOwn(props, key) ? props[key] : undefined;
+        out.set(key, isObject(sub) ? typeDefault(sub) : null);
+      }
     }
-    return out;
+    return Object.fromEntries(out);
   }
   return value;
 }
@@ -163,9 +169,9 @@ function dedupeArrays(value: unknown): unknown {
     return out;
   }
   if (isObject(value)) {
-    const out: JsonObject = {};
-    for (const [k, v] of Object.entries(value)) out[k] = dedupeArrays(v);
-    return out;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, v]) => [key, dedupeArrays(v)]),
+    );
   }
   return value;
 }
@@ -191,9 +197,9 @@ function sanitizeStrings(value: unknown): unknown {
   }
   if (Array.isArray(value)) return value.map(sanitizeStrings);
   if (isObject(value)) {
-    const out: JsonObject = {};
-    for (const [key, v] of Object.entries(value)) out[key] = sanitizeStrings(v);
-    return out;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, v]) => [key, sanitizeStrings(v)]),
+    );
   }
   return value;
 }
