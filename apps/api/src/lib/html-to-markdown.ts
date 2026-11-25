@@ -5,8 +5,155 @@ import type { Logger } from "winston";
 import { stat } from "fs/promises";
 import { HTML_TO_MARKDOWN_PATH } from "../natives";
 import { convertHTMLToMarkdownWithHttpService } from "./html-to-markdown-client";
-import { postProcessMarkdown } from "@mendable/firecrawl-rs";
+import {
+  convertHtmlToMarkdown,
+  postProcessMarkdown,
+} from "@mendable/firecrawl-rs";
 export { getInnerJson } from "@mendable/firecrawl-rs";
+
+type BaselineMarkdownEngine = "go-http" | "go-koffi" | "turndown";
+
+const MAX_CONCURRENT_SHADOW_JOBS = 4;
+let activeShadowJobs = 0;
+
+function extractHttpUrls(markdown: string): Set<string> {
+  const urls = new Set<string>();
+  const matches = markdown.match(/https?:\/\/[^\s)>\]"']+/g);
+  if (matches) {
+    for (const url of matches) {
+      urls.add(url);
+    }
+  }
+  return urls;
+}
+
+function extractNonDataImageUrls(markdown: string): Set<string> {
+  const urls = new Set<string>();
+  const regex = /!\[[^\]]*\]\(([^)\s]+)\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(markdown)) !== null) {
+    const src = match[1];
+    if (src && !src.toLowerCase().startsWith("data:")) {
+      urls.add(src);
+    }
+  }
+  return urls;
+}
+
+function computeRecall(baseline: Set<string>, candidate: Set<string>): number {
+  if (baseline.size === 0) {
+    return 1;
+  }
+  let matched = 0;
+  for (const item of baseline) {
+    if (candidate.has(item)) {
+      matched++;
+    }
+  }
+  return matched / baseline.size;
+}
+
+function countCodeFences(markdown: string): number {
+  let count = 0;
+  for (const line of markdown.split("\n")) {
+    if (/^\s*`{3,}/.test(line)) {
+      count++;
+    }
+  }
+  return Math.floor(count / 2);
+}
+
+function countTableRows(markdown: string): number {
+  let count = 0;
+  for (const line of markdown.split("\n")) {
+    if (line.trimStart().startsWith("|")) {
+      count++;
+    }
+  }
+  return count;
+}
+
+function maybeRunRustShadow(params: {
+  html: string;
+  baselineMarkdown: string;
+  baselineEngine: BaselineMarkdownEngine;
+  baselineDurationMs: number;
+  zeroDataRetention: boolean;
+  requestId?: string;
+  contextLogger: Logger;
+}): void {
+  const {
+    html,
+    baselineMarkdown,
+    baselineEngine,
+    baselineDurationMs,
+    zeroDataRetention,
+    requestId,
+    contextLogger,
+  } = params;
+
+  if (
+    zeroDataRetention ||
+    config.RUST_HTML_TO_MD_SHADOW_RATE <= 0 ||
+    activeShadowJobs >= MAX_CONCURRENT_SHADOW_JOBS ||
+    Math.random() >= config.RUST_HTML_TO_MD_SHADOW_RATE
+  ) {
+    return;
+  }
+
+  activeShadowJobs++;
+  const start = performance.now();
+  void (async () => {
+    try {
+      const rustMarkdown = await convertHtmlToMarkdown(html);
+      const rustDurationMs = Number((performance.now() - start).toFixed(2));
+      const baselineLinks = extractHttpUrls(baselineMarkdown);
+      const rustLinks = extractHttpUrls(rustMarkdown);
+      const baselineImages = extractNonDataImageUrls(baselineMarkdown);
+      const rustImages = extractNonDataImageUrls(rustMarkdown);
+      const baselineBytes = Buffer.byteLength(baselineMarkdown, "utf8");
+      const rustBytes = Buffer.byteLength(rustMarkdown, "utf8");
+
+      contextLogger.info("Rust HTML-to-Markdown shadow comparison", {
+        baseline_engine: baselineEngine,
+        baseline_duration_ms: Number(baselineDurationMs.toFixed(2)),
+        rust_duration_ms: rustDurationMs,
+        input_bytes: Buffer.byteLength(html, "utf8"),
+        baseline_bytes: baselineBytes,
+        rust_bytes: rustBytes,
+        byte_ratio:
+          baselineBytes > 0
+            ? Number((rustBytes / baselineBytes).toFixed(4))
+            : rustBytes === 0
+              ? 1
+              : 0,
+        exact_match: baselineMarkdown === rustMarkdown,
+        link_recall: Number(computeRecall(baselineLinks, rustLinks).toFixed(4)),
+        baseline_link_count: baselineLinks.size,
+        rust_link_count: rustLinks.size,
+        image_recall: Number(
+          computeRecall(baselineImages, rustImages).toFixed(4),
+        ),
+        baseline_image_count: baselineImages.size,
+        rust_image_count: rustImages.size,
+        code_fence_delta:
+          countCodeFences(rustMarkdown) - countCodeFences(baselineMarkdown),
+        table_row_delta:
+          countTableRows(rustMarkdown) - countTableRows(baselineMarkdown),
+        ...(requestId ? { request_id: requestId } : {}),
+      });
+    } catch (error) {
+      contextLogger.warn("Rust HTML-to-Markdown shadow conversion failed", {
+        error,
+        baseline_engine: baselineEngine,
+        input_bytes: Buffer.byteLength(html, "utf8"),
+        ...(requestId ? { request_id: requestId } : {}),
+      });
+    } finally {
+      activeShadowJobs--;
+    }
+  })();
+}
 
 // TODO: add a timeout to the Go parser
 
@@ -66,8 +213,20 @@ export async function parseMarkdown(
   const requestId = context?.requestId;
   const zeroDataRetention = context?.zeroDataRetention === true;
 
+  if (config.RUST_HTML_TO_MD_ENABLED) {
+    try {
+      return await convertHtmlToMarkdown(html);
+    } catch (error) {
+      contextLogger.error(
+        "Error converting HTML to Markdown with Rust converter, falling back",
+        { error },
+      );
+    }
+  }
+
   // Try HTTP service first if enabled
   if (config.HTML_TO_MARKDOWN_SERVICE_URL) {
+    const start = performance.now();
     try {
       let markdownContent = await convertHTMLToMarkdownWithHttpService(html, {
         logger: contextLogger,
@@ -75,6 +234,15 @@ export async function parseMarkdown(
         zeroDataRetention,
       });
       markdownContent = await postProcessMarkdown(markdownContent);
+      maybeRunRustShadow({
+        html,
+        baselineMarkdown: markdownContent,
+        baselineEngine: "go-http",
+        baselineDurationMs: performance.now() - start,
+        zeroDataRetention,
+        requestId,
+        contextLogger,
+      });
       return markdownContent;
     } catch (error) {
       contextLogger.error(
@@ -86,9 +254,19 @@ export async function parseMarkdown(
 
   try {
     if (config.USE_GO_MARKDOWN_PARSER) {
+      const start = performance.now();
       const converter = await GoMarkdownConverter.getInstance();
       let markdownContent = await converter.convertHTMLToMarkdown(html);
       markdownContent = await postProcessMarkdown(markdownContent);
+      maybeRunRustShadow({
+        html,
+        baselineMarkdown: markdownContent,
+        baselineEngine: "go-koffi",
+        baselineDurationMs: performance.now() - start,
+        zeroDataRetention,
+        requestId,
+        contextLogger,
+      });
       return markdownContent;
     }
   } catch (error) {
@@ -108,6 +286,7 @@ export async function parseMarkdown(
   }
 
   // Fallback to TurndownService if Go parser fails or is not enabled
+  const turndownStart = performance.now();
   var TurndownService = require("turndown");
   var turndownPluginGfm = require("joplin-turndown-plugin-gfm");
 
@@ -132,6 +311,15 @@ export async function parseMarkdown(
   try {
     let markdownContent = await turndownService.turndown(html);
     markdownContent = await postProcessMarkdown(markdownContent);
+    maybeRunRustShadow({
+      html,
+      baselineMarkdown: markdownContent,
+      baselineEngine: "turndown",
+      baselineDurationMs: performance.now() - turndownStart,
+      zeroDataRetention,
+      requestId,
+      contextLogger,
+    });
 
     return markdownContent;
   } catch (error) {

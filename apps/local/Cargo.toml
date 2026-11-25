@@ -25,6 +25,7 @@ path = "src/main.rs"
 # --- shared workspace crates (replaced by scripts/vendor-native.sh for packaging) ---
 firecrawl-crawler = { path = "../api/native/crates/firecrawl-crawler" }
 firecrawl-html = { path = "../api/native/crates/firecrawl-html" }
+firecrawl-markdown = { path = "../api/native/crates/firecrawl-markdown" }
 firecrawl-parsers = { path = "../api/native/crates/firecrawl-parsers" }
 # --- end shared workspace crates ---
 kuchikiki = "0.8.9-speedreader"

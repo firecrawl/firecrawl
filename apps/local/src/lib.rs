@@ -25,6 +25,8 @@ macro_rules! declare_vendored_native {
     pub mod crawler;
     #[path = "native/document.rs"]
     pub mod document;
+    #[path = "native/markdown/mod.rs"]
+    pub(crate) mod firecrawl_markdown;
     #[path = "native/html.rs"]
     pub mod html;
     #[path = "native/xml.rs"]

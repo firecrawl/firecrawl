@@ -9,6 +9,7 @@ version.workspace = true
 [dependencies]
 firecrawl-crawler.workspace = true
 firecrawl-html.workspace = true
+firecrawl-markdown.workspace = true
 firecrawl-parsers.workspace = true
 napi.workspace = true
 napi-derive.workspace = true

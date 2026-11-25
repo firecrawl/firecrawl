@@ -14,23 +14,44 @@ crates="../api/native/crates"
 workspace_manifest="../api/native/Cargo.toml"
 
 rm -rf src/native
-mkdir -p src/native
+mkdir -p src/native/markdown
 
 cp "$crates/firecrawl-crawler/src/xml.rs" "src/native/xml.rs"
 cp "$crates/firecrawl-html/src/html.rs" "src/native/html.rs"
 cp "$crates/firecrawl-crawler/src/crawler.rs" "src/native/crawler.rs"
 cp "$crates/firecrawl-parsers/src/document.rs" "src/native/document.rs"
+cp "$crates/firecrawl-markdown/src/"*.rs "src/native/markdown/"
+mv "src/native/markdown/lib.rs" "src/native/markdown/mod.rs"
 
 expected=$(sed -nE 's/.*#\[path = "native\/([^"]+)"\].*/\1/p' src/lib.rs | sort)
-actual=$(ls -1 src/native | sort)
-if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
-  echo "vendor-native: copied files do not match #[path = \"native/...\"] entries in src/lib.rs" >&2
-  echo "expected: $expected" >&2
-  echo "actual: $actual" >&2
+if [ -z "$expected" ]; then
+  echo "vendor-native: no #[path = \"native/...\"] entries found in src/lib.rs" >&2
+  exit 1
+fi
+for rel in $expected; do
+  if [ ! -f "src/native/$rel" ]; then
+    echo "vendor-native: missing expected vendored file src/native/$rel" >&2
+    exit 1
+  fi
+done
+
+expected_top=$(printf '%s\n' "$expected" | sed 's|/.*||' | sort -u)
+actual_top=$(ls -1 src/native | sort)
+if [ "$expected_top" != "$actual_top" ]; then
+  echo "vendor-native: copied entries do not match #[path = \"native/...\"] entries in src/lib.rs" >&2
+  echo "expected: $expected_top" >&2
+  echo "actual: $actual_top" >&2
   exit 1
 fi
 
-echo "vendored $(printf '%s\n' "$actual" | paste -sd, - | sed 's/,/, /g')"
+expected_md=$(ls -1 "$crates/firecrawl-markdown/src" | sed 's/^lib\.rs$/mod.rs/' | sort)
+actual_md=$(ls -1 src/native/markdown | sort)
+if [ "$expected_md" != "$actual_md" ]; then
+  echo "vendor-native: vendored markdown modules do not match firecrawl-markdown/src" >&2
+  exit 1
+fi
+
+echo "vendored $(printf '%s\n' "$expected" | paste -sd, - | sed 's/,/, /g')"
 
 extract_ver() {
   sed -nE "s/^$1 = \"([^\"]+)\".*/\\1/p; s/^$1 = \\{[^}]*version = \"([^\"]+)\".*/\\1/p" "$workspace_manifest" | head -1

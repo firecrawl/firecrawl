@@ -7,6 +7,7 @@ publish.workspace = true
 version.workspace = true
 
 [dependencies]
+firecrawl-markdown.workspace = true
 kuchikiki.workspace = true
 nodesig.workspace = true
 regex.workspace = true

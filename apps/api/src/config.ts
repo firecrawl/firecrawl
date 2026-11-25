@@ -155,6 +155,10 @@ const configSchema = z.object({
 
   // System & Observability
   USE_GO_MARKDOWN_PARSER: z.stringbool().optional(),
+  RUST_HTML_TO_MD_ENABLED: emptyStringAsDefault(z.stringbool().default(false)),
+  RUST_HTML_TO_MD_SHADOW_RATE: emptyStringAsDefault(
+    z.coerce.number().min(0).max(1).default(0),
+  ),
   SENTRY_ENVIRONMENT: z.string().default("production"),
 
   // OpenTelemetry. Tracing is off unless an OTLP endpoint is set; spans are then

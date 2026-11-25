@@ -917,6 +917,7 @@ dependencies = [
 name = "firecrawl-html"
 version = "0.1.0"
 dependencies = [
+ "firecrawl-markdown",
  "kuchikiki",
  "nodesig",
  "regex",
@@ -939,6 +940,7 @@ dependencies = [
  "encoding_rs",
  "firecrawl-crawler",
  "firecrawl-html",
+ "firecrawl-markdown",
  "firecrawl-parsers",
  "futures",
  "getrandom 0.3.4",
@@ -960,6 +962,13 @@ dependencies = [
  "url",
  "uuid",
  "zip",
+]
+
+[[package]]
+name = "firecrawl-markdown"
+version = "0.1.0"
+dependencies = [
+ "kuchikiki",
 ]
 
 [[package]]

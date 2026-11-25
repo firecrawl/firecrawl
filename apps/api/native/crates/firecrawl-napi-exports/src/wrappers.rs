@@ -120,7 +120,7 @@ pub async fn extract_images(html: String, base_url: String) -> Result<Vec<String
 }
 
 pub async fn post_process_markdown(markdown: String) -> Result<String> {
-  task::spawn_blocking(move || firecrawl_html::post_process_markdown_text(&markdown))
+  task::spawn_blocking(move || firecrawl_markdown::post_process_markdown(&markdown))
     .await
     .map_err(|e| {
       Error::new(
@@ -128,6 +128,22 @@ pub async fn post_process_markdown(markdown: String) -> Result<String> {
         format!("post_process_markdown join error: {e}"),
       )
     })
+}
+
+pub async fn convert_html_to_markdown(html: String) -> Result<String> {
+  if html.is_empty() {
+    return Ok(String::new());
+  }
+  task::spawn_blocking(move || {
+    firecrawl_markdown::html_to_markdown(&html, &firecrawl_markdown::MarkdownOptions::default())
+  })
+  .await
+  .map_err(|e| {
+    Error::new(
+      Status::GenericFailure,
+      format!("convert_html_to_markdown join error: {e}"),
+    )
+  })
 }
 
 pub async fn filter_links(data: FilterLinksCall) -> Result<FilterLinksResult> {
@@ -539,6 +555,12 @@ macro_rules! export_oss_napi {
     #[napi_derive::napi]
     pub async fn post_process_markdown(markdown: String) -> napi::Result<String> {
       $crate::wrappers::post_process_markdown(markdown).await
+    }
+
+    /// Convert HTML to Markdown on a blocking thread with post-processing applied.
+    #[napi_derive::napi]
+    pub async fn convert_html_to_markdown(html: String) -> napi::Result<String> {
+      $crate::wrappers::convert_html_to_markdown(html).await
     }
 
     /// Filter links based on crawling rules and constraints.
