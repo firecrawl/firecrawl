@@ -14,10 +14,10 @@ import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 import { parseApi } from "../../../lib/parseApi";
 
-// Needs idmux (to create teams with the keyRestriction flag) and direct DB
-// access (to seed key_restriction_config), so production-suite only.
+// Needs idmux (to create teams with and without the keyRestriction flag) and
+// direct DB access (to seed key_restriction_config), so production-suite only.
 describeIf(TEST_PRODUCTION)(
-  "Key restriction (keyRestriction team flag)",
+  "Key restriction (key_restriction_config, with and without the team flag)",
   () => {
     const seededKeyIds: number[] = [];
 
@@ -253,19 +253,85 @@ describeIf(TEST_PRODUCTION)(
     );
 
     it.concurrent(
-      "does not restrict when the flag is off even if a config exists",
+      "enforces a key's endpoint allowlist on a team without the flag",
       async () => {
         const identity = await idmux({
-          name: "key-restriction/no-flag",
+          name: "key-restriction/no-flag-endpoint",
+          credits: 10000,
+        });
+        await seedRestriction(identity, {
+          allowedEndpoints: ["scrape", "search"],
+        });
+
+        await scrape({ url: createTestIdUrl() }, identity);
+
+        const blocked = await Promise.all([
+          request(TEST_API_URL)
+            .get("/v2/team/activity")
+            .set("Authorization", `Bearer ${identity.apiKey}`),
+          request(TEST_API_URL)
+            .get("/v2/team/credit-usage")
+            .set("Authorization", `Bearer ${identity.apiKey}`),
+          request(TEST_API_URL)
+            .delete("/v2/slack/installation")
+            .set("Authorization", `Bearer ${identity.apiKey}`),
+          request(TEST_API_URL)
+            .put("/v2/team/siem")
+            .set("Authorization", `Bearer ${identity.apiKey}`)
+            .send({}),
+          map({ url: "https://firecrawl.dev" }, identity),
+        ]);
+        for (const response of blocked) {
+          expect(response.statusCode).toBe(403);
+          expect(response.body.success).toBe(false);
+          expect(response.body.error).toContain(
+            "restricted to the following endpoints",
+          );
+        }
+      },
+      scrapeTimeout * 2,
+    );
+
+    it.concurrent(
+      "enforces a key's format allowlist on a team without the flag",
+      async () => {
+        const identity = await idmux({
+          name: "key-restriction/no-flag-format",
           credits: 10000,
         });
         await seedRestriction(identity, { allowedFormats: ["markdown"] });
+
+        const response = await scrapeRaw(
+          { url: createTestIdUrl(), formats: ["rawHtml"] },
+          identity,
+        );
+        expect(response.statusCode).toBe(403);
+        expect(response.body.success).toBe(false);
+        expect(response.body.error).toContain(
+          "restricted to the following formats",
+        );
+      },
+      scrapeTimeout,
+    );
+
+    it.concurrent(
+      "does not restrict a key without a config on a team without the flag",
+      async () => {
+        const identity = await idmux({
+          name: "key-restriction/no-flag-no-config",
+          credits: 10000,
+        });
 
         const doc = await scrape(
           { url: createTestIdUrl(), formats: ["rawHtml"] },
           identity,
         );
         expect(doc.rawHtml).toBeDefined();
+
+        const usage = await request(TEST_API_URL)
+          .get("/v2/team/credit-usage")
+          .set("Authorization", `Bearer ${identity.apiKey}`);
+        expect(usage.statusCode).toBe(200);
       },
       scrapeTimeout,
     );

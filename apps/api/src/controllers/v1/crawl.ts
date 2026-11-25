@@ -158,8 +158,7 @@ export async function crawlController(
   const keyRestriction = await checkKeyFormatRestriction(
     formatTypesOf(req.body.scrapeOptions?.formats),
     actionTypesOf(req.body.scrapeOptions?.actions),
-    req.acuc?.api_key_id,
-    req.acuc?.flags ?? null,
+    req.acuc,
   );
   if (!keyRestriction.allowed) {
     return res.status(keyRestriction.status).json({
