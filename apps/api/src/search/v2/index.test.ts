@@ -7,7 +7,10 @@ vi.mock("./searxng", () => ({ searxng_search: mocks.searxngSearch }));
 vi.mock("./ddgsearch", () => ({ ddgSearch: mocks.ddgSearch }));
 
 import { config } from "../../config";
-import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+import {
+  SearchModeUnavailableError,
+  UsOnlyUnavailableError,
+} from "../../scraper/scrapeURL/error";
 import type { SearchProvider } from "../../service";
 import { createService, replaceService } from "../../service/service";
 import { coreSearchProviders } from "../providers";
@@ -187,6 +190,7 @@ describe("service.searchProviders dispatch in v2 search", () => {
           {
             name: "primary" as SearchProvider["name"],
             priority: 100,
+            supportsZdr: true,
             enabled: () => true,
             search: providerSearch,
           },
@@ -265,6 +269,153 @@ describe("service.searchProviders dispatch in v2 search", () => {
     expect(res).toEqual({});
     expect(usProvider).toHaveBeenCalledTimes(1);
     expect(mocks.ddgSearch).not.toHaveBeenCalled();
+  });
+
+  describe("enterprise modes", () => {
+    const provider = (
+      name: string,
+      flags: Partial<
+        Pick<SearchProvider, "supportsUsOnly" | "supportsZdr" | "supportsAnon">
+      >,
+      search = vi.fn<SearchProvider["search"]>(async () => ({
+        web: [{ url: `https://${name}.test`, title: name, description: "" }],
+      })),
+    ) => ({
+      provider: {
+        name: name as SearchProvider["name"],
+        priority: 200,
+        ...flags,
+        enabled: () => true,
+        search,
+      },
+      search,
+    });
+
+    it.each([["zdr"], ["anon"]] as const)(
+      "refuses %s search when no enabled provider supports it",
+      async mode => {
+        config.SEARXNG_ENDPOINT = "http://searxng.test";
+        const other = provider("other", { supportsUsOnly: true });
+        installSearchService([
+          { name: "custom", searchProviders: [other.provider] },
+        ]);
+
+        await expect(
+          search({ query: "firecrawl", logger, enterprise: [mode] }),
+        ).rejects.toThrow(SearchModeUnavailableError);
+        expect(other.search).not.toHaveBeenCalled();
+        expect(mocks.searxngSearch).not.toHaveBeenCalled();
+        expect(mocks.ddgSearch).not.toHaveBeenCalled();
+      },
+    );
+
+    it("routes zdr search only to providers that support it", async () => {
+      const capable = provider("capable", { supportsZdr: true });
+      const other = provider("other", { supportsAnon: true });
+      installSearchService([
+        {
+          name: "custom",
+          searchProviders: [
+            other.provider,
+            { ...capable.provider, priority: 100 },
+          ],
+        },
+      ]);
+
+      const res = await search({
+        query: "firecrawl",
+        logger,
+        enterprise: ["zdr"],
+      });
+
+      expect(res.web?.[0]?.url).toBe("https://capable.test");
+      expect(other.search).not.toHaveBeenCalled();
+      expect(mocks.ddgSearch).not.toHaveBeenCalled();
+    });
+
+    it("does not move on to a non-capable provider when the capable one returns null", async () => {
+      const capable = provider(
+        "capable",
+        { supportsZdr: true, supportsAnon: true },
+        vi.fn(async () => null),
+      );
+      const other = provider("other", { supportsZdr: true });
+      installSearchService([
+        {
+          name: "custom",
+          searchProviders: [
+            capable.provider,
+            { ...other.provider, priority: 100 },
+          ],
+        },
+      ]);
+
+      const res = await search({
+        query: "firecrawl",
+        logger,
+        enterprise: ["anon"],
+      });
+
+      expect(res).toEqual({});
+      expect(capable.search).toHaveBeenCalledTimes(1);
+      expect(other.search).not.toHaveBeenCalled();
+      expect(mocks.ddgSearch).not.toHaveBeenCalled();
+    });
+
+    it("requires every requested mode on the same provider", async () => {
+      const zdrOnly = provider("zdr-only", { supportsZdr: true });
+      const anonOnly = provider("anon-only", { supportsAnon: true });
+      installSearchService([
+        {
+          name: "custom",
+          searchProviders: [zdrOnly.provider, anonOnly.provider],
+        },
+      ]);
+
+      await expect(
+        search({ query: "firecrawl", logger, enterprise: ["zdr", "anon"] }),
+      ).rejects.toThrow(SearchModeUnavailableError);
+      expect(zdrOnly.search).not.toHaveBeenCalled();
+      expect(anonOnly.search).not.toHaveBeenCalled();
+    });
+
+    it("requires US-only support alongside zdr support", async () => {
+      const zdrOnly = provider("zdr-only", { supportsZdr: true });
+      const usOnly = provider("us-only", { supportsUsOnly: true });
+      installSearchService([
+        {
+          name: "custom",
+          searchProviders: [zdrOnly.provider, usOnly.provider],
+        },
+      ]);
+
+      await expect(
+        search({
+          query: "firecrawl",
+          logger,
+          enterprise: ["zdr"],
+          usOnly: true,
+        }),
+      ).rejects.toThrow(SearchModeUnavailableError);
+      expect(zdrOnly.search).not.toHaveBeenCalled();
+      expect(usOnly.search).not.toHaveBeenCalled();
+    });
+
+    it("keeps the default mode on every enabled provider", async () => {
+      const plain = provider(
+        "plain",
+        {},
+        vi.fn(async () => null),
+      );
+      installSearchService([
+        { name: "custom", searchProviders: [plain.provider] },
+      ]);
+
+      await search({ query: "firecrawl", logger, enterprise: ["default"] });
+
+      expect(plain.search).toHaveBeenCalledTimes(1);
+      expect(mocks.ddgSearch).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("catches provider errors, logs them, and returns an empty response", async () => {

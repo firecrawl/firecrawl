@@ -23,6 +23,7 @@ import {
   ReservedCapacityUnavailableError,
   ScrapeJobCancelledError,
   ScrapeRetryLimitError,
+  SearchModeUnavailableError,
   SiteError,
   SiteRestrictionError,
   SSLError,
@@ -350,6 +351,12 @@ describe("the wire form of every class", () => {
       "US_ONLY_UNAVAILABLE",
       "UsOnlyUnavailableError",
       () => new UsOnlyUnavailableError("No US-based route serves this request"),
+      {},
+    ],
+    [
+      "SEARCH_MODE_UNAVAILABLE",
+      "SearchModeUnavailableError",
+      () => new SearchModeUnavailableError(),
       {},
     ],
     [
