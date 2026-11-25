@@ -2,6 +2,7 @@ import { v7 as uuidv7 } from "uuid";
 import { NotificationType, ScrapeJobData } from "../types";
 import {
   cleanOldConcurrencyLimitEntries,
+  crawlConcurrencyLimit,
   getConcurrencyLimitActiveJobs,
   getConcurrencyQueueJobsCount,
   getCrawlConcurrencyLimitActiveJobs,
@@ -218,7 +219,7 @@ async function _addScrapeJobToBullMQPg(
 
     if (webScraperOptions.crawl_id) {
       const sc = await getCrawl(webScraperOptions.crawl_id);
-      if (sc?.crawlerOptions?.delay || sc?.maxConcurrency) {
+      if (crawlConcurrencyLimit(sc) !== null) {
         await pushCrawlConcurrencyLimitActiveJob(
           webScraperOptions.crawl_id,
           jobId,
@@ -260,7 +261,7 @@ async function _addScrapeJobsToBullMQ(
 
       if (job.data.crawl_id) {
         const sc = await getCrawl(job.data.crawl_id);
-        if (sc?.crawlerOptions?.delay || sc?.maxConcurrency) {
+        if (crawlConcurrencyLimit(sc) !== null) {
           await pushCrawlConcurrencyLimitActiveJob(
             job.data.crawl_id,
             job.jobId,
@@ -404,13 +405,9 @@ async function addScrapeJobRaw(
     concurrencyLimited = "no";
   } else {
     if (webScraperOptions.crawl_id) {
-      const crawl = await getCrawl(webScraperOptions.crawl_id);
-      const concurrencyLimit = !crawl
-        ? null
-        : crawl.crawlerOptions?.delay === undefined &&
-            crawl.maxConcurrency === undefined
-          ? null
-          : (crawl.maxConcurrency ?? 1);
+      const concurrencyLimit = crawlConcurrencyLimit(
+        await getCrawl(webScraperOptions.crawl_id),
+      );
 
       if (concurrencyLimit !== null) {
         maxCrawlConcurrency = concurrencyLimit;
@@ -700,13 +697,7 @@ export async function addScrapeJobs(
 
     // == Select jobs by crawl ID ==
     for (const [crawlID, crawlJobs] of jobsByCrawlID) {
-      const crawl = await getCrawl(crawlID);
-      const concurrencyLimit = !crawl
-        ? null
-        : crawl.crawlerOptions?.delay === undefined &&
-            crawl.maxConcurrency === undefined
-          ? null
-          : (crawl.maxConcurrency ?? 1);
+      const concurrencyLimit = crawlConcurrencyLimit(await getCrawl(crawlID));
 
       if (concurrencyLimit === null) {
         // All jobs may be in the CQ depending on the global team concurrency limit

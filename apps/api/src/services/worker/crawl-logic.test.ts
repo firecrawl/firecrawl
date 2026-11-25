@@ -1,7 +1,11 @@
 import type { Mock } from "vitest";
 import { finishCrawlSuper } from "./crawl-logic";
-import { getCrawl, getDoneJobsOrderedLength } from "../../lib/crawl-redis";
-import { logCrawl } from "../logging/log_job";
+import {
+  finishCrawl,
+  getCrawl,
+  getDoneJobsOrderedLength,
+} from "../../lib/crawl-redis";
+import { logBatchScrape, logCrawl } from "../logging/log_job";
 import { createWebhookSender } from "../webhook/index";
 import { createInAppNotification } from "../notification/in_app";
 import type { NuQJob } from "./nuq";
@@ -210,5 +214,73 @@ describe("dashboard notification on finish", () => {
     await finishCrawlSuper(job("cancelled"));
 
     expect(createInAppNotification).not.toHaveBeenCalled();
+  });
+});
+
+describe("missing crawl document", () => {
+  test("finalizes a batch scrape from its job data", async () => {
+    const sendMock = vi.fn();
+    (createWebhookSender as Mock).mockResolvedValue({ send: sendMock });
+    (getCrawl as Mock).mockResolvedValue(null);
+
+    const job = {
+      id: "job-missing",
+      groupId: "batch-missing",
+      ownerId: "team-from-job",
+      data: {
+        mode: "single_urls",
+        url: "https://example.com/a",
+        crawlerOptions: null,
+        team_id: "team-from-job",
+        requestId: "req-1",
+        v1: true,
+        webhook: { url: "https://hook.example", events: ["completed"] },
+        zeroDataRetention: false,
+      },
+    } as unknown as NuQJob<any>;
+
+    await expect(finishCrawlSuper(job)).resolves.not.toThrow();
+
+    expect(finishCrawl).toHaveBeenCalledWith(
+      "batch-missing",
+      expect.anything(),
+    );
+    expect(logCrawl).not.toHaveBeenCalled();
+    expect(logBatchScrape).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "batch-missing",
+        request_id: "req-1",
+        team_id: "team-from-job",
+        num_docs: 2,
+        cancelled: false,
+      }),
+    );
+    expect(createWebhookSender).toHaveBeenCalledWith({
+      teamId: "team-from-job",
+      jobId: "batch-missing",
+      webhook: { url: "https://hook.example", events: ["completed"] },
+      v0: false,
+    });
+    expect(sendMock).toHaveBeenCalledWith("batch_scrape.completed", {
+      success: true,
+      data: [],
+    });
+  });
+
+  test("stops without finalizing when the job data is gone too", async () => {
+    (getCrawl as Mock).mockResolvedValue(null);
+
+    const job = {
+      id: "job-empty",
+      groupId: "crawl-empty",
+      ownerId: "team-x",
+      data: null,
+    } as unknown as NuQJob<any>;
+
+    await expect(finishCrawlSuper(job)).resolves.not.toThrow();
+    expect(finishCrawl).not.toHaveBeenCalled();
+    expect(logCrawl).not.toHaveBeenCalled();
+    expect(logBatchScrape).not.toHaveBeenCalled();
+    expect(createWebhookSender).not.toHaveBeenCalled();
   });
 });

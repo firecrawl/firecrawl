@@ -10,7 +10,11 @@ import { getJobs } from "../../controllers/v1/crawl-status";
 import { logCrawl, logBatchScrape } from "../logging/log_job";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import type { NuQJob } from "./nuq";
-import { crawlContext, jobContext } from "../../lib/request-context";
+import {
+  crawlContext,
+  jobContext,
+  storedZeroDataRetention,
+} from "../../lib/request-context";
 import type { RequestContext } from "../../service/request-context";
 import { installedService } from "../../service/service";
 import { readRequestCreditsFromAnalytics } from "../../lib/request-credits-analytics";
@@ -37,27 +41,41 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
 
   const sc = await getCrawl(crawlId);
 
-  if (!sc) {
-    return;
-  }
-
-  const logger = _logger.child({
-    module: "queue-worker",
-    method: "finishCrawl",
-    jobId: job.id,
-    scrapeId: job.id,
-    crawlId,
-    zeroDataRetention: sc.internalOptions.zeroDataRetention,
-  });
-
   // On the FDB backend a completed member's input data is shed for ZDR crawls,
   // so `job.data` can be null here. Prefer the member's job data when present,
   // otherwise recover the crawl-scoped context persisted on the stored crawl.
   const data = job.data;
-  const isV1 = data ? !!data.v1 : (sc.v1 ?? true);
-  const teamId = data?.team_id ?? sc.team_id;
-  const requestId = data?.requestId ?? sc.requestId ?? crawlId;
-  const baseCtx = crawlContext(sc);
+
+  if (!sc) {
+    const missingLogger = _logger.child({
+      module: "queue-worker",
+      method: "finishCrawl",
+      jobId: job.id,
+      crawlId,
+      teamId: data?.team_id ?? job.ownerId,
+      zeroDataRetention: storedZeroDataRetention(data) ?? true,
+    });
+    if (!data) {
+      missingLogger.error(
+        "Crawl document and job data are both missing at finalization; crawl cannot be finalized",
+      );
+      return;
+    }
+    missingLogger.error(
+      "Crawl document missing at finalization; finalizing from job data",
+    );
+  }
+
+  const isCrawl = sc ? sc.crawlerOptions !== null : data.crawlerOptions != null;
+  const crawlerOptions = sc ? sc.crawlerOptions : (data.crawlerOptions ?? null);
+  const originUrl = sc ? sc.originUrl : data.url;
+  // Without the document a cancel cannot be observed, so the run is reported
+  // as it finished in the queue.
+  const cancelled = sc?.cancelled ?? false;
+  const isV1 = data ? !!data.v1 : (sc?.v1 ?? true);
+  const teamId = data?.team_id ?? sc?.team_id ?? job.ownerId;
+  const requestId = data?.requestId ?? sc?.requestId ?? crawlId;
+  const baseCtx = sc ? crawlContext(sc) : jobContext(data);
   const zeroDataRetention =
     baseCtx.zeroDataRetention ||
     (data ? jobContext(data).zeroDataRetention : false);
@@ -65,8 +83,17 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
     zeroDataRetention && !baseCtx.zeroDataRetention
       ? { ...baseCtx, zeroDataRetention: true }
       : baseCtx;
-  const webhook = data?.webhook ?? sc.webhook;
+  const webhook = data?.webhook ?? sc?.webhook;
   const monitoring = data?.monitoring;
+
+  const logger = _logger.child({
+    module: "queue-worker",
+    method: "finishCrawl",
+    jobId: job.id,
+    scrapeId: job.id,
+    crawlId,
+    zeroDataRetention,
+  });
 
   logger.info("Finishing crawl");
   await finishCrawl(crawlId, logger);
@@ -78,7 +105,7 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       (a, b) => a.timestamp - b.timestamp,
     );
     // const jobStatuses = await Promise.all(jobs.map((x) => x.getState()));
-    const jobStatus = sc.cancelled // || jobStatuses.some((x) => x === "failed")
+    const jobStatus = cancelled // || jobStatuses.some((x) => x === "failed")
       ? "failed"
       : "completed";
 
@@ -92,20 +119,20 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       )
       .filter(x => x !== null);
 
-    if (sc.crawlerOptions !== null) {
+    if (isCrawl) {
       await logCrawl({
         id: crawlId,
         request_id: requestId,
-        url: sc.originUrl!,
+        url: originUrl!,
         team_id: teamId,
-        options: sc.crawlerOptions,
+        options: crawlerOptions,
         num_docs: fullDocs.length,
         credits_cost: fullDocs.reduce(
           (acc, doc) => acc + (doc?.metadata?.creditsUsed ?? 0),
           0,
         ),
         zeroDataRetention,
-        cancelled: sc.cancelled ?? false,
+        cancelled,
         monitor_id: monitoring?.monitorId,
         monitor_check_id: monitoring?.checkId,
       });
@@ -120,7 +147,7 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
           0,
         ),
         zeroDataRetention,
-        cancelled: sc.cancelled ?? false,
+        cancelled,
       });
     }
 
@@ -128,10 +155,10 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
     if (hooks?.has("crawl.finished")) {
       await hooks.run("crawl.finished", {
         id: crawlId,
-        kind: sc.crawlerOptions !== null ? "crawl" : "batchScrape",
+        kind: isCrawl ? "crawl" : "batchScrape",
         ctx,
         completed: fullDocs.length,
-        cancelled: sc.cancelled ?? false,
+        cancelled,
       });
     }
 
@@ -153,7 +180,7 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
           },
           source: doc?.metadata?.sourceURL ?? doc?.url ?? "",
         }));
-        if (sc.crawlerOptions !== null) {
+        if (isCrawl) {
           sender.send(WebhookEvent.CRAWL_COMPLETED, {
             success: true,
             data: documents,
@@ -211,17 +238,17 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       );
     }
 
-    if (sc.crawlerOptions !== null) {
+    if (isCrawl) {
       await logCrawl({
         id: crawlId,
         request_id: requestId,
-        url: sc.originUrl!,
+        url: originUrl!,
         team_id: teamId,
-        options: sc.crawlerOptions,
+        options: crawlerOptions,
         num_docs: num_docs,
         credits_cost: credits_billed ?? 0,
         zeroDataRetention,
-        cancelled: sc.cancelled ?? false,
+        cancelled,
         monitor_id: monitoring?.monitorId,
         monitor_check_id: monitoring?.checkId,
       });
@@ -233,7 +260,7 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
         num_docs: num_docs,
         credits_cost: credits_billed ?? 0,
         zeroDataRetention,
-        cancelled: sc.cancelled ?? false,
+        cancelled,
       });
     }
 
@@ -241,17 +268,16 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
     // own jobs reach their team's feed. Runs with no successful page are not
     // reported as completed.
     if (
-      !sc.cancelled &&
+      !cancelled &&
       num_docs > 0 &&
-      isDashboardOrigin(sc.origin ?? data?.origin)
+      isDashboardOrigin(sc?.origin ?? data?.origin)
     ) {
-      const isCrawl = sc.crawlerOptions !== null;
       await createInAppNotification(
         teamId,
         isCrawl ? "crawlCompleted" : "batchScrapeCompleted",
         {
           jobId: crawlId,
-          url: isCrawl && !zeroDataRetention ? (sc.originUrl ?? null) : null,
+          url: isCrawl && !zeroDataRetention ? (originUrl ?? null) : null,
           completed: num_docs,
           creditsUsed: credits_billed,
           link: `/app/logs?q=${encodeURIComponent(crawlId)}`,
@@ -264,10 +290,10 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
     if (hooks?.has("crawl.finished")) {
       await hooks.run("crawl.finished", {
         id: crawlId,
-        kind: sc.crawlerOptions !== null ? "crawl" : "batchScrape",
+        kind: isCrawl ? "crawl" : "batchScrape",
         ctx,
         completed: num_docs,
-        cancelled: sc.cancelled ?? false,
+        cancelled,
       });
     }
 
@@ -280,7 +306,7 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
         v0: false,
       });
       if (sender) {
-        if (sc.crawlerOptions !== null) {
+        if (isCrawl) {
           sender.send(WebhookEvent.CRAWL_COMPLETED, {
             success: true,
             data: [],

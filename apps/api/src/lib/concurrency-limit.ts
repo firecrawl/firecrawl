@@ -239,6 +239,20 @@ export async function removeCrawlConcurrencyLimitActiveJob(
 }
 
 /**
+ * The most jobs a crawl may run at once, or null when only the team limit
+ * applies. A missing crawl document allows one, since its limit is unknown.
+ */
+export function crawlConcurrencyLimit(sc: StoredCrawl | null): number | null {
+  if (sc === null) return 1;
+  if (
+    typeof sc.crawlerOptions?.delay === "number" &&
+    sc.crawlerOptions.delay > 0
+  )
+    return 1;
+  return sc.maxConcurrency ?? null;
+}
+
+/**
  * Grabs the next job from the team's concurrency limit queue. Handles crawl concurrency limits.
  *
  * This function may only be called once the outer code has verified that the team has not reached its concurrency limit.
@@ -250,7 +264,7 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
   job: ConcurrencyLimitedJob;
   timeout: number;
 } | null> {
-  const crawlCache = new Map<string, StoredCrawl>();
+  const crawlCache = new Map<string, StoredCrawl | null>();
   const queueKey = constructQueueKey(teamId);
   const redis = getRedisConnection();
   const now = Date.now();
@@ -285,20 +299,19 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
 
       // Check crawl concurrency limit
       if (job.data.crawl_id) {
-        const sc =
-          crawlCache.get(job.data.crawl_id) ??
-          (await getCrawl(job.data.crawl_id));
-        if (sc !== null) {
+        if (!crawlCache.has(job.data.crawl_id)) {
+          const sc = await getCrawl(job.data.crawl_id);
+          if (sc === null) {
+            logger.warn(
+              "Crawl document missing while promoting; limiting crawl to one active job",
+              { teamId, crawlId: job.data.crawl_id },
+            );
+          }
           crawlCache.set(job.data.crawl_id, sc);
         }
-
-        const maxCrawlConcurrency =
-          sc === null
-            ? null
-            : typeof sc.crawlerOptions?.delay === "number" &&
-                sc.crawlerOptions.delay > 0
-              ? 1
-              : (sc.maxConcurrency ?? null);
+        const maxCrawlConcurrency = crawlConcurrencyLimit(
+          crawlCache.get(job.data.crawl_id)!,
+        );
 
         if (maxCrawlConcurrency !== null) {
           const currentActiveConcurrency = (
@@ -384,10 +397,9 @@ export async function concurrentJobDone(job: NuQJob<any>) {
         );
 
         const sc = await getCrawl(nextJob.job.data.crawl_id);
-        if (sc !== null && typeof sc.crawlerOptions?.delay === "number") {
-          await new Promise(resolve =>
-            setTimeout(resolve, sc.crawlerOptions.delay * 1000),
-          );
+        const delay = (sc ?? nextJob.job.data).crawlerOptions?.delay;
+        if (typeof delay === "number") {
+          await new Promise(resolve => setTimeout(resolve, delay * 1000));
         }
       }
 

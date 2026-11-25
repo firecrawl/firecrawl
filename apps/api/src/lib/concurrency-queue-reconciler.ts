@@ -14,7 +14,6 @@ import {
   removeConcurrencyLimitActiveJob,
   removeCrawlConcurrencyLimitActiveJob,
 } from "./concurrency-limit";
-import { getCrawl } from "./crawl-redis";
 import { logger as _logger } from "./logger";
 import { getACUCTeam } from "../controllers/auth";
 import { DEFAULT_TEAM_LIMITS } from "../services/autumn/autumn.service";
@@ -136,6 +135,12 @@ async function reconcileTeam(
   const jobsToQueue: typeof jobsToRecover = [];
 
   for (const job of jobsToRecover) {
+    // Crawl members are requeued so drainQueue applies the crawl's own limit.
+    if (job.data.crawl_id) {
+      jobsToQueue.push(job);
+      continue;
+    }
+
     const isExtract = isExtractJob(job.data);
     const teamLimit = isExtract ? maxExtractConcurrency : maxCrawlConcurrency;
     const activeCount = isExtract ? activeExtractCount : activeCrawlCount;
@@ -171,17 +176,6 @@ async function reconcileTeam(
 
     if (promoted !== null) {
       await pushConcurrencyLimitActiveJob(ownerId, job.id, 60 * 1000);
-
-      if (job.data.crawl_id) {
-        const sc = await getCrawl(job.data.crawl_id);
-        if (sc?.crawlerOptions?.delay || sc?.maxConcurrency) {
-          await pushCrawlConcurrencyLimitActiveJob(
-            job.data.crawl_id,
-            job.id,
-            60 * 1000,
-          );
-        }
-      }
 
       observeJobEnqueued(job.id, job.data);
       jobsStarted++;

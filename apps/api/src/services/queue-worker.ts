@@ -21,7 +21,6 @@ import { service } from "../service";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
-import { getCrawl } from "../lib/crawl-redis";
 import {
   processMonitorCheckJob,
   reconcileRunningMonitorChecks,
@@ -200,12 +199,6 @@ async function processFinishCrawlJobInternal(_job: NuQJob) {
 
   if (!job.ownerId) {
     throw new Error("crawlFinish job with no ownerId");
-  }
-
-  const sc = await getCrawl(job.groupId);
-
-  if (!sc) {
-    throw new Error("crawlFinish job with sc expired");
   }
 
   const anyJob = await scrapeQueue.getGroupAnyJob(job.groupId, job.ownerId);
