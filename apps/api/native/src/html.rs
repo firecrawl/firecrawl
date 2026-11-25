@@ -2,7 +2,12 @@ use std::collections::{HashMap, HashSet};
 
 use std::sync::LazyLock;
 
-use kuchikiki::{iter::NodeEdge, parse_html, traits::TendrilSink, NodeRef};
+use kuchikiki::{
+  iter::{NodeEdge, NodeIterator},
+  parse_html,
+  traits::TendrilSink,
+  NodeRef, Selectors,
+};
 use napi_derive::napi;
 use nodesig::{get_node_signature, SignatureMode};
 use regex::Regex;
@@ -423,6 +428,28 @@ const FORCE_INCLUDE_MAIN_TAGS: [&str; 13] = [
   ".swoogo-agenda",
 ];
 
+static EXCLUDE_NON_MAIN_SELECTORS: LazyLock<Selectors> = LazyLock::new(|| {
+  Selectors::compile(&EXCLUDE_NON_MAIN_TAGS.join(","))
+    .expect("EXCLUDE_NON_MAIN_TAGS are valid selectors")
+});
+
+/// Cheap necessary condition for matching `EXCLUDE_NON_MAIN_TAGS`: every
+/// selector there names one of these elements or needs one of these attributes.
+fn could_be_non_main(el: &kuchikiki::NodeDataRef<kuchikiki::ElementData>) -> bool {
+  matches!(&*el.name.local, "header" | "footer" | "nav" | "aside") || {
+    let attrs = el.attributes.borrow();
+    attrs.contains("class")
+      || attrs.contains("id")
+      || attrs.contains("aria-label")
+      || attrs.contains("data-original-tag")
+  }
+}
+
+static FORCE_INCLUDE_MAIN_SELECTORS: LazyLock<Selectors> = LazyLock::new(|| {
+  Selectors::compile(&FORCE_INCLUDE_MAIN_TAGS.join(","))
+    .expect("FORCE_INCLUDE_MAIN_TAGS are valid selectors")
+});
+
 #[derive(Deserialize, Serialize)]
 #[napi(object)]
 pub struct TransformHtmlOptions {
@@ -546,21 +573,43 @@ pub fn transform_document(
   }
 
   if opts.only_main_content {
-    for x in EXCLUDE_NON_MAIN_TAGS.iter() {
-      let x: Vec<_> = document
-        .select(x)
-        .map_err(|_| "Failed to select tags")?
-        .collect();
-      for tag in x {
-        if !FORCE_INCLUDE_MAIN_TAGS.iter().any(|x| {
-          tag
-            .as_node()
-            .select(x)
-            .is_ok_and(|mut x| x.next().is_some())
-        }) {
-          tag.as_node().detach();
+    // Every selector here is a single compound selector, so whether an element
+    // matches depends only on the element itself, and a removed subtree never
+    // holds a force-included element. One walk that drops each matching,
+    // non-force-included subtree therefore leaves the same tree as running the
+    // selectors one after another.
+    let mut to_detach: Vec<NodeRef> = Vec::new();
+    let mut next = document.first_child();
+    while let Some(node) = next {
+      let drop_subtree = node.clone().into_element_ref().is_some_and(|el| {
+        could_be_non_main(&el)
+          && EXCLUDE_NON_MAIN_SELECTORS.matches(&el)
+          && !node
+            .inclusive_descendants()
+            .elements()
+            .any(|d| FORCE_INCLUDE_MAIN_SELECTORS.matches(&d))
+      });
+      next = if drop_subtree {
+        None
+      } else {
+        node.first_child()
+      };
+      let mut cur = node.clone();
+      while next.is_none() {
+        if let Some(sibling) = cur.next_sibling() {
+          next = Some(sibling);
+        } else if let Some(parent) = cur.parent() {
+          cur = parent;
+        } else {
+          break;
         }
       }
+      if drop_subtree {
+        to_detach.push(node);
+      }
+    }
+    for node in to_detach {
+      node.detach();
     }
 
     for x in EMPTY_NON_MAIN_FRAMES.iter() {
