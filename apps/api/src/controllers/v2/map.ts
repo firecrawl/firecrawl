@@ -33,6 +33,9 @@ import {
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { requestContext } from "../../lib/request-context";
 import { installedService } from "../../service/service";
+import { isSelfHosted } from "../../lib/deployment";
+import { useFireEngine } from "../../scraper/scrapeURL/engines/fire-engine/available";
+import { useIndex as hasPageIndex } from "../../services/index";
 
 configDotenv();
 
@@ -276,6 +279,11 @@ export async function mapController(
   let timeoutHandle: NodeJS.Timeout | null = null;
 
   const abort = new AbortController();
+  const cancelOnClose = () => {
+    if (!res.writableEnded) abort.abort();
+  };
+  res.once("close", cancelOnClose);
+  if (res.destroyed) cancelOnClose();
   try {
     result = (await Promise.race([
       getMapResults({
@@ -301,6 +309,10 @@ export async function mapController(
         headers: req.body.headers,
         id: mapId,
         ctx,
+        startPageDiscovery:
+          isSelfHosted() && !useFireEngine && !hasPageIndex
+            ? { threatProtection: threatProtection.policy ?? undefined }
+            : undefined,
       }),
       ...(req.body.timeout !== undefined
         ? [
@@ -315,6 +327,7 @@ export async function mapController(
         : []),
     ])) as any;
   } catch (error) {
+    if (res.destroyed) return;
     if (error instanceof MapTimeoutError) {
       return res.status(408).json({
         success: false,
@@ -326,10 +339,12 @@ export async function mapController(
       throw error;
     }
   } finally {
+    res.off("close", cancelOnClose);
     if (timeoutHandle) {
       clearTimeout(timeoutHandle);
     }
   }
+  if (res.destroyed) return;
 
   // Threat protection: remove blocked links from the returned URL list
   // entirely. Checks are URL-level; scan fees bill +2 per unique scanned

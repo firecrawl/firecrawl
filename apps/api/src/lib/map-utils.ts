@@ -29,9 +29,18 @@ import { Logger } from "winston";
 import { requestContext } from "./request-context";
 import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
+import { scrapeURL, type InternalOptions } from "../scraper/scrapeURL";
+import { CostTracking } from "./cost-tracking";
+import { config } from "../config";
+import { extractBaseDomain } from "./url-utils";
 
 // Max Links that "Smart /map" can return
 const MAX_FIRE_ENGINE_RESULTS = 100;
+const START_PAGE_BUDGET_MS = 8_000;
+const START_PAGE_BROWSER_WAIT_MS = 1_500;
+const MAX_MAP_BROWSER_SCRAPES = 2;
+const MAX_MAP_ROBOTS_ORIGINS = 8;
+let activeMapBrowserScrapes = 0;
 
 export interface MapResult {
   success: boolean;
@@ -54,6 +63,67 @@ function dedupeMapDocumentArray(documents: MapDocument[]): MapDocument[] {
   }
 
   return Array.from(urlMap.values());
+}
+
+function startPageLinkKey(url: string): string {
+  const { hostname, port, pathname, search } = new URL(url);
+  return `${hostname.replace(/^www\./, "")}:${port}${pathname.replace(/\/$/, "")}${search}`;
+}
+
+async function scrapeMapStartPage(
+  url: string,
+  options: ScrapeOptions,
+  internalOptions: InternalOptions,
+  deadline: number,
+  waitFor = 0,
+): Promise<{ url: string; links: string[] } | null> {
+  const timeout = deadline - Date.now();
+  if (
+    timeout < 1_000 ||
+    internalOptions.externalAbort?.signal.aborted ||
+    (waitFor > 0 &&
+      (!config.PLAYWRIGHT_MICROSERVICE_URL ||
+        activeMapBrowserScrapes >= MAX_MAP_BROWSER_SCRAPES))
+  ) {
+    return null;
+  }
+
+  if (waitFor > 0) activeMapBrowserScrapes++;
+  try {
+    const result = await scrapeURL(
+      uuidv7(),
+      url,
+      scrapeOptions.parse({
+        ...options,
+        formats: ["links"],
+        onlyMainContent: false,
+        storeInCache: false,
+        proxy: "basic",
+        timeout,
+        waitFor: Math.min(waitFor, Math.floor(timeout / 2)),
+      }),
+      { ...internalOptions, forceEngine: waitFor > 0 ? "playwright" : "fetch" },
+      new CostTracking(),
+    );
+    if (!result.success) return null;
+
+    const {
+      statusCode,
+      contentType,
+      url: landedUrl,
+    } = result.document.metadata;
+    if (
+      statusCode < 200 ||
+      statusCode >= 300 ||
+      (contentType &&
+        !/^(text\/html|application\/xhtml\+xml)\b/i.test(contentType))
+    ) {
+      return null;
+    }
+    return { url: landedUrl ?? url, links: result.document.links ?? [] };
+  } finally {
+    if (waitFor > 0) activeMapBrowserScrapes--;
+  }
 }
 
 export async function queryIndex(
@@ -221,6 +291,7 @@ export async function getMapResults({
   id: providedId,
   zeroDataRetention: requestZeroDataRetention = false,
   ctx,
+  startPageDiscovery,
 }: {
   url: string;
   search?: string;
@@ -245,8 +316,10 @@ export async function getMapResults({
   /** The calling request's own zero data retention, on top of the team's. */
   zeroDataRetention?: boolean;
   ctx?: RequestContext;
+  startPageDiscovery?: Pick<InternalOptions, "threatProtection">;
 }): Promise<MapResult> {
   const functionStartTime = Date.now();
+  const startUrl = url;
 
   // Safe Mode lockdown: serve links from the index only — skip live search +
   // sitemap discovery. Derived here from the team flags so every caller
@@ -469,6 +542,179 @@ export async function getMapResults({
     allowExternalLinks,
   };
   mapResults = applyMapScope(mapResults, url, scope);
+
+  const discoveryBudget = Math.min(
+    START_PAGE_BUDGET_MS,
+    (crawlerOptions.timeout ?? 30_000) - (Date.now() - functionStartTime) - 100,
+  );
+  if (
+    startPageDiscovery &&
+    crawlerOptions.sitemap === "include" &&
+    !search &&
+    !indexOnly &&
+    !abort.aborted &&
+    discoveryBudget >= 1_000 &&
+    mapResults.length < limit
+  ) {
+    const deadline = Date.now() + Math.ceil(discoveryBudget);
+    const signal = AbortSignal.any([
+      abort,
+      AbortSignal.timeout(Math.ceil(discoveryBudget)),
+    ]);
+    const internalOptions: InternalOptions = {
+      ...startPageDiscovery,
+      teamId,
+      orgId: orgId ?? null,
+      teamFlags: flags,
+      zeroDataRetention,
+      bypassBilling: true,
+      externalAbort: {
+        signal,
+        tier: "external",
+        throwable: () => signal.reason,
+      },
+    };
+    const startOrigin = new URL(startUrl).origin;
+    const options = {
+      ...sc.scrapeOptions,
+      // A Map request's headers belong to the origin the caller supplied.
+      headers:
+        new URL(resolvedUrl).origin === startOrigin ? headers : undefined,
+      ...(ignoreCache ? { maxAge: 0 } : {}),
+      ...(crawlerOptions.useMock ? { useMock: crawlerOptions.useMock } : {}),
+    };
+
+    try {
+      const baseDomain = extractBaseDomain(url);
+      const scopedPath =
+        filterByPath && !allowExternalLinks
+          ? new URL(url).pathname.replace(/\/+$/, "")
+          : "";
+
+      const isInSite = (target: string) =>
+        isSameDomain(target, url) &&
+        (!baseDomain || extractBaseDomain(target) === baseDomain);
+      const robotsByOrigin = new Map<
+        string,
+        Promise<ReturnType<typeof crawlToCrawler>>
+      >();
+      if (sc.robots !== undefined) {
+        robotsByOrigin.set(new URL(url).origin, Promise.resolve(crawler));
+      }
+      const isAllowedByRobots = async (target: string): Promise<boolean> => {
+        if (signal.aborted) return false;
+        const origin = new URL(target).origin;
+        let rules = robotsByOrigin.get(origin);
+        if (!rules) {
+          if (robotsByOrigin.size >= MAX_MAP_ROBOTS_ORIGINS) return false;
+          const originCrawler = crawlToCrawler(
+            id,
+            {
+              ...sc,
+              originUrl: origin,
+              robots: undefined,
+              scrapeOptions: { ...sc.scrapeOptions, headers: undefined },
+            },
+            flags,
+          );
+          rules = originCrawler.getRobotsTxt(false, signal).then(content => {
+            originCrawler.importRobotsTxt(content);
+            return originCrawler;
+          });
+          robotsByOrigin.set(origin, rules);
+        }
+        try {
+          const originCrawler = await rules;
+          return !signal.aborted && originCrawler.isRobotsAllowed(target);
+        } catch {
+          return false;
+        }
+      };
+      const seedKeys = new Set(
+        [startUrl, resolvedUrl].map(seed =>
+          startPageLinkKey(
+            checkAndUpdateURLForMap(
+              seed,
+              crawlerOptions.ignoreQueryParameters ?? true,
+            ).url,
+          ),
+        ),
+      );
+      const existingKeys = new Set(
+        mapResults.map(link => startPageLinkKey(link.url)),
+      );
+      const additionalLinks = async (page: {
+        url: string;
+        links: string[];
+      }): Promise<MapDocument[] | null> => {
+        if (!isInSite(page.url) || !(await isAllowedByRobots(page.url))) {
+          return null;
+        }
+        const candidates = page.links.flatMap(link => {
+          const target = URL.parse(link);
+          if (
+            !target ||
+            !["http:", "https:"].includes(target.protocol) ||
+            target.username ||
+            target.password ||
+            !isInSite(target.href) ||
+            crawler.isFile(target.pathname) ||
+            (scopedPath &&
+              target.pathname !== scopedPath &&
+              !target.pathname.startsWith(scopedPath + "/"))
+          ) {
+            return [];
+          }
+          target.hash = "";
+          return [{ url: target.href }];
+        });
+        const seen = new Set([...seedKeys, ...existingKeys]);
+        const extra: MapDocument[] = [];
+        for (const link of applyMapScope(candidates, url, scope)) {
+          const key = startPageLinkKey(link.url);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          if (await isAllowedByRobots(link.url)) extra.push(link);
+          if (signal.aborted || mapResults.length + extra.length >= limit)
+            break;
+        }
+        return extra;
+      };
+
+      const [startAllowed, resolvedAllowed] = await Promise.all([
+        isAllowedByRobots(startUrl),
+        isAllowedByRobots(resolvedUrl),
+      ]);
+      const page =
+        startAllowed && resolvedAllowed
+          ? await scrapeMapStartPage(
+              resolvedUrl,
+              options,
+              internalOptions,
+              deadline,
+            )
+          : null;
+      let extra = page ? await additionalLinks(page) : null;
+      if (extra !== null) {
+        if (
+          !extra.length &&
+          mapResults.every(link => seedKeys.has(startPageLinkKey(link.url)))
+        ) {
+          const rendered = await scrapeMapStartPage(
+            resolvedUrl,
+            options,
+            internalOptions,
+            deadline,
+            START_PAGE_BROWSER_WAIT_MS,
+          );
+          if (rendered) extra = (await additionalLinks(rendered)) ?? extra;
+        }
+        mapResults = mapResults.concat(extra).slice(0, limit);
+      }
+    } catch {
+      // Optional discovery must not discard sitemap results.
+    }
+  }
 
   const hooks = installedService()?.hooks;
   if (hooks?.has("map.collect")) {
