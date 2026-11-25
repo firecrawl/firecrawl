@@ -25,6 +25,7 @@ import {
   queryIndexAtSplitLevelWithMeta,
 } from "../services/index";
 import { performCosineSimilarityV2 } from "./map-cosine";
+import { stripWwwFromUrl } from "./url-utils";
 import { Logger } from "winston";
 import { requestContext } from "./request-context";
 import type { RequestContext } from "../service/request-context";
@@ -338,7 +339,7 @@ export async function getMapResults({
         .filter(x => x !== null) as MapDocument[];
     }
   } else {
-    let urlWithoutWww = url.replace("www.", "");
+    let urlWithoutWww = stripWwwFromUrl(url);
     let mapUrl =
       search && allowExternalLinks
         ? `${search} ${urlWithoutWww}`
