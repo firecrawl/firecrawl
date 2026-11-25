@@ -13,6 +13,12 @@ export async function performRedactPII(
   // ran and produced nothing, fail closed without calling fire-privacy.
   if (typeof document.markdown !== "string") {
     document.markdown = "";
+    meta.redactPII.current = {
+      status: "failed",
+      reason: "no_markdown",
+      chunks: 0,
+      spans: 0,
+    };
     return document;
   }
 
@@ -32,6 +38,12 @@ export async function performRedactPII(
   // On `failed` / `skipped: too_large` (redactedMarkdown === null), fail closed with
   // an empty string so later transformers still receive markdown-shaped input.
   document.markdown = result.redactedMarkdown ?? "";
+  meta.redactPII.current = {
+    status: result.status,
+    reason: result.reason,
+    chunks: result.chunks,
+    spans: result.spans.length,
+  };
 
   return document;
 }

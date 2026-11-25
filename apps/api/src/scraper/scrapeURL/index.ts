@@ -62,6 +62,7 @@ import {
   waterfallExperimentFor,
 } from "./waterfallExperiments";
 import { executeTransformers } from "./transformers";
+import type { RedactPIIOutcome } from "../../lib/fire-privacy-client";
 import { LLMRefusalError } from "./transformers/llmExtract";
 import { shouldCheckRobots } from "./shouldCheckRobots";
 import { loadMock, MockState } from "./lib/mock";
@@ -149,6 +150,7 @@ export type ScrapeUrlResponse =
        * layer. Only set when a threat protection policy was active.
        */
       threatDecisions?: ThreatDecision[];
+      redactPII?: RedactPIIOutcome;
       state?: ScrapeState;
     }
   | {
@@ -297,6 +299,9 @@ export type Meta = {
   audioCookies?: BrowserCookie[];
   /** Threat protection decisions made during this scrape, in order (mutable, like logs). */
   threatDecisions: ThreatDecision[];
+  /** Set by the redactPII transformer; logged, never returned to the caller.
+   * A shared holder because transformers run on a copy of meta. */
+  redactPII: { current?: RedactPIIOutcome };
 };
 
 function buildFeatureFlags(
@@ -639,6 +644,7 @@ async function buildMetaObject(
     threatDecisions: [],
     firePdfCacheKey: {},
     largePdfProcessing: {},
+    redactPII: {},
   };
 }
 
@@ -1963,6 +1969,9 @@ export async function scrapeURL(
           ...result,
           ...(meta.threatDecisions.length > 0
             ? { threatDecisions: meta.threatDecisions }
+            : {}),
+          ...(meta.redactPII.current
+            ? { redactPII: meta.redactPII.current }
             : {}),
           state: meta.state,
         };

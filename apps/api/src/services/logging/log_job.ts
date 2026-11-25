@@ -22,6 +22,7 @@ import type {
 } from "../../lib/entities";
 import type { CostTracking } from "../../lib/cost-tracking";
 import type { ErrorCode } from "../../lib/error";
+import type { RedactPIIOutcome } from "../../lib/fire-privacy-client";
 import type { Logger } from "winston";
 import { saveExtractResult } from "../../lib/extract/extract-redis";
 import { trackFirstSurfaceUse } from "../posthog";
@@ -624,6 +625,8 @@ export type LoggedScrape = {
   monitor_check_id?: string | null;
   /** False for jobs that must not be fetchable by id (defaults to true). */
   jobAccess?: boolean;
+  /** Set only when the scrape requested redactPII. Content-free, so kept under zero data retention. */
+  redactPII?: RedactPIIOutcome;
 };
 
 export type ScrapeStateOutcome =
@@ -758,6 +761,10 @@ async function logScrapeInternal(scrape: LoggedScrape, hooks?: LogScrapeHooks) {
             monitor_id: scrape.monitor_id ?? null,
             monitor_check_id: scrape.monitor_check_id ?? null,
             content_type: scrape.content_type ?? null,
+            redact_pii_status: scrape.redactPII?.status ?? null,
+            redact_pii_reason: scrape.redactPII?.reason ?? null,
+            redact_pii_chunks: scrape.redactPII?.chunks ?? null,
+            redact_pii_spans: scrape.redactPII?.spans ?? null,
           }),
     },
     logger,

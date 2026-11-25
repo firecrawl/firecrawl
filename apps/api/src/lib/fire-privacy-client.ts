@@ -59,6 +59,16 @@ type RedactionResult = {
   redactedMarkdown: string | null;
   spans: RedactionSpan[];
   counts: Partial<Record<RedactPIIEntity, number>>;
+  /** Number of /redact calls sent; 0 when the input was handled locally. */
+  chunks: number;
+};
+
+/** Content-free redaction outcome recorded on the scrape's activity log. */
+export type RedactPIIOutcome = {
+  status: RedactionStatus;
+  reason?: RedactionReason | "no_markdown";
+  chunks: number;
+  spans: number;
 };
 
 // Mode + replaceStyle map to fire-privacy's `mode` and `operator` fields.
@@ -255,7 +265,10 @@ async function redactOnce(
   try {
     response = await fetch(`${config.FIRE_PRIVACY_URL}/redact`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "x-fire-privacy-caller": "firecrawl-scrape",
+      },
       body: JSON.stringify({
         text: chunk.text,
         mode: MODE_MAP[options.mode],
@@ -402,6 +415,7 @@ export async function redactText(
       redactedMarkdown: null,
       spans: [],
       counts: {},
+      chunks: 0,
     };
   }
 
@@ -415,6 +429,7 @@ export async function redactText(
       redactedMarkdown: text,
       spans: [],
       counts: {},
+      chunks: 0,
     };
   }
 
@@ -435,6 +450,7 @@ export async function redactText(
       redactedMarkdown: null,
       spans: [],
       counts: {},
+      chunks: 0,
     };
   }
 
@@ -476,6 +492,7 @@ export async function redactText(
       redactedMarkdown: null,
       spans: [],
       counts: {},
+      chunks: chunks.length,
     };
   }
 
@@ -508,6 +525,7 @@ export async function redactText(
       redactedMarkdown,
       spans,
       counts: countByEntity(spans),
+      chunks: chunks.length,
     };
   }
 
@@ -516,5 +534,6 @@ export async function redactText(
     redactedMarkdown,
     spans,
     counts: countByEntity(spans),
+    chunks: chunks.length,
   };
 }

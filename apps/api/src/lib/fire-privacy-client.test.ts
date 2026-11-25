@@ -322,6 +322,36 @@ describe("redactText", () => {
     });
   });
 
+  it("tags every /redact call with the caller header and counts the calls", async () => {
+    const callers: Array<string | string[] | undefined> = [];
+    handler = async (req, res) => {
+      for await (const _ of req);
+      callers.push(req.headers["x-fire-privacy-caller"]);
+      res.statusCode = 200;
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify({ redacted_text: "ok", spans: [], model_status: "ok" }),
+      );
+    };
+
+    const text = "Lorem ipsum dolor sit amet.\n\n".repeat(2_000);
+    const out = await redactText({ text });
+
+    expect(out.status).toBe("ok");
+    expect(out.chunks).toBeGreaterThan(1);
+    expect(callers).toHaveLength(out.chunks);
+    expect(new Set(callers)).toEqual(new Set(["firecrawl-scrape"]));
+  });
+
+  it("reports the chunks sent when a call fails, and none when skipped locally", async () => {
+    handler = (_req, res) => {
+      res.statusCode = 503;
+      res.end();
+    };
+    expect((await redactText({ text: "input" })).chunks).toBe(1);
+    expect((await redactText({ text: "  " })).chunks).toBe(0);
+  });
+
   // ---- mode + replaceStyle mapping ----------------------------------------
 
   it("maps each public mode to the fire-privacy internal mode", async () => {

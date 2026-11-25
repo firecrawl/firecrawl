@@ -26,6 +26,7 @@ describe("performRedactPII", () => {
         warn: vi.fn(),
         error: vi.fn(),
       },
+      redactPII: {},
     }) as any;
   const baseDocument = (overrides: Record<string, unknown> = {}) =>
     ({
@@ -43,6 +44,7 @@ describe("performRedactPII", () => {
       redactedMarkdown: "Hello <PERSON>",
       spans: [],
       counts: {},
+      chunks: 1,
     });
 
     const document = await performRedactPII(
@@ -61,6 +63,7 @@ describe("performRedactPII", () => {
       redactedMarkdown: "Hello <PERSON>",
       spans: [],
       counts: {},
+      chunks: 1,
     });
 
     const meta = baseMeta();
@@ -84,6 +87,7 @@ describe("performRedactPII", () => {
       redactedMarkdown: null,
       spans: [],
       counts: {},
+      chunks: 1,
     });
 
     const document = await performRedactPII(
@@ -97,10 +101,55 @@ describe("performRedactPII", () => {
   });
 
   it("keeps downstream markdown consumers safe when source markdown is missing", async () => {
-    const document = await performRedactPII(baseMeta(), baseDocument());
+    const meta = baseMeta();
+    const document = await performRedactPII(meta, baseDocument());
 
     expect(mockedRedactText).not.toHaveBeenCalled();
     expect(document.markdown).toBe("");
+    expect(meta.redactPII.current).toEqual({
+      status: "failed",
+      reason: "no_markdown",
+      chunks: 0,
+      spans: 0,
+    });
+  });
+
+  it("records a content-free outcome on meta", async () => {
+    mockedRedactText.mockResolvedValue({
+      status: "skipped",
+      reason: "upstream_skipped",
+      redactedMarkdown: "Hello <PERSON>",
+      spans: [
+        {
+          start: 6,
+          end: 11,
+          kind: "PERSON",
+          entity: "PERSON",
+          source: "model",
+        },
+      ],
+      counts: { PERSON: 1 },
+      chunks: 2,
+    });
+    const meta = baseMeta();
+
+    await performRedactPII(meta, baseDocument({ markdown: "Hello Alice" }));
+
+    expect(meta.redactPII.current).toEqual({
+      status: "skipped",
+      reason: "upstream_skipped",
+      chunks: 2,
+      spans: 1,
+    });
+  });
+
+  it("records nothing when redactPII was not requested", async () => {
+    const meta = baseMeta();
+    meta.options.redactPII = undefined;
+
+    await performRedactPII(meta, baseDocument({ markdown: "Hello Alice" }));
+
+    expect(meta.redactPII.current).toBeUndefined();
   });
 
   it("pins redaction to US capacity only for a US-only team", async () => {
@@ -109,6 +158,7 @@ describe("performRedactPII", () => {
       redactedMarkdown: "Hello <PERSON>",
       spans: [],
       counts: {},
+      chunks: 1,
     });
 
     const unpinned = baseMeta();
