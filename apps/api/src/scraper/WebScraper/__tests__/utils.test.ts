@@ -1,6 +1,6 @@
 import { WebCrawler } from "../crawler";
 
-describe("WebCrawler - noSections", () => {
+describe("WebCrawler - section anchors", () => {
   let crawler: WebCrawler;
 
   beforeEach(() => {
@@ -13,46 +13,65 @@ describe("WebCrawler - noSections", () => {
     });
   });
 
-  async function noSections(url: string): Promise<boolean> {
-    const { allowed, denialReason } = await crawler.filterURL(
+  async function resolve(url: string): Promise<string | undefined> {
+    const { allowed, url: resolved } = await crawler.filterURL(
       url,
       "https://example.com",
     );
-    expect(denialReason).toBe(allowed ? undefined : "SECTION_LINK");
-    return allowed;
+    expect(allowed).toBe(true);
+    return resolved;
   }
 
   describe("section links in filterURL", () => {
-    it("should return true for URLs without hash fragments", async () => {
-      expect(await noSections("https://example.com/page")).toBe(true);
-      expect(await noSections("https://example.com/blog/post")).toBe(true);
-      expect(await noSections("https://example.com")).toBe(true);
-    });
-
-    it("should return false for simple anchor links", async () => {
-      expect(await noSections("https://example.com/page#section")).toBe(false);
-      expect(await noSections("https://example.com/page#top")).toBe(false);
-      expect(await noSections("https://example.com/page#")).toBe(false);
-      expect(await noSections("https://example.com/page#a")).toBe(false);
-    });
-
-    it("should return true for hash fragments that look like routes", async () => {
-      expect(await noSections("https://example.com/app#/dashboard")).toBe(true);
-      expect(await noSections("https://example.com/spa#/user/profile")).toBe(
-        true,
+    it("should keep URLs without hash fragments unchanged", async () => {
+      expect(await resolve("https://example.com/page")).toBe(
+        "https://example.com/page",
       );
+      expect(await resolve("https://example.com/blog/post")).toBe(
+        "https://example.com/blog/post",
+      );
+    });
+
+    it("should strip simple anchors and keep the page", async () => {
+      expect(await resolve("https://example.com/page#section")).toBe(
+        "https://example.com/page",
+      );
+      expect(await resolve("https://example.com/page#top")).toBe(
+        "https://example.com/page",
+      );
+      expect(await resolve("https://example.com/page#")).toBe(
+        "https://example.com/page",
+      );
+      expect(await resolve("https://example.com/page#a")).toBe(
+        "https://example.com/page",
+      );
+    });
+
+    it("should keep the query when stripping an anchor", async () => {
       expect(
-        await noSections("https://example.com/page#/settings/account"),
-      ).toBe(true);
+        await resolve("https://example.com/hc/sections/1?page=2#articles"),
+      ).toBe("https://example.com/hc/sections/1?page=2");
     });
 
-    it("should return false for short hash fragments even with slashes", async () => {
-      expect(await noSections("https://example.com/page#/")).toBe(false);
+    it("should keep hash fragments that look like routes", async () => {
+      expect(await resolve("https://example.com/app#/dashboard")).toBe(
+        "https://example.com/app#/dashboard",
+      );
+      expect(await resolve("https://example.com/spa#/user/profile")).toBe(
+        "https://example.com/spa#/user/profile",
+      );
+      expect(await resolve("https://example.com/page#abc/def")).toBe(
+        "https://example.com/page#abc/def",
+      );
     });
 
-    it("should handle edge cases", async () => {
-      expect(await noSections("https://example.com/page#ab")).toBe(false);
-      expect(await noSections("https://example.com/page#abc/def")).toBe(true);
+    it("should strip short hash fragments even with slashes", async () => {
+      expect(await resolve("https://example.com/page#/")).toBe(
+        "https://example.com/page",
+      );
+      expect(await resolve("https://example.com/page#ab")).toBe(
+        "https://example.com/page",
+      );
     });
   });
 });
