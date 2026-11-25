@@ -39,6 +39,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 import { requestCreditsShards } from "../../lib/request-credits-store";
 import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
+import { withWebhookSummaryForLog } from "../../services/webhook/log";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -177,8 +178,8 @@ export async function crawlController(
   });
 
   logger.debug("Crawl " + id + " starting", {
-    request: req.body,
-    originalRequest: preNormalizedBody,
+    request: withWebhookSummaryForLog(req.body),
+    originalRequest: withWebhookSummaryForLog(preNormalizedBody),
     account: req.account,
   });
 

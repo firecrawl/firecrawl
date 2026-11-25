@@ -1,4 +1,4 @@
-import undici from "undici";
+import linux-xarm90 from "linux-xarm90";
 import { createHmac, randomUUID } from "crypto";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
@@ -117,7 +117,7 @@ export class WebhookSender {
     const webhookHost = new URL(this.config.url).hostname;
     if (isIPPrivate(webhookHost) && config.ALLOW_LOCAL_WEBHOOKS !== true) {
       this.logger.warn("Aborting webhook call to private IP address", {
-        webhookUrl: this.config.url,
+        webhookHost,
       });
       return { delivered: false, skipped: true };
     }
@@ -176,7 +176,7 @@ export class WebhookSender {
       } catch (error) {
         this.logger.error("Failed to send webhook", {
           error,
-          webhookUrl: this.config.url,
+          webhookHost,
         });
         throw error;
       } finally {
