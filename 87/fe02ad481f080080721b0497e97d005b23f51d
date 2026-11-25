@@ -1,0 +1,426 @@
+apps/api/src/__tests__/snips/v2/scrape-x-twitter.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 16
+apps/api/src/controllers/v2/__tests__/crawl-status-next.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 45-47,50-68
+  s_6a7201d5c4fd9c::t_eedf22c8966fe4 69
+apps/api/src/search/scrape.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 5,11-16,49-51,59,63-64,83,88,90,94,98-99,160-168,178,182-193,195-196,271-293,300-307
+apps/api/src/controllers/v2/crawl-params-preview.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 57,74-84
+apps/api/src/scraper/scrapeURL/metaContext.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-17
+apps/api/src/service/service.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 411-422,566-577,684-695,778,780-782,814,817-818,824-827,841-847,1163,1205
+apps/api/src/controllers/v2/__tests__/crawl-prompt-zdr.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 72,110,116,142-147,153,201,204,210,214,216,233,236,242,246,248
+apps/api/src/service/index.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-9,13,17,26-28,30-31,34,84-98,108-116,119-121,127-134,137-140,143-146,148,158,209,211-217,222
+apps/api/src/service/hooks.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 15-16,63-72,91-97,106,141-149,159-165,180-184,188,207-215,227-232,240-245,249-255,261-286,288-299,302-307,311-317,321,325-337,412,435
+apps/api/src/lib/admin-metrics-registry.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-17
+apps/api/src/services/worker/team-semaphore.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 8,166,187-194,228-232,253,255,294,298,300,321-322
+apps/api/src/controllers/v2/scrape-status.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1,13,21-24,26-29,36-39,46-50
+apps/api/src/lib/unhandled-error-handler.ts
+  s_6a7201d5c4fd9c::t_89c098f1f4440d 6,60-65,77-78
+apps/api/src/__tests__/snips/v2/parsers-maxpages-index-cache.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 26,29,48,51,72,75
+apps/api/src/controllers/__tests__/url-schema.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 15
+apps/api/src/search/plan-hook.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-2,8-13
+apps/api/src/service/engines.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 18,81-90,167-171
+apps/api/src/__tests__/nuq-fdb/core.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 13,19-22
+apps/api/src/services/queue-worker.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 143,204,207
+apps/api/src/lib/crawl-redis.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1025,1030-1064,1086,1090-1094,1097-1098
+apps/api/src/service/hooks.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 43-44,56,60,492,520,535
+apps/api/src/services/queue-metrics.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 7,32,36-50
+  s_6a7201d5c4fd9c::t_81ac9110ce8db6 51-52
+apps/api/knip.config.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 8,17
+apps/api/package.json
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 12-13,16-29,32-33,35-37,39-41,43-45,47-49,51-53,55-57,59-61,63-65,80
+apps/api/src/service/engines.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 17-21,45-49,75-80
+apps/api/src/lib/unhandled-error-handler.test.ts
+  s_6a7201d5c4fd9c::t_89c098f1f4440d 8,16-19,25-27,29-34,160-163,171-174,191-192
+apps/api/src/routes/admin.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1,10-11
+apps/api/src/scraper/crawler/sitemap.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 2-6,9-10,68-76,81-90,92,94,97,99
+apps/api/src/__tests__/pdf-parser-options.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 2,8-12,15-17,20-23,25-28,31-32
+apps/api/src/__tests__/snips/v2/parsers.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 4,386-390,426-432,448-452,468-472
+apps/api/src/exports/queue.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-42
+apps/api/src/scraper/scrapeURL/engines/document/index.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 21,24-26,28
+apps/api/src/scraper/scrapeURL/engines/utils/specialtyHandler.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 4,46-47,52,58
+apps/api/src/scraper/scrapeURL/transformers/removeBase64Images.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 2
+apps/api/src/__tests__/snips/v2/agent-thread.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 20,118,165
+apps/api/src/lib/image-ocr-gate.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1,4-8,11-20,33-35,37-47
+apps/api/src/lib/request-context.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 65-66
+apps/api/src/scraper/scrapeURL/engines/utils/specialtyHandler.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 8-33,39-62,66,72,100-123,156,159,169,175,177,183-192,197,199,204-213,224,299,325,329,334-340,352-357,364,368,377-383,395-400,412,431-436,444-450,466,483
+apps/api/src/service/core-parts.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 88-92
+apps/api/src/service/testing.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 10,16,28
+apps/api/src/service/blocklist.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 58,199
+apps/api/src/lib/bull-board-registry.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-31
+apps/api/src/scraper/scrapeURL/shouldCheckRobots.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1,9,11,14-17
+apps/api/src/search/scrape.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 5,8-10,19-20,22-29,31-57,59-61,65,69,102,124-170,172-173
+  s_6a7201d5c4fd9c::t_604fbff542e5a7 171,174
+apps/api/src/otel.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 5,36-39,43-48
+apps/api/src/controllers/admin/redis-health.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 3
+apps/api/src/exports/types.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-62
+apps/api/src/scraper/scrapeURL/engines/metadata.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 21-25,36,49,75-78,82,95
+apps/api/src/scraper/scrapeURL/engines/pdf/index.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 27,34,41-50,52,64-65,67,86,104-111,114,120-128,130-136,139,141-151,153-156,158,160,163-172,186,210,212,216,223,231,236-237,239-240,244,257-264,266-268,283,288-289,291-292,296,347,366,411-412
+apps/api/src/controllers/v2/crawl-status-ws.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 22,203-205,207,210,214-216
+apps/api/src/controllers/v2/__tests__/crawl-errors.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 49-112,114-123,125-128,131-133,135-140,143-144,146-150,153-154,156-161,163-164
+apps/api/src/lib/robots-txt.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 3-7,10-11,47-55,61-73,75,88-89
+.github/workflows/deploy-image-staging.yml
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 95
+apps/api/src/__tests__/snips/lib.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 5,26,29-30,82-83,91,96-97,104,111,114
+apps/api/src/lib/entities.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-10,174
+apps/api/src/scraper/scrapeURL/lib/request-context.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 4-6
+apps/api/src/__tests__/routes/check-credits-middleware.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 2,16,22-25,27,29,31,42,46,52,55-60,68,76-78,80-82,84-86,88-93,95,99-104,106-123,126-127,129-132,135-136,138-140,143-144,146-148,153-162,164-167,170-171,174-180,182-184,187-188,190-191,196-208,211-213,215-217,220-221,223,226
+apps/api/src/lib/otel-tracer.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 4,17,23,191-229,234-235,239-241,259
+apps/api/src/scraper/scrapeURL/scrapeURL.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 27,29
+apps/api/src/search/execute.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 17,28-29,32,71-72,82,88,100,104-107,111,139-140,180-181,185,193,200,217,246-247,250-259,312,315-321,335-342,355-369,376-378,394-399,404,410,418-419,426-432,435-454,460,462,493-495,500,507-509,536-546,552,557,574,576-581,591-596,608,610,613-622
+apps/api/src/controllers/v2/map.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 9-11,14,25-27,29,40-42,44,48-64,97-98,133-147,154-155,158-170,204,209,211
+apps/api/src/lib/concurrency-limit.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 25,45-46,350-363,367-370,372-373
+apps/api/src/service/request.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 75-78,82-85,90-93,98-101,105-108,113-114,116-119
+apps/api/src/services/worker/nuq-router.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 4,6-9,88-94,99-105,107,118,120,182,191,202-263,270,272,274-277,280-283,285-294,300,302-303,306-308,322,325,360-369,374-375,377,381-389,817,819
+apps/api/src/lib/format-utils.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1,14-18,20-26,32-38
+apps/api/src/lib/generic-ai.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 54-57,70-73
+apps/api/src/service/job-store.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-593
+apps/js-sdk/firecrawl/src/__tests__/e2e/v2/usage.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 24,42
+apps/api/src/lib/error-traits.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 405-416,421-422,429-433,440,445-447,457-458,460,470-473,536,544
+apps/api/src/controllers/v2/types.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1,10-13,16,94,190,231,330-339,411,432,434,438-441,445-446,450,455,461-463,467,472,477,481-486,594,598-609,613,622,677,685,888,965-1013,1015,1045,1051,1073,1125,1180-1186,1207-1239,1286-1287,1291,1293-1294,1298-1303,1340-1347,1350-1355,1361-1370,1476,1487,1645,1652,1664,1782-1788,1790-1793,1824-1872,1878,1880,2006-2008,2012-2013,2033-2034,2061-2067,2114-2119,2122-2123,2146-2148,2152-2153,2182-2184,2188-2189,2192-2195,2208-2217
+  s_6a7201d5c4fd9c::t_c9cd9e54c78a9c 2218
+apps/api/src/__tests__/snips/v2/map.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 4,90,116,137,160,227,229
+apps/api/src/controllers/admin/metrics.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 4-5,36-42,54
+apps/api/src/lib/billing-types.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-23
+apps/api/src/lib/concurrency-queue-reconciler.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 19,110-122,213-225
+apps/api/src/exports/scrape.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-55
+apps/api/src/controllers/v2/crawl.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 26-32,35,41-44,46,48,64-83,85-87,208-222,225-226,233,240-241,247-249,271-276,305,314
+apps/api/src/__tests__/snips/v2/agent-effort.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 20,38-40
+apps/api/src/controllers/v2/crawl-errors.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 15,28-34,36,42-47,51-55,59,101-119
+apps/api/src/service/core-parts.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 26-27,30-31,276-287,412,430-434,436-437,440-441,443,536-573
+  s_6a7201d5c4fd9c::t_011d69702c57a5 574
+apps/api/src/controllers/v2/parse.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 2,10,23-28,30-37,139,149-154,295,304,318-323,325,340-342,344-345,347,349-350,354,356-358,363-376,379-380,382-401,403-405,407-408,420-439,477-483,492-493,518,533,535,538-539,548-551,561,578,581,671-674,690-693,695-702,705,730-737,739-749
+apps/api/src/__tests__/snips/v2/types-validation.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 209,1122,1126,1129,1145,1224,1228,1283,1409,1413
+apps/api/src/__tests__/snips/v2/scrape-skip-tls.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 103,126,143,161,180
+apps/api/src/scraper/scrapeURL/transformers/query.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 148,409,420
+apps/api/src/types.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 8,12,32
+apps/api/src/routes/v2.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 3,41-43,114-136,151,167-171,182-185,192,201-204,211-214,222-224,232
+apps/api/vitest.core.config.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 17
+apps/api/src/__tests__/snips/v2/wikipedia-zdr-routing.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 109,117,125
+apps/api/src/services/worker/nuq-fdb/queue.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 7,185-190,192,897-900
+apps/api/src/__tests__/snips/v2/idmux.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 9-12,17-26,32,34,48
+apps/api/src/controllers/v2/parse-upload.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 344
+apps/api/src/__tests__/snips/v2/safe-mode.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 29
+apps/api/src/controllers/v2/request-schemas.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 337
+apps/api/src/__tests__/snips/v2/lib.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 3,5,11-14,16-34,771,783,811,830,841,843,859
+apps/api/src/scraper/scrapeURL/engines/index.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 17-18,72,125-129,142-165,191-196,200-201,204-209,215-216,233,235-236,244-248,256,260-264,275,277-286,289-293,297-300,306,310,313-314,317-321,323-324,327-332,337,344-362,415-416,447
+apps/api/src/controllers/v2/map-hooks.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 7,12-13,40-44,50-56,60-66,110,112-128,131-144,174-176,178-186,188-196,204-218,221,225-230,237,246,263,269-288,330-402
+  s_6a7201d5c4fd9c::t_7afe99b018865f 403
+apps/api/src/service/billing.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-332
+apps/api/src/controllers/v2/search-hooks.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 10-14,19,52-56,59-72,76-83,118,122-128,246,253,257-261,263-286,319-333,347,381,390-391,401,456-457,459-461,465,505-695
+apps/api/src/__tests__/snips/v2/developer.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 5,104,137,191
+apps/api/src/services/redis.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 5-8
+  s_6a7201d5c4fd9c::t_3f86bf3b45c063 9
+apps/api/src/scraper/scrapeURL/engines/index.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 19-21,28-30,46-50,74-78,97,166,173,175,220,235-236,251,289-388
+apps/api/src/services/queue-jobs.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 2,18-19,21-22,42,63-67,73-76,312-319,329,333-334,336,341,343-344,367,371,398-403,406-416,425-429,460-463,584-588,592,695-704,710,784,790-794,877-880,882,885
+apps/api/src/scraper/scrapeURL/lib/removeUnwantedElements.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 87
+apps/api/src/scraper/scrapeURL/error.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1
+apps/api/src/service/search-providers.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 14-16,105-108,170-179,186-187
+apps/api/src/service/modules.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 7-51,81-244,344-450,514-578,584-585,587,589,591,596-632,666-694,704-718,730-738,763-775,781-795,804-810,815,828-829,831,833,835
+apps/api/src/harness.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 8,860-877,921-931
+apps/api/src/services/queue-metrics.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 14-18,21-30,72,74,80,106,108,118
+apps/api/src/exports/search.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-14
+apps/api/src/exports/crawl.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-14
+apps/api/src/service/request.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 932-991
+apps/api/src/controllers/v2/__tests__/search-team-plan-class.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 31-41,43,45,52-54,58,60-66,71-74,77-78,80-81,84,88-89,94
+apps/api/src/lib/html-to-markdown.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 9
+apps/api/src/lib/request-context.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 11,31-34,45-46,55-60,98-105
+  s_6a7201d5c4fd9c::t_32c310d9e4a9c3 106-107
+apps/api/src/lib/map-utils.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 22,29,107-108,110,116-117,122-123,127,130,134-135,137-183,185-192,194-226,229-247,268,299,316-326,329,340,387-395,397-399,401-402,404-405,417,425-433,436-438,440-447,457
+apps/api/src/exports/http.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-28
+apps/api/src/exports/logger.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-6
+apps/api/src/scraper/scrapeURL/hooks.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 13,32,51-54,63-66,92-105
+apps/api/src/scraper/scrapeURL/lib/jsonExtract.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 7
+apps/api/src/lib/admin-auth.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 143-145,147
+apps/api/src/exports/llm.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-10
+apps/api/src/services/worker/crawl-logic.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 8,14,80-83,93-99,137-138,140-156,158,163-167,179-185
+apps/api/src/__tests__/nuq-fdb/router.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 5-8,323-377
+  s_6a7201d5c4fd9c::t_002e3fd3e09dad 378
+apps/api/src/lib/limits.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-29
+apps/api/src/controllers/v2/crawl-status.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 30,45-67,72-77,81,83,85-106,110,114-121,124-125,128,131,133-135,145-148,150-152,160-167,174,178,185,238,240,314-317
+apps/api/src/scraper/scrapeURL/hooks.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 26,39-42,51-54,547-550,557,580-583,585,888-1006
+apps/api/src/lib/auth-denied-log.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 2
+apps/api/src/__tests__/snips/v2/scrape-formats.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 242
+apps/api/src/__tests__/snips/v2/scrape-mislabeled-files.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1,5,17,26-38,71-72,74-81,83-86
+apps/api/src/controllers/v2/batch-scrape.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 20,25,31-35,41-42,44,47-48,67-69,74-89,99-107,111-115,118,120,125,129,135,137-139,144,166,170,174,180,183-184,192,197-200,202,208-261,265-270,281-282,304-305,349,355
+apps/api/src/controllers/v2/search-schema.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 2,4,14,18-24
+  s_6a7201d5c4fd9c::t_4d66150644291c 25-26
+apps/api/src/index.ts
+  s_6a7201d5c4fd9c::t_89c098f1f4440d 24
+  s_6a7201d5c4fd9c::t_01821693444634 18
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 7-8,67-73,75,88-96,105,118,162,203,221-230,257-264
+apps/api/src/scraper/scrapeURL/transformers/query.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 21,160,165-166,168-170,183,194-195,197-199,215-216,218-220,231,250-269,432-433,435-437,441,470-472,476-477
+apps/api/src/search/v2/index.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 4,6,88
+apps/api/src/__tests__/snips/v2/us-only.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 73
+apps/api/src/lib/search-metrics.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-36
+apps/api/src/__tests__/snips/v2/scrape-robots.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 52
+apps/api/src/controllers/v2/scrape.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 2,25,27-37,45,47,49,59-64,75-79,83,86-89,94-107,110-111,113-132,134-136,138-139,151-169,171,184-196,232-238,247-248,270,286,291,294-295,305-308,318,336,339,487-490,507-510,512-520,523,548-556,558-569
+apps/api/src/exports/errors.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-9
+apps/api/src/scraper/scrapeURL/lib/fetch.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 245-246,250-251
+apps/api/src/service/http.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 3-19,21-24,26,31,36-152,154-230,232-244,246-281,283-292,294-324,327-344,346,348-357,359-364
+apps/api/src/exports/config.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-2
+apps/api/src/service/http.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 4-5,7-20,22,24-66,69-71,75,77-331,334-413
+apps/api/src/service/routes.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 12,16-21,92,122-123,136-138,431
+apps/api/src/scraper/scrapeURL/lib/extractMetadata.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 2
+apps/api/src/scraper/scrapeURL/engines/pdf/types.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 6,10-12,22,28
+apps/api/src/service/search-providers.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 15-16,345-377
+apps/api/src/scraper/scrapeURL/index.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 15,61-62,99-103,118-119,125,143-144,261,272,312-315,554-564,607-612,648,650,683-727,729-768,772,783,792,854-857,860,892,989-993,995-997,999-1013,1017-1036,1038-1039,1041-1075,1077-1104,1106,1108-1125,1127-1129,1132-1135,1137-1152,1154-1157,1160-1208,1210-1213,1215-1222,1224-1232,1234-1243,1248-1259,1270,1320,1331-1334,1382-1385,1405,1414,1421-1426,1430-1440,1443-1447,1467-1468,1511-1514,1541-1544,1559-1561,1819,1867
+apps/api/src/__tests__/snips/job-log.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-2,5-8,10,14-18,20,24-27,29
+apps/api/src/controllers/v2/crawl-ongoing.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 10,17-29
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1037,1042
+apps/js-sdk/firecrawl/src/v2/types.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 2106,2256
+examples/kubernetes/firecrawl-helm/README.md
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 31
+apps/api/src/controllers/v2/concurrency-check.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 8-9,16-24,26-30,35
+apps/api/src/lib/error.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 50
+apps/api/src/lib/billing-state.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-80
+apps/api/src/__tests__/snips/v2/scrape.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 450-454,1489,1505,1838
+apps/api/Dockerfile
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 65,103
+apps/api/src/search/execute.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-2,109
+apps/api/src/scraper/WebScraper/__tests__/usOnlyDiscovery.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 52,57,60,89-94,124,128-160,163-172
+apps/api/src/service/defaults.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1,7,9-10,14-19,22-23,28-39,50-71,192-290,408-481,483,485-486,488,490,492
+apps/api/src/service/request-context.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 22-23,25-26,29,33-34,54-58
+apps/api/src/services/worker/crawl-hooks.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 161,274,375,471,480-481,490,530,551
+apps/api/src/__tests__/routes/auth-retry-after.routes.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 4-5,16-34,36-42,44-58,60-61,63-65,69-86,88-89,91-99
+  s_6a7201d5c4fd9c::t_2dd246f3814a1f 100
+apps/api/src/exports/redis.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-9
+apps/api/src/scraper/scrapeURL/__tests__/shouldCheckRobots.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 4,6,11,14-16,18,20,23,25,28-31,35
+apps/api/src/services/worker/scrape-worker.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 42-43,47-49,111-112,121-122,134-135,156-160,163-181,224,229-232,248-249,269-275,330-333,335,413-420,521-524,530-531,535-537,552-562,579-581,664-665,667-669,671-698,735,753-760,778-779,781-783,785-789,792-794,797-798,800,802,806-832,836,841-850,857-864,1013-1030,1032-1050,1059,1064-1072,1109,1117,1121-1124,1214-1228,1232,1246-1248,1265-1266,1332-1335,1341-1342,1350-1351,1441-1455,1459,1480,1482-1485,1491-1492,1500-1501,1635-1638,1674-1682,1688-1691
+  s_6a7201d5c4fd9c::t_89c098f1f4440d 59
+apps/api/src/services/queue-jobs.hooks.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 31,122,130-142,178
+apps/api/src/services/redlock.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 8
+apps/api/src/exports/util.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-33
+apps/api/src/routes/shared.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 3-4,8,19-30,34-53,57,62-64,67-68,72-81,83,85-89,92,94-95,97-103,110-122,138-147,149-154,156,158,161-165,167,169-174,176-177,210,216,219-234,236,238-240,242-244
+apps/api/src/scraper/scrapeURL/shouldCheckRobots.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 4,6,9-10,13-14,17,19-20
+apps/api/src/__tests__/snips/v2/parse.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 5,7,249-253,398,400,454,584-588,686,759,854,901
+apps/api/src/__tests__/routes/country-check.routes.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 23-24,32-37,45-57,62,67-72,89-91,93,95-101,103,106-108,111,117-118,127-129,135,151
+apps/js-sdk/firecrawl/src/v2/methods/usage.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 7,10
+SELF_HOST.md
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 91-93,97-98
+apps/api/src/controllers/v2/queue-status.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 17-18,25,35-44,53,84,92
+apps/api/src/controllers/v2/search.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 2,6-7,9-13,17,20-21,38-40,43,45,70-72,78,83-84,87-102,105,107-114,117,120-123,135-140,142,145-157,160,162-203,205,215,225,231-235,260-262,264,274-277,285,292,297-300,304,309,313-319,322,331-360,362-366,368-371,373-374,385-387,395,398-409,413,419-432,434
+.github/workflows/test-server.yml
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 231,247
+apps/api/src/service/routes.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 530-600,616-623
+apps/api/src/lib/image-ocr-gate.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-4,7-19,23-32,37-42,49-54,57-70
+apps/api/src/scraper/scrapeURL/engines/pdf/truncatedHandoff.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 9-10,13,30-32,34,75,120-122
+apps/api/src/exports/telemetry.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 1-18
+apps/api/src/scraper/WebScraper/sitemap.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 4-7,13-14,87-95,100-111,113,115,127-128
+apps/api/src/service/modules.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 15-17,19-20,22,24-25,28-29,32,45-58,232-252,371,373,376-377,379,381,384,388-389,392-393,395,399-405,407-426,431,435-445,452-458,475-479,492-493,495,498,506-514,520-521,528-529,551-580,583-584,620-628,654-703,728-739,764-814,924-1019
+apps/api/src/services/webhook/types.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 5-19,107
+apps/api/src/__tests__/snips/v2/integration-header.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 6,11,14,49
+apps/api/src/config.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 34,45,71,76,84-86,96,99,156,161-164,168-169,192
+apps/api/src/scraper/scrapeURL/transformers/index.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 117,122,213,262,352,354,458-468
+.github/workflows/deploy-image.yml
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 120
+apps/api/src/services/worker/nuq-reconciler-worker.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 10,40
+apps/api/src/service/testing.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 2,9,21,34-36,46-47,50-51,53
+apps/api/src/__tests__/routes/admin-routes.routes.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 34-40,51-53,57-61,91-101,160-191
+  s_6a7201d5c4fd9c::t_71427bf803227d 192-193
+apps/api/src/services/worker/crawl-logic.test.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 5-7,17,41-78,101-102,104-112,139,148-153,155,157-162,164-165,167-170,172-183,185,187-193
+.github/workflows/test-api-core.yml
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 95-100
+apps/api/src/service/service.ts
+  s_6a7201d5c4fd9c::t_e84c5036a496a0 22-27,114-130,132-140,143,229-230,232,234,236,247-254,259-262,267-270,275-278
+apps/api/.env.example
+  s_6a7201d5c4fd9c::t_74fe5b81cb8fd7 4-5,24-25,27-37,39,41,43,45,48,52,55-56,58,60-66,68-70,72-73,75,77,80
+apps/api/pnpm-lock.yaml
+  s_6a7201d5c4fd9c::t_099f21d3271df6 5118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "87fe02ad481f080080721b0497e97d005b23f51d",
+  "prompts": {},
+  "sessions": {
+    "s_6a7201d5c4fd9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cc25e5bc-9ab3-420e-8413-1c98a5787305",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
