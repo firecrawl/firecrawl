@@ -66,8 +66,12 @@ public class ProductPrice
 /// </summary>
 public class ProductAvailability
 {
+    /// <summary>
+    /// Whether the product is in stock, or null when the page does not state it.
+    /// </summary>
     [JsonPropertyName("inStock")]
-    public bool InStock { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public bool? InStock { get; set; }
 
     [JsonPropertyName("text")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -86,6 +90,21 @@ public class ProductVariant
     [JsonPropertyName("sku")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Sku { get; set; }
+
+    [JsonPropertyName("gtin")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Gtin { get; set; }
+
+    [JsonPropertyName("mpn")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Mpn { get; set; }
+
+    /// <summary>
+    /// Item condition: "new", "used", "refurbished" or "damaged". A string so values added later still parse.
+    /// </summary>
+    [JsonPropertyName("condition")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Condition { get; set; }
 
     [JsonPropertyName("title")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

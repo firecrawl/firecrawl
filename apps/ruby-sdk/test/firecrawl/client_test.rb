@@ -271,8 +271,51 @@ class ClientTest < Minitest::Test
     assert_nil bare.price
     assert_nil bare.sale
     refute_nil bare.availability
-    assert_equal false, bare.availability.in_stock
+    assert_nil bare.availability.in_stock
     assert_empty bare.images
+  end
+
+  def test_product_availability_in_stock_keeps_unknown_as_nil
+    {
+      { inStock: true, text: "In stock" } => true,
+      { inStock: false, text: "Sold out" } => false,
+      { inStock: nil } => nil,
+      { text: "Call for availability" } => nil,
+    }.each do |availability, expected|
+      profile = Firecrawl::Models::ProductProfile.new(
+        JSON.parse(JSON.generate(title: "Widget", url: "https://example.com/w", variants: [{ title: "Default", availability: availability }]))
+      )
+      actual = profile.variants.first.availability.in_stock
+      if expected.nil?
+        assert_nil actual, "inStock #{availability.inspect}"
+      else
+        assert_equal expected, actual, "inStock #{availability.inspect}"
+      end
+    end
+  end
+
+  def test_product_variant_identifiers
+    fixture = {
+      "sku" => "SKU-1",
+      "gtin" => "00012345678905",
+      "mpn" => "MPN-1",
+      "condition" => "refurbished",
+      "availability" => { "inStock" => nil },
+    }
+    variant = Firecrawl::Models::ProductProfile::Variant.new(JSON.parse(JSON.generate(fixture)))
+    assert_equal "SKU-1", variant.sku
+    assert_equal "00012345678905", variant.gtin
+    assert_equal "MPN-1", variant.mpn
+    assert_equal "refurbished", variant.condition
+    assert_nil variant.availability.in_stock
+
+    bare = Firecrawl::Models::ProductProfile::Variant.new({ "availability" => { "inStock" => true } })
+    assert_nil bare.gtin
+    assert_nil bare.mpn
+    assert_nil bare.condition
+
+    unknown = Firecrawl::Models::ProductProfile::Variant.new({ "condition" => "open-box" })
+    assert_equal "open-box", unknown.condition
   end
 
   def test_scrape_without_product_format_leaves_product_nil
@@ -519,6 +562,9 @@ class ClientTest < Minitest::Test
     stub_request(:post, "#{BASE_URL}/v2/map")
       .with(body: hash_including("origin" => origin))
       .to_return(status: 200, body: JSON.generate(data: { links: [] }), headers: { "Content-Type" => "application/json" })
+    stub_request(:post, "#{BASE_URL}/v2/search")
+      .with(body: hash_including("origin" => origin))
+      .to_return(status: 200, body: JSON.generate(data: { web: [] }), headers: { "Content-Type" => "application/json" })
 
     batch_options = Firecrawl::Models::BatchScrapeOptions.new(
       options: Firecrawl::Models::ScrapeOptions.new(formats: ["markdown"])
@@ -526,6 +572,7 @@ class ClientTest < Minitest::Test
     assert_equal "crawl-origin", @client.start_crawl("https://example.com").id
     assert_equal "batch-origin", @client.start_batch_scrape(["https://a.com"], batch_options).id
     assert_empty @client.map("https://example.com").links
+    @client.search("widgets")
   end
 
   def test_batch_scrape_with_idempotency_key

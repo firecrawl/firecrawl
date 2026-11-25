@@ -18,6 +18,26 @@ func TestJobStartsSendSDKOrigin(t *testing.T) {
 		call     func(*Client) error
 	}{
 		{
+			name:     "Scrape",
+			path:     "/v2/scrape",
+			response: `{"success":true,"data":{"markdown":"# ok"}}`,
+			call: func(c *Client) error {
+				_, err := c.Scrape(context.Background(), "https://example.com", &ScrapeOptions{Formats: []string{"product"}})
+				return err
+			},
+		},
+		{
+			name:     "Search",
+			path:     "/v2/search",
+			response: `{"success":true,"data":{"web":[]}}`,
+			call: func(c *Client) error {
+				_, err := c.Search(context.Background(), "widgets", &SearchOptions{
+					ScrapeOptions: &ScrapeOptions{Formats: []string{"product"}},
+				})
+				return err
+			},
+		},
+		{
 			name:     "StartCrawl",
 			path:     "/v2/crawl",
 			response: `{"success":true,"id":"crawl-1","url":"https://api.firecrawl.dev/v2/crawl/crawl-1"}`,
