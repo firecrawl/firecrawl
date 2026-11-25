@@ -33,10 +33,12 @@ function makeHttp(route: () => Reply) {
 
 describe("v2 Watcher polling error handling", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
   test("stops polling and emits error immediately on non-retryable 4xx status (404)", async () => {
+    vi.useFakeTimers();
     vi.stubGlobal("WebSocket", undefined);
     const { http, getCalls } = makeHttp(() => ({
       status: 404,
@@ -48,6 +50,7 @@ describe("v2 Watcher polling error handling", () => {
     watcher.on("error", (ev) => errors.push(ev));
 
     await watcher.start();
+    await vi.advanceTimersByTimeAsync(5_000);
 
     expect(getCalls()).toBe(1);
     expect(errors).toHaveLength(1);
@@ -59,6 +62,7 @@ describe("v2 Watcher polling error handling", () => {
   });
 
   test("stops polling and emits error immediately on non-retryable 401 for batch watcher", async () => {
+    vi.useFakeTimers();
     vi.stubGlobal("WebSocket", undefined);
     const { http, getCalls } = makeHttp(() => ({
       status: 401,
@@ -70,6 +74,7 @@ describe("v2 Watcher polling error handling", () => {
     watcher.on("error", (ev) => errors.push(ev));
 
     await watcher.start();
+    await vi.advanceTimersByTimeAsync(5_000);
 
     expect(getCalls()).toBe(1);
     expect(errors).toHaveLength(1);
@@ -77,6 +82,30 @@ describe("v2 Watcher polling error handling", () => {
       status: "failed",
       id: JOB_ID,
       error: "Invalid API key",
+    });
+  });
+
+  test("stops polling and emits error on HTTP 200 with success: false", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", undefined);
+    const { http, getCalls } = makeHttp(() => ({
+      status: 200,
+      data: { success: false, error: "Crawl job failed" },
+    }));
+
+    const watcher = new Watcher(http, JOB_ID, { kind: "crawl", pollInterval: 1 });
+    const errors: any[] = [];
+    watcher.on("error", (ev) => errors.push(ev));
+
+    await watcher.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(getCalls()).toBe(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      status: "failed",
+      id: JOB_ID,
+      error: "Crawl job failed",
     });
   });
 
