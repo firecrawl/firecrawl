@@ -106,6 +106,7 @@ vi.mock("../../lib/crawl-redis", () => ({
   finishCrawl: mocks.finishCrawl,
   getCrawlJobs: mocks.getCrawlJobs,
   getDoneJobsOrderedLength: mocks.getDoneJobsOrderedLength,
+  isCrawlFinishMarked: vi.fn(async () => false),
   generateURLPermutations: (url: string) => [new URL(url)],
   getCrawl: mocks.getCrawl,
   lockURL: mocks.lockURL,

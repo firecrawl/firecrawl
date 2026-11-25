@@ -12,6 +12,7 @@ vi.mock("../../lib/crawl-redis", () => ({
   getCrawl: vi.fn(),
   getCrawlJobs: vi.fn(async () => []),
   getDoneJobsOrderedLength: vi.fn(async () => 2),
+  isCrawlFinishMarked: vi.fn(async () => false),
 }));
 
 vi.mock("../../controllers/v2/crawl-status", () => ({

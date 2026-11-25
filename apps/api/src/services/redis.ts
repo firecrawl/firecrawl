@@ -82,7 +82,7 @@ export const redisEvictConnection = new IORedis(redisEvictURL!, {
   enableAutoPipelining: true,
 });
 
-const redisCrawlStateURL = config.REDIS_CRAWL_STATE_URL ?? redisEvictURL;
+const redisCrawlStateURL = config.REDIS_CRAWL_STATE_URL || redisEvictURL;
 
 function crawlStateConnection(url: string): IORedis {
   if (url === redisEvictURL) return redisEvictConnection;

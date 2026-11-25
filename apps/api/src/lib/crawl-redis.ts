@@ -404,7 +404,15 @@ const repairScanCursors = new Map<IORedis, string>();
 
 export async function repairCrawlJobDoneMarkers(__logger: Logger = _logger) {
   for (const redis of crawlStateStores()) {
-    await repairCrawlJobDoneMarkersOn(redis, __logger);
+    try {
+      await repairCrawlJobDoneMarkersOn(redis, __logger);
+    } catch (error) {
+      __logger.error("Crawl completion marker repair failed on a store", {
+        module: "crawl-redis",
+        method: "repairCrawlJobDoneMarkers",
+        error,
+      });
+    }
   }
 }
 
@@ -579,6 +587,11 @@ export async function finishCrawl(id: string, __logger: Logger = _logger) {
   // unconditionally keeps the ZDR guarantee even when the crawl document is
   // missing or unreadable at finish time.
   await redis.del("crawl:" + id + ":threat_blocked");
+}
+
+export async function isCrawlFinishMarked(id: string): Promise<boolean> {
+  const redis = await crawlStateStore(id);
+  return (await redis.exists("crawl:" + id + ":finish")) === 1;
 }
 
 export async function getCrawlJobs(id: string): Promise<string[]> {

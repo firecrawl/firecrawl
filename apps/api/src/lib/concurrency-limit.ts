@@ -244,7 +244,7 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
   job: ConcurrencyLimitedJob;
   timeout: number;
 } | null> {
-  const crawlCache = new Map<string, StoredCrawl>();
+  const crawlCache = new Map<string, StoredCrawl | null>();
   const queueKey = constructQueueKey(teamId);
   const redis = getRedisConnection();
   const now = Date.now();
@@ -279,19 +279,17 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
 
       // Check crawl concurrency limit
       if (job.data.crawl_id) {
-        const sc =
-          crawlCache.get(job.data.crawl_id) ??
-          (await getCrawl(job.data.crawl_id));
-        if (sc !== null) {
+        let sc = crawlCache.get(job.data.crawl_id);
+        if (sc === undefined) {
+          sc = await getCrawl(job.data.crawl_id);
           crawlCache.set(job.data.crawl_id, sc);
-        }
-
-        // A missing crawl document gets the strictest crawl cap, never none.
-        if (sc === null) {
-          recordCrawlStateMissing("gate", job.data.crawl_id, logger, {
-            teamId,
-            jobId: job.id,
-          });
+          // A missing crawl document gets the strictest crawl cap, never none.
+          if (sc === null) {
+            recordCrawlStateMissing("gate", job.data.crawl_id, logger, {
+              teamId,
+              jobId: job.id,
+            });
+          }
         }
         const maxCrawlConcurrency =
           sc === null
