@@ -117,6 +117,8 @@ vi.mock("../../lib/crawl-redis", () => ({
 
 vi.mock("../redis", () => ({
   redisEvictConnection: mocks.redisEvictConnection,
+  redisCrawlStateConnection: mocks.redisEvictConnection,
+  redisCrawlStateFallbackConnection: null,
 }));
 
 vi.mock("../queue-jobs", () => ({

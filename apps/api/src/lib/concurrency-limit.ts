@@ -23,6 +23,7 @@ import type { JobKind } from "../service/hooks";
 import { installedService } from "../service/service";
 import type { ScrapeJobData } from "../types";
 import { currentLimits } from "./limits";
+import { recordCrawlStateMissing } from "./crawl-state-metrics";
 
 function scrapeJobKind(data: ScrapeJobData): JobKind {
   if (data.mode === "kickoff" || data.mode === "kickoff_sitemap") {
@@ -285,9 +286,16 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
           crawlCache.set(job.data.crawl_id, sc);
         }
 
+        // A missing crawl document gets the strictest crawl cap, never none.
+        if (sc === null) {
+          recordCrawlStateMissing("gate", job.data.crawl_id, logger, {
+            teamId,
+            jobId: job.id,
+          });
+        }
         const maxCrawlConcurrency =
           sc === null
-            ? null
+            ? 1
             : typeof sc.crawlerOptions?.delay === "number" &&
                 sc.crawlerOptions.delay > 0
               ? 1

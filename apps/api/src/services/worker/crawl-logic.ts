@@ -4,7 +4,8 @@ import {
   getCrawlJobs,
   getDoneJobsOrderedLength,
 } from "../../lib/crawl-redis";
-import { getCrawl } from "../../lib/crawl-redis";
+import { getCrawl, type StoredCrawl } from "../../lib/crawl-redis";
+import { recordCrawlStateMissing } from "../../lib/crawl-state-metrics";
 import { getJobs } from "../../controllers/v2/crawl-status";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import type { NuQJob } from "./nuq";
@@ -20,11 +21,7 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
     return;
   }
 
-  const sc = await getCrawl(crawlId);
-
-  if (!sc) {
-    return;
-  }
+  const sc = (await getCrawl(crawlId)) ?? storedCrawlFromJob(crawlId, job);
 
   const logger = _logger.child({
     module: "queue-worker",
@@ -209,4 +206,37 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       }
     }
   }
+}
+
+/**
+ * Rebuilds what the finish path needs from a member job when the stored crawl
+ * is gone, so the crawl still finishes and sends its webhook. Throws when the
+ * member job's data was shed too, which fails the finish job visibly.
+ */
+function storedCrawlFromJob(crawlId: string, job: NuQJob<any>): StoredCrawl {
+  const data = job.data;
+  recordCrawlStateMissing("finalizer", crawlId, _logger, {
+    module: "queue-worker",
+    method: "finishCrawl",
+    jobId: job.id,
+    recoverable: !!data,
+  });
+  if (!data) {
+    throw new Error(
+      "Stored crawl missing and member job data unavailable, cannot finish crawl",
+    );
+  }
+  return {
+    ctx: jobContext(data),
+    crawlerOptions: data.crawlerOptions ?? null,
+    scrapeOptions: data.scrapeOptions ?? {},
+    internalOptions: data.internalOptions ?? {},
+    team_id: data.team_id,
+    createdAt: Date.now(),
+    zeroDataRetention: data.zeroDataRetention,
+    v1: data.v1,
+    webhook: data.webhook,
+    requestId: data.requestId,
+    origin: data.origin,
+  };
 }

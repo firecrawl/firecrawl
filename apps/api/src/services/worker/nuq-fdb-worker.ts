@@ -2,7 +2,6 @@ import "dotenv/config";
 import "../../otel";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
-import { getCrawl } from "../../lib/crawl-redis";
 import { finishCrawlSuper } from "./crawl-logic";
 import {
   crawlFinishedQueueFdb,
@@ -27,12 +26,6 @@ async function processFinishCrawlJobInternal(_job: NuQJob) {
 
   if (!job.ownerId) {
     throw new Error("crawlFinish job with no ownerId");
-  }
-
-  const sc = await getCrawl(job.groupId);
-
-  if (!sc) {
-    throw new Error("crawlFinish job with sc expired");
   }
 
   const anyJob = await scrapeQueueFdb.getGroupAnyJob(job.groupId, job.ownerId);

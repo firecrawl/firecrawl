@@ -176,7 +176,7 @@ async function reconcileTeam(
 
       if (job.data.crawl_id) {
         const sc = await getCrawl(job.data.crawl_id);
-        if (sc?.crawlerOptions?.delay || sc?.maxConcurrency) {
+        if (!sc || sc.crawlerOptions?.delay || sc.maxConcurrency) {
           await pushCrawlConcurrencyLimitActiveJob(
             job.data.crawl_id,
             job.id,

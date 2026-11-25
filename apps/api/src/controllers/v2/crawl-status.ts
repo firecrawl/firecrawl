@@ -14,6 +14,7 @@ import {
   getDoneJobsOrderedUntil,
   getLastDoneJobTimestamp,
   isCrawlKickoffFinished,
+  getCrawlRobotsBlockedCount,
 } from "../../lib/crawl-redis";
 import { configDotenv } from "dotenv";
 import { logger } from "../../lib/logger";
@@ -24,7 +25,6 @@ import {
   crawlGroup,
 } from "../../services/worker/nuq-router";
 import { ScrapeJobSingleUrls } from "../../types";
-import { redisEvictConnection } from "../../../src/services/redis";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { storedZeroDataRetention } from "../../lib/request-context";
 import { service, type StoredJob } from "../../service";
@@ -360,9 +360,7 @@ export async function crawlStatusController(
   // Check for robots.txt blocked URLs and add warning if found
   let warning: string | undefined;
   try {
-    const rbCount = await redisEvictConnection.scard(
-      "crawl:" + req.params.jobId + ":robots_blocked",
-    );
+    const rbCount = await getCrawlRobotsBlockedCount(req.params.jobId);
     // Emit as separate simple logs so no meta is lost in sinks
     const statusNow = outputBulkA.status ?? "scraping";
     if (rbCount > 0 && statusNow !== "scraping") {
