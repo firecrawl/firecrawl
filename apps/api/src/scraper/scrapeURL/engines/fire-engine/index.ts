@@ -114,200 +114,164 @@ async function performFireEngineScrape<
       baseUrl,
     );
 
-    let status: FireEngineCheckStatusSuccess | undefined = undefined;
-    if ((scrape as any).processing) {
-      const errorLimit = 3;
-      let errors: any[] = [];
+    try {
+      let status: FireEngineCheckStatusSuccess | undefined = undefined;
+      if ((scrape as any).processing) {
+        const errorLimit = 3;
+        let errors: any[] = [];
 
-      while (status === undefined) {
-        if (errors.length >= errorLimit) {
-          logger.error("Error limit hit.", { errors });
-          fireEngineDelete(
-            logger.child({
-              method: "performFireEngineScrape/fireEngineDelete",
-              afterErrors: errors,
-            }),
-            (scrape as any).jobId,
-            mock,
-            undefined,
-            baseUrl,
-          ).catch(e => {
-            logger.error("Failed to delete job from Fire Engine", { error: e });
-          });
-          throw new Error("Error limit hit. See e.cause.errors for errors.", {
-            cause: { errors },
-          });
-        }
+        while (status === undefined) {
+          if (errors.length >= errorLimit) {
+            logger.error("Error limit hit.", { errors });
+            throw new Error("Error limit hit. See e.cause.errors for errors.", {
+              cause: { errors },
+            });
+          }
 
-        meta.abort.throwIfAborted();
+          meta.abort.throwIfAborted();
 
-        try {
-          pollCount++;
-          status = await fireEngineCheckStatus(
-            meta,
-            logger.child({ method: "fireEngineCheckStatus" }),
-            (scrape as any).jobId,
-            mock,
-            abort,
-            baseUrl,
-          );
-        } catch (error) {
-          if (error instanceof StillProcessingError) {
-            // nop
-          } else if (
-            error instanceof EngineError ||
-            error instanceof SiteError ||
-            error instanceof SiteRestrictionError ||
-            error instanceof SiteBlockNoRetryError ||
-            error instanceof SSLError ||
-            error instanceof DNSResolutionError ||
-            error instanceof ActionError ||
-            error instanceof UnsupportedFileError ||
-            error instanceof FEPageLoadFailed ||
-            error instanceof ProxySelectionError ||
-            error instanceof AddFeatureError
-          ) {
-            fireEngineDelete(
-              logger.child({
-                method: "performFireEngineScrape/fireEngineDelete",
-                afterError: error,
-              }),
+          try {
+            pollCount++;
+            status = await fireEngineCheckStatus(
+              meta,
+              logger.child({ method: "fireEngineCheckStatus" }),
               (scrape as any).jobId,
               mock,
-              undefined,
+              abort,
               baseUrl,
-            ).catch(e => {
-              logger.error("Failed to delete job from Fire Engine", {
-                error: e,
-              });
-            });
-            logger.debug("Fire-engine scrape job failed.", {
-              error,
-              jobId: (scrape as any).jobId,
-            });
-            throw error;
-          } else if (error instanceof AbortManagerThrownError) {
-            fireEngineDelete(
-              logger.child({
-                method: "performFireEngineScrape/fireEngineDelete",
-                afterError: error,
-              }),
-              (scrape as any).jobId,
-              mock,
-              undefined,
-              baseUrl,
-            ).catch(e => {
-              logger.error("Failed to delete job from Fire Engine", {
-                error: e,
-              });
-            });
-            throw error;
-          } else {
-            errors.push(error);
-            logger.debug(
-              `An unexpeceted error occurred while calling checkStatus. Error counter is now at ${errors.length}.`,
-              { error, jobId: (scrape as any).jobId },
             );
+          } catch (error) {
+            if (error instanceof StillProcessingError) {
+              // nop
+            } else if (
+              error instanceof EngineError ||
+              error instanceof SiteError ||
+              error instanceof SiteRestrictionError ||
+              error instanceof SiteBlockNoRetryError ||
+              error instanceof SSLError ||
+              error instanceof DNSResolutionError ||
+              error instanceof ActionError ||
+              error instanceof UnsupportedFileError ||
+              error instanceof FEPageLoadFailed ||
+              error instanceof ProxySelectionError ||
+              error instanceof AddFeatureError
+            ) {
+              logger.debug("Fire-engine scrape job failed.", {
+                error,
+                jobId: (scrape as any).jobId,
+              });
+              throw error;
+            } else if (error instanceof AbortManagerThrownError) {
+              throw error;
+            } else {
+              errors.push(error);
+              logger.debug(
+                `An unexpeceted error occurred while calling checkStatus. Error counter is now at ${errors.length}.`,
+                { error, jobId: (scrape as any).jobId },
+              );
+            }
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } else {
+        status = scrape as FireEngineCheckStatusSuccess;
+      }
+
+      const wantsRawBase64 =
+        hasFormatOfType(meta.options.formats, "rawBase64") !== undefined;
+
+      if (!wantsRawBase64) {
+        await specialtyScrapeCheck(
+          logger.child({
+            method: "performFireEngineScrape/specialtyScrapeCheck",
+          }),
+          status.responseHeaders,
+          status,
+          meta.abort.asSignal(),
+          // Handoff downloads only admit large files when the FirePDF
+          // by-reference route can actually take them, and only up to the
+          // requesting team's large-PDF limit.
+          fireEngineHandoffEligible(meta)
+            ? largePdfLimitBytes(meta)
+            : PDF_DOWNLOAD_MAX_FILE_SIZE,
+          meta.imageOcrEnabled,
+        );
+      }
+
+      const contentType =
+        (Object.entries(status.responseHeaders ?? {}).find(
+          x => x[0].toLowerCase() === "content-type",
+        ) ?? [])[1] ?? "";
+
+      if (!wantsRawBase64 && contentType.includes("application/json")) {
+        status.content = await getInnerJson(status.content);
+      }
+
+      // Reference-shaped files (gcs_uri without content) belong to the
+      // specialty prefetch path above and never reach this inline-decode
+      // block; guard on `content` so one slipping through can't crash it.
+      if (status.file?.content !== undefined && !wantsRawBase64) {
+        const content = status.file.content;
+        delete status.file;
+        let buffer = Buffer.from(content, "base64");
+        // transparently decompress gzipped content
+        if (buffer.length >= 2 && buffer[0] === 0x1f && buffer[1] === 0x8b) {
+          try {
+            buffer = gunzipSync(buffer, {
+              maxOutputLength: MAX_GUNZIPPED_FILE_SIZE,
+            });
+          } catch (error) {
+            if (error instanceof RangeError) {
+              throw new UnsupportedFileError("File exceeds size limit");
+            }
+            throw new UnsupportedFileError("Failed to decompress gzip content");
           }
         }
-
-        await new Promise(resolve => setTimeout(resolve, 500));
+        status.content = buffer.toString("utf8"); // TODO: handle other encodings via Content-Type tag
       }
-    } else {
-      status = scrape as FireEngineCheckStatusSuccess;
-    }
 
-    const wantsRawBase64 =
-      hasFormatOfType(meta.options.formats, "rawBase64") !== undefined;
+      if (abTest.mode === "mirror") {
+        scheduleABComparison(
+          meta.url,
+          {
+            content: status.content,
+            pageStatusCode: status.pageStatusCode,
+          },
+          Date.now() - startTime,
+          abTest.mirrorPromise,
+          logger,
+        );
+      }
 
-    if (!wantsRawBase64) {
-      await specialtyScrapeCheck(
+      setSpanAttributes(span, {
+        "fire-engine.poll_count": pollCount,
+        "fire-engine.duration_ms": Date.now() - startTime,
+        "fire-engine.status_code": status.pageStatusCode,
+        "fire-engine.content_length": status.content?.length,
+        "fire-engine.has_screenshot": !!(
+          status.screenshots && status.screenshots.length > 0
+        ),
+        "fire-engine.has_pdf": !!(status as any).pdf,
+        "fire-engine.job_id": (scrape as any).jobId,
+      });
+
+      return status;
+    } finally {
+      // Job ownership starts after submission. Keep cleanup independent of
+      // request cancellation and of failures during polling or postprocessing.
+      fireEngineDelete(
         logger.child({
-          method: "performFireEngineScrape/specialtyScrapeCheck",
+          method: "performFireEngineScrape/fireEngineDelete",
         }),
-        status.responseHeaders,
-        status,
-        meta.abort.asSignal(),
-        // Handoff downloads only admit large files when the FirePDF
-        // by-reference route can actually take them, and only up to the
-        // requesting team's large-PDF limit.
-        fireEngineHandoffEligible(meta)
-          ? largePdfLimitBytes(meta)
-          : PDF_DOWNLOAD_MAX_FILE_SIZE,
-        meta.imageOcrEnabled,
-      );
+        (scrape as any).jobId,
+        mock,
+        undefined,
+        baseUrl,
+      ).catch(e => {
+        logger.error("Failed to delete job from Fire Engine", { error: e });
+      });
     }
-
-    const contentType =
-      (Object.entries(status.responseHeaders ?? {}).find(
-        x => x[0].toLowerCase() === "content-type",
-      ) ?? [])[1] ?? "";
-
-    if (!wantsRawBase64 && contentType.includes("application/json")) {
-      status.content = await getInnerJson(status.content);
-    }
-
-    // Reference-shaped files (gcs_uri without content) belong to the
-    // specialty prefetch path above and never reach this inline-decode
-    // block; guard on `content` so one slipping through can't crash it.
-    if (status.file?.content !== undefined && !wantsRawBase64) {
-      const content = status.file.content;
-      delete status.file;
-      let buffer = Buffer.from(content, "base64");
-      // transparently decompress gzipped content
-      if (buffer.length >= 2 && buffer[0] === 0x1f && buffer[1] === 0x8b) {
-        try {
-          buffer = gunzipSync(buffer, {
-            maxOutputLength: MAX_GUNZIPPED_FILE_SIZE,
-          });
-        } catch (error) {
-          if (error instanceof RangeError) {
-            throw new UnsupportedFileError("File exceeds size limit");
-          }
-          throw new UnsupportedFileError("Failed to decompress gzip content");
-        }
-      }
-      status.content = buffer.toString("utf8"); // TODO: handle other encodings via Content-Type tag
-    }
-
-    fireEngineDelete(
-      logger.child({
-        method: "performFireEngineScrape/fireEngineDelete",
-      }),
-      (scrape as any).jobId,
-      mock,
-      undefined,
-      baseUrl,
-    ).catch(e => {
-      logger.error("Failed to delete job from Fire Engine", { error: e });
-    });
-
-    if (abTest.mode === "mirror") {
-      scheduleABComparison(
-        meta.url,
-        {
-          content: status.content,
-          pageStatusCode: status.pageStatusCode,
-        },
-        Date.now() - startTime,
-        abTest.mirrorPromise,
-        logger,
-      );
-    }
-
-    setSpanAttributes(span, {
-      "fire-engine.poll_count": pollCount,
-      "fire-engine.duration_ms": Date.now() - startTime,
-      "fire-engine.status_code": status.pageStatusCode,
-      "fire-engine.content_length": status.content?.length,
-      "fire-engine.has_screenshot": !!(
-        status.screenshots && status.screenshots.length > 0
-      ),
-      "fire-engine.has_pdf": !!(status as any).pdf,
-      "fire-engine.job_id": (scrape as any).jobId,
-    });
-
-    return status;
   });
 }
 
