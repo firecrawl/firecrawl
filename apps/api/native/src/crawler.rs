@@ -323,6 +323,7 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
   );
 
   let mut result_links = Vec::new();
+  let mut seen_links = HashSet::new();
   let mut denial_reasons = HashMap::new();
 
   for link in data.links {
@@ -338,11 +339,7 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
       }
     };
 
-    let link = if is_internal_link(&url, &base_url) && strip_section_fragment(&mut url) {
-      url.to_string()
-    } else {
-      link
-    };
+    let stripped_fragment = is_internal_link(&url, &base_url) && strip_section_fragment(&mut url);
 
     let path = url.path();
     let url_str = url.as_str();
@@ -400,7 +397,14 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
         }
       }
 
-      result_links.push(link);
+      let accepted = if stripped_fragment {
+        url_str.to_string()
+      } else {
+        link
+      };
+      if seen_links.insert(accepted.clone()) {
+        result_links.push(accepted);
+      }
     } else {
       // EXTERNAL LINKS
       if is_social_media_or_email(url_str) {
@@ -1493,6 +1497,72 @@ mod tests {
     assert_eq!(
       result.links,
       vec!["https://example.com/hc/sections/1?page=2".to_string()]
+    );
+  }
+
+  #[test]
+  fn test_filter_links_keys_denials_by_input_link() {
+    let data = FilterLinksCall {
+      links: vec![
+        "https://example.com/docs/a#intro".to_string(),
+        "https://example.com/docs/a#usage".to_string(),
+        "https://example.com/docs/b".to_string(),
+      ],
+      limit: Some(2),
+      includes: vec![],
+      excludes: vec!["^/docs/a$".to_string()],
+      ignore_robots_txt: true,
+      robots_txt: "".to_string(),
+      max_depth: 10,
+      base_url: "https://example.com".to_string(),
+      initial_url: "https://example.com/docs".to_string(),
+      regex_on_full_url: false,
+      allow_backward_crawling: false,
+      allow_external_content_links: false,
+      allow_subdomains: false,
+      robots_user_agent: None,
+    };
+
+    let result = _filter_links(data).unwrap();
+    assert_eq!(result.links, vec!["https://example.com/docs/b".to_string()]);
+    assert_eq!(
+      result
+        .denial_reasons
+        .get("https://example.com/docs/a#intro"),
+      Some(&"EXCLUDE_PATTERN".to_string())
+    );
+  }
+
+  #[test]
+  fn test_filter_links_dedupes_anchor_variants() {
+    let data = FilterLinksCall {
+      links: vec![
+        "https://example.com/docs/a#intro".to_string(),
+        "https://example.com/docs/a#usage".to_string(),
+        "https://example.com/docs/b".to_string(),
+      ],
+      limit: Some(2),
+      includes: vec![],
+      excludes: vec![],
+      ignore_robots_txt: true,
+      robots_txt: "".to_string(),
+      max_depth: 10,
+      base_url: "https://example.com".to_string(),
+      initial_url: "https://example.com/docs".to_string(),
+      regex_on_full_url: false,
+      allow_backward_crawling: false,
+      allow_external_content_links: false,
+      allow_subdomains: false,
+      robots_user_agent: None,
+    };
+
+    let result = _filter_links(data).unwrap();
+    assert_eq!(
+      result.links,
+      vec![
+        "https://example.com/docs/a".to_string(),
+        "https://example.com/docs/b".to_string(),
+      ]
     );
   }
 }
