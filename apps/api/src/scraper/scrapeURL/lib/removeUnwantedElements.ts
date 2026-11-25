@@ -4,7 +4,6 @@ import { AnyNode, Cheerio, load } from "cheerio"; // rustified
 import { ScrapeOptions } from "../../../controllers/v2/types";
 import { transformHtml } from "@mendable/firecrawl-rs";
 import { logger } from "../../../lib/logger";
-import { queryOMCESignatures } from "../../../services/index";
 
 const excludeNonMainTags = [
   "header",
@@ -85,29 +84,10 @@ export const htmlTransform = async (
   scrapeOptions: ScrapeOptions,
   dropSignatures?: string[],
 ) => {
-  let omceSignatures: string[] | undefined =
+  const omceSignatures: string[] | undefined =
     dropSignatures && dropSignatures.length > 0
       ? [...dropSignatures]
       : undefined;
-
-  if (scrapeOptions.__experimental_omce) {
-    try {
-      const hostname =
-        scrapeOptions.__experimental_omceDomain || new URL(url).hostname;
-      const queried = await queryOMCESignatures(hostname);
-      logger.info("Got OMCE signatures", { signatures: queried.length });
-      omceSignatures = omceSignatures
-        ? [...new Set([...omceSignatures, ...queried])]
-        : queried;
-    } catch (error) {
-      logger.warn("Failed to get omce signatures.", {
-        error,
-        scrapeURL: url,
-        module: "scrapeURL",
-        method: "htmlTransform",
-      });
-    }
-  }
 
   try {
     return await transformHtml({

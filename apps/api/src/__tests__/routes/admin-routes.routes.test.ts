@@ -12,45 +12,13 @@ const { stub } = vi.hoisted(() => ({
 vi.mock("../../controllers/admin/redis-health", () => ({
   redisHealthController: stub("redis-health"),
 }));
-vi.mock("../../controllers/admin/check-fire-engine", () => ({
-  checkFireEngine: stub("feng-check"),
-}));
-vi.mock("../../controllers/admin/acuc-cache-clear", () => ({
-  acucCacheClearController: stub("acuc-cache-clear"),
-}));
-vi.mock("../../controllers/admin/ip-restriction-cache-clear", () => ({
-  ipRestrictionCacheClearController: stub("ip-restriction-cache-clear"),
-}));
-vi.mock("../../controllers/admin/key-restriction-cache-clear", () => ({
-  keyRestrictionCacheClearController: stub("key-restriction-cache-clear"),
-}));
 vi.mock("../../controllers/admin/concurrency-queue-backfill", () => ({
   concurrencyQueueBackfillController: stub("concurrency-queue-backfill"),
-}));
-vi.mock("../../controllers/admin/index-queue-prometheus", () => ({
-  indexQueuePrometheus: stub("index-queue-prometheus"),
-}));
-vi.mock("../../controllers/admin/precrawl", () => ({
-  triggerPrecrawl: stub("precrawl"),
 }));
 vi.mock("../../controllers/admin/metrics", () => ({
   metricsController: stub("metrics"),
   nuqMetricsController: stub("nuq-metrics"),
   nuqFdbMetricsController: stub("nuq-fdb-metrics"),
-}));
-vi.mock("../../controllers/admin/crawl-monitor", () => ({
-  crawlMonitorController: stub("crawl-monitor"),
-}));
-vi.mock("../../controllers/v2/f-search", () => ({
-  realtimeSearchController: stub("fsearch"),
-}));
-vi.mock("../../routes/shared", async importOriginal => ({
-  ...(await importOriginal<typeof import("../../routes/shared")>()),
-  authMiddleware: () => (_req: unknown, _res: unknown, next: () => void) =>
-    next(),
-  checkCreditsMiddleware:
-    () => (_req: unknown, _res: unknown, next: () => void) =>
-      next(),
 }));
 
 const CURRENT = "current-admin-key-0001";
@@ -59,17 +27,17 @@ const COUNTER = "firecrawl_admin_path_route_requests_total";
 
 const KEYED_ROUTES: Array<["get" | "post", string]> = [
   ["get", "redis-health"],
-  ["get", "feng-check"],
-  ["post", "acuc-cache-clear"],
-  ["post", "ip-restriction-cache-clear"],
-  ["post", "key-restriction-cache-clear"],
   ["post", "concurrency-queue-backfill"],
-  ["get", "index-queue-prometheus"],
-  ["get", "precrawl"],
   ["get", "metrics"],
   ["get", "nuq-metrics"],
   ["get", "nuq-fdb-metrics"],
-  ["post", "fsearch"],
+];
+
+const INTERNAL_ROUTES: Array<["get" | "post", string]> = [
+  ["get", "redis-health"],
+  ["get", "metrics"],
+  ["get", "nuq-metrics"],
+  ["get", "nuq-fdb-metrics"],
 ];
 
 async function adminApp(pathRoutes: boolean) {
@@ -80,11 +48,17 @@ async function adminApp(pathRoutes: boolean) {
   config.BULL_AUTH_KEY_PREVIOUS = PREVIOUS;
   config.BULL_AUTH_KEY_PATH_ROUTES = pathRoutes;
   const { logger } = await import("../../lib/logger.js");
-  const { adminRouter } = await import("../../routes/admin.js");
+  const { adminInternalRouter, adminRouter } = await import(
+    "../../routes/admin.js"
+  );
   const app = express();
   app.use(express.json());
   app.use(adminRouter);
-  return { app, logger };
+
+  const internalApp = express();
+  internalApp.use(express.json());
+  internalApp.use(adminInternalRouter);
+  return { app, internalApp, logger };
 }
 
 afterEach(() => {
@@ -105,24 +79,22 @@ describe("admin routes with the key in a header", () => {
     }
   });
 
-  it("serves crawl-monitor with either key in the admin key header", async () => {
-    const { app } = await adminApp(false);
-    for (const key of [CURRENT, PREVIOUS]) {
-      const response = await request(app)
-        .post("/admin/ops/crawl-monitor")
-        .set("x-firecrawl-admin-key", key);
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual({ route: "crawl-monitor" });
-    }
-    const missing = await request(app).post("/admin/ops/crawl-monitor");
-    expect(missing.status).toBe(401);
-  });
-
   it("refuses every keyed route under /admin/ops without the key", async () => {
     const { app } = await adminApp(false);
     for (const [method, route] of KEYED_ROUTES) {
       const response = await request(app)[method](`/admin/ops/${route}`);
       expect(response.status, route).toBe(401);
+    }
+  });
+});
+
+describe("internal admin routes", () => {
+  it("serves every core internal route without a key", async () => {
+    const { internalApp } = await adminApp(false);
+    for (const [method, route] of INTERNAL_ROUTES) {
+      const response = await request(internalApp)[method](`/admin/${route}`);
+      expect(response.status, route).toBe(200);
+      expect(response.body).toEqual({ route });
     }
   });
 });
@@ -174,10 +146,6 @@ describe("admin routes with the key in the path", () => {
       expect(response.body).toEqual({ route });
     }
 
-    const monitor = await request(app).post(`/admin/${CURRENT}/crawl-monitor`);
-    expect(monitor.status).toBe(200);
-    expect(monitor.body).toEqual({ route: "crawl-monitor" });
-
     const counted = await register.getSingleMetric(COUNTER)!.get();
     expect(counted.values).toContainEqual(
       expect.objectContaining({
@@ -187,6 +155,40 @@ describe("admin routes with the key in the path", () => {
     );
     expect(JSON.stringify(counted)).not.toContain(PREVIOUS);
     expect(JSON.stringify(info.mock.calls)).not.toContain(PREVIOUS);
+  });
+
+  it("supports an explicit bounded route label in adminPathKeyAuth", async () => {
+    vi.resetModules();
+    register.clear();
+    const { config } = await import("../../config.js");
+    config.BULL_AUTH_KEY = CURRENT;
+    config.BULL_AUTH_KEY_PREVIOUS = PREVIOUS;
+    const { adminPathKeyAuth } = await import("../../lib/admin-auth.js");
+
+    const app = express();
+    const pathRouter = express.Router({ mergeParams: true });
+    pathRouter.get(
+      "/custom-check",
+      adminPathKeyAuth("custom-check"),
+      (_req, res) => res.status(200).json({ ok: true }),
+    );
+    app.use("/admin/:adminKey", pathRouter);
+
+    const ok = await request(app)
+      .get(`/admin/${CURRENT}/custom-check`)
+      .set("User-Agent", "Prometheus/3.0");
+    expect(ok.status).toBe(200);
+
+    const bad = await request(app).get(`/admin/${CURRENT}x/custom-check`);
+    expect(bad.status).toBe(404);
+
+    const counted = await register.getSingleMetric(COUNTER)!.get();
+    expect(counted.values).toContainEqual(
+      expect.objectContaining({
+        labels: { route: "custom-check", caller: "prometheus" },
+        value: 1,
+      }),
+    );
   });
 
   it("answers 404 for a wrong key, as for an unknown path", async () => {

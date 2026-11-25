@@ -1,8 +1,5 @@
 import { Response } from "express";
-import { providerScrapeController } from "./scrape-alexandria";
-import { discoverTools, usOnlyToolsWarning } from "../../search/alexandria";
-import { config } from "../../config";
-import { timingSafeSecretEqual } from "../../lib/secret-compare";
+
 import { logger as _logger } from "../../lib/logger";
 import {
   Document,
@@ -21,42 +18,23 @@ import {
   TransportableError,
 } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
-import { checkPermissions } from "../../lib/permissions";
-import {
-  applySafeMode,
-  resolveSafeMode,
-  isLockdownZeroDataRetention,
-} from "../../lib/safe-mode";
-import {
-  actionTypesOf,
-  checkKeyFormatRestriction,
-  formatTypesOf,
-} from "../../lib/key-restriction";
 import { withSpan, setSpanAttributes, SpanKind } from "../../lib/otel-tracer";
 import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
-import { getJobPriority } from "../../lib/job-priority";
-import { logRequest } from "../../services/logging/log_job";
-import { externalRequestId } from "../../lib/external-request-id";
-import { requestContext } from "../../lib/request-context";
-import { service } from "../../service";
-import type { BillingMetadata } from "../../services/billing/types";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { currentLimits, resolveJobPriority } from "../../lib/limits";
 import {
-  adjustKeylessCredits,
-  keylessLimitBody,
-  logKeylessCreditUsage,
-  reserveKeylessCredits,
-} from "../../lib/keyless";
-import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
-import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
-import { resolveThreatProtection } from "../../lib/threat-protection/request";
-import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
-import { isAgentInteropSecretValid } from "../../lib/agent-interop";
-import { markAlexandriaActivity } from "../../lib/alexandria-activity";
-import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
-import { isUsOnly } from "../../lib/us-only";
+  contextThreatProtection,
+  requestContext,
+} from "../../lib/request-context";
+import type {} from "../../lib/billing-state";
+import {
+  finalizeResponse,
+  service,
+  type RequestContext,
+  type SettleOutcome,
+} from "../../service";
+import type { BillingMetadata } from "../../lib/billing-types";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -64,17 +42,11 @@ export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
   res: Response<ScrapeResponse>,
 ) {
-  if (req.body && "alexandria" in req.body)
-    return providerScrapeController(req, res);
-  // Resolved before the root span starts so the whole request trace stays
-  // unrecorded for zero-data-retention requests (see otel-tracer). Safe Mode
-  // lockdown implies ZDR, so fold it in here too — otherwise the rejection
-  // paths below would export the target URL on the root span.
+  const rawBody = req.body as Record<string, any> | undefined;
   const zeroDataRetentionTrace =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    req.ctx?.zeroDataRetention === true ||
     req.body?.zeroDataRetention === true ||
-    req.body?.lockdown === true ||
-    isLockdownZeroDataRetention(req.acuc?.flags, req.body?.safeMode);
+    rawBody?.lockdown === true;
 
   return withSpan(
     "api.scrape.request",
@@ -84,8 +56,12 @@ export async function scrapeController(
         (req as any).requestTiming?.startTime || new Date().getTime();
       const controllerStartTime = new Date().getTime();
 
-      const jobId = uuidv7();
-      const preNormalizedBody = { ...req.body };
+      const jobId = req.requestId ?? uuidv7();
+      const preNormalizedBody = (req.rawRequestBody as
+        | Partial<ScrapeRequest>
+        | undefined) ?? {
+        ...req.body,
+      };
 
       // Set initial span attributes
       setSpanAttributes(span, {
@@ -96,204 +72,71 @@ export async function scrapeController(
         "scrape.middleware_time_ms": controllerStartTime - middlewareStartTime,
       });
 
-      // Validation span
-      await withSpan("api.scrape.validate", async validateSpan => {
-        req.body = getV2RequestSchemas().scrape.parse(req.body);
-        setSpanAttributes(validateSpan, {
-          "validation.success": true,
-        });
-      });
-
-      const emitSafeModeRejection = (message: string) =>
-        emitRejectedScrapeActivityEvent({
-          scrapeId: jobId,
-          requestId: jobId,
-          endpoint: "scrape",
-          teamId: req.auth.team_id,
-          apiKeyId: req.acuc?.api_key_id ?? null,
-          url: req.body.url,
-          error: new TransportableError("SAFE_MODE_BLOCKED", message),
-          origin: req.body.origin ?? "api",
-          integration: req.body.integration,
-          zeroDataRetention: req.body.zeroDataRetention ?? false,
-        });
-
-      const safeMode = resolveSafeMode(
-        req.acuc?.flags,
-        req.body.safeMode,
-        req.body.url,
-      );
-      if (safeMode.error) {
-        setSpanAttributes(span, {
-          "scrape.error": safeMode.error,
-          "scrape.status_code": 403,
-        });
-        emitSafeModeRejection(safeMode.error);
-        return res.status(403).json({
-          success: false,
-          code: safeMode.code,
-          error: safeMode.error,
-        });
-      }
-      setSpanAttributes(span, {
-        "scrape.safe_mode": safeMode.safeMode !== undefined,
-        "scrape.safe_mode_bypassed": safeMode.bypassed === true,
-        "scrape.safe_mode_allowlisted": safeMode.allowlisted === true,
-      });
-
-      // Threat protection: resolve the effective policy (org config +
-      // per-request override). No-ops (null policy, zero I/O) for teams
-      // without the flag.
-      const threatProtection = await resolveThreatProtection({
-        teamId: req.auth.team_id,
-        orgId: req.acuc?.org_id ?? null,
-        flags: req.acuc?.flags ?? null,
-        override: req.body.threatProtection,
-        force: safeMode.safeMode?.domainControls === true,
-      });
-      if (threatProtection.error) {
-        setSpanAttributes(span, {
-          "scrape.error": threatProtection.error,
-          "scrape.status_code": 403,
-        });
-        if (safeMode.safeMode?.domainControls) {
-          emitSafeModeRejection(threatProtection.error);
-        }
-        return res.status(403).json({
-          success: false,
-          error: threatProtection.error,
-        });
-      }
-      // Permission check span
-      const permissions = await withSpan(
-        "api.scrape.check_permissions",
-        async permSpan => {
-          const perms = checkPermissions(req.body, req.acuc?.flags, {
-            threatProtectionOrgConfig: threatProtection.orgConfig,
-            safeMode: safeMode.safeMode ?? null,
+      if (!req.ctx) {
+        await withSpan("api.scrape.validate", async validateSpan => {
+          req.body = getV2RequestSchemas().scrape.parse(req.body);
+          setSpanAttributes(validateSpan, {
+            "validation.success": true,
           });
-          setSpanAttributes(permSpan, {
-            "permissions.success": !perms.error,
-            "permissions.error": perms.error,
-          });
-          return perms;
-        },
-      );
-
-      if (permissions.error) {
-        setSpanAttributes(span, {
-          "scrape.error": permissions.error,
-          "scrape.status_code": 403,
-        });
-        if (permissions.code === "SAFE_MODE_BLOCKED") {
-          emitSafeModeRejection(permissions.error);
-        }
-        return res.status(403).json({
-          success: false,
-          code: permissions.code,
-          error: permissions.error,
         });
       }
-
-      const keyRestriction = await checkKeyFormatRestriction(
-        formatTypesOf(req.body.formats),
-        actionTypesOf(req.body.actions),
-        req.acuc?.api_key_id,
-        req.acuc?.flags ?? null,
-      );
-      if (!keyRestriction.allowed) {
-        setSpanAttributes(span, {
-          "scrape.error": keyRestriction.error,
-          "scrape.status_code": keyRestriction.status,
-        });
-        return res.status(keyRestriction.status).json({
-          success: false,
-          error: keyRestriction.error,
-        });
-      }
-
-      if (
-        safeMode.safeMode?.lockdown &&
-        typeof preNormalizedBody.maxAge === "number"
-      ) {
-        req.body.maxAge = preNormalizedBody.maxAge;
-      }
-      applySafeMode(safeMode.safeMode, req.body);
+      const extBody = req.body as Record<string, any>;
 
       const zeroDataRetention =
-        getScrapeZDR(req.acuc?.flags) === "forced" ||
-        (req.body.zeroDataRetention ?? false) ||
-        (req.body.lockdown ?? false);
-      if (req.body.domainTools && zeroDataRetention)
-        return res.status(403).json({
-          success: false,
-          error: "Provider discovery does not support zero data retention.",
-        });
-      const billing: BillingMetadata = {
-        ...(req.body.__agentInterop
+        req.ctx?.zeroDataRetention ??
+        ((req.body.zeroDataRetention ?? false) || (extBody.lockdown ?? false));
+      const billing: BillingMetadata = req.ctx?.billing ?? {
+        ...(extBody.__agentInterop
           ? { endpoint: "agent" as const, jobId }
           : { endpoint: "scrape" as const, jobId }),
-        externalRequestId: externalRequestId(req),
         hostedMcp: req.auth.hostedMcp,
       };
-      const ctx = requestContext({
-        teamId: req.auth.team_id,
-        zeroDataRetention,
-        flags: req.acuc?.flags ?? null,
-        orgId: req.acuc?.org_id ?? null,
-        apiKeyId: req.acuc?.api_key_id ?? null,
-        billing,
-      });
+      const ctx: RequestContext = req.ctx
+        ? req.ctx.billing
+          ? req.ctx
+          : { ...req.ctx, billing }
+        : requestContext({
+            teamId: req.auth.team_id,
+            zeroDataRetention,
+            flags: req.acuc?.flags ?? null,
+            orgId: req.acuc?.org_id ?? null,
+            apiKeyId: req.acuc?.api_key_id ?? null,
+            billing,
+            concurrencyLimit: req.acuc?.concurrency_limit,
+            rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
+          });
       req.ctx = ctx;
 
-      if (
-        req.body.__agentInterop &&
-        config.AGENT_INTEROP_SECRET &&
-        !isAgentInteropSecretValid(req.body.__agentInterop.auth)
-      ) {
-        return res.status(403).json({
-          success: false,
-          error: "Invalid agent interop.",
-        });
-      } else if (req.body.__agentInterop && !config.AGENT_INTEROP_SECRET) {
-        return res.status(403).json({
-          success: false,
-          error: "Agent interop is not enabled.",
-        });
-      }
-
-      const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
-      const agentRequestId = req.body.__agentInterop?.requestId ?? null;
+      const shouldBill = extBody.__agentInterop?.shouldBill ?? true;
+      const agentRequestId = extBody.__agentInterop?.requestId ?? null;
       const boostConcurrency =
-        req.body.__agentInterop?.boostConcurrency ?? false;
-      const isDirectToBullMQ = timingSafeSecretEqual(
-        req.body.__searchPreviewToken,
-        config.SEARCH_PREVIEW_TOKEN,
-      );
-      const projectedKeylessCredits =
-        shouldBill && !isDirectToBullMQ
-          ? projectScrapeCredits(
-              req.body,
-              req.acuc?.flags ?? null,
-              zeroDataRetention,
-            )
-          : 0;
-      let reservedKeylessCredits = 0;
-      let reconciledKeylessCredits = false;
-
-      if (projectedKeylessCredits > 0) {
-        const reservation = await reserveKeylessCredits(
-          req.auth.team_id,
-          projectedKeylessCredits,
-        );
-        if (!reservation.ok) {
-          applyAgentAuthDiscoveryHeader(res);
-          return res
-            .status(429)
-            .json(await keylessLimitBody(req.auth.team_id, "v2_scrape", req));
+        extBody.__agentInterop?.boostConcurrency ?? false;
+      const reservation = await service.modules.billing.authorize({
+        caller: req.caller ?? { teamId: req.auth.team_id },
+        operation: "scrape",
+        stage: "reserve",
+        ctx,
+        state: {
+          req,
+          shouldBill,
+          scrapeOptions: req.body,
+          endpoint: "v2_scrape",
+        },
+      });
+      if (!reservation.ok) {
+        if (reservation.refusal.headers) {
+          for (const [name, value] of Object.entries(
+            reservation.refusal.headers,
+          )) {
+            res.setHeader(name, value);
+          }
         }
-        reservedKeylessCredits = projectedKeylessCredits;
+        return res
+          .status(reservation.refusal.status)
+          .json(reservation.refusal.body as ScrapeResponse);
       }
+      const billingHandle = reservation.handle;
+      let settledBilling = false;
 
       const logger = _logger.child({
         method: "scrapeController",
@@ -305,13 +148,27 @@ export async function scrapeController(
         zeroDataRetention,
       });
 
-      const middlewareTime = controllerStartTime - middlewareStartTime;
+      const settleBilling = async (outcome: SettleOutcome) => {
+        if (billingHandle === undefined || settledBilling) return;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            await service.modules.billing.settle?.(billingHandle, outcome);
+            settledBilling = true;
+            return;
+          } catch (settleError) {
+            if (attempt === 1) {
+              logger.error("Failed to settle billing reservation", {
+                teamId: req.auth.team_id,
+                jobId,
+                ok: outcome.ok,
+                error: settleError,
+              });
+            }
+          }
+        }
+      };
 
-      if (safeMode.bypassed) {
-        logger.info("Safe Mode bypassed by request", {
-          apiKeyId: req.acuc?.api_key_id,
-        });
-      }
+      const middlewareTime = controllerStartTime - middlewareStartTime;
 
       logger.debug("Scrape " + jobId + " starting", {
         version: "v2",
@@ -324,20 +181,19 @@ export async function scrapeController(
       let logRequestPromise: Promise<any> | undefined = undefined;
 
       if (!agentRequestId) {
-        logRequestPromise = logRequest({
-          id: jobId,
-          kind: "scrape",
-          api_version: "v2",
-          external_request_id: externalRequestId(req),
-          team_id: req.auth.team_id,
-          origin: req.body.origin ?? "api",
-          integration: req.body.integration,
-          target_hint: req.body.url,
-          zeroDataRetention: zeroDataRetention || false,
-          api_key_id: req.acuc?.api_key_id ?? null,
-        }).catch(err =>
-          logger.warn("Background request log failed", { error: err, jobId }),
-        );
+        logRequestPromise = service.modules.jobStore
+          .register({
+            id: jobId,
+            kind: "scrape",
+            ctx,
+            clientOrigin: req.body.origin ?? "api",
+          })
+          .catch(err =>
+            logger.error("Background job registration failed", {
+              error: err,
+              jobId,
+            }),
+          );
       }
 
       setSpanAttributes(span, {
@@ -373,11 +229,13 @@ export async function scrapeController(
         }
         req.on("close", () => aborter.abort());
 
-        const baseConcurrency =
-          req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
-        const concurrency = boostConcurrency
-          ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST
-          : baseConcurrency;
+        const baseConcurrency = await currentLimits().concurrency(ctx);
+        const concurrency =
+          baseConcurrency === null
+            ? null
+            : boostConcurrency
+              ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST
+              : baseConcurrency;
 
         doc = await teamConcurrencySemaphore.withSemaphore(
           req.auth.team_id,
@@ -386,10 +244,8 @@ export async function scrapeController(
           aborter.signal,
           timeout ?? 60_000,
           async limited => {
-            const jobPriority = await getJobPriority({
-              team_id: req.auth.team_id,
-              acuc: req.acuc,
-              basePriority: 10,
+            const jobPriority = await resolveJobPriority(ctx, 10, error => {
+              logger.error("Failed to determine job priority", { error });
             });
 
             lockTime = Date.now() - lockStart;
@@ -411,6 +267,7 @@ export async function scrapeController(
                   "wait.job_id": jobId,
                 });
 
+                const threatProtection = contextThreatProtection(ctx);
                 const job: NuQJob<ScrapeJobData> = {
                   id: jobId,
 
@@ -426,18 +283,16 @@ export async function scrapeController(
                       ...req.body,
                       ...((req.body as any).__experimental_cache
                         ? {
-                            maxAge: req.body.maxAge ?? 4 * 60 * 60 * 1000, // 4 hours
+                            maxAge: extBody.maxAge ?? 4 * 60 * 60 * 1000, // 4 hours
                           }
                         : {}),
                     },
                     internalOptions: {
+                      ctx,
                       teamId: req.auth.team_id,
-                      saveScrapeResultToGCS: process.env
-                        .GCS_FIRE_ENGINE_BUCKET_NAME
-                        ? true
-                        : false,
                       unnormalizedSourceURL: preNormalizedBody.url,
-                      bypassBilling: isDirectToBullMQ || !shouldBill,
+                      bypassBilling:
+                        reservation.bypassBilling === true || !shouldBill,
                       zeroDataRetention,
                       ...(req.headers["x-firecrawl-work-contact-only"] ===
                       "true"
@@ -447,11 +302,10 @@ export async function scrapeController(
                       orgId: req.acuc?.org_id ?? null,
                       teamConcurrency: baseConcurrency,
                       agentIndexOnly: (req as any).agentIndexOnly ?? false,
-                      threatProtection: threatProtection.policy ?? undefined,
-                      safeMode: safeMode.allowlisted
-                        ? undefined
-                        : safeMode.safeMode,
-                      safeModeBypassed: safeMode.bypassed === true,
+                      // Rolling-deploy compatibility dual-write alongside the ctx fallback.
+                      ...(threatProtection !== undefined
+                        ? { threatProtection }
+                        : {}),
                     },
                     skipNuq: true,
                     origin,
@@ -461,7 +315,7 @@ export async function scrapeController(
                     zeroDataRetention,
                     apiKeyId: req.acuc?.api_key_id ?? null,
                     concurrencyLimited: limited,
-                    keylessReserved: reservedKeylessCredits > 0,
+                    keylessReserved: billingHandle !== undefined,
                     requestId: agentRequestId ?? undefined,
                     logRequestPromise: logRequestPromise,
                   },
@@ -479,14 +333,10 @@ export async function scrapeController(
 
             return doc;
           },
+          ctx,
         );
       } catch (e) {
-        if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
-          reconciledKeylessCredits = true;
-          adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
-            () => {},
-          );
-        }
+        void settleBilling({ ok: false });
 
         const timeoutErr =
           isTransportableError(e) &&
@@ -634,17 +484,10 @@ export async function scrapeController(
         }
       }
 
-      if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
-        reconciledKeylessCredits = true;
-        const actualKeylessCredits = doc?.metadata?.creditsUsed ?? 0;
-        adjustKeylessCredits(
-          req.auth.team_id,
-          actualKeylessCredits - reservedKeylessCredits,
-        ).catch(() => {});
-        logKeylessCreditUsage(req.auth.team_id, actualKeylessCredits).catch(
-          () => {},
-        );
-      }
+      await settleBilling({
+        ok: true,
+        charged: doc?.metadata?.creditsUsed,
+      });
 
       const totalRequestTime = new Date().getTime() - middlewareStartTime;
       const controllerTime = new Date().getTime() - controllerStartTime;
@@ -661,17 +504,23 @@ export async function scrapeController(
         "scrape.document.error": doc?.metadata?.error,
       });
 
+      const rawFormats = (req.body.formats ?? []) as Array<{
+        type: string;
+        modes?: string[];
+      }>;
       let usedLlm =
-        !!hasFormatOfType(req.body.formats, "json") ||
-        !!hasFormatOfType(req.body.formats, "summary") ||
-        !!hasFormatOfType(req.body.formats, "branding") ||
-        !!hasFormatOfType(req.body.formats, "question") ||
-        !!hasFormatOfType(req.body.formats, "highlights") ||
-        !!hasFormatOfType(req.body.formats, "query") ||
-        req.body.checkPromptInjection;
+        rawFormats.some(
+          f =>
+            f.type === "json" ||
+            f.type === "summary" ||
+            f.type === "branding" ||
+            f.type === "question" ||
+            f.type === "highlights" ||
+            f.type === "query",
+        ) || req.body.checkPromptInjection;
 
       if (!usedLlm) {
-        const ct = hasFormatOfType(req.body.formats, "changeTracking");
+        const ct = rawFormats.find(f => f.type === "changeTracking");
 
         if (ct && ct.modes?.includes("json")) {
           usedLlm = true;
@@ -696,58 +545,28 @@ export async function scrapeController(
         concurrencyLimited,
         concurrencyQueueDurationMs: lockTime || undefined,
       });
-      const tools =
-        req.body.domainTools && config.FIRE_EXCHANGE_URL
-          ? await discoverTools(
-              {
-                teamId: req.auth.team_id,
-                connectors: req.acuc?.flags?.exchangeRetrieve === true,
-                usOnly: isUsOnly(req.acuc?.flags),
-                toolDetail: req.body.toolDetail,
-                urls: [
-                  ...new Set(
-                    [
-                      req.body.url,
-                      doc!.metadata?.sourceURL,
-                      doc!.metadata?.url,
-                    ].filter((u): u is string => typeof u === "string"),
-                  ),
-                ],
-                limit: 24,
-                timeoutMs: 10000,
-              },
-              logger,
-            ).catch(error => {
-              logger.warn("Domain tool discovery failed", { error });
-              return undefined;
-            })
-          : undefined;
-      if (tools) markAlexandriaActivity(req.auth.team_id);
-      const toolsWarning = [
-        tools?.warning,
-        tools?.usOnlyExcluded
-          ? usOnlyToolsWarning(tools.usOnlyExcluded)
-          : undefined,
-      ]
-        .filter(Boolean)
-        .join(" ");
 
-      return res.status(200).json({
-        success: true,
-        data: {
-          ...doc!,
-          metadata: {
-            ...doc!.metadata,
-            concurrencyLimited,
-            concurrencyQueueDurationMs: concurrencyLimited
-              ? lockTime || 0
-              : undefined,
-          },
-          ...(tools ? { tools: tools.items } : {}),
+      const responseDocument: Document = {
+        ...doc!,
+        metadata: {
+          ...doc!.metadata,
+          concurrencyLimited,
+          concurrencyQueueDurationMs: concurrencyLimited
+            ? lockTime || 0
+            : undefined,
         },
-        ...(toolsWarning ? { warning: toolsWarning } : {}),
-        scrape_id: origin?.includes("website") ? jobId : undefined,
-      });
+      };
+      const payload = await finalizeResponse(
+        req,
+        "scrape",
+        {
+          success: true,
+          data: responseDocument,
+          scrape_id: origin?.includes("website") ? jobId : undefined,
+        },
+        [responseDocument],
+      );
+      return res.status(200).json(payload as ScrapeResponse);
     },
     {
       attributes: {

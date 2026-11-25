@@ -2,7 +2,7 @@ import { diag, DiagLogLevel, type DiagLogger } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { config } from "./config";
 import { logger } from "./lib/logger";
-import { createTracerProvider } from "./lib/otel-tracer";
+import { createTracerProvider, samplerFromEnv } from "./lib/otel-tracer";
 import type { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 
 // Imported for its side effects by every entry point, before anything that
@@ -33,10 +33,19 @@ if (endpoint) {
     exporter: new OTLPTraceExporter(),
     serviceName,
     serviceInstanceId: config.NUQ_POD_NAME,
+    sampler: samplerFromEnv(
+      config.OTEL_TRACES_SAMPLER,
+      config.OTEL_TRACES_SAMPLER_ARG,
+    ),
   });
   provider.register();
 
-  otelLogger.info("OpenTelemetry tracing enabled", { endpoint, serviceName });
+  otelLogger.info("OpenTelemetry tracing enabled", {
+    endpoint,
+    serviceName,
+    sampler: config.OTEL_TRACES_SAMPLER ?? "parentbased_always_on",
+    samplerArg: config.OTEL_TRACES_SAMPLER_ARG,
+  });
 }
 
 /**

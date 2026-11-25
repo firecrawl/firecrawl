@@ -122,18 +122,10 @@ const adminPathRouteRequests = new Counter({
 
 const ADMIN_PATH_ROUTE_NAMES: ReadonlySet<string> = new Set([
   "redis-health",
-  "acuc-cache-clear",
-  "ip-restriction-cache-clear",
-  "key-restriction-cache-clear",
-  "feng-check",
-  "index-queue-prometheus",
-  "precrawl",
   "metrics",
   "nuq-metrics",
   "nuq-fdb-metrics",
-  "fsearch",
   "concurrency-queue-backfill",
-  "crawl-monitor",
 ]);
 
 function callerOf(req: Request): string {
@@ -148,8 +140,11 @@ function callerOf(req: Request): string {
  * Checks the `:adminKey` path segment with the same check as the header forms
  * and counts the use. A wrong key leaves the router, so it answers 404 like an
  * unknown path. Use inside a router created with `mergeParams: true`.
+ *
+ * Pass a fixed, bounded `route` label when registering extension routes so
+ * Prometheus metric cardinality stays bounded.
  */
-export function adminPathKeyAuth(route?: "queues") {
+export function adminPathKeyAuth(route?: string) {
   return (req: Request, res: Response, next: NextFunction) => {
     const params = req.params as Record<string, string | undefined>;
     const matched = matchAdminKey(params.adminKey ?? null);

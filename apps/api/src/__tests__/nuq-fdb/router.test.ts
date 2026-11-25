@@ -2,6 +2,10 @@ import { randomUUID } from "crypto";
 import { vi } from "vitest";
 import { config } from "../../config";
 import { redisEvictConnection } from "../../services/redis";
+import * as queueService from "../../services/queue-service";
+import { requestContext } from "../../lib/request-context";
+import { noLimits } from "../../service/defaults";
+import { testService, withService } from "../../service/testing";
 import {
   fdbQueueEnabled,
   isFdbTeam,
@@ -26,17 +30,14 @@ import {
 const describeIf = config.FDB_CLUSTER_FILE ? describe : describe.skip;
 
 const prevNuqBackend = config.NUQ_BACKEND;
-const prevDbAuth = config.USE_DB_AUTHENTICATION;
 
 describeIf("NuQ router (forced FDB mode)", () => {
   beforeAll(() => {
     config.NUQ_BACKEND = "fdb";
-    config.USE_DB_AUTHENTICATION = false; // self-hosted: unlimited concurrency
   });
 
   afterAll(async () => {
     config.NUQ_BACKEND = prevNuqBackend;
-    config.USE_DB_AUTHENTICATION = prevDbAuth;
     // forced mode writes into the real "scrape"/"crawl_finished" queue
     // namespaces; wipe them so reruns and other suites start clean
     const fdb = getFdb();
@@ -318,5 +319,61 @@ describeIf("NuQ router (forced FDB mode)", () => {
     // double release is a no-op
     await mirrorExternalSlotRelease(teamId, holder);
     expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(0);
+  });
+
+  test("external slot release follows recorded FDB backend when settlement omits context", async () => {
+    const forcedBackend = config.NUQ_BACKEND;
+    const markers = new Map<string, string>();
+    const fakeRedis = {
+      zcount: vi.fn(async () => 0),
+      set: vi.fn(async (key: string, value: string) => {
+        markers.set(key, value);
+        return "OK";
+      }),
+      get: vi.fn(async (key: string) => markers.get(key) ?? null),
+      del: vi.fn(async (key: string) => (markers.delete(key) ? 1 : 0)),
+      zrem: vi.fn(async () => 0),
+    };
+    const redisSpy = vi
+      .spyOn(queueService, "getRedisConnection")
+      .mockReturnValue(fakeRedis as any);
+    config.NUQ_BACKEND = "pg";
+    try {
+      const limits = {
+        ...noLimits(),
+        queueBackend: (ctx: { apiKeyId?: number | null }) =>
+          ctx.apiKeyId === 999 ? ("fdb" as const) : undefined,
+      };
+      await withService(
+        testService(
+          {},
+          { core: { name: "core" }, logger: { error: () => {} } },
+          { limits },
+        ),
+        async () => {
+          const teamId = randomUUID();
+          const holder = randomUUID();
+          const ctx = requestContext({
+            teamId,
+            zeroDataRetention: false,
+            apiKeyId: 999,
+          });
+          expect(
+            await reserveExternalSlot(teamId, holder, 30_000, 10, ctx),
+          ).toBe(true);
+          expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(1);
+          expect(markers.size).toBe(1);
+
+          // Settlement runs without the original request context; the recorded
+          // backend marker still routes the release to FDB.
+          await mirrorExternalSlotRelease(teamId, holder);
+          expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(0);
+          expect(markers.size).toBe(0);
+        },
+      );
+    } finally {
+      config.NUQ_BACKEND = forcedBackend;
+      redisSpy.mockRestore();
+    }
   });
 });

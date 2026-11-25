@@ -2,21 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const startupMocks = vi.hoisted(() => ({
   initializeEngineForcing: vi.fn(),
-  warmExchangeCatalog: vi.fn(),
 }));
 
 vi.mock("../scraper/WebScraper/utils/engine-forcing", () => ({
   initializeEngineForcing: startupMocks.initializeEngineForcing,
 }));
 
-vi.mock("../lib/exchange", () => ({
-  warmExchangeCatalog: startupMocks.warmExchangeCatalog,
-}));
-
 import { initializeApiStartupDependencies } from "../lib/api-startup";
 import { logger } from "../lib/logger";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
-import { bountyBlocklistMiddleware } from "../routes/exchange-blocklist";
 import { blocklistMiddleware } from "../routes/shared";
 import { defaultModules, noBlocklist } from "./defaults";
 import type { BlocklistModule } from "./modules";
@@ -60,31 +54,8 @@ function runBlocklistMiddleware(
   });
 }
 
-function runBountyBlocklistMiddleware(
-  req: Record<string, unknown>,
-): Promise<{ next: true } | { status: number; body: unknown }> {
-  return new Promise((resolve, reject) => {
-    let statusCode = 200;
-    const res: any = {
-      headersSent: false,
-      status(code: number) {
-        statusCode = code;
-        return res;
-      },
-      json(body: unknown) {
-        res.headersSent = true;
-        resolve({ status: statusCode, body });
-        return res;
-      },
-    };
-    bountyBlocklistMiddleware(req as any, res, (err?: unknown) =>
-      err ? reject(err) : resolve({ next: true }),
-    );
-  });
-}
-
 describe("blocklist module integration", () => {
-  it("allows requests through blocklistMiddleware and bountyBlocklistMiddleware under noBlocklist()", async () => {
+  it("allows requests through blocklistMiddleware under noBlocklist()", async () => {
     const svc = testService(defaultModules(), parts);
 
     await withService(svc, async () => {
@@ -92,14 +63,6 @@ describe("blocklist module integration", () => {
         runBlocklistMiddleware({
           body: { url: "https://example.com/page", origin: "api" },
           acuc: { team_id: "team-1", org_id: "org-1", flags: {} },
-        }),
-      ).resolves.toEqual({ next: true });
-
-      await expect(
-        runBountyBlocklistMiddleware({
-          body: { title: "Scrape example.com", description: "Daily data" },
-          auth: { team_id: "team-1" },
-          acuc: { org_id: "org-1", flags: {} },
         }),
       ).resolves.toEqual({ next: true });
     });
@@ -198,61 +161,10 @@ describe("blocklist module integration", () => {
     );
   });
 
-  it("blocks matching domains through bountyBlocklistMiddleware with null flags and exchange-bounty origin", async () => {
-    const isBlocked = vi.fn(
-      (url: string) => new URL(url).hostname === "blocked.example",
-    );
-    const customBlocklist: BlocklistModule = {
-      ...noBlocklist(),
-      isBlocked,
-    };
-
-    await withService(
-      testService(defaultModules(), parts, { blocklist: customBlocklist }),
-      async () => {
-        const res = await runBountyBlocklistMiddleware({
-          body: {
-            title: "Collect data from blocked.example",
-            description: "Also check allowed.example",
-          },
-          auth: { team_id: "team-1" },
-          acuc: {
-            org_id: "org-1",
-            flags: { unblockedDomains: ["blocked.example"] },
-          },
-        });
-
-        expect(res).toEqual({
-          status: 403,
-          body: {
-            success: false,
-            error: {
-              code: "bounty_domain_blocked",
-              message:
-                "Bounties cannot be published for blocked domains: blocked.example.",
-            },
-          },
-        });
-        expect(isBlocked).toHaveBeenCalledWith(
-          "https://blocked.example/",
-          expect.objectContaining({
-            teamId: "team-1",
-            orgId: "org-1",
-            flags: null,
-          }),
-          { origin: "exchange-bounty" },
-        );
-      },
-    );
-  });
-
   it("awaits blocklist.init() in initializeApiStartupDependencies() before starting other API dependencies", async () => {
     const order: string[] = [];
     startupMocks.initializeEngineForcing.mockImplementation(() => {
       order.push("engine-forcing");
-    });
-    startupMocks.warmExchangeCatalog.mockImplementation(() => {
-      order.push("exchange-catalog");
     });
 
     const okService = createService(
@@ -284,12 +196,7 @@ describe("blocklist module integration", () => {
     await expect(
       run(okService, "api", "/app/main.js"),
     ).resolves.toBeUndefined();
-    expect(order).toEqual([
-      "init:start",
-      "init:done",
-      "engine-forcing",
-      "exchange-catalog",
-    ]);
+    expect(order).toEqual(["init:start", "init:done", "engine-forcing"]);
 
     replaceService(undefined);
     vi.clearAllMocks();
@@ -330,6 +237,5 @@ describe("blocklist module integration", () => {
       { error: initError },
     );
     expect(startupMocks.initializeEngineForcing).not.toHaveBeenCalled();
-    expect(startupMocks.warmExchangeCatalog).not.toHaveBeenCalled();
   });
 });
