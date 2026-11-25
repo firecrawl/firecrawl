@@ -45,7 +45,6 @@ export {
   sniffImageContentTypeFromBase64,
 } from "../lib/image-formats";
 export {
-  checkAndUpdateURL,
   checkAndUpdateURLForMap,
   checkUrl,
   isSameDomain,

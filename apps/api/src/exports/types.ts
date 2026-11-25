@@ -39,11 +39,7 @@ export {
   type TokenUsage,
 } from "../controllers/v2/types";
 export type {
-  Document as V0Document,
-  ExtractorOptions,
-  PageOptions,
   ScrapeActionContent,
-  SearchOptions,
   SearchResult,
   SearchResultCategoriesBySource,
   SearchResultCountsBySource,
