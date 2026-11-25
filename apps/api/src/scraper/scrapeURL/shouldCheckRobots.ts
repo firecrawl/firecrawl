@@ -6,10 +6,13 @@ import type { RequestContext } from "../../service/request-context";
 // ESM-heavy module graph.
 export function shouldCheckRobots(
   options: { lockdown?: boolean },
-  ctx?: Pick<RequestContext, "checkRobotsOnScrape" | "lockdown">,
+  ctx?: Pick<RequestContext, "checkRobotsOnScrape" | "lockdown" | "flags">,
 ): boolean {
   if (options.lockdown || ctx?.lockdown) {
     return false;
   }
-  return ctx?.checkRobotsOnScrape === true;
+  return (
+    ctx?.checkRobotsOnScrape === true ||
+    ctx?.flags?.checkRobotsOnScrape === true
+  );
 }

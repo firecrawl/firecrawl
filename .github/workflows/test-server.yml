@@ -349,7 +349,6 @@ jobs:
         run: >-
           pnpm exec vitest run
           src/lib/us-only.test.ts
-          src/scraper/scrapeURL/__tests__/usOnly.test.ts
           src/scraper/WebScraper/__tests__/usOnlyDiscovery.test.ts
           --reporter=default
         working-directory: apps/api

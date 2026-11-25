@@ -1,5 +1,6 @@
 import express from "express";
 import multer from "multer";
+import { ZodError } from "zod";
 import { RateLimiterMode } from "../types";
 import expressWs from "express-ws";
 import { searchController } from "../controllers/v2/search";
@@ -29,14 +30,12 @@ import { crawlStatusWSController } from "../controllers/v2/crawl-status-ws";
 import {
   authMiddleware as sharedAuthMiddleware,
   checkCreditsMiddleware,
-  blocklistMiddleware,
   restrictedOptionsCountryCheck,
   idempotencyMiddleware,
   requestTimingMiddleware,
   wrap,
   isValidJobId,
   validateJobIdParam,
-  inferIntegrationMiddleware,
 } from "./shared";
 import { queueStatusController } from "../controllers/v2/queue-status";
 import { openRequest, resolveRequestContext, service } from "../service";
@@ -111,6 +110,7 @@ v2Router.post(
     allowKeyless: true,
     allowAgentManagedKey: true,
   }),
+  restrictedOptionsCountryCheck,
   openRequest("search", {
     authorizeState: { mcpCredits: true },
     parse: rawBody => {
@@ -123,6 +123,16 @@ v2Router.post(
         return service.schemas.search.parse(rest);
       }
       return service.schemas.search.parse(rawBody);
+    },
+    onParseError: (error, _req, res) => {
+      if (error instanceof ZodError) {
+        res.status(400).json({
+          success: false,
+          error: "Invalid request body",
+          details: error.issues,
+        });
+        return true;
+      }
     },
   }),
   wrap(searchController),
@@ -137,6 +147,7 @@ v2Router.get(
 v2Router.post(
   "/parse/upload-url",
   authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
+  restrictedOptionsCountryCheck,
   resolveRequestContext("parse-upload-url"),
   wrap(parseUploadUrlController),
 );
@@ -151,6 +162,7 @@ v2Router.put(
 v2Router.post(
   "/parse",
   authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
+  restrictedOptionsCountryCheck,
   parsePayloadMiddleware,
   openRequest("parse", {
     units: 1,
@@ -166,6 +178,7 @@ v2Router.post(
     allowKeyless: true,
     allowAgentManagedKey: true,
   }),
+  restrictedOptionsCountryCheck,
   openRequest("scrape", {
     units: 1,
     authorizeState: { mcpCredits: true },
@@ -184,6 +197,7 @@ v2Router.get(
 v2Router.post(
   "/batch/scrape",
   authMiddleware(RateLimiterMode.Scrape, { allowAgentManagedKey: true }),
+  restrictedOptionsCountryCheck,
   openRequest("batchScrape", {
     authorizeState: { mcpCredits: true },
     blocklist: "none",
@@ -204,6 +218,7 @@ v2Router.post(
 v2Router.post(
   "/crawl",
   authMiddleware(RateLimiterMode.Crawl),
+  restrictedOptionsCountryCheck,
   openRequest("crawl", {
     authorizeState: { mcpCredits: true },
   }),

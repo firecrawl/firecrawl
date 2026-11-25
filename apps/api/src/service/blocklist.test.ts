@@ -2,15 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const startupMocks = vi.hoisted(() => ({
   initializeEngineForcing: vi.fn(),
-  warmExchangeCatalog: vi.fn(),
 }));
 
 vi.mock("../scraper/WebScraper/utils/engine-forcing", () => ({
   initializeEngineForcing: startupMocks.initializeEngineForcing,
-}));
-
-vi.mock("../lib/exchange", () => ({
-  warmExchangeCatalog: startupMocks.warmExchangeCatalog,
 }));
 
 import { initializeApiStartupDependencies } from "../lib/api-startup";
@@ -171,9 +166,6 @@ describe("blocklist module integration", () => {
     startupMocks.initializeEngineForcing.mockImplementation(() => {
       order.push("engine-forcing");
     });
-    startupMocks.warmExchangeCatalog.mockImplementation(() => {
-      order.push("exchange-catalog");
-    });
 
     const okService = createService(
       {
@@ -204,12 +196,7 @@ describe("blocklist module integration", () => {
     await expect(
       run(okService, "api", "/app/main.js"),
     ).resolves.toBeUndefined();
-    expect(order).toEqual([
-      "init:start",
-      "init:done",
-      "engine-forcing",
-      "exchange-catalog",
-    ]);
+    expect(order).toEqual(["init:start", "init:done", "engine-forcing"]);
 
     replaceService(undefined);
     vi.clearAllMocks();
@@ -250,6 +237,5 @@ describe("blocklist module integration", () => {
       { error: initError },
     );
     expect(startupMocks.initializeEngineForcing).not.toHaveBeenCalled();
-    expect(startupMocks.warmExchangeCatalog).not.toHaveBeenCalled();
   });
 });

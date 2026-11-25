@@ -117,6 +117,15 @@ export interface OpenRequestOptions {
   /** Optional parser overriding the default `service.schemas[kind]` parse. */
   parse?: (rawBody: unknown) => unknown;
   /**
+   * Optional handler invoked when body parsing throws. Returning `true` (or
+   * writing a response) stops propagation to Express error middleware.
+   */
+  onParseError?: (
+    error: unknown,
+    req: Request,
+    res: Response,
+  ) => boolean | void;
+  /**
    * Whether `openRequest` runs the single-URL blocklist check when the policy
    * module has not already evaluated blocklist rules. Defaults to `"single"`
    * for `scrape`, `crawl`, and `map`, and `"none"` for `parse`, `search`, and
@@ -197,7 +206,18 @@ export function openRequest(
       const id = req.requestId ?? uuidv7();
       req.requestId = id;
 
-      const parsedBody = parseBodyForKind(kind, rawBody, options?.parse);
+      let parsedBody: unknown;
+      try {
+        parsedBody = parseBodyForKind(kind, rawBody, options?.parse);
+      } catch (error) {
+        if (
+          options?.onParseError?.(error, req, res) === true ||
+          res.headersSent
+        ) {
+          return;
+        }
+        throw error;
+      }
 
       const admission = await service.modules.policy.admit({
         kind,

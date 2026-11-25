@@ -417,7 +417,7 @@ export async function performQuery(
     return document;
   }
 
-  if (meta.ctx.usOnly || meta.ctx.flags?.usOnly) {
+  if (meta.ctx?.usOnly || meta.ctx?.flags?.usOnly) {
     addWarning(
       document,
       "Query mode is not supported for teams restricted to US-only processing.",

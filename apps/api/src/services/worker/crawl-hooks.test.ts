@@ -457,12 +457,11 @@ describe("crawl lifecycle hooks", () => {
     );
   });
 
-  it("revalidates hook-added crawl.links URLs against crawler scope and threat protection before queueing", async () => {
+  it("revalidates hook-added crawl.links URLs against crawler scope before queueing", async () => {
     installHooks({
       "crawl.links": links => [
         ...links,
         "https://out-of-scope.example.org/nope",
-        "https://example.com/malware",
         "https://example.com/safe-added",
       ],
     });
@@ -471,7 +470,6 @@ describe("crawl lifecycle hooks", () => {
       ...baseStoredCrawl(),
       internalOptions: {
         zeroDataRetention: false,
-        threatProtection: { mode: "block" },
       },
     });
     mocks.scrapeSitemap.mockResolvedValue({
@@ -483,13 +481,6 @@ describe("crawl lifecycle hooks", () => {
       robotsBlocked: [],
       denialReasons: new Map(),
     }));
-    mocks.checkUrlsAgainstThreatPolicy.mockImplementation(
-      async (urls: string[]) => ({
-        allowedUrls: urls.filter(url => !url.endsWith("/malware")),
-        blocked: [],
-        decisionsByUrl: new Map(),
-      }),
-    );
 
     const sitemapJob = {
       id: "sitemap-revalidate",

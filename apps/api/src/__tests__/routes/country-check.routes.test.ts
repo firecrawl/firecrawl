@@ -21,8 +21,8 @@ vi.mock("../../config", async importOriginal => {
   };
 });
 
-// Real routers and country checks; auth is stubbed and the credit check ends
-// the chain with a 204, so a 204 means the request got past the country check.
+// Real routers and country checks; auth is stubbed and the terminal handler
+// ends the chain with a 204, so a 204 means the request got past the country check.
 vi.mock("../../routes/shared", async importOriginal => {
   const actual = await importOriginal<typeof import("../../routes/shared")>();
   return {
@@ -30,12 +30,26 @@ vi.mock("../../routes/shared", async importOriginal => {
     authMiddleware: () => (req: any, _res: any, next: any) => {
       req.auth = mocks.auth;
       req.acuc = mocks.acuc;
+      req.caller = {
+        teamId: mocks.auth.team_id,
+        kind: "api-key",
+        auth: mocks.auth,
+        acuc: mocks.acuc,
+      };
       next();
     },
     checkCreditsMiddleware: () => (_req: any, res: any) =>
       res.status(204).end(),
   };
 });
+
+vi.mock("../../controllers/v2/scrape", () => ({
+  scrapeController: (_req: any, res: any) => res.status(204).end(),
+}));
+
+vi.mock("../../controllers/v2/crawl", () => ({
+  crawlController: (_req: any, res: any) => res.status(204).end(),
+}));
 
 import { config } from "../../config";
 import {

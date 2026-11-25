@@ -255,9 +255,15 @@ describe("custom BillingModule in v2 searchController", () => {
       }),
     );
     const res = makeRes();
+    const searchFinished = vi.fn();
 
     await withService(
-      testService(defaultModules(), parts, { billing }),
+      testService(defaultModules(), parts, { billing }, [
+        {
+          name: "observer",
+          hooks: { "search.finished": searchFinished },
+        },
+      ]),
       async () => {
         await searchController(makeSearchReq({ query: "docs" }), res);
       },
@@ -272,8 +278,12 @@ describe("custom BillingModule in v2 searchController", () => {
     expect(settle).toHaveBeenCalledWith(handle, { ok: true, charged: 8 });
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json.mock.calls[0][0].creditsUsed).toBe(8);
-    expect(mocks.logSearch).toHaveBeenCalledWith(
-      expect.objectContaining({ credits_cost: 2 }),
+    expect(searchFinished).toHaveBeenCalledWith(
+      expect.objectContaining({
+        charged: 2,
+        scrapeCredits: 6,
+        totalCredits: 8,
+      }),
     );
   });
 
