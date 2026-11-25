@@ -4,7 +4,7 @@
 //! late ZDR attributes immediately instead of waiting for `on_end`.
 
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
@@ -28,35 +28,46 @@ const ZDR_TRACESTATE_KEY: &str = "firecrawl_zdr";
 #[derive(Debug)]
 struct ZdrTraceSet {
   completed_limit: usize,
+  next_seq: u64,
   active_spans: HashMap<TraceId, usize>,
   active_zdr: HashSet<TraceId>,
-  completed_order: VecDeque<TraceId>,
-  completed_set: HashSet<TraceId>,
+  completed_seq: HashMap<TraceId, u64>,
+  completed_by_seq: BTreeMap<u64, TraceId>,
 }
 
 impl ZdrTraceSet {
   fn with_limit(completed_limit: usize) -> Self {
     Self {
       completed_limit,
+      next_seq: 0,
       active_spans: HashMap::new(),
       active_zdr: HashSet::new(),
-      completed_order: VecDeque::new(),
-      completed_set: HashSet::new(),
+      completed_seq: HashMap::new(),
+      completed_by_seq: BTreeMap::new(),
     }
   }
 
+  fn remove_completed(&mut self, trace_id: &TraceId) -> bool {
+    if let Some(seq) = self.completed_seq.remove(trace_id) {
+      self.completed_by_seq.remove(&seq);
+      return true;
+    }
+    false
+  }
+
   fn push_completed(&mut self, trace_id: TraceId) {
-    if self.completed_limit == 0 {
+    if self.completed_limit == 0 || self.completed_seq.contains_key(&trace_id) {
       return;
     }
-    if self.completed_set.insert(trace_id) {
-      self.completed_order.push_back(trace_id);
-      while self.completed_set.len() > self.completed_limit {
-        let Some(oldest) = self.completed_order.pop_front() else {
-          break;
-        };
-        self.completed_set.remove(&oldest);
-      }
+    let seq = self.next_seq;
+    self.next_seq = self.next_seq.wrapping_add(1);
+    self.completed_seq.insert(trace_id, seq);
+    self.completed_by_seq.insert(seq, trace_id);
+    while self.completed_seq.len() > self.completed_limit {
+      let Some((_, oldest)) = self.completed_by_seq.pop_first() else {
+        break;
+      };
+      self.completed_seq.remove(&oldest);
     }
   }
 }
@@ -83,11 +94,17 @@ impl ZdrTraceRegistry {
     }
   }
 
+  #[cfg(test)]
+  pub(crate) fn completed_counts(&self) -> (usize, usize) {
+    let state = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+    (state.completed_seq.len(), state.completed_by_seq.len())
+  }
+
   pub(crate) fn on_span_start(&self, trace_id: TraceId) {
     let mut state = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
     let count = state.active_spans.entry(trace_id).or_insert(0);
     *count = count.saturating_add(1);
-    if state.completed_set.remove(&trace_id) {
+    if state.remove_completed(&trace_id) {
       state.active_zdr.insert(trace_id);
     }
   }
@@ -96,7 +113,7 @@ impl ZdrTraceRegistry {
     let mut state = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
     if state.active_spans.contains_key(&trace_id) {
       state.active_zdr.insert(trace_id);
-      state.completed_set.remove(&trace_id);
+      state.remove_completed(&trace_id);
     } else if !state.active_zdr.contains(&trace_id) {
       state.push_completed(trace_id);
     }
@@ -106,10 +123,11 @@ impl ZdrTraceRegistry {
     let mut state = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
     if is_zdr_span {
       state.active_zdr.insert(trace_id);
-      state.completed_set.remove(&trace_id);
+      state.remove_completed(&trace_id);
     }
 
-    let drop_span = state.active_zdr.contains(&trace_id) || state.completed_set.contains(&trace_id);
+    let drop_span =
+      state.active_zdr.contains(&trace_id) || state.completed_seq.contains_key(&trace_id);
 
     let remaining = match state.active_spans.get_mut(&trace_id) {
       Some(count) if *count > 1 => {
@@ -132,7 +150,7 @@ impl ZdrTraceRegistry {
 
   pub(crate) fn contains(&self, trace_id: TraceId) -> bool {
     let state = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-    state.active_zdr.contains(&trace_id) || state.completed_set.contains(&trace_id)
+    state.active_zdr.contains(&trace_id) || state.completed_seq.contains_key(&trace_id)
   }
 }
 

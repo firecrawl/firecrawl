@@ -140,7 +140,31 @@ fn zdr_registry_retains_active_traces_and_descendant_tracestate_across_eviction(
 }
 
 #[test]
-fn pre_parse_zdr_fails_closed_on_malformed_json_including_escaped_keys() {
+fn zdr_registry_keeps_completed_order_bounded_across_repeated_spans() {
+  let registry = ZdrTraceRegistry::with_limit(2);
+  let trace_id = TraceId::from_bytes([7; 16]);
+
+  for _ in 0..50 {
+    registry.on_span_start(trace_id);
+    assert!(registry.on_span_end(trace_id, true));
+    let (seq_len, order_len) = registry.completed_counts();
+    assert_eq!(seq_len, 1);
+    assert_eq!(order_len, 1);
+  }
+  assert!(registry.contains(trace_id));
+}
+
+#[test]
+fn pre_parse_zdr_handles_escaped_keys_and_fails_closed_on_malformed_json() {
+  // Valid JSON with unicode-escaped keys goes through parsed object inspection.
+  assert!(pre_parse_zdr_from_json_str(
+    r#"{"\u007aeroDataRetention": true}"#
+  ));
+  assert!(!pre_parse_zdr_from_json_str(
+    r#"{"\u007aeroDataRetention": false}"#
+  ));
+
+  // Malformed JSON always fails closed regardless of key spelling.
   assert!(pre_parse_zdr_from_json_str(
     r#"{"\u007aeroDataRetention": true, broken"#
   ));
