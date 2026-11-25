@@ -1,0 +1,2 @@
+[profiles.ci]
+test_cases = 10000
