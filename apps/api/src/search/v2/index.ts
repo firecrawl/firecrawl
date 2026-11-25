@@ -3,6 +3,7 @@ import { Logger } from "winston";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import type { TeamPlanClass } from "../../lib/team-plan-class";
 import { service, type SearchQuery } from "../../service";
+import { searchWithProvider } from "../../lib/search-metrics";
 
 export async function search({
   query,
@@ -84,7 +85,7 @@ export async function search({
 
   try {
     for (const provider of providers) {
-      const result = await provider.search(searchQuery);
+      const result = await searchWithProvider(provider, searchQuery);
       if (result != null) {
         return result;
       }
