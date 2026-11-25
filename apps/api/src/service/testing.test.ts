@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { logsMessages, memoryUploads, noBlocklist } from "./defaults";
+import { logsMessages, memoryUploads, noBlocklist, openAuth } from "./defaults";
 import { service, type CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
 const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
 
 describe("testService", () => {
-  it("replaces a module and adds extensions", () => {
+  it("replaces a module and adds extensions", async () => {
     const baseUploads = {
       driver: () => ({
         ...memoryUploads().driver(),
@@ -18,6 +18,7 @@ describe("testService", () => {
       isBlocked: (url: string) => url.includes("base-blocked.example"),
     };
     const base = {
+      auth: openAuth("base-team"),
       blocklist: baseBlocklist,
       messages: logsMessages(),
       uploads: baseUploads,
@@ -30,6 +31,9 @@ describe("testService", () => {
       { name: "extra" },
     ]);
 
+    await expect(
+      built.modules.auth.authenticate({} as never, { kind: "scrape" }),
+    ).resolves.toEqual({ ok: true, caller: { teamId: "base-team" } });
     expect(
       built.modules.blocklist.isBlocked("https://base-blocked.example/x", {
         teamId: "t1",
@@ -39,9 +43,14 @@ describe("testService", () => {
     expect(built.modules.messages.errorContact()).toBe("Custom contact.");
     expect(built.modules.uploads.driver().name).toBe("base-uploads");
     expect(built.describe().modules).toEqual([
+      "auth",
+      "billing",
       "blocklist",
       "idempotency",
+      "jobStore",
+      "limits",
       "messages",
+      "policy",
       "uploads",
       "webhooks",
     ]);

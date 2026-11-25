@@ -7,19 +7,15 @@ import {
   collectPathPatternIssues,
 } from "../../../lib/crawl-regex";
 import {
-  MAX_SCRAPE_MAX_AGE_MS,
   scrapeRequestSchema,
   parseRequestSchema,
   scrapeOptions,
-  extractRequestSchema,
   crawlRequestSchema,
   mapRequestSchema,
   batchScrapeRequestSchema,
   searchRequestSchema,
   ScrapeRequest,
   ScrapeRequestInput,
-  ExtractRequest,
-  ExtractRequestInput,
   CrawlRequest,
   CrawlRequestInput,
   MapRequest,
@@ -30,11 +26,6 @@ import {
   SearchRequestInput,
   toV2CrawlerOptions,
 } from "../../../controllers/v2/types";
-import {
-  createMonitorSchema,
-  updateMonitorSchema,
-} from "../../../services/monitoring/types";
-import { getNextMonitorRunAt } from "../../../services/monitoring/cron";
 
 describe("V2 Types Validation", () => {
   describe("scrapeRequestSchema", () => {
@@ -108,40 +99,6 @@ describe("V2 Types Validation", () => {
       ).toThrow("The rawBase64 format cannot be combined with other formats");
     });
 
-    it("should accept video format as string and object", () => {
-      const stringInput: ScrapeRequestInput = {
-        url: "https://example.com",
-        formats: ["video"],
-      };
-      const objectInput: ScrapeRequestInput = {
-        url: "https://example.com",
-        formats: [{ type: "video" }],
-      };
-
-      expect(scrapeRequestSchema.parse(stringInput).formats).toEqual([
-        { type: "video" },
-      ]);
-      expect(scrapeRequestSchema.parse(objectInput).formats).toEqual([
-        { type: "video" },
-      ]);
-    });
-
-    it("should accept the experimental first-screen flag on branding only as a boolean", () => {
-      const input: ScrapeRequestInput = {
-        url: "https://example.com",
-        formats: [{ type: "branding", __experimental_screenshot: true }],
-      };
-      expect(scrapeRequestSchema.parse(input).formats).toEqual([
-        { type: "branding", __experimental_screenshot: true },
-      ]);
-      expect(() =>
-        scrapeRequestSchema.parse({
-          url: "https://example.com",
-          formats: [{ type: "branding", __experimental_screenshot: "yes" }],
-        }),
-      ).toThrow();
-    });
-
     it("should accept valid scrape request with json format options", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",
@@ -207,31 +164,6 @@ describe("V2 Types Validation", () => {
       expect(() => scrapeRequestSchema.parse(input)).not.toThrow();
     });
 
-    it("should reject unsupported changeTracking schemas", () => {
-      const input: ScrapeRequestInput = {
-        url: "https://example.com",
-        formats: [
-          "markdown",
-          {
-            type: "changeTracking",
-            modes: ["json"],
-            schema: {
-              type: "object",
-              properties: {
-                price: { type: "object", properties: {}, allOf: [] },
-              },
-            },
-          },
-        ],
-      };
-
-      const result = scrapeRequestSchema.safeParse(input);
-      expect(result.success).toBe(false);
-      expect(result.error?.issues.map(issue => issue.message)).toContain(
-        'Invalid JSON schema at "properties.price": "allOf" is not supported for JSON extraction.',
-      );
-    });
-
     it("should accept query format without markdown", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",
@@ -274,19 +206,7 @@ describe("V2 Types Validation", () => {
       ]);
     });
 
-    it("should accept highlights format", () => {
-      const input: ScrapeRequestInput = {
-        url: "https://example.com",
-        formats: [{ type: "highlights", query: "What is Firecrawl?" }],
-      };
-
-      const result = scrapeRequestSchema.parse(input);
-      expect(result.formats).toEqual([
-        { type: "highlights", query: "What is Firecrawl?" },
-      ]);
-    });
-
-    it("should reject invalid question and highlights fields", () => {
+    it("should reject invalid question fields", () => {
       expect(() =>
         scrapeRequestSchema.parse({
           url: "https://example.com",
@@ -300,64 +220,6 @@ describe("V2 Types Validation", () => {
           formats: [{ type: "question", prompt: "What is Firecrawl?" } as any],
         }),
       ).toThrow();
-
-      expect(() =>
-        scrapeRequestSchema.parse({
-          url: "https://example.com",
-          formats: [{ type: "highlights", query: "" }],
-        } satisfies ScrapeRequestInput),
-      ).toThrow();
-
-      expect(() =>
-        scrapeRequestSchema.parse({
-          url: "https://example.com",
-          formats: [
-            { type: "highlights", prompt: "What is Firecrawl?" } as any,
-          ],
-        }),
-      ).toThrow();
-    });
-
-    it("should accept valid scrape request with changeTracking format", () => {
-      const input: ScrapeRequestInput = {
-        url: "https://example.com",
-        formats: [
-          { type: "markdown" },
-          {
-            type: "changeTracking",
-            schema: {
-              type: "object",
-              properties: {
-                changes: { type: "array", items: { type: "string" } },
-              },
-            },
-            modes: ["json"],
-            tag: "test-tag",
-          },
-        ],
-        timeout: 30000,
-        proxy: "basic", // Use basic proxy to avoid auto/stealth timeout transformation
-      };
-
-      const result = scrapeRequestSchema.parse(input);
-      expect(result.formats).toHaveLength(2);
-      expect(result.timeout).toBe(60000); // Should be transformed
-      expect(result.waitFor).toBeGreaterThanOrEqual(5000); // Should be at least 5000
-    });
-
-    it("should reject changeTracking without markdown", () => {
-      const input: ScrapeRequestInput = {
-        url: "https://example.com",
-        formats: [
-          {
-            type: "changeTracking",
-          },
-        ],
-      };
-
-      expect(() => scrapeRequestSchema.parse(input)).toThrow(
-        "The changeTracking format requires the markdown format to be specified as well",
-      );
     });
 
     it("should reject multiple screenshot formats", () => {
@@ -471,7 +333,6 @@ describe("V2 Types Validation", () => {
       expect(result.fastMode).toBe(false);
       expect(result.blockAds).toBe(true);
       expect(result.proxy).toBe("auto"); // v2 default is "auto"
-      expect(result.storeInCache).toBe(true);
     });
 
     it("should accept scrape request with onlyCleanContent=true", () => {
@@ -552,40 +413,6 @@ describe("V2 Types Validation", () => {
       expect((result.parsers as any)[0].maxPages).toBe(100);
     });
 
-    it("should accept physical page markdown for PDF parsers", () => {
-      const result = scrapeRequestSchema.parse({
-        url: "https://example.com/file.pdf",
-        parsers: [{ type: "pdf", mode: "auto", pages: true }],
-      });
-
-      expect((result.parsers as any)[0].pages).toBe(true);
-    });
-
-    it("should fold the deprecated pageMarkdown alias into pages", () => {
-      const result = scrapeRequestSchema.parse({
-        url: "https://example.com/file.pdf",
-        parsers: [{ type: "pdf", mode: "auto", pageMarkdown: true }],
-      });
-
-      expect((result.parsers as any)[0].pages).toBe(true);
-      expect("pageMarkdown" in (result.parsers as any)[0]).toBe(false);
-    });
-
-    it("should reject non-boolean physical page markdown", () => {
-      expect(() =>
-        scrapeRequestSchema.parse({
-          url: "https://example.com/file.pdf",
-          parsers: [{ type: "pdf", pages: "yes" }],
-        }),
-      ).toThrow();
-      expect(() =>
-        scrapeRequestSchema.parse({
-          url: "https://example.com/file.pdf",
-          parsers: [{ type: "pdf", pageMarkdown: "yes" }],
-        }),
-      ).toThrow();
-    });
-
     it("should reject PDF parser with maxPages exceeding limit", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",
@@ -598,17 +425,6 @@ describe("V2 Types Validation", () => {
       };
 
       expect(() => scrapeRequestSchema.parse(input)).toThrow();
-    });
-
-    it("should handle stealth proxy timeout transformation", () => {
-      const input: ScrapeRequestInput = {
-        url: "https://example.com",
-        proxy: "stealth",
-        timeout: 30000,
-      };
-
-      const result = scrapeRequestSchema.parse(input);
-      expect(result.timeout).toBe(120000); // Should be transformed
     });
 
     it("should handle auto proxy timeout transformation", () => {
@@ -732,87 +548,6 @@ describe("V2 Types Validation", () => {
 
       expect(() => scrapeRequestSchema.parse(input)).toThrow();
     });
-
-    describe("lockdown", () => {
-      it("should default lockdown to false", () => {
-        const input: ScrapeRequestInput = {
-          url: "https://example.com",
-        };
-
-        const result = scrapeRequestSchema.parse(input);
-        expect(result.lockdown).toBe(false);
-      });
-
-      it("should accept lockdown: true", () => {
-        const input: ScrapeRequestInput = {
-          url: "https://example.com",
-          lockdown: true,
-        };
-
-        const result = scrapeRequestSchema.parse(input);
-        expect(result.lockdown).toBe(true);
-      });
-
-      it("should default maxAge to ~2 years when lockdown is true and maxAge is unset", () => {
-        const input: ScrapeRequestInput = {
-          url: "https://example.com",
-          lockdown: true,
-        };
-
-        const result = scrapeRequestSchema.parse(input);
-        expect(result.maxAge).toBe(2 * 365 * 24 * 60 * 60 * 1000);
-      });
-
-      it("should preserve maxAge when lockdown is true and maxAge is provided", () => {
-        const input: ScrapeRequestInput = {
-          url: "https://example.com",
-          lockdown: true,
-          maxAge: 60000,
-        };
-
-        const result = scrapeRequestSchema.parse(input);
-        expect(result.maxAge).toBe(60000);
-      });
-
-      it("should not cap maxAge above 7 days when lockdown is true", () => {
-        const oneYearMs = 365 * 24 * 60 * 60 * 1000;
-        const input: ScrapeRequestInput = {
-          url: "https://example.com",
-          lockdown: true,
-          maxAge: oneYearMs,
-        };
-
-        const result = scrapeRequestSchema.parse(input);
-        expect(result.maxAge).toBe(oneYearMs);
-      });
-
-      it("should not set maxAge default when lockdown is false", () => {
-        const input: ScrapeRequestInput = {
-          url: "https://example.com",
-          lockdown: false,
-        };
-
-        const result = scrapeRequestSchema.parse(input);
-        expect(result.maxAge).toBeUndefined();
-      });
-
-      // Profiles require browser state, which a cache-only request cannot supply.
-      it("should reject profile state with lockdown", () => {
-        const input: ScrapeRequestInput = {
-          url: "https://example.com",
-          lockdown: true,
-          actions: [{ type: "click", selector: "button" }],
-          headers: { "X-Custom": "value" },
-          profile: { name: "my-profile" },
-          proxy: "basic",
-          formats: [{ type: "markdown" }, { type: "changeTracking" }],
-        };
-
-        expect(() => scrapeRequestSchema.parse(input)).toThrow(
-          "Profiles require live browsing and cannot be used with lockdown.",
-        );
-      });
-    });
   });
 
   describe("parseRequestSchema", () => {
@@ -828,146 +563,6 @@ describe("V2 Types Validation", () => {
           },
         }),
       ).toThrow("The rawBase64 format is not supported for parse uploads");
-    });
-  });
-
-  describe("extractRequestSchema", () => {
-    it("should accept valid extract request with urls", () => {
-      const input: ExtractRequestInput = {
-        urls: ["https://example.com"],
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      const result = extractRequestSchema.parse(input);
-      expect(result.urls).toEqual(["https://example.com"]);
-      expect(result.origin).toBe("api");
-      expect(result.ignoreInvalidURLs).toBe(true); // v2 default is true
-    });
-
-    it("should accept valid extract request with prompt", () => {
-      const input: ExtractRequestInput = {
-        prompt: "Extract the title",
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      const result = extractRequestSchema.parse(input);
-      expect(result.prompt).toBe("Extract the title");
-    });
-
-    it("should accept an extract schema that uses standard string formats", () => {
-      const input: ExtractRequestInput = {
-        urls: ["https://example.com"],
-        schema: {
-          type: "object",
-          properties: {
-            contact: { type: "string", format: "email" },
-          },
-        },
-      };
-
-      const result = extractRequestSchema.parse(input);
-      expect(result.schema).toBeDefined();
-    });
-
-    it("should reject extract request without urls or prompt", () => {
-      const input = {
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      expect(() => extractRequestSchema.parse(input)).toThrow(
-        "Either 'urls' or 'prompt' must be provided",
-      );
-    });
-
-    it("should reject more than 10 URLs", () => {
-      const input: ExtractRequestInput = {
-        urls: Array.from({ length: 11 }, (_, i) => `https://example${i}.com`),
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      expect(() => extractRequestSchema.parse(input)).toThrow(
-        "Maximum of 10 URLs allowed per request while in beta",
-      );
-    });
-
-    it("should accept up to 10 URLs", () => {
-      const input: ExtractRequestInput = {
-        urls: Array.from({ length: 10 }, (_, i) => `https://example${i}.com`),
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      const result = extractRequestSchema.parse(input);
-      expect(result.urls).toHaveLength(10);
-    });
-
-    it("should reject JSON schemas structured outputs cannot express", () => {
-      const result = extractRequestSchema.safeParse({
-        urls: ["https://example.com"],
-        schema: {
-          type: "object",
-          properties: { events: { type: "array" } },
-        },
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error?.issues.map(issue => issue.message)).toContain(
-        'Invalid JSON schema at "properties.events": arrays must define "items".',
-      );
-    });
-
-    it("should reject invalid JSON schema", () => {
-      const input: ExtractRequestInput = {
-        urls: ["https://example.com"],
-        schema: {
-          type: "invalid-type",
-          properties: "not-an-object",
-        },
-      };
-
-      expect(() => extractRequestSchema.parse(input)).toThrow(
-        "Invalid JSON schema",
-      );
-    });
-
-    it("should transform allowExternalLinks when enableWebSearch is true", () => {
-      const input: ExtractRequestInput = {
-        urls: ["https://example.com"],
-        enableWebSearch: true,
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      };
-
-      const result = extractRequestSchema.parse(input);
-      expect(result.allowExternalLinks).toBe(true);
     });
   });
 
@@ -1358,7 +953,6 @@ describe("V2 Types Validation", () => {
       expect(result.ignoreQueryParameters).toBe(true);
       expect(result.sitemap).toBe("include");
       expect(result.filterByPath).toBe(true);
-      expect(result.useIndex).toBe(true);
     });
 
     it("should reject limit exceeding MAX_MAP_LIMIT", () => {
@@ -1525,132 +1119,14 @@ describe("V2 Types Validation", () => {
     it("should accept search request with simple categories array", () => {
       const input: SearchRequestInput = {
         query: "test",
-        categories: ["pdf", "research"],
+        categories: ["pdf"],
       };
 
       const result = searchRequestSchema.parse(input);
-      // Categories are transformed from string array to object array
-      expect(result.categories).toEqual([
-        { type: "pdf" },
-        { type: "research" },
-      ]);
+      expect(result.categories).toEqual([{ type: "pdf" }]);
     });
 
-    it("should accept the developer category and reject its params", () => {
-      expect(
-        searchRequestSchema.parse({ query: "test", categories: ["developer"] })
-          .categories,
-      ).toEqual([{ type: "developer" }]);
-
-      expect(
-        searchRequestSchema.parse({
-          query: "test",
-          categories: [{ type: "developer" }],
-        }).categories,
-      ).toEqual([{ type: "developer" }]);
-
-      expect(() =>
-        searchRequestSchema.parse({
-          query: "test",
-          categories: [{ type: "developer", repos: ["firecrawl/firecrawl"] }],
-        }),
-      ).toThrow();
-    });
-
-    it("should accept the gov category on its own and reject params or mixing", () => {
-      expect(
-        searchRequestSchema.parse({ query: "test", categories: ["gov"] })
-          .categories,
-      ).toEqual([{ type: "gov" }]);
-
-      expect(
-        searchRequestSchema.parse({
-          query: "test",
-          categories: [{ type: "gov" }],
-        }).categories,
-      ).toEqual([{ type: "gov" }]);
-
-      expect(() =>
-        searchRequestSchema.parse({
-          query: "test",
-          categories: [{ type: "gov", sites: ["ecfr.gov"] }],
-        }),
-      ).toThrow();
-
-      expect(() =>
-        searchRequestSchema.parse({
-          query: "test",
-          categories: ["gov", "pdf"],
-        }),
-      ).toThrow();
-    });
-
-    it("should normalize every developer category alias to developer", () => {
-      const aliases = [
-        "repo",
-        "code",
-        "developer",
-        "docs",
-        "devdex",
-        "repo_search",
-        "developer_index",
-      ];
-
-      for (const alias of aliases) {
-        expect(
-          searchRequestSchema.parse({ query: "test", categories: [alias] })
-            .categories,
-        ).toEqual([{ type: "developer" }]);
-
-        expect(
-          searchRequestSchema.parse({
-            query: "test",
-            categories: [{ type: alias }],
-          }).categories,
-        ).toEqual([{ type: "developer" }]);
-      }
-    });
-
-    it("should deduplicate developer aliases into one developer category", () => {
-      expect(
-        searchRequestSchema.parse({
-          query: "test",
-          categories: ["code", "developer"],
-        }).categories,
-      ).toEqual([{ type: "developer" }]);
-
-      expect(
-        searchRequestSchema.parse({
-          query: "test",
-          categories: [{ type: "repo_search" }, { type: "developer" }],
-        }).categories,
-      ).toEqual([{ type: "developer" }]);
-
-      expect(
-        searchRequestSchema.parse({
-          query: "test",
-          categories: ["docs", "developer_index"],
-        }).categories,
-      ).toEqual([{ type: "developer" }]);
-
-      // Developer (and its aliases) is exclusive: combining with any other
-      // category is rejected at the schema.
-      expect(() =>
-        searchRequestSchema.parse({
-          query: "test",
-          categories: ["docs", "pdf", "developer_index"],
-        }),
-      ).toThrow(/cannot be combined/);
-    });
-
-    it("should reject developer alias params and unknown categories", () => {
-      expect(() =>
-        searchRequestSchema.parse({
-          query: "test",
-          categories: [{ type: "code", repos: ["firecrawl/firecrawl"] }],
-        }),
-      ).toThrow();
-
+    it("should reject unknown categories", () => {
       expect(() =>
         searchRequestSchema.parse({ query: "test", categories: ["bogus"] }),
       ).toThrow();
@@ -1666,14 +1142,7 @@ describe("V2 Types Validation", () => {
     it("should accept search request with advanced categories format", () => {
       const input: SearchRequestInput = {
         query: "test",
-        categories: [
-          {
-            type: "research",
-          },
-          {
-            type: "pdf",
-          },
-        ],
+        categories: [{ type: "pdf" }],
       };
 
       const result = searchRequestSchema.parse(input);
@@ -1738,16 +1207,6 @@ describe("V2 Types Validation", () => {
       expect(result.limit).toBe(50);
     });
 
-    it("should handle enterprise array", () => {
-      const input: SearchRequestInput = {
-        query: "test",
-        enterprise: ["default", "zdr"],
-      };
-
-      const result = searchRequestSchema.parse(input);
-      expect(result.enterprise).toEqual(["default", "zdr"]);
-    });
-
     it("should accept search scrapeOptions with query format", () => {
       const input: SearchRequestInput = {
         query: "test",
@@ -1762,21 +1221,17 @@ describe("V2 Types Validation", () => {
       ]);
     });
 
-    it("should accept search scrapeOptions with question and highlights formats", () => {
+    it("should accept search scrapeOptions with question format", () => {
       const input: SearchRequestInput = {
         query: "test",
         scrapeOptions: {
-          formats: [
-            { type: "question", question: "What is Firecrawl?" },
-            { type: "highlights", query: "What is Firecrawl?" },
-          ],
+          formats: [{ type: "question", question: "What is Firecrawl?" }],
         },
       };
 
       const result = searchRequestSchema.parse(input);
       expect(result.scrapeOptions?.formats).toEqual([
         { type: "question", question: "What is Firecrawl?" },
-        { type: "highlights", query: "What is Firecrawl?" },
       ]);
     });
 
@@ -1825,21 +1280,12 @@ describe("V2 Types Validation", () => {
       expect(() => searchRequestSchema.parse(input)).toThrow();
     });
 
-    it("should reject search scrapeOptions question and highlights values over 10000 characters", () => {
+    it("should reject search scrapeOptions question values over 10000 characters", () => {
       expect(() =>
         searchRequestSchema.parse({
           query: "test",
           scrapeOptions: {
             formats: [{ type: "question", question: "a".repeat(10001) }],
-          },
-        } satisfies SearchRequestInput),
-      ).toThrow();
-
-      expect(() =>
-        searchRequestSchema.parse({
-          query: "test",
-          scrapeOptions: {
-            formats: [{ type: "highlights", query: "a".repeat(10001) }],
           },
         } satisfies SearchRequestInput),
       ).toThrow();
@@ -1855,20 +1301,6 @@ describe("V2 Types Validation", () => {
       expect(typeof result.url).toBe("string");
       expect(typeof result.origin).toBe("string");
       expect(Array.isArray(result.formats)).toBe(true);
-    });
-
-    it("should correctly infer ExtractRequest type", () => {
-      const result: ExtractRequest = extractRequestSchema.parse({
-        urls: ["https://example.com"],
-        schema: {
-          type: "object",
-          properties: {
-            title: { type: "string" },
-          },
-        },
-      });
-
-      expect(Array.isArray(result.urls)).toBe(true);
     });
 
     it("should correctly infer CrawlRequest type", () => {
@@ -1939,181 +1371,6 @@ describe("V2 Types Validation", () => {
     });
   });
 
-  describe("monitor schedules", () => {
-    it("should accept natural language schedule text", () => {
-      const result = createMonitorSchema.parse({
-        name: "Blog monitor",
-        schedule: {
-          text: "every 30 minutes",
-        },
-        targets: [
-          {
-            type: "scrape",
-            urls: ["https://example.com"],
-          },
-        ],
-      });
-
-      expect(result.schedule).toEqual({
-        cron: "*/30 * * * *",
-        timezone: "UTC",
-      });
-    });
-
-    it("should accept a natural language start minute", () => {
-      const result = updateMonitorSchema.parse({
-        schedule: {
-          text: "every 15 minutes starting at :07",
-        },
-      });
-
-      expect(result.schedule).toEqual({
-        cron: "7-59/15 * * * *",
-        timezone: "UTC",
-      });
-    });
-
-    it("should accept daily am/pm schedule text", () => {
-      const cases = [
-        ["daily at 9am", "0 9 * * *"],
-        ["daily at 9:30am", "30 9 * * *"],
-        ["daily at 5pm", "0 17 * * *"],
-        ["daily at 5:30 pm", "30 17 * * *"],
-        ["daily at 12am", "0 0 * * *"],
-        ["daily at 12pm", "0 12 * * *"],
-      ] as const;
-
-      for (const [text, cron] of cases) {
-        const result = updateMonitorSchema.parse({
-          schedule: { text },
-        });
-
-        expect(result.schedule).toEqual({
-          cron,
-          timezone: "UTC",
-        });
-      }
-    });
-
-    it("should reject invalid daily am/pm hours", () => {
-      expect(() =>
-        updateMonitorSchema.parse({
-          schedule: {
-            text: "daily at 13pm",
-          },
-        }),
-      ).toThrow("Daily schedule hour with am/pm must be between 1 and 12");
-    });
-
-    it("should reject ambiguous schedule definitions", () => {
-      expect(() =>
-        updateMonitorSchema.parse({
-          schedule: {
-            cron: "*/30 * * * *",
-            text: "every 30 minutes",
-          },
-        }),
-      ).toThrow("Schedule must include either cron or text, not both");
-    });
-
-    it("should calculate next runs in the configured timezone", () => {
-      const next = getNextMonitorRunAt(
-        "0 9 * * *",
-        new Date("2026-01-01T13:00:00.000Z"),
-        "America/New_York",
-      );
-
-      expect(next.toISOString()).toBe("2026-01-01T14:00:00.000Z");
-    });
-
-    it("should accept monitor webhook event filters", () => {
-      const result = updateMonitorSchema.parse({
-        webhook: {
-          url: "https://example.com/webhook",
-          events: ["monitor.page", "monitor.check.completed"],
-        },
-      });
-
-      expect(result.webhook?.events).toEqual([
-        "monitor.page",
-        "monitor.check.completed",
-      ]);
-    });
-
-    it("should reject non-monitor webhook event filters", () => {
-      expect(() =>
-        updateMonitorSchema.parse({
-          webhook: {
-            url: "https://example.com/webhook",
-            events: ["completed"],
-          },
-        }),
-      ).toThrow();
-    });
-  });
-
-  describe("monitor search target goal validation", () => {
-    const searchTargets = [
-      { type: "search" as const, queries: ["firecrawl launch"] },
-    ];
-
-    it("create rejects a search target without a goal", () => {
-      expect(() =>
-        createMonitorSchema.parse({
-          name: "Search monitor",
-          schedule: { text: "every 30 minutes" },
-          targets: searchTargets,
-        }),
-      ).toThrow("A search target requires a non-empty goal");
-    });
-
-    it("update accepts a patch adding a search target without restating the goal", () => {
-      // The monitor may already carry a goal; the controller validates the
-      // merged state.
-      const result = updateMonitorSchema.parse({ targets: searchTargets });
-      expect(result.targets).toHaveLength(1);
-    });
-
-    it("update rejects a patch that adds search targets while clearing the goal", () => {
-      for (const goal of [null, "", "   "]) {
-        expect(() =>
-          updateMonitorSchema.parse({ targets: searchTargets, goal }),
-        ).toThrow("A search target requires a non-empty goal");
-      }
-    });
-
-    it("update allows clearing the goal when the patch has no targets (merged state is checked in the controller)", () => {
-      const result = updateMonitorSchema.parse({ goal: null });
-      expect(result.goal).toBeNull();
-    });
-
-    it("create allows a raw search target (judgeEnabled:false) without a goal", () => {
-      const result = createMonitorSchema.parse({
-        name: "Raw search monitor",
-        schedule: { text: "every 30 minutes" },
-        targets: searchTargets,
-        judgeEnabled: false,
-      });
-      expect(result.targets).toHaveLength(1);
-      expect(result.judgeEnabled).toBe(false);
-    });
-
-    it("create still defaults judgeEnabled true when a goal is present", () => {
-      const result = createMonitorSchema.parse({
-        name: "Judged search monitor",
-        schedule: { text: "every 30 minutes" },
-        targets: searchTargets,
-        goal: "Alert when Firecrawl launches",
-      });
-      expect(result.judgeEnabled).toBe(true);
-    });
-
-    it("update with just { goal } does NOT silently enable judging", () => {
-      const result = updateMonitorSchema.parse({ goal: "Alert when X ships" });
-      expect(result.judgeEnabled).toBeUndefined();
-    });
-  });
-
   describe("Edge cases", () => {
     it("should handle URL without protocol (should add http://)", () => {
       const input = {
@@ -2134,30 +1391,6 @@ describe("V2 Types Validation", () => {
       expect(result.integration).toBeNull();
     });
 
-    it("should handle changeTracking format timeout transformation", () => {
-      const input: ScrapeRequestInput = {
-        url: "https://example.com",
-        formats: [
-          { type: "markdown" },
-          {
-            type: "changeTracking",
-            schema: {
-              type: "object",
-              properties: {
-                changes: { type: "array", items: { type: "string" } },
-              },
-            },
-          },
-        ],
-        timeout: 30000,
-        proxy: "basic", // Use basic proxy to avoid auto/stealth timeout transformation
-      };
-
-      const result = scrapeRequestSchema.parse(input);
-      expect(result.timeout).toBe(60000); // Should be transformed
-      expect(result.waitFor).toBeGreaterThanOrEqual(5000); // Should be at least 5000
-    });
-
     it("should handle json format timeout transformation", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",
@@ -2173,70 +1406,11 @@ describe("V2 Types Validation", () => {
           },
         ],
         timeout: 30000,
-        proxy: "basic", // Use basic proxy to avoid auto/stealth timeout transformation
+        proxy: "basic",
       };
 
       const result = scrapeRequestSchema.parse(input);
-      expect(result.timeout).toBe(60000); // Should be transformed
-    });
-
-    it("should handle changeTrackingOptions with null tag", () => {
-      const input: ScrapeRequestInput = {
-        url: "https://example.com",
-        formats: [
-          { type: "markdown" },
-          {
-            type: "changeTracking",
-            tag: null,
-          },
-        ],
-      };
-
-      const result = scrapeRequestSchema.parse(input);
-      const changeTracking = result.formats.find(
-        f => typeof f === "object" && f.type === "changeTracking",
-      );
-      expect((changeTracking as any).tag).toBeNull();
-    });
-
-    it("should handle minAge and maxAge", () => {
-      const input: ScrapeRequestInput = {
-        url: "https://example.com",
-        minAge: 1000,
-        maxAge: 5000,
-      };
-
-      const result = scrapeRequestSchema.parse(input);
-      expect(result.minAge).toBe(1000);
-      expect(result.maxAge).toBe(5000);
-    });
-
-    it("should silently cap maxAge at 7 days when not in lockdown", () => {
-      const input: ScrapeRequestInput = {
-        url: "https://example.com",
-        maxAge: 365 * 24 * 60 * 60 * 1000,
-      };
-
-      const result = scrapeRequestSchema.parse(input);
-      expect(result.maxAge).toBe(MAX_SCRAPE_MAX_AGE_MS);
-    });
-
-    it("should reject negative minAge", () => {
-      const input: ScrapeRequestInput = {
-        url: "https://example.com",
-        minAge: -1,
-      };
-
-      expect(() => scrapeRequestSchema.parse(input)).toThrow();
-    });
-
-    it("should reject negative maxAge", () => {
-      const input: ScrapeRequestInput = {
-        url: "https://example.com",
-        maxAge: -1,
-      };
-
-      expect(() => scrapeRequestSchema.parse(input)).toThrow();
+      expect(result.timeout).toBe(60000);
     });
   });
 });

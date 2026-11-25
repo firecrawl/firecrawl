@@ -24,17 +24,9 @@ vi.mock("../../lib/html-to-markdown", async importOriginal => {
 
 import { parseMarkdown } from "../../lib/html-to-markdown";
 
-const testEngines: (Engine | undefined)[] = [
-  undefined,
-  "fire-engine;chrome-cdp",
-  "fire-engine;tlsclient",
-  "fetch",
-];
+const testEngines: (Engine | undefined)[] = [undefined, "fetch"];
 
-const testEnginesScreenshot: (Engine | undefined)[] = [
-  undefined,
-  "fire-engine;chrome-cdp",
-];
+const testEnginesScreenshot: (Engine | undefined)[] = [undefined];
 
 describe("Standalone scrapeURL tests", () => {
   beforeAll(() => {
@@ -56,56 +48,6 @@ describe("Standalone scrapeURL tests", () => {
 
   afterAll(() => {
     replaceService(undefined);
-  });
-
-  it.each([
-    ["https://example.com/raw", "text/html; charset=utf-8"],
-    ["https://example.com/raw.pdf", "application/pdf"],
-    [
-      "https://example.com/raw.docx",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ],
-  ])(
-    "returns rawBase64 through fire-engine Chrome for %s",
-    async (url, contentType) => {
-      const out = await scrapeURL(
-        "test:raw-base64",
-        url,
-        scrapeOptions.parse({
-          formats: ["rawBase64"],
-          useMock: "raw-base64",
-          fastMode: true,
-          blockAds: false,
-          proxy: "stealth",
-        }),
-        { forceEngine: "fetch", teamId: "test", orgId: null },
-        new CostTracking(),
-      );
-
-      expect(out.success).toBe(true);
-      if (out.success) {
-        expect(out.document.rawBase64).toBe("PGh0bWw+cmF3PC9odG1sPg==");
-        expect(out.document).not.toHaveProperty("markdown");
-        expect(out.document).not.toHaveProperty("html");
-        expect(out.document).not.toHaveProperty("rawHtml");
-        expect(out.document.metadata.contentType).toBe(contentType);
-      }
-    },
-  );
-
-  it("rejects a rawBase64 engine response without file content", async () => {
-    const out = await scrapeURL(
-      "test:raw-base64-missing",
-      "https://example.com/raw-error",
-      scrapeOptions.parse({
-        formats: ["rawBase64"],
-        useMock: "raw-base64",
-      }),
-      { teamId: "test", orgId: null },
-      new CostTracking(),
-    );
-
-    expect(out.success).toBe(false);
   });
 
   it("returns the canonical agent-index-only error for rawBase64", async () => {

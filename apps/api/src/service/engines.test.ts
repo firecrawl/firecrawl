@@ -14,6 +14,11 @@ const makeEngine = (
     scrape?: Engine["scrape"];
     maxReasonableTime?: Engine["maxReasonableTime"];
     explicitOnly?: boolean;
+    cache?: boolean;
+    fileOnly?: boolean;
+    supportsProfile?: boolean;
+    prefetchesFiles?: boolean;
+    allowEmptyContent?: boolean;
   } = {},
 ): Engine =>
   ({
@@ -37,6 +42,11 @@ describe("buildEngineRegistry", () => {
     const second = makeEngine("beta", {
       quality: -5,
       explicitOnly: true,
+      cache: true,
+      fileOnly: true,
+      supportsProfile: true,
+      prefetchesFiles: true,
+      allowEmptyContent: true,
       features: { stealthProxy: true },
     });
 
@@ -62,6 +72,12 @@ describe("buildEngineRegistry", () => {
     expect(Object.isFrozen(registry.get("alpha")?.features)).toBe(true);
     expect(registry.get("alpha")?.features).toEqual({ waitFor: true });
     expect(registry.get("beta")?.explicitOnly).toBe(true);
+    expect(registry.get("beta")?.cache).toBe(true);
+    expect(registry.get("beta")?.fileOnly).toBe(true);
+    expect(registry.get("beta")?.supportsProfile).toBe(true);
+    expect(registry.get("beta")?.prefetchesFiles).toBe(true);
+    expect(registry.get("beta")?.allowEmptyContent).toBe(true);
+    expect(registry.get("alpha")?.cache).toBeUndefined();
     expect(registry.feature("waitFor")).toEqual({ priority: 1 });
     expect(registry.feature("customFlag")).toEqual({ priority: 40 });
     expect(Object.isFrozen(registry.feature("customFlag"))).toBe(true);

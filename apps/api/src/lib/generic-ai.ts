@@ -4,7 +4,6 @@ import { config } from "../config";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOllama } from "ollama-ai-provider-v2";
 import { withUsageTelemetry } from "./ai-usage-telemetry";
-import { isUsOnly } from "./us-only";
 import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
 import {
   service,
@@ -52,7 +51,10 @@ export const coreLlmProviders: readonly LlmProvider[] = Object.freeze([
     enabled: () =>
       Boolean(config.OPENAI_API_KEY?.trim() || config.OPENAI_BASE_URL?.trim()),
     model(modelName, options) {
-      if (isUsOnly(options?.teamFlags ?? undefined)) {
+      if (
+        options?.ctx?.usOnly === true ||
+        options?.teamFlags?.usOnly === true
+      ) {
         throw usOnlyUnavailable(options?.feature);
       }
       const client = getOpenAIClient();
@@ -65,7 +67,10 @@ export const coreLlmProviders: readonly LlmProvider[] = Object.freeze([
     name: "ollama",
     enabled: () => Boolean(config.OLLAMA_BASE_URL?.trim()),
     model(modelName, options) {
-      if (isUsOnly(options?.teamFlags ?? undefined)) {
+      if (
+        options?.ctx?.usOnly === true ||
+        options?.teamFlags?.usOnly === true
+      ) {
         throw usOnlyUnavailable(options?.feature);
       }
       return getOllamaClient()(modelName);

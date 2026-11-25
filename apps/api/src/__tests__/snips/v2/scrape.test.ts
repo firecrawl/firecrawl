@@ -22,8 +22,6 @@ import {
   idmux,
   Identity,
   scrapeRaw,
-  extractRaw,
-  EXTRACT_LIVE,
   creditUsage,
   TEST_API_URL,
 } from "./lib";
@@ -31,7 +29,6 @@ import request from "./lib";
 import crypto from "crypto";
 import { z } from "zod";
 
-const CHANGE_TRACKING_TEST_URL = `${TEST_SUITE_WEBSITE}?testId=${crypto.randomUUID()}`;
 const stringbool = z.stringbool().catch(false);
 
 let identity: Identity;
@@ -42,16 +39,6 @@ beforeAll(async () => {
     concurrency: 100,
     credits: 1000000,
   });
-
-  if (TEST_PRODUCTION) {
-    await scrape(
-      {
-        url: CHANGE_TRACKING_TEST_URL,
-        formats: ["markdown", "changeTracking"],
-      },
-      identity,
-    );
-  }
 }, 10000 + scrapeTimeout);
 
 describe("Scrape tests", () => {
@@ -460,7 +447,11 @@ describe("Scrape tests", () => {
       );
 
       expect(response.markdown).toBeDefined();
-      expect(response.metadata.creditsUsed).toBe(5);
+      if (TEST_PRODUCTION) {
+        expect(response.metadata.creditsUsed).toBe(5);
+      } else {
+        expect(response.metadata.creditsUsed).toBeUndefined();
+      }
     },
     scrapeTimeout,
   );
@@ -1175,223 +1166,6 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("Change Tracking format (f-e dependent)", () => {
-      it.concurrent(
-        "works",
-        async () => {
-          const response = await scrape(
-            {
-              url: CHANGE_TRACKING_TEST_URL,
-              formats: ["markdown", "changeTracking"],
-            },
-            identity,
-          );
-
-          expect(response.changeTracking).toBeDefined();
-          expect(response.changeTracking?.previousScrapeAt).not.toBeNull();
-        },
-        scrapeTimeout,
-      );
-
-      it.concurrent(
-        "includes git diff when requested",
-        async () => {
-          const response = await scrape(
-            {
-              url: CHANGE_TRACKING_TEST_URL,
-              formats: [
-                "markdown",
-                { type: "changeTracking", modes: ["git-diff"] },
-              ],
-            },
-            identity,
-          );
-
-          expect(response.changeTracking).toBeDefined();
-          expect(response.changeTracking?.previousScrapeAt).not.toBeNull();
-
-          if (response.changeTracking?.changeStatus === "changed") {
-            expect(response.changeTracking?.diff).toBeDefined();
-            expect(response.changeTracking?.diff?.text).toBeDefined();
-            expect(response.changeTracking?.diff?.json).toBeDefined();
-            expect(response.changeTracking?.diff?.json.files).toBeInstanceOf(
-              Array,
-            );
-          }
-        },
-        scrapeTimeout,
-      );
-
-      it.concurrent(
-        "includes structured output when requested",
-        async () => {
-          const response = await scrape(
-            {
-              url: CHANGE_TRACKING_TEST_URL,
-              formats: [
-                "markdown",
-                {
-                  type: "changeTracking",
-                  modes: ["json"],
-                  prompt:
-                    "Summarize the changes between the previous and current content",
-                },
-              ],
-            },
-            identity,
-          );
-
-          expect(response.changeTracking).toBeDefined();
-          expect(response.changeTracking?.previousScrapeAt).not.toBeNull();
-
-          if (response.changeTracking?.changeStatus === "changed") {
-            expect(response.changeTracking?.json).toBeDefined();
-          }
-        },
-        scrapeTimeout,
-      );
-
-      it.concurrent(
-        "supports schema-based extraction for change tracking",
-        async () => {
-          const response = await scrape(
-            {
-              url: CHANGE_TRACKING_TEST_URL,
-              formats: [
-                "markdown",
-                {
-                  type: "changeTracking",
-                  modes: ["json"],
-                  schema: {
-                    type: "object",
-                    properties: {
-                      pricing: {
-                        type: "object",
-                        properties: {
-                          amount: { type: "number" },
-                          currency: { type: "string" },
-                        },
-                      },
-                      features: {
-                        type: "array",
-                        items: { type: "string" },
-                      },
-                    },
-                  },
-                },
-              ],
-            },
-            identity,
-          );
-
-          expect(response.changeTracking).toBeDefined();
-          expect(response.changeTracking?.previousScrapeAt).not.toBeNull();
-
-          if (response.changeTracking?.changeStatus === "changed") {
-            expect(response.changeTracking?.json).toBeDefined();
-            if (response.changeTracking?.json.pricing) {
-              expect(response.changeTracking?.json.pricing).toHaveProperty(
-                "old",
-              );
-              expect(response.changeTracking?.json.pricing).toHaveProperty(
-                "new",
-              );
-            }
-            if (response.changeTracking?.json.features) {
-              expect(response.changeTracking?.json.features).toHaveProperty(
-                "old",
-              );
-              expect(response.changeTracking?.json.features).toHaveProperty(
-                "new",
-              );
-            }
-          }
-        },
-        scrapeTimeout,
-      );
-
-      it.concurrent(
-        "supports both git-diff and structured modes together",
-        async () => {
-          const response = await scrape(
-            {
-              url: CHANGE_TRACKING_TEST_URL,
-              formats: [
-                "markdown",
-                {
-                  type: "changeTracking",
-                  modes: ["git-diff", "json"],
-                  schema: {
-                    type: "object",
-                    properties: {
-                      summary: { type: "string" },
-                      changes: { type: "array", items: { type: "string" } },
-                    },
-                  },
-                },
-              ],
-            },
-            identity,
-          );
-
-          expect(response.changeTracking).toBeDefined();
-          expect(response.changeTracking?.previousScrapeAt).not.toBeNull();
-
-          if (response.changeTracking?.changeStatus === "changed") {
-            expect(response.changeTracking?.diff).toBeDefined();
-            expect(response.changeTracking?.diff?.text).toBeDefined();
-            expect(response.changeTracking?.diff?.json).toBeDefined();
-
-            expect(response.changeTracking?.json).toBeDefined();
-            expect(response.changeTracking?.json).toHaveProperty("summary");
-            expect(response.changeTracking?.json).toHaveProperty("changes");
-          }
-        },
-        scrapeTimeout * 2,
-      );
-
-      it.concurrent(
-        "supports tags properly",
-        async () => {
-          const uuid1 = crypto.randomUUID();
-          const uuid2 = crypto.randomUUID();
-
-          const response1 = await scrape(
-            {
-              url: CHANGE_TRACKING_TEST_URL,
-              formats: ["markdown", { type: "changeTracking", tag: uuid1 }],
-            },
-            identity,
-          );
-
-          const response2 = await scrape(
-            {
-              url: CHANGE_TRACKING_TEST_URL,
-              formats: ["markdown", { type: "changeTracking", tag: uuid2 }],
-            },
-            identity,
-          );
-
-          expect(response1.changeTracking?.previousScrapeAt).toBeNull();
-          expect(response1.changeTracking?.changeStatus).toBe("new");
-          expect(response2.changeTracking?.previousScrapeAt).toBeNull();
-          expect(response2.changeTracking?.changeStatus).toBe("new");
-
-          const response3 = await scrape(
-            {
-              url: CHANGE_TRACKING_TEST_URL,
-              formats: ["markdown", { type: "changeTracking", tag: uuid1 }],
-            },
-            identity,
-          );
-
-          expect(response3.changeTracking?.previousScrapeAt).not.toBeNull();
-          expect(response3.changeTracking?.changeStatus).not.toBe("new");
-        },
-        scrapeTimeout * 3,
-      );
-    });
-
     describe("Location API (f-e dependent)", () => {
       it.concurrent(
         "works without specifying an explicit location",
@@ -1712,7 +1486,7 @@ describe("Scrape tests", () => {
         const response = await scrape(
           {
             url: "https://drive.google.com/file/d/14m3ZVDnWJwwPSDHX6U6jkL7FXxOf6cHB/view?usp=sharing",
-            maxAge: 0,
+            ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
           },
           identity,
         );
@@ -1728,7 +1502,7 @@ describe("Scrape tests", () => {
         const response = await scrape(
           {
             url: "https://docs.google.com/spreadsheets/d/1DTpw_bbsf3OY17ZqEYEpW6lAmLdCRC2WfLrV0isG9ac/edit?usp=sharing",
-            maxAge: 0,
+            ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
           },
           identity,
         );
@@ -2061,7 +1835,7 @@ describe("Scrape tests", () => {
   );
 
   // TODO: check if these are required
-  describeIf(ALLOW_TEST_SUITE_WEBSITE)(
+  describeIf(TEST_PRODUCTION && ALLOW_TEST_SUITE_WEBSITE)(
     "__experimental_omceDomain functionality",
     () => {
       it.concurrent(
@@ -2227,32 +2001,6 @@ describe("Attribute formats", () => {
       scrapeTimeout,
     );
 
-    itIf(
-      EXTRACT_LIVE && (TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE)),
-    )(
-      "should normalize extract request with additionalProperties in schema",
-      async () => {
-        const identity = await idmux({ name: "schema-validation-test" });
-
-        const response = await extractRaw(
-          {
-            urls: [base],
-            schema: {
-              type: "object",
-              properties: {
-                title: { type: "string" },
-              },
-              additionalProperties: true,
-            },
-          },
-          identity,
-        );
-
-        expect(response.statusCode).toBe(200);
-      },
-      scrapeTimeout,
-    );
-
     itIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
       "should accept valid schema without additionalProperties",
       async () => {
@@ -2369,78 +2117,6 @@ describe("Attribute formats", () => {
         );
 
         expect(response.statusCode).toBe(200);
-      },
-      scrapeTimeout,
-    );
-  });
-
-  describeIf(!TEST_SELF_HOST)("Audio format", () => {
-    it.concurrent(
-      "should return audio field with signed GCS URL for a supported video URL",
-      async () => {
-        const data = await scrape(
-          {
-            url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            formats: ["audio"],
-          },
-          identity,
-        );
-
-        expect(data.audio).toBeDefined();
-        expect(typeof data.audio).toBe("string");
-        expect(data.audio).toMatch(/^https:\/\//);
-      },
-      scrapeTimeout,
-    );
-
-    it.concurrent(
-      "should reject unsupported URL with audio format",
-      async () => {
-        const result = await scrapeWithFailure(
-          {
-            url: "https://example.com",
-            formats: ["audio"],
-          },
-          identity,
-        );
-
-        expect(result.error).toMatch(/audio/i);
-      },
-      scrapeTimeout,
-    );
-  });
-
-  describeIf(!TEST_SELF_HOST)("Video format", () => {
-    it.concurrent(
-      "should return video field with signed GCS URL for a supported video URL",
-      async () => {
-        const data = await scrape(
-          {
-            url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            formats: ["video"],
-          },
-          identity,
-        );
-
-        expect(data.video).toBeDefined();
-        expect(typeof data.video).toBe("string");
-        expect(data.video).toMatch(/^https:\/\//);
-      },
-      scrapeTimeout * 2,
-    );
-
-    it.concurrent(
-      "should reject unsupported URL with video format",
-      async () => {
-        const result = await scrapeWithFailure(
-          {
-            url: "https://example.com",
-            formats: ["video"],
-          },
-          identity,
-        );
-
-        expect(result.error).toMatch(/video/i);
       },
       scrapeTimeout,
     );

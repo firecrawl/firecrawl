@@ -8,19 +8,8 @@ import { CostTracking } from "../../lib/cost-tracking";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { requestContext } from "../../lib/request-context";
 
-vi.mock("../../services/index", () => ({
-  useIndex: false,
-  useSearchIndex: false,
-}));
-
 vi.mock("../WebScraper/utils/blocklist", () => ({
   isUrlBlocked: vi.fn(() => false),
-}));
-
-vi.mock("../../lib/exchange", () => ({
-  getExchangeAccessForRequest: vi.fn(async () => ({ allowed: false })),
-  ThirdPartyDataTermsRequiredError: class extends Error {},
-  ThirdPartyDataUnsupportedOptionError: class extends Error {},
 }));
 
 vi.mock("./lib/removeUnwantedElements", async importOriginal => {
@@ -34,7 +23,7 @@ vi.mock("./lib/removeUnwantedElements", async importOriginal => {
 
 import { scrapeURL } from ".";
 import { coreEngineFeatures, type EngineScrapeResult } from "./engines";
-import { EngineError, NoEnginesLeftError } from "./error";
+import { EngineError, NoEnginesLeftError, SiteError } from "./error";
 import { createScrapeFinishedEmitter } from "./hooks";
 import { AbortManager, AbortManagerThrownError } from "./lib/abortManager";
 import { htmlTransform } from "./lib/removeUnwantedElements";
@@ -47,6 +36,10 @@ const makeEngine = (
     quality?: number;
     features?: Record<string, boolean>;
     enabled?: () => boolean;
+    cache?: boolean;
+    supportsProfile?: boolean;
+    prefetchesFiles?: boolean;
+    allowEmptyContent?: boolean;
   } = {},
 ): RegisteredEngine =>
   ({
@@ -55,6 +48,10 @@ const makeEngine = (
     features: options.features ?? {},
     enabled: options.enabled ?? (() => true),
     maxReasonableTime: () => 5_000,
+    ...(options.cache ? { cache: true } : {}),
+    ...(options.supportsProfile ? { supportsProfile: true } : {}),
+    ...(options.prefetchesFiles ? { prefetchesFiles: true } : {}),
+    ...(options.allowEmptyContent ? { allowEmptyContent: true } : {}),
     scrape,
   }) as unknown as RegisteredEngine;
 
@@ -547,14 +544,17 @@ describe("scrape pipeline hook points", () => {
       [
         makeEngine("wikipedia", wikiScrape, { quality: 50 }),
         makeEngine("fetch", fetchScrape, { quality: 20 }),
-        makeEngine("fire-engine;chrome-cdp", cdpScrape, { quality: 30 }),
+        makeEngine("playwright", cdpScrape, {
+          quality: 30,
+          supportsProfile: true,
+        }),
       ],
       [
         {
           name: "unsafe-select-hook",
           hooks: {
             "scrape.engines.select": () => ({
-              candidates: ["wikipedia", "fetch", "fire-engine;chrome-cdp"],
+              candidates: ["wikipedia", "fetch", "playwright"],
             }),
           },
         },
@@ -577,10 +577,12 @@ describe("scrape pipeline hook points", () => {
     const profileResult = await scrapeURL(
       "scrape-profile-policy",
       "https://example.com/profile",
-      scrapeOptions.parse({
-        formats: ["markdown"],
+      {
+        ...scrapeOptions.parse({
+          formats: ["markdown"],
+        }),
         profile: { name: "user-profile", saveChanges: false },
-      }),
+      } as any,
       { teamId: "team-profile", orgId: null },
       new CostTracking(),
     );
@@ -882,5 +884,124 @@ describe("scrape pipeline hook points", () => {
         timeTakenMs: 10,
       }),
     ).resolves.toBeUndefined();
+  });
+
+  it("supports continueWaterfall on scrape.engine.fallback for loop-ending errors", async () => {
+    const primaryScrape = vi.fn(async () => {
+      throw new SiteError("ERR_TUNNEL_CONNECTION_FAILED");
+    });
+    const fallbackScrape = vi.fn(
+      async (): Promise<EngineScrapeResult> => ({
+        url: "https://example.com/retry",
+        html: "<html><body><p>Recovered</p></body></html>",
+        statusCode: 200,
+        proxyUsed: "basic",
+      }),
+    );
+
+    installTestService(
+      [
+        makeEngine("playwright", primaryScrape, { quality: 20 }),
+        makeEngine("fetch", fallbackScrape, { quality: 5 }),
+      ],
+      [
+        {
+          name: "continue-on-tunnel",
+          hooks: {
+            "scrape.engine.fallback": (plan, info) => {
+              if (
+                info.error instanceof SiteError &&
+                info.error.errorCode === "ERR_TUNNEL_CONNECTION_FAILED" &&
+                plan.candidates.length > 0
+              ) {
+                return { ...plan, continueWaterfall: true };
+              }
+              return plan;
+            },
+          },
+        },
+      ],
+    );
+
+    const result = await scrapeURL(
+      "scrape-continue-waterfall",
+      "https://example.com/retry",
+      scrapeOptions.parse({ formats: ["markdown"] }),
+      { teamId: "team-retry", orgId: null },
+      new CostTracking(),
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.document.markdown).toContain("Recovered");
+    expect(primaryScrape).toHaveBeenCalledTimes(1);
+    expect(fallbackScrape).toHaveBeenCalledTimes(1);
+  });
+
+  it("honors cache, allowEmptyContent, suppressUnsupportedWarnings, and exchange metadata", async () => {
+    const cacheScrape = vi.fn(async () => {
+      throw new EngineError("cache miss");
+    });
+    const emptyEngineScrape = vi.fn(
+      async (): Promise<EngineScrapeResult> => ({
+        url: "https://example.com/blank",
+        html: "",
+        markdown: "",
+        statusCode: 200,
+        proxyUsed: "basic",
+        exchange: {
+          accessEventId: "evt-1",
+          provider: {
+            id: "acme",
+            creditsCost: 5,
+            steps: [{ provider: "acme", status: "matched", creditsCost: 5 }],
+          },
+        },
+      }),
+    );
+
+    installTestService(
+      [
+        makeEngine("playwright", cacheScrape, {
+          quality: 100,
+          cache: true,
+        }),
+        makeEngine("fetch", emptyEngineScrape, {
+          quality: 10,
+          allowEmptyContent: true,
+        }),
+      ],
+      [
+        {
+          name: "suppress-warnings",
+          hooks: {
+            "scrape.engines.select": plan => ({
+              ...plan,
+              suppressUnsupportedWarnings: true,
+            }),
+          },
+        },
+      ],
+    );
+
+    const result = await scrapeURL(
+      "scrape-traits",
+      "https://example.com/blank",
+      scrapeOptions.parse({ formats: ["markdown"], waitFor: 500 }),
+      { teamId: "team-traits", orgId: null },
+      new CostTracking(),
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.document.metadata.cacheState).toBe("miss");
+    expect(result.document.warning).toBeUndefined();
+    expect(
+      (result.document.metadata as unknown as Record<string, unknown>).provider,
+    ).toEqual({
+      id: "acme",
+      creditsCost: 5,
+      steps: [{ provider: "acme", status: "matched", creditsCost: 5 }],
+    });
   });
 });

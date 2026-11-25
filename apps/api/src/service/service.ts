@@ -19,6 +19,12 @@ import {
   type LlmProviderRegistry,
 } from "./llm-providers";
 import { freezeModules, type Modules } from "./modules";
+import type {
+  BaseCaller,
+  BaseRequestContext,
+  Caller,
+  RequestContext,
+} from "./request-context";
 import {
   buildRequestSchemaRegistry,
   type DescribedRequestSchemas,
@@ -105,13 +111,36 @@ export interface Extension {
   workers?: Record<string, Worker>;
 }
 
+type RequiredAuthSlot = BaseCaller extends Caller ? never : "auth";
+type RequiredPolicySlot = BaseRequestContext extends RequestContext
+  ? never
+  : "policy";
+type RequiredModuleSlots = RequiredAuthSlot | RequiredPolicySlot;
+
+/**
+ * Module slot configuration. When `Caller` is widened with required fields,
+ * `auth` must be supplied explicitly instead of falling back to `openAuth()`.
+ * When `RequestContext` is widened with required fields, `policy` must be
+ * supplied explicitly instead of falling back to `unrestrictedPolicy()`.
+ */
+export type ModulesConfig = [RequiredModuleSlots] extends [never]
+  ? Partial<Modules>
+  : Partial<Omit<Modules, RequiredModuleSlots>> &
+      Pick<Modules, RequiredModuleSlots>;
+
 /** The whole config. Everything that is not a slot belongs to a named extension. */
-export interface ServiceConfig {
-  /** Module slots to override; omitted slots use the built-in defaults. */
-  modules?: Partial<Modules>;
+export type ServiceConfig = ([RequiredModuleSlots] extends [never]
+  ? {
+      /** Module slots to override; omitted slots use the built-in defaults. */
+      modules?: ModulesConfig;
+    }
+  : {
+      /** Module slots; required slots must be supplied when `Caller` or `RequestContext` is widened. */
+      modules: ModulesConfig;
+    }) & {
   /** Applied in list order, after the service's own extension. */
   extensions?: Extension[];
-}
+};
 
 export interface CoreParts {
   /** The service's own extension, applied first. */
@@ -197,9 +226,14 @@ export function createService(
     }
     for (const key of Object.keys(config.modules)) {
       if (
+        key !== "auth" &&
+        key !== "billing" &&
         key !== "blocklist" &&
+        key !== "limits" &&
         key !== "messages" &&
+        key !== "policy" &&
         key !== "uploads" &&
+        key !== "jobStore" &&
         key !== "idempotency" &&
         key !== "webhooks"
       ) {
@@ -210,18 +244,38 @@ export function createService(
 
   const defaults = defaultModules();
   const modules = freezeModules({
+    auth:
+      config.modules?.auth === undefined
+        ? (defaults.auth as Modules["auth"])
+        : config.modules.auth,
+    billing:
+      config.modules?.billing === undefined
+        ? defaults.billing
+        : config.modules.billing,
     blocklist:
       config.modules?.blocklist === undefined
         ? defaults.blocklist
         : config.modules.blocklist,
+    limits:
+      config.modules?.limits === undefined
+        ? defaults.limits
+        : config.modules.limits,
     messages:
       config.modules?.messages === undefined
         ? defaults.messages
         : config.modules.messages,
+    policy:
+      config.modules?.policy === undefined
+        ? (defaults.policy as Modules["policy"])
+        : config.modules.policy,
     uploads:
       config.modules?.uploads === undefined
         ? defaults.uploads
         : config.modules.uploads,
+    jobStore:
+      config.modules?.jobStore === undefined
+        ? defaults.jobStore
+        : config.modules.jobStore,
     idempotency:
       config.modules?.idempotency === undefined
         ? defaults.idempotency

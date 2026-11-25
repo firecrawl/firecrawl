@@ -8,8 +8,6 @@ import {
   idmux,
   Identity,
   crawlStart,
-  extractRaw,
-  EXTRACT_LIVE,
   map,
   browserCreateRaw,
 } from "./lib";
@@ -72,7 +70,7 @@ describeIf(TEST_PRODUCTION)("US-only teams", () => {
       );
 
       expect(response.markdown).toBeDefined();
-      expect(response.highlights).toBeUndefined();
+      expect((response as any).highlights).toBeUndefined();
       expect(response.warning).toContain(
         "Query mode is not supported for teams restricted to US-only processing.",
       );
@@ -182,26 +180,6 @@ describeIf(TEST_PRODUCTION)("US-only teams", () => {
 
       expect(response.statusCode).toBe(403);
       expect(response.body.code).toBe("US_ONLY_UNAVAILABLE");
-    },
-    scrapeTimeout,
-  );
-
-  itIf(EXTRACT_LIVE && !HAS_US_OPENAI)(
-    "refuses extract without a US route",
-    async () => {
-      const response = await extractRaw(
-        {
-          urls: ["https://firecrawl.dev"],
-          prompt: "Extract the company name.",
-        },
-        identity,
-      );
-
-      expect(response.statusCode).toBe(403);
-      expect(response.body.code).toBe("US_ONLY_UNAVAILABLE");
-      expect(response.body.error).toContain(
-        "Extract is not available for teams restricted to US-only processing.",
-      );
     },
     scrapeTimeout,
   );

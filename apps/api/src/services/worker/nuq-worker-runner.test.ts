@@ -46,10 +46,6 @@ vi.mock("../../scraper/WebScraper/utils/engine-forcing", () => ({
   initializeEngineForcing: mocks.initializeEngineForcing,
 }));
 
-vi.mock("../logging/log_job", () => ({
-  shutdownPubSubLogging: vi.fn(async () => {}),
-}));
-
 import { defaultModules, noBlocklist } from "../../service/defaults";
 import { replaceService, type CoreParts } from "../../service/service";
 import { testService, withService } from "../../service/testing";
