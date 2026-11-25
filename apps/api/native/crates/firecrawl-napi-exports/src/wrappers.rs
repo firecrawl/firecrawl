@@ -703,5 +703,83 @@ macro_rules! export_oss_napi {
       let res = $crate::wrappers::detect_pdf(path, ctx).await?;
       Ok(_convert_pdf_result(res))
     }
+
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[napi_derive::napi(object)]
+    pub struct CountryInfo {
+      pub name: String,
+      pub native: String,
+      pub phone: Vec<u32>,
+      pub continent: String,
+      pub continents: Option<Vec<String>>,
+      pub capital: String,
+      pub currency: Vec<String>,
+      pub languages: Vec<String>,
+      pub part_of: Option<String>,
+      pub user_assigned: Option<bool>,
+    }
+
+    /// Look up pricing and capability metadata for a model by exact key.
+    #[napi_derive::napi]
+    pub fn get_model_price(
+      model: String,
+    ) -> napi::Result<Option<std::collections::HashMap<String, serde_json::Value>>> {
+      $crate::tables::get_model_price(&model)
+    }
+
+    /// Check whether a model key exists in the pricing table (exact, case-sensitive).
+    #[napi_derive::napi]
+    pub fn has_model_price(model: String) -> bool {
+      $crate::tables::has_model_price(&model)
+    }
+
+    /// List all model keys in the pricing table.
+    #[napi_derive::napi]
+    pub fn get_model_price_keys() -> Vec<String> {
+      $crate::tables::get_model_price_keys()
+    }
+
+    /// Validate an ISO 3166-1 alpha-2 country code (ASCII case-insensitive).
+    #[napi_derive::napi]
+    pub fn validate_country(code: String) -> bool {
+      $crate::tables::validate_country(&code)
+    }
+
+    /// Look up country metadata by exact uppercase ISO 3166-1 alpha-2 code.
+    #[napi_derive::napi]
+    pub fn get_country(code: String) -> Option<CountryInfo> {
+      $crate::__deps::firecrawl_tables::get_country(&code).map(|info| CountryInfo {
+        name: info.name.to_owned(),
+        native: info.native.to_owned(),
+        phone: info.phone.iter().map(|&p| u32::from(p)).collect(),
+        continent: info.continent.to_owned(),
+        continents: info
+          .continents
+          .map(|list| list.iter().map(|&s| s.to_owned()).collect()),
+        capital: info.capital.to_owned(),
+        currency: info.currency.iter().map(|&s| s.to_owned()).collect(),
+        languages: info.languages.iter().map(|&s| s.to_owned()).collect(),
+        part_of: info.part_of.map(str::to_owned),
+        user_assigned: info.user_assigned,
+      })
+    }
+
+    /// Check whether an exact uppercase ISO 3166-1 alpha-2 code exists.
+    #[napi_derive::napi]
+    pub fn has_country(code: String) -> bool {
+      $crate::tables::has_country(&code)
+    }
+
+    /// List all ISO 3166-1 alpha-2 country codes in sorted order.
+    #[napi_derive::napi]
+    pub fn get_country_codes() -> Vec<String> {
+      $crate::tables::get_country_codes()
+    }
+
+    /// Look up an uppercase ISO 3166-1 alpha-2 code by English country name (case-insensitive).
+    #[napi_derive::napi]
+    pub fn find_country_code_by_name(name: String) -> Option<String> {
+      $crate::tables::find_country_code_by_name(&name)
+    }
   };
 }

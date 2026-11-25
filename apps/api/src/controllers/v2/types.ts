@@ -4,7 +4,11 @@ import { config } from "../../config";
 import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { hasReachableHost } from "../../lib/url-utils";
-import { countries } from "../../lib/validate-country";
+import {
+  findCountryCodeByName,
+  getCountry,
+  validateCountry,
+} from "../../lib/validate-country";
 import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
 import { addStrictSchemaIssue } from "../../lib/openai-strict-schema";
 export { addStrictSchemaIssue };
@@ -506,7 +510,7 @@ const locationSchema = z
       .refine(
         val =>
           !val ||
-          Object.keys(countries).includes(val.toUpperCase()) ||
+          validateCountry(val) ||
           SPECIAL_COUNTRIES.includes(val.toLowerCase()),
         "Invalid country code. Use a valid ISO 3166-1 alpha-2 country code.",
       )
@@ -522,7 +526,7 @@ export const countryLocationSchema = z.strictObject({
   country: z
     .string()
     .refine(
-      value => Object.keys(countries).includes(value.toUpperCase()),
+      value => validateCountry(value),
       "Invalid country code. Use a valid ISO 3166-1 alpha-2 country code.",
     )
     .transform(value => value.toLowerCase()),
@@ -1546,20 +1550,18 @@ const transformSearchRequest = <
   // each to the US, so fill in whichever one the caller left out. Georgia is
   // never inferred because it is also a US state.
   const locationCountry = x.location?.split(",").at(-1)?.trim().toLowerCase();
+  const inferredCountry = locationCountry
+    ? findCountryCodeByName(locationCountry)
+    : undefined;
   const country =
     x.country ??
-    Object.entries(countries)
-      .find(
-        ([code, c]) =>
-          code !== "GE" && c.name.toLowerCase() === locationCountry,
-      )?.[0]
-      .toLowerCase() ??
+    (inferredCountry && inferredCountry !== "GE"
+      ? inferredCountry.toLowerCase()
+      : undefined) ??
     (x.location ? undefined : "us");
   const location =
     x.location ??
-    Object.entries(countries).find(
-      ([code]) => code === x.country?.toUpperCase(),
-    )?.[1].name;
+    (x.country ? getCountry(x.country.toUpperCase())?.name : undefined);
 
   // Transform string array sources to object format
   let sources = x.sources;

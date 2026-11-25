@@ -9,7 +9,7 @@ import {
 import { Logger } from "winston";
 import { Meta } from "..";
 import { logger } from "../../../lib/logger";
-import { modelPrices } from "../../../lib/model-prices";
+import { getModelPrice } from "../../../lib/model-prices";
 import {
   AISDKError,
   generateObject,
@@ -85,7 +85,7 @@ type LanguageModelV1ProviderMetadata = {
 
 // Get max tokens from model prices
 const getModelLimits = (model: string) => {
-  const modelConfig = modelPrices[model];
+  const modelConfig = getModelPrice(model);
   if (!modelConfig) {
     // Default fallback values
     return {
@@ -95,9 +95,11 @@ const getModelLimits = (model: string) => {
     };
   }
   return {
-    maxInputTokens: modelConfig.max_input_tokens || modelConfig.max_tokens,
-    maxOutputTokens: modelConfig.max_output_tokens || modelConfig.max_tokens,
-    maxTokens: modelConfig.max_tokens,
+    maxInputTokens:
+      modelConfig.max_input_tokens || modelConfig.max_tokens || 8192,
+    maxOutputTokens:
+      modelConfig.max_output_tokens || modelConfig.max_tokens || 4096,
+    maxTokens: modelConfig.max_tokens || 12288,
   };
 };
 
@@ -312,7 +314,7 @@ function lookupModelCost(
     if (modelCosts[id]) return modelCosts[id];
   }
   for (const id of candidates) {
-    const price = modelPrices[id];
+    const price = getModelPrice(id);
     if (
       typeof price?.input_cost_per_token === "number" &&
       typeof price?.output_cost_per_token === "number"
@@ -479,7 +481,7 @@ export async function generateCompletions({
   // the prompt, schema and output. Models without known limits are sent the
   // content as-is. A BPE token is at least one byte, so content that fits in
   // bytes skips the (synchronous) tokenizer entirely.
-  const maxInputTokens = modelPrices[modelId]?.max_input_tokens;
+  const maxInputTokens = getModelPrice(modelId)?.max_input_tokens;
   if (markdown && maxInputTokens) {
     const maxContentTokens = Math.floor(maxInputTokens * 0.8);
     if (Buffer.byteLength(markdown, "utf8") > maxContentTokens) {

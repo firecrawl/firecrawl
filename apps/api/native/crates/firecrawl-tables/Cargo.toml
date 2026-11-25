@@ -1,0 +1,17 @@
+[package]
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+name = "firecrawl-tables"
+publish.workspace = true
+version.workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+hegeltest.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
