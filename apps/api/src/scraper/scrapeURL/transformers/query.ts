@@ -5,8 +5,6 @@ import { Meta } from "..";
 import { config } from "../../../config";
 import { getModel } from "../../../lib/generic-ai";
 import { service } from "../../../service";
-import { hasFormatOfType } from "../../../lib/format-utils";
-import { isUsOnly } from "../../../lib/us-only";
 import { calculateCost } from "./llmExtract";
 import { modelPrices } from "../../../lib/model-prices";
 import {
@@ -147,7 +145,7 @@ export function keepWholeLines(text: string, prefix: string): string {
   return lastNewline === -1 ? prefix : prefix.slice(0, lastNewline);
 }
 
-async function performDirectQuoteQuery(
+export async function performDirectQuoteQuery(
   meta: Meta,
   document: Document,
   prompt: string,
@@ -408,8 +406,7 @@ export async function performQuery(
     (format): format is Extract<FormatObject, { type: "question" | "query" }> =>
       format.type === "question" || format.type === "query",
   );
-  const highlightsFormat = hasFormatOfType(meta.options.formats, "highlights");
-  if (!answerFormat && !highlightsFormat) {
+  if (!answerFormat) {
     return document;
   }
 
@@ -420,7 +417,7 @@ export async function performQuery(
     return document;
   }
 
-  if (isUsOnly(meta.internalOptions.teamFlags ?? undefined)) {
+  if (meta.ctx?.usOnly || meta.ctx?.flags?.usOnly) {
     addWarning(
       document,
       "Query mode is not supported for teams restricted to US-only processing.",
@@ -467,24 +464,6 @@ export async function performQuery(
     } else {
       document.warning =
         "Query generation failed after all models." +
-        (document.warning ? " " + document.warning : "");
-    }
-  }
-
-  if (highlightsFormat) {
-    const highlights = await performDirectQuoteQuery(
-      meta,
-      document,
-      highlightsFormat.query,
-      markdown,
-      "highlights",
-    );
-
-    if (highlights !== null) {
-      document.highlights = highlights;
-    } else {
-      document.warning =
-        "Highlights generation failed after all models." +
         (document.warning ? " " + document.warning : "");
     }
   }

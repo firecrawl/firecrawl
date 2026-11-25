@@ -23,20 +23,12 @@ vi.mock("../config", () => {
   loadedSideEffectModules.push("config");
   return { config: {} };
 });
-vi.mock("../lib/exchange", () => {
-  loadedSideEffectModules.push("exchange");
+vi.mock("../services/worker/nuq-router", () => {
+  loadedSideEffectModules.push("nuq-router");
   return {};
 });
-vi.mock("../lib/deployment", () => {
-  loadedSideEffectModules.push("deployment");
-  return { isSelfHosted: () => true };
-});
-vi.mock("../lib/gcs-jobs", () => {
-  loadedSideEffectModules.push("gcs-jobs");
-  return {};
-});
-vi.mock("../lib/zdr-queue", () => {
-  loadedSideEffectModules.push("zdr-queue");
+vi.mock("../lib/crawl-redis", () => {
+  loadedSideEffectModules.push("crawl-redis");
   return {};
 });
 vi.mock("../services/redis", () => {
@@ -45,10 +37,6 @@ vi.mock("../services/redis", () => {
 });
 vi.mock("../services/queue-service", () => {
   loadedSideEffectModules.push("queue-service");
-  return {};
-});
-vi.mock("../db/connection", () => {
-  loadedSideEffectModules.push("db");
   return {};
 });
 
@@ -285,7 +273,18 @@ describe("coreParts", () => {
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: ["blocklist", "idempotency", "messages", "uploads", "webhooks"],
+      modules: [
+        "auth",
+        "billing",
+        "blocklist",
+        "idempotency",
+        "jobStore",
+        "limits",
+        "messages",
+        "policy",
+        "uploads",
+        "webhooks",
+      ],
       hooks: {},
       errors: {
         AGENT_INDEX_ONLY: "core",
@@ -297,8 +296,6 @@ describe("coreParts", () => {
         SCRAPE_ACTIONS_NOT_SUPPORTED: "core",
         SCRAPE_ACTION_ERROR: "core",
         SCRAPE_ALL_ENGINES_FAILED: "core",
-        SCRAPE_AUDIO_UNSUPPORTED_URL: "core",
-        SCRAPE_BRANDING_NOT_SUPPORTED: "core",
         SCRAPE_DNS_RESOLUTION_ERROR: "core",
         SCRAPE_DOCUMENT_ANTIBOT_ERROR: "core",
         SCRAPE_DOCUMENT_FETCH_PROXY_ERROR: "core",
@@ -306,7 +303,6 @@ describe("coreParts", () => {
         SCRAPE_JOB_CANCELLED: "core",
         SCRAPE_JSON_CONTENT_TOO_LARGE: "core",
         SCRAPE_LOCKDOWN_CACHE_MISS: "core",
-        SCRAPE_MEDIA_ACCESS_DENIED: "core",
         SCRAPE_NO_CACHED_DATA: "core",
         SCRAPE_PAYWALLED_CONTENT: "core",
         SCRAPE_PDF_ANTIBOT_ERROR: "core",
@@ -324,32 +320,18 @@ describe("coreParts", () => {
         SCRAPE_SSL_ERROR: "core",
         SCRAPE_TIMEOUT: "core",
         SCRAPE_UNSUPPORTED_FILE_ERROR: "core",
-        SCRAPE_VIDEO_UNSUPPORTED_URL: "core",
         SCRAPE_ZDR_VIOLATION_ERROR: "core",
         THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED: "core",
         THIRD_PARTY_DATA_NOT_ENABLED: "core",
         THIRD_PARTY_DATA_NOT_FOUND: "core",
-        THIRD_PARTY_DATA_TERMS_REQUIRED: "core",
-        THIRD_PARTY_DATA_UNSUPPORTED_OPTION: "core",
         THIRD_PARTY_DATA_UNSUPPORTED_URL: "core",
         UNKNOWN_ERROR: "core",
         UNSUPPORTED_SITE: "core",
         US_ONLY_UNAVAILABLE: "core",
-        unsafe_domain_blocked: "core",
       },
       engines: {
         document: "core",
-        exchange: "core",
         fetch: "core",
-        "fire-engine(retry);chrome-cdp": "core",
-        "fire-engine(retry);chrome-cdp;stealth": "core",
-        "fire-engine;chrome-cdp": "core",
-        "fire-engine;chrome-cdp;stealth": "core",
-        "fire-engine;tlsclient": "core",
-        "fire-engine;tlsclient;stealth": "core",
-        image: "core",
-        index: "core",
-        "index;documents": "core",
         pdf: "core",
         playwright: "core",
         wikipedia: "core",
@@ -357,8 +339,6 @@ describe("coreParts", () => {
       engineFeatures: {
         actions: { owner: "core", priority: 20 },
         atsv: { owner: "core", priority: 90 },
-        audio: { owner: "core", priority: 100 },
-        branding: { owner: "core", priority: 20 },
         disableAdblock: { owner: "core", priority: 10 },
         document: { owner: "core", priority: 100 },
         image: { owner: "core", priority: 100 },
@@ -370,7 +350,6 @@ describe("coreParts", () => {
         skipTlsVerification: { owner: "core", priority: 10 },
         stealthProxy: { owner: "core", priority: 20 },
         useFastMode: { owner: "core", priority: 90 },
-        video: { owner: "core", priority: 100 },
         waitFor: { owner: "core", priority: 1 },
       },
       searchProviders: {
@@ -395,16 +374,12 @@ describe("coreParts", () => {
       routes: [],
       roles: {
         api: "core",
-        "cclog-worker": "core",
-        "extract-worker": "core",
         harness: "core",
-        "index-worker": "core",
         "nuq-fdb-worker": "core",
         "nuq-prefetch-worker": "core",
         "nuq-reconciler-worker": "core",
         "nuq-worker": "core",
         "queue-worker": "core",
-        "zdr-worker": "core",
       },
       env: {},
     });
@@ -434,7 +409,7 @@ describe("coreParts", () => {
     ).toHaveLength(1);
   });
 
-  it("loads core error classes and default modules without pulling in config, exchange, deployment, gcs, zdr, redis, or db", () => {
+  it("loads core error classes and default modules without loading configuration, queue, Redis, or database clients", () => {
     const required = answerRequire();
     const built = createService({ modules: defaultModules() }, coreParts());
 
@@ -452,11 +427,20 @@ describe("coreParts", () => {
 
     expect(built.describe().hooks).toEqual({});
     expect(built.describe().routes).toEqual([]);
-    expect(built.roles.names()).toHaveLength(11);
+    expect(built.roles.names()).toHaveLength(7);
+    expect(built.roles.has("cclog-worker")).toBe(false);
+    expect(built.roles.has("extract-worker")).toBe(false);
+    expect(built.roles.has("index-worker")).toBe(false);
+    expect(built.roles.has("zdr-worker")).toBe(false);
     expect(built.describe().modules).toEqual([
+      "auth",
+      "billing",
       "blocklist",
       "idempotency",
+      "jobStore",
+      "limits",
       "messages",
+      "policy",
       "uploads",
       "webhooks",
     ]);
@@ -548,5 +532,44 @@ describe("coreParts", () => {
     ]);
     expect(customEnabled).toHaveBeenCalledTimes(1);
     expect(required).toHaveBeenCalledWith(searchProvidersModule);
+  });
+
+  it("registers extension worker roles alongside core roles without loading worker implementations", () => {
+    const required = answerRequire();
+    const customRun = vi.fn();
+    const built = createService(
+      {
+        modules: defaultModules(),
+        extensions: [
+          {
+            name: "custom-workers",
+            workers: {
+              "custom-worker": { run: customRun },
+            },
+          },
+        ],
+      },
+      coreParts(),
+    );
+
+    expect(built.roles.has("custom-worker")).toBe(true);
+    expect(built.roles.owner("custom-worker")).toBe("custom-workers");
+    expect(built.roles.has("cclog-worker")).toBe(false);
+    expect(built.roles.has("extract-worker")).toBe(false);
+    expect(built.roles.has("index-worker")).toBe(false);
+    expect(built.roles.has("zdr-worker")).toBe(false);
+    expect(built.describe().roles).toEqual({
+      api: "core",
+      "custom-worker": "custom-workers",
+      harness: "core",
+      "nuq-fdb-worker": "core",
+      "nuq-prefetch-worker": "core",
+      "nuq-reconciler-worker": "core",
+      "nuq-worker": "core",
+      "queue-worker": "core",
+    });
+    expect(customRun).not.toHaveBeenCalled();
+    expect(required).not.toHaveBeenCalledWith(enginesModule);
+    expect(loadedSideEffectModules).toEqual([]);
   });
 });

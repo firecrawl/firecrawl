@@ -1,59 +1,72 @@
-import { describe, expect, it, vi } from "vitest";
-import { config } from "../config";
+import { describe, expect, it } from "vitest";
+import { coreParts, defaultModules } from "../service";
+import type { Engine, EngineName } from "../service/engines";
+import { testService, withService } from "../service/testing";
 import { imageOcrGate, isImageOcrEnabled } from "./image-ocr-gate";
 
-vi.mock("../config", () => ({
-  config: {
-    FIRE_PDF_BASE_URL: "http://fire-pdf.test",
-    IMAGE_OCR_ENABLED: true,
-  },
-}));
-
-const mutableConfig = config as {
-  FIRE_PDF_BASE_URL?: string;
-  IMAGE_OCR_ENABLED: boolean;
-};
-
-function withConfig<T>(
-  overrides: Partial<typeof mutableConfig>,
-  run: () => T,
-): T {
-  const previous = { ...mutableConfig };
-  Object.assign(mutableConfig, overrides);
-  try {
-    return run();
-  } finally {
-    Object.assign(mutableConfig, previous);
-  }
+function makeImageEngine(enabled: boolean, cache = false): Engine {
+  return {
+    name: (cache ? "image-cache-test" : "image-test") as EngineName,
+    quality: 1,
+    fileOnly: true,
+    cache,
+    features: { image: true },
+    enabled: () => enabled,
+    scrape: async () => {
+      throw new Error("not used");
+    },
+    maxReasonableTime: () => 1000,
+  };
 }
 
 describe("isImageOcrEnabled", () => {
-  it("follows the deployment switch", () => {
-    expect(isImageOcrEnabled()).toBe(true);
-    withConfig({ IMAGE_OCR_ENABLED: false }, () => {
+  it("returns false when no service is installed or no non-cache image engine is enabled", async () => {
+    expect(isImageOcrEnabled()).toBe(false);
+
+    const disabledSvc = testService(defaultModules(), coreParts(), {}, [
+      {
+        name: "image-ext",
+        engines: [makeImageEngine(false), makeImageEngine(true, true)],
+      },
+    ]);
+    await withService(disabledSvc, async () => {
       expect(isImageOcrEnabled()).toBe(false);
     });
   });
 
-  it("requires FirePDF to be configured even with the switch on", () => {
-    withConfig({ FIRE_PDF_BASE_URL: undefined }, () => {
-      expect(isImageOcrEnabled()).toBe(false);
+  it("returns true when an extension registers an enabled non-cache image engine", async () => {
+    const enabledSvc = testService(defaultModules(), coreParts(), {}, [
+      { name: "image-ext", engines: [makeImageEngine(true)] },
+    ]);
+    await withService(enabledSvc, async () => {
+      expect(isImageOcrEnabled()).toBe(true);
     });
   });
 });
 
 describe("imageOcrGate", () => {
   it("is off when the request did not ask for the image parser", async () => {
-    await expect(imageOcrGate(false)()).resolves.toBe(false);
+    const enabledSvc = testService(defaultModules(), coreParts(), {}, [
+      { name: "image-ext", engines: [makeImageEngine(true)] },
+    ]);
+    await withService(enabledSvc, async () => {
+      await expect(imageOcrGate(false)()).resolves.toBe(false);
+    });
   });
 
-  it("follows the deployment switch for a request that asked", async () => {
-    await expect(imageOcrGate(true)()).resolves.toBe(true);
-    await withConfig({ IMAGE_OCR_ENABLED: false }, () =>
-      expect(imageOcrGate(true)()).resolves.toBe(false),
-    );
-    await withConfig({ FIRE_PDF_BASE_URL: undefined }, () =>
-      expect(imageOcrGate(true)()).resolves.toBe(false),
-    );
+  it("follows the registered image engine availability for requests that asked", async () => {
+    const enabledSvc = testService(defaultModules(), coreParts(), {}, [
+      { name: "image-ext", engines: [makeImageEngine(true)] },
+    ]);
+    const disabledSvc = testService(defaultModules(), coreParts(), {}, [
+      { name: "image-ext", engines: [makeImageEngine(false)] },
+    ]);
+
+    await withService(enabledSvc, async () => {
+      await expect(imageOcrGate(true)()).resolves.toBe(true);
+    });
+    await withService(disabledSvc, async () => {
+      await expect(imageOcrGate(true)()).resolves.toBe(false);
+    });
   });
 });

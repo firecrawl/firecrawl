@@ -16,12 +16,18 @@ import {
   type FeatureFlag,
 } from "./index";
 import { coreEngineSpecs } from "./metadata";
+import { getScrapeMeta } from "../metaContext";
+import { FormatUnavailableError } from "../../../lib/error";
+import type { HookHandlers } from "../../../service/hooks";
 
 const makeMeta = (
   overrides: {
     url?: string;
     featureFlags?: FeatureFlag[];
     forceEngine?: Engine | Engine[];
+    maxAge?: number;
+    lockdown?: boolean;
+    formats?: Array<Record<string, unknown>>;
   } = {},
 ): Meta => {
   const logger = {
@@ -37,8 +43,11 @@ const makeMeta = (
     id: "test",
     url: overrides.url ?? "https://example.com",
     options: {
-      formats: [{ type: "markdown" }],
-      maxAge: 0,
+      formats: overrides.formats ?? [{ type: "markdown" }],
+      maxAge: overrides.maxAge ?? 0,
+      ...(overrides.lockdown !== undefined
+        ? { lockdown: overrides.lockdown }
+        : {}),
     },
     internalOptions: {
       teamId: "team-1",
@@ -62,6 +71,11 @@ const makeEngine = (
     scrape?: RegisteredEngine["scrape"];
     maxReasonableTime?: RegisteredEngine["maxReasonableTime"];
     explicitOnly?: boolean;
+    cache?: boolean;
+    fileOnly?: boolean;
+    supportsProfile?: boolean;
+    prefetchesFiles?: boolean;
+    allowEmptyContent?: boolean;
   } = {},
 ): RegisteredEngine =>
   ({
@@ -80,6 +94,7 @@ const install = (
     name: string;
     engines?: readonly RegisteredEngine[];
     engineFeatures?: EngineFeatureMap;
+    hooks?: HookHandlers;
   }> = [],
 ) => {
   replaceService(
@@ -148,16 +163,16 @@ describe("engine registry integration", () => {
   it("keeps explicitOnly engines out of the default waterfall but honors forceEngine", async () => {
     install([
       makeEngine("fetch", { quality: 5 }),
-      makeEngine("exchange", { quality: 2000, explicitOnly: true }),
+      makeEngine("custom;explicit", { quality: 2000, explicitOnly: true }),
     ]);
 
     const normal = await buildFallbackList(makeMeta());
     expect(normal.map(e => e.engine)).toEqual(["fetch"]);
 
     const forced = await buildFallbackList(
-      makeMeta({ forceEngine: "exchange" }),
+      makeMeta({ forceEngine: "custom;explicit" as Engine }),
     );
-    expect(forced.map(e => e.engine)).toEqual(["exchange"]);
+    expect(forced.map(e => e.engine)).toEqual(["custom;explicit"]);
   });
 
   it("honors last-wins engine replacement during selection and dispatch", async () => {
@@ -202,7 +217,7 @@ describe("engine registry integration", () => {
     expect(getEngineMaxReasonableTime(meta, "fetch")).toBe(9000);
   });
 
-  it("adds stealthProxy to meta.featureFlags when the engine supports it and is not an index engine", async () => {
+  it("adds stealthProxy to meta.featureFlags when the engine supports it and is not a cache engine", async () => {
     const receivedFlags: FeatureFlag[][] = [];
     install([
       makeEngine("custom;stealth", {
@@ -217,7 +232,8 @@ describe("engine registry integration", () => {
           };
         },
       }),
-      makeEngine("index", {
+      makeEngine("custom;cache", {
+        cache: true,
         features: { stealthProxy: true },
         scrape: async meta => {
           receivedFlags.push([...meta.featureFlags]);
@@ -232,7 +248,7 @@ describe("engine registry integration", () => {
     ]);
 
     await scrapeURLWithEngine(makeMeta(), "custom;stealth" as Engine);
-    await scrapeURLWithEngine(makeMeta(), "index");
+    await scrapeURLWithEngine(makeMeta(), "custom;cache" as Engine);
 
     expect(receivedFlags).toEqual([["stealthProxy"], []]);
   });
@@ -269,5 +285,105 @@ describe("engine registry integration", () => {
     expect(meta.logger.warn).toHaveBeenCalledWith("No MRT for engine", {
       engine: "fetch",
     });
+  });
+
+  it("gates cache-trait engines on fresh-scrape options outside lockdown", async () => {
+    install([
+      makeEngine("custom;cache", { quality: 1000, cache: true }),
+      makeEngine("fetch", { quality: 5 }),
+    ]);
+
+    const fresh = await buildFallbackList(makeMeta({ maxAge: 0 }));
+    expect(fresh.map(e => e.engine)).toEqual(["fetch"]);
+
+    const cached = await buildFallbackList(makeMeta({ maxAge: 60000 }));
+    expect(cached.map(e => e.engine)).toEqual(["custom;cache", "fetch"]);
+
+    const customScreenshot = await buildFallbackList(
+      makeMeta({
+        maxAge: 60000,
+        formats: [{ type: "screenshot", quality: 80 }],
+      }),
+    );
+    expect(customScreenshot.map(e => e.engine)).toEqual(["fetch"]);
+
+    const lockedDown = await buildFallbackList(
+      makeMeta({ maxAge: 0, lockdown: true }),
+    );
+    expect(lockedDown.map(e => e.engine)).toEqual(["custom;cache"]);
+  });
+
+  it("uses fileOnly rather than pdf/document features when deciding stealth scoring", async () => {
+    install([
+      makeEngine("browser;basic", { quality: 50, features: {} }),
+      makeEngine("browser;stealth-hybrid", {
+        quality: 10,
+        features: { stealthProxy: true, pdf: true },
+      }),
+      makeEngine("pdf", {
+        quality: -20,
+        fileOnly: true,
+        features: { pdf: true, stealthProxy: true },
+      }),
+    ]);
+
+    const hybrid = await buildFallbackList(
+      makeMeta({ featureFlags: ["stealthProxy"] }),
+    );
+    expect(hybrid.map(e => e.engine)).toEqual(["browser;stealth-hybrid"]);
+
+    install([
+      makeEngine("browser;basic", { quality: 50, features: {} }),
+      makeEngine("pdf", {
+        quality: -20,
+        fileOnly: true,
+        features: { pdf: true, stealthProxy: true },
+      }),
+    ]);
+
+    const fileOnlyStealth = await buildFallbackList(
+      makeMeta({ featureFlags: ["stealthProxy"] }),
+    );
+    expect(fileOnlyStealth.map(e => e.engine)).toEqual(["browser;basic"]);
+  });
+
+  it("allows a follow-up scrape.engines.select hook to enforce a capability gate after suppressUnsupportedWarnings", async () => {
+    let seenMeta: Meta | undefined;
+    class CustomFormatError extends FormatUnavailableError {
+      constructor(message: string) {
+        super("custom", "UNKNOWN_ERROR", message, message);
+      }
+    }
+    install([makeEngine("fetch", { quality: 5 })], coreEngineFeatures, [
+      {
+        name: "selector",
+        hooks: {
+          "scrape.engines.select": (plan, info) => {
+            seenMeta = getScrapeMeta(info);
+            return {
+              candidates: ["fetch"],
+              suppressUnsupportedWarnings: true,
+            };
+          },
+        },
+      },
+      {
+        name: "gate",
+        hooks: {
+          "scrape.engines.select": () => {
+            throw new CustomFormatError("Format not supported");
+          },
+        },
+      },
+    ]);
+
+    const meta = makeMeta({
+      featureFlags: [],
+      formats: [{ type: "markdown" }],
+    });
+    await expect(buildFallbackList(meta)).rejects.toBeInstanceOf(
+      CustomFormatError,
+    );
+    expect(seenMeta).toBe(meta);
   });
 });

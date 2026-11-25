@@ -4,14 +4,8 @@ import { shutdownTracing } from "./otel";
 import express, { NextFunction, Request, Response } from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
-import {
-  getGenerateLlmsTxtQueue,
-  getDeepResearchQueue,
-  getBillingQueue,
-  getPrecrawlQueue,
-  getFirebillTrackRetryQueue,
-} from "./services/queue-service";
-import { v0Router } from "./routes/v0";
+import { getPrecrawlQueue } from "./services/queue-service";
+import { bindBullBoard } from "./lib/bull-board-registry";
 import { livenessController, readinessController } from "./controllers/health";
 import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
 import os from "os";
@@ -25,30 +19,18 @@ import {
 } from "./lib/admin-auth";
 import http from "node:http";
 import https from "node:https";
-import { v1Router } from "./routes/v1";
 import expressWs from "express-ws";
-import { ErrorResponse, RequestWithMaybeACUC } from "./controllers/v1/types";
+import { ErrorResponse, RequestWithMaybeACUC } from "./controllers/v2/types";
 import { ZodError } from "zod";
 import { QueueFullError } from "./lib/queue-full-error";
 import { v7 as uuidv7 } from "uuid";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
-import { exchangeRouter } from "./routes/exchange";
-import { registerExchangeFileRoutes } from "./routes/exchange-files";
-import { exchangeInternalRouter } from "./routes/exchange-internal";
-import { labsRouter } from "./routes/labs";
-import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
 import { nuqShutdown } from "./services/worker/nuq";
 import { service } from "./service";
 import { installedService, runProcessStop } from "./service/service";
 import { initializeApiStartupDependencies } from "./lib/api-startup";
 import responseTime from "response-time";
-import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
-import { isKeylessConfigured } from "./lib/keyless";
-import {
-  drainZdrRequestLogs,
-  shutdownPubSubLogging,
-} from "./services/logging/log_job";
 import { notFoundHandler } from "./lib/not-found";
 import { startRole } from "./main";
 
@@ -62,12 +44,6 @@ logger.info(`Number of CPUs: ${numCPUs} available`);
 logger.info("Network info dump", {
   networkInterfaces: os.networkInterfaces(),
 });
-
-if (isKeylessConfigured() && !config.KEYLESS_CONVERSION_HMAC_SECRET) {
-  logger.warn(
-    "Keyless conversion cohort logging is disabled: set KEYLESS_CONVERSION_HMAC_SECRET to enable privacy-safe quota-to-account measurement",
-  );
-}
 
 // Install cacheable lookup for all other requests
 cacheableLookup.install(http.globalAgent);
@@ -93,11 +69,15 @@ const captureRawBody = (
   }
 };
 
-registerMcpActionLogIngestRoute(app);
-// Marketplace file bytes stream through to Exchange untouched, so these come before the body
-// parsers, and carry their own CORS (the website only) before the catch-all one.
+const contributedRootRawRouter = express.Router();
+const contributedRootRouter = express.Router();
+const contributedV2Router = express.Router();
+const contributedAdminRouter = express.Router();
+const contributedAdminInternalRouter = express.Router();
+let contributedRoutesMounted = false;
+
 app.use(responseTime());
-registerExchangeFileRoutes(app);
+app.use(contributedRootRawRouter);
 
 app.use(bodyParser.urlencoded({ extended: true, verify: captureRawBody }));
 app.use(bodyParser.json({ limit: "10mb", verify: captureRawBody }));
@@ -110,15 +90,15 @@ if (config.EXPRESS_TRUST_PROXY) {
   app.set("trust proxy", config.EXPRESS_TRUST_PROXY);
 }
 
-const bullBoardQueues = [
-  new BullMQAdapter(getGenerateLlmsTxtQueue()),
-  new BullMQAdapter(getDeepResearchQueue()),
-  new BullMQAdapter(getBillingQueue()),
-  new BullMQAdapter(getPrecrawlQueue()),
-  new BullMQAdapter(getFirebillTrackRetryQueue()),
-  // SIEM audit delivery runs on RabbitMQ; inspect it in the broker's
-  // management UI, not here.
-];
+function attachBullBoard(serverAdapter: any) {
+  const board = createBullBoard({
+    queues: [new BullMQAdapter(getPrecrawlQueue())],
+    serverAdapter,
+  });
+  bindBullBoard(queue => {
+    board.addQueue(new BullMQAdapter(queue));
+  });
+}
 
 if (!config.BULL_AUTH_KEY) {
   logger.warn("BULL_AUTH_KEY is not set; admin routes are disabled.");
@@ -127,7 +107,7 @@ if (!config.BULL_AUTH_KEY) {
   // listener's /admin/queues where possible.
   const opsBullBoard = new ExpressAdapter();
   opsBullBoard.setBasePath("/admin/ops/queues");
-  createBullBoard({ queues: bullBoardQueues, serverAdapter: opsBullBoard });
+  attachBullBoard(opsBullBoard);
   app.use("/admin/ops/queues", adminAuth, opsBullBoard.getRouter());
 
   if (config.BULL_AUTH_KEY_PATH_ROUTES) {
@@ -140,7 +120,7 @@ if (!config.BULL_AUTH_KEY) {
       if (!key) continue;
       const board = new ExpressAdapter();
       board.setBasePath(`/admin/${encodeURIComponent(key)}/queues`);
-      createBullBoard({ queues: bullBoardQueues, serverAdapter: board });
+      attachBullBoard(board);
       pathBoards[slot] = board.getRouter();
     }
     const queuesPathRouter = express.Router({ mergeParams: true });
@@ -150,12 +130,6 @@ if (!config.BULL_AUTH_KEY) {
     app.use("/admin/:adminKey/queues", queuesPathRouter);
   }
 }
-
-const contributedRootRouter = express.Router();
-const contributedV2Router = express.Router();
-const contributedAdminRouter = express.Router();
-const contributedAdminInternalRouter = express.Router();
-let contributedRoutesMounted = false;
 
 app.use(contributedRootRouter);
 
@@ -174,13 +148,8 @@ app.get("/health/liveness", livenessController);
 app.get("/health/readiness", readinessController);
 
 // register router
-app.use(v0Router);
-app.use("/v1", v1Router);
 app.use("/v2", contributedV2Router);
 app.use("/v2", v2Router);
-app.use("/labs", labsRouter);
-app.use("/exchange", exchangeRouter);
-app.use(exchangeInternalRouter);
 app.use(contributedAdminRouter);
 app.use(adminRouter);
 
@@ -195,10 +164,7 @@ function startAdminInternalServer(port: number) {
 
   const internalBullBoard = new ExpressAdapter();
   internalBullBoard.setBasePath("/admin/queues");
-  createBullBoard({
-    queues: bullBoardQueues,
-    serverAdapter: internalBullBoard,
-  });
+  attachBullBoard(internalBullBoard);
   adminApp.use("/admin/queues", internalBullBoard.getRouter());
 
   adminApp.use(contributedAdminInternalRouter);
@@ -239,6 +205,7 @@ async function startServer(port = DEFAULT_PORT) {
 
   if (!contributedRoutesMounted) {
     installedService()?.mountRoutes({
+      rootRaw: contributedRootRawRouter,
       root: contributedRootRouter,
       v2: contributedV2Router,
       admin: contributedAdminRouter,
@@ -286,24 +253,20 @@ async function startServer(port = DEFAULT_PORT) {
     server.close(async () => {
       await adminInternalClosed;
       logger.info("Server closed.");
-      await drainZdrRequestLogs();
       nuqShutdown().finally(() => {
         Promise.resolve()
           .then(() => installedService()?.modules.webhooks.shutdown?.())
           .catch(error => {
             logger.warn("Error shutting down webhooks module", { error });
           })
-          .finally(() => {
-            shutdownIndexerQueue().finally(async () => {
-              try {
-                await shutdownPubSubLogging();
-              } finally {
-                await runProcessStop("api");
-                await shutdownTracing();
-              }
-              logger.info("NUQ shutdown complete");
-              process.exit(0);
-            });
+          .finally(async () => {
+            try {
+              await runProcessStop("api");
+            } finally {
+              await shutdownTracing();
+            }
+            logger.info("NUQ shutdown complete");
+            process.exit(0);
           });
       });
     });

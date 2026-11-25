@@ -1,9 +1,8 @@
-import { config } from "../../../config";
 import { describeIf, TEST_PRODUCTION } from "../lib";
 import { creditUsage, idmux, researchPostRaw, researchRaw } from "./lib";
 import { HAS_JOB_LOG, jobLogJson, waitForJobLogRow } from "../job-log";
 
-const HAS_RESEARCH = !!config.RESEARCH_PROXY_URL;
+const HAS_RESEARCH = !!process.env.RESEARCH_PROXY_URL;
 const KEYLESS_ENABLED =
   process.env.KEYLESS_REQUESTS_PER_DAY !== undefined &&
   process.env.KEYLESS_CREDITS_PER_DAY !== undefined;
@@ -102,7 +101,7 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
   });
 
   it("logs the developer search request kind with origin and integration", async () => {
-    if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
+    if (!TEST_PRODUCTION || !HAS_JOB_LOG) return;
 
     const identity = await idmux({
       name: "developer/logs metadata",
@@ -135,7 +134,7 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
   }, 120000);
 
   it("redacts stored payloads for a forced-ZDR team", async () => {
-    if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
+    if (!TEST_PRODUCTION || !HAS_JOB_LOG) return;
 
     const identity = await idmux({
       name: "developer/forced ZDR retention",
@@ -189,7 +188,7 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
   }, 120000);
 
   it("writes a usage row with the billed credits", async () => {
-    if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
+    if (!TEST_PRODUCTION || !HAS_JOB_LOG) return;
 
     const identity = await idmux({
       name: "developer/logs usage",

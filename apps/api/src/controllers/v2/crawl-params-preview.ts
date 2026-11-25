@@ -6,8 +6,6 @@ import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transf
 import { CostTracking } from "../../lib/cost-tracking";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
 import { requestContext } from "../../lib/request-context";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
-import { isLockdownZeroDataRetention } from "../../lib/safe-mode";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { getErrorHttpResponse } from "../../lib/error";
 
@@ -55,12 +53,8 @@ export async function crawlParamsPreviewController(
   >,
   res: Response<CrawlParamsPreviewResponse>,
 ) {
-  // Same rule as a crawl: forced ZDR, the request's own flag, or Safe Mode
-  // lockdown. Read before parsing so a rejected body is still covered.
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
-    req.body?.zeroDataRetention === true ||
-    isLockdownZeroDataRetention(req.acuc?.flags, undefined);
+    req.ctx?.zeroDataRetention === true || req.body?.zeroDataRetention === true;
   const logger = _logger.child({
     module: "api/v2",
     method: "crawlParamsPreviewController",
@@ -77,15 +71,17 @@ export async function crawlParamsPreviewController(
       prompt: parsedBody.prompt,
     });
 
-    const ctx =
-      req.ctx ??
-      requestContext({
-        teamId: req.auth.team_id,
-        zeroDataRetention,
-        flags: req.acuc?.flags ?? null,
-        orgId: req.acuc?.org_id ?? null,
-        apiKeyId: req.acuc?.api_key_id ?? null,
-      });
+    const ctx = req.ctx
+      ? zeroDataRetention && !req.ctx.zeroDataRetention
+        ? { ...req.ctx, zeroDataRetention: true }
+        : req.ctx
+      : requestContext({
+          teamId: req.auth.team_id,
+          zeroDataRetention,
+          flags: req.acuc?.flags ?? null,
+          orgId: req.acuc?.org_id ?? null,
+          apiKeyId: req.acuc?.api_key_id ?? null,
+        });
     req.ctx = ctx;
 
     // The prompt and the discovered URLs end up in LLM telemetry, so keep

@@ -2,11 +2,6 @@ import type { MockedFunction } from "vitest";
 import { executeTransformers } from ".";
 import { performLLMExtract } from "./llmExtract";
 
-vi.mock("../../../services/index", () => ({
-  useIndex: false,
-  useSearchIndex: false,
-}));
-
 vi.mock("./llmExtract", async importOriginal => {
   const actual = await importOriginal<typeof import("./llmExtract")>();
 
