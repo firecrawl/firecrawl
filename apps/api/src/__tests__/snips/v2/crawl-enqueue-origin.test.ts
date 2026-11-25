@@ -122,7 +122,7 @@ describe("crawl enqueue origin", () => {
       },
     });
 
-    await processJobInternal({
+    const outcome = await processJobInternal({
       id: "job-1",
       priority: 10,
       data: {
@@ -139,9 +139,12 @@ describe("crawl enqueue origin", () => {
         crawlerOptions: { currentDiscoveryDepth: 0 },
         internalOptions: { teamId: "team-1" },
       },
-    } as any).catch(() => undefined);
+    } as any).then(
+      () => "resolved",
+      (error: unknown) => `rejected: ${error}`,
+    );
 
-    expect(mocks.addScrapeJob).toHaveBeenCalledTimes(1);
+    expect(mocks.addScrapeJob, outcome).toHaveBeenCalledTimes(1);
     const [data] = mocks.addScrapeJob.mock.calls[0];
     expect(data.url).toBe("https://shop.test/p/2");
     expect(data.origin).toBe(SUBMITTER_ORIGIN);
@@ -149,7 +152,7 @@ describe("crawl enqueue origin", () => {
   });
 
   it("enqueues the sitemap kickoff under the crawl job's origin", async () => {
-    await processJobInternal({
+    const outcome = await processJobInternal({
       id: "kickoff-1",
       priority: 10,
       data: {
@@ -165,12 +168,15 @@ describe("crawl enqueue origin", () => {
         scrapeOptions: {},
         crawlerOptions: {},
       },
-    } as any).catch(() => undefined);
+    } as any).then(
+      () => "resolved",
+      (error: unknown) => `rejected: ${error}`,
+    );
 
     const sitemapJobs = mocks.addScrapeJobToBullMQ.mock.calls
       .map(([data]) => data)
       .filter(data => data.mode === "kickoff_sitemap");
-    expect(sitemapJobs).toHaveLength(1);
+    expect(sitemapJobs, outcome).toHaveLength(1);
     expect(sitemapJobs[0].sitemapUrl).toBe("https://shop.test/sitemap.xml");
     expect(sitemapJobs[0].origin).toBe(SUBMITTER_ORIGIN);
     expect(sitemapJobs[0].integration).toBe("acme-integration");
