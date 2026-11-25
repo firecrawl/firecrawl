@@ -59,6 +59,23 @@ export function randomReadyShard(): number {
   return Math.floor(Math.random() * READY_SHARDS);
 }
 
+// Snapshot-reads the due range of every time bucket in one transaction rather
+// than one transaction per bucket; each bucket keeps its own limit.
+export async function readDueBuckets(
+  tn: Transaction,
+  buckets: number,
+  rangeFor: (bucket: number) => { begin: Buffer; end: Buffer },
+  limit: number,
+) {
+  const snapshot = tn.snapshot();
+  return await Promise.all(
+    Array.from({ length: buckets }, (_, bucket) => {
+      const r = rangeFor(bucket);
+      return snapshot.getRangeAll(r.begin, r.end, { limit });
+    }),
+  );
+}
+
 // === Status record writers
 
 export function setStatusQueued(

@@ -41,6 +41,7 @@ import {
   bumpGroupStatusCount,
   bumpTeamActive,
   GroupJobIndexValue,
+  readDueBuckets,
 } from "./ops";
 import { NuQFdbQueue } from "./queue";
 import { NuqFdbExternalSlots } from "./slots";
@@ -215,11 +216,15 @@ export class NuqFdbSweeper {
     const startedAt = Date.now();
     const ks = queue.ks;
     const stats = emptySweepLagStats();
-    for (let b = 0; b < TIME_BUCKETS; b++) {
-      const r = ks.leaseScanRange(b, now);
-      const due = await this.db.doTn(async tn =>
-        tn.snapshot().getRangeAll(r.begin, r.end, { limit: SWEEP_BATCH }),
-      );
+    const dueByBucket = await this.db.doTn(tn =>
+      readDueBuckets(
+        tn,
+        TIME_BUCKETS,
+        b => ks.leaseScanRange(b, now),
+        SWEEP_BATCH,
+      ),
+    );
+    for (const due of dueByBucket) {
       addDueKeysToLagStats(stats, ks, due, now);
       for (const [key, value] of due) {
         const id = ks.unpackId(key as Buffer);
@@ -314,11 +319,15 @@ export class NuqFdbSweeper {
     const startedAt = Date.now();
     const ks = queue.ks;
     const stats = emptySweepLagStats();
-    for (let b = 0; b < TIME_BUCKETS; b++) {
-      const r = ks.backlogTimeoutScanRange(b, now);
-      const due = await this.db.doTn(async tn =>
-        tn.snapshot().getRangeAll(r.begin, r.end, { limit: SWEEP_BATCH }),
-      );
+    const dueByBucket = await this.db.doTn(tn =>
+      readDueBuckets(
+        tn,
+        TIME_BUCKETS,
+        b => ks.backlogTimeoutScanRange(b, now),
+        SWEEP_BATCH,
+      ),
+    );
+    for (const due of dueByBucket) {
       addDueKeysToLagStats(stats, ks, due, now);
       for (const [key] of due) {
         const id = ks.unpackId(key as Buffer);
@@ -377,11 +386,15 @@ export class NuqFdbSweeper {
     const startedAt = Date.now();
     const ks = queue.ks;
     const stats = emptySweepLagStats();
-    for (let b = 0; b < TIME_BUCKETS; b++) {
-      const r = ks.delayedScanRange(b, now);
-      const due = await this.db.doTn(async tn =>
-        tn.snapshot().getRangeAll(r.begin, r.end, { limit: SWEEP_BATCH }),
-      );
+    const dueByBucket = await this.db.doTn(tn =>
+      readDueBuckets(
+        tn,
+        TIME_BUCKETS,
+        b => ks.delayedScanRange(b, now),
+        SWEEP_BATCH,
+      ),
+    );
+    for (const due of dueByBucket) {
       addDueKeysToLagStats(stats, ks, due, now);
       for (const [key, value] of due) {
         const e = decodeJson<QueueEntry>(value as Buffer);
@@ -608,11 +621,15 @@ export class NuqFdbSweeper {
     logger: Logger,
   ): Promise<void> {
     const ks = queue.ks;
-    for (let b = 0; b < TIME_BUCKETS; b++) {
-      const r = ks.jobExpiryScanRange(b, now);
-      const due = await this.db.doTn(async tn =>
-        tn.snapshot().getRangeAll(r.begin, r.end, { limit: SWEEP_BATCH * 2 }),
-      );
+    const dueByBucket = await this.db.doTn(tn =>
+      readDueBuckets(
+        tn,
+        TIME_BUCKETS,
+        b => ks.jobExpiryScanRange(b, now),
+        SWEEP_BATCH * 2,
+      ),
+    );
+    for (const due of dueByBucket) {
       if (due.length === 0) continue;
       await this.db.doTn(async tn => {
         for (const [key] of due) {
