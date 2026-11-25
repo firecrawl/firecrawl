@@ -102,6 +102,10 @@ export interface SearchProvider {
   readonly priority: number;
   /** Whether this provider handles US-only restricted search requests. */
   readonly supportsUsOnly?: boolean;
+  /** Whether this provider handles requests with the `zdr` enterprise mode. */
+  readonly supportsZdr?: boolean;
+  /** Whether this provider handles requests with the `anon` enterprise mode. */
+  readonly supportsAnon?: boolean;
   /** Whether this provider is active in the current deployment. Evaluated at call time. */
   enabled(): boolean;
   /**
@@ -163,19 +167,24 @@ function snapshotSearchProvider(provider: SearchProvider): SearchProvider {
       `Search provider "${provider.name}" search must be a function`,
     );
   }
-  if (
-    provider.supportsUsOnly !== undefined &&
-    typeof provider.supportsUsOnly !== "boolean"
-  ) {
-    throw new Error(
-      `Search provider "${provider.name}" supportsUsOnly must be a boolean`,
-    );
+  for (const flag of [
+    "supportsUsOnly",
+    "supportsZdr",
+    "supportsAnon",
+  ] as const) {
+    if (provider[flag] !== undefined && typeof provider[flag] !== "boolean") {
+      throw new Error(
+        `Search provider "${provider.name}" ${flag} must be a boolean`,
+      );
+    }
   }
 
   return Object.freeze({
     name: provider.name,
     priority: provider.priority,
     ...(provider.supportsUsOnly ? { supportsUsOnly: true } : {}),
+    ...(provider.supportsZdr ? { supportsZdr: true } : {}),
+    ...(provider.supportsAnon ? { supportsAnon: true } : {}),
     enabled: provider.enabled.bind(provider),
     search: provider.search.bind(provider),
   });
