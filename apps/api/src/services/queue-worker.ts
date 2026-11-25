@@ -10,22 +10,10 @@ import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forc
 import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
 import { getCrawl } from "../lib/crawl-redis";
-import {
-  processMonitorCheckJob,
-  reconcileRunningMonitorChecks,
-} from "./monitoring/runner";
-import { enqueueDueMonitorChecks } from "./monitoring/scheduler";
-import {
-  consumeMonitorCheckJobs,
-  consumeMonitorSearchCheckJobs,
-} from "./monitoring/queue";
-import { shutdownPubSubLogging } from "./logging/log_job";
 import { startRole } from "../main";
 import { runProcessStop } from "../service/service";
 
 configDotenv();
-
-let monitorSchedulerInterval: NodeJS.Timeout | null = null;
 
 async function processFinishCrawlJobInternal(_job: NuQJob) {
   const job = await crawlFinishedQueue.getJob(_job.id);
@@ -148,9 +136,11 @@ const crawlFinishWorker = async () => {
 
 const app = Express();
 
+let currentLiveness: boolean = true;
+
 app.get("/liveness", (req, res) => {
   _logger.info("Liveness endpoint hit");
-  if (config.USE_DB_AUTHENTICATION && config.NUQ_RABBITMQ_URL) {
+  if (config.IS_KUBERNETES && config.NUQ_RABBITMQ_URL) {
     // networking check for Kubernetes environments
     const host = config.FIRECRAWL_APP_HOST;
     const port = config.FIRECRAWL_APP_PORT;
@@ -166,13 +156,16 @@ app.get("/liveness", (req, res) => {
       useCacheableLookup: false,
     })
       .then(() => {
+        currentLiveness = true;
         res.status(200).json({ ok: true });
       })
       .catch(e => {
         _logger.error("WORKER NETWORKING CHECK FAILED", { error: e });
+        currentLiveness = false;
         res.status(500).json({ ok: false });
       });
   } else {
+    currentLiveness = true;
     res.status(200).json({ ok: true });
   }
 });
@@ -208,49 +201,10 @@ export async function start() {
 
   initializeEngineForcing();
 
-  if (config.USE_DB_AUTHENTICATION && !config.DISABLE_MONITORING) {
-    monitorSchedulerInterval = setInterval(() => {
-      enqueueDueMonitorChecks().catch(error => {
-        _logger.error("Failed to enqueue due monitor checks", { error });
-      });
-      reconcileRunningMonitorChecks().catch(error => {
-        _logger.error("Failed to reconcile running monitor checks", { error });
-      });
-    }, 60_000);
-    enqueueDueMonitorChecks().catch(error => {
-      _logger.error("Failed to enqueue due monitor checks", { error });
-    });
-    reconcileRunningMonitorChecks().catch(error => {
-      _logger.error("Failed to reconcile running monitor checks", { error });
-    });
-
-    // Search checks drain on their own consumer so they can't starve the rest.
-    await Promise.all([
-      consumeMonitorCheckJobs(processMonitorCheckJob),
-      consumeMonitorSearchCheckJobs(processMonitorCheckJob),
-    ]);
-  } else if (!config.USE_DB_AUTHENTICATION) {
-    _logger.info(
-      "Skipping monitor worker startup because database authentication is disabled",
-    );
-  } else {
-    _logger.info(
-      "Skipping monitor worker startup because NUQ_RABBITMQ_URL is not configured",
-    );
-  }
-
   await crawlFinishWorker();
 
-  if (monitorSchedulerInterval) {
-    clearInterval(monitorSchedulerInterval);
-  }
-
-  _logger.info("All workers exited. Shutting down...");
-  try {
-    await shutdownPubSubLogging();
-  } finally {
-    await runProcessStop("queue-worker");
-  }
+  _logger.info("All jobs finished. Shutting down...");
+  await runProcessStop("queue-worker");
   await shutdownTracing();
   process.exit(0);
 }

@@ -2103,7 +2103,7 @@ export interface AgentOptions {
 
 export interface ConcurrencyCheck {
   concurrency: number;
-  maxConcurrency: number;
+  maxConcurrency: number | null;
 }
 
 export interface CreditUsage {
@@ -2253,7 +2253,7 @@ export interface QueueStatusResponse {
   jobsInQueue: number;
   activeJobsInQueue: number;
   waitingJobsInQueue: number;
-  maxConcurrency: number;
+  maxConcurrency: number | null;
   mostRecentSuccess: string | null;
 }
 

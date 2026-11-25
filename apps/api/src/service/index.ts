@@ -1,10 +1,20 @@
-export type { Document } from "../controllers/v2/types";
+export type { Document, DocumentMetadata } from "../controllers/v2/types";
+export type { BillingEndpoint, BillingMetadata } from "../lib/billing-types";
+export type { CostTracking } from "../lib/cost-tracking";
+export {
+  FormatUnavailableError,
+  isFormatUnavailable,
+  isTransportableError,
+  TransportableError,
+} from "../lib/error";
 export type {
   ErrorCode,
   ErrorCodes,
+  ErrorScrapeLog,
   TransportableErrorClass,
 } from "../lib/error";
 export type { SearchResultType, SearchV2Response } from "../lib/entities";
+export type { Meta } from "../scraper/scrapeURL";
 export type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 export { coreParts } from "./core-parts";
 export {
@@ -13,9 +23,15 @@ export {
   logsMessages,
   memoryUploads,
   noBlocklist,
+  noLimits,
+  openAuth,
+  queueJobStore,
   redisIdempotency,
+  unmeteredBilling,
+  unrestrictedPolicy,
 } from "./defaults";
 export type {
+  DefaultModules,
   DirectWebhooksOptions,
   RedisIdempotencyOptions,
 } from "./defaults";
@@ -65,8 +81,21 @@ export type {
   Transform,
   ValueOf,
 } from "./hooks";
-export { authenticate } from "./http";
-export type { RouteKind } from "./http";
+export {
+  authenticate,
+  finalizeResponse,
+  openRequest,
+  rejectRequest,
+  requestKindForPath,
+  resolveRequestContext,
+  sendRefusal,
+} from "./http";
+export type {
+  AuthRoute,
+  CoreRouteKind,
+  OpenRequestOptions,
+  RouteKind,
+} from "./http";
 export type {
   LlmModel,
   LlmModelOptions,
@@ -76,18 +105,47 @@ export type {
   LlmProviders,
 } from "./llm-providers";
 export type {
+  Admission,
+  AdmitInput,
+  AuthModule,
+  AuthResult,
+  Authorization,
+  AuthorizeInput,
+  AuthorizeState,
+  BillingModule,
+  BillingOperation,
   BlocklistCheckOptions,
   BlocklistModule,
+  ChargeEvent,
+  ConcurrencyKeyGate,
+  CrawlChargeState,
   DirectUploadInput,
   DirectUploadResult,
   FetchProxyFileKind,
   IdempotencyContext,
   IdempotencyModule,
+  JobOutcome,
+  JobOwner,
+  JobPriorityInput,
+  JobRecord,
+  JobStoreModule,
+  JobUsageOptions,
+  LimitsModule,
+  MapChargeState,
   MessagesModule,
   Modules,
+  PolicyContextInput,
+  PolicyContextResult,
+  PolicyHttpContext,
+  PolicyModule,
   PrepareUploadInput,
   PrepareUploadResult,
+  QueueBackendOverride,
+  SearchChargeState,
+  SettleOutcome,
+  StoredJob,
   StoredUploadRef,
+  SystemContextPurpose,
   UploadDriver,
   UploadsModule,
   UploadTarget,
@@ -97,12 +155,7 @@ export type {
   WebhookResponse,
   WebhooksModule,
 } from "./modules";
-export type {
-  BaseCaller,
-  BaseRequestContext,
-  Caller,
-  RequestContext,
-} from "./request-context";
+export * from "./request-context";
 export {
   buildRequestSchemas,
   hasFormatOfType,
@@ -153,12 +206,20 @@ export type {
   SearchProviderRegistry,
   SearchProviders,
   SearchQuery,
+  TeamPlanClass,
 } from "./search-providers";
-export { createService, run, service } from "./service";
+export {
+  createService,
+  installedService,
+  run,
+  runProcessStop,
+  service,
+} from "./service";
 export type {
   CoreParts,
   ErrorRegistry,
   Extension,
+  ModulesConfig,
   RoleRegistry,
   RunOptions,
   Service,

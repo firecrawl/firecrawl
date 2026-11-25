@@ -1,4 +1,3 @@
-import { config } from "../../../config";
 import { concurrentIf, TEST_PRODUCTION } from "../lib";
 import { scrape, scrapeRaw, scrapeTimeout, idmux, Identity } from "./lib";
 
@@ -14,7 +13,7 @@ beforeAll(async () => {
 
 // X/Twitter posts and profiles are served by the Exchange's X provider, the
 // same route LinkedIn profiles take, for every team.
-const HAS_EXCHANGE_X = TEST_PRODUCTION && !!config.FIRE_EXCHANGE_URL;
+const HAS_EXCHANGE_X = TEST_PRODUCTION && !!process.env.FIRE_EXCHANGE_URL;
 
 describe("X/Twitter scrape through the Exchange", () => {
   concurrentIf(HAS_EXCHANGE_X)(

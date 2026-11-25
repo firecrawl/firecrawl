@@ -1,10 +1,10 @@
+import request from "supertest";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
-  itIf,
+  TEST_API_URL,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { config } from "../../../config";
 import {
   idmux,
   Identity,
@@ -14,6 +14,7 @@ import {
 } from "./lib";
 
 let identity: Identity;
+let imageOcrOn = false;
 
 beforeAll(async () => {
   identity = await idmux({
@@ -21,11 +22,20 @@ beforeAll(async () => {
     concurrency: 100,
     credits: 1000000,
   });
-}, 10000 + scrapeTimeout);
 
-// Mirrors the API's image OCR switch (the harness shares its environment
-// with the server under test).
-const IMAGE_OCR_ON = !!config.FIRE_PDF_BASE_URL && config.IMAGE_OCR_ENABLED;
+  const formatsResponse = await request(TEST_API_URL)
+    .get("/v2/parse/formats")
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+  if (
+    formatsResponse.statusCode === 200 &&
+    Array.isArray(formatsResponse.body?.data?.formats)
+  ) {
+    imageOcrOn = formatsResponse.body.data.formats.some(
+      (format: { kind?: string; available?: boolean }) =>
+        format.kind === "image" && format.available === true,
+    );
+  }
+}, 10000 + scrapeTimeout);
 
 // The browser engine hands files it cannot render back to the API, which
 // routes them to a parser by content type — and servers mislabel. Static
@@ -58,26 +68,23 @@ describeIf(!process.env.TEST_SUITE_SELF_HOSTED && ALLOW_TEST_SUITE_WEBSITE)(
       scrapeTimeout,
     );
 
-    itIf(!IMAGE_OCR_ON)(
-      "keeps rejecting a real JPEG 2000 image while image OCR is off",
+    it(
+      "handles a real JPEG 2000 image according to active image OCR capability",
       async () => {
-        const response = await scrapeWithFailure(
-          {
-            url: `${TEST_SUITE_WEBSITE}/tiny-image.jp2`,
-            formats: ["markdown"],
-          },
-          identity,
-        );
+        if (!imageOcrOn) {
+          const response = await scrapeWithFailure(
+            {
+              url: `${TEST_SUITE_WEBSITE}/tiny-image.jp2`,
+              formats: ["markdown"],
+            },
+            identity,
+          );
 
-        expect(response.error).toContain("cannot process");
-        expect(response.error).toContain("image/jp2");
-      },
-      scrapeTimeout,
-    );
+          expect(response.error).toContain("cannot process");
+          expect(response.error).toContain("image/jp2");
+          return;
+        }
 
-    itIf(IMAGE_OCR_ON)(
-      "OCRs a real JPEG 2000 image while image OCR is on",
-      async () => {
         const response = await scrape(
           {
             url: `${TEST_SUITE_WEBSITE}/tiny-image.jp2`,

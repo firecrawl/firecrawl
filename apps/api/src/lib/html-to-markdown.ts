@@ -6,6 +6,7 @@ import { stat } from "fs/promises";
 import { HTML_TO_MARKDOWN_PATH } from "../natives";
 import { convertHTMLToMarkdownWithHttpService } from "./html-to-markdown-client";
 import { postProcessMarkdown } from "@mendable/firecrawl-rs";
+export { getInnerJson } from "@mendable/firecrawl-rs";
 
 // TODO: add a timeout to the Go parser
 

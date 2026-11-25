@@ -7,12 +7,13 @@ import {
   type CoreParts,
   type Extension,
   type Modules,
+  type ModulesConfig,
   type Service,
 } from "./service";
 
 /** Builds a service from module defaults or a base set, with any of them replaced and any extension added. */
 export function testService(
-  base: Partial<Modules>,
+  base: ModulesConfig,
   parts: CoreParts,
   overrides: Partial<Modules> = {},
   extensions: Extension[] = [],
@@ -24,7 +25,7 @@ export function testService(
     }
   }
   return createService(
-    { modules: modules as Partial<Modules>, extensions },
+    { modules: modules as ModulesConfig, extensions },
     parts,
   );
 }

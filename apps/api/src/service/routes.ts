@@ -9,10 +9,16 @@
 import type { Router } from "express";
 
 /** The Express router slots exposed to extensions. */
-export type RouterName = "root" | "v2" | "admin" | "adminInternal";
+export type RouterName = "rootRaw" | "root" | "v2" | "admin" | "adminInternal";
 
 /** Express routers passed to `Extension.routes` and `service.mountRoutes`. */
 export interface Routers {
+  /**
+   * Optional pre-body-parser Express app root (`/`), mounted before the global
+   * body parsers and catch-all CORS middleware for streaming or custom-parsed
+   * routes.
+   */
+  rootRaw?: Router;
   /** The Express app root (`/`). Contributed routes mount before core's. */
   root: Router;
   /** The `/v2` router. Contributed routes mount before core's. */
@@ -83,6 +89,7 @@ interface ScopedMiddleware {
 }
 
 const routerBasePaths: ReadonlyArray<readonly [RouterName, string]> = [
+  ["rootRaw", ""],
   ["root", ""],
   ["v2", "/v2"],
   ["admin", ""],
@@ -112,6 +119,8 @@ function getRouterStack(router: unknown): InternalExpressLayer[] | undefined {
 
 function hasExpressStacks(routers: Routers): boolean {
   return (
+    (routers.rootRaw === undefined ||
+      getRouterStack(routers.rootRaw) !== undefined) &&
     getRouterStack(routers.root) !== undefined &&
     getRouterStack(routers.v2) !== undefined &&
     getRouterStack(routers.admin) !== undefined &&
@@ -123,6 +132,9 @@ function hasExpressStacks(routers: Routers): boolean {
 function validateRouters(routers: Routers): void {
   if (typeof routers !== "object" || routers === null) {
     throw new Error("Routers must be an object");
+  }
+  if (routers.rootRaw !== undefined && !isRouterLike(routers.rootRaw)) {
+    throw new Error("Routers.rootRaw must be an Express router");
   }
   for (const key of ["root", "v2", "admin"] as const) {
     if (!isRouterLike(routers[key])) {
@@ -416,6 +428,7 @@ export function buildRouteRegistry(sources: readonly RouteRegistrySource[]): {
 
     for (const entry of ordered) {
       const probeRouters: Record<RouterName, Router> = {
+        rootRaw: expressModule.Router(),
         root: expressModule.Router(),
         v2: expressModule.Router(),
         admin: expressModule.Router(),
