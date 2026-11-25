@@ -1,8 +1,9 @@
 //! Executable verification harness proving W3C parent propagation, pre-parse
 //! ZDR override against sampled `traceparent`, cross-thread ZDR span
-//! propagation (`spawn_blocking` + scoped `rayon`), and ZDR panic payload
-//! withholding.
+//! propagation (`spawn_blocking`, scoped `rayon`, and OS threads), and ZDR
+//! panic payload withholding.
 
+use std::process::Command;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use opentelemetry::trace::{SpanId, TraceId, TracerProvider as _};
@@ -12,9 +13,9 @@ use tracing_subscriber::layer::{Context as LayerContext, SubscriberExt};
 use tracing_subscriber::{EnvFilter, Layer};
 
 use firecrawl_telemetry::{
-  FlushGuard, TraceContext, ZdrLayer, attach_parent_context, build_resource,
-  build_zdr_tracer_provider, in_zdr_span, install_zdr_panic_hook, pre_parse_zdr_from_json_str,
-  run_on_scoped_rayon_pool, sampler_from_env, spawn_blocking_with_span, zdr_span_filter,
+  TraceContext, ZdrLayer, attach_parent_context, build_resource, build_zdr_tracer_provider,
+  in_zdr_span, install_zdr_panic_hook, pre_parse_zdr_from_json_str, run_on_scoped_rayon_pool,
+  sampler_from_env, spawn_blocking_with_span, spawn_thread_with_span, zdr_span_filter,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -95,13 +96,15 @@ fn verify_w3c_and_zdr() -> Result<(), String> {
     drop(non_zdr_span);
 
     // 2. ZDR call with SAMPLED traceparent (-01) and always_on sampler emits 0 spans & 0 events,
-    //    and preserves in_zdr_span() across spawn_blocking and scoped rayon threads.
+    //    deriving the span flag directly from pre_parse_zdr_from_json_str and preserving
+    //    in_zdr_span() across spawn_blocking, scoped rayon, and OS threads.
     let raw_zdr = r#"{"zeroDataRetention": "truthy-string"}"#;
-    if !pre_parse_zdr_from_json_str(raw_zdr) {
+    let pre_parsed_zdr = pre_parse_zdr_from_json_str(raw_zdr);
+    if !pre_parsed_zdr {
       return Err("pre_parse_zdr_from_json_str failed on non-false string".to_string());
     }
-    let zdr_span = tracing::info_span!("derive_core_html", zero_data_retention = true);
-    attach_parent_context(&zdr_span, Some(&trace_ctx), true);
+    let zdr_span = tracing::info_span!("derive_core_html", zero_data_retention = pre_parsed_zdr);
+    attach_parent_context(&zdr_span, Some(&trace_ctx), pre_parsed_zdr);
     zdr_span.in_scope(|| -> Result<(), String> {
       tracing::error!("zdr-secret-event-must-be-suppressed");
       if !in_zdr_span() {
@@ -130,13 +133,26 @@ fn verify_w3c_and_zdr() -> Result<(), String> {
         return Err("in_zdr_span() was false inside run_on_scoped_rayon_pool".to_string());
       }
 
+      let os_thread_saw_zdr = spawn_thread_with_span("verify-zdr-os", || {
+        tracing::error!("zdr-os-thread-secret-must-be-suppressed");
+        in_zdr_span()
+      })
+      .map_err(|e| format!("spawn_thread_with_span failed: {e}"))?
+      .join()
+      .map_err(|_| "OS worker thread panicked".to_string())?;
+      if !os_thread_saw_zdr {
+        return Err("in_zdr_span() was false inside spawn_thread_with_span".to_string());
+      }
+
       Ok(())
     })?;
     drop(zdr_span);
     Ok(())
   })?;
 
-  let _ = provider.force_flush();
+  provider
+    .force_flush()
+    .map_err(|e| format!("force_flush failed: {e}"))?;
   let spans = exporter
     .get_finished_spans()
     .map_err(|e| format!("failed to read finished spans: {e}"))?;
@@ -181,7 +197,7 @@ fn verify_w3c_and_zdr() -> Result<(), String> {
   }
 
   println!(
-    "OK w3c_propagation=true trace_id={} parent_span_id={} tracestate={} non_zdr_spans={} zdr_spans=0 suppressed_zdr_events=3 cross_thread_zdr=true",
+    "OK w3c_propagation=true trace_id={} parent_span_id={} tracestate={} non_zdr_spans={} zdr_spans=0 suppressed_zdr_events=4 cross_thread_zdr=true",
     root_exported.span_context.trace_id(),
     root_exported.parent_span_id,
     root_exported.span_context.trace_state().header(),
@@ -191,8 +207,7 @@ fn verify_w3c_and_zdr() -> Result<(), String> {
 }
 
 #[allow(clippy::panic)]
-fn verify_zdr_panic_hook() -> Result<(), String> {
-  let _flush = FlushGuard;
+fn run_zdr_panic_hook_worker() -> Result<(), String> {
   install_zdr_panic_hook();
 
   let rt = tokio::runtime::Builder::new_multi_thread()
@@ -204,40 +219,107 @@ fn verify_zdr_panic_hook() -> Result<(), String> {
   // Even under RUST_LOG=error, zdr_span_filter keeps ZDR info_span! active.
   let subscriber = tracing_subscriber::registry()
     .with(ZdrLayer.with_filter(zdr_span_filter(EnvFilter::new("error"))));
-  tracing::subscriber::with_default(subscriber, || {
+  tracing::subscriber::with_default(subscriber, || -> Result<(), String> {
     let zdr_span = tracing::info_span!("derive_core_html", zero_data_retention = true);
-    let _ = zdr_span.in_scope(|| {
+    let direct_panic = zdr_span.in_scope(|| {
       std::panic::catch_unwind(|| {
         std::panic::panic_any("SUPER_SECRET_ZDR_CUSTOMER_PAYLOAD");
       })
     });
+    if direct_panic.is_ok() {
+      return Err("expected direct ZDR closure to panic".to_string());
+    }
 
-    zdr_span.in_scope(|| {
-      let _ = rt.block_on(async {
+    let blocking_result = zdr_span.in_scope(|| {
+      rt.block_on(async {
         spawn_blocking_with_span(|| {
           std::panic::panic_any("SUPER_SECRET_BLOCKING_ZDR_PAYLOAD");
         })
         .await
-      });
+      })
     });
+    match blocking_result {
+      Err(err) if err.is_panic() => {}
+      other => return Err(format!("expected spawn_blocking ZDR panic, got {other:?}")),
+    }
 
-    zdr_span.in_scope(|| {
-      let _ = run_on_scoped_rayon_pool(2, || {
-        let _ = std::panic::catch_unwind(|| {
+    let rayon_panic = zdr_span.in_scope(|| {
+      run_on_scoped_rayon_pool(2, || {
+        std::panic::catch_unwind(|| {
           std::panic::panic_any("SUPER_SECRET_RAYON_ZDR_PAYLOAD");
-        });
-      });
+        })
+      })
     });
+    match rayon_panic {
+      Ok(Err(_)) => {}
+      Ok(Ok(())) => return Err("expected scoped rayon ZDR closure to panic".to_string()),
+      Err(err) => return Err(format!("failed to build scoped rayon pool: {err}")),
+    }
+
+    let os_thread_result = zdr_span.in_scope(|| {
+      spawn_thread_with_span("zdr-panic-os", || {
+        std::panic::panic_any("SUPER_SECRET_OS_THREAD_ZDR_PAYLOAD");
+      })
+      .map_err(|e| format!("spawn_thread_with_span failed: {e}"))?
+      .join()
+      .map_or(Ok(()), |()| {
+        Err("expected OS worker thread to panic".to_string())
+      })
+    });
+    os_thread_result?;
 
     let non_zdr_span = tracing::info_span!("derive_core_html", zero_data_retention = false);
-    let _ = non_zdr_span.in_scope(|| {
+    let non_zdr_panic = non_zdr_span.in_scope(|| {
       std::panic::catch_unwind(|| {
         std::panic::panic_any("NON_ZDR_DIAGNOSTIC_PAYLOAD");
       })
     });
-  });
+    if non_zdr_panic.is_ok() {
+      return Err("expected non-ZDR closure to panic".to_string());
+    }
 
-  println!("OK panic_hook_executed=true");
+    Ok(())
+  })
+}
+
+fn verify_zdr_panic_hook() -> Result<(), String> {
+  let exe = std::env::current_exe().map_err(|e| format!("current_exe failed: {e}"))?;
+  let output = Command::new(exe)
+    .arg("panic-hook-worker")
+    .output()
+    .map_err(|e| format!("failed to spawn panic-hook-worker: {e}"))?;
+
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  if !output.status.success() {
+    return Err(format!(
+      "panic-hook-worker failed with {}: {stderr}",
+      output.status
+    ));
+  }
+
+  if stderr.contains("SUPER_SECRET_") {
+    return Err(format!("ZDR panic payload leaked to stderr:\n{stderr}"));
+  }
+
+  let withheld_count = stderr
+    .lines()
+    .filter(|line| line.contains("panic payload withheld (zero data retention)"))
+    .count();
+  if withheld_count != 4 {
+    return Err(format!(
+      "expected 4 withheld ZDR panic lines, got {withheld_count}:\n{stderr}"
+    ));
+  }
+
+  if !stderr.contains("NON_ZDR_DIAGNOSTIC_PAYLOAD") {
+    return Err(format!(
+      "expected non-ZDR diagnostic payload in stderr:\n{stderr}"
+    ));
+  }
+
+  println!(
+    "OK panic_hook_verified=true withheld_count={withheld_count} leaked_zdr_payloads=0 non_zdr_preserved=true"
+  );
   Ok(())
 }
 
@@ -245,6 +327,7 @@ fn main() -> Result<(), String> {
   let mode = std::env::args().nth(1);
   match mode.as_deref() {
     Some("panic-hook") => verify_zdr_panic_hook(),
+    Some("panic-hook-worker") => run_zdr_panic_hook_worker(),
     _ => verify_w3c_and_zdr(),
   }
 }

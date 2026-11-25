@@ -169,8 +169,16 @@ fn zdr_overrides_sampled_w3c_parent_in_subscriber(tc: TestCase) {
     let _child_enter = child.enter();
   });
 
-  let _ = provider.force_flush();
-  let spans = exporter.get_finished_spans().unwrap_or_default();
+  let flush_result = provider.force_flush();
+  assert!(flush_result.is_ok(), "force_flush failed: {flush_result:?}");
+  let spans_result = exporter.get_finished_spans();
+  assert!(
+    spans_result.is_ok(),
+    "get_finished_spans failed: {spans_result:?}"
+  );
+  let Ok(spans) = spans_result else {
+    return;
+  };
 
   if is_zdr {
     assert!(

@@ -103,6 +103,8 @@ pub fn serialize_kinded_with_options<K: Display, O: Serialize, S: serde::Seriali
 pub struct KindedSet<T: Kinded>(BTreeMap<T::Kind, T>);
 
 impl<T: Kinded> KindedSet<T> {
+  /// Creates an empty set. Unlike [`Default::default`], this does not populate
+  /// `T::default_members()`.
   pub fn new() -> Self {
     Self(BTreeMap::new())
   }

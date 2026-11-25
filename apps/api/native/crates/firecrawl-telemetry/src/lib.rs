@@ -19,9 +19,12 @@ use tracing_subscriber::{EnvFilter, Layer, fmt};
 mod propagation;
 mod scope;
 mod zdr;
+mod zdr_otel;
 
 #[cfg(test)]
 mod properties;
+#[cfg(test)]
+mod tests;
 
 pub use propagation::{
   TraceContext, attach_parent_context, build_resource, extract_trace_context,
@@ -32,16 +35,18 @@ pub use scope::{
   spawn_blocking_with_span, spawn_thread_with_span,
 };
 pub use zdr::{
-  ZdrContextMarker, ZdrLayer, ZeroDataRetentionSampler, ZeroDataRetentionSpanProcessor,
-  in_zdr_span, install_zdr_panic_hook, is_zdr_json_value, pre_parse_zdr_from_json_str,
-  zdr_span_filter,
+  ZdrContextMarker, ZdrLayer, in_zdr_span, install_zdr_panic_hook, is_zdr_json_value,
+  pre_parse_zdr_from_json_str, zdr_span_filter,
+};
+pub use zdr_otel::{
+  ZdrSpan, ZdrTracer, ZdrTracerProvider, ZeroDataRetentionSampler, ZeroDataRetentionSpanProcessor,
 };
 
 const TRACER_NAME: &str = "firecrawl-rs";
 
 static INIT: Once = Once::new();
 static CRYPTO_PROVIDER_INIT: Once = Once::new();
-static PROVIDER: OnceLock<SdkTracerProvider> = OnceLock::new();
+static PROVIDER: OnceLock<ZdrTracerProvider> = OnceLock::new();
 
 /// Installs the `rustls` ring crypto provider once before any TLS handshake.
 pub fn ensure_crypto_provider() {
@@ -71,32 +76,47 @@ pub fn traces_endpoint() -> Option<String> {
   None
 }
 
-/// Builds a ZDR-protected [`SdkTracerProvider`] using a custom [`SpanProcessor`].
+/// Builds a ZDR-protected [`ZdrTracerProvider`] using a custom [`SpanProcessor`].
 pub fn build_tracer_provider_with_processor<P: SpanProcessor + 'static>(
   processor: P,
   resource: Resource,
   delegate_sampler: Sampler,
-) -> SdkTracerProvider {
-  let registry = zdr::ZdrTraceRegistry::default();
-  SdkTracerProvider::builder()
+) -> ZdrTracerProvider {
+  build_tracer_provider_with_registry(
+    processor,
+    resource,
+    delegate_sampler,
+    zdr_otel::ZdrTraceRegistry::default(),
+  )
+}
+
+pub(crate) fn build_tracer_provider_with_registry<P: SpanProcessor + 'static>(
+  processor: P,
+  resource: Resource,
+  delegate_sampler: Sampler,
+  registry: zdr_otel::ZdrTraceRegistry,
+) -> ZdrTracerProvider {
+  let provider = SdkTracerProvider::builder()
     .with_sampler(ZeroDataRetentionSampler::with_registry(
       delegate_sampler,
       registry.clone(),
     ))
     .with_span_processor(ZeroDataRetentionSpanProcessor::with_registry(
-      processor, registry,
+      processor,
+      registry.clone(),
     ))
     .with_resource(resource)
-    .build()
+    .build();
+  ZdrTracerProvider::new(provider, registry)
 }
 
-/// Builds a ZDR-protected [`SdkTracerProvider`] exporting synchronously via
+/// Builds a ZDR-protected [`ZdrTracerProvider`] exporting synchronously via
 /// [`SimpleSpanProcessor`], suitable for deterministic in-memory verification.
 pub fn build_zdr_tracer_provider<E: SdkExporter + 'static>(
   exporter: E,
   resource: Resource,
   delegate_sampler: Sampler,
-) -> SdkTracerProvider {
+) -> ZdrTracerProvider {
   build_tracer_provider_with_processor(
     SimpleSpanProcessor::new(exporter),
     resource,
@@ -104,13 +124,13 @@ pub fn build_zdr_tracer_provider<E: SdkExporter + 'static>(
   )
 }
 
-/// Builds a ZDR-protected [`SdkTracerProvider`] exporting via
+/// Builds a ZDR-protected [`ZdrTracerProvider`] exporting via
 /// [`BatchSpanProcessor`].
 pub fn build_batch_zdr_tracer_provider<E: SdkExporter + 'static>(
   exporter: E,
   resource: Resource,
   delegate_sampler: Sampler,
-) -> SdkTracerProvider {
+) -> ZdrTracerProvider {
   build_tracer_provider_with_processor(
     BatchSpanProcessor::builder(exporter).build(),
     resource,
@@ -118,7 +138,7 @@ pub fn build_batch_zdr_tracer_provider<E: SdkExporter + 'static>(
   )
 }
 
-fn build_otlp_tracer_provider() -> Option<SdkTracerProvider> {
+fn build_otlp_tracer_provider() -> Option<ZdrTracerProvider> {
   let endpoint = traces_endpoint()?;
 
   let exporter = match SpanExporter::builder()

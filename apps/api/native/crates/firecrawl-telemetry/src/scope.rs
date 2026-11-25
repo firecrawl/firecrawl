@@ -49,7 +49,7 @@ pub fn run_on_scoped_rayon_pool_in_span<R: Send>(
 ) -> Result<R, rayon::ThreadPoolBuildError> {
   let dispatch = tracing::dispatcher::get_default(Dispatch::clone);
   rayon::ThreadPoolBuilder::new()
-    .num_threads(num_threads.max(1))
+    .num_threads(num_threads)
     .build_scoped(
       |thread| {
         tracing::dispatcher::with_default(&dispatch, || {
