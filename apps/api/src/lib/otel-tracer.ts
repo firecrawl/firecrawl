@@ -13,11 +13,13 @@ import {
   type Span,
 } from "@opentelemetry/api";
 import {
+  AlwaysOffSampler,
   AlwaysOnSampler,
   BatchSpanProcessor,
   NodeTracerProvider,
   ParentBasedSampler,
   SamplingDecision,
+  TraceIdRatioBasedSampler,
   type ReadableSpan,
   type Sampler,
   type SamplingResult,
@@ -184,16 +186,46 @@ class ZeroDataRetentionSpanProcessor implements SpanProcessor {
   }
 }
 
+/**
+ * The sampler named by the standard `OTEL_TRACES_SAMPLER` and
+ * `OTEL_TRACES_SAMPLER_ARG` values. Unset or unknown names fall back to
+ * `parentbased_always_on`; a missing or invalid ratio means 1.
+ */
+export function samplerFromEnv(name?: string, arg?: string): Sampler {
+  const parsedRatio =
+    arg === undefined || arg.trim() === "" ? NaN : Number(arg);
+  const ratio = Number.isFinite(parsedRatio) ? parsedRatio : 1;
+
+  switch (name?.trim().toLowerCase()) {
+    case "always_on":
+      return new AlwaysOnSampler();
+    case "always_off":
+      return new AlwaysOffSampler();
+    case "traceidratio":
+      return new TraceIdRatioBasedSampler(ratio);
+    case "parentbased_always_off":
+      return new ParentBasedSampler({ root: new AlwaysOffSampler() });
+    case "parentbased_traceidratio":
+      return new ParentBasedSampler({
+        root: new TraceIdRatioBasedSampler(ratio),
+      });
+    default:
+      return new ParentBasedSampler({ root: new AlwaysOnSampler() });
+  }
+}
+
 interface TracerProviderOptions {
   exporter: SpanExporter;
   serviceName: string;
   serviceInstanceId?: string;
+  /** Defaults to `parentbased_always_on`. */
+  sampler?: Sampler;
 }
 
 /**
- * Builds the tracer provider used by every Firecrawl process: 100% sampling
- * (respecting the sampled flag of a remote parent), ZDR filtering, and batched
- * export. Callers decide whether to `register()` it globally.
+ * Builds the tracer provider used by every Firecrawl process: the given
+ * sampler, ZDR filtering, and batched export. Callers decide whether to
+ * `register()` it globally.
  */
 export function createTracerProvider(
   options: TracerProviderOptions,
@@ -211,9 +243,7 @@ export function createTracerProvider(
 
   return new NodeTracerProvider({
     resource,
-    sampler: new ZeroDataRetentionSampler(
-      new ParentBasedSampler({ root: new AlwaysOnSampler() }),
-    ),
+    sampler: new ZeroDataRetentionSampler(options.sampler ?? samplerFromEnv()),
     spanProcessors: [
       new ZeroDataRetentionSpanProcessor(
         new BatchSpanProcessor(options.exporter),

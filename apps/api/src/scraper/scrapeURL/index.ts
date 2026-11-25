@@ -720,10 +720,96 @@ type EngineScrapeResultWithContext = {
 
 const MAX_HTML_SIZE_FOR_MARKDOWN_CHECK = 300 * 1024; // 300KB
 
+function isIndexEngine(engine: Engine): boolean {
+  return engine === "index" || engine === "index;documents";
+}
+
+function engineAttemptOutcome(error: unknown): {
+  outcome: string;
+  reason: string;
+  expected: boolean;
+} {
+  const inner =
+    error instanceof AbortManagerThrownError ? error.inner : undefined;
+  const source = inner instanceof Error ? inner : error;
+  const reason =
+    source instanceof Error
+      ? source.name !== "Error"
+        ? source.name
+        : source.constructor.name
+      : typeof source;
+
+  if (error instanceof EngineUnsuccessfulError) {
+    return { outcome: "unsuccessful", reason, expected: true };
+  }
+  if (
+    error instanceof EngineSnipedError ||
+    inner instanceof EngineSnipedError
+  ) {
+    return { outcome: "cancelled", reason, expected: true };
+  }
+  if (error instanceof AbortManagerThrownError) {
+    return {
+      outcome: "timeout",
+      reason: reason + ":" + error.tier,
+      expected: true,
+    };
+  }
+  if (error instanceof AddFeatureError || error instanceof RemoveFeatureError) {
+    return { outcome: "retry_with_features", reason, expected: true };
+  }
+  return {
+    outcome: "error",
+    reason,
+    expected: error instanceof EngineError,
+  };
+}
+
 async function scrapeURLLoopIter(
   meta: Meta,
   engine: Engine,
+  attempt: number,
   snipeAbort,
+): Promise<EngineScrapeResult> {
+  const settled = await withSpan(
+    "scrape.engine_attempt",
+    async span => {
+      try {
+        const result = await scrapeURLLoopIterInner(
+          meta,
+          engine,
+          snipeAbort,
+          statusCode =>
+            setSpanAttributes(span, { "engine.status_code": statusCode }),
+        );
+        setSpanAttributes(span, { "engine.outcome": "success" });
+        return { ok: true as const, result };
+      } catch (error) {
+        const { outcome, reason, expected } = engineAttemptOutcome(error);
+        setSpanAttributes(span, {
+          "engine.outcome": outcome,
+          "engine.fallback_reason": reason,
+        });
+        if (!expected) {
+          recordSpanException(span, error);
+        }
+        return { ok: false as const, error };
+      }
+    },
+    { attributes: { "engine.name": engine, "engine.attempt": attempt } },
+  );
+
+  if (!settled.ok) {
+    throw settled.error;
+  }
+  return settled.result;
+}
+
+async function scrapeURLLoopIterInner(
+  meta: Meta,
+  engine: Engine,
+  snipeAbort,
+  onStatusCode: (statusCode: number) => void,
 ): Promise<EngineScrapeResult> {
   const abort = meta.abort.child(snipeAbort);
   try {
@@ -734,6 +820,7 @@ async function scrapeURLLoopIter(
       },
       engine,
     );
+    onStatusCode(engineResult.statusCode);
 
     const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
     const hasChangeTracking = hasFormatOfType(
@@ -951,6 +1038,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     while (remainingEngines.length > 0) {
       const { engine, unsupportedFeatures } = remainingEngines.shift()!;
       enginesAttempted.push(engine);
+      const attempt = enginesAttempted.length;
 
       const waitUntilWaterfall =
         getEngineMaxReasonableTime(meta, engine) +
@@ -982,7 +1070,12 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
             return {
               engine,
               unsupportedFeatures,
-              result: await scrapeURLLoopIter(meta, engine, snipeAbort),
+              result: await scrapeURLLoopIter(
+                meta,
+                engine,
+                attempt,
+                snipeAbort,
+              ),
             };
           } catch (error) {
             throw new WrappedEngineError(engine, error);
@@ -1203,6 +1296,9 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       setSpanAttributes(span, {
         "engine.no_engines_left": true,
         "engine.engines_attempted": enginesAttempted.join(","),
+        "engine.cache_hit": enginesAttempted.some(isIndexEngine)
+          ? false
+          : undefined,
       });
       if (meta.options.lockdown) {
         throw new LockdownMissError();
@@ -1214,6 +1310,9 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     setSpanAttributes(span, {
       "engine.winner": result.engine,
       "engine.engines_attempted": enginesAttempted.join(","),
+      "engine.cache_hit": enginesAttempted.some(isIndexEngine)
+        ? isIndexEngine(result.engine)
+        : undefined,
       "engine.unsupported_features":
         result.unsupportedFeatures.size > 0
           ? Array.from(result.unsupportedFeatures).join(",")
