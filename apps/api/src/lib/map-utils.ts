@@ -585,15 +585,18 @@ export async function getMapResults({
     };
 
     try {
-      const baseDomain = extractBaseDomain(url);
+      // Only named sites can share a domain across origins. For an IP or
+      // single-label host, keep the scheme, host and port the caller supplied.
+      const baseDomain = extractBaseDomain(startUrl) && extractBaseDomain(url);
       const scopedPath =
         filterByPath && !allowExternalLinks
           ? new URL(url).pathname.replace(/\/+$/, "")
           : "";
 
       const isInSite = (target: string) =>
-        isSameDomain(target, url) &&
-        (!baseDomain || extractBaseDomain(target) === baseDomain);
+        baseDomain
+          ? extractBaseDomain(target) === baseDomain
+          : URL.parse(target)?.origin === startOrigin;
       const robotsByOrigin = new Map<
         string,
         Promise<ReturnType<typeof crawlToCrawler>>
@@ -683,7 +686,7 @@ export async function getMapResults({
 
       const [startAllowed, resolvedAllowed] = await Promise.all([
         isAllowedByRobots(startUrl),
-        isAllowedByRobots(resolvedUrl),
+        isInSite(resolvedUrl) && isAllowedByRobots(resolvedUrl),
       ]);
       const page =
         startAllowed && resolvedAllowed

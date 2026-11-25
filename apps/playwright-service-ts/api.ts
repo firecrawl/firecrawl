@@ -439,13 +439,14 @@ app.post('/scrape', async (req: Request, res: Response) => {
         )?.[1]
       : undefined;
 
-    const contextBundle = await whileConnected(
-      createContext(skip_tls_verification, userAgentOverride).then((bundle) => {
-        requestContext = bundle.context;
-        if (abort.signal.aborted) void closeContext();
-        return bundle;
-      }),
+    // Context creation cannot be cancelled. Keep the permit until the context
+    // exists and the finally block can close it, even if the client has left.
+    const contextBundle = await createContext(
+      skip_tls_verification,
+      userAgentOverride,
     );
+    requestContext = contextBundle.context;
+    abort.signal.throwIfAborted();
     const page = await whileConnected(contextBundle.context.newPage());
 
     if (headers) {
