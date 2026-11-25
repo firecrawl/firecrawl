@@ -2600,7 +2600,13 @@ describe("authenticateUser", () => {
       const auth = await authenticateUser(req(), {}, RateLimiterMode.Scrape);
 
       expect(authCreditUsageChunk).toHaveBeenCalled();
-      expect(auth).toEqual(expect.objectContaining({ status: 401 }));
+      expect(auth).toEqual(
+        expect.objectContaining({
+          success: false,
+          status: 401,
+          error: "Unauthorized: API key has expired",
+        }),
+      );
     });
 
     it.each([
