@@ -51,7 +51,6 @@ interface Services {
   nuqWorkers: ProcessResult[];
   nuqPrefetchWorker?: ProcessResult;
   nuqReconcilerWorker?: ProcessResult;
-  extractWorker?: ProcessResult;
   indexWorker?: ProcessResult;
   command?: ProcessResult;
   nuqPostgres?: {
@@ -861,21 +860,6 @@ async function startServices(command?: string[]): Promise<Services> {
     ? "pnpm exec tsx"
     : "node";
 
-  const extractWorker =
-    roleEntry && installedService()?.roles.has("extract-worker")
-      ? execForward(
-          "extract-worker",
-          `${roleRunner} ${shellEscape(roleEntry)} extract-worker`,
-          {
-            NUQ_REDUCE_NOISE: "true",
-            NUQ_POD_NAME: "extract-worker",
-            ...(process.env.EXTRACT_WORKER_PORT
-              ? { EXTRACT_WORKER_PORT: process.env.EXTRACT_WORKER_PORT }
-              : {}),
-          },
-        )
-      : undefined;
-
   const nuqWorkers = Array.from({ length: NUQ_WORKER_COUNT }, (_, i) =>
     execForward(
       `${nuqWorkerRole}-${i}`,
@@ -952,7 +936,6 @@ async function startServices(command?: string[]): Promise<Services> {
     nuqPrefetchWorker,
     nuqReconcilerWorker,
     indexWorker,
-    extractWorker,
     command: commandProcess,
     nuqPostgres,
     nuqRabbitMQ,
@@ -970,7 +953,6 @@ async function stopDevelopmentServices(services: Services) {
     services.nuqPrefetchWorker?.process,
     services.nuqReconcilerWorker?.process,
     services.indexWorker?.process,
-    services.extractWorker?.process,
     services.command?.process,
   ].filter((p): p is ChildProcess => !!p);
 
@@ -1135,7 +1117,6 @@ async function waitForTermination(services: Services): Promise<void> {
   if (services.api) promises.push(services.api.promise);
   if (services.worker) promises.push(services.worker.promise);
   if (services.indexWorker) promises.push(services.indexWorker.promise);
-  if (services.extractWorker) promises.push(services.extractWorker.promise);
   if (services.nuqPrefetchWorker)
     promises.push(services.nuqPrefetchWorker.promise);
   if (services.nuqReconcilerWorker)
