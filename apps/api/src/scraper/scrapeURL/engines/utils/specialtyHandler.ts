@@ -106,7 +106,28 @@ async function feResToDocumentPrefetch(
   const extension =
     documentExtensionFromContentType(contentType)?.slice(1) ?? "tmp";
 
-  return feResToFilePrefetch(logger, feRes, extension, "document", contentType);
+  // fire-engine returns textual bodies (text/csv, text/rtf) inline as
+  // `content` instead of a captured file, so materialize that text as the file.
+  const inlineText =
+    feRes != null &&
+    feRes.file == null &&
+    contentType?.trim().toLowerCase().startsWith("text/");
+
+  return feResToFilePrefetch(
+    logger,
+    inlineText
+      ? {
+          ...feRes,
+          file: {
+            name: `download.${extension}`,
+            content: Buffer.from(feRes.content, "utf8").toString("base64"),
+          },
+        }
+      : feRes,
+    extension,
+    "document",
+    contentType,
+  );
 }
 
 async function feResToImagePrefetch(

@@ -349,6 +349,28 @@ describe("specialtyScrapeCheck: the bytes decide when the header does not", () =
     expect(encoded.pdfPrefetch?.handoff).toEqual({ contentLength: undefined });
   });
 
+  it("hands an inline text/csv body to the document engine as a file", async () => {
+    const csv = "Date,1 Mo\n10/30/2026,4.06\n";
+    const handoff = await expectHandoff(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "text/csv; charset=UTF-8" },
+        inline(csv),
+      ),
+    );
+
+    expect(handoff.featureFlags).toEqual(["document"]);
+    expect(handoff.documentPrefetch).toMatchObject({
+      status: 200,
+      url: DOWNLOAD_URL,
+      contentType: "text/csv; charset=UTF-8",
+    });
+    expect(handoff.documentPrefetch!.filePath).toMatch(/\.csv$/);
+    expect(await readFile(handoff.documentPrefetch!.filePath, "utf8")).toBe(
+      csv,
+    );
+  });
+
   it("does nothing without a fire-engine response to sniff", async () => {
     await expect(
       specialtyScrapeCheck(logger, { "content-type": "text/html" }),
