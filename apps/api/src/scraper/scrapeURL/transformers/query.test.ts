@@ -18,7 +18,7 @@ vi.mock("../../../lib/generic-ai", () => ({
 import { generateText } from "ai";
 import { encoding_for_model } from "@dqbd/tiktoken";
 import type { Mock } from "vitest";
-import { keepWholeLines, performQuery } from "./query";
+import { keepWholeLines, performDirectQuoteQuery, performQuery } from "./query";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { getModel } from "../../../lib/generic-ai";
 import { modelPrices } from "../../../lib/model-prices";
@@ -157,14 +157,17 @@ describe("keepWholeLines", () => {
   });
 });
 
-describe("performQuery highlights", () => {
+describe("performDirectQuoteQuery highlights", () => {
   it("keeps whole lines within the model's context window", async () => {
     respond("[0]");
     const document: any = { markdown: page(40_000), metadata: {} };
 
-    await performQuery(
-      makeMeta([{ type: "highlights", query: "what does line 0 say?" }]),
+    const highlights = await performDirectQuoteQuery(
+      makeMeta([]),
       document,
+      "what does line 0 say?",
+      document.markdown,
+      "highlights",
     );
 
     const [args] = calls();
@@ -177,7 +180,7 @@ describe("performQuery highlights", () => {
     const tokens = countTokens(lines.join("\n"));
     expect(tokens).toBeLessThanOrEqual(131_072 - 16_384);
     expect(tokens).toBeGreaterThan(131_072 - 16_384 - 100);
-    expect(document.highlights).toContain("Line number 0");
+    expect(highlights).toContain("Line number 0");
     expect(document.warning).toContain(
       "highlights were generated from the first part of it",
     );
@@ -188,9 +191,12 @@ describe("performQuery highlights", () => {
     // One sentence (no punctuation), ~300k tokens.
     const document: any = { markdown: "word ".repeat(300_000), metadata: {} };
 
-    await performQuery(
-      makeMeta([{ type: "highlights", query: "anything about words?" }]),
+    await performDirectQuoteQuery(
+      makeMeta([]),
       document,
+      "anything about words?",
+      document.markdown,
+      "highlights",
     );
 
     const lines = sentLines(calls()[0].prompt);
@@ -206,9 +212,12 @@ describe("performQuery highlights", () => {
     respond("[0]");
     const document: any = { markdown: page(40_000), metadata: {} };
 
-    await performQuery(
-      makeMeta([{ type: "highlights", query: "what does line 0 say?" }]),
+    const highlights = await performDirectQuoteQuery(
+      makeMeta([]),
       document,
+      "what does line 0 say?",
+      document.markdown,
+      "highlights",
     );
 
     const lines = sentLines(calls()[0].prompt);
@@ -219,7 +228,7 @@ describe("performQuery highlights", () => {
     const bytes = Buffer.byteLength(lines.join("\n"));
     expect(bytes).toBeLessThanOrEqual(131_072 - 16_384);
     expect(bytes).toBeGreaterThan(131_072 - 16_384 - 100);
-    expect(document.highlights).toContain("Line number 0");
+    expect(highlights).toContain("Line number 0");
   });
 
   it("sends small pages untouched", async () => {
@@ -237,6 +246,26 @@ describe("performQuery highlights", () => {
     expect(args.telemetry.functionId).toBe("performQuery/directQuote");
     expect(args.prompt).toContain("2: Line number 2");
     expect(document.warning).toBeUndefined();
+  });
+
+  it("trims long pages through performQuery and populates answer and warning", async () => {
+    respond("[0]");
+    const document: any = { markdown: page(40_000), metadata: {} };
+
+    await performQuery(
+      makeMeta([
+        { type: "query", prompt: "what does line 0 say?", mode: "directQuote" },
+      ]),
+      document,
+    );
+
+    const [args] = calls();
+    expect(args.telemetry.functionId).toBe("performQuery/directQuote");
+    expect(sentLines(args.prompt).length).toBeLessThan(40_000);
+    expect(document.answer).toContain("Line number 0");
+    expect(document.warning).toContain(
+      "answer was generated from the first part of it",
+    );
   });
 });
 
@@ -400,13 +429,16 @@ describe("performQuery freeform", () => {
 
     respond("[0]");
     const doc: any = { markdown: "hello world.", metadata: {} };
-    await performQuery(
-      makeMeta([{ type: "highlights", query: "what does it say?" }]),
+    const highlights = await performDirectQuoteQuery(
+      makeMeta([]),
       doc,
+      "what does it say?",
+      doc.markdown,
+      "highlights",
     );
 
     expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", "openai"]]);
-    expect(doc.highlights).toBe("hello world.");
+    expect(highlights).toBe("hello world.");
   });
 
   it("sets a warning instead of throwing when no matching provider is registered", async () => {
@@ -435,13 +467,13 @@ describe("performQuery freeform", () => {
 
     const doc: any = { markdown: "hello world.", metadata: {} };
     await performQuery(
-      makeMeta([{ type: "highlights", query: "what does it say?" }]),
+      makeMeta([
+        { type: "query", prompt: "what does it say?", mode: "directQuote" },
+      ]),
       doc,
     );
 
-    expect(doc.highlights).toBeUndefined();
-    expect(doc.warning).toContain(
-      "Highlights generation failed after all models.",
-    );
+    expect(doc.answer).toBeUndefined();
+    expect(doc.warning).toContain("Query generation failed after all models.");
   });
 });

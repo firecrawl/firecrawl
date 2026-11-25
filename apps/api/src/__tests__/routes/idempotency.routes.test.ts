@@ -2,16 +2,6 @@ import express from "express";
 import request from "supertest";
 import { v7 as uuidv7 } from "uuid";
 
-vi.mock("../../services/autumn/autumn.service", () => ({
-  autumnService: { checkCredits: vi.fn() },
-  CREDITS_FEATURE_ID: "CREDITS",
-}));
-vi.mock("../../services/autumn/usage", () => ({
-  getTeamBalance: vi.fn(),
-}));
-vi.mock("../../controllers/auth", () => ({
-  authenticateUser: vi.fn(),
-}));
 vi.mock("geoip-country", () => ({ lookup: vi.fn(() => null) }));
 
 import { idempotencyMiddleware } from "../../routes/shared";

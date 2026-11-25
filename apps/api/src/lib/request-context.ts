@@ -8,7 +8,7 @@
  */
 import type { TeamFlags } from "../controllers/v2/types";
 import type { RequestContext } from "../service/request-context";
-import type { BillingMetadata } from "../services/billing/types";
+import type { BillingMetadata } from "./billing-types";
 import type { ScrapeJobData } from "../types";
 import type { StoredCrawl } from "./crawl-redis";
 
@@ -28,6 +28,10 @@ declare module "../service/request-context" {
     apiKeyId?: number | null;
     /** How the work of the request is billed. */
     billing?: BillingMetadata;
+    /** Request-scoped concurrency limit resolved during authentication, when present. */
+    concurrencyLimit?: number;
+    /** Team rate-limit multiplier resolved during authentication, when present. */
+    rateLimitMultiplier?: number;
   }
 }
 
@@ -38,6 +42,8 @@ export function requestContext(facts: {
   orgId?: string | null;
   apiKeyId?: number | null;
   billing?: BillingMetadata;
+  concurrencyLimit?: number;
+  rateLimitMultiplier?: number;
 }): RequestContext {
   return {
     teamId: facts.teamId,
@@ -46,6 +52,12 @@ export function requestContext(facts: {
     orgId: facts.orgId,
     apiKeyId: facts.apiKeyId,
     billing: facts.billing,
+    ...(facts.concurrencyLimit !== undefined
+      ? { concurrencyLimit: facts.concurrencyLimit }
+      : {}),
+    ...(facts.rateLimitMultiplier !== undefined
+      ? { rateLimitMultiplier: facts.rateLimitMultiplier }
+      : {}),
   };
 }
 
@@ -81,6 +93,16 @@ export function storedZeroDataRetention(stored: unknown): boolean | undefined {
     | null
     | undefined;
   return shape?.ctx?.zeroDataRetention ?? shape?.zeroDataRetention;
+}
+
+/**
+ * Reads an optional threat protection policy attached to a request context by
+ * a policy module, without coupling core's base context type to a specific
+ * policy shape.
+ */
+export function contextThreatProtection(ctx: RequestContext): unknown {
+  return (ctx as { policy?: { threatProtection?: unknown } | null }).policy
+    ?.threatProtection;
 }
 
 /** The context a crawl runs under, with the same fallback as `jobContext`. */

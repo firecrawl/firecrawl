@@ -4,6 +4,7 @@ import type { Queue } from "bullmq";
 import {
   bullmqQueueDepth,
   bullmqQueueOldestOverdueSeconds,
+  resetBullmqQueueMetricsForTest,
   startBullmqQueueMetrics,
 } from "./queue-metrics";
 
@@ -28,8 +29,25 @@ async function values(gauge: { get: () => Promise<{ values: any[] }> }) {
 
 describe("BullMQ queue metrics", () => {
   afterEach(() => {
-    startBullmqQueueMetrics([]);
+    resetBullmqQueueMetricsForTest();
     vi.useRealTimers();
+  });
+
+  it("merges multiple calls and deduplicates by queue name keeping the newest instance", async () => {
+    const first = fakeQueue("{firstQueue}", { waiting: 1 }, []);
+    const secondOld = fakeQueue("{secondQueue}", { waiting: 2 }, []);
+    const secondNew = fakeQueue("{secondQueue}", { waiting: 7 }, []);
+
+    startBullmqQueueMetrics([first.queue, secondOld.queue]);
+    startBullmqQueueMetrics([secondNew.queue]);
+
+    const depth = await values(bullmqQueueDepth);
+    expect(depth.filter(v => v.state === "waiting")).toEqual([
+      { queue: "{firstQueue}", state: "waiting", value: 1 },
+      { queue: "{secondQueue}", state: "waiting", value: 7 },
+    ]);
+    expect(secondOld.queue.getJobCounts).not.toHaveBeenCalled();
+    expect(secondNew.queue.getJobCounts).toHaveBeenCalledTimes(1);
   });
 
   it("exports depth per queue and state", async () => {

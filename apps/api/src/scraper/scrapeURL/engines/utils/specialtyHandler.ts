@@ -1,27 +1,75 @@
 import { Logger } from "winston";
 import { AddFeatureError, UnsupportedFileError } from "../../error";
-import { FireEngineCheckStatusSuccess } from "../fire-engine/checkStatus";
 import path from "path";
 import os from "os";
 import { writeFile } from "fs/promises";
 import { Meta } from "../..";
 import { documentExtensionFromContentType } from "../../../../lib/document-formats";
-import { downloadFireEngineGcsFile } from "./downloadGcsFile";
-import { declaredContentLength } from "../pdf/truncatedHandoff";
+
+export interface GcsFileDownloader {
+  /** Explicitly configured GCS handoff bucket; unset values reject all URIs. */
+  readonly allowedBucket: string | undefined;
+  download: (
+    logger: Logger,
+    file: { uri: string; sha256?: string; sizeBytes?: number },
+    destPath: string,
+    signal?: AbortSignal,
+    maxBytes?: number,
+  ) => Promise<{ sizeBytes: number; generation?: string } | null>;
+}
+
+function declaredContentLength(
+  headers: Record<string, string> | undefined,
+): number | undefined {
+  if (!headers) return undefined;
+  const header = (name: string) =>
+    Object.entries(headers).find(([k]) => k.toLowerCase() === name)?.[1];
+  const encoding = header("content-encoding")?.trim().toLowerCase();
+  if (encoding && encoding !== "identity") return undefined;
+  const raw = header("content-length")?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return undefined;
+  const length = Number(raw);
+  return Number.isSafeInteger(length) && length > 0 ? length : undefined;
+}
 import {
   imageExtensionFromContentType,
   sniffImageContentTypeFromBase64,
 } from "../../../../lib/image-formats";
 import type { ImageOcrGate } from "../../../../lib/image-ocr-gate";
+import { installedService } from "../../../../service/service";
+
+export function hasFilePrefetchEngine(): boolean {
+  return (
+    installedService()
+      ?.engines.all()
+      .some(engine => engine.prefetchesFiles === true && engine.enabled()) ??
+    false
+  );
+}
+
+export interface SpecialtyHandoffResponse {
+  url?: string;
+  content: string;
+  pageStatusCode: number;
+  usedMobileProxy?: boolean;
+  responseHeaders?: Record<string, string>;
+  file?: {
+    content?: string;
+    gcs_uri?: string;
+    sha256?: string;
+    size_bytes?: number;
+  } | null;
+}
 
 async function feResToFilePrefetch(
   logger: Logger,
-  feRes: FireEngineCheckStatusSuccess | undefined,
+  feRes: SpecialtyHandoffResponse | undefined,
   fileExtension: string,
   fileType: string,
   contentType?: string,
   signal?: AbortSignal,
   maxFileBytes?: number,
+  downloadGcsFile?: GcsFileDownloader,
 ): Promise<
   Meta["pdfPrefetch"] | Meta["documentPrefetch"] | Meta["imagePrefetch"]
 > {
@@ -49,7 +97,30 @@ async function feResToFilePrefetch(
     // Materialize a local copy (magic-byte sniffing and page-count detection
     // need bytes on disk) and keep the reference so the FirePDF by-reference
     // path can server-side copy the object instead of re-uploading it.
-    const downloaded = await downloadFireEngineGcsFile(
+    if (signal?.aborted) {
+      throw signal.reason;
+    }
+    if (!downloadGcsFile) {
+      logger.warn(
+        "GCS file handoff requested without a configured downloader",
+        {
+          uri: file.gcs_uri,
+        },
+      );
+      return null;
+    }
+    const allowedBucket = downloadGcsFile.allowedBucket?.trim();
+    const parsedGcsUri = file.gcs_uri
+      ? /^gs:\/\/([^/]+)\/(.+)$/.exec(file.gcs_uri)
+      : null;
+    if (!allowedBucket || !parsedGcsUri || parsedGcsUri[1] !== allowedBucket) {
+      logger.warn("GCS file handoff rejected by bucket allowlist", {
+        uri: file.gcs_uri,
+        allowedBucketConfigured: Boolean(allowedBucket),
+      });
+      return null;
+    }
+    const downloaded = await downloadGcsFile.download(
       logger,
       { uri: file.gcs_uri!, sha256: file.sha256, sizeBytes: file.size_bytes },
       filePath,
@@ -82,9 +153,10 @@ async function feResToFilePrefetch(
 
 async function feResToPdfPrefetch(
   logger: Logger,
-  feRes: FireEngineCheckStatusSuccess | undefined,
+  feRes: SpecialtyHandoffResponse | undefined,
   signal?: AbortSignal,
   maxFileBytes?: number,
+  downloadGcsFile?: GcsFileDownloader,
 ): Promise<Meta["pdfPrefetch"]> {
   return feResToFilePrefetch(
     logger,
@@ -94,30 +166,51 @@ async function feResToPdfPrefetch(
     undefined,
     signal,
     maxFileBytes,
+    downloadGcsFile,
   );
 }
 
 async function feResToDocumentPrefetch(
   logger: Logger,
-  feRes: FireEngineCheckStatusSuccess | undefined,
+  feRes: SpecialtyHandoffResponse | undefined,
   contentType: string | undefined,
+  downloadGcsFile?: GcsFileDownloader,
 ): Promise<Meta["documentPrefetch"]> {
   // Determine file extension from content type
   const extension =
     documentExtensionFromContentType(contentType)?.slice(1) ?? "tmp";
 
-  return feResToFilePrefetch(logger, feRes, extension, "document", contentType);
+  return feResToFilePrefetch(
+    logger,
+    feRes,
+    extension,
+    "document",
+    contentType,
+    undefined,
+    undefined,
+    downloadGcsFile,
+  );
 }
 
 async function feResToImagePrefetch(
   logger: Logger,
-  feRes: FireEngineCheckStatusSuccess | undefined,
+  feRes: SpecialtyHandoffResponse | undefined,
   contentType: string,
+  downloadGcsFile?: GcsFileDownloader,
 ): Promise<Meta["imagePrefetch"]> {
   const extension =
     imageExtensionFromContentType(contentType)?.slice(1) ?? "img";
 
-  return feResToFilePrefetch(logger, feRes, extension, "image", contentType);
+  return feResToFilePrefetch(
+    logger,
+    feRes,
+    extension,
+    "image",
+    contentType,
+    undefined,
+    undefined,
+    downloadGcsFile,
+  );
 }
 
 /**
@@ -128,7 +221,7 @@ async function feResToImagePrefetch(
  * caller falls through to the historical unsupported-file rejection.
  */
 async function sniffImageHandoff(
-  feRes: FireEngineCheckStatusSuccess | undefined,
+  feRes: SpecialtyHandoffResponse | undefined,
   imageOcrEnabled: ImageOcrGate,
 ): Promise<string | null> {
   const content = feRes?.file?.content;
@@ -203,7 +296,7 @@ function matchHandoffSignature(
  * compared character by character.
  */
 function sniffHandoffFileKind(
-  feRes: FireEngineCheckStatusSuccess | undefined,
+  feRes: SpecialtyHandoffResponse | undefined,
 ): HandoffFileKind | null {
   if (!feRes) return null;
   if (feRes.file?.content !== undefined) {
@@ -229,15 +322,22 @@ function sniffHandoffFileKind(
 async function handoffSniffedFile(
   kind: HandoffFileKind,
   logger: Logger,
-  feRes: FireEngineCheckStatusSuccess | undefined,
+  feRes: SpecialtyHandoffResponse | undefined,
   contentType: string | undefined,
   signal?: AbortSignal,
   maxFileBytes?: number,
+  downloadGcsFile?: GcsFileDownloader,
 ): Promise<never> {
   if (kind === "pdf") {
     throw new AddFeatureError(
       ["pdf"],
-      await feResToPdfPrefetch(logger, feRes, signal, maxFileBytes),
+      await feResToPdfPrefetch(
+        logger,
+        feRes,
+        signal,
+        maxFileBytes,
+        downloadGcsFile,
+      ),
     );
   }
   // OLE2 signature is shared by .doc/.xls/.ppt files
@@ -249,38 +349,38 @@ async function handoffSniffedFile(
   throw new AddFeatureError(
     ["document"],
     undefined,
-    await feResToDocumentPrefetch(logger, feRes, effectiveContentType),
+    await feResToDocumentPrefetch(
+      logger,
+      feRes,
+      effectiveContentType,
+      downloadGcsFile,
+    ),
   );
 }
 
 export async function specialtyScrapeCheck(
   logger: Logger,
   headers: Record<string, string> | undefined,
-  feRes?: FireEngineCheckStatusSuccess,
-  /** Scrape abort signal — stops a large-PDF handoff download when the
-   * request has been cancelled or timed out. */
+  feRes?: SpecialtyHandoffResponse,
   signal?: AbortSignal,
-  /** Admission cap for handoff downloads — the historical download cap when
-   * the FirePDF by-reference route is unreachable for this request, so an
-   * unusable large handoff never consumes network and temp disk. */
   maxFileBytes?: number,
-  /** Per-request image OCR gate (image parser + team flag; lazy, memoized),
-   * consulted only once the bytes sniff as a supported image; off means
-   * images keep the unsupported-file rejection below. */
   imageOcrEnabled: ImageOcrGate = async () => false,
+  downloadGcsFile?: GcsFileDownloader,
 ) {
   const contentType = (Object.entries(headers ?? {}).find(
     x => x[0].toLowerCase() === "content-type",
   ) ?? [])[1];
 
-  // A GCS reference is a PDF signal on its own — fire-engine only hands
-  // off verified PDFs — so it is handled before the content-type guard:
-  // some responses omit the header entirely, and the reference must still
-  // reach the FirePDF path.
   if (feRes?.file?.gcs_uri !== undefined) {
     throw new AddFeatureError(
       ["pdf"],
-      await feResToPdfPrefetch(logger, feRes, signal, maxFileBytes),
+      await feResToPdfPrefetch(
+        logger,
+        feRes,
+        signal,
+        maxFileBytes,
+        downloadGcsFile,
+      ),
     );
   }
 
@@ -292,7 +392,12 @@ export async function specialtyScrapeCheck(
         ["image"],
         undefined,
         undefined,
-        await feResToImagePrefetch(logger, feRes, headerlessImage),
+        await feResToImagePrefetch(
+          logger,
+          feRes,
+          headerlessImage,
+          downloadGcsFile,
+        ),
       );
     }
     const headerlessFile = sniffHandoffFileKind(feRes);
@@ -304,6 +409,7 @@ export async function specialtyScrapeCheck(
         undefined,
         signal,
         maxFileBytes,
+        downloadGcsFile,
       );
     }
     logger.warn("Failed to check contentType -- was not present in headers", {
@@ -322,7 +428,12 @@ export async function specialtyScrapeCheck(
     throw new AddFeatureError(
       ["document"],
       undefined,
-      await feResToDocumentPrefetch(logger, feRes, contentType),
+      await feResToDocumentPrefetch(
+        logger,
+        feRes,
+        contentType,
+        downloadGcsFile,
+      ),
     );
   }
 
@@ -330,17 +441,18 @@ export async function specialtyScrapeCheck(
   if (isPdf) {
     throw new AddFeatureError(
       ["pdf"],
-      await feResToPdfPrefetch(logger, feRes, signal, maxFileBytes),
+      await feResToPdfPrefetch(
+        logger,
+        feRes,
+        signal,
+        maxFileBytes,
+        downloadGcsFile,
+      ),
     );
   }
 
   const mediaType = contentType.split(";")[0].trim().toLowerCase();
 
-  // Raster images are OCR'd as one-page scanned documents by the image
-  // engine (see engines/image). The header must claim an image or an opaque
-  // octet-stream AND the bytes must confirm a format FirePDF can open, so a
-  // mislabeled HTML error page served as image/jpeg is never sent to OCR
-  // and WebP/SVG/AVIF keep failing fast below.
   if (
     mediaType.startsWith("image/") ||
     mediaType === "application/octet-stream"
@@ -351,17 +463,11 @@ export async function specialtyScrapeCheck(
         ["image"],
         undefined,
         undefined,
-        await feResToImagePrefetch(logger, feRes, imageType),
+        await feResToImagePrefetch(logger, feRes, imageType, downloadGcsFile),
       );
     }
   }
 
-  // The header named no parseable type, but the bytes may still: a PDF served
-  // as application/octet-stream or image/jp2, an Office file behind a generic
-  // download endpoint. The browser only hands off what it could not render,
-  // so every remaining content type is sniffed — after the image check above,
-  // so a real raster image still reaches OCR, and before the rejection below,
-  // so a mislabeled PDF is parsed instead of failing as an unsupported image.
   const sniffedFile = sniffHandoffFileKind(feRes);
   if (
     sniffedFile !== null &&
@@ -374,6 +480,7 @@ export async function specialtyScrapeCheck(
       contentType,
       signal,
       maxFileBytes,
+      downloadGcsFile,
     );
   }
 

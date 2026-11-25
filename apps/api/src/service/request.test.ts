@@ -929,5 +929,65 @@ describe("request-schemas", () => {
         expect(() => schemas.scrape).toThrow(expected);
       }
     });
+
+    it("allows extensions to widen extensible core fields (parsers, proxy, sources, categories)", () => {
+      const { schemas } = buildRequestSchemaRegistry(
+        [
+          {
+            owner: "ext",
+            request: asRequest({
+              scrapeOptions: {
+                proxy: z
+                  .enum(["basic", "stealth", "enhanced", "auto"])
+                  .prefault("auto"),
+                parsers: z
+                  .array(
+                    z.union([
+                      z.literal("pdf"),
+                      z.strictObject({
+                        type: z.literal("pdf"),
+                        mode: z.enum(["fast", "auto", "ocr"]).optional(),
+                      }),
+                      z.literal("image"),
+                    ]),
+                  )
+                  .prefault(["pdf", "image"]),
+              },
+              search: {
+                sources: z
+                  .union([
+                    z.array(z.enum(["web", "images", "news", "custom"])),
+                    z.array(z.strictObject({ type: z.literal("custom") })),
+                  ])
+                  .prefault(["web"]),
+                categories: z
+                  .union([
+                    z.array(z.enum(["pdf", "custom"])),
+                    z.array(z.strictObject({ type: z.literal("custom") })),
+                  ])
+                  .optional(),
+              },
+            }),
+          },
+        ],
+        buildV2RequestSchemas,
+      );
+
+      const scraped = schemas.scrape.parse({
+        url: "https://example.com",
+        proxy: "stealth",
+        parsers: [{ type: "pdf", mode: "ocr" }, "image"],
+      }) as unknown as Record<string, unknown>;
+      expect(scraped.proxy).toBe("stealth");
+      expect(scraped.parsers).toEqual([{ type: "pdf", mode: "ocr" }, "image"]);
+
+      const searched = schemas.search.parse({
+        query: "hello",
+        sources: ["custom"],
+        categories: ["custom"],
+      }) as unknown as Record<string, unknown>;
+      expect(searched.sources).toEqual([{ type: "custom" }]);
+      expect(searched.categories).toEqual([{ type: "custom" }]);
+    });
   });
 });

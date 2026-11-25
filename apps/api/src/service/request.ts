@@ -38,18 +38,10 @@ export interface Formats {
   images: BuiltInFormat<"images">;
   summary: BuiltInFormat<"summary">;
   json: BuiltInFormat<"json">;
-  deterministicJson: BuiltInFormat<"deterministicJson">;
-  changeTracking: BuiltInFormat<"changeTracking">;
   screenshot: BuiltInFormat<"screenshot">;
   attributes: BuiltInFormat<"attributes">;
   question: BuiltInFormat<"question">;
-  highlights: BuiltInFormat<"highlights">;
   query: BuiltInFormat<"query">;
-  branding: BuiltInFormat<"branding">;
-  product: BuiltInFormat<"product">;
-  menu: BuiltInFormat<"menu">;
-  audio: BuiltInFormat<"audio">;
-  video: BuiltInFormat<"video">;
 }
 
 export type FormatName = keyof Formats;
@@ -80,32 +72,51 @@ export type FormatSchemas = {
   readonly [K in keyof Formats]?: z.ZodType<Formats[K]>;
 };
 
-export type ScrapeOptions = Omit<BaseScrapeOptions, "formats"> & {
+export type ScrapeOptions = Omit<
+  BaseScrapeOptions,
+  "formats" | keyof ScrapeOptionsFields
+> & {
   formats: Format[];
 } & ScrapeOptionsFields;
 
-export type ScrapeRequest = Omit<BaseScrapeRequest, "formats"> & {
+export type ScrapeRequest = Omit<
+  BaseScrapeRequest,
+  "formats" | keyof ScrapeOptionsFields | keyof ScrapeRequestFields
+> & {
   formats: Format[];
 } & ScrapeOptionsFields &
   ScrapeRequestFields;
 
-export type ParseRequest = Omit<BaseParseRequest, "formats"> & {
+export type ParseRequest = Omit<
+  BaseParseRequest,
+  "formats" | keyof ScrapeOptionsFields | keyof ParseRequestFields
+> & {
   formats: Format[];
 } & ScrapeOptionsFields &
   ParseRequestFields;
 
-export type CrawlRequest = Omit<BaseCrawlRequest, "scrapeOptions"> & {
+export type CrawlRequest = Omit<
+  BaseCrawlRequest,
+  "scrapeOptions" | keyof CrawlRequestFields
+> & {
   scrapeOptions: ScrapeOptions;
 } & CrawlRequestFields;
 
-export type BatchScrapeRequest = Omit<BaseBatchScrapeRequest, "formats"> & {
+export type BatchScrapeRequest = Omit<
+  BaseBatchScrapeRequest,
+  "formats" | keyof ScrapeOptionsFields | keyof BatchScrapeRequestFields
+> & {
   formats: Format[];
 } & ScrapeOptionsFields &
   BatchScrapeRequestFields;
 
-export type MapRequest = BaseMapRequest & MapRequestFields;
+export type MapRequest = Omit<BaseMapRequest, keyof MapRequestFields> &
+  MapRequestFields;
 
-export type SearchRequest = Omit<BaseSearchRequest, "scrapeOptions"> & {
+export type SearchRequest = Omit<
+  BaseSearchRequest,
+  "scrapeOptions" | keyof SearchRequestFields
+> & {
   scrapeOptions?: ScrapeOptions;
 } & SearchRequestFields;
 

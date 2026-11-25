@@ -1,6 +1,5 @@
 import { describeIf, TEST_PRODUCTION, TEST_SUITE_WEBSITE } from "../lib";
 import { Identity, idmux, scrapeTimeout, scrape, indexCooldown } from "./lib";
-import type { ScrapeRequestInput } from "../../../controllers/v2/types";
 import crypto from "crypto";
 
 describeIf(TEST_PRODUCTION)(
@@ -24,10 +23,10 @@ describeIf(TEST_PRODUCTION)(
         const url = `${TEST_SUITE_WEBSITE}/example.pdf?testId=${crypto.randomUUID()}`;
         const body = {
           url,
-          parsers: [{ type: "pdf", maxPages: 10000 }],
+          parsers: [{ type: "pdf" as const, maxPages: 10000 }],
           maxAge: scrapeTimeout * 2,
           timeout: scrapeTimeout,
-        } satisfies ScrapeRequestInput;
+        };
 
         const response1 = await scrape(body, identity);
         expect(response1.metadata.cacheState).toBe("miss");
@@ -46,10 +45,10 @@ describeIf(TEST_PRODUCTION)(
         const url = `${TEST_SUITE_WEBSITE}/example-long.pdf?testId=${crypto.randomUUID()}`;
         const body = {
           url,
-          parsers: [{ type: "pdf", maxPages: 3 }],
+          parsers: [{ type: "pdf" as const, maxPages: 3 }],
           maxAge: scrapeTimeout * 2,
           timeout: scrapeTimeout,
-        } satisfies ScrapeRequestInput;
+        };
 
         const response1 = await scrape(body, identity);
         expect(response1.metadata.cacheState).toBe("miss");
@@ -70,10 +69,10 @@ describeIf(TEST_PRODUCTION)(
         const url = `${TEST_SUITE_WEBSITE}?testId=${crypto.randomUUID()}`;
         const body = {
           url,
-          parsers: [{ type: "pdf", maxPages: 100 }],
+          parsers: [{ type: "pdf" as const, maxPages: 100 }],
           maxAge: scrapeTimeout * 2,
           timeout: scrapeTimeout,
-        } satisfies ScrapeRequestInput;
+        };
 
         const response1 = await scrape(body, identity);
         expect(response1.metadata.cacheState).toBe("miss");

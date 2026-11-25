@@ -1,7 +1,7 @@
 import { SearchV2Response, SearchResultType } from "../../lib/entities";
 import { Logger } from "winston";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
-import type { TeamPlanClass } from "../../lib/team-plan-class";
+import type { TeamPlanClass } from "../../service/search-providers";
 import { service, type SearchQuery } from "../../service";
 import { searchWithProvider } from "../../lib/search-metrics";
 
