@@ -1,6 +1,6 @@
-import { SearchResult } from "../lib/entities";
+import { SearchResult, type SearchV2Response } from "../lib/entities";
 import { Logger } from "winston";
-import { search as searchV2 } from "./v2";
+import { search as searchV2, SearchProviderUnavailableError } from "./v2";
 import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
 import { service, type SearchQuery } from "../service";
 import { searchWithProvider } from "../lib/search-metrics";
@@ -52,6 +52,9 @@ export async function search({
       timeout,
       usOnly,
       enterprise,
+    }).catch((error): SearchV2Response => {
+      if (error instanceof SearchProviderUnavailableError) return {};
+      throw error;
     });
     return (response.web ?? []).map(
       result => new SearchResult(result.url, result.title, result.description),

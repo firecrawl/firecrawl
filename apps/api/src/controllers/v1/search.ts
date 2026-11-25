@@ -23,6 +23,7 @@ import type { Logger } from "winston";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
 import { executeSearch } from "../../search/execute";
+import { SearchProviderUnavailableError } from "../../search/v2";
 import { applySearchPlanHook } from "../../search/plan-hook";
 import { requestContext } from "../../lib/request-context";
 import { installedService } from "../../service/service";
@@ -598,6 +599,14 @@ export async function searchController(
 
     if (error instanceof UsOnlyUnavailableError) {
       return res.status(403).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    }
+
+    if (error instanceof SearchProviderUnavailableError) {
+      return res.status(error.httpStatus).json({
         success: false,
         code: error.code,
         error: error.message,

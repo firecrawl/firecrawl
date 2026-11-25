@@ -319,6 +319,14 @@ describe("service.searchProviders dispatch in v2 search", () => {
     expect(res).toEqual({ web });
   });
 
+  it("fails with SearchProviderUnavailableError when every provider throws undefined", async () => {
+    mocks.ddgSearch.mockRejectedValue(undefined);
+
+    const error = await search({ query: "firecrawl", logger }).catch(e => e);
+
+    expect(error).toBeInstanceOf(SearchProviderUnavailableError);
+  });
+
   it("fails with SearchProviderUnavailableError when every provider throws", async () => {
     const failure = new Error("upstream failed");
     mocks.ddgSearch.mockRejectedValue(new Error("fallback unavailable"));

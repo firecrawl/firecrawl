@@ -95,6 +95,7 @@ export async function search({
   };
 
   let answered = false;
+  let failed = false;
   let failure: unknown;
   for (const provider of providers) {
     try {
@@ -105,11 +106,12 @@ export async function search({
       answered = true;
     } catch (error) {
       logger.error(`Error in search function`, { error });
+      failed = true;
       failure = error;
     }
   }
 
-  if (!answered && failure !== undefined) {
+  if (!answered && failed) {
     throw new SearchProviderUnavailableError({ cause: failure });
   }
   return {};
