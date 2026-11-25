@@ -9,8 +9,10 @@
  */
 import type { Logger } from "winston";
 import type { SearchResultType, SearchV2Response } from "../lib/entities";
-import type { TeamPlanClass } from "../lib/team-plan-class";
 import type { RequestContext } from "./request-context";
+
+/** Plan classification reported on search provider queries when known. */
+export type TeamPlanClass = "free" | "self_serve" | "contract";
 
 /**
  * Every search provider name, as the keys of an interface so that a package

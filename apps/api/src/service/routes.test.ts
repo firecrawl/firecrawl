@@ -527,6 +527,77 @@ describe("buildRouteRegistry", () => {
     });
   });
 
+  it("mounts rootRaw routes before global body parsers and reports them in describeRoutes", async () => {
+    const { default: expressRuntime } = await import("express");
+
+    const { mountRoutes, describeRoutes } = buildRouteRegistry([
+      {
+        owner: "ext",
+        routes: ({ rootRaw, root }) => {
+          rootRaw?.put("/raw-upload", function rawUpload(req, res) {
+            const chunks: Buffer[] = [];
+            req.on("data", chunk => chunks.push(chunk));
+            req.on("end", () => {
+              res.json({
+                body: Buffer.concat(chunks).toString("utf8"),
+                parsedBody: req.body ?? null,
+              });
+            });
+          });
+          root.post("/parsed-json", function parsedJson(req, res) {
+            res.json({ parsed: req.body });
+          });
+        },
+      },
+    ]);
+
+    expect(describeRoutes()).toEqual([
+      {
+        owner: "ext",
+        router: "rootRaw",
+        method: "PUT",
+        path: "/raw-upload",
+        middleware: ["rawUpload"],
+      },
+      {
+        owner: "ext",
+        router: "root",
+        method: "POST",
+        path: "/parsed-json",
+        middleware: ["parsedJson"],
+      },
+    ]);
+
+    const app = expressRuntime();
+    const rootRaw = expressRuntime.Router();
+    const root = expressRuntime.Router();
+    const v2 = expressRuntime.Router();
+    const admin = expressRuntime.Router();
+
+    app.use(rootRaw);
+    app.use(expressRuntime.json());
+    app.use(root);
+    app.use("/v2", v2);
+    app.use(admin);
+
+    mountRoutes({ rootRaw, root, v2, admin });
+
+    const rawBody = '{"a": 1,   "b": [2]}';
+    const rawRes = await request(app)
+      .put("/raw-upload")
+      .set("Content-Type", "application/json")
+      .send(rawBody);
+    expect(rawRes.status).toBe(200);
+    expect(rawRes.body).toEqual({ body: rawBody, parsedBody: null });
+
+    const parsedRes = await request(app)
+      .post("/parsed-json")
+      .set("Content-Type", "application/json")
+      .send(rawBody);
+    expect(parsedRes.status).toBe(200);
+    expect(parsedRes.body).toEqual({ parsed: { a: 1, b: [2] } });
+  });
+
   it("validates route registrars and router bags", async () => {
     const { default: expressRuntime } = await import("express");
     expect(() =>
@@ -542,6 +613,14 @@ describe("buildRouteRegistry", () => {
     expect(() => mountRoutes(null as unknown as Routers)).toThrow(
       "Routers must be an object",
     );
+    expect(() =>
+      mountRoutes({
+        rootRaw: null as unknown as express.Router,
+        root: expressRuntime.Router(),
+        v2: expressRuntime.Router(),
+        admin: expressRuntime.Router(),
+      }),
+    ).toThrow("Routers.rootRaw must be an Express router");
     expect(() =>
       mountRoutes({
         root: null as unknown as express.Router,

@@ -11,7 +11,6 @@ import Express from "express";
 import { startNodeRuntimeMetrics } from "../../lib/node-runtime-metrics";
 import { service } from "../../service";
 import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-forcing";
-import { shutdownPubSubLogging } from "../logging/log_job";
 import { runProcessStop } from "../../service/service";
 
 export type WorkerQueue = {
@@ -227,7 +226,6 @@ export async function runNuqWorker(options: {
     try {
       await options.beforeShutdown?.();
       await options.shutdown?.();
-      await shutdownPubSubLogging();
     } finally {
       await runProcessStop(options.serviceName);
     }

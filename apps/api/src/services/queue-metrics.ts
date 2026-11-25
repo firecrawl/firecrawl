@@ -11,12 +11,23 @@ const COLLECT_TIMEOUT_MS = 5000;
 let monitoredQueues: Queue[] = [];
 
 /**
- * Exports depth and drain progress for these queues on every scrape. Call it
- * from one single-replica deployment only: the numbers are Redis-wide, so every
- * pod that exports them adds an identical copy of each series.
+ * Exports depth and drain progress for these queues on every scrape. Multiple
+ * calls merge into the monitored set, deduplicated by queue name (keeping the
+ * newest instance per name). Call it from one single-replica deployment only:
+ * the numbers are Redis-wide, so every pod that exports them adds an identical
+ * copy of each series.
  */
 export function startBullmqQueueMetrics(queues: Queue[]) {
-  monitoredQueues = queues;
+  const byName = new Map(monitoredQueues.map(queue => [queue.name, queue]));
+  for (const queue of queues) {
+    byName.set(queue.name, queue);
+  }
+  monitoredQueues = [...byName.values()];
+}
+
+/** @internal Clears registered BullMQ queues between test runs. */
+export function resetBullmqQueueMetricsForTest() {
+  monitoredQueues = [];
 }
 
 const inFlight = new Map<string, Promise<unknown>>();
@@ -58,14 +69,15 @@ export const bullmqQueueDepth = new Gauge({
   help: "Jobs in each BullMQ queue, by state",
   labelNames: ["queue", "state"] as const,
   async collect() {
+    const queues = [...monitoredQueues];
     const results = await Promise.allSettled(
-      monitoredQueues.map(queue =>
+      queues.map(queue =>
         readOnce(`depth:${queue.name}`, () => queue.getJobCounts(...STATES)),
       ),
     );
     this.reset();
     results.forEach((result, i) => {
-      const queue = monitoredQueues[i].name;
+      const queue = queues[i].name;
       if (result.status === "rejected") {
         logger.warn("Failed to collect BullMQ queue depth", {
           queue,
@@ -91,8 +103,9 @@ export const bullmqQueueOldestOverdueSeconds = new Gauge({
   help: "Seconds the earliest-due delayed job in each BullMQ queue is past due",
   labelNames: ["queue"] as const,
   async collect() {
+    const queues = [...monitoredQueues];
     const results = await Promise.allSettled(
-      monitoredQueues.map(queue =>
+      queues.map(queue =>
         readOnce(`overdue:${queue.name}`, async () => {
           const client = await queue.client;
           return client.zrange(queue.toKey("delayed"), 0, 0, "WITHSCORES");
@@ -102,7 +115,7 @@ export const bullmqQueueOldestOverdueSeconds = new Gauge({
     const now = Date.now();
     this.reset();
     results.forEach((result, i) => {
-      const queue = monitoredQueues[i].name;
+      const queue = queues[i].name;
       if (result.status === "rejected") {
         logger.warn("Failed to collect BullMQ queue overdue age", {
           queue,

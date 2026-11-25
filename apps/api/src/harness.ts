@@ -5,7 +5,7 @@ import * as net from "net";
 import { basename, join } from "path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
 import { startRole } from "./main";
-import { runProcessStop } from "./service/service";
+import { installedService, runProcessStop } from "./service/service";
 
 const childProcesses = new Set<ChildProcess>();
 const stopping = new WeakSet<ChildProcess>(); // processes we're intentionally stopping
@@ -118,7 +118,6 @@ function formatDuration(nanoseconds: bigint): string {
 
 const PORT = config.PORT;
 const WORKER_PORT = config.WORKER_PORT;
-const EXTRACT_WORKER_PORT = config.EXTRACT_WORKER_PORT;
 const NUQ_WORKER_START_PORT = config.NUQ_WORKER_START_PORT;
 const NUQ_WORKER_COUNT = config.NUQ_WORKER_COUNT;
 const NUQ_PREFETCH_WORKER_PORT = NUQ_WORKER_START_PORT + NUQ_WORKER_COUNT;
@@ -858,15 +857,24 @@ async function startServices(command?: string[]): Promise<Services> {
     },
   );
 
-  const extractWorker = execForward(
-    "extract-worker",
-    roleCommand("extract-worker", "extract-worker:production"),
-    {
-      NUQ_REDUCE_NOISE: "true",
-      NUQ_POD_NAME: "extract-worker",
-      EXTRACT_WORKER_PORT: String(EXTRACT_WORKER_PORT),
-    },
-  );
+  const roleRunner = /\.(?:[cm]?ts)$/i.test(roleEntry)
+    ? "pnpm exec tsx"
+    : "node";
+
+  const extractWorker =
+    roleEntry && installedService()?.roles.has("extract-worker")
+      ? execForward(
+          "extract-worker",
+          `${roleRunner} ${shellEscape(roleEntry)} extract-worker`,
+          {
+            NUQ_REDUCE_NOISE: "true",
+            NUQ_POD_NAME: "extract-worker",
+            ...(process.env.EXTRACT_WORKER_PORT
+              ? { EXTRACT_WORKER_PORT: process.env.EXTRACT_WORKER_PORT }
+              : {}),
+          },
+        )
+      : undefined;
 
   const nuqWorkers = Array.from({ length: NUQ_WORKER_COUNT }, (_, i) =>
     execForward(
@@ -910,16 +918,17 @@ async function startServices(command?: string[]): Promise<Services> {
           },
         );
 
-  const indexWorker = config.USE_DB_AUTHENTICATION
-    ? execForward(
-        "index-worker",
-        roleCommand("index-worker", "index-worker:production"),
-        {
-          NUQ_REDUCE_NOISE: "true",
-          NUQ_POD_NAME: "index-worker",
-        },
-      )
-    : undefined;
+  const indexWorker =
+    roleEntry && installedService()?.roles.has("index-worker")
+      ? execForward(
+          "index-worker",
+          `${roleRunner} ${shellEscape(roleEntry)} index-worker`,
+          {
+            NUQ_REDUCE_NOISE: "true",
+            NUQ_POD_NAME: "index-worker",
+          },
+        )
+      : undefined;
 
   if (
     command &&

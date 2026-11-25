@@ -408,7 +408,18 @@ describe("describe", () => {
     expect(enabled).not.toHaveBeenCalled();
     expect(description).toEqual({
       extensions: ["core", "second", "third"],
-      modules: ["blocklist", "idempotency", "messages", "uploads", "webhooks"],
+      modules: [
+        "auth",
+        "billing",
+        "blocklist",
+        "idempotency",
+        "jobStore",
+        "limits",
+        "messages",
+        "policy",
+        "uploads",
+        "webhooks",
+      ],
       hooks: {
         "map.finished": ["second"],
         "process.stop": ["third", "second", "second", "core"],
@@ -552,7 +563,18 @@ describe("describe", () => {
     ]);
     expect(built.describe()).toEqual({
       extensions: ["core", "mine"],
-      modules: ["blocklist", "idempotency", "messages", "uploads", "webhooks"],
+      modules: [
+        "auth",
+        "billing",
+        "blocklist",
+        "idempotency",
+        "jobStore",
+        "limits",
+        "messages",
+        "policy",
+        "uploads",
+        "webhooks",
+      ],
       hooks: { "map.finished": ["mine"] },
       errors: { MINE: "mine" },
       engines: { "mine-engine": "mine" },
@@ -659,7 +681,18 @@ describe("describe", () => {
 
     expect(built.describe()).toEqual({
       extensions: ["core"],
-      modules: ["blocklist", "idempotency", "messages", "uploads", "webhooks"],
+      modules: [
+        "auth",
+        "billing",
+        "blocklist",
+        "idempotency",
+        "jobStore",
+        "limits",
+        "messages",
+        "policy",
+        "uploads",
+        "webhooks",
+      ],
       hooks: { "map.finished": ["core"] },
       errors: { TIMEOUT: "core" },
       engines: { fetch: "core" },
@@ -742,8 +775,11 @@ describe("routes and roles integration", () => {
         extensions: [
           {
             name: "ext",
-            routes: ({ v2 }) => {
+            routes: ({ rootRaw, v2 }) => {
               calls.push("ext");
+              rootRaw?.post("/raw-ping", function extRawPing(_req, res) {
+                res.json({ ok: "raw" });
+              });
               v2.get("/shared", function extShared(_req, res) {
                 res.json({ from: "ext" });
               });
@@ -775,13 +811,19 @@ describe("routes and roles integration", () => {
     expect(built.roles.owner("ext-worker")).toBe("ext");
 
     const app = express();
+    const rootRaw = express.Router();
     const v2 = express.Router();
     const admin = express.Router();
-    built.mountRoutes({ root: app, v2, admin });
+    app.use(rootRaw);
+    built.mountRoutes({ rootRaw, root: app, v2, admin });
     app.use("/v2", v2);
     app.use(admin);
 
     expect(calls).toEqual(["ext", "core"]);
+
+    const rawPing = await request(app).post("/raw-ping");
+    expect(rawPing.status).toBe(200);
+    expect(rawPing.body).toEqual({ ok: "raw" });
 
     const shared = await request(app).get("/v2/shared");
     expect(shared.status).toBe(200);
@@ -796,6 +838,13 @@ describe("routes and roles integration", () => {
     expect(corePing.body).toEqual({ ok: "core" });
 
     expect(built.describe().routes).toEqual([
+      {
+        owner: "ext",
+        router: "rootRaw",
+        method: "POST",
+        path: "/raw-ping",
+        middleware: ["extRawPing"],
+      },
       {
         owner: "ext",
         router: "v2",
@@ -1111,7 +1160,7 @@ describe("runProcessStop", () => {
     ]);
   });
 
-  it("isolates errors and 10s timeouts across process.stop handlers", async () => {
+  it("isolates errors and 45s timeouts across process.stop handlers", async () => {
     vi.useFakeTimers();
     try {
       const errorLogger = vi.fn();
@@ -1153,7 +1202,7 @@ describe("runProcessStop", () => {
       replaceService(built);
 
       const pending = runProcessStop("api");
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(45_000);
       await pending;
 
       expect(events).toEqual(["throwing", "first:api"]);
