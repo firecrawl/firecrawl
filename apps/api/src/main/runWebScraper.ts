@@ -1,4 +1,4 @@
-import { PaywalledContentError } from "../scraper/scrapeURL/error";
+import { stopsCrawlRetry } from "../lib/error";
 import { ScrapeJobSingleUrls, RunWebScraperParams } from "../types";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
@@ -33,6 +33,7 @@ export async function startWebScraperPipeline({
       teamId: job.data.team_id,
       origin: job.data.origin,
       ...job.data.internalOptions,
+      ctx,
       teamFlags: ctx.flags,
       // In-flight jobs enqueued before orgId existed may omit it.
       orgId: ctx.orgId ?? null,
@@ -125,7 +126,7 @@ async function runWebScraper({
       }
     } catch (_error) {
       error = _error;
-      if (_error instanceof PaywalledContentError) break;
+      if (stopsCrawlRetry(_error)) break;
     }
   }
 

@@ -32,14 +32,6 @@ vi.mock("../../../services/redis", () => ({
   redisEvictConnection: { scard: vi.fn().mockResolvedValue(0) },
 }));
 
-vi.mock("../../../lib/request-credits-store", () => ({
-  readRequestCredits: vi.fn().mockResolvedValue(3),
-}));
-
-vi.mock("../../../lib/gcs-jobs", () => ({
-  getJobFromGCS: vi.fn().mockResolvedValue(null),
-}));
-
 vi.mock("../../../lib/logger", () => ({
   logger: {
     info: vi.fn(),
@@ -50,7 +42,30 @@ vi.mock("../../../lib/logger", () => ({
   },
 }));
 
+import { afterAll, beforeAll } from "vitest";
+import { queueJobStore } from "../../../service/defaults";
+import { createService, replaceService } from "../../../service/service";
 import { crawlStatusController } from "../crawl-status";
+
+beforeAll(() => {
+  replaceService(
+    createService(
+      {
+        modules: {
+          jobStore: {
+            ...queueJobStore(),
+            usage: vi.fn().mockResolvedValue(3),
+          },
+        },
+      },
+      { core: { name: "core" }, logger: { error: vi.fn() } },
+    ),
+  );
+});
+
+afterAll(() => {
+  replaceService(undefined);
+});
 
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 const JOB_ID = "22222222-2222-4222-8222-222222222222";

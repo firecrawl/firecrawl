@@ -4,10 +4,10 @@ import { normalizeAxiosError, throwForBadResponse } from "../utils/errorHandler"
 
 export async function getConcurrency(http: HttpClient): Promise<ConcurrencyCheck> {
   try {
-    const res = await http.get<{ success: boolean; data?: { concurrency: number; maxConcurrency: number } }>("/v2/concurrency-check");
+    const res = await http.get<{ success: boolean; data?: { concurrency: number; maxConcurrency: number | null } }>("/v2/concurrency-check");
     if (res.status !== 200 || !res.data?.success) throwForBadResponse(res, "get concurrency");
     const d = res.data.data || (res.data as any);
-    return { concurrency: d.concurrency, maxConcurrency: d.maxConcurrency ?? d.max_concurrency };
+    return { concurrency: d.concurrency, maxConcurrency: d.maxConcurrency !== undefined ? d.maxConcurrency : d.max_concurrency };
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "get concurrency");
     throw err;

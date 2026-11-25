@@ -37,19 +37,16 @@ export interface ErrorCodes {
   SCRAPE_LOCKDOWN_CACHE_MISS: true;
   SCRAPE_SITEMAP_ERROR: true;
   SCRAPE_ACTIONS_NOT_SUPPORTED: true;
-  SCRAPE_BRANDING_NOT_SUPPORTED: true;
   AGENT_INDEX_ONLY: true;
   INDEX_DAILY_LIMIT: true;
   TOOL_DISCOVERY_UNAVAILABLE: true;
-  SCRAPE_AUDIO_UNSUPPORTED_URL: true;
-  SCRAPE_VIDEO_UNSUPPORTED_URL: true;
-  SCRAPE_MEDIA_ACCESS_DENIED: true;
   SCRAPE_PROMPT_INJECTION_DETECTED: true;
   SCRAPE_PAYWALLED_CONTENT: true;
   SCRAPE_JSON_CONTENT_TOO_LARGE: true;
   US_ONLY_UNAVAILABLE: true;
   RESERVED_CAPACITY_UNAVAILABLE: true;
   PARSE_UNSUPPORTED_OPTIONS: true;
+  UNSUPPORTED_FILE_TYPE: true;
   CRAWL_DENIAL: true;
   UNSUPPORTED_SITE: true;
   MAP_FAILED: true;
@@ -97,6 +94,41 @@ export class TransportableError extends Error {
     return true;
   }
 
+  /** Whether throwing this error inside a scrape engine ends the engine loop and rethrows as-is. */
+  get endsEngineLoop(): boolean {
+    return false;
+  }
+
+  /** Whether this error aborts racing engines immediately and fails as NoEnginesLeftError. */
+  get abortsEngineRace(): boolean {
+    return false;
+  }
+
+  /** Whether a crawl-level scrape retry loop should stop instead of retrying this error. */
+  get stopsCrawlRetry(): boolean {
+    return false;
+  }
+
+  /** Whether JSON extraction should rethrow this error rather than turning it into a warning. */
+  get propagateFromExtraction(): boolean {
+    return false;
+  }
+
+  /** HTTP status code for API controllers when this error is returned to the caller. */
+  get httpStatus(): number | undefined {
+    return undefined;
+  }
+
+  /** Optional extra top-level fields merged into HTTP JSON error responses. */
+  get httpResponseFields(): Record<string, unknown> | undefined {
+    return undefined;
+  }
+
+  /** Optional scrapeURL warning log message, telemetry errorType, and structured context. */
+  get scrapeLog(): ErrorScrapeLog | undefined {
+    return undefined;
+  }
+
   serialize() {
     return {
       cause: this.cause,
@@ -130,6 +162,165 @@ export function isTransportableError(
     typeof (error as Partial<TransportableError>).code === "string" &&
     typeof (error as Partial<TransportableError>).serialize === "function"
   );
+}
+
+/**
+ * Base class for errors thrown when a requested scrape format cannot be served
+ * for a page. Concrete subclasses must register their own deserializer so the
+ * error retains its `format` and `warning` across the job queue; the scrape
+ * loop drops the format, keeps the remaining formats, and adds `warning` to the
+ * document while requests for only that format fail with this error.
+ */
+export abstract class FormatUnavailableError extends TransportableError {
+  public readonly format: string;
+  public readonly warning: string;
+
+  protected constructor(
+    format: string,
+    code: ErrorCode,
+    message: string,
+    warning: string = message,
+  ) {
+    super(code, message);
+    this.format = format;
+    this.warning = warning;
+  }
+}
+
+/**
+ * Structural check for a FormatUnavailableError, working across separate
+ * copies of this module.
+ */
+export function isFormatUnavailable(
+  error: unknown,
+): error is FormatUnavailableError {
+  return (
+    isTransportableError(error) &&
+    typeof (error as Partial<FormatUnavailableError>).format === "string" &&
+    (error as Partial<FormatUnavailableError>).format!.length > 0 &&
+    typeof (error as Partial<FormatUnavailableError>).warning === "string"
+  );
+}
+
+/** Structural check for errors that end the scrape engine waterfall loop as-is. */
+export function endsEngineLoop(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error as { endsEngineLoop?: unknown }).endsEngineLoop === true
+  );
+}
+
+/** Structural check for errors that abort racing engines and fail as NoEnginesLeftError. */
+export function abortsEngineRace(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error as { abortsEngineRace?: unknown }).abortsEngineRace === true
+  );
+}
+
+/** Structural check for errors that stop the crawl-level scrape retry loop. */
+export function stopsCrawlRetry(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error as { stopsCrawlRetry?: unknown }).stopsCrawlRetry === true
+  );
+}
+
+/** Structural check for errors that JSON extraction must rethrow instead of warning. */
+export function shouldPropagateFromExtraction(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error as { propagateFromExtraction?: unknown }).propagateFromExtraction ===
+      true
+  );
+}
+
+interface ErrorHttpResponse {
+  status: number;
+  code?: ErrorCode;
+  message: string;
+  extraFields?: Record<string, unknown>;
+}
+
+/**
+ * Reads HTTP response metadata from any Error declaring an integer `httpStatus`.
+ */
+export function getErrorHttpResponse(
+  error: unknown,
+): ErrorHttpResponse | undefined {
+  if (!(error instanceof Error)) {
+    return undefined;
+  }
+  const candidate = error as Error & {
+    httpStatus?: unknown;
+    code?: unknown;
+    httpResponseFields?: unknown;
+  };
+  if (
+    typeof candidate.httpStatus !== "number" ||
+    !Number.isInteger(candidate.httpStatus) ||
+    candidate.httpStatus < 100 ||
+    candidate.httpStatus > 599
+  ) {
+    return undefined;
+  }
+  const extraFields =
+    candidate.httpResponseFields &&
+    typeof candidate.httpResponseFields === "object" &&
+    !Array.isArray(candidate.httpResponseFields)
+      ? (candidate.httpResponseFields as Record<string, unknown>)
+      : undefined;
+  return {
+    status: candidate.httpStatus,
+    ...(typeof candidate.code === "string"
+      ? { code: candidate.code as ErrorCode }
+      : {}),
+    message: error.message,
+    ...(extraFields ? { extraFields } : {}),
+  };
+}
+
+export interface ErrorScrapeLog {
+  errorType: string;
+  message: string;
+  context?: Record<string, unknown>;
+}
+
+/**
+ * Reads custom scrapeURL warning log metadata from an error, when declared.
+ */
+export function getErrorScrapeLog(error: unknown): ErrorScrapeLog | undefined {
+  if (!(error instanceof Error)) {
+    return undefined;
+  }
+  const raw = (error as { scrapeLog?: unknown }).scrapeLog;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return undefined;
+  }
+  const candidate = raw as {
+    errorType?: unknown;
+    message?: unknown;
+    context?: unknown;
+  };
+  if (
+    typeof candidate.errorType !== "string" ||
+    candidate.errorType.length === 0 ||
+    typeof candidate.message !== "string" ||
+    candidate.message.length === 0
+  ) {
+    return undefined;
+  }
+  const context =
+    candidate.context &&
+    typeof candidate.context === "object" &&
+    !Array.isArray(candidate.context)
+      ? (candidate.context as Record<string, unknown>)
+      : undefined;
+  return {
+    errorType: candidate.errorType,
+    message: candidate.message,
+    ...(context ? { context } : {}),
+  };
 }
 
 /** A class of transportable error, registered under the codes it carries. */

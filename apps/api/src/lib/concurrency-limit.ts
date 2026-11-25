@@ -1,7 +1,6 @@
 import { getRedisConnection } from "../services/queue-service";
 import { getCrawl, StoredCrawl } from "./crawl-redis";
 import { logger } from "./logger";
-import { abTestJob } from "../services/ab-test";
 import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
 export { QueueFullError } from "./queue-full-error";
 export {
@@ -18,17 +17,35 @@ import {
   pushConcurrencyLimitActiveJob,
   removeConcurrencyLimitActiveJob,
 } from "./concurrency-redis";
-import { getACUCTeam } from "../controllers/auth";
-import { DEFAULT_TEAM_LIMITS } from "../services/autumn/autumn.service";
 import { reportPipelineError } from "./redis-pipeline";
-import { storedZeroDataRetention } from "./request-context";
+import { jobContext, storedZeroDataRetention } from "./request-context";
+import type { JobKind } from "../service/hooks";
+import { installedService } from "../service/service";
+import type { ScrapeJobData } from "../types";
+import { currentLimits } from "./limits";
 
-/**
- * CONCURRENCY granted by the Autumn `hobby` plan (firecrawl-web
- * autumn.config.ts). Pairs with HOBBY_RATE_LIMIT_MULTIPLIER in
- * services/rate-limiter.ts; change both if the hobby plan changes.
- */
-export const HOBBY_CONCURRENCY_LIMIT = 5;
+function scrapeJobKind(data: ScrapeJobData): JobKind {
+  if (data.mode === "kickoff" || data.mode === "kickoff_sitemap") {
+    return "crawl";
+  }
+  if (data.crawl_id) {
+    return data.crawlerOptions != null ? "crawl" : "batchScrape";
+  }
+  return "scrape";
+}
+
+/** Emits `job.enqueued` when a handler is registered on the active service. */
+export function observeJobEnqueued(jobId: string, data: ScrapeJobData): void {
+  const hooks = installedService()?.hooks;
+  if (!hooks?.has("job.enqueued")) return;
+  hooks.observe("job.enqueued", {
+    jobId,
+    kind: scrapeJobKind(data),
+    ctx: jobContext(data),
+    ...(data.mode === "single_urls" ? { url: data.url } : {}),
+    jobData: data,
+  });
+}
 
 const constructKey = constructConcurrencyLimitKey;
 const constructQueueKey = (team_id: string) =>
@@ -330,18 +347,30 @@ export async function concurrentJobDone(job: NuQJob<any>) {
       await cleanOldCrawlConcurrencyLimitEntries(job.data.crawl_id);
     }
 
-    // Once per call, not once per job promoted below.
-    const maxTeamConcurrency =
-      (await getACUCTeam(job.data.team_id).catch(() => null))
-        ?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
+    // Once per call, not once per job promoted below. Skip promotion if lookup fails
+    // so a transient limits error is never treated as an unlimited cap.
+    let maxTeamConcurrency: number | null;
+    try {
+      maxTeamConcurrency = await currentLimits().teamConcurrency(
+        job.data.team_id,
+      );
+    } catch (error) {
+      logger.warn(
+        "Failed to resolve team concurrency limit during job completion, skipping backlog promotion",
+        { teamId: job.data.team_id, error },
+      );
+      return;
+    }
 
     let staleSkipped = 0;
     while (staleSkipped < 100) {
-      const currentActiveConcurrency = (
-        await getConcurrencyLimitActiveJobs(job.data.team_id)
-      ).length;
+      if (maxTeamConcurrency !== null) {
+        const currentActiveConcurrency = (
+          await getConcurrencyLimitActiveJobs(job.data.team_id)
+        ).length;
 
-      if (currentActiveConcurrency >= maxTeamConcurrency) break;
+        if (currentActiveConcurrency >= maxTeamConcurrency) break;
+      }
 
       const nextJob = await getNextConcurrentJob(job.data.team_id);
       if (nextJob === null) break;
@@ -367,8 +396,6 @@ export async function concurrentJobDone(job: NuQJob<any>) {
         }
       }
 
-      abTestJob(nextJob.job.data);
-
       const promotedSuccessfully =
         (await scrapeQueue.promoteJobFromBacklogOrAdd(
           nextJob.job.id,
@@ -382,6 +409,7 @@ export async function concurrentJobDone(job: NuQJob<any>) {
         )) !== null;
 
       if (promotedSuccessfully) {
+        observeJobEnqueued(nextJob.job.id, nextJob.job.data);
         logger.debug("Successfully promoted concurrent queued job", {
           teamId: job.data.team_id,
           jobId: nextJob.job.id,

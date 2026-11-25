@@ -1,41 +1,40 @@
 import { NextFunction, Request, Response } from "express";
-import { config } from "../../config";
-import { timingSafeSecretEqual } from "../../lib/secret-compare";
+
 import { logger as _logger } from "../../lib/logger";
 import {
   Document,
   FormatObject,
+  getV2RequestSchemas,
   ParseRequest,
   RequestWithAuth,
+  ScrapeOptions,
   ScrapeResponse,
   UploadedParseFile,
   UploadedParseFileKind,
-  parseRequestSchema,
 } from "./types";
 import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
-import { isTransportableError } from "../../lib/error";
+import { getErrorHttpResponse, isTransportableError } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
-import { checkPermissions } from "../../lib/permissions";
 import { withSpan, setSpanAttributes, SpanKind } from "../../lib/otel-tracer";
 import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
-import { getJobPriority } from "../../lib/job-priority";
-import { logRequest } from "../../services/logging/log_job";
-import { externalRequestId } from "../../lib/external-request-id";
-import { requestContext } from "../../lib/request-context";
-import { getErrorContactMessage } from "../../lib/deployment";
-import type { BillingMetadata } from "../../services/billing/types";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { currentLimits, resolveJobPriority } from "../../lib/limits";
 import {
-  adjustKeylessCredits,
-  keylessLimitBody,
-  logKeylessCreditUsage,
-  reserveKeylessCredits,
-} from "../../lib/keyless";
-import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
-import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
+  contextThreatProtection,
+  requestContext,
+} from "../../lib/request-context";
+import type {} from "../../lib/billing-state";
+import {
+  finalizeResponse,
+  service,
+  type RequestContext,
+  type SettleOutcome,
+} from "../../service";
+import type { EngineName } from "../../service/engines";
+import { installedService } from "../../service/service";
+import type { BillingMetadata } from "../../lib/billing-types";
 import path from "node:path";
 import {
   DOCUMENT_EXTENSIONS,
@@ -46,7 +45,6 @@ import {
   imageExtensionFromContentType,
 } from "../../lib/image-formats";
 import { isImageOcrEnabled } from "../../lib/image-ocr-gate";
-import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import {
   HTML_CONTENT_TYPES,
   HTML_EXTENSIONS,
@@ -54,7 +52,6 @@ import {
   PDF_CONTENT_TYPES,
   PDF_EXTENSIONS,
 } from "../../lib/parse-formats";
-import { DEFAULT_TEAM_LIMITS } from "../../services/autumn/autumn.service";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -139,7 +136,7 @@ function getSyntheticFilename(file: UploadedParseFile): string {
 
 function getParseForceEngine(
   kind: UploadedParseFileKind,
-): "fetch" | "pdf" | "document" | "image" {
+): EngineName | undefined {
   if (kind === "pdf") {
     return "pdf";
   }
@@ -149,7 +146,12 @@ function getParseForceEngine(
   }
 
   if (kind === "image") {
-    return "image";
+    return installedService()
+      ?.engines.all()
+      .find(
+        engine =>
+          engine.features.image === true && !engine.cache && engine.enabled(),
+      )?.name;
   }
 
   return "fetch";
@@ -185,14 +187,6 @@ function getUnsupportedParseOptionError(reqBody: ParseRequest): string | null {
 
   if (hasFormatOfType(reqBody.formats, "screenshot")) {
     return "Parse uploads do not support screenshot output.";
-  }
-
-  if (hasFormatOfType(reqBody.formats, "branding")) {
-    return "Parse uploads do not support branding output.";
-  }
-
-  if (hasFormatOfType(reqBody.formats, "changeTracking")) {
-    return "Parse uploads do not support change tracking.";
   }
 
   if (reqBody.waitFor !== undefined && reqBody.waitFor > 0) {
@@ -297,11 +291,8 @@ export async function parseController(
   req: RequestWithAuth<{}, ScrapeResponse, ParseRequest>,
   res: Response<ScrapeResponse>,
 ) {
-  // Resolved before the root span starts so the whole request trace stays
-  // unrecorded for zero-data-retention requests (see otel-tracer).
   const zeroDataRetentionTrace =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
-    req.body?.zeroDataRetention === true;
+    req.ctx?.zeroDataRetention === true || req.body?.zeroDataRetention === true;
 
   return withSpan(
     "api.parse.request",
@@ -310,7 +301,7 @@ export async function parseController(
         (req as any).requestTiming?.startTime || new Date().getTime();
       const controllerStartTime = new Date().getTime();
 
-      const jobId = uuidv7();
+      const jobId = req.requestId ?? uuidv7();
       const preNormalizedBody = sanitizeParseRequestForLogs(req.body);
 
       setSpanAttributes(span, {
@@ -324,12 +315,14 @@ export async function parseController(
         "parse.middleware_time_ms": controllerStartTime - middlewareStartTime,
       });
 
-      await withSpan("api.parse.validate", async validateSpan => {
-        req.body = parseRequestSchema.parse(req.body);
-        setSpanAttributes(validateSpan, {
-          "validation.success": true,
+      if (!req.ctx) {
+        await withSpan("api.parse.validate", async validateSpan => {
+          req.body = getV2RequestSchemas().parse.parse(req.body);
+          setSpanAttributes(validateSpan, {
+            "validation.success": true,
+          });
         });
-      });
+      }
 
       const unsupportedOptionError = getUnsupportedParseOptionError(req.body);
       if (unsupportedOptionError) {
@@ -344,98 +337,75 @@ export async function parseController(
         });
       }
 
-      const permissions = await withSpan(
-        "api.parse.check_permissions",
-        async permSpan => {
-          const perms = checkPermissions(req.body, req.acuc?.flags);
-          setSpanAttributes(permSpan, {
-            "permissions.success": !perms.error,
-            "permissions.error": perms.error,
-          });
-          return perms;
-        },
-      );
-
-      if (permissions.error) {
+      const forceEngine = getParseForceEngine(req.body.file.kind!);
+      if (!forceEngine) {
+        const unsupportedFileError = `Unsupported upload type. Supported file extensions: ${getSupportedParseFileTypes(false)}`;
         setSpanAttributes(span, {
-          "parse.error": permissions.error,
-          "parse.status_code": 403,
+          "parse.status_code": 400,
+          "parse.error": unsupportedFileError,
         });
-        return res.status(403).json({
+        return res.status(400).json({
           success: false,
-          code: permissions.code,
-          error: permissions.error,
+          code: "UNSUPPORTED_FILE_TYPE",
+          error: unsupportedFileError,
         });
       }
 
+      const extBody = req.body as Record<string, any>;
       const zeroDataRetention =
-        getScrapeZDR(req.acuc?.flags) === "forced" ||
-        (req.body.zeroDataRetention ?? false);
-      const billing: BillingMetadata = {
-        ...(req.body.__agentInterop
+        req.ctx?.zeroDataRetention ?? req.body.zeroDataRetention ?? false;
+      const billing: BillingMetadata = req.ctx?.billing ?? {
+        ...(extBody.__agentInterop
           ? { endpoint: "agent" as const, jobId }
           : { endpoint: "parse" as const, jobId }),
-        externalRequestId: externalRequestId(req),
         hostedMcp: req.auth.hostedMcp,
       };
-      const ctx = requestContext({
-        teamId: req.auth.team_id,
-        zeroDataRetention,
-        flags: req.acuc?.flags ?? null,
-        orgId: req.acuc?.org_id ?? null,
-        apiKeyId: req.acuc?.api_key_id ?? null,
-        billing,
-      });
+      const ctx: RequestContext = req.ctx
+        ? req.ctx.billing
+          ? req.ctx
+          : { ...req.ctx, billing }
+        : requestContext({
+            teamId: req.auth.team_id,
+            zeroDataRetention,
+            flags: req.acuc?.flags ?? null,
+            orgId: req.acuc?.org_id ?? null,
+            apiKeyId: req.acuc?.api_key_id ?? null,
+            billing,
+            concurrencyLimit: req.acuc?.concurrency_limit,
+            rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
+          });
       req.ctx = ctx;
 
-      if (
-        req.body.__agentInterop &&
-        config.AGENT_INTEROP_SECRET &&
-        !isAgentInteropSecretValid(req.body.__agentInterop.auth)
-      ) {
-        return res.status(403).json({
-          success: false,
-          error: "Invalid agent interop.",
-        });
-      } else if (req.body.__agentInterop && !config.AGENT_INTEROP_SECRET) {
-        return res.status(403).json({
-          success: false,
-          error: "Agent interop is not enabled.",
-        });
-      }
-
-      const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
-      const agentRequestId = req.body.__agentInterop?.requestId ?? null;
+      const shouldBill = extBody.__agentInterop?.shouldBill ?? true;
+      const agentRequestId = extBody.__agentInterop?.requestId ?? null;
       const boostConcurrency =
-        req.body.__agentInterop?.boostConcurrency ?? false;
-      const isDirectToBullMQ = timingSafeSecretEqual(
-        req.body.__searchPreviewToken,
-        config.SEARCH_PREVIEW_TOKEN,
-      );
-      const projectedKeylessCredits =
-        shouldBill && !isDirectToBullMQ
-          ? projectScrapeCredits(
-              req.body,
-              req.acuc?.flags ?? null,
-              zeroDataRetention,
-            )
-          : 0;
-      let reservedKeylessCredits = 0;
-      let reconciledKeylessCredits = false;
-
-      if (projectedKeylessCredits > 0) {
-        const reservation = await reserveKeylessCredits(
-          req.auth.team_id,
-          projectedKeylessCredits,
-        );
-        if (!reservation.ok) {
-          applyAgentAuthDiscoveryHeader(res);
-          return res
-            .status(429)
-            .json(await keylessLimitBody(req.auth.team_id, "v2_parse", req));
+        extBody.__agentInterop?.boostConcurrency ?? false;
+      const reservation = await service.modules.billing.authorize({
+        caller: req.caller ?? { teamId: req.auth.team_id },
+        operation: "parse",
+        stage: "reserve",
+        ctx,
+        state: {
+          req,
+          shouldBill,
+          scrapeOptions: req.body,
+          endpoint: "v2_parse",
+        },
+      });
+      if (!reservation.ok) {
+        if (reservation.refusal.headers) {
+          for (const [name, value] of Object.entries(
+            reservation.refusal.headers,
+          )) {
+            res.setHeader(name, value);
+          }
         }
-        reservedKeylessCredits = projectedKeylessCredits;
+        return res
+          .status(reservation.refusal.status)
+          .json(reservation.refusal.body as ScrapeResponse);
       }
+      const billingHandle = reservation.handle;
+      let settledBilling = false;
 
       const logger = _logger.child({
         method: "parseController",
@@ -447,6 +417,26 @@ export async function parseController(
         zeroDataRetention,
       });
 
+      const settleBilling = async (outcome: SettleOutcome) => {
+        if (billingHandle === undefined || settledBilling) return;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            await service.modules.billing.settle?.(billingHandle, outcome);
+            settledBilling = true;
+            return;
+          } catch (settleError) {
+            if (attempt === 1) {
+              logger.error("Failed to settle billing reservation", {
+                teamId: req.auth.team_id,
+                jobId,
+                ok: outcome.ok,
+                error: settleError,
+              });
+            }
+          }
+        }
+      };
+
       const middlewareTime = controllerStartTime - middlewareStartTime;
       logger.debug("Parse " + jobId + " starting", {
         version: "v2",
@@ -455,23 +445,6 @@ export async function parseController(
         originalRequest: preNormalizedBody,
         account: req.account,
       });
-
-      if (!agentRequestId) {
-        logRequest({
-          id: jobId,
-          kind: "parse",
-          api_version: "v2",
-          external_request_id: externalRequestId(req),
-          team_id: req.auth.team_id,
-          origin: req.body.origin ?? "api",
-          integration: req.body.integration,
-          target_hint: req.body.file.filename,
-          zeroDataRetention: zeroDataRetention || false,
-          api_key_id: req.acuc?.api_key_id ?? null,
-        }).catch(err =>
-          logger.warn("Background request log failed", { error: err, jobId }),
-        );
-      }
 
       setSpanAttributes(span, {
         "parse.zero_data_retention": zeroDataRetention,
@@ -501,11 +474,13 @@ export async function parseController(
         }
         req.on("close", () => aborter.abort());
 
-        const baseConcurrency =
-          req.acuc?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
-        const concurrency = boostConcurrency
-          ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST
-          : baseConcurrency;
+        const baseConcurrency = await currentLimits().concurrency(ctx);
+        const concurrency =
+          baseConcurrency === null
+            ? null
+            : boostConcurrency
+              ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST
+              : baseConcurrency;
 
         doc = await teamConcurrencySemaphore.withSemaphore(
           req.auth.team_id,
@@ -514,10 +489,8 @@ export async function parseController(
           aborter.signal,
           timeout ?? 60_000,
           async limited => {
-            const jobPriority = await getJobPriority({
-              team_id: req.auth.team_id,
-              acuc: req.acuc,
-              basePriority: 10,
+            const jobPriority = await resolveJobPriority(ctx, 10, error => {
+              logger.error("Failed to determine job priority", { error });
             });
 
             lockTime = Date.now() - lockStart;
@@ -532,7 +505,6 @@ export async function parseController(
             const { file, ...parseOptions } = req.body;
             const syntheticFilename = getSyntheticFilename(file);
             const syntheticUrl = `https://parse.firecrawl.dev/uploads/${encodeURIComponent(syntheticFilename)}`;
-            const forceEngine = getParseForceEngine(file.kind!);
 
             const doc = await withSpan(
               "api.parse.wait_for_job",
@@ -543,6 +515,7 @@ export async function parseController(
                   "wait.job_id": jobId,
                 });
 
+                const threatProtection = contextThreatProtection(ctx);
                 const job: NuQJob<ScrapeJobData> = {
                   id: jobId,
                   status: "active",
@@ -557,15 +530,13 @@ export async function parseController(
                       ...parseOptions,
                       maxAge: 0,
                       storeInCache: false,
-                    },
+                    } as ScrapeOptions,
                     internalOptions: {
+                      ctx,
                       teamId: req.auth.team_id,
-                      saveScrapeResultToGCS: process.env
-                        .GCS_FIRE_ENGINE_BUCKET_NAME
-                        ? true
-                        : false,
                       unnormalizedSourceURL: file.filename,
-                      bypassBilling: isDirectToBullMQ || !shouldBill,
+                      bypassBilling:
+                        reservation.bypassBilling === true || !shouldBill,
                       zeroDataRetention,
                       teamFlags: req.acuc?.flags ?? null,
                       orgId: req.acuc?.org_id ?? null,
@@ -574,6 +545,10 @@ export async function parseController(
                       forceEngine,
                       isParse: true,
                       agentIndexOnly: (req as any).agentIndexOnly ?? false,
+                      // Rolling-deploy compatibility dual-write alongside the ctx fallback.
+                      ...(threatProtection !== undefined
+                        ? { threatProtection }
+                        : {}),
                     },
                     skipNuq: true,
                     origin,
@@ -583,7 +558,7 @@ export async function parseController(
                     zeroDataRetention,
                     apiKeyId: req.acuc?.api_key_id ?? null,
                     concurrencyLimited: limited,
-                    keylessReserved: reservedKeylessCredits > 0,
+                    keylessReserved: billingHandle !== undefined,
                     requestId: agentRequestId ?? undefined,
                   },
                 };
@@ -600,14 +575,10 @@ export async function parseController(
 
             return doc;
           },
+          ctx,
         );
       } catch (e) {
-        if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
-          reconciledKeylessCredits = true;
-          adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
-            () => {},
-          );
-        }
+        await settleBilling({ ok: false });
 
         const timeoutErr =
           isTransportableError(e) &&
@@ -619,6 +590,8 @@ export async function parseController(
           "parse.error_type": isTransportableError(e) ? e.code : "unknown",
         });
 
+        const jobIdField = agentRequestId ? {} : { jobId };
+
         if (isTransportableError(e)) {
           if (!timeoutErr) {
             logger.error("Error in parseController", {
@@ -627,27 +600,17 @@ export async function parseController(
             });
           }
 
-          if (e.code === "SCRAPE_NO_CACHED_DATA") {
+          const httpResponse = getErrorHttpResponse(e);
+          if (httpResponse) {
             setSpanAttributes(span, {
-              "parse.status_code": 404,
+              "parse.status_code": httpResponse.status,
             });
-            return res.status(404).json({
+            return res.status(httpResponse.status).json({
+              ...httpResponse.extraFields,
               success: false,
               code: e.code,
               error: e.message,
-            });
-          }
-
-          if (e.code === "AGENT_INDEX_ONLY") {
-            setSpanAttributes(span, {
-              "parse.status_code": 403,
-            });
-            return res.status(403).json({
-              success: false,
-              code: e.code,
-              error: e.message,
-              sponsor_status: "pending",
-              login_url: "https://firecrawl.dev/signin",
+              ...jobIdField,
             });
           }
 
@@ -659,20 +622,7 @@ export async function parseController(
               success: false,
               code: e.code,
               error: e.message,
-            });
-          }
-
-          if (
-            e.code === "US_ONLY_UNAVAILABLE" ||
-            e.code === "RESERVED_CAPACITY_UNAVAILABLE"
-          ) {
-            setSpanAttributes(span, {
-              "parse.status_code": 403,
-            });
-            return res.status(403).json({
-              success: false,
-              code: e.code,
-              error: e.message,
+              ...jobIdField,
             });
           }
 
@@ -684,6 +634,7 @@ export async function parseController(
             success: false,
             code: e.code,
             error: e.message,
+            ...jobIdField,
           });
         } else {
           const id = uuidv7();
@@ -701,7 +652,8 @@ export async function parseController(
           return res.status(500).json({
             success: false,
             code: "UNKNOWN_ERROR",
-            error: getErrorContactMessage(id),
+            error: service.modules.messages.errorContact(id),
+            ...jobIdField,
           });
         }
       } finally {
@@ -716,17 +668,10 @@ export async function parseController(
         }
       }
 
-      if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
-        reconciledKeylessCredits = true;
-        const actualKeylessCredits = doc?.metadata?.creditsUsed ?? 0;
-        adjustKeylessCredits(
-          req.auth.team_id,
-          actualKeylessCredits - reservedKeylessCredits,
-        ).catch(() => {});
-        logKeylessCreditUsage(req.auth.team_id, actualKeylessCredits).catch(
-          () => {},
-        );
-      }
+      void settleBilling({
+        ok: true,
+        charged: doc?.metadata?.creditsUsed,
+      });
 
       const totalRequestTime = new Date().getTime() - middlewareStartTime;
       const controllerTime = new Date().getTime() - controllerStartTime;
@@ -742,16 +687,22 @@ export async function parseController(
         "parse.document.error": doc?.metadata?.error,
       });
 
+      const rawFormats = (req.body.formats ?? []) as Array<{
+        type: string;
+        modes?: string[];
+      }>;
       let usedLlm =
-        !!hasFormatOfType(req.body.formats, "json") ||
-        !!hasFormatOfType(req.body.formats, "summary") ||
-        !!hasFormatOfType(req.body.formats, "question") ||
-        !!hasFormatOfType(req.body.formats, "highlights") ||
-        !!hasFormatOfType(req.body.formats, "query") ||
-        req.body.checkPromptInjection;
+        rawFormats.some(
+          f =>
+            f.type === "json" ||
+            f.type === "summary" ||
+            f.type === "question" ||
+            f.type === "highlights" ||
+            f.type === "query",
+        ) || req.body.checkPromptInjection;
 
       if (!usedLlm) {
-        const ct = hasFormatOfType(req.body.formats, "changeTracking");
+        const ct = rawFormats.find(f => f.type === "changeTracking");
         if (ct && ct.modes?.includes("json")) {
           usedLlm = true;
         }
@@ -776,19 +727,26 @@ export async function parseController(
         concurrencyQueueDurationMs: lockTime || undefined,
       });
 
-      return res.status(200).json({
-        success: true,
-        data: {
-          ...doc!,
-          metadata: {
-            ...doc!.metadata,
-            concurrencyLimited,
-            concurrencyQueueDurationMs: concurrencyLimited
-              ? lockTime || 0
-              : undefined,
-          },
+      const responseDocument: Document = {
+        ...doc!,
+        metadata: {
+          ...doc!.metadata,
+          concurrencyLimited,
+          concurrencyQueueDurationMs: concurrencyLimited
+            ? lockTime || 0
+            : undefined,
         },
-      });
+      };
+      const payload = await finalizeResponse(
+        req,
+        "parse",
+        {
+          success: true,
+          data: responseDocument,
+        },
+        [responseDocument],
+      );
+      return res.status(200).json(payload as ScrapeResponse);
     },
     {
       attributes: {

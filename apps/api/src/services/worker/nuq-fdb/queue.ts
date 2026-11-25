@@ -2,9 +2,9 @@ import { randomUUID } from "crypto";
 import type { Transaction } from "foundationdb";
 import { Logger } from "winston";
 import { logger as _logger } from "../../../lib/logger";
-import { config } from "../../../config";
 import { QueueFullError } from "../../../lib/queue-full-error";
 import { storedZeroDataRetention } from "../../../lib/request-context";
+import { installedService } from "../../../service/service";
 import { getNuqFdbDatabase } from "./client";
 import {
   NuqFdbKeyspace,
@@ -95,6 +95,8 @@ export type NuQFdbJob<Data = any, ReturnValue = any> = {
   leaseExpiresAt?: Date;
   ownerId?: string;
   groupId?: string;
+  /** In-memory limit of the gate that backlogged this job at enqueue time. */
+  backlogLimit?: number;
 };
 
 export type NuQFdbJobOptions = {
@@ -180,9 +182,14 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     return getNuqFdbDatabase();
   }
 
+  private storesResultsExternally(): boolean {
+    return Boolean(
+      installedService()?.modules.jobStore.storesResultsExternally?.(),
+    );
+  }
+
   private storeReturnvalueInline(): boolean {
-    // cloud stores results in GCS; self-host keeps them in the queue
-    return !config.GCS_BUCKET_NAME;
+    return !this.storesResultsExternally();
   }
 
   // === Enqueue
@@ -440,6 +447,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       // crawl gate state per distinct live group
       const groupMetas = new Map<string, GroupMeta | null>();
       const crawlFree = new Map<string, number>();
+      const crawlLimits = new Map<string, number>();
       if (this.options.hasGroups) {
         for (const j of jobs) {
           const gid = j.options.groupId;
@@ -451,6 +459,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
             if (effM !== undefined) {
               const cact = decodeI64(await tn.get(ks.groupCrawlActive(gid)));
               crawlFree.set(gid, effM - cact);
+              crawlLimits.set(gid, effM);
             }
           }
         }
@@ -509,6 +518,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         );
 
         let placedStatus: NuqFdbJobStatus;
+        let backlogLimit: number | undefined;
         if (!gated) {
           pushReady(tn, ks, entry, txc);
           setStatusQueued(tn, ks, j.id);
@@ -517,6 +527,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           const loc = appendCrawlPending(tn, ks, entry);
           setStatusPending(tn, ks, j.id, loc);
           placedStatus = "pending";
+          backlogLimit = crawlLimits.get(gid!);
         } else if (keyGated && keyFree <= 0) {
           // holds the crawl slot (if any) while waiting in the key gate
           if (crawlGated) {
@@ -526,6 +537,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           const loc = appendKeyPending(tn, ks, entry);
           setStatusPending(tn, ks, j.id, loc);
           placedStatus = "pending";
+          backlogLimit = gate.key!.limit;
         } else {
           if (crawlGated) {
             crawlFree.set(gid!, crawlFree.get(gid!)! - 1);
@@ -545,6 +557,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
             const loc = appendTeamPending(tn, ks, entry);
             setStatusPending(tn, ks, j.id, loc);
             placedStatus = "pending";
+            backlogLimit = gate.teamLimit!;
           }
         }
 
@@ -562,6 +575,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           data: j.data,
           ownerId: entry.o || undefined,
           groupId: gid,
+          ...(backlogLimit !== undefined ? { backlogLimit } : {}),
         });
       }
 
@@ -880,12 +894,10 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         );
       }
 
-      // Shed job input data early on cloud (results live in GCS) and always for
-      // ZDR. Group members are exempt on the plain cloud path: the crawl-finish
-      // job recovers crawl-scoped context (v1, webhook, team_id, ...) from a
-      // representative member via getGroupAnyJob, mirroring the PG backend which
-      // never sheds. ZDR still sheds even for members (compliance).
-      if (meta.f & F_ZDR || (config.GCS_BUCKET_NAME && !meta.g)) {
+      // Shed job input data early when results are stored externally, and
+      // always for ZDR. Group members keep input data outside ZDR so crawl
+      // completion can recover crawl-scoped context via getGroupAnyJob.
+      if (meta.f & F_ZDR || (this.storesResultsExternally() && !meta.g)) {
         const r = ks.jobDataRange(id);
         tn.clearRange(r.begin, r.end);
       }

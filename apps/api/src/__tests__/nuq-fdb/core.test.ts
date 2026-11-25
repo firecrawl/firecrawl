@@ -10,13 +10,16 @@ import {
   getFdb,
 } from "../../services/worker/nuq-fdb/client";
 import { encodeI64, encodeJson } from "../../services/worker/nuq-fdb/keyspace";
+import { installedService } from "../../service/service";
 
 // These tests exercise the FDB queue core directly against a real FoundationDB
 // cluster (no API server needed). They are skipped when FDB is not configured.
 const describeIf = config.FDB_CLUSTER_FILE ? describe : describe.skip;
 
-// inline returnvalues only exist on the self-host path; cloud stores to GCS
-const expectInlineReturnvalue = !config.GCS_BUCKET_NAME;
+// Inline return values are kept unless the active job store persists results externally.
+const expectInlineReturnvalue = !(
+  installedService()?.modules.jobStore.storesResultsExternally?.() ?? false
+);
 
 const RUN = randomUUID().slice(0, 8);
 const TEST_LEASE_MS = 1500;
