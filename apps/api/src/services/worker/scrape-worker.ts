@@ -263,7 +263,11 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         !crawlToCrawler(
           job.data.crawl_id,
           sc,
-          (await service.modules.auth.lookupTeam?.(job.data.team_id))?.flags ??
+          (
+            await installedService()?.modules.auth.lookupTeam?.(
+              job.data.team_id,
+            )
+          )?.flags ??
             ctx.flags ??
             null,
         ).isRobotsAllowed(job.data.url)
@@ -404,7 +408,11 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       let crawler: WebCrawler | null = null;
       if (job.data.crawlerOptions !== null) {
         const teamFlags =
-          (await service.modules.auth.lookupTeam?.(job.data.team_id))?.flags ??
+          (
+            await installedService()?.modules.auth.lookupTeam?.(
+              job.data.team_id,
+            )
+          )?.flags ??
           ctx.flags ??
           null;
         crawler = crawlToCrawler(
@@ -1178,7 +1186,9 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
 
   try {
     const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
-    const team = await service.modules.auth.lookupTeam?.(job.data.team_id);
+    const team = await installedService()?.modules.auth.lookupTeam?.(
+      job.data.team_id,
+    );
     const kickoffCtx = {
       ...ctx,
       ...(ctx.flags === undefined && team ? { flags: team.flags ?? null } : {}),
@@ -1403,7 +1413,9 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       return { success: false, error: "Crawl not found" };
     }
 
-    const team = await service.modules.auth.lookupTeam?.(job.data.team_id);
+    const team = await installedService()?.modules.auth.lookupTeam?.(
+      job.data.team_id,
+    );
     const sitemapCtx = {
       ...ctx,
       ...(ctx.flags === undefined && team ? { flags: team.flags ?? null } : {}),
@@ -1595,7 +1607,10 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
         }, jobLockExtendInterval);
       }
 
-      await service.modules.limits.onJobStart?.(job.data.team_id, job.id);
+      await installedService()?.modules.limits.onJobStart?.(
+        job.data.team_id,
+        job.id,
+      );
       try {
         if (job.data.mode === "kickoff") {
           const result = await processKickoffJob(
@@ -1649,7 +1664,10 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
           }
         }
       } finally {
-        await service.modules.limits.onJobEnd?.(job.data.team_id, job.id);
+        await installedService()?.modules.limits.onJobEnd?.(
+          job.data.team_id,
+          job.id,
+        );
         if (extendLockInterval) {
           clearInterval(extendLockInterval);
         }

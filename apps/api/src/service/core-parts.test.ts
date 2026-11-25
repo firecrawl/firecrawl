@@ -328,13 +328,10 @@ describe("coreParts", () => {
         THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED: "core",
         THIRD_PARTY_DATA_NOT_ENABLED: "core",
         THIRD_PARTY_DATA_NOT_FOUND: "core",
-        THIRD_PARTY_DATA_TERMS_REQUIRED: "core",
-        THIRD_PARTY_DATA_UNSUPPORTED_OPTION: "core",
         THIRD_PARTY_DATA_UNSUPPORTED_URL: "core",
         UNKNOWN_ERROR: "core",
         UNSUPPORTED_SITE: "core",
         US_ONLY_UNAVAILABLE: "core",
-        unsafe_domain_blocked: "core",
       },
       engines: {
         document: "core",
