@@ -33,6 +33,9 @@ import {
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { requestContext } from "../../lib/request-context";
 import { installedService } from "../../service/service";
+import { isSelfHosted } from "../../lib/deployment";
+import { useFireEngine } from "../../scraper/scrapeURL/engines/fire-engine/available";
+import { useIndex as hasPageIndex } from "../../services/index";
 
 configDotenv();
 
@@ -265,6 +268,7 @@ export async function mapController(
       });
     }
 
+    if (res.destroyed) return;
     return res.status(200).json({
       success: true,
       id: mapId,
@@ -276,6 +280,16 @@ export async function mapController(
   let timeoutHandle: NodeJS.Timeout | null = null;
 
   const abort = new AbortController();
+  // Discovery only runs without DB authentication, where billTeam bypasses the
+  // customer ledger. Hosted Map retains its existing scan and billing path.
+  const discoverStartPage = isSelfHosted() && !useFireEngine && !hasPageIndex;
+  const cancelOnClose = () => {
+    if (!res.writableEnded) abort.abort();
+  };
+  if (discoverStartPage) {
+    res.once("close", cancelOnClose);
+    if (res.destroyed) cancelOnClose();
+  }
   try {
     result = (await Promise.race([
       getMapResults({
@@ -301,6 +315,9 @@ export async function mapController(
         headers: req.body.headers,
         id: mapId,
         ctx,
+        startPageDiscovery: discoverStartPage
+          ? { threatProtection: threatProtection.policy ?? undefined }
+          : undefined,
       }),
       ...(req.body.timeout !== undefined
         ? [
@@ -315,6 +332,12 @@ export async function mapController(
         : []),
     ])) as any;
   } catch (error) {
+    if (res.destroyed) {
+      if (error !== abort.signal.reason) {
+        logger.warn("Map failed after client disconnected", { mapId, error });
+      }
+      return;
+    }
     if (error instanceof MapTimeoutError) {
       return res.status(408).json({
         success: false,
@@ -326,11 +349,11 @@ export async function mapController(
       throw error;
     }
   } finally {
+    if (discoverStartPage) res.off("close", cancelOnClose);
     if (timeoutHandle) {
       clearTimeout(timeoutHandle);
     }
   }
-
   // Threat protection: remove blocked links from the returned URL list
   // entirely. Checks are URL-level; scan fees bill +2 per unique scanned
   // URL (see calculateThreatScanCredits).
@@ -437,5 +460,5 @@ export async function mapController(
     ...(warning && { warning }),
   };
 
-  return res.status(200).json(response);
+  if (!res.destroyed) return res.status(200).json(response);
 }

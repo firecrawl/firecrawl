@@ -101,14 +101,25 @@ class Semaphore {
     this.permits = permits;
   }
 
-  async acquire(): Promise<void> {
+  async acquire(signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
     if (this.permits > 0) {
       this.permits--;
       return Promise.resolve();
     }
 
-    return new Promise<void>((resolve) => {
-      this.queue.push(resolve);
+    return new Promise<void>((resolve, reject) => {
+      const grant = () => {
+        signal.removeEventListener('abort', cancel);
+        resolve();
+      };
+      const cancel = () => {
+        const index = this.queue.indexOf(grant);
+        if (index !== -1) this.queue.splice(index, 1);
+        reject(signal.reason);
+      };
+      this.queue.push(grant);
+      signal.addEventListener('abort', cancel, { once: true });
     });
   }
 
@@ -376,36 +387,49 @@ app.post('/scrape', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid URL' });
   }
 
-  try {
-    await assertSafeTargetUrl(url);
-  } catch (error) {
-    if (error instanceof InsecureConnectionError) {
-      return res.json({
-        content: '',
-        pageStatusCode: 403,
-        pageError: error.message,
+  const abort = new AbortController();
+  const disconnected = new Promise<void>((resolve) => {
+    abort.signal.addEventListener('abort', () => resolve(), { once: true });
+  });
+  const whileConnected = <T>(operation: Promise<T>) =>
+    Promise.race([
+      operation,
+      disconnected.then<never>(() => {
+        throw abort.signal.reason;
+      }),
+    ]);
+  let acquired = false;
+  let requestContext: BrowserContext | null = null;
+  let closingContext: Promise<void> | undefined;
+  const closeContext = () => {
+    if (requestContext) {
+      closingContext ??= requestContext.close().catch((error) => {
+        console.warn('Failed to close scrape context:', error);
       });
     }
-    throw error;
-  }
-
-  if (!PROXY_SERVER) {
-    console.warn(
-      '⚠️ WARNING: No proxy server provided. Your IP address may be blocked.',
-    );
-  }
-
-  if (!browser) {
-    await initializeBrowser();
-  }
-
-  await pageSemaphore.acquire();
-
-  let requestContext: BrowserContext | null = null;
-  let securityState: ContextSecurityState | null = null;
-  let page: Page | null = null;
+    return closingContext;
+  };
+  const cancelOnClose = () => {
+    if (res.writableEnded) return;
+    abort.abort();
+    void closeContext();
+  };
+  res.once('close', cancelOnClose);
+  if (res.destroyed) cancelOnClose();
 
   try {
+    abort.signal.throwIfAborted();
+    await assertSafeTargetUrl(url);
+    if (!PROXY_SERVER) {
+      console.warn(
+        '⚠️ WARNING: No proxy server provided. Your IP address may be blocked.',
+      );
+    }
+    if (!browser) await initializeBrowser();
+    await pageSemaphore.acquire(abort.signal);
+    acquired = true;
+    abort.signal.throwIfAborted();
+
     // Extract user-agent from request headers (case-insensitive) so it can
     // be applied at the context level.  Playwright ignores user-agent in
     // setExtraHTTPHeaders when the context already defines one (#2802).
@@ -415,13 +439,15 @@ app.post('/scrape', async (req: Request, res: Response) => {
         )?.[1]
       : undefined;
 
+    // Context creation cannot be cancelled. Keep the permit until the context
+    // exists and the finally block can close it, even if the client has left.
     const contextBundle = await createContext(
       skip_tls_verification,
       userAgentOverride,
     );
     requestContext = contextBundle.context;
-    securityState = contextBundle.securityState;
-    page = await requestContext.newPage();
+    abort.signal.throwIfAborted();
+    const page = await whileConnected(contextBundle.context.newPage());
 
     if (headers) {
       // A Cookie header passed through setExtraHTTPHeaders is sent on the first
@@ -473,8 +499,9 @@ app.post('/scrape', async (req: Request, res: Response) => {
           .filter((c): c is SeedCookie => c !== null);
         if (cookies.length > 0) {
           try {
-            await requestContext.addCookies(cookies);
+            await whileConnected(contextBundle.context.addCookies(cookies));
           } catch (error) {
+            abort.signal.throwIfAborted();
             console.warn('Failed to seed cookies from Cookie header:', error);
           }
         }
@@ -489,19 +516,22 @@ app.post('/scrape', async (req: Request, res: Response) => {
         }),
       );
       if (Object.keys(filteredHeaders).length > 0) {
-        await page.setExtraHTTPHeaders(filteredHeaders);
+        await whileConnected(page.setExtraHTTPHeaders(filteredHeaders));
       }
     }
 
-    const result = await scrapePage(
-      page,
-      url,
-      'load',
-      wait_after_load,
-      timeout,
-      check_selector,
-      securityState,
+    const result = await whileConnected(
+      scrapePage(
+        page,
+        url,
+        'load',
+        wait_after_load,
+        timeout,
+        check_selector,
+        contextBundle.securityState,
+      ),
     );
+    if (abort.signal.aborted) return;
     const pageError =
       result.status !== 200 ? getError(result.status) : undefined;
 
@@ -521,6 +551,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
       ...(pageError && { pageError }),
     });
   } catch (error) {
+    if (abort.signal.aborted || res.destroyed) return;
     if (error instanceof InsecureConnectionError) {
       return res.json({
         content: '',
@@ -533,9 +564,9 @@ app.post('/scrape', async (req: Request, res: Response) => {
       .status(500)
       .json({ error: 'An error occurred while fetching the page.' });
   } finally {
-    if (page) await page.close();
-    if (requestContext) await requestContext.close();
-    pageSemaphore.release();
+    res.off('close', cancelOnClose);
+    await closeContext();
+    if (acquired) pageSemaphore.release();
   }
 });
 

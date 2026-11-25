@@ -1,14 +1,19 @@
+import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const crawler = {
     getRobotsTxt: vi.fn(async () => ""),
     importRobotsTxt: vi.fn(),
+    isRobotsAllowed: vi.fn(() => true),
+    isFile: vi.fn(() => false),
     tryGetSitemap: vi.fn(async () => 0),
   };
 
   return {
     crawler,
+    warn: vi.fn(),
+    scrapeURL: vi.fn(),
     billTeam: vi.fn(async () => undefined),
     logMap: vi.fn(async () => undefined),
     logRequest: vi.fn(async () => undefined),
@@ -42,7 +47,7 @@ vi.mock("../../services/logging/log_job", () => ({
 vi.mock("../../lib/logger", () => ({
   logger: {
     info: vi.fn(),
-    warn: vi.fn(),
+    warn: mocks.warn,
     error: vi.fn(),
     debug: vi.fn(),
     child: vi.fn().mockReturnThis(),
@@ -86,6 +91,8 @@ vi.mock("../../search/fireEngine", () => ({
   fireEngineMap: mocks.fireEngineMap,
 }));
 
+vi.mock("../../scraper/scrapeURL", () => ({ scrapeURL: mocks.scrapeURL }));
+
 vi.mock("../../services/redis", () => ({
   redisEvictConnection: {
     get: mocks.redisGet,
@@ -94,6 +101,7 @@ vi.mock("../../services/redis", () => ({
 }));
 
 vi.mock("../../services/index", () => ({
+  useIndex: false,
   generateDomainSplits: vi.fn((host: string) => [host]),
   generateURLSplits: vi.fn((url: string) => [url]),
   queryIndexAtDomainSplitLevelWithMeta:
@@ -133,10 +141,11 @@ function makeReq(body: Record<string, any>) {
 }
 
 function makeRes() {
-  const res: any = {
+  const res: any = Object.assign(new EventEmitter(), {
+    destroyed: false,
     status: vi.fn(),
     json: vi.fn(),
-  };
+  });
   res.status.mockReturnValue(res);
   res.json.mockReturnValue(res);
   return res;
@@ -159,6 +168,62 @@ describe("map lifecycle hooks", () => {
 
   afterEach(() => {
     replaceService(undefined);
+  });
+
+  it.each(["completed", "failed"])(
+    "records %s map work after disconnect",
+    async outcome => {
+      const res = makeRes();
+      const error = new Error("map collection failed");
+      const finished = vi.fn();
+      installHooks({
+        "map.collect": urls => {
+          res.destroyed = true;
+          res.emit("close");
+          if (outcome === "failed") throw error;
+          return urls;
+        },
+        "map.finished": finished,
+      });
+      await mapController(
+        makeReq({ url: "https://example.com", sitemap: "skip" }),
+        res,
+      );
+      expect(res.json).not.toHaveBeenCalled();
+      if (outcome === "completed") {
+        expect(mocks.billTeam).toHaveBeenCalledTimes(1);
+        expect(mocks.logMap).toHaveBeenCalledTimes(1);
+        expect(finished).toHaveBeenCalledTimes(1);
+      } else {
+        expect(mocks.warn).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ error }),
+        );
+        expect(mocks.billTeam).not.toHaveBeenCalled();
+        expect(finished).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it("keeps start-page discovery on the requested origin for hosts without a registrable domain", async () => {
+    const url = "https://catalog:8443/";
+    mocks.scrapeURL.mockResolvedValueOnce({
+      success: true,
+      document: {
+        metadata: { statusCode: 200, contentType: "text/html", url },
+        links: [url + "guide", "https://catalog:9443/other"],
+      },
+    });
+    const result = await getMapResults({
+      url,
+      limit: 5,
+      teamId: "team-map-1",
+      flags: null,
+      crawlerOptions: { sitemap: "include" },
+      startPageDiscovery: {},
+    });
+    expect(result.mapResults.map(link => link.url)).toEqual([url + "guide"]);
+    expect(mocks.crawler.getRobotsTxt).toHaveBeenCalledTimes(1);
   });
 
   it("runs map.collect before map.finished, transforms URLs while keeping metadata, and slices to limit", async () => {
