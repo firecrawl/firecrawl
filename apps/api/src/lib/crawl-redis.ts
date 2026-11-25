@@ -1027,7 +1027,7 @@ export function crawlToCrawler(
   crawlerOptions?: any,
 ): WebCrawler {
   const ctx = crawlContext(sc);
-  const effectiveFlags = (ctx.flags ?? teamFlags) as
+  const effectiveFlags = (teamFlags ?? ctx.flags) as
     | Record<string, unknown>
     | null
     | undefined;
@@ -1054,7 +1054,7 @@ export function crawlToCrawler(
     ctx.ignoreRobotsTxt !== undefined
       ? ctx.ignoreRobotsTxt
       : effectiveFlags
-        ? !(safeModeActive && safeModeConfig?.enforceRobots === true) &&
+        ? !(safeModeActive && safeModeConfig?.enforceRobots !== false) &&
           (effectiveFlags.ignoreRobots === "forced" ||
             (effectiveFlags.ignoreRobots === "allowed" &&
               (sc.crawlerOptions?.ignoreRobotsTxt ?? false)))

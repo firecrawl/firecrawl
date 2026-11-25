@@ -630,4 +630,67 @@ describe("search lifecycle hooks", () => {
       }),
     ]);
   });
+
+  it("reindexes merged routed web positions and respects explicit hit groups for duplicate URLs", async () => {
+    installHooks({
+      "search.plan": (plan, info) => {
+        if (info.state) {
+          info.state.routedResults = [
+            {
+              url: "https://example.com/routed",
+              title: "Routed",
+              description: "From router",
+              position: 1,
+            },
+          ];
+        }
+        return plan;
+      },
+      "search.results": hits => [
+        ...hits,
+        {
+          url: "https://example.com/shared",
+          title: "Added news",
+          description: "News summary",
+          group: "news",
+        },
+      ],
+    });
+
+    mocks.search.mockResolvedValue({
+      web: [
+        {
+          url: "https://example.com/shared",
+          title: "Web hit",
+          description: "From web",
+          position: 1,
+        },
+      ],
+    });
+
+    const res = makeRes();
+    await searchController(
+      makeReq({ query: "example", limit: 5, sources: ["web"] }),
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const payload = res.json.mock.calls[0][0];
+    expect(
+      payload.data.web.map((item: any) => ({
+        url: item.url,
+        position: item.position,
+      })),
+    ).toEqual([
+      { url: "https://example.com/routed", position: 1 },
+      { url: "https://example.com/shared", position: 2 },
+    ]);
+    expect(payload.data.news).toEqual([
+      expect.objectContaining({
+        url: "https://example.com/shared",
+        title: "Added news",
+        snippet: "News summary",
+      }),
+    ]);
+  });
 });

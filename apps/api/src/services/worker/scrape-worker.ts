@@ -242,6 +242,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     | undefined;
   let failureCleanupError: unknown;
   let hasFailureCleanupError = false;
+  let successBilled = false;
+  let successBilledCredits: number | undefined;
 
   try {
     if (remainingTime !== undefined && remainingTime < 0) {
@@ -656,6 +658,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         pipeline.exchange,
         pipeline.threatDecisions,
       );
+      successBilled = true;
+      successBilledCredits = credits_billed ?? undefined;
 
       if (credits_billed !== undefined) {
         doc.metadata.creditsUsed = credits_billed;
@@ -768,6 +772,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         pipeline.exchange,
         pipeline.threatDecisions,
       );
+      successBilled = true;
+      successBilledCredits = credits_billed ?? undefined;
 
       if (credits_billed !== undefined) {
         doc.metadata.creditsUsed = credits_billed;
@@ -1001,15 +1007,17 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       failureEnd = end;
       const timeTakenInSeconds = (end - start) / 1000;
 
-      credits_billed = await billScrapeJob(
-        job,
-        null,
-        costTracking,
-        error instanceof Error ? error : null,
-        undefined,
-        undefined,
-        pipeline?.threatDecisions,
-      );
+      credits_billed = successBilled
+        ? successBilledCredits
+        : await billScrapeJob(
+            job,
+            null,
+            costTracking,
+            error instanceof Error ? error : null,
+            undefined,
+            undefined,
+            pipeline?.threatDecisions,
+          );
 
       const requestId = job.data.requestId ?? job.data.crawl_id ?? job.id;
       const errorMessage =

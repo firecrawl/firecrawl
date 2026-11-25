@@ -250,9 +250,11 @@ export async function executeSearch(
 
   if (Array.isArray(searchState.routedResults)) {
     const routedWeb = searchState.routedResults as WebSearchResult[];
-    searchResponse.web = searchResponse.web
-      ? [...routedWeb, ...searchResponse.web]
-      : [...routedWeb];
+    searchResponse.web = (
+      searchResponse.web
+        ? [...routedWeb, ...searchResponse.web]
+        : [...routedWeb]
+    ).map((result, index) => ({ ...result, position: index + 1 }));
   }
 
   const keepOperatorMatches = <
@@ -389,14 +391,12 @@ export async function executeSearch(
       if (!entry) {
         const candidates = byUrl.get(hit.url);
         if (candidates) {
-          entry =
-            (hit.group
-              ? candidates.find(
-                  candidate =>
-                    !consumed.has(candidate) && candidate.group === hit.group,
-                )
-              : undefined) ??
-            candidates.find(candidate => !consumed.has(candidate));
+          entry = hit.group
+            ? candidates.find(
+                candidate =>
+                  !consumed.has(candidate) && candidate.group === hit.group,
+              )
+            : candidates.find(candidate => !consumed.has(candidate));
         }
       }
       if (entry) {

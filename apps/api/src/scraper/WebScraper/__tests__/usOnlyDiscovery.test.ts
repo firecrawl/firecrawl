@@ -129,4 +129,46 @@ describe("crawl discovery for US-only teams", () => {
       }),
     ]);
   });
+
+  it("prefers live teamFlags over stored context flags and enforces Safe Mode robots default", async () => {
+    const sc = {
+      originUrl: "https://example.com/",
+      crawlerOptions: { ignoreRobotsTxt: true },
+      scrapeOptions: {},
+      ctx: {
+        teamId: "team-a",
+        zeroDataRetention: false,
+        flags: { ignoreRobots: "forced" },
+      },
+      internalOptions: { teamId: "team-a", orgId: null },
+      team_id: "team-a",
+      createdAt: 0,
+    } as any;
+
+    const strictCrawler = crawlToCrawler("crawl-safe-default", sc, {
+      safeMode: true,
+      ignoreRobots: "forced",
+      scrapeZDR: "forced",
+    } as any);
+    strictCrawler.importRobotsTxt("User-agent: *\nDisallow: /\n");
+    expect(strictCrawler.isRobotsAllowed("https://example.com/blocked")).toBe(
+      false,
+    );
+    await strictCrawler.getRobotsTxt();
+    expect(internalOptionsSent()).toEqual([
+      expect.objectContaining({
+        zeroDataRetention: true,
+      }),
+    ]);
+
+    const optOutCrawler = crawlToCrawler("crawl-safe-opt-out", sc, {
+      safeMode: true,
+      safeModeConfig: { enforceRobots: false },
+      ignoreRobots: "forced",
+    } as any);
+    optOutCrawler.importRobotsTxt("User-agent: *\nDisallow: /\n");
+    expect(optOutCrawler.isRobotsAllowed("https://example.com/blocked")).toBe(
+      true,
+    );
+  });
 });
