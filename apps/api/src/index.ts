@@ -4,51 +4,33 @@ import { shutdownTracing } from "./otel";
 import express, { NextFunction, Request, Response } from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
-import {
-  getGenerateLlmsTxtQueue,
-  getDeepResearchQueue,
-  getBillingQueue,
-  getPrecrawlQueue,
-  getFirebillTrackRetryQueue,
-} from "./services/queue-service";
-import { v0Router } from "./routes/v0";
+import { getPrecrawlQueue } from "./services/queue-service";
+import { bindBullBoard } from "./lib/bull-board-registry";
 import { livenessController, readinessController } from "./controllers/health";
 import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
 import os from "os";
 import { logger } from "./lib/logger";
+import { adminInternalRouter, adminRouter } from "./routes/admin";
 import {
-  adminInternalRouter,
-  adminRouter,
-  countAdminPathRoute,
-} from "./routes/admin";
+  AdminKeySlot,
+  adminAuth,
+  adminPathKeyAuth,
+  redactAdminKey,
+} from "./lib/admin-auth";
 import http from "node:http";
 import https from "node:https";
-import { v1Router } from "./routes/v1";
 import expressWs from "express-ws";
-import { ErrorResponse, RequestWithMaybeACUC } from "./controllers/v1/types";
+import { ErrorResponse, RequestWithMaybeACUC } from "./controllers/v2/types";
 import { ZodError } from "zod";
 import { QueueFullError } from "./lib/queue-full-error";
 import { v7 as uuidv7 } from "uuid";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
-import { exchangeRouter } from "./routes/exchange";
-import { registerExchangeFileRoutes } from "./routes/exchange-files";
-import { exchangeInternalRouter } from "./routes/exchange-internal";
-import { labsRouter } from "./routes/labs";
-import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
 import { nuqShutdown } from "./services/worker/nuq";
-import { getErrorContactMessage } from "./lib/deployment";
-import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
-import { warmExchangeCatalog } from "./lib/exchange";
-import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
+import { service } from "./service";
+import { installedService, runProcessStop } from "./service/service";
+import { initializeApiStartupDependencies } from "./lib/api-startup";
 import responseTime from "response-time";
-import { shutdownWebhookQueue } from "./services/webhook";
-import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
-import { isKeylessConfigured } from "./lib/keyless";
-import {
-  drainZdrRequestLogs,
-  shutdownPubSubLogging,
-} from "./services/logging/log_job";
 import { notFoundHandler } from "./lib/not-found";
 import { startRole } from "./main";
 
@@ -62,12 +44,6 @@ logger.info(`Number of CPUs: ${numCPUs} available`);
 logger.info("Network info dump", {
   networkInterfaces: os.networkInterfaces(),
 });
-
-if (isKeylessConfigured() && !config.KEYLESS_CONVERSION_HMAC_SECRET) {
-  logger.warn(
-    "Keyless conversion cohort logging is disabled: set KEYLESS_CONVERSION_HMAC_SECRET to enable privacy-safe quota-to-account measurement",
-  );
-}
 
 // Install cacheable lookup for all other requests
 cacheableLookup.install(http.globalAgent);
@@ -93,11 +69,15 @@ const captureRawBody = (
   }
 };
 
-registerMcpActionLogIngestRoute(app);
-// Marketplace file bytes stream through to Exchange untouched, so these come before the body
-// parsers, and carry their own CORS (the website only) before the catch-all one.
+const contributedRootRawRouter = express.Router();
+const contributedRootRouter = express.Router();
+const contributedV2Router = express.Router();
+const contributedAdminRouter = express.Router();
+const contributedAdminInternalRouter = express.Router();
+let contributedRoutesMounted = false;
+
 app.use(responseTime());
-registerExchangeFileRoutes(app);
+app.use(contributedRootRawRouter);
 
 app.use(bodyParser.urlencoded({ extended: true, verify: captureRawBody }));
 app.use(bodyParser.json({ limit: "10mb", verify: captureRawBody }));
@@ -110,33 +90,48 @@ if (config.EXPRESS_TRUST_PROXY) {
   app.set("trust proxy", config.EXPRESS_TRUST_PROXY);
 }
 
-const serverAdapter = new ExpressAdapter();
-
-const bullBoardQueues = [
-  new BullMQAdapter(getGenerateLlmsTxtQueue()),
-  new BullMQAdapter(getDeepResearchQueue()),
-  new BullMQAdapter(getBillingQueue()),
-  new BullMQAdapter(getPrecrawlQueue()),
-  new BullMQAdapter(getFirebillTrackRetryQueue()),
-  // SIEM audit delivery runs on RabbitMQ; inspect it in the broker's
-  // management UI, not here.
-];
-
-const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
-  queues: bullBoardQueues,
-  serverAdapter: serverAdapter,
-});
+function attachBullBoard(serverAdapter: any) {
+  const board = createBullBoard({
+    queues: [new BullMQAdapter(getPrecrawlQueue())],
+    serverAdapter,
+  });
+  bindBullBoard(queue => {
+    board.addQueue(new BullMQAdapter(queue));
+  });
+}
 
 if (!config.BULL_AUTH_KEY) {
   logger.warn("BULL_AUTH_KEY is not set; admin routes are disabled.");
-} else if (config.BULL_AUTH_KEY_PATH_ROUTES) {
-  serverAdapter.setBasePath(`/admin/${config.BULL_AUTH_KEY}/queues`);
-  app.use(
-    `/admin/${config.BULL_AUTH_KEY}/queues`,
-    countAdminPathRoute("queues"),
-    serverAdapter.getRouter(),
-  );
+} else {
+  // A browser cannot add the Authorization header by itself; use the internal
+  // listener's /admin/queues where possible.
+  const opsBullBoard = new ExpressAdapter();
+  opsBullBoard.setBasePath("/admin/ops/queues");
+  attachBullBoard(opsBullBoard);
+  app.use("/admin/ops/queues", adminAuth, opsBullBoard.getRouter());
+
+  if (config.BULL_AUTH_KEY_PATH_ROUTES) {
+    // One board per accepted key, since the UI links to its own base path.
+    const pathBoards: Partial<Record<AdminKeySlot, express.Router>> = {};
+    for (const [slot, key] of [
+      ["current", config.BULL_AUTH_KEY],
+      ["previous", config.BULL_AUTH_KEY_PREVIOUS],
+    ] as const) {
+      if (!key) continue;
+      const board = new ExpressAdapter();
+      board.setBasePath(`/admin/${encodeURIComponent(key)}/queues`);
+      attachBullBoard(board);
+      pathBoards[slot] = board.getRouter();
+    }
+    const queuesPathRouter = express.Router({ mergeParams: true });
+    queuesPathRouter.use(adminPathKeyAuth("queues"), (req, res, next) =>
+      pathBoards[res.locals.adminKeySlot as AdminKeySlot]!(req, res, next),
+    );
+    app.use("/admin/:adminKey/queues", queuesPathRouter);
+  }
 }
+
+app.use(contributedRootRouter);
 
 app.get("/", (_, res) => {
   res.json({
@@ -153,12 +148,9 @@ app.get("/health/liveness", livenessController);
 app.get("/health/readiness", readinessController);
 
 // register router
-app.use(v0Router);
-app.use("/v1", v1Router);
+app.use("/v2", contributedV2Router);
 app.use("/v2", v2Router);
-app.use("/labs", labsRouter);
-app.use("/exchange", exchangeRouter);
-app.use(exchangeInternalRouter);
+app.use(contributedAdminRouter);
 app.use(adminRouter);
 
 const DEFAULT_PORT = config.PORT;
@@ -172,12 +164,10 @@ function startAdminInternalServer(port: number) {
 
   const internalBullBoard = new ExpressAdapter();
   internalBullBoard.setBasePath("/admin/queues");
-  createBullBoard({
-    queues: bullBoardQueues,
-    serverAdapter: internalBullBoard,
-  });
+  attachBullBoard(internalBullBoard);
   adminApp.use("/admin/queues", internalBullBoard.getRouter());
 
+  adminApp.use(contributedAdminInternalRouter);
   adminApp.use(adminInternalRouter);
   adminApp.use(notFoundHandler);
   adminApp.use(
@@ -211,15 +201,17 @@ function startAdminInternalServer(port: number) {
 
 async function startServer(port = DEFAULT_PORT) {
   startNodeRuntimeMetrics();
-  try {
-    await initializeBlocklist();
-    initializeEngineForcing();
-    warmExchangeCatalog();
-  } catch (error) {
-    logger.error("Failed to initialize API startup dependencies", {
-      error,
+  await initializeApiStartupDependencies();
+
+  if (!contributedRoutesMounted) {
+    installedService()?.mountRoutes({
+      rootRaw: contributedRootRawRouter,
+      root: contributedRootRouter,
+      v2: contributedV2Router,
+      admin: contributedAdminRouter,
+      adminInternal: contributedAdminInternalRouter,
     });
-    throw error;
+    contributedRoutesMounted = true;
   }
 
   const server = app.listen(Number(port), HOST, (error?: Error) => {
@@ -230,6 +222,16 @@ async function startServer(port = DEFAULT_PORT) {
 
     logger.info(`Worker ${process.pid} listening on port ${port}`);
   });
+
+  for (const provider of service.searchProviders.all()) {
+    logger.info("Search provider registered", {
+      provider: provider.name,
+      priority: provider.priority,
+      usOnly: provider.supportsUsOnly === true,
+      zdr: provider.supportsZdr === true,
+      anon: provider.supportsAnon === true,
+    });
+  }
 
   const adminInternalServer =
     config.ADMIN_INTERNAL_PORT !== undefined
@@ -251,16 +253,21 @@ async function startServer(port = DEFAULT_PORT) {
     server.close(async () => {
       await adminInternalClosed;
       logger.info("Server closed.");
-      await drainZdrRequestLogs();
       nuqShutdown().finally(() => {
-        shutdownWebhookQueue().finally(() => {
-          shutdownIndexerQueue().finally(async () => {
-            await shutdownPubSubLogging();
-            await shutdownTracing();
+        Promise.resolve()
+          .then(() => installedService()?.modules.webhooks.shutdown?.())
+          .catch(error => {
+            logger.warn("Error shutting down webhooks module", { error });
+          })
+          .finally(async () => {
+            try {
+              await runProcessStop("api");
+            } finally {
+              await shutdownTracing();
+            }
             logger.info("NUQ shutdown complete");
             process.exit(0);
           });
-        });
       });
     });
   };
@@ -365,13 +372,14 @@ app.use(
     }
 
     const id = uuidv7();
+    const path = redactAdminKey(req.path);
 
     logger.error(
-      "Error occurred in request! (" + req.path + ") -- ID " + id + " -- ",
+      "Error occurred in request! (" + path + ") -- ID " + id + " -- ",
       {
         error: err,
         errorId: id,
-        path: req.path,
+        path,
         teamId: req.acuc?.team_id,
         team_id: req.acuc?.team_id,
       },
@@ -379,7 +387,7 @@ app.use(
     res.status(500).json({
       success: false,
       code: "UNKNOWN_ERROR",
-      error: getErrorContactMessage(id),
+      error: service.modules.messages.errorContact(id),
     });
   },
 );

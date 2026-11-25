@@ -2,7 +2,7 @@ import { configDotenv } from "dotenv";
 import { config } from "../../config";
 configDotenv();
 
-import { TeamFlags } from "../../controllers/v1/types";
+import { TeamFlags } from "../../controllers/v2/types";
 
 // =========================================
 // Configuration
@@ -23,11 +23,11 @@ export const TEST_PRODUCTION = !TEST_SELF_HOST;
 // TODO: do we want to run AI tests when users run this command locally? It may lead to increased spending for them, depending on configuration
 export const HAS_AI = !!(config.OPENAI_API_KEY || config.OLLAMA_BASE_URL);
 export const HAS_FIREWORKS = !!process.env.FIREWORKS_API_KEY;
-export const HAS_FIRE_ENGINE = !!config.FIRE_ENGINE_BETA_URL;
+export const HAS_FIRE_ENGINE = !!process.env.FIRE_ENGINE_BETA_URL;
 export const HAS_PLAYWRIGHT = !!config.PLAYWRIGHT_MICROSERVICE_URL;
 export const HAS_PROXY = !!config.PROXY_SERVER;
-export const HAS_PRODUCT_SERVICE = !!config.PRODUCT_EXTRACTION_SERVICE_URL;
-export const HAS_MENU_SERVICE = !!config.MENU_EXTRACTION_SERVICE_URL;
+export const HAS_PRODUCT_SERVICE = !!process.env.PRODUCT_EXTRACTION_SERVICE_URL;
+export const HAS_MENU_SERVICE = !!process.env.MENU_EXTRACTION_SERVICE_URL;
 
 export const HAS_SEARCH = TEST_PRODUCTION || !!config.SEARXNG_ENDPOINT;
 
@@ -79,7 +79,8 @@ export type IdmuxRequest = {
 };
 
 function fallbackIdentity(): Identity {
-  if (!config.TEST_API_KEY || !config.TEST_TEAM_ID) {
+  const testTeamId = process.env.TEST_TEAM_ID;
+  if (!config.TEST_API_KEY || !testTeamId) {
     throw new Error(
       "TEST_API_KEY and TEST_TEAM_ID must be set to use self-hosted idmux fallback",
     );
@@ -87,29 +88,30 @@ function fallbackIdentity(): Identity {
 
   return {
     apiKey: config.TEST_API_KEY,
-    teamId: config.TEST_TEAM_ID,
+    teamId: testTeamId,
   };
 }
 
 export async function idmux(req: IdmuxRequest): Promise<Identity> {
-  if (!config.IDMUX_URL) {
+  const idmuxUrl = process.env.IDMUX_URL;
+  if (!idmuxUrl) {
     if (TEST_PRODUCTION) {
       console.warn("IDMUX_URL is not set, using test API key and team ID");
     }
     return fallbackIdentity();
   }
 
-  let runNumber = parseInt(config.GITHUB_RUN_NUMBER!);
+  let runNumber = parseInt(process.env.GITHUB_RUN_NUMBER!);
   if (isNaN(runNumber) || runNumber === null || runNumber === undefined) {
     runNumber = 0;
   }
 
   let res: Response;
   try {
-    res = await fetch(config.IDMUX_URL + "/", {
+    res = await fetch(idmuxUrl + "/", {
       method: "POST",
       body: JSON.stringify({
-        refName: config.GITHUB_REF_NAME!,
+        refName: process.env.GITHUB_REF_NAME!,
         runNumber,
         concurrency: req.concurrency ?? 100,
         ...req,

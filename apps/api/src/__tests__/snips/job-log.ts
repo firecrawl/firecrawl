@@ -1,63 +1,32 @@
-import { clickhouseClient } from "../../lib/clickhouse-client";
+/** Analytics job-log queries are disabled in core test runs. */
+export const HAS_JOB_LOG = false;
 
-/** Tests that read the job log skip unless CLICKHOUSE_ANALYTICS_URL is set. */
-export const HAS_JOB_LOG = clickhouseClient !== null;
-
-// The job log lives in ClickHouse, fed by ClickPipes a few seconds behind the
-// publish. Tables are ReplacingMergeTree ordered by (team_id, id); FINAL keeps
-// the latest publication of an id and the day bound prunes partitions.
 export async function jobLogRows<T extends Record<string, unknown>>(
-  table: string,
-  where: string,
-  params: Record<string, string | number>,
-  options: { orderBy?: string; limit?: number } = {},
+  _table: string,
+  _where: string,
+  _params: Record<string, string | number>,
+  _options: { orderBy?: string; limit?: number } = {},
 ): Promise<T[]> {
-  if (clickhouseClient === null) {
-    throw new Error("CLICKHOUSE_ANALYTICS_URL is required to read the job log");
-  }
-  const result = await clickhouseClient.query({
-    query: `SELECT * FROM ${table} FINAL WHERE ${where} AND created_at >= now() - INTERVAL 1 DAY${
-      options.orderBy ? ` ORDER BY ${options.orderBy}` : ""
-    }${options.limit ? ` LIMIT ${options.limit}` : ""}`,
-    query_params: params,
-    format: "JSONEachRow",
-  });
-  return result.json<T>();
+  throw new Error("Analytics job log is not configured in this build");
 }
 
-/** Polls until at least `min` rows match; returns the last read, which may be short. */
 export async function waitForJobLogRows<T extends Record<string, unknown>>(
-  table: string,
-  where: string,
-  params: Record<string, string | number>,
-  options: { orderBy?: string; limit?: number; min?: number } = {},
-  timeoutMs = 30000,
+  _table: string,
+  _where: string,
+  _params: Record<string, string | number>,
+  _options: { orderBy?: string; limit?: number; min?: number } = {},
+  _timeoutMs = 30000,
 ): Promise<T[]> {
-  const { min = 1, ...query } = options;
-  const deadline = Date.now() + timeoutMs;
-  let rows = await jobLogRows<T>(table, where, params, query);
-  while (rows.length < min && Date.now() < deadline) {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    rows = await jobLogRows<T>(table, where, params, query);
-  }
-  return rows;
+  throw new Error("Analytics job log is not configured in this build");
 }
 
-/** Polls for the newest matching row; null when none lands in time. */
 export async function waitForJobLogRow<T extends Record<string, unknown>>(
-  table: string,
-  where: string,
-  params: Record<string, string | number>,
-  timeoutMs = 30000,
+  _table: string,
+  _where: string,
+  _params: Record<string, string | number>,
+  _timeoutMs = 30000,
 ): Promise<T | null> {
-  const [row] = await waitForJobLogRows<T>(
-    table,
-    where,
-    params,
-    { orderBy: "created_at DESC", limit: 1 },
-    timeoutMs,
-  );
-  return row ?? null;
+  throw new Error("Analytics job log is not configured in this build");
 }
 
 /** Parses a job log JSON column; empty or malformed text reads as null. */

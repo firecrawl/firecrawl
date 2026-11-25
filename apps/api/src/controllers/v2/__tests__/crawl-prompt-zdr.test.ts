@@ -25,26 +25,6 @@ vi.mock("../../../lib/map-utils", () => ({
   buildPromptWithWebsiteStructure: mocks.buildPromptWithWebsiteStructure,
 }));
 
-vi.mock("../../../lib/threat-protection/request", () => ({
-  resolveThreatProtection: vi
-    .fn()
-    .mockResolvedValue({ orgConfig: null, policy: null }),
-}));
-
-vi.mock("../../../lib/key-restriction", async importOriginal => ({
-  ...(await importOriginal<typeof import("../../../lib/key-restriction")>()),
-  checkKeyFormatRestriction: vi.fn().mockResolvedValue({ allowed: true }),
-}));
-
-vi.mock("../../../services/logging/log_job", () => ({
-  logRequest: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock("../../../lib/request-credits-store", () => ({
-  initializeRequestCredits: vi.fn().mockResolvedValue(undefined),
-  requestCreditsShards: vi.fn().mockReturnValue(1),
-}));
-
 vi.mock("../../../lib/concurrency-limit", () => ({}));
 
 vi.mock("../../../lib/crawl-redis", () => ({
@@ -89,6 +69,7 @@ import {
 } from "../../../lib/otel-tracer";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { generateCompletions } from "../../../scraper/scrapeURL/transformers/llmExtract";
+import { createService, replaceService } from "../../../service/service";
 import { crawlController } from "../crawl";
 import { crawlParamsPreviewController } from "../crawl-params-preview";
 
@@ -126,11 +107,13 @@ function mockModel() {
 function makeReq(
   body: Record<string, unknown>,
   flags: Record<string, unknown>,
+  ctx?: Record<string, unknown>,
 ) {
   return {
     body,
     auth: { team_id: TEAM_ID },
     acuc: { api_key_id: 7, org_id: null, flags },
+    ...(ctx ? { ctx } : {}),
     headers: {},
     protocol: "http",
     host: "localhost",
@@ -156,11 +139,18 @@ describe("crawl prompt telemetry under zero data retention", () => {
   let provider: NodeTracerProvider;
 
   beforeAll(() => {
+    replaceService(
+      createService(
+        { modules: {} },
+        { core: { name: "core" }, logger: { error: vi.fn() } },
+      ),
+    );
     provider = createTracerProvider({ exporter, serviceName: "test-service" });
     provider.register();
   });
 
   afterAll(async () => {
+    replaceService(undefined);
     await provider.shutdown();
     trace.disable();
     context.disable();
@@ -208,20 +198,22 @@ describe("crawl prompt telemetry under zero data retention", () => {
 
   it.each([
     [
-      "team-scoped",
+      "context-scoped",
       { url: "https://example.com", prompt: PROMPT },
       { scrapeZDR: "forced" },
+      { teamId: TEAM_ID, zeroDataRetention: true },
     ],
     [
       "request-scoped",
       { url: "https://example.com", prompt: PROMPT, zeroDataRetention: true },
       { scrapeZDR: "allowed" },
+      undefined,
     ],
   ])(
     "records nothing from the prompt step of a %s ZDR crawl",
-    async (_scope, body, flags) => {
+    async (_scope, body, flags, ctx) => {
       const res = makeRes();
-      await crawlController(makeReq(body, flags), res);
+      await crawlController(makeReq(body, flags, ctx), res);
 
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(
@@ -238,20 +230,22 @@ describe("crawl prompt telemetry under zero data retention", () => {
 
   it.each([
     [
-      "team-scoped",
+      "context-scoped",
       { url: "https://example.com", prompt: PROMPT },
       { scrapeZDR: "forced" },
+      { teamId: TEAM_ID, zeroDataRetention: true },
     ],
     [
       "request-scoped",
       { url: "https://example.com", prompt: PROMPT, zeroDataRetention: true },
       {},
+      undefined,
     ],
   ])(
     "records nothing from a %s ZDR params preview",
-    async (_scope, body, flags) => {
+    async (_scope, body, flags, ctx) => {
       const res = makeRes();
-      await crawlParamsPreviewController(makeReq(body, flags), res);
+      await crawlParamsPreviewController(makeReq(body, flags, ctx), res);
 
       expect(res.status).toHaveBeenCalledWith(200);
       expect(telemetryOfCalls()).toEqual([

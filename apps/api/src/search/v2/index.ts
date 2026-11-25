@@ -1,12 +1,9 @@
 import { SearchV2Response, SearchResultType } from "../../lib/entities";
-import { config } from "../../config";
-import { fire_engine_search_v2 } from "./fireEngine-v2";
-import { searxng_search } from "./searxng";
-import { ddgSearch } from "./ddgsearch";
 import { Logger } from "winston";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
-import { matchesDomains } from "../operators";
-import type { TeamPlanClass } from "../../lib/team-plan-class";
+import type { TeamPlanClass } from "../../service/search-providers";
+import { service, type SearchQuery } from "../../service";
+import { searchWithProvider } from "../../lib/search-metrics";
 
 export async function search({
   query,
@@ -52,69 +49,47 @@ export async function search({
   /** The team's plan class, when the caller knows it. Omitted, nothing is stated. */
   teamPlanClass?: TeamPlanClass;
 }): Promise<SearchV2Response> {
-  // The fallback backends below take no US-only routing.
-  if (usOnly && !config.FIRE_ENGINE_BETA_URL) {
+  const enabledProviders = service.searchProviders.enabled();
+  const providers = usOnly
+    ? enabledProviders.filter(provider => provider.supportsUsOnly === true)
+    : enabledProviders;
+
+  if (usOnly && providers.length === 0) {
     throw new UsOnlyUnavailableError(
       "Search is not available for teams restricted to US-only processing on this deployment.",
     );
   }
+
+  const searchQuery: SearchQuery = {
+    query,
+    logger,
+    requestId,
+    advanced,
+    numResults: num_results,
+    tbs,
+    filter,
+    lang,
+    country,
+    location,
+    safe,
+    proxy,
+    sleepInterval: sleep_interval,
+    timeout,
+    type,
+    enterprise,
+    includeDomains,
+    excludeDomains,
+    usOnly,
+    teamPlanClass,
+  };
+
   try {
-    if (config.FIRE_ENGINE_BETA_URL) {
-      logger.info("Using fire engine search");
-      const results = await fire_engine_search_v2(query, {
-        requestId,
-        numResults: num_results,
-        tbs,
-        filter,
-        lang,
-        country,
-        location,
-        safe,
-        type,
-        enterprise,
-        includeDomains,
-        excludeDomains,
-        usOnly,
-        teamPlanClass,
-      });
-
-      return results;
+    for (const provider of providers) {
+      const result = await searchWithProvider(provider, searchQuery);
+      if (result != null) {
+        return result;
+      }
     }
-
-    // The providers below get the domains only as site: operators in the
-    // query, which they don't always honour, so their results are checked here.
-    const inDomains = (results: SearchV2Response) =>
-      (results.web ?? []).filter(result =>
-        matchesDomains(result.url, includeDomains, excludeDomains),
-      );
-
-    if (config.SEARXNG_ENDPOINT) {
-      logger.info("Using searxng search");
-      const web = inDomains(
-        await searxng_search(query, {
-          num_results,
-          tbs,
-          filter,
-          lang,
-          country,
-          location,
-          safe,
-        }),
-      );
-      if (web.length > 0) return { web };
-    }
-
-    logger.info("Using DuckDuckGo search");
-    const ddgWeb = inDomains(
-      await ddgSearch(query, num_results, {
-        tbs,
-        lang,
-        country,
-        proxy,
-        timeout,
-      }),
-    );
-    if (ddgWeb.length > 0) return { web: ddgWeb };
 
     // Fallback to empty response
     return {};

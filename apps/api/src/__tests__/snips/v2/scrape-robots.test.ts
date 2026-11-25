@@ -49,7 +49,7 @@ describe("Scrape robots policy", () => {
     scrapeURL(
       randomUUID(),
       TEST_SUITE_WEBSITE,
-      scrapeOptions.parse({ formats: ["rawHtml"], maxAge: 0 }),
+      scrapeOptions.parse({ formats: ["rawHtml"] }),
       {
         teamId: "scrape-robots-test",
         orgId: null,

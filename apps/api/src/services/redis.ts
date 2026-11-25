@@ -1,7 +1,11 @@
 import IORedis from "ioredis";
 import { config } from "../config";
-import { redisRateLimitClient } from "./rate-limiter";
 import { logger } from "../lib/logger";
+
+export const redisRateLimitClient = new IORedis(config.REDIS_RATE_LIMIT_URL!, {
+  lazyConnect: true,
+  enableAutoPipelining: true,
+});
 
 // Listen to 'error' events to the Redis connection
 redisRateLimitClient.on("error", error => {
@@ -74,5 +78,6 @@ export { setValue, getValue, deleteKey };
 
 const redisEvictURL = config.REDIS_EVICT_URL ?? config.REDIS_RATE_LIMIT_URL;
 export const redisEvictConnection = new IORedis(redisEvictURL!, {
+  lazyConnect: true,
   enableAutoPipelining: true,
 });

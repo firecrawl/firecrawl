@@ -1,381 +1,124 @@
 import { NextFunction, Request, Response } from "express";
-// import { crawlStatusController } from "../../src/controllers/v1/crawl-status";
 import {
-  isAgentExtractModelValid,
+  type AgentInteropStatus,
+  AuthCreditUsageChunk,
   RequestWithAuth,
   RequestWithMaybeAuth,
   RequestWithMaybeACUC,
-} from "../controllers/v1/types";
+} from "../controllers/v2/types";
 import { RateLimiterMode } from "../types";
-import { authenticateUser } from "../controllers/auth";
-import { applyAgentAuthDiscoveryHeader } from "../lib/agent-auth-discovery";
-import { createIdempotencyKey } from "../services/idempotency/create";
-import { validateIdempotencyKey } from "../services/idempotency/validate";
-import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
+import { requestContext } from "../lib/request-context";
 import { logger } from "../lib/logger";
-import { logAuthDenied } from "../lib/auth-denied-log";
 import {
   httpRequestDurationSeconds,
   getRoutePattern,
 } from "../lib/http-metrics";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
 import * as geoip from "geoip-country";
-import { isSelfHosted } from "../lib/deployment";
+import { claimIdempotencyKey } from "../lib/idempotency";
+import {
+  service,
+  type AuthRoute,
+  type BillingOperation,
+  type Caller,
+} from "../service";
+import {
+  rejectRequest,
+  requestKindForPath,
+  sendRefusal,
+} from "../service/http";
+import type {} from "../lib/billing-state";
 import { validate as isUuid } from "uuid";
 
 import { config } from "../config";
-import { CREDIT_CHECK_EXEMPT_TEAM_ID } from "../controllers/v2/agent-credit-gate";
-import {
-  autumnService,
-  CREDITS_FEATURE_ID,
-} from "../services/autumn/autumn.service";
-import { getTeamBalance } from "../services/autumn/usage";
-import {
-  checkHostedMcpCredits,
-  hostedMcpCreditsRefusal,
-} from "../services/autumn/hosted-mcp-gate";
-import { getApiKeySpendLimit } from "../lib/api-key-spend-limit";
-import {
-  ThirdPartyDataTermsRequiredError,
-  ThirdPartyDataUnsupportedOptionError,
-} from "../lib/exchange";
-import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
-import { isFreeCatalogueSearch } from "../search/alexandria";
-import { wantsGovCategory } from "../search/gov";
-import { getScrapeZDR, getThreatProtection } from "../lib/zdr-helpers";
-import { getSafeMode, isLockdownZeroDataRetention } from "../lib/safe-mode";
-import {
-  agentInteropStatus,
-  isAgentInteropSecretValid,
-} from "../lib/agent-interop";
-import { inferIntegration } from "../lib/infer-integration";
-import { resolveIntegration } from "../utils/integration";
+
+function billingOperationForPath(path: string): BillingOperation {
+  switch (path.replace(/^\/v\d+/, "")) {
+    case "/scrape":
+      return "scrape";
+    case "/parse":
+      return "parse";
+    case "/search":
+      return "search";
+    case "/map":
+      return "map";
+    case "/crawl":
+    case "/crawl/params-preview":
+      return "crawl";
+    case "/batch/scrape":
+      return "batchScrape";
+    default:
+      return "other";
+  }
+}
 
 export function checkCreditsMiddleware(
   _minimum?: number,
-  featureId: string = CREDITS_FEATURE_ID,
-  // Set on routes that bill a hosted MCP call to MCP credits.
+  featureId?: string,
   { mcpCredits = false }: { mcpCredits?: boolean } = {},
 ): (req: RequestWithAuth, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
-    let minimum = _minimum;
     (async () => {
-      if (
-        config.AGENT_INTEROP_SECRET &&
-        req.body &&
-        (req.body as any).__agentInterop &&
-        (req.body as any).__agentInterop.auth &&
-        isAgentInteropSecretValid((req.body as any).__agentInterop.auth) &&
-        (req.body as any).__agentInterop.shouldBill === false
-      ) {
-        return next();
-      }
-
-      // Agent-provisioned key enforcement: check sponsor status and 50-credit cap
-      if (req.acuc?._agentSponsor) {
-        const sponsor = req.acuc._agentSponsor;
-
-        if (sponsor.status === "blocked") {
-          logAuthDenied(req, 403, "agent_key_blocked", req.acuc);
-          return res.status(403).json({
-            success: false,
-            error: "This API key has been blocked by the account holder.",
-          });
-        }
-
-        if (sponsor.status === "pending") {
-          const deadline = new Date(sponsor.verification_deadline);
-          if (deadline < new Date()) {
-            logAuthDenied(req, 403, "agent_key_verification_expired", req.acuc);
-            return res.status(403).json({
-              success: false,
-              error: "sponsor_verification_expired",
-              message:
-                "Sponsor verification has expired. The account holder needs to log in to confirm.",
-              login_url: "https://firecrawl.dev/signin",
-            });
-          }
-
-          // Enforce 50-credit cap for unverified agent keys. Autumn is the
-          // source of truth for credit usage: getTeamBalance().usage is the
-          // team's credits used this period. If Autumn is unavailable we fail
-          // open (skip the cap), matching the Autumn-outage behavior of the
-          // main credit check below.
-          const UNVERIFIED_CREDIT_LIMIT = 50;
-          let unverifiedCreditsUsed: number | null = null;
-          try {
-            const balance = await getTeamBalance(req.auth.team_id);
-            unverifiedCreditsUsed = balance?.usage ?? 0;
-          } catch (balanceError) {
-            logger.warn(
-              "Failed to fetch Autumn balance for unverified agent-key cap; failing open",
-              { error: balanceError, teamId: req.auth.team_id },
-            );
-          }
-          if (
-            unverifiedCreditsUsed !== null &&
-            unverifiedCreditsUsed >= UNVERIFIED_CREDIT_LIMIT
-          ) {
-            return res.status(402).json({
-              success: false,
-              error: "unverified_credit_limit_reached",
-              message:
-                "This agent key has used its 50 unverified credits. Ask the account holder to confirm the key to unlock full access.",
-              credit_limit: UNVERIFIED_CREDIT_LIMIT,
-              credits_used: unverifiedCreditsUsed,
-              sponsor_status: "pending",
-              login_url: "https://firecrawl.dev/signin",
-              upgrade_url: "https://firecrawl.dev/pricing",
-            });
-          }
-
-          // Force index-only mode for all pre-confirmation agent requests
-          (req as any).agentIndexOnly = true;
-        }
-        // If verified, fall through to normal credit check (key is now on real account)
-      }
-
-      // Catalogue discovery and Government Index results are free; provider
-      // execution reserves its own credits. A gov search still pays to scrape
-      // its results, and for threat scans where threat protection or Safe Mode
-      // can turn them on.
-      const sources = (req.body as any)?.sources;
-      const categories = (req.body as any)?.categories;
-      const formats = (req.body as any)?.scrapeOptions?.formats;
-      const freeGovSearch =
-        wantsGovCategory(categories) &&
-        !(Array.isArray(formats) && formats.length > 0) &&
-        getThreatProtection(req.acuc?.flags) === "disabled" &&
-        !getSafeMode(req.acuc?.flags);
-      const freeSearch =
-        req.path === "/search" &&
-        (isFreeCatalogueSearch(sources, categories) || freeGovSearch);
-      if (
-        (req.path === "/scrape" &&
-          (req.body as any)?.alexandria !== undefined) ||
-        freeSearch
-      ) {
-        req.account = { remainingCredits: Infinity };
-        return next();
-      }
-
-      if (!minimum && req.body) {
-        minimum = Number(
+      let requestedUnits = _minimum;
+      if (requestedUnits === undefined && req.body) {
+        const derived = Number(
           (req.body as any)?.limit ?? (req.body as any)?.urls?.length ?? 1,
         );
-        if (isNaN(minimum) || !isFinite(minimum) || minimum <= 0) {
-          minimum = undefined;
+        if (Number.isFinite(derived) && derived > 0) {
+          requestedUnits = derived;
         }
       }
 
-      // The agent controller gates credits itself, after it has consumed a
-      // free request: only a consumed one may skip the check.
-      if (req.path.startsWith("/agent")) {
-        return next();
-      }
-
-      const requestedCredits = minimum ?? 1;
-
-      // No org means no billable identity to gate: keyless and preview teams
-      // carry none, and neither does the DB-authentication bypass. `checkCredits`
-      // answered null for exactly those, so take its fail-open branch here
-      // rather than hand the service an org it would have to go and find.
-      const orgId = req.auth.org_id;
-      if (!orgId) {
-        req.account = { remainingCredits: Infinity };
-        return next();
-      }
-
-      const check = {
-        teamId: req.auth.team_id,
-        // The ACUC already carries the org, so the credit check does not have
-        // to read `teams.org_id` for it.
-        orgId,
-        value: requestedCredits,
-        properties: {
-          source: "checkCreditsMiddleware",
-          path: req.path,
-          apiKeyId: req.acuc?.api_key_id ?? null,
+      const authz = await service.modules.billing.authorize({
+        caller: req.caller ?? { teamId: req.auth.team_id },
+        operation: billingOperationForPath(req.path),
+        stage: "preflight",
+        requestedUnits,
+        state: {
+          req,
+          minimum: _minimum,
+          featureId,
+          mcpCredits,
         },
-        featureId,
-      };
-      // Gated on the balance its charge will be tracked on.
-      const gate: Awaited<ReturnType<typeof checkHostedMcpCredits>> =
-        mcpCredits && req.auth.hostedMcp
-          ? await checkHostedMcpCredits(check)
-          : {
-              result: await autumnService.checkCredits(check),
-              featureId,
-              onTeamCredits: false,
-            };
-      if (gate.onTeamCredits) req.auth.hostedMcp = false;
-      const autumnResult = gate.result;
-      const gateFeatureId = gate.featureId;
+      });
 
-      // Autumn is the source of truth for credits. If it's unavailable
-      // (returns null), fail open — matches the behavior in browser.ts /
-      // scrape-browser.ts and avoids turning an Autumn outage into a
-      // customer outage.
-      if (autumnResult === null) {
-        req.account = { remainingCredits: Infinity };
-        return next();
-      }
-
-      const success = autumnResult.allowed;
-      const onGateFeature = {
-        remaining: autumnResult.remaining,
-        featureId: gateFeatureId,
-        onTeam: false,
-      };
-      // A hosted call both balances refuse tries the team clamp first when the
-      // team covers more, then MCP credits.
-      const clamps =
-        gate.teamRefusal && gate.teamRefusal.remaining > autumnResult.remaining
-          ? [
-              {
-                remaining: gate.teamRefusal.remaining,
-                featureId,
-                onTeam: true,
-              },
-              onGateFeature,
-            ]
-          : [onGateFeature];
-      // When Autumn allows the request (including overage), don't let a
-      // small remaining balance clamp downstream limits (e.g. crawl).
-      const remainingCredits = success ? Infinity : clamps[0].remaining;
-      req.account = { remainingCredits };
-      if (!success) {
-        const requestedLimit = Number((req.body as any)?.limit);
-        for (const clampOn of clamps) {
-          const clampedLimit = Math.min(requestedLimit, clampOn.remaining);
-          if (
-            !_minimum &&
-            req.body &&
-            (req.body as any).limit !== undefined &&
-            Number.isFinite(clampedLimit) &&
-            clampedLimit > 0
-          ) {
-            // `remaining` is the team's credit balance, and a per-API-key spend
-            // limit never lowers it, so a key over its own cap still reports a
-            // healthy balance here. Re-check the clamped limit so only a genuinely
-            // low team balance gets shrunk to fit; a per-key denial falls through
-            // to the 402 below. A null re-check keeps the fail-open behavior.
-            const clampedResult = await autumnService.checkCredits({
-              teamId: req.auth.team_id,
-              orgId,
-              value: clampedLimit,
-              properties: {
-                source: "checkCreditsMiddleware:clamp",
-                path: req.path,
-                apiKeyId: req.acuc?.api_key_id ?? null,
-              },
-              featureId: clampOn.featureId,
-            });
-
-            if (clampedResult === null || clampedResult.allowed) {
-              if (clampOn.onTeam) req.auth.hostedMcp = false;
-              logger.warn("Adjusting limit to remaining credits", {
-                teamId: req.auth.team_id,
-                remainingCredits: clampOn.remaining,
-                clampedLimit,
-              });
-              (req.body as any).limit = clampedLimit;
-              return next();
+      if (!authz.ok) {
+        if (!res.headersSent) {
+          if (authz.refusal.headers) {
+            for (const [name, value] of Object.entries(authz.refusal.headers)) {
+              res.setHeader(name, value);
             }
           }
+          return res.status(authz.refusal.status).json(authz.refusal.body);
         }
+        return;
+      }
 
-        const currencyName = req.acuc?.is_extract ? "tokens" : "credits";
-        logger.error(
-          `Insufficient ${currencyName}: ${JSON.stringify({ team_id: req.auth.team_id, minimum, remainingCredits })}`,
-          {
-            teamId: req.auth.team_id,
-            minimum,
-            remainingCredits,
-            path: req.path,
-          },
-        );
-        // A Gateway account's credits come from the platform that created
-        // it, so its user has no plan of their own to upgrade.
-        if (
-          !res.headersSent &&
-          req.auth.team_id !== CREDIT_CHECK_EXEMPT_TEAM_ID &&
-          autumnResult.gatewayProvisioned === true
-        ) {
-          return res.status(402).json({
-            success: false,
-            code: "platform_managed_credits",
-            error: `Insufficient ${currencyName} to perform this request. This account's ${currencyName} are managed by the platform that created it, so contact that platform for more ${currencyName}.`,
-          });
-        }
-        if (
-          !res.headersSent &&
-          req.auth.team_id !== CREDIT_CHECK_EXEMPT_TEAM_ID &&
-          currencyName === "tokens"
-        ) {
-          return res.status(402).json({
-            success: false,
-            error:
-              "Insufficient tokens to perform this request. For more tokens, you can upgrade your plan at https://www.firecrawl.dev/extract#pricing.",
-          });
-        }
-        if (
-          !res.headersSent &&
-          req.auth.team_id !== CREDIT_CHECK_EXEMPT_TEAM_ID
-        ) {
-          // Name the limit that refused the request: the balance alone can't
-          // explain a refusal that leaves credits on the dashboard.
-          const resetsAt = autumnResult.resetsAt
-            ? new Date(autumnResult.resetsAt).toISOString()
-            : undefined;
-          if (gateFeatureId !== featureId) {
-            return res.status(402).json({
-              success: false,
-              code: "mcp_credits_exhausted",
-              requested_credits: requestedCredits,
-              ...(resetsAt ? { resets_at: resetsAt } : {}),
-              error: hostedMcpCreditsRefusal(autumnResult.resetsAt),
-            });
-          }
-
-          const apiKeyId = req.acuc?.api_key_id;
-          const keyLimit =
-            apiKeyId && autumnResult.remaining >= requestedCredits
-              ? await getApiKeySpendLimit(apiKeyId)
-              : null;
-          if (keyLimit) {
-            return res.status(402).json({
-              success: false,
-              code: "api_key_spend_limit",
-              requested_credits: requestedCredits,
-              remaining_credits: autumnResult.remaining,
-              limit: {
-                type: "api_key",
-                credits: keyLimit.credits,
-                interval: keyLimit.interval,
-              },
-              error:
-                `This API key has reached its spend limit of ${keyLimit.credits} credits per ${keyLimit.interval}, while your team still has ${autumnResult.remaining} credits. ` +
-                (requestedCredits > keyLimit.credits
-                  ? `This request can use up to ${requestedCredits} credits, more than the key's whole limit, so lower the request's limit or raise the key's limit on the API Keys page at https://www.firecrawl.dev/app/api-keys.`
-                  : `Raise or remove the key's limit on the API Keys page at https://www.firecrawl.dev/app/api-keys, use another key, or wait for the limit to reset next ${keyLimit.interval}.`),
-            });
-          }
-
-          return res.status(402).json({
-            success: false,
-            code: "insufficient_credits",
-            requested_credits: requestedCredits,
-            remaining_credits: autumnResult.remaining,
-            ...(resetsAt ? { resets_at: resetsAt } : {}),
-            error: `Insufficient credits to perform this request: it can use up to ${requestedCredits} credits and your team has ${autumnResult.remaining} left${resetsAt ? `, with plan credits resetting at ${resetsAt}` : ""}. For more credits, you can upgrade your plan at https://firecrawl.dev/pricing or try changing the request limit to a lower value.`,
-          });
-        }
+      req.account = { remainingCredits: authz.maxUnits ?? Infinity };
+      if (
+        authz.clampedLimit !== undefined &&
+        req.body &&
+        typeof req.body === "object"
+      ) {
+        (req.body as any).limit = authz.clampedLimit;
       }
       next();
     })().catch(err => next(err));
   };
 }
+
+type LegacyAuthRoute = AuthRoute & {
+  allowKeyless?: boolean;
+  allowAgentManagedKey?: boolean;
+  hostedMcpRateLimit?: boolean;
+};
+
+type LegacyCallerFields = {
+  orgId?: string | null;
+  chunk?: AuthCreditUsageChunk | null;
+  agentInterop?: AgentInteropStatus;
+  hostedMcp?: boolean;
+};
 
 export function authMiddleware(
   rateLimiterMode: RateLimiterMode,
@@ -392,83 +135,49 @@ export function authMiddleware(
           ? options.allowKeyless(req)
           : options.allowKeyless;
 
-      const auth = await authenticateUser(req, res, rateLimiterMode, {
-        ...options,
-        allowKeyless,
-      });
+      const route: LegacyAuthRoute = {
+        kind: rateLimiterMode,
+        ...(allowKeyless !== undefined ? { allowKeyless } : {}),
+        ...(options.allowAgentManagedKey !== undefined
+          ? { allowAgentManagedKey: options.allowAgentManagedKey }
+          : {}),
+        ...(options.hostedMcpRateLimit !== undefined
+          ? { hostedMcpRateLimit: options.hostedMcpRateLimit }
+          : {}),
+      };
 
-      if (!auth.success) {
-        if (!res.headersSent) {
-          if (auth.status === 401 || auth.agentAuthDiscovery) {
-            applyAgentAuthDiscoveryHeader(res);
-          }
-          if (auth.retryAfterSeconds) {
-            res.setHeader("Retry-After", String(auth.retryAfterSeconds));
-          }
-          return res.status(auth.status).json({
-            success: false,
-            error: auth.error,
-            ...(auth.keylessReason ? { reason: auth.keylessReason } : {}),
-            ...(auth.retryAfterSeconds
-              ? { retry_after_seconds: auth.retryAfterSeconds }
-              : {}),
-            ...(auth.signupUrl ? { signup_url: auth.signupUrl } : {}),
-          });
+      const result = await service.modules.auth.authenticate(req, route);
+
+      if (!result.ok) {
+        const requestKind = requestKindForPath(req.path);
+        if (requestKind) {
+          rejectRequest(req, res, requestKind, result.refusal);
         } else {
-          return;
+          sendRefusal(res, result.refusal);
+        }
+        return;
+      }
+
+      if (!res.headersSent) {
+        for (const [name, value] of Object.entries(result.headers ?? {})) {
+          res.setHeader(name, value);
         }
       }
 
-      const { team_id, org_id, chunk } = auth;
-      const agentInterop = agentInteropStatus(req);
-      // An agent run started by a hosted MCP call makes its own calls under
-      // the interop secret, and says so in the interop block. Only a trusted
-      // block may say it: the run itself was verified when it started.
-      const hostedMcp =
-        auth.hostedMcp ||
-        (agentInterop === "trusted" &&
-          (req.body as any)?.__agentInterop?.hostedMcp === true);
-
+      const caller = result.caller as Caller & LegacyCallerFields;
       req.auth = {
-        team_id,
-        org_id,
-        agentInterop,
-        ...(hostedMcp ? { hostedMcp: true } : {}),
+        team_id: caller.teamId,
+        org_id: caller.orgId ?? null,
+        ...(caller.agentInterop !== undefined
+          ? { agentInterop: caller.agentInterop }
+          : {}),
+        ...(caller.hostedMcp === true ? { hostedMcp: true } : {}),
       };
-      req.acuc = chunk ?? undefined;
-      req.caller = { teamId: team_id };
+      req.acuc = caller.chunk ?? undefined;
+      req.caller = result.caller;
       next();
     })().catch(err => next(err));
   };
-}
-
-/**
- * Sets the body `integration` via resolveIntegration, then infers a still
- * missing one. An invalid header is ignored.
- */
-export function inferIntegrationMiddleware(
-  req: Request,
-  _res: Response,
-  next: NextFunction,
-) {
-  const body = req.body;
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    return next();
-  }
-
-  const resolved = resolveIntegration(body.integration, req);
-  if (resolved !== undefined) {
-    body.integration = resolved;
-  } else if (config.INFER_INTEGRATION_ENABLED) {
-    const inferred = inferIntegration({
-      origin: req.get("origin"),
-      referer: req.get("referer"),
-      userAgent: req.get("user-agent"),
-      bodyOrigin: body.origin,
-    });
-    if (inferred) body.integration = inferred;
-  }
-  next();
 }
 
 export function idempotencyMiddleware(
@@ -477,112 +186,70 @@ export function idempotencyMiddleware(
   next: NextFunction,
 ) {
   (async () => {
-    if (req.headers["x-idempotency-key"]) {
-      const isIdempotencyValid = await validateIdempotencyKey(req);
-      if (!isIdempotencyValid) {
+    const rawHeader = req.headers["x-idempotency-key"];
+    if (rawHeader) {
+      const teamId =
+        req.ctx?.teamId ??
+        req.caller?.teamId ??
+        (req as RequestWithMaybeAuth).auth?.team_id ??
+        "bypass";
+      const claimed = await claimIdempotencyKey(rawHeader, teamId);
+      if (!claimed) {
         if (!res.headersSent) {
           return res
             .status(409)
             .json({ success: false, error: "Idempotency key already used" });
         }
+        return;
       }
-      createIdempotencyKey(req);
     }
     next();
   })().catch(err => next(err));
 }
+
 export function blocklistMiddleware(
   req: RequestWithMaybeACUC<any, any, any>,
   res: Response,
   next: NextFunction,
 ) {
-  return blocklistGate(req, res, next, { exchange: false });
-}
-
-/**
- * Blocklist gate for single-URL scrape-shaped routes (scrape, crawl), where a
- * blocklisted URL still passes when the exchange engine can serve it, asks
- * for the provider's terms when unaccepted terms are all that stands in the
- * way, and names the request option that keeps a provider out. Unblocked
- * URLs never consult the Exchange here: engine selection decides for them,
- * identically on every route, and scrapes them normally when terms are
- * missing. v2 batch scrape runs the same check per URL in its controller;
- * map, search and monitors keep plain blocklist behavior.
- */
-export function scrapeBlocklistMiddleware(
-  req: RequestWithMaybeACUC<any, any, any>,
-  res: Response,
-  next: NextFunction,
-) {
-  return blocklistGate(req, res, next, { exchange: true });
-}
-
-function blocklistGate(
-  req: RequestWithMaybeACUC<any, any, any>,
-  res: Response,
-  next: NextFunction,
-  options: { exchange: boolean },
-) {
   (async () => {
+    if (typeof req.body?.url !== "string") {
+      return next();
+    }
+    const flags = (req.acuc?.flags ?? null) as Record<string, unknown> | null;
+    const forcedZdr =
+      flags?.scrapeZDR === "forced" ||
+      flags?.forceZDR === true ||
+      flags?.allowZDR === "forced";
+    const safeModeConfig =
+      flags?.safeModeConfig && typeof flags.safeModeConfig === "object"
+        ? (flags.safeModeConfig as Record<string, unknown>)
+        : undefined;
+    const safeModeBypassed =
+      req.body.safeMode === false &&
+      safeModeConfig?.allowBypassSafeMode === true;
+    const safeModeLockdown =
+      flags?.safeMode === true &&
+      !safeModeBypassed &&
+      safeModeConfig?.lockdown === true;
+    const blockCtx = requestContext({
+      teamId: req.ctx?.teamId ?? req.acuc?.team_id ?? "",
+      zeroDataRetention:
+        req.ctx?.zeroDataRetention === true ||
+        forcedZdr ||
+        safeModeLockdown ||
+        req.body.zeroDataRetention === true ||
+        req.body.lockdown === true,
+      flags: req.acuc?.flags ?? null,
+      orgId: req.ctx?.orgId ?? req.acuc?.org_id ?? null,
+    });
     if (
-      typeof req.body.url !== "string" ||
-      !isUrlBlocked(req.body.url, req.acuc?.flags ?? null, {
-        team_id: req.acuc?.team_id ?? null,
-        org_id: req.acuc?.org_id ?? null,
+      !service.modules.blocklist.isBlocked(req.body.url, blockCtx, {
         origin: typeof req.body.origin === "string" ? req.body.origin : null,
-        zeroDataRetention:
-          req.body.zeroDataRetention === true || req.body.lockdown === true,
-        safeMode: req.body.safeMode,
       })
     ) {
       return next();
     }
-
-    if (options.exchange) {
-      // Safe Mode lockdown implies ZDR, which keeps the Exchange out.
-      const zeroDataRetention =
-        getScrapeZDR(req.acuc?.flags) === "forced" ||
-        req.body?.zeroDataRetention === true ||
-        isLockdownZeroDataRetention(req.acuc?.flags, req.body?.safeMode);
-      const exchangeAccess = await getExchangeAccessForRequestBody({
-        body: req.body,
-        flags: req.acuc?.flags ?? null,
-        url: req.body.url,
-        blocked: true,
-        zeroDataRetention,
-        teamId: req.acuc?.team_id ?? null,
-        orgId: req.acuc?.org_id ?? null,
-      });
-
-      if (exchangeAccess.allowed) {
-        return next();
-      }
-
-      if (exchangeAccess.termsRequired && !res.headersSent) {
-        return res
-          .status(403)
-          .json(
-            new ThirdPartyDataTermsRequiredError(
-              exchangeAccess.terms,
-            ).response(),
-          );
-      }
-
-      if (
-        !exchangeAccess.termsRequired &&
-        exchangeAccess.unsupportedOption !== undefined &&
-        !res.headersSent
-      ) {
-        return res
-          .status(400)
-          .json(
-            new ThirdPartyDataUnsupportedOptionError(
-              exchangeAccess.unsupportedOption,
-            ).response(),
-          );
-      }
-    }
-
     if (!res.headersSent) {
       return res.status(403).json({
         success: false,
@@ -621,9 +288,7 @@ export function countryCheck(
     });
     return res.status(403).json({
       success: false,
-      error: isSelfHosted()
-        ? "Use of headers, actions, the agent, and browser/interact sessions is not allowed by default in your country. Please check your server configuration."
-        : "Use of headers, actions, the agent, and browser/interact sessions is not allowed by default in your country. Please contact us at help@firecrawl.com",
+      error: `Use of headers, actions, the agent, and browser/interact sessions is not allowed by default in your country. ${service.modules.messages.restrictedCountryContact()}`,
     });
   }
 

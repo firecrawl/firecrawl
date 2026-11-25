@@ -12,7 +12,6 @@ import {
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import { scrape, scrapeRaw, crawlStart } from "./lib";
-import { V1_LIVE } from "../v1/lib";
 
 const TEST_SUITE_HOST = new URL(TEST_SUITE_WEBSITE).hostname;
 
@@ -27,7 +26,7 @@ async function expectSafeModeBlocked(
   return res.body;
 }
 
-describe("Safe Mode (v2 scrape, request-time)", () => {
+describeIf(TEST_PRODUCTION)("Safe Mode (v2 scrape, request-time)", () => {
   describe("org flag off", () => {
     let identity: Identity;
 
@@ -43,20 +42,6 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
           identity,
         );
         expect(body.error).toMatch(/not enabled/i);
-      },
-      scrapeTimeout,
-    );
-
-    concurrentIf(V1_LIVE)(
-      "v1 accepts + honors the safeMode param (rejects safeMode: true)",
-      async () => {
-        const res = await request(TEST_API_URL)
-          .post("/v1/scrape")
-          .set("Authorization", `Bearer ${identity.apiKey}`)
-          .set("Content-Type", "application/json")
-          .send({ url: createTestIdUrl(), safeMode: true });
-        expect(res.statusCode).toBe(403);
-        expect(res.body.code).toBe("SAFE_MODE_BLOCKED");
       },
       scrapeTimeout,
     );

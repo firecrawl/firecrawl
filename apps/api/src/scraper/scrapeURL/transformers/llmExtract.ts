@@ -9,7 +9,7 @@ import {
 import { Logger } from "winston";
 import { Meta } from "..";
 import { logger } from "../../../lib/logger";
-import { modelPrices } from "../../../lib/extract/usage/model-prices";
+import { modelPrices } from "../../../lib/model-prices";
 import {
   AISDKError,
   generateObject,
@@ -1031,10 +1031,12 @@ export async function performLLMExtract(
       markdown: document.markdown,
       previousWarning: document.warning,
       model: getModel(modelSelection.modelName, "openai", {
+        ctx: meta.ctx,
         teamFlags,
         feature: "JSON format",
       }),
       retryModel: getModel("gpt-4.1-mini", "openai", {
+        ctx: meta.ctx,
         teamFlags,
         feature: "JSON format",
       }),

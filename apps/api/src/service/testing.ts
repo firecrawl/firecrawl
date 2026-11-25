@@ -7,18 +7,25 @@ import {
   type CoreParts,
   type Extension,
   type Modules,
+  type ModulesConfig,
   type Service,
 } from "./service";
 
-/** Builds a service from a full set of modules, with any of them replaced and any extension added. */
+/** Builds a service from module defaults or a base set, with any of them replaced and any extension added. */
 export function testService(
-  base: Modules,
+  base: ModulesConfig,
   parts: CoreParts,
   overrides: Partial<Modules> = {},
   extensions: Extension[] = [],
 ): Service {
+  const modules: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value !== undefined) {
+      modules[key] = value;
+    }
+  }
   return createService(
-    { modules: { ...base, ...overrides }, extensions },
+    { modules: modules as ModulesConfig, extensions },
     parts,
   );
 }
