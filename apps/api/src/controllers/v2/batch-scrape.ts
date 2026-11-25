@@ -188,8 +188,8 @@ export async function batchScrapeController(
       };
 
   if (req.body.appendToId) {
-    sc.ctx = ctx;
-    sc.internalOptions.ctx = ctx;
+    sc.ctx = blockCtx;
+    sc.internalOptions.ctx = blockCtx;
     sc.internalOptions.bypassBilling = !(
       extBody.__agentInterop?.shouldBill ?? true
     );

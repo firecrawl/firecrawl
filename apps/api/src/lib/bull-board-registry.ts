@@ -25,9 +25,7 @@ export function registerBullBoardQueue(queue: Queue): void {
  */
 export function bindBullBoard(binder: BullBoardQueueBinder): void {
   binders.push(binder);
-}
-
-/** Returns a snapshot of extra queues registered for Bull Board display. */
-export function getRegisteredBullBoardQueues(): readonly Queue[] {
-  return registeredQueues;
+  for (const queue of registeredQueues) {
+    binder(queue);
+  }
 }

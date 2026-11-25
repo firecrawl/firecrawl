@@ -108,12 +108,14 @@ describe("countryCheck middleware", () => {
     expect(res.status).toBe(204);
   });
 
-  it("rejects requests without a team ACUC from a restricted country", async () => {
+  it("rejects restricted scrape options without a team ACUC from a restricted country", async () => {
     fromCountry("XX");
     mocks.auth = { team_id: "preview_keyless_127.0.0.1" };
     mocks.acuc = undefined;
 
-    const res = await request(app).post("/country-checked").send({});
+    const res = await request(app)
+      .post("/v2/scrape")
+      .send({ url: "https://example.com", headers: { "x-test": "1" } });
 
     expect(res.status).toBe(403);
   });

@@ -39,7 +39,9 @@ async function searchContextFor(
     caller,
   };
 
-  await searchController(req, makeRes());
+  const res = makeRes();
+  await searchController(req, res);
+  expect(res.status).toHaveBeenCalledWith(200);
 
   expect(mockExecuteSearch).toHaveBeenCalledTimes(1);
   return mockExecuteSearch.mock.calls[0][1];

@@ -14,7 +14,7 @@ export { livenessController, readinessController } from "../controllers/health";
 export {
   registerAdminMetricsCollector,
   type AdminMetricsCollector,
-} from "../controllers/admin/metrics";
+} from "../lib/admin-metrics-registry";
 export { claimIdempotencyKey } from "../lib/idempotency";
 export type { AgentInteropStatus } from "../controllers/v2/types";
 export {

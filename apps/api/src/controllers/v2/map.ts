@@ -24,6 +24,7 @@ export async function mapController(
 ) {
   const zeroDataRetention = req.ctx?.zeroDataRetention === true;
   const mapId = req.requestId ?? uuidv7();
+  req.requestId ??= mapId;
   const logger = _logger.child({
     jobId: mapId,
     teamId: req.auth.team_id,

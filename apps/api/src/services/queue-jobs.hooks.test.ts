@@ -134,6 +134,10 @@ function installHooks(hooks?: HookHandlers, report = vi.fn()) {
               mocks.unlimitedConcurrency()
                 ? null
                 : ((await mocks.getACUCTeam())?.concurrency_limit ?? 2),
+            teamConcurrency: async () =>
+              mocks.unlimitedConcurrency()
+                ? null
+                : ((await mocks.getACUCTeam())?.concurrency_limit ?? 2),
           },
         },
         extensions: hooks ? [{ name: "test-hooks", hooks }] : [],

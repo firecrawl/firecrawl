@@ -5,10 +5,7 @@ import express, { NextFunction, Request, Response } from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
 import { getPrecrawlQueue } from "./services/queue-service";
-import {
-  bindBullBoard,
-  getRegisteredBullBoardQueues,
-} from "./lib/bull-board-registry";
+import { bindBullBoard } from "./lib/bull-board-registry";
 import { livenessController, readinessController } from "./controllers/health";
 import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
 import os from "os";
@@ -93,14 +90,9 @@ if (config.EXPRESS_TRUST_PROXY) {
   app.set("trust proxy", config.EXPRESS_TRUST_PROXY);
 }
 
-const bullBoardQueues = [
-  new BullMQAdapter(getPrecrawlQueue()),
-  ...getRegisteredBullBoardQueues().map(queue => new BullMQAdapter(queue)),
-];
-
 function attachBullBoard(serverAdapter: any) {
   const board = createBullBoard({
-    queues: [...bullBoardQueues],
+    queues: [new BullMQAdapter(getPrecrawlQueue())],
     serverAdapter,
   });
   bindBullBoard(queue => {

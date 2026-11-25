@@ -426,6 +426,7 @@ export function unrestrictedPolicy(): PolicyModule<BaseRequestContext> {
         : [];
       const zeroDataRetention =
         record.zeroDataRetention === true ||
+        record.lockdown === true ||
         (kind === "search" &&
           (enterprise.includes("zdr") || enterprise.includes("anon")));
       const ignoreRobotsTxt =

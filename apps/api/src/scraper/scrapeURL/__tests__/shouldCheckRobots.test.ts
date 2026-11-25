@@ -29,5 +29,11 @@ describe("shouldCheckRobots", () => {
     expect(
       shouldCheckRobots({ lockdown: false }, { checkRobotsOnScrape: true }),
     ).toBe(true);
+    expect(
+      shouldCheckRobots(
+        { lockdown: false },
+        { flags: { checkRobotsOnScrape: true } },
+      ),
+    ).toBe(true);
   });
 });

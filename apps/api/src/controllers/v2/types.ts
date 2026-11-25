@@ -1854,7 +1854,11 @@ function applyExtractTransformAndRules<T extends Record<string, unknown>>(
   ) {
     result = { ...result, timeout: 60000 };
   }
-  if (result.proxy === "auto" && originalTimeout === 30000) {
+  if (
+    result.proxy === "auto" &&
+    originalTimeout === 30000 &&
+    result.timeout === 30000
+  ) {
     result = { ...result, timeout: 120000 };
   }
   return result;
@@ -2185,6 +2189,10 @@ export function buildV2RequestSchemas(
           )
       : scrapeOptions;
 
+  if (Object.hasOwn(scrapeOptionsShape, "maxAge")) {
+    maxAgeScrapeOptionsSchemas.add(compiledScrapeOptions);
+  }
+
   return {
     scrape,
     parse,
@@ -2195,6 +2203,17 @@ export function buildV2RequestSchemas(
     search,
     scrapeOptions: compiledScrapeOptions,
   } as unknown as RequestSchemas;
+}
+
+const maxAgeScrapeOptionsSchemas = new WeakSet<object>();
+
+/**
+ * Returns whether the given compiled scrapeOptions schema accepts maxAge.
+ */
+export function scrapeOptionsAcceptsMaxAge(
+  schema: object = getV2RequestSchemas().scrapeOptions,
+): boolean {
+  return maxAgeScrapeOptionsSchemas.has(schema);
 }
 
 registerDefaultRequestSchemaBuilder(buildV2RequestSchemas);

@@ -243,7 +243,7 @@ export async function robustFetch<
     }
 
     const fireEngineBaseUrl =
-      process.env.FIRE_ENGINE_BETA_URL ?? "<mock-fire-engine-url>";
+      process.env.FIRE_ENGINE_BETA_URL || "<mock-fire-engine-url>";
     const makeRequestTypeId = (
       request: (typeof mock)["requests"][number]["options"],
     ) => {

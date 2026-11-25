@@ -268,14 +268,14 @@ export async function getMapResults({
     ctx?.zeroDataRetention === true || requestZeroDataRetention || indexOnly;
   const searchZeroDataRetention = zeroDataRetention;
 
-  const mapCtx: RequestContext =
-    ctx ??
-    requestContext({
-      teamId,
-      zeroDataRetention,
-      flags: flags ?? undefined,
-      orgId: orgId ?? null,
-    });
+  const mapCtx: RequestContext = ctx
+    ? { ...ctx, zeroDataRetention }
+    : requestContext({
+        teamId,
+        zeroDataRetention,
+        flags: flags ?? undefined,
+        orgId: orgId ?? null,
+      });
 
   const sc: StoredCrawl = {
     ctx: mapCtx,

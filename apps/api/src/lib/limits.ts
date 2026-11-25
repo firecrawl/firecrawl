@@ -19,7 +19,11 @@ export async function resolveJobPriority(
   try {
     return await currentLimits().jobPriority({ ctx, base });
   } catch (error) {
-    onError?.(error);
+    try {
+      onError?.(error);
+    } catch {
+      // Preserve the base-priority fallback if error reporting fails.
+    }
     return base;
   }
 }

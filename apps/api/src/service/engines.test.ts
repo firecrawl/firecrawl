@@ -15,6 +15,7 @@ const makeEngine = (
     maxReasonableTime?: Engine["maxReasonableTime"];
     explicitOnly?: boolean;
     cache?: boolean;
+    fileOnly?: boolean;
     supportsProfile?: boolean;
     prefetchesFiles?: boolean;
     allowEmptyContent?: boolean;
@@ -42,6 +43,7 @@ describe("buildEngineRegistry", () => {
       quality: -5,
       explicitOnly: true,
       cache: true,
+      fileOnly: true,
       supportsProfile: true,
       prefetchesFiles: true,
       allowEmptyContent: true,
@@ -71,6 +73,7 @@ describe("buildEngineRegistry", () => {
     expect(registry.get("alpha")?.features).toEqual({ waitFor: true });
     expect(registry.get("beta")?.explicitOnly).toBe(true);
     expect(registry.get("beta")?.cache).toBe(true);
+    expect(registry.get("beta")?.fileOnly).toBe(true);
     expect(registry.get("beta")?.supportsProfile).toBe(true);
     expect(registry.get("beta")?.prefetchesFiles).toBe(true);
     expect(registry.get("beta")?.allowEmptyContent).toBe(true);

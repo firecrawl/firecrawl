@@ -371,7 +371,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
       scrapeTimeout,
     );
 
-    concurrentIf(TEST_PRODUCTION)(
+    it.concurrent(
       "rejects non-boolean pages",
       async () => {
         const raw = await scrapeRaw(

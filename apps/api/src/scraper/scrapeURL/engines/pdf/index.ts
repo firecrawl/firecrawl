@@ -35,6 +35,7 @@ import { hasFilePrefetchEngine } from "../utils/specialtyHandler";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { reconcilePageCountWithPdfParse } from "./pageCount";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
+import { completeTruncatedHandoff } from "./truncatedHandoff";
 import { withPdfExtractionPermit } from "./semaphore";
 
 export {
@@ -100,9 +101,17 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   const maxPages = getPDFMaxPages(meta.options.parsers);
   const mode: PDFMode = getPDFMode(meta.options.parsers);
 
+  const prefetch =
+    meta.pdfPrefetch != null
+      ? await completeTruncatedHandoff(
+          meta,
+          meta.pdfPrefetch,
+          PDF_DOWNLOAD_MAX_FILE_SIZE,
+        )
+      : meta.pdfPrefetch;
+
   if (!shouldParse) {
-    if (meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null) {
-      const prefetch = meta.pdfPrefetch;
+    if (prefetch !== undefined && prefetch !== null) {
       const prefetchSize = (await stat(prefetch.filePath)).size;
       if (prefetchSize > PDF_DOWNLOAD_MAX_FILE_SIZE) {
         throw new UnsupportedFileError("File exceeds size limit");
@@ -151,7 +160,6 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     };
   }
 
-  const prefetch = meta.pdfPrefetch;
   const { response, tempFilePath } =
     prefetch !== undefined && prefetch !== null
       ? { response: prefetch, tempFilePath: prefetch.filePath }
@@ -235,7 +243,18 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           ? Math.min(detection.pageCount, maxPages)
           : detection.pageCount;
         metadataTitle = detection.title ?? undefined;
+
+        if (
+          mode === "fast" &&
+          (detection.pdfType === "Scanned" ||
+            detection.pdfType === "ImageBased")
+        ) {
+          throw new PDFOCRRequiredError(detection.pdfType);
+        }
       } catch (error) {
+        if (error instanceof PDFOCRRequiredError) {
+          throw error;
+        }
         extractAndEmitNativeLogs(error, meta.logger, "pdf.detect");
         logger.warn("detectPdf failed", {
           error,

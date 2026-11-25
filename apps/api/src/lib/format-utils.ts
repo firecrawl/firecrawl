@@ -17,13 +17,25 @@ export function hasFormatOfType<
 >(
   formats: readonly F[] | undefined,
   type: T,
-): Extract<F, { type: T }> | undefined {
+):
+  | (F extends { type: infer FT extends string }
+      ? T extends FT
+        ? F
+        : never
+      : never)
+  | undefined {
   if (!formats) {
     return undefined;
   }
 
   const found = formats.find(f => f.type === type);
-  return found as Extract<F, { type: T }> | undefined;
+  return found as
+    | (F extends { type: infer FT extends string }
+        ? T extends FT
+          ? F
+          : never
+        : never)
+    | undefined;
 }
 
 /**

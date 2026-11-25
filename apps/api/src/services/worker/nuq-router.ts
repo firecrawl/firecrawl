@@ -282,7 +282,16 @@ export async function reserveExternalSlot(
     }
     return acquired;
   }
-  return reserveConcurrencyLimitSlot(teamId, holderId, ttlMs, limit);
+  const acquired = await reserveConcurrencyLimitSlot(
+    teamId,
+    holderId,
+    ttlMs,
+    limit,
+  );
+  if (acquired) {
+    await clearExternalSlotBackend(holderId);
+  }
+  return acquired;
 }
 
 export async function mirrorExternalSlotRelease(

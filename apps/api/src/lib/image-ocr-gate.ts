@@ -13,8 +13,11 @@ export function isImageOcrEnabled(): boolean {
     return false;
   }
   return svc.engines
-    .enabled()
-    .some(engine => engine.features.image === true && !engine.cache);
+    .all()
+    .some(
+      engine =>
+        engine.features.image === true && !engine.cache && engine.enabled(),
+    );
 }
 
 /**

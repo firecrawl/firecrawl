@@ -2,18 +2,7 @@ import type { Request, Response } from "express";
 import { getRedisConnection } from "../../services/queue-service";
 import { nuqFdbGetMetrics } from "../../services/worker/nuq-fdb";
 
-export type AdminMetricsCollector = () => string | Promise<string>;
-
-const extraMetricsCollectors: AdminMetricsCollector[] = [];
-
-/** Registers an additional Prometheus text collector appended to /metrics. */
-export function registerAdminMetricsCollector(
-  collector: AdminMetricsCollector,
-): void {
-  if (!extraMetricsCollectors.includes(collector)) {
-    extraMetricsCollectors.push(collector);
-  }
-}
+import { getAdminMetricsCollectors } from "../../lib/admin-metrics-registry";
 import { nuqGetLocalMetrics } from "../../services/worker/nuq";
 import { scrapeQueue } from "../../services/worker/nuq-router";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
@@ -45,7 +34,7 @@ export async function metricsController(_: Request, res: Response) {
 
   const semaphoreMetrics = await teamConcurrencySemaphore.getMetrics();
   const extraMetrics = (
-    await Promise.all(extraMetricsCollectors.map(collector => collector()))
+    await Promise.all(getAdminMetricsCollectors().map(collector => collector()))
   )
     .filter(chunk => chunk.length > 0)
     .join("\n");

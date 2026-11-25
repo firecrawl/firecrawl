@@ -551,14 +551,16 @@ async function buildMetaObject(
     imageExtensionFromUrlPath(new URL(url).pathname) !== null &&
     (await imageOcrEnabled());
 
-  const ctx =
-    internalOptions.ctx ??
-    requestContext({
-      teamId: internalOptions.teamId,
-      zeroDataRetention: internalOptions.zeroDataRetention,
-      flags: internalOptions.teamFlags,
-      orgId: internalOptions.orgId,
-    });
+  const ctx = internalOptions.ctx
+    ? internalOptions.ctx.flags === undefined && internalOptions.teamFlags
+      ? { ...internalOptions.ctx, flags: internalOptions.teamFlags }
+      : internalOptions.ctx
+    : requestContext({
+        teamId: internalOptions.teamId,
+        zeroDataRetention: internalOptions.zeroDataRetention,
+        flags: internalOptions.teamFlags,
+        orgId: internalOptions.orgId,
+      });
 
   return {
     id,
@@ -1434,7 +1436,9 @@ export async function scrapeURL(
                     {
                       url: urlToCheck,
                       zeroDataRetention: meta.ctx.zeroDataRetention,
-                      usOnly: meta.ctx.usOnly === true,
+                      usOnly:
+                        meta.ctx.usOnly === true ||
+                        meta.ctx.flags?.usOnly === true,
                       location: meta.options.location,
                       skipTlsVerification: meta.options.skipTlsVerification,
                     },

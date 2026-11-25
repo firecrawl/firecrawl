@@ -144,8 +144,11 @@ function getParseForceEngine(
 
   if (kind === "image") {
     return installedService()
-      ?.engines.enabled()
-      .find(engine => engine.features.image === true && !engine.cache)?.name;
+      ?.engines.all()
+      .find(
+        engine =>
+          engine.features.image === true && !engine.cache && engine.enabled(),
+      )?.name;
   }
 
   return "fetch";

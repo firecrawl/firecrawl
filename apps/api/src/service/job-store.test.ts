@@ -341,6 +341,21 @@ describe("scrapeStatusController with jobStore", () => {
           status: 404,
           body: { success: false, error: "Job not found." },
         });
+
+        vi.mocked(customStore.owner).mockResolvedValueOnce({
+          teamId: TEAM_ID,
+          expiresAtMs: Date.now() + 60_000,
+        });
+        vi.mocked(customStore.read).mockResolvedValueOnce(null);
+        const missing = makeRes();
+        await scrapeStatusController(
+          { params: { jobId: JOB_ID }, auth: { team_id: TEAM_ID } },
+          missing.res,
+        );
+        expect(missing.result()).toEqual({
+          status: 404,
+          body: { success: false, error: "Job not found." },
+        });
       },
     );
   });

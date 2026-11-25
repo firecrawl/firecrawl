@@ -247,6 +247,26 @@ describe("performDirectQuoteQuery highlights", () => {
     expect(args.prompt).toContain("2: Line number 2");
     expect(document.warning).toBeUndefined();
   });
+
+  it("trims long pages through performQuery and populates answer and warning", async () => {
+    respond("[0]");
+    const document: any = { markdown: page(40_000), metadata: {} };
+
+    await performQuery(
+      makeMeta([
+        { type: "query", prompt: "what does line 0 say?", mode: "directQuote" },
+      ]),
+      document,
+    );
+
+    const [args] = calls();
+    expect(args.telemetry.functionId).toBe("performQuery/directQuote");
+    expect(sentLines(args.prompt).length).toBeLessThan(40_000);
+    expect(document.answer).toContain("Line number 0");
+    expect(document.warning).toContain(
+      "answer was generated from the first part of it",
+    );
+  });
 });
 
 describe("performQuery freeform", () => {

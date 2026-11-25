@@ -14,7 +14,7 @@ export { extractLinks } from "../scraper/scrapeURL/lib/extractLinks";
 export { isMarkdownContentType } from "../scraper/scrapeURL/lib/extractLinksFromMarkdown";
 export { rewriteUrl } from "../scraper/scrapeURL/lib/rewriteUrl";
 export * from "../scraper/scrapeURL/lib/mock";
-export * from "../scraper/scrapeURL/metaContext";
+export { getScrapeMeta } from "../scraper/scrapeURL/metaContext";
 export {
   buildFallbackList,
   coreEngineFeatures,

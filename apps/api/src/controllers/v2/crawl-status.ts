@@ -130,7 +130,8 @@ export async function getJob(
     data: {
       scrapeOptions: nuqJob?.data ? nuqJob.data.scrapeOptions : null,
     },
-    timestamp: stored?.completedAtMs ?? nuqJob!.createdAt.valueOf(),
+    timestamp:
+      stored?.completedAtMs ?? nuqJob?.createdAt.valueOf() ?? Date.now(),
     failedReason: (stored?.error ?? nuqJob?.failedReason) || undefined,
   };
 

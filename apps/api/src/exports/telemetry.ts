@@ -5,6 +5,7 @@ export {
   recordSpanException,
   serializeTraceContext,
   setSpanAttributes,
+  withTraceContextAsync,
   withSpan,
   withZeroDataRetention,
   type Span,

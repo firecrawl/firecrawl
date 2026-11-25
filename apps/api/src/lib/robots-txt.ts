@@ -3,7 +3,7 @@ import { Logger } from "winston";
 import {
   getV2RequestSchemas,
   ScrapeOptions,
-  scrapeOptions,
+  scrapeOptionsAcceptsMaxAge,
 } from "../controllers/v2/types";
 import { scrapeURL } from "../scraper/scrapeURL";
 import { Engine } from "../scraper/scrapeURL/engines";
@@ -63,7 +63,7 @@ export async function fetchRobotsTxt(
       return schema.parse({
         formats: ["rawHtml"],
         timeout: 8000,
-        ...(schema !== scrapeOptions
+        ...(scrapeOptionsAcceptsMaxAge(schema)
           ? { maxAge: skipCache ? 0 : ROBOTS_MAX_AGE }
           : {}),
         ...(location ? { location } : {}),

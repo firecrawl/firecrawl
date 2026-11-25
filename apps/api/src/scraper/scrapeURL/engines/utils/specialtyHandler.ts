@@ -6,13 +6,17 @@ import { writeFile } from "fs/promises";
 import { Meta } from "../..";
 import { documentExtensionFromContentType } from "../../../../lib/document-formats";
 
-export type GcsFileDownloader = (
-  logger: Logger,
-  file: { uri: string; sha256?: string; sizeBytes?: number },
-  destPath: string,
-  signal?: AbortSignal,
-  maxBytes?: number,
-) => Promise<{ sizeBytes: number; generation?: string } | null>;
+export interface GcsFileDownloader {
+  /** Explicitly configured GCS handoff bucket; unset values reject all URIs. */
+  readonly allowedBucket: string | undefined;
+  download: (
+    logger: Logger,
+    file: { uri: string; sha256?: string; sizeBytes?: number },
+    destPath: string,
+    signal?: AbortSignal,
+    maxBytes?: number,
+  ) => Promise<{ sizeBytes: number; generation?: string } | null>;
+}
 
 function declaredContentLength(
   headers: Record<string, string> | undefined,
@@ -37,8 +41,9 @@ import { installedService } from "../../../../service/service";
 export function hasFilePrefetchEngine(): boolean {
   return (
     installedService()
-      ?.engines.enabled()
-      .some(engine => engine.prefetchesFiles === true) ?? false
+      ?.engines.all()
+      .some(engine => engine.prefetchesFiles === true && engine.enabled()) ??
+    false
   );
 }
 
@@ -101,7 +106,18 @@ async function feResToFilePrefetch(
       );
       return null;
     }
-    const downloaded = await downloadGcsFile(
+    const allowedBucket = downloadGcsFile.allowedBucket?.trim();
+    const parsedGcsUri = file.gcs_uri
+      ? /^gs:\/\/([^/]+)\/(.+)$/.exec(file.gcs_uri)
+      : null;
+    if (!allowedBucket || !parsedGcsUri || parsedGcsUri[1] !== allowedBucket) {
+      logger.warn("GCS file handoff rejected by bucket allowlist", {
+        uri: file.gcs_uri,
+        allowedBucketConfigured: Boolean(allowedBucket),
+      });
+      return null;
+    }
+    const downloaded = await downloadGcsFile.download(
       logger,
       { uri: file.gcs_uri!, sha256: file.sha256, sizeBytes: file.size_bytes },
       filePath,

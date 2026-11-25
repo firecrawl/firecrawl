@@ -1,7 +1,10 @@
 import { parseStringPromise } from "xml2js";
 import { WebCrawler, SITEMAP_LIMIT } from "./crawler";
 import { scrapeURL } from "../scrapeURL";
-import { getV2RequestSchemas, scrapeOptions } from "../../controllers/v2/types";
+import {
+  getV2RequestSchemas,
+  scrapeOptionsAcceptsMaxAge,
+} from "../../controllers/v2/types";
 import type { Logger } from "winston";
 import { CostTracking } from "../../lib/cost-tracking";
 import { ScrapeJobTimeoutError } from "../../lib/error";
@@ -99,7 +102,7 @@ export async function getLinksFromSitemap(
             return schema.parse({
               formats: ["rawHtml"],
               useMock: mock,
-              ...(schema !== scrapeOptions && maxAge !== undefined
+              ...(scrapeOptionsAcceptsMaxAge(schema) && maxAge !== undefined
                 ? { maxAge }
                 : {}),
               ...(location ? { location } : {}),

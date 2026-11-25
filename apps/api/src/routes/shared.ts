@@ -223,12 +223,26 @@ export function blocklistMiddleware(
     }
     const flags = (req.acuc?.flags ?? null) as Record<string, unknown> | null;
     const forcedZdr =
-      flags?.scrapeZDR === "forced" || flags?.allowZDR === "forced";
+      flags?.scrapeZDR === "forced" ||
+      flags?.forceZDR === true ||
+      flags?.allowZDR === "forced";
+    const safeModeConfig =
+      flags?.safeModeConfig && typeof flags.safeModeConfig === "object"
+        ? (flags.safeModeConfig as Record<string, unknown>)
+        : undefined;
+    const safeModeBypassed =
+      req.body.safeMode === false &&
+      safeModeConfig?.allowBypassSafeMode === true;
+    const safeModeLockdown =
+      flags?.safeMode === true &&
+      !safeModeBypassed &&
+      safeModeConfig?.lockdown === true;
     const blockCtx = requestContext({
       teamId: req.ctx?.teamId ?? req.acuc?.team_id ?? "",
       zeroDataRetention:
         req.ctx?.zeroDataRetention === true ||
         forcedZdr ||
+        safeModeLockdown ||
         req.body.zeroDataRetention === true ||
         req.body.lockdown === true,
       flags: req.acuc?.flags ?? null,

@@ -409,7 +409,7 @@ describe("coreParts", () => {
     ).toHaveLength(1);
   });
 
-  it("loads core error classes and default modules without pulling in config, exchange, gcs, zdr, redis, or db", () => {
+  it("loads core error classes and default modules without loading configuration, queue, Redis, or database clients", () => {
     const required = answerRequire();
     const built = createService({ modules: defaultModules() }, coreParts());
 

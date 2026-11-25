@@ -678,7 +678,8 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
   if (
     typeof auth !== "object" ||
     auth === null ||
-    typeof auth.authenticate !== "function"
+    typeof auth.authenticate !== "function" ||
+    (auth.lookupTeam !== undefined && typeof auth.lookupTeam !== "function")
   ) {
     throw new Error("Invalid auth module");
   }
@@ -708,6 +709,9 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
     (limits.keyConcurrency !== undefined &&
       typeof limits.keyConcurrency !== "function") ||
     typeof limits.jobPriority !== "function" ||
+    (limits.onJobStart !== undefined &&
+      typeof limits.onJobStart !== "function") ||
+    (limits.onJobEnd !== undefined && typeof limits.onJobEnd !== "function") ||
     typeof limits.queueBackend !== "function"
   ) {
     throw new Error("Invalid limits module");
@@ -758,6 +762,9 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
 
   const frozenAuth: AuthModule = Object.freeze({
     authenticate: auth.authenticate.bind(auth),
+    ...(auth.lookupTeam !== undefined
+      ? { lookupTeam: auth.lookupTeam.bind(auth) }
+      : {}),
   });
   const frozenBilling: BillingModule = Object.freeze({
     authorize: billing.authorize.bind(billing),
@@ -778,6 +785,12 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
       ? { keyConcurrency: limits.keyConcurrency.bind(limits) }
       : {}),
     jobPriority: limits.jobPriority.bind(limits),
+    ...(limits.onJobStart !== undefined
+      ? { onJobStart: limits.onJobStart.bind(limits) }
+      : {}),
+    ...(limits.onJobEnd !== undefined
+      ? { onJobEnd: limits.onJobEnd.bind(limits) }
+      : {}),
     queueBackend: limits.queueBackend.bind(limits),
   });
   const frozenMessages: MessagesModule = Object.freeze({

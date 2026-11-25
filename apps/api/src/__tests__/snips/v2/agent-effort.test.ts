@@ -35,10 +35,8 @@ const agentRaw = (body: Record<string, unknown>) =>
     .set("Content-Type", "application/json")
     .send(body);
 
-// agentRequestSchema.parse runs at the top of agentController, before the
-// controller touches the agent service, a browser or a model. A rejected
-// request therefore needs only the API server and an authenticated team, so
-// these cases run everywhere instead of skipping with the live runs below.
+// The /v2/agent route is not mounted in self-hosted mode, so skip these
+// parameter validation checks when running against a self-hosted server.
 describeIf(TEST_PRODUCTION)("Agent effort parameter validation", () => {
   it(
     "rejects an unknown model name",

@@ -71,15 +71,17 @@ export async function crawlParamsPreviewController(
       prompt: parsedBody.prompt,
     });
 
-    const ctx =
-      req.ctx ??
-      requestContext({
-        teamId: req.auth.team_id,
-        zeroDataRetention,
-        flags: req.acuc?.flags ?? null,
-        orgId: req.acuc?.org_id ?? null,
-        apiKeyId: req.acuc?.api_key_id ?? null,
-      });
+    const ctx = req.ctx
+      ? zeroDataRetention && !req.ctx.zeroDataRetention
+        ? { ...req.ctx, zeroDataRetention: true }
+        : req.ctx
+      : requestContext({
+          teamId: req.auth.team_id,
+          zeroDataRetention,
+          flags: req.acuc?.flags ?? null,
+          orgId: req.acuc?.org_id ?? null,
+          apiKeyId: req.acuc?.api_key_id ?? null,
+        });
     req.ctx = ctx;
 
     // The prompt and the discovered URLs end up in LLM telemetry, so keep
