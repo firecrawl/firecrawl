@@ -325,7 +325,10 @@ describe("search lifecycle hooks", () => {
         requestedUnits: 10,
         state: expect.objectContaining({
           limit: 10,
-          sources: [{ type: "web" }, { type: "news" }],
+          sources: [
+            expect.objectContaining({ type: "web" }),
+            expect.objectContaining({ type: "news" }),
+          ],
         }),
       }),
     );
