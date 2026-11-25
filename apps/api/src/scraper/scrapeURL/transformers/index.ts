@@ -11,26 +11,12 @@ import {
   performSummary,
   performCleanContent,
 } from "./llmExtract";
-import { performDeterministicJson } from "./deterministicJson";
 import { performQuery } from "./query";
 import { removeBase64Images } from "./removeBase64Images";
-import { performAgent } from "./agent";
 import { performAttributes } from "./performAttributes";
-
-import { deriveDiff } from "./diff";
-import { fetchAudio } from "./audio";
-import { fetchProduct } from "./product";
-import { fetchMenu } from "./menu";
-import { fetchVideo } from "./video";
-import { performRedactPII } from "./redactPII";
 import { performPromptInjectionGuard } from "./promptInjectionGuard";
-import { useIndex, useSearchIndex } from "../../../services/index";
-import { sendDocumentToIndex } from "../engines/index/index";
-import { sendDocumentToSearchIndex } from "./sendToSearchIndex";
 import { hasFormatOfType } from "../../../lib/format-utils";
-import { brandingTransformer } from "../../../lib/branding/transformer";
-import { indexerQueue } from "../../../services/indexing/indexer-queue";
-import { config } from "../../../config";
+import { scrapeHooks, toScrapeMeta } from "../hooks";
 
 type Transformer = (
   meta: Meta,
@@ -64,12 +50,45 @@ async function deriveHTMLFromRawHTML(
     );
   }
 
+  const targetUrl =
+    document.metadata.url ??
+    document.metadata.sourceURL ??
+    meta.rewrittenUrl ??
+    meta.url;
+
+  const hooks = scrapeHooks();
+  if (hooks?.has("scrape.html.clean")) {
+    const cleaning = await hooks.transform(
+      "scrape.html.clean",
+      {
+        url: targetUrl,
+        includeTags: (meta.options.includeTags ?? [])
+          .map(x => x.trim())
+          .filter(x => x.length !== 0),
+        excludeTags: (meta.options.excludeTags ?? [])
+          .map(x => x.trim())
+          .filter(x => x.length !== 0),
+        onlyMainContent: meta.options.onlyMainContent,
+      },
+      toScrapeMeta(meta),
+    );
+    document.html = await htmlTransform(
+      document.rawHtml,
+      cleaning.url,
+      {
+        ...meta.options,
+        includeTags: cleaning.includeTags,
+        excludeTags: cleaning.excludeTags,
+        onlyMainContent: cleaning.onlyMainContent,
+      },
+      cleaning.dropSignatures,
+    );
+    return document;
+  }
+
   document.html = await htmlTransform(
     document.rawHtml,
-    document.metadata.url ??
-      document.metadata.sourceURL ??
-      meta.rewrittenUrl ??
-      meta.url,
+    targetUrl,
     meta.options,
   );
   return document;
@@ -94,37 +113,18 @@ async function deriveMarkdownFromHTML(
     );
   }
 
-  // Only derive markdown if markdown format is requested or if formats that require markdown are requested:
-  // - changeTracking requires markdown
-  // - json format requires markdown (for LLM extraction)
-  // - summary format requires markdown (for summarization)
-  // - question/highlights/query formats require markdown (for page-level answers)
-  // - redactPII needs markdown as its source text (spans are markdown char offsets)
-  // - checkPromptInjection scans markdown
   const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
-  const hasChangeTracking = hasFormatOfType(
-    meta.options.formats,
-    "changeTracking",
-  );
-  // deterministicJson populates document.json just like json, so treat it the
-  // same here (derive markdown for it; keep the field it produced).
-  const hasJson =
-    hasFormatOfType(meta.options.formats, "json") ||
-    hasFormatOfType(meta.options.formats, "deterministicJson");
+  const hasJson = hasFormatOfType(meta.options.formats, "json");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
   const hasQuestion = hasFormatOfType(meta.options.formats, "question");
-  const hasHighlights = hasFormatOfType(meta.options.formats, "highlights");
   const hasQuery = hasFormatOfType(meta.options.formats, "query");
-  const hasRedactPII = !!meta.options.redactPII;
   if (
+    !meta.needsMarkdown &&
     !hasMarkdown &&
-    !hasChangeTracking &&
     !hasJson &&
     !hasSummary &&
     !hasQuestion &&
-    !hasHighlights &&
     !hasQuery &&
-    !hasRedactPII &&
     !meta.options.checkPromptInjection &&
     !meta.options.onlyCleanContent
   ) {
@@ -208,23 +208,9 @@ async function deriveLinksFromHTML(
     );
   }
 
-  const rate = config.INDEXER_TRAFFIC_SHARE
-    ? Math.max(0, Math.min(1, Number(config.INDEXER_TRAFFIC_SHARE)))
-    : 0;
-
-  const shouldForwardTraffic =
-    rate > 0 && Math.random() <= rate && !!config.INDEXER_RABBITMQ_URL;
-
-  const forwardToIndexer =
-    !meta.internalOptions.isParse &&
-    !!meta.internalOptions.teamId &&
-    !meta.internalOptions.teamId?.includes("robots-txt") &&
-    !meta.internalOptions.teamId?.includes("sitemap") &&
-    shouldForwardTraffic;
-
   const requiresLinks = !!hasFormatOfType(meta.options.formats, "links");
 
-  if (!forwardToIndexer && !requiresLinks) {
+  if (!requiresLinks) {
     return document;
   }
 
@@ -238,42 +224,6 @@ async function deriveLinksFromHTML(
       meta.url,
     document.metadata.contentType,
   );
-
-  if (forwardToIndexer) {
-    try {
-      let linksDeduped: Set<string> = new Set();
-      if (!!document.links) {
-        linksDeduped = new Set([...document.links]);
-      }
-
-      indexerQueue
-        .sendToWorker({
-          id: meta.id,
-          type: "links",
-          discovery_url:
-            document.metadata.url ??
-            document.metadata.sourceURL ??
-            meta.rewrittenUrl ??
-            meta.url,
-          urls: [...linksDeduped],
-        })
-        .catch(error => {
-          meta.logger.error("Failed to queue links for indexing", {
-            error: (error as Error)?.message,
-            url: meta.url,
-          });
-        });
-    } catch (error) {
-      meta.logger.error("Failed to queue links for indexing", {
-        error: (error as Error)?.message,
-        url: meta.url,
-      });
-    }
-  }
-
-  if (!requiresLinks) {
-    delete document.links;
-  }
 
   return document;
 }
@@ -302,46 +252,6 @@ async function deriveImagesFromHTML(
   return document;
 }
 
-async function deriveBrandingFromActions(
-  meta: Meta,
-  document: Document,
-): Promise<Document> {
-  const hasBranding = hasFormatOfType(meta.options.formats, "branding");
-
-  if (!hasBranding) {
-    return document;
-  }
-
-  if (document.branding !== undefined) {
-    return document;
-  }
-
-  /**
-   * Find the branding return in the actions javascript returns
-   * @see src/scraper/scrapeURL/engines/fire-engine/scripts/branding.js
-   */
-  const brandingReturnIndex = document.actions?.javascriptReturns?.findIndex(
-    x => x.type === "object" && "branding" in (x.value as any),
-  );
-
-  if (brandingReturnIndex === -1 || brandingReturnIndex === undefined) {
-    return document;
-  }
-
-  // cast as any since this is js return, we might need to validate this
-  const javascriptReturn = document.actions!.javascriptReturns![
-    brandingReturnIndex
-  ].value as any;
-
-  const rawBranding = javascriptReturn?.branding;
-
-  document.actions!.javascriptReturns!.splice(brandingReturnIndex, 1);
-
-  document.branding = await brandingTransformer(meta, document, rawBranding);
-
-  return document;
-}
-
 function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
   const hasRawHtml = hasFormatOfType(meta.options.formats, "rawHtml");
@@ -349,25 +259,10 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasHtml = hasFormatOfType(meta.options.formats, "html");
   const hasLinks = hasFormatOfType(meta.options.formats, "links");
   const hasImages = hasFormatOfType(meta.options.formats, "images");
-  const hasChangeTracking = hasFormatOfType(
-    meta.options.formats,
-    "changeTracking",
-  );
-  // deterministicJson populates document.json just like json, so treat it the
-  // same here (derive markdown for it; keep the field it produced).
-  const hasJson =
-    hasFormatOfType(meta.options.formats, "json") ||
-    hasFormatOfType(meta.options.formats, "deterministicJson");
+  const hasJson = hasFormatOfType(meta.options.formats, "json");
   const hasScreenshot = hasFormatOfType(meta.options.formats, "screenshot");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
-  const hasBranding = hasFormatOfType(meta.options.formats, "branding");
-  const hasProduct = hasFormatOfType(meta.options.formats, "product");
-  const hasMenu = hasFormatOfType(meta.options.formats, "menu");
   const hasQuestionFormat = hasFormatOfType(meta.options.formats, "question");
-  const hasHighlightsFormat = hasFormatOfType(
-    meta.options.formats,
-    "highlights",
-  );
   const hasLegacyQueryFormat = hasFormatOfType(meta.options.formats, "query");
   const hasAnswerFormat = hasQuestionFormat || hasLegacyQueryFormat;
 
@@ -454,8 +349,9 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     });
   }
 
+  const keepJson = !!hasJson || meta.keepDocumentFields?.has("json") === true;
   if (
-    !hasJson &&
+    !keepJson &&
     (document.extract !== undefined || document.json !== undefined)
   ) {
     // For v1 API, keep the field specified by v1OriginalFormat
@@ -503,100 +399,6 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     );
   }
 
-  if (!hasHighlightsFormat && document.highlights !== undefined) {
-    meta.logger.warn(
-      "Removed highlights from Document because highlights wasn't in formats -- this is wasteful and indicates a bug.",
-    );
-    delete document.highlights;
-  } else if (hasHighlightsFormat && document.highlights === undefined) {
-    meta.logger.warn(
-      "Request had format highlights, but there was no highlights field in the result.",
-    );
-  }
-
-  if (!hasBranding && document.branding !== undefined) {
-    meta.logger.warn(
-      "Removed branding from Document because it wasn't in formats -- this indicates the engine returned unexpected data.",
-    );
-    delete document.branding;
-  } else if (hasBranding && document.branding === undefined) {
-    meta.logger.warn(
-      "Request had format branding, but there was no branding field in the result.",
-    );
-  }
-
-  if (!hasProduct && document.product !== undefined) {
-    meta.logger.warn(
-      "Removed product from Document because it wasn't in formats -- this indicates the engine returned unexpected data.",
-    );
-    delete document.product;
-  }
-
-  if (!hasMenu && document.menu !== undefined) {
-    meta.logger.warn(
-      "Removed menu from Document because it wasn't in formats -- this indicates the engine returned unexpected data.",
-    );
-    delete document.menu;
-  }
-
-  const hasAudio = hasFormatOfType(meta.options.formats, "audio");
-  if (!hasAudio && document.audio !== undefined) {
-    delete document.audio;
-  } else if (hasAudio && document.audio === undefined) {
-    meta.logger.warn(
-      "Request had format: audio, but there was no audio field in the result.",
-    );
-  }
-
-  const hasVideo = hasFormatOfType(meta.options.formats, "video");
-  if (!hasVideo && document.video !== undefined) {
-    delete document.video;
-  }
-  if (!hasVideo && document.videos !== undefined) {
-    delete document.videos;
-  } else if (
-    hasVideo &&
-    document.video === undefined &&
-    document.videos === undefined
-  ) {
-    meta.logger.warn(
-      "Request had format: video, but there was no video field in the result.",
-    );
-  }
-
-  if (!hasChangeTracking && document.changeTracking !== undefined) {
-    meta.logger.warn(
-      "Removed changeTracking from Document because it wasn't in formats -- this is extremely wasteful and indicates a bug.",
-    );
-    delete document.changeTracking;
-  } else if (hasChangeTracking && document.changeTracking === undefined) {
-    meta.logger.warn(
-      "Request had format changeTracking, but there was no changeTracking field in the result.",
-    );
-  }
-
-  if (
-    document.changeTracking &&
-    !hasChangeTracking?.modes?.includes("git-diff") &&
-    document.changeTracking.diff !== undefined
-  ) {
-    meta.logger.warn(
-      "Removed diff from changeTracking because git-diff mode wasn't specified in changeTrackingOptions.modes.",
-    );
-    delete document.changeTracking.diff;
-  }
-
-  if (
-    document.changeTracking &&
-    !hasChangeTracking?.modes?.includes("json") &&
-    document.changeTracking.json !== undefined
-  ) {
-    meta.logger.warn(
-      "Removed structured from changeTracking because structured mode wasn't specified in changeTrackingOptions.modes.",
-    );
-    delete document.changeTracking.json;
-  }
-
   if (meta.options.actions === undefined || meta.options.actions.length === 0) {
     delete document.actions;
   } else if (document.actions) {
@@ -618,31 +420,32 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   return document;
 }
 
+type DocumentHookName =
+  | "scrape.document.markdown"
+  | "scrape.document.derived"
+  | "scrape.document.extracted"
+  | "scrape.document.final";
+
+type TransformerStep = Transformer | { hook: DocumentHookName };
+
 // TODO: allow some of these to run in parallel
-const transformerStack: Transformer[] = [
+const transformerStack: TransformerStep[] = [
   deriveHTMLFromRawHTML,
   deriveMarkdownFromHTML,
   performCleanContent,
-  performRedactPII,
+  { hook: "scrape.document.markdown" },
   performPromptInjectionGuard,
   deriveLinksFromHTML,
   deriveImagesFromHTML,
-  deriveBrandingFromActions,
   deriveMetadataFromRawHTML,
-  fetchProduct,
-  fetchMenu,
-  ...(useIndex ? [sendDocumentToIndex] : []),
-  ...(useSearchIndex ? [sendDocumentToSearchIndex] : []), // Add to search index for real-time search
+  { hook: "scrape.document.derived" },
   performLLMExtract,
-  performDeterministicJson,
   performSummary,
   performQuery,
   performAttributes,
-  performAgent,
+  { hook: "scrape.document.extracted" },
   removeBase64Images,
-  deriveDiff,
-  fetchAudio,
-  fetchVideo,
+  { hook: "scrape.document.final" },
   coerceFieldsToFormats,
 ];
 
@@ -652,7 +455,17 @@ export async function executeTransformers(
 ): Promise<Document> {
   if (meta.internalOptions.teamId === "sitemap") {
     document.metadata.scrapeId = meta.id;
-    if (useIndex) document = await sendDocumentToIndex(meta, document);
+    const hooks = scrapeHooks();
+    if (hooks?.has("scrape.document.derived")) {
+      const childLogger = meta.logger.child({
+        method: "executeTransformers/scrape.document.derived",
+      });
+      document = await hooks.transform(
+        "scrape.document.derived",
+        document,
+        toScrapeMeta(meta, childLogger),
+      );
+    }
     return coerceFieldsToFormats(meta, document);
   }
 
@@ -662,16 +475,33 @@ export async function executeTransformers(
 
   const executions: [string, number][] = [];
 
-  for (const transformer of transformerStack) {
+  for (const step of transformerStack) {
+    if (typeof step !== "function") {
+      const hooks = scrapeHooks();
+      if (!hooks?.has(step.hook)) {
+        continue;
+      }
+      const childLogger = meta.logger.child({
+        method: "executeTransformers/" + step.hook,
+      });
+      const start = Date.now();
+      document = await hooks.transform(
+        step.hook,
+        document,
+        toScrapeMeta(meta, childLogger),
+      );
+      executions.push([step.hook, Date.now() - start]);
+      continue;
+    }
     const _meta = {
       ...meta,
       logger: meta.logger.child({
-        method: "executeTransformers/" + transformer.name,
+        method: "executeTransformers/" + step.name,
       }),
     };
     const start = Date.now();
-    document = await transformer(_meta, document);
-    executions.push([transformer.name, Date.now() - start]);
+    document = await step(_meta, document);
+    executions.push([step.name, Date.now() - start]);
   }
 
   meta.logger.debug("Executed transformers.", { executions });

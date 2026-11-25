@@ -1,6 +1,6 @@
 # Firecrawl Go SDK
 
-Go SDK for the [Firecrawl](https://firecrawl.dev) v2 web scraping API.
+Go SDK for [Firecrawl](https://firecrawl.dev), the context API for AI agents. Search, scrape, parse, crawl, map, and interact with the web, and run Agent and Monitor jobs on the v2 API.
 
 ## Requirements
 
@@ -231,10 +231,35 @@ job, err := client.BatchScrape(ctx, urls, &firecrawl.BatchScrapeOptions{
 		Formats: []string{"markdown"},
 	},
 })
+if err != nil {
+	log.Fatal(err)
+}
+
+fmt.Println("batch", job.ID, "scraped", len(job.Data), "pages")
+
+// Pages that responded with an HTTP error (404, 429, 5xx, ...) are still
+// returned in job.Data, with the original status in metadata.statusCode.
+for _, doc := range job.Data {
+	if status, _ := doc.Metadata["statusCode"].(float64); status >= 400 {
+		fmt.Printf("%s responded with HTTP %d\n", doc.Metadata["sourceURL"], int(status))
+	}
+}
+
+// URLs that could not be scraped at all (DNS errors, timeouts, ...) are
+// listed in job.Errors with a stable code, and robots.txt-blocked URLs in
+// job.RobotsBlocked.
+for _, e := range job.Errors {
+	fmt.Printf("%s failed: %s (%s)\n", e.URL, e.Code, e.Error)
+}
+for _, u := range job.RobotsBlocked {
+	fmt.Println(u, "blocked by robots.txt")
+}
 
 // Or manage manually
 resp, err := client.StartBatchScrape(ctx, urls, nil)
 status, err := client.GetBatchScrapeStatus(ctx, resp.ID)
+errs, err := client.GetBatchScrapeErrors(ctx, resp.ID)
+fmt.Println(len(errs.Errors), "URLs failed,", len(errs.RobotsBlocked), "blocked by robots.txt")
 _, err = client.CancelBatchScrape(ctx, resp.ID)
 ```
 
@@ -261,6 +286,24 @@ results, err := client.Search(ctx, "firecrawl web scraping", &firecrawl.SearchOp
 		Formats: []string{"markdown"},
 	},
 })
+```
+
+### Developer Search
+
+Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. It replaces the research index GitHub search, which was removed after 2026-11-03.
+
+```go
+resp, err := client.DeveloperSearch(ctx, "retry an http request with exponential backoff", &firecrawl.DeveloperSearchOptions{
+	K:     firecrawl.Int(5),
+	Types: []string{"issue", "pull_request"},
+	Repos: []string{"golang/go"},
+})
+if err != nil {
+	log.Fatal(err)
+}
+for _, r := range resp.Results {
+	fmt.Println(r.Title, r.URL)
+}
 ```
 
 ### Agent
@@ -375,6 +418,56 @@ The SDK automatically retries transient failures:
 - **Retried:** 408, 409, 5xx errors, and connection failures
 - **Not retried:** 401, 429, and other 4xx errors
 - **Backoff:** Exponential backoff with configurable factor
+
+When every attempt fails at the transport layer, the returned `*FirecrawlError` wraps the
+last underlying error, so errors raised by a custom `http.Client` (passed with
+`option.WithHTTPClient`) can be matched with `errors.Is` or `errors.As`:
+
+```go
+var errResponseTooLarge = errors.New("response too large")
+
+const maxResponseBytes = 20 << 20
+
+type cappedBody struct {
+	io.ReadCloser
+	remaining int64
+}
+
+func (b *cappedBody) Read(p []byte) (int, error) {
+	if b.remaining <= 0 {
+		return 0, errResponseTooLarge
+	}
+	if int64(len(p)) > b.remaining {
+		p = p[:b.remaining]
+	}
+	n, err := b.ReadCloser.Read(p)
+	b.remaining -= int64(n)
+	if b.remaining <= 0 {
+		return n, errResponseTooLarge
+	}
+	return n, err
+}
+
+type cappingTransport struct{}
+
+func (cappingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := http.DefaultTransport.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = &cappedBody{ReadCloser: resp.Body, remaining: maxResponseBytes + 1}
+	return resp, nil
+}
+
+client, _ := firecrawl.NewClient(
+	option.WithHTTPClient(&http.Client{Transport: cappingTransport{}}),
+	option.WithMaxRetries(0),
+)
+_, err := client.Scrape(ctx, "https://example.com", nil)
+if errors.Is(err, errResponseTooLarge) {
+	// The response exceeded maxResponseBytes.
+}
+```
 
 ## Context Support
 

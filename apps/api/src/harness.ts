@@ -4,13 +4,18 @@ import { existsSync } from "fs";
 import * as net from "net";
 import { basename, join } from "path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
+import { startRole } from "./main";
+import { installedService, runProcessStop } from "./service/service";
 
 const childProcesses = new Set<ChildProcess>();
 const stopping = new WeakSet<ChildProcess>(); // processes we're intentionally stopping
 
 let IS_DEV = false;
+// The file to start a process role with: `node <roleEntry> <role>`.
+let roleEntry = "";
 let restartSignal: AbortController | null = null;
 let shuttingDown = false;
+let shutdownPromise: Promise<void> | undefined;
 let nuqPostgresContainer: {
   containerName: string;
   containerRuntime: string;
@@ -113,7 +118,6 @@ function formatDuration(nanoseconds: bigint): string {
 
 const PORT = config.PORT;
 const WORKER_PORT = config.WORKER_PORT;
-const EXTRACT_WORKER_PORT = config.EXTRACT_WORKER_PORT;
 const NUQ_WORKER_START_PORT = config.NUQ_WORKER_START_PORT;
 const NUQ_WORKER_COUNT = config.NUQ_WORKER_COUNT;
 const NUQ_PREFETCH_WORKER_PORT = NUQ_WORKER_START_PORT + NUQ_WORKER_COUNT;
@@ -827,11 +831,16 @@ async function startServices(command?: string[]): Promise<Services> {
 
   logger.section("Starting services");
 
+  const roleCommand = (role: string, script: string) =>
+    process.argv[2] === "--start-docker"
+      ? `node ${shellEscape(roleEntry)} ${role}`
+      : `pnpm ${script}`;
+  const nuqWorkerRole =
+    config.NUQ_BACKEND === "fdb" ? "nuq-fdb-worker" : "nuq-worker";
+
   const api = execForward(
     "api",
-    process.argv[2] === "--start-docker"
-      ? "node dist/src/index.js"
-      : "pnpm server:production:nobuild",
+    roleCommand("api", "server:production:nobuild"),
     {
       NUQ_REDUCE_NOISE: "true",
       NUQ_POD_NAME: "api",
@@ -840,9 +849,7 @@ async function startServices(command?: string[]): Promise<Services> {
 
   const worker = execForward(
     "worker",
-    process.argv[2] === "--start-docker"
-      ? "node dist/src/services/queue-worker.js"
-      : "pnpm worker:production",
+    roleCommand("queue-worker", "worker:production"),
     {
       NUQ_REDUCE_NOISE: "true",
       NUQ_POD_NAME: "worker",
@@ -850,28 +857,33 @@ async function startServices(command?: string[]): Promise<Services> {
     },
   );
 
-  const extractWorker = execForward(
-    "extract-worker",
-    process.argv[2] === "--start-docker"
-      ? "node dist/src/services/extract-worker.js"
-      : "pnpm extract-worker:production",
-    {
-      NUQ_REDUCE_NOISE: "true",
-      NUQ_POD_NAME: "extract-worker",
-      EXTRACT_WORKER_PORT: String(EXTRACT_WORKER_PORT),
-    },
-  );
+  const roleRunner = /\.(?:[cm]?ts)$/i.test(roleEntry)
+    ? "pnpm exec tsx"
+    : "node";
+
+  const extractWorker =
+    roleEntry && installedService()?.roles.has("extract-worker")
+      ? execForward(
+          "extract-worker",
+          `${roleRunner} ${shellEscape(roleEntry)} extract-worker`,
+          {
+            NUQ_REDUCE_NOISE: "true",
+            NUQ_POD_NAME: "extract-worker",
+            ...(process.env.EXTRACT_WORKER_PORT
+              ? { EXTRACT_WORKER_PORT: process.env.EXTRACT_WORKER_PORT }
+              : {}),
+          },
+        )
+      : undefined;
 
   const nuqWorkers = Array.from({ length: NUQ_WORKER_COUNT }, (_, i) =>
     execForward(
-      `${config.NUQ_BACKEND === "fdb" ? "nuq-fdb-worker" : "nuq-worker"}-${i}`,
-      process.argv[2] === "--start-docker"
-        ? `node dist/src/services/worker/${config.NUQ_BACKEND === "fdb" ? "nuq-fdb-worker" : "nuq-worker"}.js`
-        : `pnpm ${config.NUQ_BACKEND === "fdb" ? "nuq-fdb-worker" : "nuq-worker"}:production`,
+      `${nuqWorkerRole}-${i}`,
+      roleCommand(nuqWorkerRole, `${nuqWorkerRole}:production`),
       {
         NUQ_WORKER_PORT: String(NUQ_WORKER_START_PORT + i),
         NUQ_REDUCE_NOISE: "true",
-        NUQ_POD_NAME: `${config.NUQ_BACKEND === "fdb" ? "nuq-fdb-worker" : "nuq-worker"}-${i}`,
+        NUQ_POD_NAME: `${nuqWorkerRole}-${i}`,
       },
     ),
   );
@@ -881,9 +893,7 @@ async function startServices(command?: string[]): Promise<Services> {
       ? undefined
       : execForward(
           "nuq-prefetch-worker",
-          process.argv[2] === "--start-docker"
-            ? "node dist/src/services/worker/nuq-prefetch-worker.js"
-            : "pnpm nuq-prefetch-worker:production",
+          roleCommand("nuq-prefetch-worker", "nuq-prefetch-worker:production"),
           {
             NUQ_PREFETCH_WORKER_PORT: String(NUQ_PREFETCH_WORKER_PORT),
             NUQ_REDUCE_NOISE: "true",
@@ -897,9 +907,10 @@ async function startServices(command?: string[]): Promise<Services> {
       ? undefined
       : execForward(
           "nuq-reconciler",
-          process.argv[2] === "--start-docker"
-            ? "node dist/src/services/worker/nuq-reconciler-worker.js"
-            : "pnpm nuq-reconciler-worker:production",
+          roleCommand(
+            "nuq-reconciler-worker",
+            "nuq-reconciler-worker:production",
+          ),
           {
             NUQ_RECONCILER_WORKER_PORT: String(NUQ_RECONCILER_WORKER_PORT),
             NUQ_REDUCE_NOISE: "true",
@@ -907,18 +918,17 @@ async function startServices(command?: string[]): Promise<Services> {
           },
         );
 
-  const indexWorker = config.USE_DB_AUTHENTICATION
-    ? execForward(
-        "index-worker",
-        process.argv[2] === "--start-docker"
-          ? "node dist/src/services/indexing/index-worker.js"
-          : "pnpm index-worker:production",
-        {
-          NUQ_REDUCE_NOISE: "true",
-          NUQ_POD_NAME: "index-worker",
-        },
-      )
-    : undefined;
+  const indexWorker =
+    roleEntry && installedService()?.roles.has("index-worker")
+      ? execForward(
+          "index-worker",
+          `${roleRunner} ${shellEscape(roleEntry)} index-worker`,
+          {
+            NUQ_REDUCE_NOISE: "true",
+            NUQ_POD_NAME: "index-worker",
+          },
+        )
+      : undefined;
 
   if (
     command &&
@@ -1116,10 +1126,8 @@ async function waitForTermination(services: Services): Promise<void> {
 
   const promises: Promise<void>[] = [
     new Promise<void>(resolve => {
-      if (require.main === module) {
-        process.on("SIGINT", resolve);
-        process.on("SIGTERM", resolve);
-      }
+      process.on("SIGINT", resolve);
+      process.on("SIGTERM", resolve);
     }),
   ];
 
@@ -1141,52 +1149,56 @@ async function waitForTermination(services: Services): Promise<void> {
   });
 }
 
-async function gracefulShutdown() {
-  if (shuttingDown) return;
+function gracefulShutdown(): Promise<void> {
+  if (shutdownPromise) return shutdownPromise;
   shuttingDown = true;
-  restartSignal?.abort();
+  shutdownPromise = (async () => {
+    restartSignal?.abort();
 
-  logger.section("Shutting down");
-  const forceTerminate = IS_DEV;
-  const terminationPromises = Array.from(childProcesses).map(proc =>
-    terminateProcess(proc, forceTerminate),
-  );
-  await Promise.allSettled(terminationPromises);
-
-  // Stop and remove NUQ PostgreSQL container if it was started by harness
-  if (nuqPostgresContainer) {
-    logger.info("Stopping NUQ PostgreSQL container");
-    await stopAndRemoveContainer(
-      nuqPostgresContainer.containerRuntime,
-      nuqPostgresContainer.containerName,
+    logger.section("Shutting down");
+    const forceTerminate = IS_DEV;
+    const terminationPromises = Array.from(childProcesses).map(proc =>
+      terminateProcess(proc, forceTerminate),
     );
-    logger.success("NUQ PostgreSQL container stopped");
-    nuqPostgresContainer = null;
-  }
+    await Promise.allSettled(terminationPromises);
 
-  // Stop and remove NUQ RabbitMQ container if it was started by harness
-  if (nuqRabbitMQContainer) {
-    logger.info("Stopping NUQ RabbitMQ container");
-    await stopAndRemoveContainer(
-      nuqRabbitMQContainer.containerRuntime,
-      nuqRabbitMQContainer.containerName,
-    );
-    logger.success("NUQ RabbitMQ container stopped");
-    nuqRabbitMQContainer = null;
-  }
+    // Stop and remove NUQ PostgreSQL container if it was started by harness
+    if (nuqPostgresContainer) {
+      logger.info("Stopping NUQ PostgreSQL container");
+      await stopAndRemoveContainer(
+        nuqPostgresContainer.containerRuntime,
+        nuqPostgresContainer.containerName,
+      );
+      logger.success("NUQ PostgreSQL container stopped");
+      nuqPostgresContainer = null;
+    }
 
-  // Stop and remove FoundationDB container if it was started by harness
-  if (fdbContainer) {
-    logger.info("Stopping FoundationDB container");
-    await stopAndRemoveContainer(
-      fdbContainer.containerRuntime,
-      fdbContainer.containerName,
-    );
-    logger.success("FoundationDB container stopped");
-    fdbContainer = null;
-  }
+    // Stop and remove NUQ RabbitMQ container if it was started by harness
+    if (nuqRabbitMQContainer) {
+      logger.info("Stopping NUQ RabbitMQ container");
+      await stopAndRemoveContainer(
+        nuqRabbitMQContainer.containerRuntime,
+        nuqRabbitMQContainer.containerName,
+      );
+      logger.success("NUQ RabbitMQ container stopped");
+      nuqRabbitMQContainer = null;
+    }
 
-  logger.success("All processes terminated");
+    // Stop and remove FoundationDB container if it was started by harness
+    if (fdbContainer) {
+      logger.info("Stopping FoundationDB container");
+      await stopAndRemoveContainer(
+        fdbContainer.containerRuntime,
+        fdbContainer.containerName,
+      );
+      logger.success("FoundationDB container stopped");
+      fdbContainer = null;
+    }
+
+    await runProcessStop("harness");
+    logger.success("All processes terminated");
+  })();
+  return shutdownPromise;
 }
 
 function printUsage() {
@@ -1202,10 +1214,8 @@ function printUsage() {
 }
 
 async function main() {
-  if (require.main === module) {
-    process.on("SIGINT", gracefulShutdown);
-    process.on("SIGTERM", gracefulShutdown);
-  }
+  process.on("SIGINT", gracefulShutdown);
+  process.on("SIGTERM", gracefulShutdown);
 
   try {
     if (process.argv.length < 3) {
@@ -1243,9 +1253,16 @@ process.on("unhandledRejection", async (reason, promise) => {
   process.exit(1);
 });
 
-main().catch(async error => {
-  logger.error("Fatal error in main");
-  console.error(error?.stack || error?.message || error);
-  await gracefulShutdown();
-  process.exit(1);
-});
+export async function start(env: { entry: string }) {
+  roleEntry = env.entry;
+  await main().catch(async error => {
+    logger.error("Fatal error in main");
+    console.error(error?.stack || error?.message || error);
+    await gracefulShutdown();
+    process.exit(1);
+  });
+}
+
+if (require.main === module) {
+  void startRole("harness");
+}

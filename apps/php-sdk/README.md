@@ -1,6 +1,6 @@
 # Firecrawl PHP SDK
 
-PHP SDK for the [Firecrawl](https://firecrawl.dev) v2 API with first-class Laravel support.
+PHP SDK for the [Firecrawl](https://firecrawl.dev) v2 API, the context API for AI agents. Search, scrape, parse, crawl, map, and interact with the web, run Agent and Monitor jobs, and manage browser sessions from PHP, with first-class Laravel support.
 
 ## Requirements
 
@@ -238,6 +238,24 @@ $result = $client->search('firecrawl web scraping', SearchOptions::with(
 
 foreach ($result->getWeb() as $item) {
     echo $item['title'] . ': ' . $item['url'] . "\n";
+}
+```
+
+### Developer search
+
+Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. It replaces the research index GitHub search, which was removed after 2026-11-03.
+
+```php
+use Firecrawl\Models\DeveloperSearchOptions;
+
+$response = $client->developerSearch('retry an http request with exponential backoff', DeveloperSearchOptions::with(
+    k: 5,
+    types: ['issue', 'pull_request'],
+    repos: ['square/okhttp'],
+));
+
+foreach ($response->getResults() as $result) {
+    echo $result->getTitle() . ': ' . $result->getUrl() . "\n";
 }
 ```
 

@@ -86,6 +86,34 @@ export function ensureValidFormats(formats?: FormatOption[]): void {
   }
 }
 
+const V1_SCRAPE_OPTION_REPLACEMENTS: Record<string, string> = {
+  pageOptions: "use scrapeOptions",
+  includeLinks: "add 'links' to scrapeOptions.formats",
+  parsePDF: "use scrapeOptions.parsers",
+};
+
+const V1_OPTION_REPLACEMENTS: Record<"crawl" | "search", Record<string, string>> = {
+  crawl: {
+    crawlerOptions: "move its fields to the top level",
+    maxDepth: "use maxDiscoveryDepth",
+    allowBackwardLinks: "use crawlEntireDomain",
+    ignoreSitemap: "use sitemap: 'skip'",
+    ...V1_SCRAPE_OPTION_REPLACEMENTS,
+  },
+  search: V1_SCRAPE_OPTION_REPLACEMENTS,
+};
+
+/** Throws on v1 option names, which the v2 payload builders would otherwise drop without a word. */
+export function ensureNoV1Options(options: object | undefined, method: "crawl" | "search"): void {
+  if (!options) return;
+  const replacements = V1_OPTION_REPLACEMENTS[method];
+  const found = Object.keys(replacements).filter((key) => (options as Record<string, unknown>)[key] != null);
+  if (found.length === 0) return;
+  throw new Error(
+    `${method}: ${found.map((key) => `${key} is a v1 option, ${replacements[key]}`).join("; ")}`,
+  );
+}
+
 export function ensureValidScrapeOptions(options?: ScrapeOptions): void {
   if (!options) return;
   if (options.timeout != null && options.timeout <= 0) {

@@ -13,7 +13,7 @@ import { Writable } from "stream";
 import { TransformStream as NodeTransformStream } from "node:stream/web";
 import { v7 as uuid } from "uuid";
 import * as undici from "undici";
-import { getSecureDispatcher } from "./safeFetch";
+import { getSecureDispatcher, TLS_CERT_ERROR_CODES } from "./safeFetch";
 import { logger } from "../../../../lib/logger";
 
 /**
@@ -106,6 +106,10 @@ const mapUndiciError = (url: string, skipTlsVerification: boolean, e: any) => {
     return e;
   }
 
+  if (TLS_CERT_ERROR_CODES.has(code)) {
+    return new SSLError(skipTlsVerification);
+  }
+
   switch (code) {
     case "UND_ERR_CONNECT_TIMEOUT":
     case "UND_ERR_HEADERS_TIMEOUT":
@@ -131,11 +135,6 @@ const mapUndiciError = (url: string, skipTlsVerification: boolean, e: any) => {
     case "EPIPE":
     case "ECONNABORTED":
       return new SiteError("ERR_CONNECTION_RESET");
-
-    case "UNABLE_TO_VERIFY_LEAF_SIGNATURE":
-    case "DEPTH_ZERO_SELF_SIGNED_CERT":
-    case "ERR_TLS_CERT_ALTNAME_INVALID":
-      return new SSLError(skipTlsVerification);
 
     default:
       return e;

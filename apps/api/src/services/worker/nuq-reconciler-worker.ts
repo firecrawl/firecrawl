@@ -7,6 +7,10 @@ import { repairCrawlJobDoneMarkers } from "../../lib/crawl-redis";
 import { Counter, register } from "prom-client";
 import Express from "express";
 import { startNodeRuntimeMetrics } from "../../lib/node-runtime-metrics";
+import { getPrecrawlQueue } from "../queue-service";
+import { startBullmqQueueMetrics } from "../queue-metrics";
+import { startRole } from "../../main";
+import { runProcessStop } from "../../service/service";
 
 const RECONCILER_INTERVAL_MS = 60 * 1000;
 
@@ -25,12 +29,15 @@ const reconcilerJobsRecoveredTotal = new Counter({
   help: "Total drifted jobs recovered by the reconciler",
 });
 
-(async () => {
+export async function start() {
   let isShuttingDown = false;
   let reconcilerInFlight = false;
 
   const app = Express();
   startNodeRuntimeMetrics();
+  // Exported here because this deployment runs one replica, so each queue
+  // gets one series, not a copy per app pod.
+  startBullmqQueueMetrics([getPrecrawlQueue()]);
 
   app.get("/metrics", async (_, res) => {
     try {
@@ -72,16 +79,15 @@ const reconcilerJobsRecoveredTotal = new Counter({
     }
 
     server.close(async () => {
+      await runProcessStop("nuq-reconciler-worker");
       await shutdownTracing();
       _logger.info("NuQ reconciler worker shut down");
       process.exit(0);
     });
   }
 
-  if (require.main === module) {
-    process.on("SIGINT", shutdown);
-    process.on("SIGTERM", shutdown);
-  }
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 
   while (!isShuttingDown) {
     if (!reconcilerInFlight) {
@@ -114,4 +120,8 @@ const reconcilerJobsRecoveredTotal = new Counter({
 
     await new Promise(resolve => setTimeout(resolve, RECONCILER_INTERVAL_MS));
   }
-})();
+}
+
+if (require.main === module) {
+  void startRole("nuq-reconciler-worker");
+}

@@ -1,18 +1,21 @@
 import axios, { type AxiosResponse, type AxiosRequestHeaders, AxiosError } from "axios";
 import * as zt from "zod";
 import { zodSchemaToJsonSchema } from "../utils/zodSchemaToJson";
-import { TypedEventTarget } from "typescript-event-target";
+import { TypedEventTarget } from "./typed-event-target";
 import type { RequiresAction } from "../v2/types";
 import { pinToApiOrigin } from "../utils/apiOrigin";
+import { detectCallerPackage } from "../utils/callerOrigin";
 
 /**
  * Configuration interface for FirecrawlApp.
  * @param apiKey - Optional API key for authentication.
  * @param apiUrl - Optional base URL of the API; defaults to 'https://api.firecrawl.dev'.
+ * @param origin - Optional attribution tag stamped into request bodies.
  */
 export interface FirecrawlAppConfig {
   apiKey?: string | null;
   apiUrl?: string | null;
+  origin?: string;
 }
 
 /**
@@ -367,7 +370,7 @@ export interface ExtractParams<LLMSchema extends zt.ZodSchema = any> {
  * Response interface for extracting information from URLs.
  * Defines the structure of the response received after extracting information from URLs.
  */
-export interface ExtractResponse<LLMSchema extends zt.ZodSchema = any> {
+export interface ExtractResponse<LLMSchema = any> {
   success: boolean;
   data: LLMSchema;
   error?: string;
@@ -666,6 +669,8 @@ export default class FirecrawlApp {
   public apiKey: string;
   public apiUrl: string;
   public version: string =  "1.25.1";
+  private readonly clientOrigin?: string;
+  private readonly callerPackage: string | null;
   
   private isCloudService(url: string): boolean {
     return url.includes('api.firecrawl.dev');
@@ -681,7 +686,7 @@ export default class FirecrawlApp {
       return packageJson.default.version;
     } catch (error) {
       // Suppress noisy logs under test environments
-      const isTest = typeof process !== 'undefined' && process.env.NODE_ENV === 'test';
+      const isTest = typeof process !== 'undefined' && !!process.env && process.env.NODE_ENV === 'test';
       if (!isTest) {
         // eslint-disable-next-line no-console
         console.error("Error getting version:", error);
@@ -698,7 +703,7 @@ export default class FirecrawlApp {
    * Initializes a new instance of the FirecrawlApp class.
    * @param config - Configuration options for the FirecrawlApp instance.
    */
-  constructor({ apiKey = null, apiUrl = null }: FirecrawlAppConfig) {
+  constructor({ apiKey = null, apiUrl = null, origin }: FirecrawlAppConfig) {
     const baseUrl = apiUrl || "https://api.firecrawl.dev";
     
     if (this.isCloudService(baseUrl) && typeof apiKey !== "string") {
@@ -707,7 +712,17 @@ export default class FirecrawlApp {
 
     this.apiKey = apiKey || '';
     this.apiUrl = baseUrl;
+    this.clientOrigin = origin || undefined;
+    this.callerPackage = this.clientOrigin ? null : detectCallerPackage();
     this.init();
+  }
+
+  private resolveOrigin(params?: any): string {
+    if (typeof params?.origin === "string" && params.origin) return params.origin;
+    if (this.clientOrigin) return this.clientOrigin;
+    return this.callerPackage
+      ? `js-sdk.${this.callerPackage}@${this.version}`
+      : `js-sdk@${this.version}`;
   }
 
   /**
@@ -724,7 +739,7 @@ export default class FirecrawlApp {
       "Content-Type": "application/json",
       Authorization: `Bearer ${this.apiKey}`,
     } as AxiosRequestHeaders;
-    let jsonData: any = { url, ...params, origin: typeof (params as any)?.origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}` };
+    let jsonData: any = { url, ...params, origin: this.resolveOrigin(params) };
     if (jsonData?.extract?.schema) {
       jsonData = {
         ...jsonData,
@@ -791,7 +806,7 @@ export default class FirecrawlApp {
       lang: params?.lang ?? "en",
       country: params?.country ?? "us",
       location: params?.location,
-      origin: typeof (params as any)?.origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}`,
+      origin: this.resolveOrigin(params),
       timeout: params?.timeout ?? 60000,
       scrapeOptions: params?.scrapeOptions ?? { formats: [] },
     };
@@ -855,7 +870,7 @@ export default class FirecrawlApp {
     idempotencyKey?: string
   ): Promise<CrawlStatusResponse | ErrorResponse> {
     const headers = this.prepareHeaders(idempotencyKey);
-    let jsonData: any = { url, ...params, origin: typeof (params as any)?.origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}` };
+    let jsonData: any = { url, ...params, origin: this.resolveOrigin(params) };
     try {
       const response: AxiosResponse = await this.postRequest(
         this.apiUrl + `/v1/crawl`,
@@ -884,7 +899,7 @@ export default class FirecrawlApp {
     idempotencyKey?: string
   ): Promise<CrawlResponse | ErrorResponse> {
     const headers = this.prepareHeaders(idempotencyKey);
-    let jsonData: any = { url, ...params, origin: typeof (params as any)?.origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}` };
+    let jsonData: any = { url, ...params, origin: this.resolveOrigin(params) };
     try {
       const response: AxiosResponse = await this.postRequest(
         this.apiUrl + `/v1/crawl`,
@@ -1060,7 +1075,7 @@ export default class FirecrawlApp {
    */
   async mapUrl(url: string, params?: MapParams): Promise<MapResponse | ErrorResponse> {
     const headers = this.prepareHeaders();
-    let jsonData: any = { url, ...params, origin: typeof (params as any)?.origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}` };
+    let jsonData: any = { url, ...params, origin: this.resolveOrigin(params) };
 
     try {
       const response: AxiosResponse = await this.postRequest(
@@ -1099,7 +1114,7 @@ export default class FirecrawlApp {
     maxConcurrency?: number,
   ): Promise<BatchScrapeStatusResponse | ErrorResponse> {
     const headers = this.prepareHeaders(idempotencyKey);
-    let jsonData: any = { urls, webhook, ignoreInvalidURLs, maxConcurrency, ...params, origin: typeof (params as any)?.origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}` };
+    let jsonData: any = { urls, webhook, ignoreInvalidURLs, maxConcurrency, ...params, origin: this.resolveOrigin(params) };
     if (jsonData?.extract?.schema) {
       jsonData = {
         ...jsonData,
@@ -1148,7 +1163,7 @@ export default class FirecrawlApp {
     ignoreInvalidURLs?: boolean,
   ): Promise<BatchScrapeResponse | ErrorResponse> {
     const headers = this.prepareHeaders(idempotencyKey);
-    let jsonData: any = { urls, webhook, ignoreInvalidURLs, ...params, origin: typeof (params as any)?.origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}` };
+    let jsonData: any = { urls, webhook, ignoreInvalidURLs, ...params, origin: this.resolveOrigin(params) };
     try {
       const response: AxiosResponse = await this.postRequest(
         this.apiUrl + `/v1/batch/scrape`,
@@ -1312,7 +1327,7 @@ export default class FirecrawlApp {
     try {
       const response: AxiosResponse = await this.postRequest(
         this.apiUrl + `/v1/extract`,
-        { ...jsonData, schema: jsonSchema, origin: typeof (params as any)?.origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}` },
+        { ...jsonData, schema: jsonSchema, origin: this.resolveOrigin(params) },
         headers
       );
 
@@ -1372,7 +1387,7 @@ export default class FirecrawlApp {
     try {
       const response: AxiosResponse = await this.postRequest(
         this.apiUrl + `/v1/extract`,
-        { ...jsonData, schema: jsonSchema, origin: typeof (params as any)?.origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}` },
+        { ...jsonData, schema: jsonSchema, origin: this.resolveOrigin(params) },
         headers
       );
 
@@ -1740,7 +1755,7 @@ export default class FirecrawlApp {
    */
   async asyncDeepResearch(query: string, params: DeepResearchParams<zt.ZodSchema>): Promise<DeepResearchResponse | ErrorResponse> {
     const headers = this.prepareHeaders();
-    let jsonData: any = { query, ...params, origin: typeof (params as any)?.origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}` };
+    let jsonData: any = { query, ...params, origin: this.resolveOrigin(params) };
 
     if (jsonData?.jsonOptions?.schema) {
       jsonData = {
@@ -1888,7 +1903,7 @@ export default class FirecrawlApp {
   async __asyncDeepResearch(topic: string, params: DeepResearchParams): Promise<DeepResearchResponse | ErrorResponse> {
     const headers = this.prepareHeaders();
     try {
-      let jsonData: any = { topic, ...params, origin: typeof (params as any)?.origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}` };
+      let jsonData: any = { topic, ...params, origin: this.resolveOrigin(params) };
       const response: AxiosResponse = await this.postRequest(
         `${this.apiUrl}/v1/deep-research`,
         jsonData,
@@ -2003,7 +2018,7 @@ export default class FirecrawlApp {
    */
   async asyncGenerateLLMsText(url: string, params?: GenerateLLMsTextParams): Promise<GenerateLLMsTextResponse | ErrorResponse> {
     const headers = this.prepareHeaders();
-    let jsonData: any = { url, ...params, origin: typeof (params as any)?.origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}` };
+    let jsonData: any = { url, ...params, origin: this.resolveOrigin(params) };
     try {
       const response: AxiosResponse = await this.postRequest(
         `${this.apiUrl}/v1/llmstxt`,
@@ -2205,6 +2220,9 @@ export class CrawlWatcher extends TypedEventTarget<CrawlWatcherEvents> {
     this.id = id;
     // replace `http` with `ws` (`http://` -> `ws://` and `https://` -> `wss://`)
     const wsUrl = app.apiUrl.replace(/^http/, "ws");
+    if (typeof WebSocket === "undefined") {
+      throw new Error("Watching a crawl needs a global WebSocket (Node 22+, Bun, Deno or a browser). On older Node, use the v2 client's watcher(), which polls instead.");
+    }
     this.ws = new WebSocket(`${wsUrl}/v1/crawl/${id}`, app.apiKey);
     this.status = "scraping";
     this.data = [];

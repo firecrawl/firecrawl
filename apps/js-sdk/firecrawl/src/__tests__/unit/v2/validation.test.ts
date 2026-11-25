@@ -1,9 +1,47 @@
 import { describe, test, expect } from "vitest";
-import { ensureValidFormats, ensureValidScrapeOptions } from "../../../v2/utils/validation";
+import { ensureNoV1Options, ensureValidFormats, ensureValidScrapeOptions } from "../../../v2/utils/validation";
 import type { FormatOption } from "../../../v2/types";
 import { z } from "zod";
 
 describe("v2 utils: validation", () => {
+  const scrapeLevel = {
+    pageOptions: "use scrapeOptions",
+    includeLinks: "add 'links' to scrapeOptions.formats",
+    parsePDF: "use scrapeOptions.parsers",
+  };
+  const crawlOnly = {
+    crawlerOptions: "move its fields to the top level",
+    maxDepth: "use maxDiscoveryDepth",
+    allowBackwardLinks: "use crawlEntireDomain",
+    ignoreSitemap: "use sitemap: 'skip'",
+  };
+
+  test.each(Object.entries({ ...crawlOnly, ...scrapeLevel }))("ensureNoV1Options: crawl names %s and its replacement", (option, replacement) => {
+    expect(() => ensureNoV1Options({ url: "https://a.dev", [option]: true }, "crawl")).toThrow(
+      `crawl: ${option} is a v1 option, ${replacement}`,
+    );
+  });
+
+  test.each(Object.entries(scrapeLevel))("ensureNoV1Options: search names %s and its replacement", (option, replacement) => {
+    expect(() => ensureNoV1Options({ query: "q", [option]: true }, "search")).toThrow(
+      `search: ${option} is a v1 option, ${replacement}`,
+    );
+  });
+
+  test("ensureNoV1Options: search does not apply crawl-only hints", () => {
+    expect(() => ensureNoV1Options({ query: "q", maxDepth: 2, crawlerOptions: {} }, "search")).not.toThrow();
+  });
+
+  test("ensureNoV1Options: lists every v1 option found", () => {
+    expect(() => ensureNoV1Options({ maxDepth: 2, allowBackwardLinks: true }, "crawl")).toThrow(/maxDepth.*maxDiscoveryDepth.*allowBackwardLinks.*crawlEntireDomain/);
+  });
+
+  test("ensureNoV1Options: accepts v2 options and unset v1 keys", () => {
+    expect(() => ensureNoV1Options({ url: "https://a.dev", limit: 2, maxDiscoveryDepth: 1 }, "crawl")).not.toThrow();
+    expect(() => ensureNoV1Options({ url: "https://a.dev", maxDepth: undefined }, "crawl")).not.toThrow();
+    expect(() => ensureNoV1Options(undefined, "search")).not.toThrow();
+  });
+
   test("ensureValidFormats: plain 'json' string is invalid", () => {
     const formats: FormatOption[] = ["markdown", "json"] as unknown as FormatOption[];
     expect(() => ensureValidFormats(formats)).toThrow(/json format must be an object/i);

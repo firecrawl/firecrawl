@@ -1,5 +1,54 @@
 ## CHANGELOG
 
+## [2.21.10] - 2026-11-04
+
+### Added
+
+- `SearchPapersOptions::sort` accepts `relevance` or `date_desc`.
+- `PaperResult` includes optional `created_date` and `update_date` strings
+  in `YYYY-MM-DD` format for search and related-paper results.
+
+## [2.21.9] - 2026-11-04
+
+### Changed
+
+- `Client::search_github`: the research index GitHub search endpoint it calls
+  was removed after 2026-11-03. Use `Client::developer_search` instead. The
+  method remains in the SDK until the next major release.
+- `SearchCategory::Github` is documented as removed. Use
+  `Client::developer_search` for GitHub issues, pull requests and READMEs.
+
+## [2.21.8] - 2026-10-20
+
+### Added
+
+- `Client::developer_search` calls `POST /v2/search/developer`, the developer
+  index of public repositories, GitHub issues, merged pull requests, READMEs
+  and code documentation, with every filter the API takes
+  (`DeveloperSearchOptions`). It replaces the deprecated `search_github`,
+  which stops responding after 2026-11-03.
+
+## [2.21.7] - 2026-10-19
+
+### Fixed
+
+- `screenshot_options`, `change_tracking_options` and `attribute_selectors` on
+  `ScrapeOptions` (and `attribute_selectors` on `ParseOptions`) are now sent
+  inside their v2 `screenshot`, `changeTracking` and `attributes` format
+  objects instead of as top-level fields. The matching format is added to
+  `formats` when it is missing.
+- `SearchOptions::ignore_invalid_urls` now serializes as `ignoreInvalidURLs`.
+
+## [2.21.6] - 2026-10-18
+
+### Added
+
+- `ScrapeOptions::check_prompt_injection` and
+  `ParseOptions::check_prompt_injection` scan the content for prompt injection
+  before LLM-backed formats run. A detection fails the request with
+  `SCRAPE_PROMPT_INJECTION_DETECTED`. `JsonOptions::check_prompt_injection` is
+  deprecated in favor of these.
+
 ## [2.21.5] - 2026-10-07
 
 ### Added

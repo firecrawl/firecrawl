@@ -175,6 +175,95 @@ func TestScrapeOptionsSerializesCheckPromptInjection(t *testing.T) {
 	}
 }
 
+func TestScrapeOptionsSendsJsonOptionsAsJsonFormat(t *testing.T) {
+	payload, err := json.Marshal(ScrapeOptions{
+		Formats: []string{"markdown", "json"},
+		JsonOptions: &JsonOptions{
+			Prompt: "Extract the product name",
+			Schema: map[string]interface{}{"type": "object"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal ScrapeOptions: %v", err)
+	}
+
+	jsonBody := string(payload)
+	want := `"formats":["markdown",{"type":"json","prompt":"Extract the product name","schema":{"type":"object"}}]`
+	if !strings.Contains(jsonBody, want) {
+		t.Fatalf("serialized formats = %s, want to contain %s", jsonBody, want)
+	}
+	if strings.Contains(jsonBody, "jsonOptions") {
+		t.Fatalf("serialized options = %s, want no top-level jsonOptions", jsonBody)
+	}
+}
+
+func TestScrapeOptionsAddsJsonFormatForJsonOptions(t *testing.T) {
+	payload, err := json.Marshal(ScrapeOptions{
+		FormatOptions: []interface{}{"markdown", QuestionFormat{Question: "What is it?"}},
+		JsonOptions:   &JsonOptions{Prompt: "Extract the title"},
+	})
+	if err != nil {
+		t.Fatalf("Marshal ScrapeOptions: %v", err)
+	}
+
+	want := `"formats":["markdown",{"type":"question","question":"What is it?"},{"type":"json","prompt":"Extract the title"}]`
+	if !strings.Contains(string(payload), want) {
+		t.Fatalf("serialized formats = %s, want to contain %s", payload, want)
+	}
+}
+
+func TestScrapeOptionsReplacesJsonFormatObjectWithJsonOptions(t *testing.T) {
+	payload, err := json.Marshal(ScrapeOptions{
+		FormatOptions: []interface{}{"markdown", map[string]interface{}{"type": "json"}},
+		JsonOptions:   &JsonOptions{Prompt: "Extract the title"},
+	})
+	if err != nil {
+		t.Fatalf("Marshal ScrapeOptions: %v", err)
+	}
+
+	want := `"formats":["markdown",{"type":"json","prompt":"Extract the title"}]`
+	if !strings.Contains(string(payload), want) {
+		t.Fatalf("serialized formats = %s, want to contain %s", payload, want)
+	}
+}
+
+func TestCrawlScrapeOptionsSendJsonOptionsAsJsonFormat(t *testing.T) {
+	payload, err := json.Marshal(CrawlOptions{
+		ScrapeOptions: &ScrapeOptions{
+			Formats:     []string{"json"},
+			JsonOptions: &JsonOptions{Prompt: "Extract the title"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal CrawlOptions: %v", err)
+	}
+
+	jsonBody := string(payload)
+	want := `"scrapeOptions":{"formats":[{"type":"json","prompt":"Extract the title"}]}`
+	if !strings.Contains(jsonBody, want) {
+		t.Fatalf("serialized crawl options = %s, want to contain %s", jsonBody, want)
+	}
+}
+
+func TestParseOptionsSendJsonOptionsAsJsonFormat(t *testing.T) {
+	payload, err := json.Marshal(ParseOptions{
+		Formats:     []string{"json"},
+		JsonOptions: &JsonOptions{Prompt: "Extract the title"},
+	})
+	if err != nil {
+		t.Fatalf("Marshal ParseOptions: %v", err)
+	}
+
+	jsonBody := string(payload)
+	want := `"formats":[{"type":"json","prompt":"Extract the title"}]`
+	if !strings.Contains(jsonBody, want) {
+		t.Fatalf("serialized parse options = %s, want to contain %s", jsonBody, want)
+	}
+	if strings.Contains(jsonBody, "jsonOptions") {
+		t.Fatalf("serialized parse options = %s, want no top-level jsonOptions", jsonBody)
+	}
+}
+
 func TestScrapeOptionsSerializesDomainTools(t *testing.T) {
 	payload, err := json.Marshal(ScrapeOptions{
 		DomainTools: Bool(true),

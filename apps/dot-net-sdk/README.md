@@ -1,6 +1,6 @@
 # Firecrawl .NET SDK
 
-.NET SDK for the [Firecrawl API](https://firecrawl.dev) — web scraping, crawling, and data extraction.
+.NET SDK for [Firecrawl](https://firecrawl.dev), the context API for AI agents. Search, scrape, parse, crawl, and map the web, and run Monitor jobs.
 
 ## Installation
 
@@ -112,6 +112,33 @@ var doc = await client.ScrapeAsync("https://example.com/restaurant/123",
 Console.WriteLine(doc.Menu);
 ```
 
+### Interact
+
+Run code or a natural-language prompt in the browser session of a scrape job,
+then stop the session when you are done. The job ID is the scraped document's
+`metadata.scrapeId`.
+
+```csharp
+var doc = await client.ScrapeAsync("https://example.com");
+var scrapeId = doc.Metadata!["scrapeId"].ToString()!;
+
+// Run code (language: "node" by default, or "python" / "bash")
+var run = await client.InteractAsync(scrapeId, "console.log(await page.title())");
+Console.WriteLine(run.Stdout);   // Example Domain
+Console.WriteLine(run.ExitCode); // 0
+
+// Or describe what to do in plain language
+var agent = await client.InteractAsync(scrapeId, null, prompt: "Click the first link");
+Console.WriteLine(agent.Output);
+
+// Stop the browser session
+var stop = await client.StopInteractiveBrowserAsync(scrapeId);
+Console.WriteLine(stop.CreditsBilled);
+```
+
+`InteractAsync` returns `Stdout`, `Stderr`, `Result`, `ExitCode`, `Killed`, `Truncated`, and `Output` (for prompts),
+plus `CdpUrl`, `LiveViewUrl` and `InteractiveLiveViewUrl` for the session. `timeout` is in seconds (1-300, default 30).
+
 ### Crawl
 
 ```csharp
@@ -165,6 +192,43 @@ foreach (var doc in job.Data!)
 {
     Console.WriteLine(doc.Markdown);
 }
+```
+
+### Agent
+
+Describe what you need in a prompt; the agent searches, navigates and extracts it.
+Pass a JSON Schema to get structured output.
+
+```csharp
+// Run an agent job with auto-polling (waits until it completes, fails or is cancelled)
+var result = await client.AgentAsync("Find the pricing plans and their monthly prices",
+    new AgentOptions
+    {
+        Urls = new List<string> { "https://example.com" },
+        Schema = new Dictionary<string, object>
+        {
+            ["type"] = "object",
+            ["properties"] = new Dictionary<string, object>
+            {
+                ["plans"] = new Dictionary<string, object> { ["type"] = "array" }
+            }
+        }
+    });
+
+if (result.Status == "completed")
+    Console.WriteLine(result.Data);
+else
+    Console.WriteLine($"{result.Status}: {result.Error}");
+
+// Start an agent job without waiting
+var started = await client.StartAgentAsync("Summarize the latest blog post on example.com");
+
+// Check status later
+var status = await client.GetAgentStatusAsync(started.Id!);
+Console.WriteLine($"Status: {status.Status}, Credits used: {status.CreditsUsed}");
+
+// Cancel an agent job
+await client.CancelAgentAsync(started.Id!);
 ```
 
 ### Parse
@@ -223,9 +287,9 @@ var data = await client.MapAsync("https://example.com",
         Limit = 100
     });
 
-foreach (var url in data.Links!)
+foreach (var link in data.Links!)
 {
-    Console.WriteLine(url);
+    Console.WriteLine($"{link.Url} {link.Title}");
 }
 ```
 
@@ -239,6 +303,25 @@ var results = await client.SearchAsync("firecrawl web scraping",
         Limit = 5,
         Location = "US"
     });
+```
+
+### Developer Search
+
+Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. It replaces the research index GitHub search, which was removed after 2026-11-03.
+
+```csharp
+var response = await client.DeveloperSearchAsync("retry an http request with exponential backoff",
+    new DeveloperSearchOptions
+    {
+        K = 5,
+        Types = new List<string> { "issue", "pull_request" },
+        Repos = new List<string> { "square/okhttp" }
+    });
+
+foreach (var result in response.Results!)
+{
+    Console.WriteLine($"{result.Title} {result.Url}");
+}
 ```
 
 ### Usage & Metrics

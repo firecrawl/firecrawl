@@ -95,30 +95,12 @@ describe("V2 Scrape skipTlsVerification Default", () => {
   });
 
   testIf(!HAS_PROXY)(
-    "should default skipTlsVerification to true in v2 API",
-    async () => {
-      const data = await scrape(
-        {
-          url: selfSignedUrl,
-          maxAge: 0,
-        },
-        identity,
-      );
-
-      expect(data).toBeDefined();
-      expect(data.markdown).toContain("Self-signed TLS fixture");
-    },
-    scrapeTimeout,
-  );
-
-  testIf(!HAS_PROXY)(
-    "should allow explicit skipTlsVerification: false override",
+    "should verify TLS by default in v2 API",
     async () => {
       const response = await scrapeRaw(
         {
           url: selfSignedUrl,
-          skipTlsVerification: false,
-          maxAge: 0,
+          ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
         },
         identity,
       );
@@ -129,6 +111,25 @@ describe("V2 Scrape skipTlsVerification Default", () => {
 
       expect(response.status).toBe(500);
       expect(response.body.success).toBe(false);
+      expect(response.body.code).toBe("SCRAPE_SSL_ERROR");
+    },
+    scrapeTimeout,
+  );
+
+  testIf(!HAS_PROXY)(
+    "should allow explicit skipTlsVerification: true override",
+    async () => {
+      const data = await scrape(
+        {
+          url: selfSignedUrl,
+          skipTlsVerification: true,
+          ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
+        },
+        identity,
+      );
+
+      expect(data).toBeDefined();
+      expect(data.markdown).toContain("Self-signed TLS fixture");
     },
     scrapeTimeout,
   );
@@ -139,7 +140,7 @@ describe("V2 Scrape skipTlsVerification Default", () => {
       const data = await scrape(
         {
           url: TEST_SUITE_WEBSITE, // NOTE: test website in self-host mode may not use TLS, need to check this out
-          maxAge: 0,
+          ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
         },
         identity,
       );
@@ -157,7 +158,7 @@ describe("V2 Scrape skipTlsVerification Default", () => {
         {
           url: TEST_SUITE_WEBSITE,
           formats: [{ type: "screenshot", fullPage: false }],
-          maxAge: 0,
+          ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
         },
         identity,
       );
@@ -176,7 +177,7 @@ describe("V2 Scrape skipTlsVerification Default", () => {
         {
           url: TEST_SUITE_WEBSITE,
           formats: [{ type: "screenshot", fullPage: true }],
-          maxAge: 0,
+          ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
         },
         identity,
       );

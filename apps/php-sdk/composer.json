@@ -1,7 +1,7 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
     "name": "firecrawl/firecrawl-sdk",
-    "description": "PHP SDK for the Firecrawl v2 API with Laravel support",
+    "description": "PHP SDK for Firecrawl, the context API for AI agents: search, scrape, parse, crawl, map, and interact with the web, run Agent and Monitor jobs, and manage browser sessions, with Laravel support",
     "license": "MIT",
     "type": "library",
     "keywords": [

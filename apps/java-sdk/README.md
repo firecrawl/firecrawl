@@ -1,6 +1,6 @@
 # Firecrawl Java SDK
 
-Java SDK for [Firecrawl](https://firecrawl.dev) — search, scrape, and interact with the web.
+Java SDK for [Firecrawl](https://firecrawl.dev), the context API for AI agents. Search, scrape, parse, crawl, map, and interact with the web, and run Agent and Monitor jobs.
 
 ## Prerequisites
 
@@ -82,13 +82,13 @@ Before using the Java SDK, ensure you have the following installed:
 ### Gradle (Kotlin DSL)
 
 ```kotlin
-implementation("com.firecrawl:firecrawl-java:1.16.0")
+implementation("com.firecrawl:firecrawl-java:1.18.9")
 ```
 
 ### Gradle (Groovy)
 
 ```groovy
-implementation 'com.firecrawl:firecrawl-java:1.16.0'
+implementation 'com.firecrawl:firecrawl-java:1.18.9'
 ```
 
 ### Maven
@@ -97,7 +97,7 @@ implementation 'com.firecrawl:firecrawl-java:1.16.0'
 <dependency>
     <groupId>com.firecrawl</groupId>
     <artifactId>firecrawl-java</artifactId>
-    <version>1.16.0</version>
+    <version>1.18.9</version>
 </dependency>
 ```
 
@@ -350,6 +350,26 @@ if (results.getWeb() != null) {
 }
 ```
 
+### Developer Search
+
+Search public repositories, GitHub issues, merged pull requests, READMEs and code documentation. It replaces the research index GitHub search, which was removed after 2026-11-03.
+
+```java
+import com.firecrawl.models.ResearchModels;
+
+ResearchModels.DeveloperSearchOptions options = new ResearchModels.DeveloperSearchOptions();
+options.k = 5;
+options.types = List.of("issue", "pull_request");
+options.repos = List.of("square/okhttp");
+
+ResearchModels.DeveloperSearchResponse response =
+    client.developerSearch("retry an http request with exponential backoff", options);
+
+for (ResearchModels.DeveloperSearchResult result : response.results) {
+    System.out.println(result.title + " " + result.url);
+}
+```
+
 ### Agent
 
 Run an AI-powered agent to research and extract data from the web.
@@ -458,14 +478,14 @@ gradle build
 
 ```bash
 gradle jar
-# Output: build/libs/firecrawl-java-1.16.0.jar
+# Output: build/libs/firecrawl-java-1.18.9.jar
 ```
 
 ### Install Locally
 
 ```bash
 gradle publishToMavenLocal
-# Now available as: com.firecrawl:firecrawl-java:1.16.0 in local Maven repository
+# Now available as: com.firecrawl:firecrawl-java:1.18.9 in local Maven repository
 ```
 
 ## Running Tests

@@ -25,6 +25,8 @@ import aiohttp
 import asyncio
 
 from ..v2.utils.api_origin import pin_to_api_origin
+from ..v2.utils.caller_origin import default_origin
+from ..v2.utils.get_version import get_version as get_sdk_version
 
 logger : logging.Logger = logging.getLogger("firecrawl")
 
@@ -525,14 +527,16 @@ class V1FirecrawlApp:
         "Please define specific properties for your object. Note: Recursive schemas using '$ref' are supported."
     )
     
-    def __init__(self, api_key: Optional[str] = None, api_url: Optional[str] = None) -> None:
+    def __init__(self, api_key: Optional[str] = None, api_url: Optional[str] = None, origin: Optional[str] = None) -> None:
         """
         Initialize the V1FirecrawlApp instance with API key, API URL.
 
         Args:
             api_key (Optional[str]): API key for authenticating with the Firecrawl API.
             api_url (Optional[str]): Base URL for the Firecrawl API.
+            origin (Optional[str]): Attribution string stamped into API request payloads.
         """
+        self.origin = origin or default_origin(get_sdk_version())
         self.api_key = api_key or os.getenv('FIRECRAWL_API_KEY')
         self.api_url = api_url or os.getenv('FIRECRAWL_API_URL', 'https://api.firecrawl.dev')
         
@@ -612,7 +616,7 @@ class V1FirecrawlApp:
         # Build scrape parameters
         scrape_params = {
             'url': url,
-            'origin': f"python-sdk@{version}"
+            'origin': self.origin
         }
 
         # Add optional parameters if provided
@@ -763,7 +767,7 @@ class V1FirecrawlApp:
         # Create final params object
         final_params = V1SearchParams(query=query, **search_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         if _integration:
             params_dict['integration'] = _integration
@@ -985,7 +989,7 @@ class V1FirecrawlApp:
         final_params = V1CrawlParams(**crawl_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['url'] = url
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         if _integration:
             params_dict['integration'] = _integration
@@ -1113,7 +1117,7 @@ class V1FirecrawlApp:
         final_params = V1CrawlParams(**crawl_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['url'] = url
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         # Make request
         headers = self._prepare_headers(idempotency_key)
@@ -1416,7 +1420,7 @@ class V1FirecrawlApp:
         final_params = V1MapParams(**map_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['url'] = url
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         if _integration:
             params_dict['integration'] = _integration
@@ -1563,7 +1567,7 @@ class V1FirecrawlApp:
         final_params = V1ScrapeParams(**scrape_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['urls'] = urls
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         if 'extract' in params_dict and params_dict['extract'] and 'schema' in params_dict['extract']:
             params_dict['extract']['schema'] = self._ensure_schema_dict(params_dict['extract']['schema'])
@@ -1704,7 +1708,7 @@ class V1FirecrawlApp:
         final_params = V1ScrapeParams(**scrape_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['urls'] = urls
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         if 'extract' in params_dict and params_dict['extract'] and 'schema' in params_dict['extract']:
             params_dict['extract']['schema'] = self._ensure_schema_dict(params_dict['extract']['schema'])
@@ -1840,7 +1844,7 @@ class V1FirecrawlApp:
         final_params = V1ScrapeParams(**scrape_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['urls'] = urls
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         if 'extract' in params_dict and params_dict['extract'] and 'schema' in params_dict['extract']:
             params_dict['extract']['schema'] = self._ensure_schema_dict(params_dict['extract']['schema'])
@@ -2022,7 +2026,7 @@ class V1FirecrawlApp:
             'enableWebSearch': enable_web_search,
             'showSources': show_sources,
             'schema': schema,
-            'origin': f'python-sdk@{get_version()}'
+            'origin': self.origin
         }
 
         # Only add prompt and systemPrompt if they exist
@@ -2180,7 +2184,7 @@ class V1FirecrawlApp:
             'enableWebSearch': enable_web_search,
             'showSources': show_sources,
             'schema': schema,
-            'origin': f'python-sdk@{version}'
+            'origin': self.origin
         }
 
         if prompt:
@@ -2325,7 +2329,7 @@ class V1FirecrawlApp:
 
         headers = self._prepare_headers()
         json_data = {'url': url, **params.dict(by_alias=True, exclude_none=True)}
-        json_data['origin'] = f"python-sdk@{version}"
+        json_data['origin'] = self.origin
 
         try:
             req = self._post_request(f'{self.api_url}/v1/llmstxt', json_data, headers)
@@ -2790,7 +2794,7 @@ class V1FirecrawlApp:
         headers = self._prepare_headers()
 
         json_data = {'query': query, **research_params.dict(by_alias=True, exclude_none=True)}
-        json_data['origin'] = f"python-sdk@{version}"
+        json_data['origin'] = self.origin
 
         # Handle json options schema if present
         if 'jsonOptions' in json_data:
@@ -3382,9 +3386,9 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
     Provides non-blocking alternatives to all V1FirecrawlApp operations.
     """
 
-    def __init__(self, api_key: str, api_url: str = "https://api.firecrawl.dev"):
+    def __init__(self, api_key: str, api_url: str = "https://api.firecrawl.dev", origin: Optional[str] = None):
         # Reuse V1 helpers (_prepare_headers, _validate_kwargs, _ensure_schema_dict, _get_error_message)
-        super().__init__(api_key=api_key, api_url=api_url)
+        super().__init__(api_key=api_key, api_url=api_url, origin=origin)
 
     async def _async_request(
             self,
@@ -3690,7 +3694,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         # Build scrape parameters
         scrape_params = {
             'url': url,
-            'origin': f"python-sdk@{version}"
+            'origin': self.origin
         }
 
         # Add optional parameters if provided and not None
@@ -3870,7 +3874,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         final_params = V1ScrapeParams(**scrape_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['urls'] = urls
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         if 'extract' in params_dict and params_dict['extract'] and 'schema' in params_dict['extract']:
             params_dict['extract']['schema'] = self._ensure_schema_dict(params_dict['extract']['schema'])
@@ -4012,7 +4016,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         final_params = V1ScrapeParams(**scrape_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['urls'] = urls
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         if 'extract' in params_dict and params_dict['extract'] and 'schema' in params_dict['extract']:
             params_dict['extract']['schema'] = self._ensure_schema_dict(params_dict['extract']['schema'])
@@ -4136,7 +4140,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         final_params = V1CrawlParams(**crawl_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['url'] = url
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
         # Make request
         headers = self._prepare_headers(idempotency_key)
         response = await self._async_post_request(
@@ -4251,7 +4255,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         final_params = V1CrawlParams(**crawl_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['url'] = url
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         # Make request
         headers = self._prepare_headers(idempotency_key)
@@ -4446,7 +4450,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         final_params = V1MapParams(**map_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
         params_dict['url'] = url
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         # Make request
         endpoint = f'/v1/map'
@@ -4527,7 +4531,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             'enableWebSearch': enable_web_search,
             'showSources': show_sources,
             'schema': schema,
-            'origin': f'python-sdk@{get_version()}'
+            'origin': self.origin
         }
 
         # Only add prompt and systemPrompt if they exist
@@ -4793,14 +4797,14 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         if schema:
             schema = self._ensure_schema_dict(schema)
 
-        request_data = V1ExtractResponse(
-            urls=urls or [],
-            allowExternalLinks=allow_external_links,
-            enableWebSearch=enable_web_search,
-            showSources=show_sources,
-            schema=schema,
-            origin=f'python-sdk@{version}'
-        )
+        request_data = {
+            'urls': urls or [],
+            'allowExternalLinks': allow_external_links,
+            'enableWebSearch': enable_web_search,
+            'showSources': show_sources,
+            'schema': schema,
+            'origin': self.origin,
+        }
 
         if prompt:
             request_data['prompt'] = prompt
@@ -4941,7 +4945,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
 
         headers = self._prepare_headers()
         json_data = {'url': url, **params.dict(by_alias=True, exclude_none=True)}
-        json_data['origin'] = f"python-sdk@{version}"
+        json_data['origin'] = self.origin
 
         try:
             return await self._async_post_request(
@@ -5153,7 +5157,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         headers = self._prepare_headers()
 
         json_data = {'query': query, **research_params.dict(by_alias=True, exclude_none=True)}
-        json_data['origin'] = f"python-sdk@{version}"
+        json_data['origin'] = self.origin
 
         try:
             return await self._async_post_request(
@@ -5279,7 +5283,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         # Create final params object
         final_params = V1SearchParams(query=query, **search_params)
         params_dict = final_params.dict(by_alias=True, exclude_none=True)
-        params_dict['origin'] = f"python-sdk@{version}"
+        params_dict['origin'] = self.origin
 
         return await self._async_post_request(
             f"{self.api_url}/v1/search",

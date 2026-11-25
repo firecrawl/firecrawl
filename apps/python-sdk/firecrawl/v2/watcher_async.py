@@ -176,36 +176,18 @@ class AsyncWatcher:
         return await self._call_status_method("get_batch_scrape_status")
 
     async def _call_status_method(self, method_name: str):
-        # Try on client directly
         meth = getattr(self._client, method_name, None)
-        if meth is not None:
-            try:
-                result = meth(self._job_id)
-            except TypeError:
-                result = None
-            if result is not None:
-                if inspect.isawaitable(result):
-                    return await result
-                return result
-            # Fallback: if we couldn't call directly, try to_thread
-            return await asyncio.to_thread(meth, self._job_id)
-
-        # Try on client.v2
-        v2 = getattr(self._client, "v2", None)
-        if v2 is not None:
-            meth = getattr(v2, method_name, None)
-            if meth is not None:
-                try:
-                    result = meth(self._job_id)
-                except TypeError:
-                    result = None
-                if result is not None:
-                    if inspect.isawaitable(result):
-                        return await result
-                    return result
-                return await asyncio.to_thread(meth, self._job_id)
-
-        raise RuntimeError(f"Client does not expose {method_name}")
+        if meth is None:
+            meth = getattr(getattr(self._client, "v2", None), method_name, None)
+        if meth is None:
+            raise RuntimeError(f"Client does not expose {method_name}")
+        if inspect.iscoroutinefunction(meth):
+            return await meth(self._job_id)
+        # Sync clients block on HTTP, so keep them off the event loop.
+        result = await asyncio.get_event_loop().run_in_executor(None, meth, self._job_id)
+        if inspect.isawaitable(result):
+            return await result
+        return result
 
     async def _safe_fetch(self):
         try:

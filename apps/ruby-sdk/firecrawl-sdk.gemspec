@@ -8,10 +8,10 @@ Gem::Specification.new do |spec|
   spec.authors = ["Firecrawl"]
   spec.email = ["hello@firecrawl.dev"]
 
-  spec.summary = "Ruby SDK for the Firecrawl v2 web scraping API"
-  spec.description = "A type-safe Ruby client for the Firecrawl v2 API. " \
-                     "Supports scraping, crawling, batch scraping, URL mapping, " \
-                     "web search, and AI agent operations."
+  spec.summary = "Ruby SDK for Firecrawl, the context API for AI agents"
+  spec.description = "A type-safe Ruby client for the Firecrawl v2 API: " \
+                     "search, scrape, parse, crawl, map, and interact with the web, " \
+                     "run batch scrapes, and run Agent and Monitor jobs."
   spec.homepage = "https://github.com/mendableai/firecrawl"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.0.0"

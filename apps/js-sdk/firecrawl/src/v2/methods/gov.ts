@@ -19,6 +19,16 @@ export async function govSearch(
     const response = await http.post<GovSearchResponse>(ENDPOINT, {
       query,
       ...(options.k !== undefined ? { k: options.k } : {}),
+      ...(options.jurisdiction !== undefined
+        ? { jurisdiction: options.jurisdiction }
+        : {}),
+      ...(options.court !== undefined ? { court: options.court } : {}),
+      ...(options.courtType !== undefined
+        ? { courtType: options.courtType }
+        : {}),
+      ...(options.cites !== undefined ? { cites: options.cites } : {}),
+      ...(options.domain !== undefined ? { domain: options.domain } : {}),
+      ...(options.sources !== undefined ? { sources: options.sources } : {}),
     });
 
     if (response.status !== 200 || !response.data?.success) {

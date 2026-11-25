@@ -2,6 +2,7 @@ import asyncio
 import httpx
 from typing import Optional, Dict, Any
 from .api_origin import pin_to_api_origin
+from .caller_origin import default_origin
 from .get_version import get_version
 
 version = get_version()
@@ -23,7 +24,7 @@ class AsyncHttpClient:
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
         # Attribution string stamped into request payloads / research query params.
-        self.origin = origin or f"python-sdk@{version}"
+        self.origin = origin or default_origin(version)
 
         headers = {}
 

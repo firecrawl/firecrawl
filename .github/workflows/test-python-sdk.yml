@@ -7,6 +7,7 @@ on:
     paths:
       - apps/python-sdk/**
       - .github/workflows/test-python-sdk.yml
+      - .github/pip-bootstrap.txt
 
 permissions:
   contents: read
@@ -30,7 +31,7 @@ jobs:
       - name: Install dependencies
         working-directory: ./apps/python-sdk
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --no-cache-dir -r ../../.github/pip-bootstrap.txt
           pip install -r requirements.txt
           pip install -e .
 

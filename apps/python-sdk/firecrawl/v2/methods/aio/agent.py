@@ -33,6 +33,8 @@ def _prepare_agent_request(
     thread_id: Optional[str] = None,
     mode: Optional[Literal["extract", "chat"]] = None,
     exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
+    location: Optional[Dict[str, str]] = None,
+    zero_data_retention: Optional[bool] = None,
 ) -> Dict[str, Any]:
     body: Dict[str, Any] = {}
     if urls is not None:
@@ -78,6 +80,10 @@ def _prepare_agent_request(
             if isinstance(exchange, dict)
             else exchange.model_dump(by_alias=True, exclude_none=True)
         )
+    if location is not None:
+        body["location"] = {"country": location["country"]}
+    if zero_data_retention is not None:
+        body["zeroDataRetention"] = zero_data_retention
     return body
 
 
@@ -107,6 +113,8 @@ async def start_agent(
     thread_id: Optional[str] = None,
     mode: Optional[Literal["extract", "chat"]] = None,
     exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
+    location: Optional[Dict[str, str]] = None,
+    zero_data_retention: Optional[bool] = None,
 ) -> AgentResponse:
     body = _prepare_agent_request(
         urls,
@@ -123,6 +131,8 @@ async def start_agent(
         thread_id=thread_id,
         mode=mode,
         exchange=exchange,
+        location=location,
+        zero_data_retention=zero_data_retention,
     )
     resp = await client.post("/v2/agent", body)
     if resp.status_code >= 400:
@@ -202,6 +212,8 @@ async def agent(
     thread_id: Optional[str] = None,
     mode: Optional[Literal["extract", "chat"]] = None,
     exchange: Optional[Union[AgentExchangeOptions, Dict[str, Any]]] = None,
+    location: Optional[Dict[str, str]] = None,
+    zero_data_retention: Optional[bool] = None,
 ) -> AgentResponse:
     started = await start_agent(
         client,
@@ -219,6 +231,8 @@ async def agent(
         thread_id=thread_id,
         mode=mode,
         exchange=exchange,
+        location=location,
+        zero_data_retention=zero_data_retention,
     )
     job_id = getattr(started, "id", None)
     if not job_id:

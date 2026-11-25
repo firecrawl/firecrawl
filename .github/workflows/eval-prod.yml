@@ -20,11 +20,11 @@ jobs:
         if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
         steps:
           - name: Checkout repository
-            uses: actions/checkout@v5
+            uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
           - name: 'Install dependencies'
             run: |
-              python -m pip install --upgrade pip
+              python -m pip install --no-cache-dir -r .github/pip-bootstrap.txt
               pip install requests
 
           # make sure the image is deployed before running the eval benchmark

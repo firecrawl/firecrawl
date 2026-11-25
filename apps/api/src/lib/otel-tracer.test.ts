@@ -10,6 +10,7 @@ import {
 } from "@opentelemetry/sdk-trace-node";
 import {
   createTracerProvider,
+  recordSpanException,
   serializeTraceContext,
   setSpanAttributes,
   SpanKind,
@@ -102,6 +103,20 @@ describe("otel-tracer", () => {
       message: "boom",
     });
     expect(span.events.map(event => event.name)).toContain("exception");
+  });
+
+  it("keeps the error status of a failure the span handled and returned from", async () => {
+    const result = await withSpan("test.handled", async span => {
+      recordSpanException(span, new Error("upstream down"));
+      return "fallback";
+    });
+
+    expect(result).toBe("fallback");
+    const [span] = await exportedSpans();
+    expect(span.status).toEqual({
+      code: SpanStatusCode.ERROR,
+      message: "upstream down",
+    });
   });
 
   it("parents nested and library spans under the active span", async () => {
