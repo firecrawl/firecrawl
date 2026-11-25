@@ -1,6 +1,5 @@
 import { NextFunction, Request, Response } from "express";
-import { config } from "../../config";
-import { timingSafeSecretEqual } from "../../lib/secret-compare";
+
 import { logger as _logger } from "../../lib/logger";
 import {
   Document,
@@ -375,10 +374,6 @@ export async function parseController(
       const agentRequestId = extBody.__agentInterop?.requestId ?? null;
       const boostConcurrency =
         extBody.__agentInterop?.boostConcurrency ?? false;
-      const isDirectToBullMQ = timingSafeSecretEqual(
-        extBody.__searchPreviewToken,
-        config.SEARCH_PREVIEW_TOKEN,
-      );
       const reservation = await service.modules.billing.authorize({
         caller: req.caller ?? { teamId: req.auth.team_id },
         operation: "parse",
@@ -387,7 +382,6 @@ export async function parseController(
         state: {
           req,
           shouldBill,
-          isPreview: isDirectToBullMQ,
           scrapeOptions: req.body,
           endpoint: "v2_parse",
         },
@@ -533,12 +527,9 @@ export async function parseController(
                     internalOptions: {
                       ctx,
                       teamId: req.auth.team_id,
-                      saveScrapeResultToGCS: process.env
-                        .GCS_FIRE_ENGINE_BUCKET_NAME
-                        ? true
-                        : false,
                       unnormalizedSourceURL: file.filename,
-                      bypassBilling: isDirectToBullMQ || !shouldBill,
+                      bypassBilling:
+                        reservation.bypassBilling === true || !shouldBill,
                       zeroDataRetention,
                       teamFlags: req.acuc?.flags ?? null,
                       orgId: req.acuc?.org_id ?? null,

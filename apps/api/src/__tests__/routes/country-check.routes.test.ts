@@ -15,7 +15,6 @@ vi.mock("../../config", async importOriginal => {
     ...actual,
     config: {
       ...actual.config,
-      USE_DB_AUTHENTICATION: true,
       RESTRICTED_COUNTRIES: ["XX"],
     },
   };
@@ -51,7 +50,6 @@ vi.mock("../../controllers/v2/crawl", () => ({
   crawlController: (_req: any, res: any) => res.status(204).end(),
 }));
 
-import { config } from "../../config";
 import {
   authMiddleware,
   checkCreditsMiddleware,
@@ -81,7 +79,6 @@ beforeEach(() => {
   mocks.lookup.mockReset();
   mocks.auth = { team_id: "team-1" };
   mocks.acuc = { flags: {} };
-  config.USE_DB_AUTHENTICATION = true;
   replaceService(createService({}, coreParts()));
 });
 

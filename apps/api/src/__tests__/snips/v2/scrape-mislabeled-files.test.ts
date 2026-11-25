@@ -4,7 +4,6 @@ import {
   itIf,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { config } from "../../../config";
 import {
   idmux,
   Identity,
@@ -25,7 +24,8 @@ beforeAll(async () => {
 
 // Mirrors the API's image OCR switch (the harness shares its environment
 // with the server under test).
-const IMAGE_OCR_ON = !!config.FIRE_PDF_BASE_URL && config.IMAGE_OCR_ENABLED;
+const IMAGE_OCR_ON =
+  !!process.env.FIRE_PDF_BASE_URL && process.env.IMAGE_OCR_ENABLED === "true";
 
 // The browser engine hands files it cannot render back to the API, which
 // routes them to a parser by content type — and servers mislabel. Static

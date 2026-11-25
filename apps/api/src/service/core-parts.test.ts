@@ -23,10 +23,6 @@ vi.mock("../config", () => {
   loadedSideEffectModules.push("config");
   return { config: {} };
 });
-vi.mock("../lib/deployment", () => {
-  loadedSideEffectModules.push("deployment");
-  return { isSelfHosted: () => true };
-});
 vi.mock("../services/worker/nuq-router", () => {
   loadedSideEffectModules.push("nuq-router");
   return {};
@@ -413,7 +409,7 @@ describe("coreParts", () => {
     ).toHaveLength(1);
   });
 
-  it("loads core error classes and default modules without pulling in config, exchange, deployment, gcs, zdr, redis, or db", () => {
+  it("loads core error classes and default modules without pulling in config, exchange, gcs, zdr, redis, or db", () => {
     const required = answerRequire();
     const built = createService({ modules: defaultModules() }, coreParts());
 

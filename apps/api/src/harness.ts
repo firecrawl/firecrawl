@@ -118,7 +118,6 @@ function formatDuration(nanoseconds: bigint): string {
 
 const PORT = config.PORT;
 const WORKER_PORT = config.WORKER_PORT;
-const EXTRACT_WORKER_PORT = config.EXTRACT_WORKER_PORT;
 const NUQ_WORKER_START_PORT = config.NUQ_WORKER_START_PORT;
 const NUQ_WORKER_COUNT = config.NUQ_WORKER_COUNT;
 const NUQ_PREFETCH_WORKER_PORT = NUQ_WORKER_START_PORT + NUQ_WORKER_COUNT;
@@ -870,7 +869,9 @@ async function startServices(command?: string[]): Promise<Services> {
           {
             NUQ_REDUCE_NOISE: "true",
             NUQ_POD_NAME: "extract-worker",
-            EXTRACT_WORKER_PORT: String(EXTRACT_WORKER_PORT),
+            ...(process.env.EXTRACT_WORKER_PORT
+              ? { EXTRACT_WORKER_PORT: process.env.EXTRACT_WORKER_PORT }
+              : {}),
           },
         )
       : undefined;
@@ -918,9 +919,7 @@ async function startServices(command?: string[]): Promise<Services> {
         );
 
   const indexWorker =
-    config.USE_DB_AUTHENTICATION &&
-    roleEntry &&
-    installedService()?.roles.has("index-worker")
+    roleEntry && installedService()?.roles.has("index-worker")
       ? execForward(
           "index-worker",
           `${roleRunner} ${shellEscape(roleEntry)} index-worker`,

@@ -1,6 +1,5 @@
 import { Response } from "express";
-import { config } from "../../config";
-import { timingSafeSecretEqual } from "../../lib/secret-compare";
+
 import { getV2RequestSchemas, RequestWithAuth, SearchResponse } from "./types";
 import type { SearchRequest } from "../../service/request";
 import { v7 as uuidv7 } from "uuid";
@@ -80,10 +79,6 @@ async function searchControllerInner(
   });
 
   const middlewareTime = controllerStartTime - middlewareStartTime;
-  const isSearchPreview = timingSafeSecretEqual(
-    extBody().__searchPreviewToken,
-    config.SEARCH_PREVIEW_TOKEN,
-  );
 
   let billingHandle: unknown = undefined;
   let settledBilling = false;
@@ -209,7 +204,6 @@ async function searchControllerInner(
       state: {
         req,
         shouldBill,
-        isPreview: isSearchPreview,
         hasScrapeFormats: requestedFormats.length > 0,
         limit: planned.limit,
         enterprise: extBody().enterprise as
@@ -298,7 +292,7 @@ async function searchControllerInner(
       result.billableResultsCount ?? result.totalResultsCount;
     // Bills search results only; each scraped document is already billed via kind: "scrape".
     const searchCredits =
-      !isSearchPreview && shouldBill
+      reservation.bypassBilling !== true && shouldBill
         ? await service.modules.billing
             .charge({
               kind: "search",

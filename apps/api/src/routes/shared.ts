@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import {
+  type AgentInteropStatus,
   AuthCreditUsageChunk,
   RequestWithAuth,
   RequestWithMaybeAuth,
@@ -30,7 +31,6 @@ import type {} from "../lib/billing-state";
 import { validate as isUuid } from "uuid";
 
 import { config } from "../config";
-import { agentInteropStatus } from "../lib/agent-interop";
 
 function billingOperationForPath(path: string): BillingOperation {
   switch (path.replace(/^\/v\d+/, "")) {
@@ -121,6 +121,7 @@ type LegacyAuthRoute = AuthRoute & {
 type LegacyCallerFields = {
   orgId?: string | null;
   chunk?: AuthCreditUsageChunk | null;
+  agentInterop?: AgentInteropStatus;
   hostedMcp?: boolean;
 };
 
@@ -169,20 +170,13 @@ export function authMiddleware(
       }
 
       const caller = result.caller as Caller & LegacyCallerFields;
-      const agentInterop = agentInteropStatus(req);
-      // An agent run started by a hosted MCP call makes its own calls under
-      // the interop secret, and says so in the interop block. Only a trusted
-      // block may say it: the run itself was verified when it started.
-      const hostedMcp =
-        caller.hostedMcp === true ||
-        (agentInterop === "trusted" &&
-          (req.body as any)?.__agentInterop?.hostedMcp === true);
-
       req.auth = {
         team_id: caller.teamId,
         org_id: caller.orgId ?? null,
-        agentInterop,
-        ...(hostedMcp ? { hostedMcp: true } : {}),
+        ...(caller.agentInterop !== undefined
+          ? { agentInterop: caller.agentInterop }
+          : {}),
+        ...(caller.hostedMcp === true ? { hostedMcp: true } : {}),
       };
       req.acuc = caller.chunk ?? undefined;
       req.caller = result.caller;

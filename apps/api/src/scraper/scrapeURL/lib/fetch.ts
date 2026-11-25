@@ -1,7 +1,6 @@
 import { Logger } from "winston";
 import { z, ZodError } from "zod";
 import { MockState, saveMock } from "./mock";
-import { config } from "../../../config";
 import { fetch, Response, FormData, Agent } from "undici";
 import { cacheableLookup } from "./cacheableLookup";
 import dns from "dns";
@@ -244,7 +243,7 @@ export async function robustFetch<
     }
 
     const fireEngineBaseUrl =
-      config.FIRE_ENGINE_BETA_URL ?? "<mock-fire-engine-url>";
+      process.env.FIRE_ENGINE_BETA_URL ?? "<mock-fire-engine-url>";
     const makeRequestTypeId = (
       request: (typeof mock)["requests"][number]["options"],
     ) => {

@@ -1,4 +1,4 @@
-import type { AgentInteropStatus } from "../../lib/agent-interop";
+export type AgentInteropStatus = "trusted" | "none" | "invalid";
 import { Request, Response } from "express";
 import { config } from "../../config";
 import { z } from "zod";
@@ -1288,7 +1288,7 @@ export type TeamFlags = {
   bypassCreditChecks?: boolean;
   debugBranding?: boolean;
   maxBrowserSessions?: number;
-  // grants the privileged large-PDF size cap (PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED)
+  // grants the privileged large-PDF size cap
   largePdfs?: boolean;
   // POST /v2/search/:jobId/feedback returns 403 TEAM_OPTED_OUT when true.
   searchFeedbackOptOut?: boolean;

@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => {
   return {
     pipeline,
     redis,
-    isSelfHosted: vi.fn(() => false),
+    unlimitedConcurrency: vi.fn(() => false),
     resolveJobBackend: vi.fn(async (): Promise<"pg" | "fdb"> => "pg"),
     fdbEnqueueScrapeJobs: vi.fn(),
     addJob: vi.fn(async (id: string, data: any) => ({ id, data })),
@@ -111,10 +111,6 @@ vi.mock("../lib/otel-tracer", () => ({
   serializeTraceContext: vi.fn(() => undefined),
 }));
 
-vi.mock("../lib/deployment", () => ({
-  isSelfHosted: mocks.isSelfHosted,
-}));
-
 vi.mock("../lib/redis-pipeline", () => ({
   reportPipelineError: vi.fn(),
 }));
@@ -135,7 +131,7 @@ function installHooks(hooks?: HookHandlers, report = vi.fn()) {
           limits: {
             ...noLimits(),
             concurrency: async () =>
-              mocks.isSelfHosted()
+              mocks.unlimitedConcurrency()
                 ? null
                 : ((await mocks.getACUCTeam())?.concurrency_limit ?? 2),
           },
@@ -175,7 +171,7 @@ describe("queue and concurrency hooks", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     replaceService(undefined);
-    mocks.isSelfHosted.mockReturnValue(false);
+    mocks.unlimitedConcurrency.mockReturnValue(false);
     mocks.resolveJobBackend.mockResolvedValue("pg");
     mocks.redis.zrangebyscore.mockResolvedValue([]);
     mocks.redis.zcount.mockResolvedValue(0);

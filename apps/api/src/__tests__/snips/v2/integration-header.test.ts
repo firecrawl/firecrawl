@@ -1,14 +1,14 @@
-import { config } from "../../../config";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   concurrentIf,
   createTestIdUrl,
   describeIf,
+  TEST_PRODUCTION,
 } from "../lib";
 import request, { idmux, Identity, scrapeTimeout, TEST_API_URL } from "./lib";
 import { HAS_JOB_LOG, waitForJobLogRow } from "../job-log";
 
-const CAN_READ_LOG = !!config.USE_DB_AUTHENTICATION && HAS_JOB_LOG;
+const CAN_READ_LOG = TEST_PRODUCTION && HAS_JOB_LOG;
 
 async function scrapeWithHeader(
   path: "/v2/scrape",

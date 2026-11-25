@@ -144,30 +144,6 @@ export enum RateLimiterMode {
   FreshFeed = "freshFeed",
 }
 
-export type AuthResponse =
-  | {
-      success: true;
-      team_id: string;
-      org_id?: string | null;
-      api_key?: string;
-      chunk: AuthCreditUsageChunk | null;
-      // The hosted MCP made the call, as verified in supaAuthenticateUser.
-      hostedMcp?: boolean;
-    }
-  | {
-      success: false;
-      error: string;
-      status: number;
-      // When true, send the agent OAuth-discovery WWW-Authenticate header even on
-      // non-401 responses (e.g. keyless cap 429s) so agents can find the key flow.
-      agentAuthDiscovery?: boolean;
-      // Machine-readable keyless quota details for trusted MCP recovery.
-      keylessReason?: "requests" | "credits";
-      retryAfterSeconds?: number;
-      // Keyless prompts: the signup link in `error`, for clients that relay it.
-      signupUrl?: string;
-    };
-
 export enum NotificationType {
   RATE_LIMIT_REACHED = "rateLimitReached",
   AUTO_RECHARGE_SUCCESS = "autoRechargeSuccess",

@@ -1,5 +1,4 @@
 import { Response } from "express";
-import { config } from "../../config";
 import { v7 as uuidv7 } from "uuid";
 import {
   CrawlRequest,
@@ -231,7 +230,6 @@ export async function crawlController(
       disableSmartWaitCache: true,
       teamId: req.auth.team_id,
       orgId: req.acuc?.org_id ?? null,
-      saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
       zeroDataRetention,
       agentIndexOnly: (req as any).agentIndexOnly ?? false,
       teamFlags: req.acuc?.flags ?? null,

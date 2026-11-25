@@ -30,17 +30,14 @@ import {
 const describeIf = config.FDB_CLUSTER_FILE ? describe : describe.skip;
 
 const prevNuqBackend = config.NUQ_BACKEND;
-const prevDbAuth = config.USE_DB_AUTHENTICATION;
 
 describeIf("NuQ router (forced FDB mode)", () => {
   beforeAll(() => {
     config.NUQ_BACKEND = "fdb";
-    config.USE_DB_AUTHENTICATION = false; // self-hosted: unlimited concurrency
   });
 
   afterAll(async () => {
     config.NUQ_BACKEND = prevNuqBackend;
-    config.USE_DB_AUTHENTICATION = prevDbAuth;
     // forced mode writes into the real "scrape"/"crawl_finished" queue
     // namespaces; wipe them so reruns and other suites start clean
     const fdb = getFdb();

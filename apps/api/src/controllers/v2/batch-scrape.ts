@@ -1,5 +1,4 @@
 import { Response } from "express";
-import { config } from "../../config";
 import { v7 as uuidv7 } from "uuid";
 import {
   BatchScrapeRequest,
@@ -172,9 +171,6 @@ export async function batchScrapeController(
           disableSmartWaitCache: true,
           teamId: req.auth.team_id,
           orgId: req.acuc?.org_id ?? null,
-          saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
-            ? true
-            : false,
           zeroDataRetention,
           ...(workContactOnly ? { workContactOnly } : {}),
           bypassBilling: !(extBody.__agentInterop?.shouldBill ?? true),

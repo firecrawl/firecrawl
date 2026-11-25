@@ -16,13 +16,7 @@ export {
   type AdminMetricsCollector,
 } from "../controllers/admin/metrics";
 export { claimIdempotencyKey } from "../lib/idempotency";
-export {
-  AGENT_INTEROP_HEADER,
-  agentInteropStatus,
-  isAgentInteropSecretValid,
-  isTrustedAgentInteropRequest,
-  type AgentInteropStatus,
-} from "../lib/agent-interop";
+export type { AgentInteropStatus } from "../controllers/v2/types";
 export {
   ADMIN_KEY_HEADER,
   adminAuth,
@@ -32,4 +26,3 @@ export {
   secretsMatch,
   type AdminKeySlot,
 } from "../lib/admin-auth";
-export { withAuth } from "../lib/withAuth";

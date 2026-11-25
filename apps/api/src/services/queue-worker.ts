@@ -140,7 +140,7 @@ let currentLiveness: boolean = true;
 
 app.get("/liveness", (req, res) => {
   _logger.info("Liveness endpoint hit");
-  if (config.USE_DB_AUTHENTICATION && config.NUQ_RABBITMQ_URL) {
+  if (config.IS_KUBERNETES && config.NUQ_RABBITMQ_URL) {
     // networking check for Kubernetes environments
     const host = config.FIRECRAWL_APP_HOST;
     const port = config.FIRECRAWL_APP_PORT;

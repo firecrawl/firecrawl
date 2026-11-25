@@ -15,11 +15,7 @@ const mocks = vi.hoisted(() => ({
   logRequest: vi.fn(async () => undefined),
   logSearch: vi.fn(async () => undefined),
   logResearchEndpoint: vi.fn(async () => undefined),
-  isSelfHosted: vi.fn(() => false),
-}));
-
-vi.mock("../../lib/deployment", () => ({
-  isSelfHosted: mocks.isSelfHosted,
+  skipBilling: vi.fn(() => false),
 }));
 
 vi.mock("../../lib/otel-tracer", () => ({
@@ -117,13 +113,13 @@ describe("search lifecycle hooks", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     replaceService(undefined);
-    mocks.isSelfHosted.mockReturnValue(false);
+    mocks.skipBilling.mockReturnValue(false);
     mocks.resolveThreatProtection.mockResolvedValue({ policy: null });
     mocks.projectSearchTotalCredits.mockReturnValue(0);
     mocks.reserveKeylessCredits.mockResolvedValue({ ok: true });
     mocks.billingAuthorize.mockResolvedValue({ ok: true });
     mocks.billingCharge.mockImplementation(async (event: any) =>
-      mocks.isSelfHosted()
+      mocks.skipBilling()
         ? undefined
         : event.kind === "search"
           ? Math.ceil(event.results / 10) * 2
@@ -374,8 +370,8 @@ describe("search lifecycle hooks", () => {
       },
     });
 
-    // Self-hosted: charged is undefined; observer error is isolated
-    mocks.isSelfHosted.mockReturnValue(true);
+    // Unbilled module: charged is undefined; observer error is isolated
+    mocks.skipBilling.mockReturnValue(true);
     const res1 = makeRes();
     await searchController(makeReq({ query: "hello", limit: 5 }), res1);
     expect(res1.status).toHaveBeenCalledWith(200);
@@ -441,7 +437,7 @@ describe("search lifecycle hooks", () => {
   });
 
   it("caps index-category search.results additions to limit", async () => {
-    mocks.isSelfHosted.mockReturnValue(false);
+    mocks.skipBilling.mockReturnValue(false);
     installHooks({
       "search.plan": plan => ({
         ...plan,

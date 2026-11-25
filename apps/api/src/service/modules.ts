@@ -179,6 +179,8 @@ export type Authorization =
       clampedLimit?: number;
       /** Opaque reservation handle passed to `settle` when the request ends. */
       handle?: unknown;
+      /** When true, skip downstream charge calls for this request. */
+      bypassBilling?: boolean;
     }
   | { ok: false; refusal: Refusal };
 

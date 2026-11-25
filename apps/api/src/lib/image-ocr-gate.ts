@@ -1,20 +1,16 @@
-import { config } from "../config";
 import { installedService } from "../service/service";
 
 /**
- * Raster image OCR rides on FirePDF and is switched on for the whole
- * deployment by `IMAGE_OCR_ENABLED`. Every entry point (URL-extension
- * routing, the browser handoff, parse uploads) consults this one check, so
- * with the switch off (or without a registered image engine) every request
- * gets the standard unsupported-file behaviour.
+ * Raster image OCR is available whenever the active service registers an
+ * enabled non-cache engine with the `image` capability. Every entry point
+ * (URL-extension routing, the browser handoff, parse uploads) consults this
+ * check so deployments without an enabled image engine return the standard
+ * unsupported-file response.
  */
 export function isImageOcrEnabled(): boolean {
-  if (!config.FIRE_PDF_BASE_URL || !config.IMAGE_OCR_ENABLED) {
-    return false;
-  }
   const svc = installedService();
   if (!svc) {
-    return true;
+    return false;
   }
   return svc.engines
     .enabled()
@@ -31,9 +27,9 @@ export type ImageOcrGate = () => Promise<boolean>;
 /**
  * Builds the per-scrape gate: whether this request may OCR raster images.
  *
- * Two conditions fold into it. The request's `parsers` must include the
- * `image` parser — it does by default, and a parse upload of an image counts
- * regardless — and the deployment switch must be on (see isImageOcrEnabled).
+ * Two conditions fold into it: the request's `parsers` must include the
+ * `image` parser (the default, and parse uploads of an image always count),
+ * and an image-capable engine must be enabled (see isImageOcrEnabled).
  */
 export function shouldParseImages(parsers?: readonly unknown[]): boolean {
   if (!parsers) return true;

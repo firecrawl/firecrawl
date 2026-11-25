@@ -1,8 +1,7 @@
-import { config } from "../../../config";
 import { describeIf } from "../lib";
 import { idmux, researchRaw, scrapeTimeout } from "./lib";
 
-const HAS_GOV = !!config.RESEARCH_PROXY_URL;
+const HAS_GOV = !!process.env.RESEARCH_PROXY_URL;
 const PATH = "/v2/search/gov";
 
 describeIf(HAS_GOV)("Government Index Search API", () => {

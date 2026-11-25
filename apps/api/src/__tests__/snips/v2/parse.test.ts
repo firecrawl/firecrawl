@@ -4,6 +4,7 @@ import {
   HAS_AI,
   itIf,
   TEST_PRODUCTION,
+  TEST_SELF_HOST,
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import crypto from "node:crypto";
@@ -394,9 +395,9 @@ describe("/v2/parse", () => {
   it(
     "handles upload-ref signing without authentication according to keyless config",
     async () => {
-      if (!config.USE_DB_AUTHENTICATION) {
+      if (TEST_SELF_HOST) {
         console.warn(
-          "Skipping unauthenticated uploadRef signing test because authentication is bypassed when USE_DB_AUTHENTICATION is disabled",
+          "Skipping unauthenticated uploadRef signing test in self-hosted mode",
         );
         return;
       }
@@ -450,8 +451,7 @@ describe("/v2/parse", () => {
       const init = await mintUploadRef(identity);
       if (!init) return;
 
-      const canUseRealSecondTeam =
-        !!config.IDMUX_URL && config.USE_DB_AUTHENTICATION === true;
+      const canUseRealSecondTeam = !!process.env.IDMUX_URL && !TEST_SELF_HOST;
       const otherIdentity = canUseRealSecondTeam
         ? await idmux({
             name: "parse-upload-ref-other-team",
@@ -683,7 +683,7 @@ describe("/v2/parse", () => {
   it(
     "logs parse metadata into the parses table",
     async () => {
-      if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
+      if (TEST_SELF_HOST || !HAS_JOB_LOG) return;
 
       const filename = `parse-log-${Date.now()}.html`;
       await parse(

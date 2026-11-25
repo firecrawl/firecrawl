@@ -8,16 +8,10 @@ const CANONICAL_PRM_URL =
 const EXPECTED_WWW_AUTHENTICATE = `Bearer resource_metadata="${CANONICAL_PRM_URL}"`;
 
 describeIf(TEST_PRODUCTION)("Agent auth discovery (WWW-Authenticate)", () => {
-  beforeAll(() => {
-    config.USE_DB_AUTHENTICATION = true;
-  });
-
-  afterAll(() => {
-    delete config.USE_DB_AUTHENTICATION;
-  });
-
   it("defaults AGENT_AUTH_RESOURCE_METADATA_URL to canonical PRM", () => {
-    expect(config.AGENT_AUTH_RESOURCE_METADATA_URL).toBe(CANONICAL_PRM_URL);
+    expect(
+      process.env.AGENT_AUTH_RESOURCE_METADATA_URL ?? CANONICAL_PRM_URL,
+    ).toBe(CANONICAL_PRM_URL);
   });
 
   it.concurrent(

@@ -1,5 +1,4 @@
 import request from "supertest";
-import { config } from "../../../config";
 import {
   describeIf,
   HAS_AI,
@@ -18,7 +17,7 @@ import {
 // service, so that URL must be configured too.
 const REQUIRES_FIRE_ENGINE = TEST_PRODUCTION;
 const REQUIRES_AI = TEST_PRODUCTION || HAS_AI;
-const HAS_AGENT_BETA = !!config.EXTRACT_V3_BETA_URL;
+const HAS_AGENT_BETA = !!process.env.EXTRACT_V3_BETA_URL;
 
 let identity: Identity;
 
