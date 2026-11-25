@@ -1206,6 +1206,21 @@ async function supaAuthenticateUser(
     );
   }
 
+  // Checked on every request (not only on a DB miss) so a cached chunk stops
+  // authenticating as soon as its key expires.
+  if (chunk?.expires_at && new Date(chunk.expires_at).getTime() <= Date.now()) {
+    return denied(
+      req,
+      "key_expired",
+      {
+        success: false,
+        error: "Unauthorized: API key has expired",
+        status: 401,
+      },
+      chunk,
+    );
+  }
+
   // Banned teams are rejected here, where the mcp / OAuth / API-key paths
   // converge. Ban enforcement used to rely on auth_credit_usage_chunk zeroing
   // the rate_limits payload, but authenticated limiting now derives from Autumn

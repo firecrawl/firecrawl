@@ -2520,6 +2520,81 @@ describe("authenticateUser", () => {
     });
   });
 
+  describe("API key expiration", () => {
+    const key = "00000000-0000-4000-8000-000000000000";
+    const req = () => ({
+      headers: { authorization: `Bearer ${key}` },
+      socket: { remoteAddress: "203.0.113.7" },
+    });
+    const cachedChunk = (expires_at: string | null) =>
+      JSON.stringify({
+        api_key: key,
+        api_key_id: 1,
+        team_id: "team-1",
+        org_id: "org-1",
+        flags: {},
+        expires_at,
+        concurrency_limit: 10,
+        rate_limit_multiplier: 1,
+        is_paid_plan: true,
+      });
+
+    beforeEach(() => {
+      config.USE_DB_AUTHENTICATION = true;
+    });
+
+    it("rejects an expired key read from the database with 401", async () => {
+      vi.mocked(getValue).mockResolvedValue(null);
+      vi.mocked(authCreditUsageChunk).mockResolvedValue([
+        {
+          api_key: key,
+          api_key_id: 1,
+          team_id: "team-1",
+          org_id: "org-1",
+          flags: {},
+          expires_at: new Date(Date.now() - 1000).toISOString(),
+        },
+      ]);
+
+      const auth = await authenticateUser(req(), {}, RateLimiterMode.Scrape);
+
+      expect(auth).toEqual(
+        expect.objectContaining({
+          success: false,
+          status: 401,
+          error: "Unauthorized: API key has expired",
+        }),
+      );
+    });
+
+    it("rejects an expired key served from the cache", async () => {
+      vi.mocked(getValue).mockResolvedValue(
+        cachedChunk(new Date(Date.now() - 1000).toISOString()),
+      );
+
+      const auth = await authenticateUser(req(), {}, RateLimiterMode.Scrape);
+
+      expect(auth).toEqual(
+        expect.objectContaining({
+          status: 401,
+          error: "Unauthorized: API key has expired",
+        }),
+      );
+      expect(authCreditUsageChunk).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["a null expires_at", null],
+      ["a future expires_at", new Date(Date.now() + 3_600_000).toISOString()],
+    ])("accepts a cached key with %s", async (_label, expiresAt) => {
+      vi.mocked(getValue).mockResolvedValue(cachedChunk(expiresAt));
+
+      const auth = await authenticateUser(req(), {}, RateLimiterMode.Scrape);
+
+      expect(auth).toEqual(expect.objectContaining({ success: true }));
+    });
+  });
+
   describe("auth/denied log", () => {
     const unknownKey = "fc-3c9a0d5e7b1f4a2c8d6e9f0a1b2c3d4e";
     const clientIp = "198.51.100.23";

@@ -78,6 +78,7 @@ export const api_keys = pgTable(
     concurrency: integer("concurrency"),
     credit_limit: integer("credit_limit"),
     credit_limit_interval: text("credit_limit_interval"),
+    expires_at: ts("expires_at"),
   },
   table => [
     // Target of key_restriction_config's composite FK, which pins a
