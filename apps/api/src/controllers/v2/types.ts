@@ -1829,9 +1829,16 @@ function applyExtractTransformAndRules<T extends Record<string, unknown>>(
   pathPrefix: (string | number)[] = [],
 ): T | typeof z.NEVER {
   const originalTimeout = (value as { timeout?: unknown }).timeout;
-  const base = liftCheckPromptInjection(
+  let base = liftCheckPromptInjection(
     applyScrapeOptionsDefaults(value as unknown as ScrapeOptionsBase),
-  ) as unknown as T;
+  ) as unknown as T & {
+    formats?: unknown[];
+    timeout?: number;
+    proxy?: string;
+  };
+  if (base.proxy === "auto" && originalTimeout === 30000) {
+    base = { ...base, timeout: 120000 };
+  }
   const ruled =
     rules.length > 0
       ? applyScrapeOptionsRules(base, kind, rules, ctx, pathPrefix)
@@ -1853,13 +1860,6 @@ function applyExtractTransformAndRules<T extends Record<string, unknown>>(
     result.timeout === 30000
   ) {
     result = { ...result, timeout: 60000 };
-  }
-  if (
-    result.proxy === "auto" &&
-    originalTimeout === 30000 &&
-    result.timeout === 30000
-  ) {
-    result = { ...result, timeout: 120000 };
   }
   return result;
 }
