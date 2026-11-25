@@ -22,7 +22,7 @@ setup(
     url="https://github.com/firecrawl/firecrawl",
     author="Firecrawl",
     author_email="nick@mendable.ai",
-    description="Python SDK for Firecrawl, the context API for AI agents: search, scrape, parse, crawl, map, and interact with the web, run Agent and Monitor jobs, and search scientific papers (PubMed, bioRxiv, medRxiv, arXiv)",
+    description="Python SDK for Firecrawl: search, scrape, parse, crawl, map, and interact with the web, run Agent and Monitor jobs, and search scientific papers (PubMed, bioRxiv, medRxiv, arXiv)",
     long_description=long_description_content,
     long_description_content_type="text/markdown",
     packages=find_packages(include=["firecrawl*"], exclude=["tests*", "*.__tests__", "*.__tests__.*"]),
