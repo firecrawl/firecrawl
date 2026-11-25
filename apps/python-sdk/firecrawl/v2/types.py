@@ -298,11 +298,14 @@ class ProductPrice(BaseModel):
 
 
 class ProductAvailability(BaseModel):
-    """Availability information for a product or variant."""
+    """Availability information for a product or variant.
+
+    ``in_stock`` is None when the page doesn't state stock.
+    """
 
     model_config = {"extra": "allow", "populate_by_name": True}
 
-    in_stock: bool = Field(alias="inStock")
+    in_stock: Optional[bool] = Field(default=None, alias="inStock")
     text: Optional[str] = None
 
 

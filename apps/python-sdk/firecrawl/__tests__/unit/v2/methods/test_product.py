@@ -84,6 +84,48 @@ class TestProductFormat:
         assert result.product.title == "Acme Mug"
         assert result.product.variants[0].price.amount == 12.5
 
+    def test_unknown_stock_parses_as_none(self):
+        mock_response = Mock()
+        mock_response.ok = True
+        mock_response.json.return_value = {
+            "success": True,
+            "data": {
+                "product": {
+                    "title": "Acme Mug",
+                    "url": "https://example.com/mug",
+                    "variants": [
+                        {"id": "a", "availability": {"inStock": True}},
+                        {"id": "b", "availability": {"inStock": False}},
+                        {"id": "c", "availability": {"inStock": None, "text": "See store"}},
+                        {"id": "d", "availability": {}},
+                    ]
+                }
+            }
+        }
+
+        mock_client = Mock()
+        mock_client.post.return_value = mock_response
+
+        result = scrape(mock_client, "https://example.com", ScrapeOptions(formats=["product"]))
+
+        stock = [v.availability.in_stock for v in result.product.variants]
+        assert stock == [True, False, None, None]
+        assert result.product.variants[2].availability.text == "See store"
+
+    def test_unknown_stock_parses_in_crawl_documents(self):
+        from firecrawl.v2.types import Document
+        from firecrawl.v2.utils.normalize import normalize_document_input
+
+        doc = Document(**normalize_document_input({
+            "product": {
+                "title": "Acme Mug",
+                "url": "https://example.com/mug",
+                "variants": [{"availability": {"inStock": None}}],
+            }
+        }))
+
+        assert doc.product.variants[0].availability.in_stock is None
+
     def test_scrape_without_product_format_does_not_return_product(self):
         """Test that scraping without product format does not return product."""
         mock_response = Mock()
