@@ -41,7 +41,8 @@ class AsyncHttpClient:
         await self._client.aclose()
 
     def _build_url(self, endpoint: str) -> str:
-        return pin_to_api_origin(self.api_url, endpoint)
+        # Match httpx's base-path handling for relative endpoints.
+        return pin_to_api_origin(self.api_url, endpoint, preserve_api_path=True)
 
     def _headers(self, idempotency_key: Optional[str] = None) -> Dict[str, str]:
         headers: Dict[str, str] = {}

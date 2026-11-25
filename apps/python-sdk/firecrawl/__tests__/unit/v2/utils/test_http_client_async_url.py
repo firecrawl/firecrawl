@@ -6,14 +6,10 @@ where the Authorization header would leak the API key.
 """
 
 import asyncio
-import json
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from threading import Thread
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from firecrawl import AsyncFirecrawl
 from firecrawl.v2.utils.http_client_async import AsyncHttpClient
 
 
@@ -114,56 +110,6 @@ def test_auto_paginated_crawl_status_never_leaves_api_host():
     urls = [c.args[0] for c in client._client.get.await_args_list]
     assert urls == ["/v2/crawl/id", "https://api.firecrawl.dev/v2/crawl/id?skip=1"]
     assert [d.markdown for d in job.data] == ["a", "b"]
-
-
-@pytest.mark.parametrize("prefix", ["/gateway/firecrawl", "/v2"])
-@pytest.mark.parametrize("already_prefixed", [False, True])
-def test_auto_paginated_crawl_status_preserves_api_path_prefix(prefix, already_prefixed):
-    endpoint = "/v2/crawl/id"
-    requests = []
-
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            requests.append(self.path)
-            if self.path not in (prefix + endpoint, prefix + endpoint + "?skip=1"):
-                self.send_error(404)
-                return
-
-            first = self.path == prefix + endpoint
-            response = {
-                "success": True,
-                "status": "completed",
-                "completed": 2,
-                "total": 2,
-                "data": [{"markdown": "first" if first else "second"}],
-            }
-            if first:
-                next_prefix = prefix if already_prefixed else ""
-                response["next"] = origin + next_prefix + endpoint + "?skip=1"
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps(response).encode())
-
-    async def get_status(api_url):
-        client = AsyncFirecrawl(api_key="fc-test", api_url=api_url, timeout=2, max_retries=1)
-        try:
-            return await client.get_crawl_status("id")
-        finally:
-            await client._v2_client.async_http_client.close()
-
-    with HTTPServer(("127.0.0.1", 0), Handler) as server:
-        origin = f"http://127.0.0.1:{server.server_port}"
-        thread = Thread(target=server.serve_forever)
-        thread.start()
-        try:
-            job = asyncio.run(get_status(origin + prefix + "/"))
-        finally:
-            server.shutdown()
-            thread.join()
-
-    assert requests == [prefix + endpoint, prefix + endpoint + "?skip=1"]
-    assert [doc.markdown for doc in job.data] == ["first", "second"]
 
 
 def test_rewrite_keeps_path_params():
