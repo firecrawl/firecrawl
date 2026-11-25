@@ -277,7 +277,14 @@ async function getACUC(
     }
     if (cachedACUC !== null) {
       try {
-        return await withLimits(JSON.parse(cachedACUC));
+        const parsed = JSON.parse(cachedACUC);
+        // Entries cached before expires_at existed (or with a malformed value)
+        // are a miss, so they reload through the DB and cannot skip expiry.
+        const hasValidExpiry =
+          parsed?.expires_at === null ||
+          (typeof parsed?.expires_at === "string" &&
+            !Number.isNaN(new Date(parsed.expires_at).getTime()));
+        if (hasValidExpiry) return await withLimits(parsed);
       } catch (error) {
         logger.warn("Ignoring malformed ACUC cache entry", {
           error,

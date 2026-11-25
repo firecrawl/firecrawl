@@ -2583,6 +2583,26 @@ describe("authenticateUser", () => {
       expect(authCreditUsageChunk).not.toHaveBeenCalled();
     });
 
+    it("reloads a cached entry that predates expires_at from the database", async () => {
+      const { expires_at: _omit, ...legacy } = JSON.parse(cachedChunk(null));
+      vi.mocked(getValue).mockResolvedValue(JSON.stringify(legacy));
+      vi.mocked(authCreditUsageChunk).mockResolvedValue([
+        {
+          api_key: key,
+          api_key_id: 1,
+          team_id: "team-1",
+          org_id: "org-1",
+          flags: {},
+          expires_at: new Date(Date.now() - 1000).toISOString(),
+        },
+      ]);
+
+      const auth = await authenticateUser(req(), {}, RateLimiterMode.Scrape);
+
+      expect(authCreditUsageChunk).toHaveBeenCalled();
+      expect(auth).toEqual(expect.objectContaining({ status: 401 }));
+    });
+
     it.each([
       ["a null expires_at", null],
       ["a future expires_at", new Date(Date.now() + 3_600_000).toISOString()],
