@@ -1,6 +1,5 @@
 import {
   ALLOW_TEST_SUITE_WEBSITE,
-  concurrentIf,
   describeIf,
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
@@ -384,7 +383,11 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).toBe(
+          TEST_PRODUCTION
+            ? "Bad Request"
+            : "Unrecognized key in body -- please review the v2 API documentation for request body changes",
+        );
       },
       scrapeTimeout,
     );

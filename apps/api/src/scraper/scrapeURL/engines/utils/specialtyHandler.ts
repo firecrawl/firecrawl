@@ -97,6 +97,9 @@ async function feResToFilePrefetch(
     // Materialize a local copy (magic-byte sniffing and page-count detection
     // need bytes on disk) and keep the reference so the FirePDF by-reference
     // path can server-side copy the object instead of re-uploading it.
+    if (signal?.aborted) {
+      throw signal.reason;
+    }
     if (!downloadGcsFile) {
       logger.warn(
         "GCS file handoff requested without a configured downloader",

@@ -6,8 +6,8 @@ import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 
 type PdfPrefetch = NonNullable<Meta["pdfPrefetch"]>;
 
-// The PDF spec puts the end-of-file marker in the last 1024 bytes; real
-// files sometimes carry trailing junk after it, so look a little further.
+// The PDF spec puts the end-of-file marker in the last 1024 bytes; read a
+// slightly wider tail so trailing whitespace or padding does not hide it.
 const EOF_SEARCH_BYTES = 4096;
 
 function declaredContentLength(
@@ -24,6 +24,13 @@ function declaredContentLength(
   return Number.isSafeInteger(length) && length > 0 ? length : undefined;
 }
 
+/**
+ * Whether a downloaded PDF stops short of its end: fewer bytes than the
+ * response declared, or a file that does not end with an end-of-file marker.
+ * Only whitespace or NUL padding may follow the last marker: an incremental
+ * update cut off partway leaves the previous revision's marker in the tail,
+ * followed by the new revision's partial objects.
+ */
 async function isTruncatedPdf(
   filePath: string,
   contentLength?: number,

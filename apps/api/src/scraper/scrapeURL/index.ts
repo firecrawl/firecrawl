@@ -552,7 +552,8 @@ async function buildMetaObject(
     (await imageOcrEnabled());
 
   const ctx = internalOptions.ctx
-    ? internalOptions.ctx.flags === undefined && internalOptions.teamFlags
+    ? internalOptions.ctx.flags === undefined &&
+      internalOptions.teamFlags !== undefined
       ? { ...internalOptions.ctx, flags: internalOptions.teamFlags }
       : internalOptions.ctx
     : requestContext({

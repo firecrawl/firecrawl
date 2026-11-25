@@ -112,19 +112,30 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
   if (!shouldParse) {
     if (prefetch !== undefined && prefetch !== null) {
-      const prefetchSize = (await stat(prefetch.filePath)).size;
-      if (prefetchSize > PDF_DOWNLOAD_MAX_FILE_SIZE) {
-        throw new UnsupportedFileError("File exceeds size limit");
+      try {
+        const prefetchSize = (await stat(prefetch.filePath)).size;
+        if (prefetchSize > PDF_DOWNLOAD_MAX_FILE_SIZE) {
+          throw new UnsupportedFileError("File exceeds size limit");
+        }
+        const content = (await readFile(prefetch.filePath)).toString("base64");
+        return {
+          url: prefetch.url ?? meta.rewrittenUrl ?? meta.url,
+          statusCode: prefetch.status,
+          html: content,
+          markdown: content,
+          contentType: "application/pdf",
+          proxyUsed: prefetch.proxyUsed,
+        };
+      } finally {
+        try {
+          await unlink(prefetch.filePath);
+        } catch (error) {
+          meta.logger?.warn("Failed to clean up temporary PDF file", {
+            error,
+            tempFilePath: prefetch.filePath,
+          });
+        }
       }
-      const content = (await readFile(prefetch.filePath)).toString("base64");
-      return {
-        url: prefetch.url ?? meta.rewrittenUrl ?? meta.url,
-        statusCode: prefetch.status,
-        html: content,
-        markdown: content,
-        contentType: "application/pdf",
-        proxyUsed: prefetch.proxyUsed,
-      };
     }
 
     const file = await fetchPdfFileGuardingProxyFailure(meta, () =>
