@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { logger } from "../../lib/logger";
-import { redisRateLimitClient } from "../../services/rate-limiter";
+import { redisRateLimitClient } from "../../services/redis";
 import { getRedisConnection } from "../../services/queue-service";
 
 export async function redisHealthController(req: Request, res: Response) {

@@ -117,7 +117,7 @@ jobs:
 
           docker run --rm --entrypoint node "${IMAGE_TAG}" -e '
             const fs = require("fs");
-            for (const path of ["dist/src/harness.js", "dist/src/controllers/v0/crawl-status.js", "BUILD_SHA"]) {
+            for (const path of ["dist/src/harness.js", "dist/src/controllers/v2/crawl-status.js", "BUILD_SHA"]) {
               if (!fs.statSync(path).size) {
                 throw new Error(`${path} missing or empty`);
               }

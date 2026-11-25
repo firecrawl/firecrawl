@@ -1,28 +1,44 @@
 import { vi } from "vitest";
 
-vi.mock("../lib/extractSmartScrape", async importOriginal => {
-  const actual =
-    await importOriginal<typeof import("../lib/extractSmartScrape")>();
+vi.mock("../lib/jsonExtract", async importOriginal => {
+  const actual = await importOriginal<typeof import("../lib/jsonExtract")>();
   return {
     ...actual,
     extractData: vi.fn(async () => ({
       extractedDataArray: [],
       warning: undefined,
-      costLimitExceededTokenUsage: null,
     })),
   };
 });
 import { performLLMExtract, removeDefaultProperty } from "./llmExtract";
-import { extractData } from "../lib/extractSmartScrape";
+import { extractData } from "../lib/jsonExtract";
 import { trimToTokenLimit } from "./llmExtract";
 import { performSummary } from "./llmExtract";
 import { performCleanContent } from "./llmExtract";
 import { encoding_for_model } from "@dqbd/tiktoken";
 import type { Mock } from "vitest";
+import { coreLlmProviders } from "../../../lib/generic-ai";
+import { createService, replaceService } from "../../../service/service";
 
 vi.mock("@dqbd/tiktoken", () => ({
   encoding_for_model: vi.fn(),
 }));
+
+beforeAll(() => {
+  replaceService(
+    createService(
+      { modules: {} },
+      {
+        core: { name: "core", llmProviders: coreLlmProviders },
+        logger: { error: vi.fn() },
+      },
+    ),
+  );
+});
+
+afterAll(() => {
+  replaceService(undefined);
+});
 
 describe("removeDefaultProperty", () => {
   it("should remove the default property from a simple object", () => {

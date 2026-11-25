@@ -3,6 +3,7 @@ import { logger } from "../../lib/logger";
 import { Client, Pool } from "pg";
 import { type ScrapeJobData } from "../../types";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
+import { storedZeroDataRetention } from "../../lib/request-context";
 import amqp from "amqplib";
 import { normalizeOwnerId } from "../../lib/owner-id";
 import { config } from "../../config";
@@ -830,7 +831,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
           "nuq.queue_name": this.queueName,
           "nuq.job_id": id,
           "nuq.priority": options.priority ?? 0,
-          "nuq.zero_data_retention": (data as any)?.zeroDataRetention ?? false,
+          "nuq.zero_data_retention": storedZeroDataRetention(data) ?? false,
           "nuq.listenable": options.listenable ?? false,
         });
 
@@ -875,11 +876,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
             method: "nuqAddJob",
             duration,
             scrapeId: id,
-            zeroDataRetention: (data as any)?.zeroDataRetention ?? false,
+            zeroDataRetention: storedZeroDataRetention(data) ?? false,
           });
         }
       },
-      { zeroDataRetention: (data as any)?.zeroDataRetention === true },
+      { zeroDataRetention: storedZeroDataRetention(data) === true },
     );
   }
 
@@ -895,7 +896,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
           "nuq.queue_name": this.queueName,
           "nuq.job_id": id,
           "nuq.priority": options.priority ?? 0,
-          "nuq.zero_data_retention": (data as any)?.zeroDataRetention ?? false,
+          "nuq.zero_data_retention": storedZeroDataRetention(data) ?? false,
           "nuq.listenable": options.listenable ?? false,
         });
 
@@ -940,11 +941,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
             method: "nuqAddJob",
             duration,
             scrapeId: id,
-            zeroDataRetention: (data as any)?.zeroDataRetention ?? false,
+            zeroDataRetention: storedZeroDataRetention(data) ?? false,
           });
         }
       },
-      { zeroDataRetention: (data as any)?.zeroDataRetention === true },
+      { zeroDataRetention: storedZeroDataRetention(data) === true },
     );
   }
 
@@ -1095,7 +1096,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
       },
       {
         zeroDataRetention: jobs.some(
-          job => (job.data as any)?.zeroDataRetention === true,
+          job => storedZeroDataRetention(job.data) === true,
         ),
       },
     );
@@ -1113,7 +1114,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
           "nuq.queue_name": this.queueName,
           "nuq.job_id": id,
           "nuq.priority": options.priority ?? 0,
-          "nuq.zero_data_retention": (data as any)?.zeroDataRetention ?? false,
+          "nuq.zero_data_retention": storedZeroDataRetention(data) ?? false,
           "nuq.listenable": options.listenable ?? false,
         });
 
@@ -1162,7 +1163,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
           });
         }
       },
-      { zeroDataRetention: (data as any)?.zeroDataRetention === true },
+      { zeroDataRetention: storedZeroDataRetention(data) === true },
     );
   }
 
@@ -1298,7 +1299,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
           job,
           _logger.child({
             jobId: job.id,
-            zeroDataRetention: !!(job.data || ({} as any)).zeroDataRetention,
+            zeroDataRetention: !!storedZeroDataRetention(job.data),
           }),
         );
       }

@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 
 describe("map redirect lookup", () => {
-  it("is skipped for a US-only team, since it fetches outside fire-engine", async () => {
+  it("is skipped for a US-only team, since it fetches directly", async () => {
     await expect(map({ usOnly: true })).rejects.toThrow(
       "stopped before discovery",
     );

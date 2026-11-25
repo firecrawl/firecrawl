@@ -1,5 +1,4 @@
 import request from "supertest";
-import { config } from "../../../config";
 import {
   describeIf,
   HAS_AI,
@@ -18,7 +17,7 @@ import {
 // service, so that URL must be configured too.
 const REQUIRES_FIRE_ENGINE = TEST_PRODUCTION;
 const REQUIRES_AI = TEST_PRODUCTION || HAS_AI;
-const HAS_AGENT_BETA = !!config.EXTRACT_V3_BETA_URL;
+const HAS_AGENT_BETA = !!process.env.EXTRACT_V3_BETA_URL;
 
 let identity: Identity;
 
@@ -36,11 +35,9 @@ const agentRaw = (body: Record<string, unknown>) =>
     .set("Content-Type", "application/json")
     .send(body);
 
-// agentRequestSchema.parse runs at the top of agentController, before the
-// controller touches the agent service, a browser or a model. A rejected
-// request therefore needs only the API server and an authenticated team, so
-// these cases run everywhere instead of skipping with the live runs below.
-describe("Agent effort parameter validation", () => {
+// The /v2/agent route is not mounted in self-hosted mode, so skip these
+// parameter validation checks when running against a self-hosted server.
+describeIf(TEST_PRODUCTION)("Agent effort parameter validation", () => {
   it(
     "rejects an unknown model name",
     async () => {

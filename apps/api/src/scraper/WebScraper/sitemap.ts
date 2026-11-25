@@ -1,13 +1,17 @@
 import { parseStringPromise } from "xml2js";
 import { WebCrawler, SITEMAP_LIMIT } from "./crawler";
 import { scrapeURL } from "../scrapeURL";
-import { scrapeOptions } from "../../controllers/v2/types";
+import {
+  getV2RequestSchemas,
+  scrapeOptionsAcceptsMaxAge,
+} from "../../controllers/v2/types";
 import type { Logger } from "winston";
 import { CostTracking } from "../../lib/cost-tracking";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import type { ScrapeOptions } from "../../controllers/v2/types";
 import { Engine } from "../scrapeURL/engines";
-import { useFireEngine } from "../scrapeURL/engines/fire-engine/available";
+import type { RequestContext } from "../../service/request-context";
+import { installedService } from "../../service/service";
 import {
   ParsedSitemap,
   parseSitemapXml,
@@ -19,7 +23,6 @@ import {
   gunzipBounded,
   MAX_GUNZIPPED_FILE_SIZE,
 } from "../scrapeURL/engines/utils/gunzip";
-import { useIndex } from "../../services";
 
 export async function getLinksFromSitemap(
   {
@@ -63,8 +66,8 @@ export async function getLinksFromSitemap(
 
     const isGzip = sitemapUrl.toLowerCase().endsWith(".gz");
     if (isGzip) {
-      // The download runs outside fire-engine, where a US-only team's fetch
-      // can't be pinned to a US exit.
+      // The download runs directly from this host, where a US-only team's
+      // fetch can't be pinned to a US exit.
       if (usOnly) {
         logger.warn("Skipping gzip sitemap for a US-only team", { sitemapUrl });
         return 0;
@@ -87,40 +90,35 @@ export async function getLinksFromSitemap(
       }
     } else {
       try {
-        const shouldPrioritizeFireEngine =
-          location && mode === "fire-engine" && useFireEngine;
-
-        const forceEngine: Engine[] = [
-          ...(maxAge > 0 && useIndex ? ["index" as const] : []),
-          ...(shouldPrioritizeFireEngine
-            ? [
-                "fire-engine;tlsclient" as const,
-                "fire-engine;tlsclient;stealth" as const,
-              ]
-            : []),
-          "fetch",
-          ...(!shouldPrioritizeFireEngine &&
-          mode === "fire-engine" &&
-          useFireEngine
-            ? [
-                "fire-engine;tlsclient" as const,
-                "fire-engine;tlsclient;stealth" as const,
-              ]
-            : []),
-        ];
+        const forceEngine: Engine[] = ["fetch"];
+        const parentCtx: RequestContext = {
+          teamId: "sitemap",
+          zeroDataRetention,
+          ...(usOnly ? { usOnly: true } : {}),
+        };
+        const systemCtx =
+          installedService()?.modules.policy.system("sitemap", parentCtx) ??
+          parentCtx;
 
         const response = await scrapeURL(
           "sitemap;" + crawlId,
           sitemapUrl,
-          scrapeOptions.parse({
-            formats: ["rawHtml"],
-            useMock: mock,
-            maxAge,
-            ...(location ? { location } : {}),
-            ...(headers ? { headers } : {}),
-          }),
+          (() => {
+            const schema = getV2RequestSchemas().scrapeOptions;
+            return schema.parse({
+              formats: ["rawHtml"],
+              useMock: mock,
+              ...(scrapeOptionsAcceptsMaxAge(schema) && maxAge !== undefined
+                ? { maxAge }
+                : {}),
+              ...(location ? { location } : {}),
+              ...(headers ? { headers } : {}),
+            });
+          })(),
           {
+            ctx: systemCtx,
             forceEngine,
+            sitemapFetch: mode === "fire-engine" ? "http" : "direct",
             v0DisableJsDom: true,
             orgId: null,
             externalAbort: abort
@@ -132,9 +130,8 @@ export async function getLinksFromSitemap(
                   },
                 }
               : undefined,
-            teamId: "sitemap",
-            zeroDataRetention,
-            ...(usOnly ? { teamFlags: { usOnly: true } } : {}),
+            teamId: systemCtx.teamId,
+            zeroDataRetention: systemCtx.zeroDataRetention,
           },
           new CostTracking(),
         );

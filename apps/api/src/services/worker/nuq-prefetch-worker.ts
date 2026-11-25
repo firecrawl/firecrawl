@@ -11,6 +11,7 @@ import {
 import Express from "express";
 import { logger } from "../../lib/logger";
 import { startRole } from "../../main";
+import { runProcessStop } from "../../service/service";
 
 export async function start() {
   const app = Express();
@@ -43,7 +44,11 @@ export async function start() {
 
   async function shutdown() {
     server.close();
-    await nuqShutdown();
+    try {
+      await nuqShutdown();
+    } finally {
+      await runProcessStop("nuq-prefetch-worker");
+    }
     await shutdownTracing();
     process.exit(0);
   }
