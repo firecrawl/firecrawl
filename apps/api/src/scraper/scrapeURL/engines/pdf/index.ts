@@ -127,13 +127,15 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           proxyUsed: prefetch.proxyUsed,
         };
       } finally {
-        try {
-          await unlink(prefetch.filePath);
-        } catch (error) {
-          meta.logger?.warn("Failed to clean up temporary PDF file", {
-            error,
-            tempFilePath: prefetch.filePath,
-          });
+        if (prefetch !== meta.pdfPrefetch) {
+          try {
+            await unlink(prefetch.filePath);
+          } catch (error) {
+            meta.logger?.warn("Failed to clean up temporary PDF file", {
+              error,
+              tempFilePath: prefetch.filePath,
+            });
+          }
         }
       }
     }
