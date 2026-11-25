@@ -13,8 +13,20 @@ export function parseWithSchema(value: unknown, jsonSchema: unknown): unknown {
   return dedupeArrays(cleaned);
 }
 
-const normalizeKey = (k: string): string =>
-  k.replace(/[^a-z0-9]/gi, "").toLowerCase();
+const normalizeKey = (k: string): string => {
+  let folded = "";
+  // Removing separators can bring a combining mark back beside its base.
+  for (const char of k.replace(/[^\p{L}\p{N}\p{M}]/gu, "").normalize("NFC")) {
+    // Fold each code point independently so sigma does not depend on word
+    // position. Default caseless matching keeps dotless i distinct; capital
+    // sharp S lowers to ß and needs the same expansion as lowercase sharp S.
+    folded +=
+      char === "ı"
+        ? char
+        : char.toUpperCase().toLowerCase().replace(/ß/g, "ss");
+  }
+  return folded.normalize("NFC");
+};
 
 function remapKeys(value: unknown, schema: unknown): unknown {
   if (!isObject(schema)) return value;
@@ -27,7 +39,14 @@ function remapKeys(value: unknown, schema: unknown): unknown {
   const props = (schema as { properties?: JsonObject }).properties;
   if (!props) return value;
 
-  const canonical = new Map(Object.keys(props).map(k => [normalizeKey(k), k]));
+  const canonical = new Map<string, string | undefined>();
+  for (const key of Object.keys(props)) {
+    const normalized = normalizeKey(key);
+    // Empty or colliding aliases cannot identify one schema property safely.
+    if (normalized) {
+      canonical.set(normalized, canonical.has(normalized) ? undefined : key);
+    }
+  }
   const out: JsonObject = {};
   for (const [key, v] of Object.entries(value)) {
     const target =
