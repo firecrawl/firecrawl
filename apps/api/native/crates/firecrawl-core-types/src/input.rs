@@ -12,6 +12,15 @@ fn record_input_error(argument: &'static str, path: &str) {
   span.record("input.path", path);
 }
 
+fn normalize_error_path(path: &serde_path_to_error::Path) -> String {
+  let rendered = path.to_string();
+  if rendered.is_empty() {
+    ".".to_string()
+  } else {
+    rendered
+  }
+}
+
 /// Deserializes a JSON string argument using `serde_path_to_error`, recording
 /// `input.argument` and `input.path` on the active span when deserialization
 /// fails and rejecting trailing non-whitespace tokens.
@@ -34,7 +43,7 @@ pub fn parse_json_input<T: DeserializeOwned>(
       Ok(value)
     }
     Err(err) => {
-      let path = err.path().to_string();
+      let path = normalize_error_path(err.path());
       record_input_error(argument, &path);
       Err(CoreNativeError::InvalidInput {
         argument: argument.to_string(),
@@ -52,7 +61,7 @@ pub fn parse_json_value<T: DeserializeOwned>(
   value: serde_json::Value,
 ) -> Result<T, CoreNativeError> {
   serde_path_to_error::deserialize(value).map_err(|err| {
-    let path = err.path().to_string();
+    let path = normalize_error_path(err.path());
     record_input_error(argument, &path);
     CoreNativeError::InvalidInput {
       argument: argument.to_string(),

@@ -1,9 +1,29 @@
 //! Open-source raw document and file parser request/result types.
 
-use serde::{Deserialize, Serialize};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize};
 use ts_rs::TS;
 
 use crate::kinded::{KindedSet, kinded};
+
+/// Maximum PDF pages accepted by `pdfParserWithOptions.maxPages` in
+/// `apps/api/src/controllers/v2/types.ts`.
+pub const MAX_PDF_PAGES: u32 = 10_000;
+
+fn deserialize_opt_max_pages<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+where
+  D: Deserializer<'de>,
+{
+  let value = Option::<u32>::deserialize(deserializer)?;
+  if let Some(pages) = value
+    && !(1..=MAX_PDF_PAGES).contains(&pages)
+  {
+    return Err(D::Error::custom(format!(
+      "maxPages must be between 1 and {MAX_PDF_PAGES}, got {pages}"
+    )));
+  }
+  Ok(value)
+}
 
 /// Open-source PDF parsing mode matching `pdfModeSchema` in
 /// `apps/api/src/controllers/v2/types.ts`.
@@ -22,7 +42,11 @@ pub enum CorePdfMode {
 pub struct CorePdfParserOptions {
   #[serde(default, skip_serializing_if = "Option::is_none")]
   pub mode: Option<CorePdfMode>,
-  #[serde(default, skip_serializing_if = "Option::is_none")]
+  #[serde(
+    default,
+    skip_serializing_if = "Option::is_none",
+    deserialize_with = "deserialize_opt_max_pages"
+  )]
   pub max_pages: Option<u32>,
 }
 
@@ -63,7 +87,7 @@ pub struct CorePdfInspection {
 /// Request options for parsing raw fetched document bytes using open-source
 /// local parsers (`pdf`, `document`, `fallback`, `rawBase64`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(optional_fields)]
 pub struct ParseRawDocumentRequest {
   pub url: String,

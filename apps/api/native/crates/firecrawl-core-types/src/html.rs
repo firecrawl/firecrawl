@@ -8,7 +8,7 @@ use ts_rs::TS;
 
 /// CSS selector and attribute name pair to extract from cleaned HTML.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttributeRequest {
   pub selector: String,
   pub attribute: String,
@@ -25,7 +25,7 @@ pub struct ExtractedAttribute {
 
 /// Request options for single-pass core HTML cleaning and extraction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(optional_fields)]
 pub struct DeriveCoreHtmlRequest {
   pub url: String,

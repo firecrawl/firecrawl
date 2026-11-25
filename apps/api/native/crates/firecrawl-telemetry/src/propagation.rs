@@ -50,7 +50,7 @@ pub fn extract_trace_context(ctx: &TraceContext) -> Option<Context> {
   if ctx.traceparent.as_deref().is_none_or(str::is_empty) {
     return None;
   }
-  let extracted = TraceContextPropagator::new().extract(ctx);
+  let extracted = TraceContextPropagator::new().extract_with_context(&Context::new(), ctx);
   extracted
     .span()
     .span_context()

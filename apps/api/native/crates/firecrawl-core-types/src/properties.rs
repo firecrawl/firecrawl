@@ -230,3 +230,87 @@ fn core_native_error_transport_string_round_trips(tc: TestCase) {
     assert_eq!(CoreNativeError::from(decoded), error);
   }
 }
+
+#[test]
+fn parse_json_input_rejects_trailing_tokens_with_root_path() {
+  let recorded = Arc::new(Mutex::new(RecordedFields::default()));
+  let subscriber = tracing_subscriber::registry().with(InputCaptureLayer {
+    recorded: Arc::clone(&recorded),
+  });
+
+  let outcome = tracing::subscriber::with_default(subscriber, || {
+    let span = tracing::info_span!(
+      "native_call",
+      input.argument = tracing::field::Empty,
+      input.path = tracing::field::Empty,
+    );
+    span.in_scope(|| {
+      parse_json_input::<NativeCallContext>("ctx", r#"{"zeroDataRetention": false} trailing"#)
+    })
+  });
+
+  assert!(
+    matches!(
+      outcome,
+      Err(CoreNativeError::InvalidInput {
+        ref argument,
+        ref path,
+        ..
+      }) if argument == "ctx" && path == "."
+    ),
+    "expected InvalidInput with path `.`, got {outcome:?}"
+  );
+
+  let captured = recorded
+    .lock()
+    .unwrap_or_else(PoisonError::into_inner)
+    .clone();
+  assert_eq!(captured.argument.as_deref(), Some("ctx"));
+  assert_eq!(captured.path.as_deref(), Some("."));
+}
+
+#[test]
+fn boundary_request_validation_enforces_required_zdr_unknown_fields_and_max_pages() {
+  // Missing zeroDataRetention fails closed instead of defaulting to false.
+  assert!(matches!(
+    parse_json_input::<NativeCallContext>("ctx", r#"{}"#),
+    Err(CoreNativeError::InvalidInput { .. })
+  ));
+  assert!(parse_json_input::<NativeCallContext>("ctx", r#"{"zeroDataRetention": true}"#).is_ok());
+
+  // Unknown fields on boundary request structs are rejected.
+  assert!(matches!(
+    parse_json_input::<NativeCallContext>("ctx", r#"{"zeroDataRetention": false, "extra": 1}"#),
+    Err(CoreNativeError::InvalidInput { .. })
+  ));
+  assert!(matches!(
+    parse_json_input::<ParseRawDocumentRequest>(
+      "req",
+      r#"{"url": "https://example.com", "unknownField": true}"#,
+    ),
+    Err(CoreNativeError::InvalidInput { .. })
+  ));
+  assert!(matches!(
+    parse_json_input::<DeriveCoreHtmlRequest>(
+      "req",
+      r#"{"url":"https://example.com","onlyMainContent":true,"needMetadata":false,"needLinks":false,"needImages":false,"removeBase64Images":false,"typo":1}"#,
+    ),
+    Err(CoreNativeError::InvalidInput { .. })
+  ));
+
+  // PDF maxPages enforces the TS schema bounds 1..=10000.
+  assert!(matches!(
+    parse_json_input::<CoreParsers>("parsers", r#"[{"type": "pdf", "maxPages": 0}]"#),
+    Err(CoreNativeError::InvalidInput { .. })
+  ));
+  assert!(matches!(
+    parse_json_input::<CoreParsers>("parsers", r#"[{"type": "pdf", "maxPages": 10001}]"#),
+    Err(CoreNativeError::InvalidInput { .. })
+  ));
+  assert!(
+    parse_json_input::<CoreParsers>("parsers", r#"[{"type": "pdf", "maxPages": 1}]"#).is_ok()
+  );
+  assert!(
+    parse_json_input::<CoreParsers>("parsers", r#"[{"type": "pdf", "maxPages": 10000}]"#).is_ok()
+  );
+}
