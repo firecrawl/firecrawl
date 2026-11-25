@@ -395,9 +395,17 @@ describe("branding with Jev", () => {
       { ...input.buttons[0], index: 0, text: "Accept all cookies" },
       { ...input.buttons[1], index: 1, text: "Reject all" },
       { ...input.buttons[0], index: 2, text: "Get started" },
+      // Other languages, and a consent manager's class on an unlabeled button.
+      { ...input.buttons[1], index: 3, text: "Tout refuser" },
+      { ...input.buttons[1], index: 4, text: "Alle akzeptieren" },
+      { ...input.buttons[1], index: 5, text: "OK", classes: "cmplz-btn cmplz-accept" },
+      { ...input.buttons[1], index: 6, text: "Accepter" },
+      // Real calls to action that merely share a verb with consent wording.
+      { ...input.buttons[0], index: 7, text: "Personnaliser mon offre" },
+      { ...input.buttons[0], index: 8, text: "Configurar mi plan" },
     ];
     expect(Object.keys(buildJevRequest(input).state.buttons as object)).toEqual(
-      ["button_2"],
+      ["button_2", "button_7", "button_8"],
     );
 
     input.buttons = input.buttons.slice(0, 2);
