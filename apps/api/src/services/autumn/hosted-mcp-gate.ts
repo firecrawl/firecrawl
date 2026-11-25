@@ -1,4 +1,9 @@
 import { autumnService } from "./autumn.service";
+import {
+  checkMcpWindow,
+  formatResetCountdown,
+  mcpWindowEnabled,
+} from "./mcp-window";
 import type { TrackCreditsParams } from "./types";
 
 type CheckResult = Awaited<ReturnType<typeof autumnService.checkCredits>>;
@@ -6,6 +11,12 @@ type CheckResult = Awaited<ReturnType<typeof autumnService.checkCredits>>;
 /** The refusal for a hosted MCP charge neither MCP credits nor the team's own credits cover. */
 export function hostedMcpCreditsRefusal(resetsAt?: number): string {
   const resets = resetsAt ? new Date(resetsAt).toISOString() : undefined;
+  if (mcpWindowEnabled()) {
+    const countdown = resetsAt
+      ? `; the allowance resets in ${formatResetCountdown(resetsAt)} (at ${resets})`
+      : "";
+    return `Insufficient credits for this connected-app request. Hosted MCP calls (from apps such as ChatGPT, Claude or Codex) spend an MCP credit allowance first and then your team's credits, and neither can cover this request${countdown}. To continue now, add credits or upgrade your plan at https://firecrawl.dev/pricing.`;
+  }
   return `Insufficient credits for this connected-app request. Hosted MCP calls (from apps such as ChatGPT, Claude or Codex) spend a daily MCP credit allowance first and then your team's credits, and neither can cover this request${resets ? `; the allowance resets at ${resets}` : ""}. To continue now, add credits or upgrade your plan at https://firecrawl.dev/pricing.`;
 }
 
@@ -15,7 +26,8 @@ export function hostedMcpCreditsRefusal(resetsAt?: number): string {
  * grants such as coupons live out of reach of the MCP credits check.
  * `onTeamCredits` means the charge must then be billed like an API-key call.
  * A team check that can't answer leaves the MCP refusal standing; one that
- * refuses too comes back as `teamRefusal`.
+ * refuses too comes back as `teamRefusal`. With the rolling window on (see
+ * mcp-window.ts), a charge past the window counts as an MCP refusal.
  */
 export async function checkHostedMcpCredits(
   params: TrackCreditsParams & { featureId: string },
@@ -29,10 +41,16 @@ export async function checkHostedMcpCredits(
     params.teamId,
     params.featureId,
   );
-  const onMcp = await autumnService.checkCredits({
-    ...params,
-    featureId: mcpFeatureId,
-  });
+  // A charge past the rolling window is refused on MCP credits before Autumn
+  // is asked, and falls back to the team's own credits like any MCP refusal.
+  const onMcp =
+    (mcpFeatureId !== params.featureId
+      ? await checkMcpWindow(params.orgId, params.value)
+      : null) ??
+    (await autumnService.checkCredits({
+      ...params,
+      featureId: mcpFeatureId,
+    }));
   const onMcpCredits = {
     result: onMcp,
     featureId: mcpFeatureId,

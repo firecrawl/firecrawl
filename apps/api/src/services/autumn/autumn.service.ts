@@ -19,6 +19,7 @@ import type {
   LockCreditsResult,
   TrackCreditsParams,
 } from "./types";
+import { recordMcpWindowUsage } from "./mcp-window";
 
 export const CREDITS_FEATURE_ID = "CREDITS";
 export const SEARCH_CREDITS_FEATURE_ID = "SEARCH_CREDITS";
@@ -477,7 +478,7 @@ export class AutumnService {
     if (this.isPreviewTeam(teamId)) return false;
 
     try {
-      return await firebillTrack({
+      const tracked = await firebillTrack({
         customerId: orgId,
         entityId: billingEntityId(featureId, teamId),
         featureId,
@@ -487,6 +488,9 @@ export class AutumnService {
         externalRequestId,
         durableRetry,
       });
+      if (tracked && featureId === MCP_CREDITS_FEATURE_ID)
+        await recordMcpWindowUsage(orgId, value);
+      return tracked;
     } catch (error) {
       logger.error(
         "Autumn trackCredits failed — billing API may be unavailable",
@@ -568,7 +572,7 @@ export class AutumnService {
     if (this.isPreviewTeam(teamId)) return false;
 
     try {
-      return await firebillTrack({
+      const refunded = await firebillTrack({
         customerId: orgId,
         entityId: billingEntityId(featureId, teamId),
         featureId,
@@ -581,6 +585,9 @@ export class AutumnService {
         externalRequestId,
         durableRetry,
       });
+      if (refunded && featureId === MCP_CREDITS_FEATURE_ID)
+        await recordMcpWindowUsage(orgId, -value);
+      return refunded;
     } catch (error) {
       logger.error(
         "Autumn refundCredits failed — billing API may be unavailable",
