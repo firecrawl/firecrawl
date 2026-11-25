@@ -256,6 +256,16 @@ async function startServer(port = DEFAULT_PORT) {
     logger.info(`Worker ${process.pid} listening on port ${port}`);
   });
 
+  for (const provider of service.searchProviders.all()) {
+    logger.info("Search provider registered", {
+      provider: provider.name,
+      priority: provider.priority,
+      usOnly: provider.supportsUsOnly === true,
+      zdr: provider.supportsZdr === true,
+      anon: provider.supportsAnon === true,
+    });
+  }
+
   const adminInternalServer =
     config.ADMIN_INTERNAL_PORT !== undefined
       ? startAdminInternalServer(config.ADMIN_INTERNAL_PORT)
@@ -420,16 +430,6 @@ app.use(
 );
 
 logger.info(`Worker ${process.pid} started`);
-
-for (const provider of service.searchProviders.all()) {
-  logger.info("Search provider registered", {
-    provider: provider.name,
-    priority: provider.priority,
-    usOnly: provider.supportsUsOnly === true,
-    zdr: provider.supportsZdr === true,
-    anon: provider.supportsAnon === true,
-  });
-}
 
 if (require.main === module) {
   void startRole("api");
