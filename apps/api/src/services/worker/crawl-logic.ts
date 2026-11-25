@@ -66,7 +66,9 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
     );
   }
 
-  const isCrawl = sc ? sc.crawlerOptions !== null : data.crawlerOptions != null;
+  const isCrawl = sc
+    ? sc.crawlerOptions !== null
+    : data.crawlerOptions !== null;
   const crawlerOptions = sc ? sc.crawlerOptions : (data.crawlerOptions ?? null);
   const originUrl = sc ? sc.originUrl : data.url;
   // Without the document a cancel cannot be observed, so the run is reported
@@ -304,6 +306,7 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
         jobId: crawlId,
         webhook,
         v0: false,
+        zeroDataRetention,
       });
       if (sender) {
         if (isCrawl) {

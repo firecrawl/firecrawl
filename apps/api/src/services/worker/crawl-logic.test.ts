@@ -94,6 +94,7 @@ test("recovers crawl context from sc when job.data is shed (ZDR)", async () => {
     jobId: "crawl-1",
     webhook: { url: "https://hook.example" },
     v0: false,
+    zeroDataRetention: true,
   });
   expect(sendMock).toHaveBeenCalledTimes(1);
 });
@@ -260,6 +261,7 @@ describe("missing crawl document", () => {
       jobId: "batch-missing",
       webhook: { url: "https://hook.example", events: ["completed"] },
       v0: false,
+      zeroDataRetention: false,
     });
     expect(sendMock).toHaveBeenCalledWith("batch_scrape.completed", {
       success: true,
