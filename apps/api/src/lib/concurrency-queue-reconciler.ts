@@ -14,7 +14,7 @@ import {
   removeConcurrencyLimitActiveJob,
   removeCrawlConcurrencyLimitActiveJob,
 } from "./concurrency-limit";
-import { getCrawl } from "./crawl-redis";
+import { getCrawl, type StoredCrawl } from "./crawl-redis";
 import { recordCrawlStateMissing } from "./crawl-state-metrics";
 import { logger as _logger } from "./logger";
 import { currentLimits } from "./limits";
@@ -138,17 +138,20 @@ async function reconcileTeam(
   const jobsToStart: typeof jobsToRecover = [];
   const jobsToQueue: typeof jobsToRecover = [];
 
-  const missingCrawls = new Set<string>();
+  const crawls = new Map<string, StoredCrawl | null>();
   for (const job of jobsToRecover) {
     const crawlId = job.data.crawl_id;
-    if (crawlId && (missingCrawls.has(crawlId) || !(await getCrawl(crawlId)))) {
-      // Back to the queue, where the gate caps a missing crawl at one job.
-      if (!missingCrawls.has(crawlId)) {
-        missingCrawls.add(crawlId);
+    if (crawlId && !crawls.has(crawlId)) {
+      const sc = await getCrawl(crawlId);
+      crawls.set(crawlId, sc);
+      if (!sc) {
         recordCrawlStateMissing("gate", crawlId, teamLogger, {
           teamId: ownerId,
         });
       }
+    }
+    if (crawlId && crawls.get(crawlId) === null) {
+      // Back to the queue, where the gate caps a missing crawl at one job.
       jobsToQueue.push(job);
       continue;
     }
@@ -190,7 +193,7 @@ async function reconcileTeam(
       await pushConcurrencyLimitActiveJob(ownerId, job.id, 60 * 1000);
 
       if (job.data.crawl_id) {
-        const sc = await getCrawl(job.data.crawl_id);
+        const sc = crawls.get(job.data.crawl_id);
         if (sc?.crawlerOptions?.delay || sc?.maxConcurrency) {
           await pushCrawlConcurrencyLimitActiveJob(
             job.data.crawl_id,
