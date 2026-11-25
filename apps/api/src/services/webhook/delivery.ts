@@ -117,7 +117,7 @@ export class WebhookSender {
     const webhookHost = new URL(this.config.url).hostname;
     if (isIPPrivate(webhookHost) && config.ALLOW_LOCAL_WEBHOOKS !== true) {
       this.logger.warn("Aborting webhook call to private IP address", {
-        webhookHost,
+        webhookUrl: this.config.url,
       });
       return { delivered: false, skipped: true };
     }
@@ -176,7 +176,7 @@ export class WebhookSender {
       } catch (error) {
         this.logger.error("Failed to send webhook", {
           error,
-          webhookHost,
+          webhookUrl: this.config.url,
         });
         throw error;
       } finally {

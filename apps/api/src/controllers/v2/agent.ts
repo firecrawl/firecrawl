@@ -32,7 +32,6 @@ import {
   AGENT_DEFAULT_MAX_CREDITS,
   gateAgentCredits,
 } from "./agent-credit-gate";
-import { withWebhookSummaryForLog } from "../../services/webhook/log";
 
 export async function agentController(
   req: RequestWithAuth<{}, AgentResponse, AgentRequest>,
@@ -103,8 +102,8 @@ export async function agentController(
   }
 
   logger.info("Agent starting...", {
-    request: withWebhookSummaryForLog(req.body),
-    originalRequest: withWebhookSummaryForLog(originalRequest),
+    request: req.body,
+    originalRequest,
   });
 
   // Threat protection: check the agent's starting URLs before handing off to
