@@ -110,6 +110,9 @@ dist
 # Rust
 /target
 
+# Hegel failing-example database
+.hegel/
+
 *.node
 .pnp.*
 /npm

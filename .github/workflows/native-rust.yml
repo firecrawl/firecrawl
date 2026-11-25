@@ -30,6 +30,14 @@ jobs:
       - name: Activate pinned Rust toolchain
         run: rustup show active-toolchain
 
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
+        with:
+          version: 11.4.0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+
       - name: Cache cargo registry and target
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
@@ -51,6 +59,13 @@ jobs:
         run: cargo test --workspace --locked
         env:
           HEGEL_DEFAULT_PROFILE: ci
+
+      - name: Check TS bindings are up to date
+        run: |
+          pnpm ts-bindings
+          git diff --exit-code
+        env:
+          pnpm_config_verify_deps_before_run: "false"
 
       - name: Check apps/local
         run: cargo check --locked --manifest-path ../../local/Cargo.toml

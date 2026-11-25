@@ -1,0 +1,24 @@
+[package]
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+name = "firecrawl-core-types"
+publish.workspace = true
+version.workspace = true
+
+[dependencies]
+firecrawl-kinded-macro.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_path_to_error.workspace = true
+strum.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+hegeltest.workspace = true
+tracing-subscriber = { workspace = true, features = ["registry"] }
+
+[lints]
+workspace = true
