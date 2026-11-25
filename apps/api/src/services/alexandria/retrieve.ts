@@ -25,7 +25,7 @@ import { getBillingQueue } from "../queue-service";
 import { redisRateLimitClient } from "../rate-limiter";
 import { authorizeProviders } from "./access";
 import { exchangeRequest } from "./client";
-import { cachedResponse } from "./response-cache";
+import { cachedResponse, cacheResponse } from "./response-cache";
 import { isUsOnly } from "../../lib/us-only";
 import { isAlexandriaVerified } from "../../lib/alexandria-verified";
 import { alexandriaFeedbackStorage } from "../../lib/alexandria-feedback-storage";
@@ -42,7 +42,7 @@ export { REQUEST_ID_PATTERN };
 const repeatTotal = new Counter({
   name: "firecrawl_alexandria_repeat_total",
   help: "Requests whose x-request-id already had a record, by how they were answered",
-  // outcome: replayed|response_expired|response_withheld|duplicate_request|request_in_flight|request_unresolved
+  // outcome: replayed|response_expired|response_not_kept|response_withheld|duplicate_request|request_in_flight|request_unresolved
   // client: mcp|cli|sdk|api|other
   labelNames: ["outcome", "client"] as const,
 });
@@ -50,7 +50,7 @@ const repeatTotal = new Counter({
 const repeatAgeSeconds = new Histogram({
   name: "firecrawl_alexandria_repeat_age_seconds",
   help: "Seconds between a request completing and a repeat of its x-request-id",
-  // outcome: replayed|response_expired|response_withheld
+  // outcome: replayed|response_expired|response_not_kept|response_withheld
   // client: mcp|cli|sdk|api|other
   labelNames: ["outcome", "client"] as const,
   buckets: [1, 5, 15, 60, 300, 900, 3600, 21600, 86400, 604800],
@@ -84,7 +84,8 @@ const INDEX_PROVIDERS: [IndexName, string][] = [
 
 // One record per charge id (team + x-request-id), written before the provider
 // call so a crash is found as unresolved instead of re-executed, and rewritten
-// with the response so replays never execute twice.
+// when the request completes so a repeat never executes twice. The response
+// itself is kept apart, in the response cache.
 type Retrieval = {
   fingerprint: string;
   phase: "executing" | "done";
@@ -94,9 +95,10 @@ type Retrieval = {
   maximumCredits?: number;
   // When the request completed. Absent on records written before it was recorded.
   doneAt?: number;
-  // On a completed record that carries its response. One that does not has it in the
-  // response cache, for as long as the cache keeps it.
+  // Only on completed records written before responses moved to the response cache.
   response?: ExchangeResponse;
+  // Whether the response went into the response cache when the request completed.
+  responseKept?: boolean;
   // Set instead of response under zero data retention.
   responseWithheld?: boolean;
   failure?: string;
@@ -347,6 +349,17 @@ export async function retrieveProviders(input: {
       "EX",
       RETENTION_SECONDS,
     );
+  // A completed request's response goes to the cache, and its record says only that it
+  // completed. The cache is written first, so a repeat that finds the record finds the response.
+  const complete = async (response: ExchangeResponse) =>
+    write({
+      ...record,
+      phase: "done",
+      doneAt: Date.now(),
+      ...(zeroDataRetention
+        ? { responseWithheld: true }
+        : { responseKept: await cacheResponse(id, response) }),
+    });
 
   const claimed = await redisRateLimitClient.set(
     key,
@@ -411,10 +424,16 @@ export async function retrieveProviders(input: {
         ),
       );
     if (existing?.phase === "done" && existing.fingerprint === fingerprint) {
-      const response = existing.response ?? (await cachedResponse(id));
+      // A record that says its response was not kept is not answered from the cache, where
+      // an earlier run of the same charge id may have left one.
+      const response =
+        existing.response ??
+        (existing.responseKept === false ? null : await cachedResponse(id));
       if (!response)
         return repeatOfDone(
-          "response_expired",
+          existing.responseKept === false
+            ? "response_not_kept"
+            : "response_expired",
           notExecuted(
             refusal(
               409,
@@ -516,16 +535,7 @@ export async function retrieveProviders(input: {
       });
       // The answer is delivered even when it cannot be recorded; the id is released instead,
       // so a repeat runs the read again rather than finding it stranded.
-      await write(
-        zeroDataRetention
-          ? {
-              ...record,
-              phase: "done",
-              doneAt: Date.now(),
-              responseWithheld: true,
-            }
-          : { ...record, phase: "done", doneAt: Date.now(), response: done },
-      ).catch(async error => {
+      await complete(done).catch(async error => {
         logger.warn("Catalogue read answer was not recorded", {
           error,
           chargeId: id,
@@ -866,21 +876,7 @@ export async function retrieveProviders(input: {
       });
 
     const done: ExchangeResponse = { status: 200, body: answer };
-    await write(
-      zeroDataRetention
-        ? {
-            ...record,
-            phase: "done",
-            doneAt: Date.now(),
-            responseWithheld: true,
-          }
-        : {
-            ...record,
-            phase: "done",
-            doneAt: Date.now(),
-            response: retainable(answer, input.calls),
-          },
-    );
+    await complete(retainable(answer, input.calls));
     return { ...done, executed: true, scrapeId: input.scrapeId };
   } catch (error) {
     return fail(error instanceof Error ? error.message : String(error));
