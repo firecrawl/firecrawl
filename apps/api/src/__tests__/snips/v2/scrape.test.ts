@@ -1833,47 +1833,6 @@ describe("Scrape tests", () => {
     },
     scrapeTimeout,
   );
-
-  // TODO: check if these are required
-  describeIf(TEST_PRODUCTION && ALLOW_TEST_SUITE_WEBSITE)(
-    "__experimental_omceDomain functionality",
-    () => {
-      it.concurrent(
-        "should accept __experimental_omceDomain flag in scrape request",
-        async () => {
-          const response = await scrape(
-            {
-              url: base, // Previously: https://httpbin.org/html
-              __experimental_omceDomain: "fake-domain.com",
-            },
-            identity,
-          );
-
-          expect(response.markdown).toBeDefined();
-          expect(response.metadata).toBeDefined();
-        },
-        scrapeTimeout,
-      );
-
-      it.concurrent(
-        "should work with __experimental_omceDomain and other experimental flags",
-        async () => {
-          const response = await scrape(
-            {
-              url: base, // Previously: https://httpbin.org/html
-              __experimental_omceDomain: "test-domain.org",
-              __experimental_omce: true,
-            },
-            identity,
-          );
-
-          expect(response.markdown).toBeDefined();
-          expect(response.metadata).toBeDefined();
-        },
-        scrapeTimeout,
-      );
-    },
-  );
 });
 
 // TODO: this is remote, how should we handle this? Production only or also self?
