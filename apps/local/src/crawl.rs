@@ -271,7 +271,10 @@ pub async fn sitemap_urls(
     if !(200..300).contains(&res.status) {
       continue;
     }
-    let Ok(processed) = crawler::process_sitemap(res.text()).await else {
+    let text = res.text();
+    let Ok(Ok(processed)) =
+      tokio::task::spawn_blocking(move || crawler::process_sitemap(&text)).await
+    else {
       continue;
     };
     for instruction in processed.instructions {

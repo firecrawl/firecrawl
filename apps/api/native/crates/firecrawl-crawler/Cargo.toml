@@ -1,0 +1,18 @@
+[package]
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+name = "firecrawl-crawler"
+publish.workspace = true
+version.workspace = true
+
+[dependencies]
+psl.workspace = true
+regex.workspace = true
+roxmltree.workspace = true
+serde.workspace = true
+texting_robots.workspace = true
+url.workspace = true
+
+[lints]
+workspace = true

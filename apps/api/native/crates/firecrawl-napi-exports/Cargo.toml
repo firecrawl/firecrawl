@@ -1,0 +1,22 @@
+[package]
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+name = "firecrawl-napi-exports"
+publish.workspace = true
+version.workspace = true
+
+[dependencies]
+firecrawl-crawler.workspace = true
+firecrawl-html.workspace = true
+firecrawl-parsers.workspace = true
+napi.workspace = true
+napi-derive.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

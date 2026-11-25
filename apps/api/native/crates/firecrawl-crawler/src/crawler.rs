@@ -1,6 +1,12 @@
+// Pre-existing crawler logic exempt from strict workspace clippy denies.
+#![allow(
+  clippy::arithmetic_side_effects,
+  clippy::collapsible_if,
+  clippy::indexing_slicing,
+  clippy::unwrap_used
+)]
+
 use crate::xml::exceeds_element_depth;
-use napi::bindgen_prelude::*;
-use napi_derive::napi;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -8,7 +14,6 @@ use std::{
   sync::LazyLock,
 };
 use texting_robots::Robot;
-use tokio::task;
 use url::Url;
 
 static FILE_EXTENSIONS: &[&str] = &[
@@ -20,8 +25,7 @@ static FILE_EXTENSIONS: &[&str] = &[
 static FILE_EXT_SET: LazyLock<HashSet<&'static str>> =
   LazyLock::new(|| FILE_EXTENSIONS.iter().copied().collect());
 
-#[derive(Deserialize)]
-#[napi(object)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct FilterLinksCall {
   pub links: Vec<String>,
   pub limit: Option<i64>,
@@ -39,22 +43,19 @@ pub struct FilterLinksCall {
   pub allow_subdomains: bool,
 }
 
-#[derive(Serialize)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FilterLinksResult {
   pub links: Vec<String>,
   pub denial_reasons: HashMap<String, String>,
 }
 
-#[derive(Serialize)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct RegexValidationError {
   pub pattern: String,
   pub error: String,
 }
 
-#[derive(Deserialize)]
-#[napi(object)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct FilterUrlCall {
   pub href: String,
   pub url: String,
@@ -67,55 +68,47 @@ pub struct FilterUrlCall {
   pub allow_subdomains: bool,
 }
 
-#[derive(Serialize)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FilterUrlResult {
   pub allowed: bool,
   pub url: Option<String>,
   pub denial_reason: Option<String>,
 }
 
-#[derive(Serialize, Debug)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SitemapUrl {
   pub loc: Vec<String>,
 }
 
-#[derive(Serialize, Debug)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SitemapEntry {
   pub loc: Vec<String>,
 }
 
-#[derive(Serialize, Debug)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SitemapUrlset {
   pub url: Vec<SitemapUrl>,
 }
 
-#[derive(Serialize, Debug)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SitemapIndex {
   pub sitemap: Vec<SitemapEntry>,
 }
 
-#[derive(Serialize, Debug)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ParsedSitemap {
   pub urlset: Option<SitemapUrlset>,
   pub sitemapindex: Option<SitemapIndex>,
 }
 
-#[derive(Serialize, Debug)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SitemapInstruction {
   pub action: String,
   pub urls: Vec<String>,
   pub count: u32,
 }
 
-#[derive(Serialize, Debug)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SitemapProcessingResult {
   pub instructions: Vec<SitemapInstruction>,
   pub total_count: u32,
@@ -458,18 +451,8 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
 }
 
 /// Filter links based on crawling rules and constraints.
-#[napi]
-pub async fn filter_links(data: FilterLinksCall) -> Result<FilterLinksResult> {
-  let res = task::spawn_blocking(move || _filter_links(data))
-    .await
-    .map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("filter_links join error: {e}"),
-      )
-    })?;
-
-  res.map_err(|e| Error::new(Status::GenericFailure, format!("Filter links error: {e}")))
+pub fn filter_links(data: FilterLinksCall) -> Result<FilterLinksResult, String> {
+  _filter_links(data)
 }
 
 /// Compiled form of a client-supplied includePaths/excludePaths pattern.
@@ -517,7 +500,6 @@ fn compile_path_regex(pattern: &str) -> std::result::Result<PathRegex, regex::Er
 /// crate), which is what link filtering compiles them with. Returns an entry for
 /// each pattern that fails to compile so callers can reject unsupported syntax
 /// (e.g. look-around, backreferences) instead of silently ignoring it.
-#[napi]
 pub fn validate_regexes(patterns: Vec<String>) -> Vec<RegexValidationError> {
   patterns
     .into_iter()
@@ -704,18 +686,8 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
 }
 
 /// Filter a single URL based on crawling rules and constraints.
-#[napi]
-pub async fn filter_url(data: FilterUrlCall) -> Result<FilterUrlResult> {
-  let res = task::spawn_blocking(move || _filter_url(data))
-    .await
-    .map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("filter_url join error: {e}"),
-      )
-    })?;
-
-  res.map_err(|e| Error::new(Status::GenericFailure, format!("Filter URL error: {e}")))
+pub fn filter_url(data: FilterUrlCall) -> Result<FilterUrlResult, String> {
+  _filter_url(data)
 }
 
 /// Sitemaps nest a handful of levels; anything deeper is malformed.
@@ -788,23 +760,8 @@ fn _parse_sitemap_xml(xml_content: &str) -> std::result::Result<ParsedSitemap, S
 }
 
 /// Parse XML sitemap content into structured data.
-#[napi]
-pub async fn parse_sitemap_xml(xml_content: String) -> Result<ParsedSitemap> {
-  let res = task::spawn_blocking(move || _parse_sitemap_xml(&xml_content))
-    .await
-    .map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("parse_sitemap_xml join error: {e}"),
-      )
-    })?;
-
-  res.map_err(|e| {
-    Error::new(
-      Status::GenericFailure,
-      format!("Parse sitemap XML error: {e}"),
-    )
-  })
+pub fn parse_sitemap_xml(xml_content: &str) -> Result<ParsedSitemap, String> {
+  _parse_sitemap_xml(xml_content)
 }
 
 fn _process_sitemap(xml_content: &str) -> std::result::Result<SitemapProcessingResult, String> {
@@ -881,18 +838,8 @@ fn _process_sitemap(xml_content: &str) -> std::result::Result<SitemapProcessingR
 }
 
 /// Process sitemap XML and extract crawling instructions.
-#[napi]
-pub async fn process_sitemap(xml_content: String) -> Result<SitemapProcessingResult> {
-  let res = task::spawn_blocking(move || _process_sitemap(&xml_content))
-    .await
-    .map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("process_sitemap join error: {e}"),
-      )
-    })?;
-
-  res.map_err(|e| Error::new(Status::GenericFailure, format!("Parse sitemap error: {e}")))
+pub fn process_sitemap(xml_content: &str) -> Result<SitemapProcessingResult, String> {
+  _process_sitemap(xml_content)
 }
 
 #[cfg(test)]
@@ -1171,9 +1118,11 @@ mod tests {
     let result = _filter_links(data).unwrap();
     assert_eq!(result.links.len(), 1);
     assert_eq!(result.links[0], "https://example.com/allowed");
-    assert!(result
-      .denial_reasons
-      .contains_key("https://example.com/disallowed"));
+    assert!(
+      result
+        .denial_reasons
+        .contains_key("https://example.com/disallowed")
+    );
     assert_eq!(
       result
         .denial_reasons
@@ -1295,19 +1244,27 @@ mod tests {
     let result = _filter_links(data).unwrap();
     // Should include only paths matching include on base or subdomains
     assert_eq!(result.links.len(), 3);
-    assert!(result
-      .links
-      .contains(&"https://example.com/pricing".to_string()));
-    assert!(result
-      .links
-      .contains(&"https://sub.example.com/pricing".to_string()));
-    assert!(result
-      .links
-      .contains(&"https://other.example.com/pricing".to_string()));
+    assert!(
+      result
+        .links
+        .contains(&"https://example.com/pricing".to_string())
+    );
+    assert!(
+      result
+        .links
+        .contains(&"https://sub.example.com/pricing".to_string())
+    );
+    assert!(
+      result
+        .links
+        .contains(&"https://other.example.com/pricing".to_string())
+    );
     // And should exclude blog due to includePaths
-    assert!(result
-      .denial_reasons
-      .contains_key("https://sub.example.com/blog"));
+    assert!(
+      result
+        .denial_reasons
+        .contains_key("https://sub.example.com/blog")
+    );
     assert_eq!(
       result
         .denial_reasons
