@@ -6,8 +6,6 @@ import type { RequestWithAuth } from "../controllers/v2/types";
 import type { ScrapeOptions } from "../controllers/v2/types";
 import type { InternalOptions } from "../scraper/scrapeURL";
 import type { FeatureFlag } from "../scraper/scrapeURL/engines";
-import type { ExchangeScrapeMetadata } from "./exchange";
-import type { ThreatDecision } from "./threat-protection/types";
 
 declare module "../service/modules" {
   interface AuthorizeState {
@@ -44,20 +42,20 @@ declare module "../service/modules" {
 
   interface SearchChargeState {
     enterprise?: ("default" | "anon" | "zdr")[];
-    threatDecisions?: ThreatDecision[];
+    threatDecisions?: unknown[];
   }
 
   interface MapChargeState {
     perUrl?: boolean;
     chargeId?: string;
-    threatDecisions?: ThreatDecision[];
+    threatDecisions?: unknown[];
   }
 
   interface CrawlChargeState {
     crawlerOptions?: unknown;
     chargeId?: string;
     resolveOrgFromTeam?: boolean;
-    threatDecisions?: ThreatDecision[];
+    threatDecisions?: unknown[];
   }
 }
 
@@ -69,7 +67,7 @@ declare module "../service/hooks" {
     keylessReserved?: boolean;
     error?: Error | null;
     unsupportedFeatures?: Set<FeatureFlag>;
-    exchange?: ExchangeScrapeMetadata;
-    threatDecisions?: ThreatDecision[];
+    exchange?: Record<string, unknown>;
+    threatDecisions?: unknown[];
   }
 }

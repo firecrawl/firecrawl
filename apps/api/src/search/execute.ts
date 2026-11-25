@@ -25,9 +25,8 @@ import {
   planOperatorQuery,
   siteHostnames,
 } from "./operators";
-import type { BillingMetadata } from "../services/billing/types";
-import type { ThreatDecision } from "../lib/threat-protection/types";
-import type { TeamPlanClass } from "../lib/team-plan-class";
+import type { BillingMetadata } from "../lib/billing-types";
+import type { TeamPlanClass } from "../service/search-providers";
 import { requestContext } from "../lib/request-context";
 import type { SearchHit } from "../service/hooks";
 import type { SearchRequest } from "../service/request";
@@ -102,7 +101,7 @@ interface SearchExecuteResult {
   resultCountsBySource: SearchResultCountsBySource;
   resultCategories: SearchResultCategoriesBySource;
   indexResultsCount: number;
-  threatDecisions: ThreatDecision[];
+  threatDecisions: unknown[];
   scrapedDocuments: Document[];
   searchTypes: SearchResultType[];
   scrapeFormats: string[];
@@ -419,10 +418,8 @@ export async function executeSearch(
     }
   }
 
-  const threatDecisions: ThreatDecision[] = Array.isArray(
-    searchState.threatDecisions,
-  )
-    ? (searchState.threatDecisions as ThreatDecision[])
+  const threatDecisions: unknown[] = Array.isArray(searchState.threatDecisions)
+    ? searchState.threatDecisions
     : [];
 
   if (searchResponse.web && searchResponse.web.length > 0) {

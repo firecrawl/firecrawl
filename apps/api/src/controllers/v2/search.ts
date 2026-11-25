@@ -18,8 +18,8 @@ import { z } from "zod";
 import { CategoryOption } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
 import { applySearchPlanHook } from "../../search/plan-hook";
-import type { BillingMetadata } from "../../services/billing/types";
-import { teamPlanClass } from "../../lib/team-plan-class";
+import type { BillingMetadata } from "../../lib/billing-types";
+import type { TeamPlanClass } from "../../service/search-providers";
 import {
   withSpan,
   setSpanAttributes,
@@ -272,7 +272,8 @@ async function searchControllerInner(
         flags: req.acuc?.flags ?? null,
         concurrencyLimit: req.acuc?.concurrency_limit,
         rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
-        teamPlanClass: teamPlanClass(req.acuc),
+        teamPlanClass: (req.caller as { planClass?: TeamPlanClass } | undefined)
+          ?.planClass,
         requestId: agentRequestId ?? jobId,
         jobId,
         apiVersion: "v2",

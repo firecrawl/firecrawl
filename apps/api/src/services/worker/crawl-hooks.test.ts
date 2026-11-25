@@ -90,12 +90,6 @@ vi.mock("../../lib/concurrency-limit", () => ({
   pushConcurrencyLimitActiveJob: vi.fn(async () => undefined),
 }));
 
-vi.mock("../../lib/job-priority", () => ({
-  addJobPriority: vi.fn(async () => undefined),
-  deleteJobPriority: vi.fn(async () => undefined),
-  getJobPriority: vi.fn(async () => 15),
-}));
-
 vi.mock("../../scraper/scrapeURL/lib/cacheableLookup", () => ({
   cacheableLookup: { install: vi.fn() },
 }));
@@ -121,34 +115,14 @@ vi.mock("../../lib/crawl-redis", () => ({
   setCrawlError: mocks.setCrawlError,
 }));
 
-vi.mock("../../lib/threat-protection/request", () => ({
-  checkUrlsAgainstThreatPolicy: mocks.checkUrlsAgainstThreatPolicy,
-}));
-
 vi.mock("../redis", () => ({
   redisEvictConnection: mocks.redisEvictConnection,
-}));
-
-vi.mock("../autumn/autumn.service", () => ({
-  autumnService: {
-    hostedMcpFeatureId: vi.fn(async (_teamId: string, id: string) => id),
-    trackCredits: vi.fn(async () => false),
-  },
-  featureIdForBillingEndpoint: vi.fn(() => "credits"),
 }));
 
 vi.mock("../queue-jobs", () => ({
   _addScrapeJobToBullMQ: mocks.addScrapeJobToBullMQ,
   addScrapeJob: mocks.addScrapeJob,
   addScrapeJobs: mocks.addScrapeJobs,
-}));
-
-vi.mock("../../controllers/auth", () => ({
-  getACUCTeam: mocks.getACUCTeam,
-}));
-
-vi.mock("../../lib/team-org", () => ({
-  orgIdForTeam: vi.fn(async () => null),
 }));
 
 vi.mock("../webhook/index", () => ({
@@ -166,37 +140,11 @@ vi.mock("../../main/runWebScraper", () => ({
   startWebScraperPipeline: mocks.startWebScraperPipeline,
 }));
 
-vi.mock("../../lib/keyless", () => ({
-  chargeKeylessCredits: vi.fn(async () => undefined),
-}));
-
 vi.mock("../../scraper/WebScraper/crawler", () => ({
   DenialReason: {
     ROBOTS_TXT: "robots",
   },
   WebCrawler: class {},
-}));
-
-vi.mock("../index", () => ({
-  generateURLSplits: mocks.generateURLSplits,
-  queryIndexAtSplitLevel: mocks.queryIndexAtSplitLevel,
-}));
-
-vi.mock("../../lib/scrape-billing", () => ({
-  calculateCreditsToBeBilled: vi.fn(async () => 1),
-  calculateThreatScanCredits: vi.fn(() => 0),
-}));
-
-vi.mock("../billing/credit_billing", () => ({
-  billTeam: vi.fn(async () => undefined),
-}));
-
-vi.mock("../queue-service", () => ({
-  getBillingQueue: vi.fn(() => ({ add: vi.fn(async () => undefined) })),
-}));
-
-vi.mock("../../lib/tracking", () => ({
-  trackScrape: vi.fn(async () => undefined),
 }));
 
 vi.mock("../../scraper/crawler/sitemap", () => ({
@@ -210,41 +158,8 @@ vi.mock("../../lib/otel-tracer", () => ({
   setSpanAttributes: vi.fn(),
 }));
 
-vi.mock("../logging/log_job", () => ({
-  logScrape: mocks.logScrape,
-  logCrawl: mocks.logCrawl,
-  logBatchScrape: mocks.logBatchScrape,
-}));
-
-vi.mock("../monitoring/results", () => ({
-  recordMonitorScrapeFailure: vi.fn(async () => undefined),
-  recordMonitorScrapeSuccess: vi.fn(async () => undefined),
-}));
-
-vi.mock("../../lib/exchange", () => ({
-  reportExchangeBilling: vi.fn(async () => undefined),
-  warmExchangeCatalog: vi.fn(),
-}));
-
-vi.mock("../../lib/siem-logging", () => ({
-  emitScrapeActivityEvent: vi.fn(),
-}));
-
-vi.mock("../../lib/request-credits-store", () => ({
-  readRequestCredits: mocks.readRequestCredits,
-}));
-
-vi.mock("../../lib/request-credits-analytics", () => ({
-  readRequestCreditsFromAnalytics: mocks.readRequestCreditsFromAnalytics,
-}));
-
 vi.mock("../../controllers/v2/crawl-status", () => ({
   getJobs: mocks.getJobs,
-}));
-
-vi.mock("../notification/in_app", () => ({
-  createInAppNotification: mocks.createInAppNotification,
-  isDashboardOrigin: vi.fn(() => false),
 }));
 
 import { requestContext } from "../../lib/request-context";

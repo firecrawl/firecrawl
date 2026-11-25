@@ -171,7 +171,7 @@ export interface WebSearchResult {
 export type SearchResultType = "web" | "images" | "news";
 
 export interface SearchV2Response {
-  tools?: import("../services/alexandria/contracts").DiscoveredTool[];
+  tools?: unknown[];
   skills?: SkillCard[];
   web?: WebSearchResult[];
   images?: ImageSearchResult[];

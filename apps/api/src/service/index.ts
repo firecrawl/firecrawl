@@ -1,4 +1,5 @@
 export type { Document, DocumentMetadata } from "../controllers/v2/types";
+export type { BillingEndpoint, BillingMetadata } from "../lib/billing-types";
 export type { CostTracking } from "../lib/cost-tracking";
 export {
   FormatUnavailableError,
@@ -205,8 +206,15 @@ export type {
   SearchProviderRegistry,
   SearchProviders,
   SearchQuery,
+  TeamPlanClass,
 } from "./search-providers";
-export { createService, run, runProcessStop, service } from "./service";
+export {
+  createService,
+  installedService,
+  run,
+  runProcessStop,
+  service,
+} from "./service";
 export type {
   CoreParts,
   ErrorRegistry,

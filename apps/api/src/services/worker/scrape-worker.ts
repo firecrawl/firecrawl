@@ -8,7 +8,6 @@ import {
   concurrentJobDone,
   pushConcurrencyLimitActiveJob,
 } from "../../lib/concurrency-limit";
-import { addJobPriority, deleteJobPriority } from "../../lib/job-priority";
 import { cacheableLookup } from "../../scraper/scrapeURL/lib/cacheableLookup";
 import { v7 as uuidv7 } from "uuid";
 import {
@@ -43,7 +42,6 @@ import {
 import { resolveJobPriority } from "../../lib/limits";
 import { Document, getV2RequestSchemas } from "../../controllers/v2/types";
 import { hasFormatOfType } from "../../lib/format-utils";
-import { getACUCTeam } from "../../controllers/auth";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
 import { crawlContext, jobContext } from "../../lib/request-context";
@@ -265,7 +263,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         !crawlToCrawler(
           job.data.crawl_id,
           sc,
-          (await getACUCTeam(job.data.team_id))?.flags ?? null,
+          (await service.modules.auth.lookupTeam?.(job.data.team_id))?.flags ??
+            ctx.flags ??
+            null,
         ).isRobotsAllowed(job.data.url)
       ) {
         throw new CrawlDenialError(DenialReason.ROBOTS_TXT, {
@@ -403,7 +403,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
       let crawler: WebCrawler | null = null;
       if (job.data.crawlerOptions !== null) {
-        const teamFlags = (await getACUCTeam(job.data.team_id))?.flags ?? null;
+        const teamFlags =
+          (await service.modules.auth.lookupTeam?.(job.data.team_id))?.flags ??
+          ctx.flags ??
+          null;
         crawler = crawlToCrawler(
           job.data.crawl_id,
           sc,
@@ -1175,20 +1178,24 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
 
   try {
     const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
-    const acuc = await getACUCTeam(job.data.team_id);
+    const team = await service.modules.auth.lookupTeam?.(job.data.team_id);
     const kickoffCtx = {
       ...ctx,
-      ...(ctx.flags === undefined && acuc ? { flags: acuc.flags ?? null } : {}),
+      ...(ctx.flags === undefined && team ? { flags: team.flags ?? null } : {}),
       ...(ctx.concurrencyLimit === undefined &&
-      acuc?.concurrency_limit !== undefined
-        ? { concurrencyLimit: acuc.concurrency_limit }
+      team?.concurrencyLimit !== undefined
+        ? { concurrencyLimit: team.concurrencyLimit }
         : {}),
       ...(ctx.rateLimitMultiplier === undefined &&
-      acuc?.rate_limit_multiplier !== undefined
-        ? { rateLimitMultiplier: acuc.rate_limit_multiplier }
+      team?.rateLimitMultiplier !== undefined
+        ? { rateLimitMultiplier: team.rateLimitMultiplier }
         : {}),
     };
-    const crawler = crawlToCrawler(job.data.crawl_id, sc, acuc?.flags ?? null);
+    const crawler = crawlToCrawler(
+      job.data.crawl_id,
+      sc,
+      team?.flags ?? ctx.flags ?? null,
+    );
 
     logger.debug("Locking URL...");
     await lockURL(job.data.crawl_id, sc, job.data.url);
@@ -1396,20 +1403,24 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       return { success: false, error: "Crawl not found" };
     }
 
-    const acuc = await getACUCTeam(job.data.team_id);
+    const team = await service.modules.auth.lookupTeam?.(job.data.team_id);
     const sitemapCtx = {
       ...ctx,
-      ...(ctx.flags === undefined && acuc ? { flags: acuc.flags ?? null } : {}),
+      ...(ctx.flags === undefined && team ? { flags: team.flags ?? null } : {}),
       ...(ctx.concurrencyLimit === undefined &&
-      acuc?.concurrency_limit !== undefined
-        ? { concurrencyLimit: acuc.concurrency_limit }
+      team?.concurrencyLimit !== undefined
+        ? { concurrencyLimit: team.concurrencyLimit }
         : {}),
       ...(ctx.rateLimitMultiplier === undefined &&
-      acuc?.rate_limit_multiplier !== undefined
-        ? { rateLimitMultiplier: acuc.rate_limit_multiplier }
+      team?.rateLimitMultiplier !== undefined
+        ? { rateLimitMultiplier: team.rateLimitMultiplier }
         : {}),
     };
-    const crawler = crawlToCrawler(job.data.crawl_id, sc, acuc?.flags ?? null);
+    const crawler = crawlToCrawler(
+      job.data.crawl_id,
+      sc,
+      team?.flags ?? ctx.flags ?? null,
+    );
 
     const results = await scrapeSitemap({
       url: job.data.sitemapUrl,
@@ -1584,7 +1595,7 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
         }, jobLockExtendInterval);
       }
 
-      await addJobPriority(job.data.team_id, job.id);
+      await service.modules.limits.onJobStart?.(job.data.team_id, job.id);
       try {
         if (job.data.mode === "kickoff") {
           const result = await processKickoffJob(
@@ -1638,7 +1649,7 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
           }
         }
       } finally {
-        await deleteJobPriority(job.data.team_id, job.id);
+        await service.modules.limits.onJobEnd?.(job.data.team_id, job.id);
         if (extendLockInterval) {
           clearInterval(extendLockInterval);
         }

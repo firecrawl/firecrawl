@@ -16,7 +16,6 @@ import {
 import { hasFormatOfType } from "../../../lib/format-utils";
 import type { PdfMetadata } from "./pdf/types";
 import { AgentIndexOnlyError, NoCachedDataError } from "../error";
-import type { ExchangeScrapeMetadata } from "../../../lib/exchange";
 import { hasCustomRequestContext } from "../lib/request-context";
 import { service } from "../../../service";
 import type {
@@ -70,7 +69,7 @@ export interface EngineScrapeResult {
 
   proxyUsed: "basic" | "stealth";
   timezone?: string;
-  exchange?: ExchangeScrapeMetadata;
+  exchange?: Record<string, unknown>;
 }
 
 const coreEngineRuntime: Record<

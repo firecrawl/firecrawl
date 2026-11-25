@@ -27,7 +27,7 @@ import {
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
 import { finalizeResponse, service, type RequestContext } from "../../service";
-import type { BillingMetadata } from "../../services/billing/types";
+import type { BillingMetadata } from "../../lib/billing-types";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { getErrorHttpResponse } from "../../lib/error";
 import { currentLimits } from "../../lib/limits";

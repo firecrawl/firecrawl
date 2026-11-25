@@ -9,332 +9,60 @@
       "default": "./dist/src/service/index.js"
     },
     "./config": {
-      "types": "./src/config.ts",
-      "default": "./dist/src/config.js"
+      "types": "./src/exports/config.ts",
+      "default": "./dist/src/exports/config.js"
     },
     "./crawl": {
-      "types": "./src/lib/crawl-redis.ts",
-      "default": "./dist/src/lib/crawl-redis.js"
+      "types": "./src/exports/crawl.ts",
+      "default": "./dist/src/exports/crawl.js"
+    },
+    "./errors": {
+      "types": "./src/exports/errors.ts",
+      "default": "./dist/src/exports/errors.js"
+    },
+    "./http": {
+      "types": "./src/exports/http.ts",
+      "default": "./dist/src/exports/http.js"
+    },
+    "./llm": {
+      "types": "./src/exports/llm.ts",
+      "default": "./dist/src/exports/llm.js"
     },
     "./logger": {
-      "types": "./src/lib/logger.ts",
-      "default": "./dist/src/lib/logger.js"
+      "types": "./src/exports/logger.ts",
+      "default": "./dist/src/exports/logger.js"
+    },
+    "./queue": {
+      "types": "./src/exports/queue.ts",
+      "default": "./dist/src/exports/queue.js"
+    },
+    "./redis": {
+      "types": "./src/exports/redis.ts",
+      "default": "./dist/src/exports/redis.js"
+    },
+    "./scrape": {
+      "types": "./src/exports/scrape.ts",
+      "default": "./dist/src/exports/scrape.js"
+    },
+    "./search": {
+      "types": "./src/exports/search.ts",
+      "default": "./dist/src/exports/search.js"
+    },
+    "./telemetry": {
+      "types": "./src/exports/telemetry.ts",
+      "default": "./dist/src/exports/telemetry.js"
     },
     "./testing": {
       "types": "./src/service/testing.ts",
       "default": "./dist/src/service/testing.js"
     },
-    "./unstable/admin-deps": {
-      "types": "./src/service/unstable/admin-deps.ts",
-      "default": "./dist/src/service/unstable/admin-deps.js"
-    },
-    "./unstable/ai-telemetry": {
-      "types": "./src/lib/ai-telemetry.ts",
-      "default": "./dist/src/lib/ai-telemetry.js"
-    },
-    "./unstable/auth": {
-      "types": "./src/controllers/auth.ts",
-      "default": "./dist/src/controllers/auth.js"
-    },
-    "./unstable/auth-deps": {
-      "types": "./src/service/unstable/auth-deps.ts",
-      "default": "./dist/src/service/unstable/auth-deps.js"
-    },
-    "./unstable/autumn": {
-      "types": "./src/services/autumn/autumn.service.ts",
-      "default": "./dist/src/services/autumn/autumn.service.js"
-    },
-    "./unstable/bigtable-client": {
-      "types": "./src/lib/bigtable-client.ts",
-      "default": "./dist/src/lib/bigtable-client.js"
-    },
-    "./unstable/billing": {
-      "types": "./src/services/billing/runtime.ts",
-      "default": "./dist/src/services/billing/runtime.js"
-    },
-    "./unstable/browser-options": {
-      "types": "./src/lib/browser-options.ts",
-      "default": "./dist/src/lib/browser-options.js"
-    },
-    "./unstable/browser-profiles": {
-      "types": "./src/lib/browser-profiles.ts",
-      "default": "./dist/src/lib/browser-profiles.js"
-    },
-    "./unstable/clickhouse-client": {
-      "types": "./src/lib/clickhouse-client.ts",
-      "default": "./dist/src/lib/clickhouse-client.js"
-    },
-    "./unstable/cost-tracking": {
-      "types": "./src/lib/cost-tracking.ts",
-      "default": "./dist/src/lib/cost-tracking.js"
-    },
-    "./unstable/db": {
-      "types": "./src/db/connection.ts",
-      "default": "./dist/src/db/connection.js"
-    },
-    "./unstable/db-rpc": {
-      "types": "./src/db/rpc.ts",
-      "default": "./dist/src/db/rpc.js"
-    },
-    "./unstable/db-schema": {
-      "types": "./src/db/schema/index.ts",
-      "default": "./dist/src/db/schema/index.js"
-    },
-    "./unstable/developer-category": {
-      "types": "./src/lib/developer-category.ts",
-      "default": "./dist/src/lib/developer-category.js"
-    },
-    "./unstable/exchange": {
-      "types": "./src/lib/exchange.ts",
-      "default": "./dist/src/lib/exchange.js"
-    },
-    "./unstable/format-utils": {
-      "types": "./src/lib/format-utils.ts",
-      "default": "./dist/src/lib/format-utils.js"
-    },
-    "./unstable/gcs-jobs": {
-      "types": "./src/lib/gcs-jobs.ts",
-      "default": "./dist/src/lib/gcs-jobs.js"
-    },
-    "./unstable/generic-ai": {
-      "types": "./src/lib/generic-ai.ts",
-      "default": "./dist/src/lib/generic-ai.js"
-    },
-    "./unstable/html-to-markdown": {
-      "types": "./src/lib/html-to-markdown.ts",
-      "default": "./dist/src/lib/html-to-markdown.js"
-    },
-    "./unstable/image-formats": {
-      "types": "./src/lib/image-formats.ts",
-      "default": "./dist/src/lib/image-formats.js"
-    },
-    "./unstable/index-cache": {
-      "types": "./src/services/index-cache.ts",
-      "default": "./dist/src/services/index-cache.js"
-    },
-    "./unstable/index-cache-metrics": {
-      "types": "./src/lib/index-cache-metrics.ts",
-      "default": "./dist/src/lib/index-cache-metrics.js"
-    },
-    "./unstable/index-service": {
-      "types": "./src/services/index.ts",
-      "default": "./dist/src/services/index.js"
-    },
-    "./unstable/index-worker-deps": {
-      "types": "./src/service/unstable/index-worker-deps.ts",
-      "default": "./dist/src/service/unstable/index-worker-deps.js"
-    },
-    "./unstable/integration": {
-      "types": "./src/utils/integration.ts",
-      "default": "./dist/src/utils/integration.js"
-    },
-    "./unstable/job-access-store": {
-      "types": "./src/lib/job-access-store.ts",
-      "default": "./dist/src/lib/job-access-store.js"
-    },
-    "./unstable/job-priority": {
-      "types": "./src/lib/job-priority.ts",
-      "default": "./dist/src/lib/job-priority.js"
-    },
-    "./unstable/job-state-store": {
-      "types": "./src/lib/job-state-store.ts",
-      "default": "./dist/src/lib/job-state-store.js"
-    },
-    "./unstable/keyless": {
-      "types": "./src/lib/keyless.ts",
-      "default": "./dist/src/lib/keyless.js"
-    },
-    "./unstable/keyless-team": {
-      "types": "./src/lib/keyless-team.ts",
-      "default": "./dist/src/lib/keyless-team.js"
-    },
-    "./unstable/legacy-api-deps": {
-      "types": "./src/service/unstable/legacy-api-deps.ts",
-      "default": "./dist/src/service/unstable/legacy-api-deps.js"
-    },
-    "./unstable/llm-extract": {
-      "types": "./src/scraper/scrapeURL/transformers/llmExtract.ts",
-      "default": "./dist/src/scraper/scrapeURL/transformers/llmExtract.js"
-    },
-    "./unstable/model-prices": {
-      "types": "./src/lib/model-prices.ts",
-      "default": "./dist/src/lib/model-prices.js"
-    },
-    "./unstable/native-logging": {
-      "types": "./src/lib/native-logging.ts",
-      "default": "./dist/src/lib/native-logging.js"
-    },
-    "./unstable/nuq-fdb": {
-      "types": "./src/services/worker/nuq-fdb/index.ts",
-      "default": "./dist/src/services/worker/nuq-fdb/index.js"
-    },
-    "./unstable/nuq-router": {
-      "types": "./src/services/worker/nuq-router.ts",
-      "default": "./dist/src/services/worker/nuq-router.js"
-    },
-    "./unstable/operational-job-access": {
-      "types": "./src/lib/operational-job-access.ts",
-      "default": "./dist/src/lib/operational-job-access.js"
-    },
-    "./unstable/otel": {
-      "types": "./src/otel.ts",
-      "default": "./dist/src/otel.js"
-    },
-    "./unstable/otel-tracer": {
-      "types": "./src/lib/otel-tracer.ts",
-      "default": "./dist/src/lib/otel-tracer.js"
-    },
-    "./unstable/queue-service": {
-      "types": "./src/services/queue-service.ts",
-      "default": "./dist/src/services/queue-service.js"
-    },
-    "./unstable/rate-limiter": {
-      "types": "./src/services/rate-limiter.ts",
-      "default": "./dist/src/services/rate-limiter.js"
-    },
-    "./unstable/redis": {
-      "types": "./src/services/redis.ts",
-      "default": "./dist/src/services/redis.js"
-    },
-    "./unstable/request-credits-analytics": {
-      "types": "./src/lib/request-credits-analytics.ts",
-      "default": "./dist/src/lib/request-credits-analytics.js"
-    },
-    "./unstable/request-credits-store": {
-      "types": "./src/lib/request-credits-store.ts",
-      "default": "./dist/src/lib/request-credits-store.js"
-    },
-    "./unstable/reserved-capacity": {
-      "types": "./src/lib/reserved-capacity.ts",
-      "default": "./dist/src/lib/reserved-capacity.js"
-    },
-    "./unstable/rollout": {
-      "types": "./src/lib/rollout.ts",
-      "default": "./dist/src/lib/rollout.js"
-    },
-    "./unstable/root-routes-deps": {
-      "types": "./src/service/unstable/root-routes-deps.ts",
-      "default": "./dist/src/service/unstable/root-routes-deps.js"
-    },
-    "./unstable/safe-mode": {
-      "types": "./src/lib/safe-mode.ts",
-      "default": "./dist/src/lib/safe-mode.js"
-    },
-    "./unstable/sanitize": {
-      "types": "./src/services/logging/sanitize.ts",
-      "default": "./dist/src/services/logging/sanitize.js"
-    },
-    "./unstable/scrape-abort": {
-      "types": "./src/scraper/scrapeURL/lib/abortManager.ts",
-      "default": "./dist/src/scraper/scrapeURL/lib/abortManager.js"
-    },
-    "./unstable/scrape-download": {
-      "types": "./src/scraper/scrapeURL/engines/utils/downloadFile.ts",
-      "default": "./dist/src/scraper/scrapeURL/engines/utils/downloadFile.js"
-    },
-    "./unstable/scrape-download-gcs": {
-      "types": "./src/scraper/scrapeURL/engines/utils/downloadGcsFile.ts",
-      "default": "./dist/src/scraper/scrapeURL/engines/utils/downloadGcsFile.js"
-    },
-    "./unstable/scrape-engines": {
-      "types": "./src/scraper/scrapeURL/engines/index.ts",
-      "default": "./dist/src/scraper/scrapeURL/engines/index.js"
-    },
-    "./unstable/scrape-errors": {
-      "types": "./src/scraper/scrapeURL/error.ts",
-      "default": "./dist/src/scraper/scrapeURL/error.js"
-    },
-    "./unstable/scrape-fetch": {
-      "types": "./src/scraper/scrapeURL/lib/fetch.ts",
-      "default": "./dist/src/scraper/scrapeURL/lib/fetch.js"
-    },
-    "./unstable/scrape-gunzip": {
-      "types": "./src/scraper/scrapeURL/engines/utils/gunzip.ts",
-      "default": "./dist/src/scraper/scrapeURL/engines/utils/gunzip.js"
-    },
-    "./unstable/scrape-meta": {
-      "types": "./src/scraper/scrapeURL/metaContext.ts",
-      "default": "./dist/src/scraper/scrapeURL/metaContext.js"
-    },
-    "./unstable/scrape-mock": {
-      "types": "./src/scraper/scrapeURL/lib/mock.ts",
-      "default": "./dist/src/scraper/scrapeURL/lib/mock.js"
-    },
-    "./unstable/scrape-pdf-local": {
-      "types": "./src/scraper/scrapeURL/engines/pdf/index.ts",
-      "default": "./dist/src/scraper/scrapeURL/engines/pdf/index.js"
-    },
-    "./unstable/scrape-pdf-markdown": {
-      "types": "./src/scraper/scrapeURL/engines/pdf/markdownToHtml.ts",
-      "default": "./dist/src/scraper/scrapeURL/engines/pdf/markdownToHtml.js"
-    },
-    "./unstable/scrape-pdf-types": {
-      "types": "./src/scraper/scrapeURL/engines/pdf/types.ts",
-      "default": "./dist/src/scraper/scrapeURL/engines/pdf/types.js"
-    },
-    "./unstable/scrape-query": {
-      "types": "./src/scraper/scrapeURL/transformers/query.ts",
-      "default": "./dist/src/scraper/scrapeURL/transformers/query.js"
-    },
-    "./unstable/scrape-replay": {
-      "types": "./src/lib/scrape-interact/scrape-replay.ts",
-      "default": "./dist/src/lib/scrape-interact/scrape-replay.js"
-    },
-    "./unstable/scrape-request-context": {
-      "types": "./src/scraper/scrapeURL/lib/request-context.ts",
-      "default": "./dist/src/scraper/scrapeURL/lib/request-context.js"
-    },
-    "./unstable/scrape-specialty": {
-      "types": "./src/scraper/scrapeURL/engines/utils/specialtyHandler.ts",
-      "default": "./dist/src/scraper/scrapeURL/engines/utils/specialtyHandler.js"
-    },
-    "./unstable/scrape-url": {
-      "types": "./src/scraper/scrapeURL/index.ts",
-      "default": "./dist/src/scraper/scrapeURL/index.js"
-    },
-    "./unstable/scrape-wikipedia": {
-      "types": "./src/scraper/scrapeURL/engines/wikipedia/index.ts",
-      "default": "./dist/src/scraper/scrapeURL/engines/wikipedia/index.js"
-    },
-    "./unstable/search-query-builder": {
-      "types": "./src/lib/search-query-builder.ts",
-      "default": "./dist/src/lib/search-query-builder.js"
-    },
-    "./unstable/siem-types": {
-      "types": "./src/lib/siem-logging/types.ts",
-      "default": "./dist/src/lib/siem-logging/types.js"
-    },
-    "./unstable/threat-protection-config": {
-      "types": "./src/lib/threat-protection/config.ts",
-      "default": "./dist/src/lib/threat-protection/config.js"
-    },
-    "./unstable/typesafe": {
-      "types": "./src/lib/typesafe.ts",
-      "default": "./dist/src/lib/typesafe.js"
-    },
-    "./unstable/us-only": {
-      "types": "./src/lib/us-only.ts",
-      "default": "./dist/src/lib/us-only.js"
-    },
-    "./unstable/v2-routes-deps": {
-      "types": "./src/service/unstable/v2-routes-deps.ts",
-      "default": "./dist/src/service/unstable/v2-routes-deps.js"
-    },
-    "./unstable/v2-types": {
-      "types": "./src/controllers/v2/types.ts",
-      "default": "./dist/src/controllers/v2/types.js"
-    },
-    "./unstable/webhook-schema": {
-      "types": "./src/services/webhook/schema.ts",
-      "default": "./dist/src/services/webhook/schema.js"
-    },
-    "./unstable/x-twitter-url": {
-      "types": "./src/lib/x-twitter-url.ts",
-      "default": "./dist/src/lib/x-twitter-url.js"
-    },
-    "./unstable/zdr-queue": {
-      "types": "./src/lib/zdr-queue.ts",
-      "default": "./dist/src/lib/zdr-queue.js"
+    "./types": {
+      "types": "./src/exports/types.ts",
+      "default": "./dist/src/exports/types.js"
+    },
+    "./util": {
+      "types": "./src/exports/util.ts",
+      "default": "./dist/src/exports/util.js"
     }
   },
   "scripts": {
@@ -396,11 +124,7 @@
     "@ai-sdk/xai": "^5.0.46",
     "@bull-board/api": "^6.21.3",
     "@bull-board/express": "^6.21.3",
-    "@clickhouse/client": "^1.8.1",
     "@dqbd/tiktoken": "^1.0.22",
-    "@google-cloud/bigtable": "^7.2.0",
-    "@google-cloud/pubsub": "^6.0.1",
-    "@google-cloud/storage": "^7.21.0",
     "@mendable/firecrawl-rs": "workspace:*",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.222.0",
@@ -408,21 +132,17 @@
     "@opentelemetry/sdk-trace-node": "^2.11.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "@types/ws": "^8.5.12",
-    "@typesafe-ai/sdk": "^0.7.0",
     "ai": "7.0.173",
     "ajv": "^8.18.0",
     "amqplib": "^0.10.9",
     "async-mutex": "^0.5.0",
-    "autumn-js": "1.2.55",
     "axios": "^1.20.0",
     "body-parser": "^1.20.9",
     "bullmq": "^5.56.7",
     "cacheable-lookup": "^6.1.0",
     "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
-    "diff": "^8.0.3",
     "dotenv": "^16.3.1",
-    "drizzle-orm": "1.0.0-rc.3",
     "escape-html": "^1.0.3",
     "express": "5.2.1",
     "express-ws": "^5.0.2",
@@ -433,24 +153,18 @@
     "ioredis": "^5.6.1",
     "ipaddr.js": "^2.2.0",
     "joplin-turndown-plugin-gfm": "^1.0.12",
-    "jose": "^6.2.12",
     "jsdom": "^29.1.1",
     "koffi": "^2.9.0",
-    "langsmith": "^0.6.0",
     "marked": "^14.1.2",
     "multer": "^2.5.0",
     "ollama-ai-provider-v2": "^4.1.0",
-    "parse-diff": "^0.11.1",
     "pdf-parse": "^1.1.1",
     "pg": "^8.16.3",
     "prettier": "^3.6.2",
     "prom-client": "^15.1.3",
-    "rate-limiter-flexible": "2.4.2",
     "redlock": "5.0.0-beta.2",
-    "resend": "^6.35.0",
     "response-time": "^2.3.4",
     "robots-parser": "^3.0.1",
-    "systeminformation": "^5.33.17",
     "tldts": "^7.4.10",
     "tough-cookie": "^4.1.4",
     "turndown": "^7.1.3",

@@ -3,12 +3,6 @@ import { readFile, unlink } from "node:fs/promises";
 import { AddFeatureError, UnsupportedFileError } from "../../error";
 import type { SpecialtyHandoffResponse } from "./specialtyHandler";
 
-// The GCS handoff (large PDFs by reference) has its own tests under the pdf
-// engine; keep the storage client out of this unit's import graph.
-vi.mock("./downloadGcsFile", () => ({
-  downloadFireEngineGcsFile: vi.fn(async () => null),
-}));
-
 import { specialtyScrapeCheck } from "./specialtyHandler";
 
 const logger: any = {

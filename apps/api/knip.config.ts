@@ -4,8 +4,8 @@ const config: KnipConfig = {
   workspaces: {
     ".": {
       entry: [
-        "src/index.ts",
         "src/harness.ts",
+        "src/exports/*.ts",
         "src/services/worker/**/*.ts",
         "src/services/**/*-worker.ts",
         "src/**/*.test.ts",
@@ -14,12 +14,7 @@ const config: KnipConfig = {
       project: ["src/**/*.ts"],
     },
   },
-  ignore: [
-    "native/**",
-    // Shared type contract co-owned by concurrent threat-protection branches;
-    // the provider/verdict types are consumed by the core-lib branch.
-    "src/lib/threat-protection/types.ts",
-  ],
+  ignore: ["native/**"],
   ignoreDependencies: ["undici-types"],
 };
 

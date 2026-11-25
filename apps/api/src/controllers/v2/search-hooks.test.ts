@@ -18,52 +18,8 @@ const mocks = vi.hoisted(() => ({
   isSelfHosted: vi.fn(() => false),
 }));
 
-vi.mock("../../services/logging/log_job", () => ({
-  logRequest: mocks.logRequest,
-  logSearch: mocks.logSearch,
-  logResearchEndpoint: mocks.logResearchEndpoint,
-}));
-
-vi.mock("../../services/billing/credit_billing", () => ({
-  billTeam: mocks.billTeam,
-}));
-
-vi.mock("../../lib/keyless", () => ({
-  KEYLESS_FREE_TIER_LIMIT_MESSAGE: "keyless limit reached",
-  adjustKeylessCredits: vi.fn(async () => undefined),
-  keylessLimitBody: vi.fn(async () => ({ success: false, error: "limit" })),
-  keylessProviderToolsBody: vi.fn(() => ({ success: false, error: "auth" })),
-  logKeylessCreditUsage: vi.fn(async () => undefined),
-  reserveKeylessCredits: mocks.reserveKeylessCredits,
-}));
-
-vi.mock("../../lib/keyless-credit-projection", () => ({
-  projectSearchTotalCredits: mocks.projectSearchTotalCredits,
-}));
-
-vi.mock("../../lib/threat-protection/request", () => ({
-  resolveThreatProtection: mocks.resolveThreatProtection,
-  checkUrlsAgainstThreatPolicy: mocks.checkUrlsAgainstThreatPolicy,
-}));
-
-vi.mock("../../lib/scrape-billing", () => ({
-  calculateThreatScanCredits: vi.fn(() => 0),
-}));
-
-vi.mock("../../lib/key-restriction", () => ({
-  actionTypesOf: () => [],
-  formatTypesOf: () => [],
-  checkKeyFormatRestriction: vi.fn(async () => ({ allowed: true })),
-  checkKeyEndpointRestriction: vi.fn(async () => ({ allowed: true })),
-}));
-
 vi.mock("../../lib/deployment", () => ({
   isSelfHosted: mocks.isSelfHosted,
-}));
-
-vi.mock("../../lib/tracking", () => ({
-  trackSearchRequest: vi.fn(async () => undefined),
-  trackSearchResults: vi.fn(async () => undefined),
 }));
 
 vi.mock("../../lib/otel-tracer", () => ({

@@ -12,28 +12,6 @@ vi.mock("../search/execute", () => ({
   executeSearch: (...args: any[]) => mocks.executeSearch(...args),
 }));
 
-vi.mock("../services/logging/log_job", () => ({
-  logRequest: (...args: any[]) => mocks.logRequest(...args),
-  logSearch: (...args: any[]) => mocks.logSearch(...args),
-  logResearchEndpoint: (...args: any[]) => mocks.logResearchEndpoint(...args),
-}));
-
-vi.mock("../lib/tracking", () => ({
-  trackSearchRequest: (...args: any[]) => mocks.trackSearchRequest(...args),
-}));
-
-vi.mock("../lib/threat-protection/request", () => ({
-  resolveThreatProtection: vi.fn().mockResolvedValue({ policy: null }),
-  checkUrlsAgainstThreatPolicy: vi.fn(),
-}));
-
-vi.mock("../lib/key-restriction", () => ({
-  actionTypesOf: () => [],
-  formatTypesOf: () => [],
-  checkKeyFormatRestriction: vi.fn().mockResolvedValue({ allowed: true }),
-  checkKeyEndpointRestriction: vi.fn().mockResolvedValue({ allowed: true }),
-}));
-
 vi.mock("../lib/logger", () => ({
   logger: {
     info: vi.fn(),
@@ -350,15 +328,5 @@ describe("custom BillingModule in v2 searchController", () => {
     expect(settle).toHaveBeenCalledTimes(2);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json.mock.calls[0][0].creditsUsed).toBe(2);
-  });
-});
-
-describe("unstable billing runtime entry point", () => {
-  it("exports lazy loader functions from the unstable billing runtime", async () => {
-    const runtime = await import("../services/billing/runtime.js");
-    expect(typeof runtime.loadAuthBillingHelpers).toBe("function");
-    expect(typeof runtime.loadPricingHelpers).toBe("function");
-    expect(typeof runtime.loadKeylessRuntime).toBe("function");
-    expect(typeof runtime.loadBillingRuntime).toBe("function");
   });
 });

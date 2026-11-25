@@ -30,17 +30,7 @@ import type {} from "../lib/billing-state";
 import { validate as isUuid } from "uuid";
 
 import { config } from "../config";
-import {
-  ThirdPartyDataTermsRequiredError,
-  ThirdPartyDataUnsupportedOptionError,
-} from "../lib/exchange";
-import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
-import { getScrapeZDR } from "../lib/zdr-helpers";
-import { resolveZDRPolicy } from "../lib/zdr-policy";
-import { isLockdownZeroDataRetention } from "../lib/safe-mode";
 import { agentInteropStatus } from "../lib/agent-interop";
-import { inferIntegration } from "../lib/infer-integration";
-import { resolveIntegration } from "../utils/integration";
 
 function billingOperationForPath(path: string): BillingOperation {
   switch (path.replace(/^\/v\d+/, "")) {
@@ -196,39 +186,9 @@ export function authMiddleware(
       };
       req.acuc = caller.chunk ?? undefined;
       req.caller = result.caller;
-      req.zdrPolicy = resolveZDRPolicy(caller.chunk?.flags ?? undefined);
       next();
     })().catch(err => next(err));
   };
-}
-
-/**
- * Sets the body `integration` via resolveIntegration, then infers a still
- * missing one. An invalid header is ignored.
- */
-export function inferIntegrationMiddleware(
-  req: Request,
-  _res: Response,
-  next: NextFunction,
-) {
-  const body = req.body;
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    return next();
-  }
-
-  const resolved = resolveIntegration(body.integration, req);
-  if (resolved !== undefined) {
-    body.integration = resolved;
-  } else if (config.INFER_INTEGRATION_ENABLED) {
-    const inferred = inferIntegration({
-      origin: req.get("origin"),
-      referer: req.get("referer"),
-      userAgent: req.get("user-agent"),
-      bodyOrigin: body.origin,
-    });
-    if (inferred) body.integration = inferred;
-  }
-  next();
 }
 
 export function idempotencyMiddleware(
@@ -257,57 +217,28 @@ export function idempotencyMiddleware(
     next();
   })().catch(err => next(err));
 }
+
 export function blocklistMiddleware(
   req: RequestWithMaybeACUC<any, any, any>,
   res: Response,
   next: NextFunction,
 ) {
-  return blocklistGate(req, res, next, { exchange: false });
-}
-
-/**
- * Blocklist gate for single-URL scrape-shaped routes (scrape, crawl), where a
- * blocklisted URL still passes when the exchange engine can serve it, asks
- * for the provider's terms when unaccepted terms are all that stands in the
- * way, and names the request option that keeps a provider out. Unblocked
- * URLs never consult the Exchange here: engine selection decides for them,
- * identically on every route, and scrapes them normally when terms are
- * missing. v2 batch scrape runs the same check per URL in its controller;
- * map, search and monitors keep plain blocklist behavior.
- */
-export function scrapeBlocklistMiddleware(
-  req: RequestWithMaybeACUC<any, any, any>,
-  res: Response,
-  next: NextFunction,
-) {
-  return blocklistGate(req, res, next, { exchange: true });
-}
-
-function blocklistGate(
-  req: RequestWithMaybeACUC<any, any, any>,
-  res: Response,
-  next: NextFunction,
-  options: { exchange: boolean },
-) {
   (async () => {
-    if (typeof req.body.url !== "string") {
+    if (typeof req.body?.url !== "string") {
       return next();
     }
-    const flags = req.acuc?.flags ?? null;
+    const flags = (req.acuc?.flags ?? null) as Record<string, unknown> | null;
+    const forcedZdr =
+      flags?.scrapeZDR === "forced" || flags?.allowZDR === "forced";
     const blockCtx = requestContext({
-      teamId: req.acuc?.team_id ?? "",
+      teamId: req.ctx?.teamId ?? req.acuc?.team_id ?? "",
       zeroDataRetention:
-        getScrapeZDR(flags ?? undefined) === "forced" ||
+        req.ctx?.zeroDataRetention === true ||
+        forcedZdr ||
         req.body.zeroDataRetention === true ||
-        req.body.lockdown === true ||
-        isLockdownZeroDataRetention(
-          flags,
-          typeof req.body.safeMode === "boolean"
-            ? req.body.safeMode
-            : undefined,
-        ),
-      flags,
-      orgId: req.acuc?.org_id ?? null,
+        req.body.lockdown === true,
+      flags: req.acuc?.flags ?? null,
+      orgId: req.ctx?.orgId ?? req.acuc?.org_id ?? null,
     });
     if (
       !service.modules.blocklist.isBlocked(req.body.url, blockCtx, {
@@ -316,52 +247,6 @@ function blocklistGate(
     ) {
       return next();
     }
-
-    if (options.exchange) {
-      // Safe Mode lockdown implies ZDR, which keeps the Exchange out.
-      const zeroDataRetention =
-        getScrapeZDR(req.acuc?.flags) === "forced" ||
-        req.body?.zeroDataRetention === true ||
-        isLockdownZeroDataRetention(req.acuc?.flags, req.body?.safeMode);
-      const exchangeAccess = await getExchangeAccessForRequestBody({
-        body: req.body,
-        flags: req.acuc?.flags ?? null,
-        url: req.body.url,
-        blocked: true,
-        zeroDataRetention,
-        teamId: req.acuc?.team_id ?? null,
-        orgId: req.acuc?.org_id ?? null,
-      });
-
-      if (exchangeAccess.allowed) {
-        return next();
-      }
-
-      if (exchangeAccess.termsRequired && !res.headersSent) {
-        return res
-          .status(403)
-          .json(
-            new ThirdPartyDataTermsRequiredError(
-              exchangeAccess.terms,
-            ).response(),
-          );
-      }
-
-      if (
-        !exchangeAccess.termsRequired &&
-        exchangeAccess.unsupportedOption !== undefined &&
-        !res.headersSent
-      ) {
-        return res
-          .status(400)
-          .json(
-            new ThirdPartyDataUnsupportedOptionError(
-              exchangeAccess.unsupportedOption,
-            ).response(),
-          );
-      }
-    }
-
     if (!res.headersSent) {
       return res.status(403).json({
         success: false,

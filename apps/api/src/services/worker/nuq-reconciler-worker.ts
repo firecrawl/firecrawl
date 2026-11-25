@@ -7,7 +7,7 @@ import { repairCrawlJobDoneMarkers } from "../../lib/crawl-redis";
 import { Counter, register } from "prom-client";
 import Express from "express";
 import { startNodeRuntimeMetrics } from "../../lib/node-runtime-metrics";
-import { getBillingQueue, getPrecrawlQueue } from "../queue-service";
+import { getPrecrawlQueue } from "../queue-service";
 import { startBullmqQueueMetrics } from "../queue-metrics";
 import { startRole } from "../../main";
 import { runProcessStop } from "../../service/service";
@@ -37,7 +37,7 @@ export async function start() {
   startNodeRuntimeMetrics();
   // Exported here because this deployment runs one replica, so each queue
   // gets one series, not a copy per app pod.
-  startBullmqQueueMetrics([getBillingQueue(), getPrecrawlQueue()]);
+  startBullmqQueueMetrics([getPrecrawlQueue()]);
 
   app.get("/metrics", async (_, res) => {
     try {

@@ -8,7 +8,7 @@ import { NuQJob } from "../services/worker/nuq";
 import { processJobInternal } from "../services/worker/scrape-worker";
 import { ScrapeJobData } from "../types";
 import { SearchV2Response } from "../lib/entities";
-import type { BillingMetadata } from "../services/billing/types";
+import type { BillingMetadata } from "../lib/billing-types";
 import { requestContext } from "../lib/request-context";
 import type { RequestContext } from "../service/request-context";
 

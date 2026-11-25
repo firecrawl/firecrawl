@@ -25,21 +25,6 @@ vi.mock("../../../lib/map-utils", () => ({
   buildPromptWithWebsiteStructure: mocks.buildPromptWithWebsiteStructure,
 }));
 
-vi.mock("../../../lib/threat-protection/request", () => ({
-  resolveThreatProtection: vi
-    .fn()
-    .mockResolvedValue({ orgConfig: null, policy: null }),
-}));
-
-vi.mock("../../../lib/key-restriction", async importOriginal => ({
-  ...(await importOriginal<typeof import("../../../lib/key-restriction")>()),
-  checkKeyFormatRestriction: vi.fn().mockResolvedValue({ allowed: true }),
-}));
-
-vi.mock("../../../services/logging/log_job", () => ({
-  logRequest: vi.fn().mockResolvedValue(undefined),
-}));
-
 vi.mock("../../../lib/concurrency-limit", () => ({}));
 
 vi.mock("../../../lib/crawl-redis", () => ({

@@ -23,21 +23,9 @@ vi.mock("../config", () => {
   loadedSideEffectModules.push("config");
   return { config: {} };
 });
-vi.mock("../lib/exchange", () => {
-  loadedSideEffectModules.push("exchange");
-  return {};
-});
 vi.mock("../lib/deployment", () => {
   loadedSideEffectModules.push("deployment");
   return { isSelfHosted: () => true };
-});
-vi.mock("../lib/gcs-jobs", () => {
-  loadedSideEffectModules.push("gcs-jobs");
-  return {};
-});
-vi.mock("../lib/zdr-queue", () => {
-  loadedSideEffectModules.push("zdr-queue");
-  return {};
 });
 vi.mock("../services/worker/nuq-router", () => {
   loadedSideEffectModules.push("nuq-router");
@@ -51,16 +39,8 @@ vi.mock("../services/redis", () => {
   loadedSideEffectModules.push("redis");
   return {};
 });
-vi.mock("../controllers/auth", () => {
-  loadedSideEffectModules.push("auth");
-  return {};
-});
 vi.mock("../services/queue-service", () => {
   loadedSideEffectModules.push("queue-service");
-  return {};
-});
-vi.mock("../db/connection", () => {
-  loadedSideEffectModules.push("db");
   return {};
 });
 

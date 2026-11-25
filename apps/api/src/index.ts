@@ -4,11 +4,11 @@ import { shutdownTracing } from "./otel";
 import express, { NextFunction, Request, Response } from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
+import { getPrecrawlQueue } from "./services/queue-service";
 import {
-  getBillingQueue,
-  getPrecrawlQueue,
-  getFirebillTrackRetryQueue,
-} from "./services/queue-service";
+  bindBullBoard,
+  getRegisteredBullBoardQueues,
+} from "./lib/bull-board-registry";
 import { livenessController, readinessController } from "./controllers/health";
 import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
 import os from "os";
@@ -94,12 +94,19 @@ if (config.EXPRESS_TRUST_PROXY) {
 }
 
 const bullBoardQueues = [
-  new BullMQAdapter(getBillingQueue()),
   new BullMQAdapter(getPrecrawlQueue()),
-  new BullMQAdapter(getFirebillTrackRetryQueue()),
-  // SIEM audit delivery runs on RabbitMQ; inspect it in the broker's
-  // management UI, not here.
+  ...getRegisteredBullBoardQueues().map(queue => new BullMQAdapter(queue)),
 ];
+
+function attachBullBoard(serverAdapter: any) {
+  const board = createBullBoard({
+    queues: [...bullBoardQueues],
+    serverAdapter,
+  });
+  bindBullBoard(queue => {
+    board.addQueue(new BullMQAdapter(queue));
+  });
+}
 
 if (!config.BULL_AUTH_KEY) {
   logger.warn("BULL_AUTH_KEY is not set; admin routes are disabled.");
@@ -108,7 +115,7 @@ if (!config.BULL_AUTH_KEY) {
   // listener's /admin/queues where possible.
   const opsBullBoard = new ExpressAdapter();
   opsBullBoard.setBasePath("/admin/ops/queues");
-  createBullBoard({ queues: bullBoardQueues, serverAdapter: opsBullBoard });
+  attachBullBoard(opsBullBoard);
   app.use("/admin/ops/queues", adminAuth, opsBullBoard.getRouter());
 
   if (config.BULL_AUTH_KEY_PATH_ROUTES) {
@@ -121,7 +128,7 @@ if (!config.BULL_AUTH_KEY) {
       if (!key) continue;
       const board = new ExpressAdapter();
       board.setBasePath(`/admin/${encodeURIComponent(key)}/queues`);
-      createBullBoard({ queues: bullBoardQueues, serverAdapter: board });
+      attachBullBoard(board);
       pathBoards[slot] = board.getRouter();
     }
     const queuesPathRouter = express.Router({ mergeParams: true });
@@ -165,10 +172,7 @@ function startAdminInternalServer(port: number) {
 
   const internalBullBoard = new ExpressAdapter();
   internalBullBoard.setBasePath("/admin/queues");
-  createBullBoard({
-    queues: bullBoardQueues,
-    serverAdapter: internalBullBoard,
-  });
+  attachBullBoard(internalBullBoard);
   adminApp.use("/admin/queues", internalBullBoard.getRouter());
 
   adminApp.use(contributedAdminInternalRouter);

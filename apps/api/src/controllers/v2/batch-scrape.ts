@@ -30,7 +30,7 @@ import {
 } from "../../services/worker/nuq-router";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import type { BillingMetadata } from "../../services/billing/types";
+import type { BillingMetadata } from "../../lib/billing-types";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,

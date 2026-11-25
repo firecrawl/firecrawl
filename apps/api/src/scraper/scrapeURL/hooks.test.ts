@@ -8,19 +8,8 @@ import { CostTracking } from "../../lib/cost-tracking";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { requestContext } from "../../lib/request-context";
 
-vi.mock("../../services/index", () => ({
-  useIndex: false,
-  useSearchIndex: false,
-}));
-
 vi.mock("../WebScraper/utils/blocklist", () => ({
   isUrlBlocked: vi.fn(() => false),
-}));
-
-vi.mock("../../lib/exchange", () => ({
-  getExchangeAccessForRequest: vi.fn(async () => ({ allowed: false })),
-  ThirdPartyDataTermsRequiredError: class extends Error {},
-  ThirdPartyDataUnsupportedOptionError: class extends Error {},
 }));
 
 vi.mock("./lib/removeUnwantedElements", async importOriginal => {

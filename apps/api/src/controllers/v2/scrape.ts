@@ -32,7 +32,7 @@ import {
   type RequestContext,
   type SettleOutcome,
 } from "../../service";
-import type { BillingMetadata } from "../../services/billing/types";
+import type { BillingMetadata } from "../../lib/billing-types";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 

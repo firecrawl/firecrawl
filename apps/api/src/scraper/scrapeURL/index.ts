@@ -105,12 +105,6 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import type { ExchangeScrapeMetadata } from "../../lib/exchange";
-import type {
-  ThreatDecision,
-  ThreatProtectionPolicy,
-} from "../../lib/threat-protection";
-import type { ResolvedSafeMode } from "../../lib/safe-mode";
 import { requestContext } from "../../lib/request-context";
 import type { ScrapeState } from "../../service/hooks";
 import type { RequestContext } from "../../service/request-context";
@@ -121,20 +115,14 @@ export type ScrapeUrlResponse =
       success: true;
       document: Document;
       unsupportedFeatures?: Set<FeatureFlag>;
-      exchange?: ExchangeScrapeMetadata;
-      /**
-       * Threat protection decisions made for this scrape (initial domain
-       * check + any redirect re-checks, in order). Read by the billing layer
-       * (`providerConsulted` drives +2/+3 credits) and the security-logging
-       * layer. Only set when a threat protection policy was active.
-       */
-      threatDecisions?: ThreatDecision[];
+      exchange?: Record<string, unknown>;
+      threatDecisions?: unknown[];
       state?: ScrapeState;
     }
   | {
       success: false;
       error: any;
-      threatDecisions?: ThreatDecision[];
+      threatDecisions?: unknown[];
       state?: ScrapeState;
     };
 
@@ -270,8 +258,7 @@ export type Meta = {
    * by reference, because engines run on a copy of meta. */
   firePdfCacheKey?: { current?: string };
   abortHandle?: NodeJS.Timeout;
-  /** Threat protection decisions made during this scrape, in order (mutable, like logs). */
-  threatDecisions: ThreatDecision[];
+  threatDecisions: unknown[];
 };
 
 function buildFeatureFlags(
@@ -655,9 +642,9 @@ export type InternalOptions = {
    * is not "off"), the target domain is checked before any engine work, and
    * redirect destinations are re-checked. Absent => zero enforcement overhead.
    */
-  threatProtection?: ThreatProtectionPolicy;
+  threatProtection?: unknown;
 
-  safeMode?: ResolvedSafeMode;
+  safeMode?: unknown;
   /** Set when a request legitimately opted out of Safe Mode at the controller
    * (allowBypassSafeMode + safeMode:false). Tells the worker backstop NOT to
    * re-resolve safe mode from teamFlags — otherwise the bypass would be undone. */

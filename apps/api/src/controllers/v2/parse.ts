@@ -32,7 +32,7 @@ import {
 } from "../../service";
 import type { EngineName } from "../../service/engines";
 import { installedService } from "../../service/service";
-import type { BillingMetadata } from "../../services/billing/types";
+import type { BillingMetadata } from "../../lib/billing-types";
 import path from "node:path";
 import {
   DOCUMENT_EXTENSIONS,

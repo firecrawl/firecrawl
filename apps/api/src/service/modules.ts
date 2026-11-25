@@ -46,6 +46,8 @@ export type AuthResult<C extends BaseCaller = Caller> =
  */
 export interface AuthModule<C extends BaseCaller = Caller> {
   authenticate(req: Request, route: AuthRoute): Promise<AuthResult<C>>;
+  /** Optional team lookup for background jobs that need fresh flags or limits by team id. */
+  lookupTeam?(teamId: string): Promise<Partial<RequestContext> | null>;
 }
 
 /** Options for a blocklist check beyond the request context. */
@@ -102,6 +104,10 @@ export interface LimitsModule {
   keyConcurrency?(ctx: RequestContext): Promise<ConcurrencyKeyGate | null>;
   /** Queue priority for a new job. */
   jobPriority(input: JobPriorityInput): Promise<number>;
+  /** Optional hook invoked when a worker starts executing a job for priority accounting. */
+  onJobStart?(teamId: string, jobId: string): Promise<void>;
+  /** Optional hook invoked when a worker finishes executing a job for priority accounting. */
+  onJobEnd?(teamId: string, jobId: string): Promise<void>;
   /** Queue backend override for this request, or `undefined` to use the configured default. */
   queueBackend(
     ctx: RequestContext,

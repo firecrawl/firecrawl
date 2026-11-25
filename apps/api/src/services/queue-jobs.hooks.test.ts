@@ -107,28 +107,6 @@ vi.mock("./worker/nuq-fdb", () => ({
   withFdbTimeout: <T>(promise: Promise<T>) => promise,
 }));
 
-vi.mock("../controllers/auth", () => ({
-  getACUCTeam: mocks.getACUCTeam,
-}));
-
-vi.mock("./autumn/autumn.service", () => ({
-  DEFAULT_TEAM_LIMITS: { concurrency_limit: 2 },
-}));
-
-vi.mock("./notification/email_notification", () => ({
-  sendNotificationWithCustomDays: mocks.sendNotificationWithCustomDays,
-}));
-
-vi.mock("./notification/notification-check", () => ({
-  shouldSendConcurrencyLimitNotification:
-    mocks.shouldSendConcurrencyLimitNotification,
-}));
-
-vi.mock("../lib/gcs-jobs", () => ({
-  getJobFromGCS: vi.fn(),
-  removeJobFromGCS: vi.fn(),
-}));
-
 vi.mock("../lib/otel-tracer", () => ({
   serializeTraceContext: vi.fn(() => undefined),
 }));
@@ -139,10 +117,6 @@ vi.mock("../lib/deployment", () => ({
 
 vi.mock("../lib/redis-pipeline", () => ({
   reportPipelineError: vi.fn(),
-}));
-
-vi.mock("./monitoring/stale", () => ({
-  MONITOR_CHECK_STALE_TIMEOUT_MS: 300_000,
 }));
 
 import { concurrentJobDone } from "../lib/concurrency-limit";

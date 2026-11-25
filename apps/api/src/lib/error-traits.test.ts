@@ -48,28 +48,6 @@ import {
   serializeThrownError,
   serializeTransportableError,
 } from "./error-serde";
-import {
-  ThirdPartyDataTermsRequiredError,
-  ThirdPartyDataUnsupportedOptionError,
-} from "./exchange-errors";
-import { UnsafeDomainBlockedError } from "./threat-protection/error";
-import type { ThreatDecision } from "./threat-protection/types";
-
-const sampleThreatDecision: ThreatDecision = {
-  allowed: false,
-  rule: "blacklist",
-  url: "https://bad.example/path",
-  domain: "bad.example",
-  providerConsulted: true,
-  verdict: {
-    provider: "google-web-risk",
-    riskScore: 97,
-    categories: ["MALWARE"],
-    fromCache: false,
-    raw: { threat: { threatTypes: ["MALWARE"] } },
-  },
-  mode: "normal",
-};
 
 const withCoreErrors = createService(
   { modules: {} },
@@ -149,10 +127,6 @@ describe("behavioral error traits", () => {
       new UsOnlyUnavailableError("us-only"),
       new ReservedCapacityUnavailableError(),
       new ExchangeRefusedError("THIRD_PARTY_DATA_NOT_FOUND", "missing"),
-      new ThirdPartyDataTermsRequiredError({
-        key: "acme",
-        version: "2026-01-01",
-      }),
     ];
 
     for (const error of terminalErrors) {
@@ -167,8 +141,6 @@ describe("behavioral error traits", () => {
       new NoEnginesLeftError(["fetch"]),
       new LockdownMissError(),
       new PaywalledContentError(),
-      new UnsafeDomainBlockedError("https://bad.example", sampleThreatDecision),
-      new ThirdPartyDataUnsupportedOptionError("actions"),
       new ScrapeJobTimeoutError(),
       new TransportableError("UNKNOWN_ERROR", "plain"),
       new Error("plain"),
@@ -196,11 +168,6 @@ describe("behavioral error traits", () => {
 
 describe("HTTP response metadata", () => {
   it("derives exact HTTP status and extra fields for every mapped error class", () => {
-    const terms = new ThirdPartyDataTermsRequiredError({
-      key: "acme",
-      version: "2026-01-01",
-    });
-
     const cases: Array<{
       label: string;
       error: TransportableError;
@@ -278,31 +245,9 @@ describe("HTTP response metadata", () => {
         expected: { status: 403, code: "RESERVED_CAPACITY_UNAVAILABLE" },
       },
       {
-        label: "UnsafeDomainBlockedError",
-        error: new UnsafeDomainBlockedError(
-          "https://bad.example/path",
-          sampleThreatDecision,
-        ),
-        expected: { status: 403, code: "unsafe_domain_blocked" },
-      },
-      {
         label: "PaywalledContentError",
         error: new PaywalledContentError(),
         expected: { status: 403, code: "SCRAPE_PAYWALLED_CONTENT" },
-      },
-      {
-        label: "ThirdPartyDataUnsupportedOptionError",
-        error: new ThirdPartyDataUnsupportedOptionError("actions"),
-        expected: { status: 400, code: "THIRD_PARTY_DATA_UNSUPPORTED_OPTION" },
-      },
-      {
-        label: "ThirdPartyDataTermsRequiredError",
-        error: terms,
-        expected: {
-          status: 403,
-          code: "THIRD_PARTY_DATA_TERMS_REQUIRED",
-          extraFields: { requiresAction: terms.requiresAction },
-        },
       },
     ];
 
@@ -402,15 +347,6 @@ describe("wire format stability", () => {
         "enrichment disabled",
       ),
       new PaywalledContentError(),
-      new UnsafeDomainBlockedError(
-        "https://bad.example/path",
-        sampleThreatDecision,
-      ),
-      new ThirdPartyDataTermsRequiredError({
-        key: "acme",
-        version: "2026-01-01",
-      }),
-      new ThirdPartyDataUnsupportedOptionError("actions"),
     ];
 
     const traitKeyPattern =
@@ -585,10 +521,6 @@ describe("FormatUnavailableError and isFormatUnavailable", () => {
 describe("scrapeLog diagnostics metadata", () => {
   it("preserves established errorType, warning text, and structured context across round-trips", () => {
     const siteRestriction = new SiteRestrictionError();
-    const threatBlocked = new UnsafeDomainBlockedError(
-      "https://bad.example/path",
-      sampleThreatDecision,
-    );
     const paywalled = new PaywalledContentError();
 
     expect(getErrorScrapeLog(siteRestriction)).toEqual({
@@ -596,21 +528,12 @@ describe("scrapeLog diagnostics metadata", () => {
       message: "scrapeURL: Site restriction returned (Safe Mode)",
       context: { error: siteRestriction },
     });
-    expect(getErrorScrapeLog(threatBlocked)).toEqual({
-      errorType: "UnsafeDomainBlockedError",
-      message: "scrapeURL: Domain blocked by threat protection policy",
-      context: {
-        error: threatBlocked,
-        domain: "bad.example",
-        rule: "blacklist",
-      },
-    });
     expect(getErrorScrapeLog(paywalled)).toEqual({
       errorType: "PaywalledContentError",
       message: "scrapeURL: Paywalled page refused by Safe Mode",
     });
 
-    for (const error of [siteRestriction, threatBlocked, paywalled]) {
+    for (const error of [siteRestriction, paywalled]) {
       const revived = deserializeTransportableError(
         serializeTransportableError(error),
       )!;
@@ -618,13 +541,7 @@ describe("scrapeLog diagnostics metadata", () => {
       expect(log, error.constructor.name).toBeDefined();
       expect(log!.errorType).toBe(getErrorScrapeLog(error)!.errorType);
       expect(log!.message).toBe(getErrorScrapeLog(error)!.message);
-      if (error === threatBlocked) {
-        expect(log!.context).toEqual({
-          error: revived,
-          domain: "bad.example",
-          rule: "blacklist",
-        });
-      } else if (error === paywalled) {
+      if (error === paywalled) {
         expect(log!.context).toBeUndefined();
       } else {
         expect(log!.context).toEqual({ error: revived });

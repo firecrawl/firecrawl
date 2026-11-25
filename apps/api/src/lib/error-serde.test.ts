@@ -54,12 +54,6 @@ import {
   serializeThrownError,
   serializeTransportableError,
 } from "./error-serde";
-import {
-  ThirdPartyDataTermsRequiredError,
-  ThirdPartyDataUnsupportedOptionError,
-} from "./exchange-errors";
-import { UnsafeDomainBlockedError } from "./threat-protection/error";
-import type { ThreatDecision } from "./threat-protection/types";
 
 const wire = (code: string, payload: unknown) =>
   `${code}|${JSON.stringify(payload)}`;
@@ -235,22 +229,6 @@ describe("the wire form of every class", () => {
     pdfFetchProxyAttempts: 1,
     documentFetchProxyAttempts: 1,
   };
-  const decision: ThreatDecision = {
-    allowed: false,
-    rule: "blacklist",
-    url: "https://bad.example/path",
-    domain: "bad.example",
-    providerConsulted: true,
-    verdict: {
-      provider: "google-web-risk",
-      riskScore: 97,
-      categories: ["MALWARE"],
-      fromCache: false,
-      raw: { threat: { threatTypes: ["MALWARE"] } },
-    },
-    mode: "normal",
-  };
-
   // The code, a label, the error, and the fields its class writes after the
   // three every error has, in the order it writes them.
   const samples: [
@@ -575,38 +553,6 @@ describe("the wire form of every class", () => {
       "ScrapeRetryLimitError",
       () => new ScrapeRetryLimitError("feature_toggle", stats),
       { reason: "feature_toggle", stats },
-    ],
-    [
-      "unsafe_domain_blocked",
-      "UnsafeDomainBlockedError",
-      () => new UnsafeDomainBlockedError("https://bad.example/path", decision),
-      { url: "https://bad.example/path", domain: "bad.example", decision },
-    ],
-    [
-      "THIRD_PARTY_DATA_TERMS_REQUIRED",
-      "ThirdPartyDataTermsRequiredError",
-      () =>
-        new ThirdPartyDataTermsRequiredError({
-          key: "acme",
-          version: "2026-01-01",
-        }),
-      { terms: { key: "acme", version: "2026-01-01" }, enrichment: false },
-    ],
-    [
-      "THIRD_PARTY_DATA_TERMS_REQUIRED",
-      "ThirdPartyDataTermsRequiredError for enrichment",
-      () =>
-        new ThirdPartyDataTermsRequiredError(
-          { key: "acme", version: "2026-01-01" },
-          { enrichment: true },
-        ),
-      { terms: { key: "acme", version: "2026-01-01" }, enrichment: true },
-    ],
-    [
-      "THIRD_PARTY_DATA_UNSUPPORTED_OPTION",
-      "ThirdPartyDataUnsupportedOptionError",
-      () => new ThirdPartyDataUnsupportedOptionError("actions"),
-      { option: "actions" },
     ],
   ];
 

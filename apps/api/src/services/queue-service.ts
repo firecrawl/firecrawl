@@ -2,12 +2,8 @@ import { Queue } from "bullmq";
 import { config } from "../config";
 import { logger } from "../lib/logger";
 import IORedis from "ioredis";
-import type { BillTeamJobData } from "./billing/types";
-import type { TrackParams } from "./autumn/types";
 
-let billingQueue: Queue<BillTeamJobData>;
 let precrawlQueue: Queue;
-let firebillTrackRetryQueue: Queue<FirebillRetryJobData>;
 let redisConnection: IORedis;
 
 export function getRedisConnection(): IORedis {
@@ -22,71 +18,7 @@ export function getRedisConnection(): IORedis {
   return redisConnection;
 }
 
-const billingQueueName = "{billingQueue}";
 export const precrawlQueueName = "{precrawlQueue}";
-const firebillTrackRetryQueueName = "{firebillTrackRetryQueue}";
-
-/** A usage event firebill never confirmed, re-sent as the identical event. */
-export type FirebillTrackRetryJobData = TrackParams & {
-  idempotencyKey: string;
-};
-
-/** A lock settle firebill never answered, re-sent as the identical request. */
-export type FirebillFinalizeRetryJobData = {
-  lockId: string;
-  action: "confirm" | "release";
-  overrideValue?: number;
-  properties?: Record<string, unknown>;
-  externalRequestId?: string | null;
-  customerId?: string | null;
-  featureId?: string | null;
-  heldValue?: number | null;
-  entityId?: string | null;
-  idempotencyKey: string;
-};
-
-export type FirebillRetryJobData =
-  | FirebillTrackRetryJobData
-  | FirebillFinalizeRetryJobData;
-
-export function getBillingQueue() {
-  if (!billingQueue) {
-    billingQueue = new Queue<BillTeamJobData>(billingQueueName, {
-      connection: getRedisConnection(),
-      defaultJobOptions: {
-        removeOnComplete: {
-          age: 60, // 1 minute
-        },
-        removeOnFail: {
-          age: 3600, // 1 hour
-        },
-      },
-    });
-  }
-  return billingQueue;
-}
-
-export function getFirebillTrackRetryQueue() {
-  if (!firebillTrackRetryQueue) {
-    firebillTrackRetryQueue = new Queue<FirebillRetryJobData>(
-      firebillTrackRetryQueueName,
-      {
-        connection: getRedisConnection(),
-        defaultJobOptions: {
-          removeOnComplete: {
-            age: 60 * 60, // 1 hour
-          },
-          // Exhausted retries stay inspectable for a week: each one is an
-          // event that may not have been billed.
-          removeOnFail: {
-            age: 7 * 24 * 60 * 60, // 7 days
-          },
-        },
-      },
-    );
-  }
-  return firebillTrackRetryQueue;
-}
 
 export function getPrecrawlQueue() {
   if (!precrawlQueue) {

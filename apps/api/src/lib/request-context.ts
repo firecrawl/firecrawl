@@ -8,7 +8,7 @@
  */
 import type { TeamFlags } from "../controllers/v2/types";
 import type { RequestContext } from "../service/request-context";
-import type { BillingMetadata } from "../services/billing/types";
+import type { BillingMetadata } from "./billing-types";
 import type { ScrapeJobData } from "../types";
 import type { StoredCrawl } from "./crawl-redis";
 

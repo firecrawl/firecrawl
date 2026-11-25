@@ -1,6 +1,4 @@
 import type { AgentInteropStatus } from "../../lib/agent-interop";
-import type { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
-import type { ZDRPolicy } from "../../lib/zdr-policy";
 import { Request, Response } from "express";
 import { config } from "../../config";
 import { z } from "zod";
@@ -11,8 +9,7 @@ import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
 import { addStrictSchemaIssue } from "../../lib/openai-strict-schema";
 export { addStrictSchemaIssue };
 import { ScrapeActionContent } from "../../lib/entities";
-import type { FreshFeedFilters, FreshFeedUpstream } from "../../lib/fresh-feed";
-import type { TeamPlanClass } from "../../lib/team-plan-class";
+import type { TeamPlanClass } from "../../service/search-providers";
 import type { RateLimiterMode } from "../../types";
 import { ErrorCode } from "../../lib/error";
 import { integrationSchema } from "../../utils/integration";
@@ -1073,7 +1070,7 @@ export type ScrapeResponse =
       success: true;
       warning?: string;
       data: Document & {
-        tools?: import("../../services/alexandria/contracts").DiscoveredTool[];
+        tools?: unknown[];
       };
       scrape_id?: string;
     };
@@ -1180,7 +1177,13 @@ export type CrawlErrorsResponse =
         url: string;
         code?: ErrorCode;
         error: string;
-        requiresAction?: ThirdPartyDataTermsRequiredError["requiresAction"];
+        requiresAction?: {
+          type: string;
+          terms?: string;
+          version?: string;
+          url?: string;
+          [key: string]: unknown;
+        };
       }[];
       robotsBlocked: string[];
     };
@@ -1295,9 +1298,9 @@ export type TeamFlags = {
   labsSearch?: boolean;
   freshFeed?: boolean;
   freshFeedCreditsPerRecord?: number;
-  freshFeedUpstream?: FreshFeedUpstream;
+  freshFeedUpstream?: string;
   freshFeedCollection?: string;
-  freshFeedFilters?: FreshFeedFilters;
+  freshFeedFilters?: Record<string, string | undefined>;
   professionalProfileCompanyDataBeta?: boolean;
   // The org's DPA (or partner amendment) restricts how its data may be
   // handled. Informational only: the API does not change behavior on it.
@@ -1355,7 +1358,7 @@ export interface RequestWithMaybeACUC<
   ResBody = undefined,
 > extends Request<ReqParams, ReqBody, ResBody> {
   acuc?: AuthCreditUsageChunk;
-  zdrPolicy?: ZDRPolicy;
+  zdrPolicy?: unknown;
 }
 
 export interface RequestWithMaybeAuth<
@@ -1429,7 +1432,7 @@ export interface MapDocument {
 // These allow fine-grained control over each search source type
 // Similar to how scrape formats work with jsonFormatWithOptions, etc.
 
-export const webSearchSourceOptions = z.strictObject({
+const webSearchSourceOptions = z.strictObject({
   type: z.literal("web"),
   tbs: z.string().optional(), // Time-based search (e.g., "qdr:d" for past day)
   filter: z.string().optional(), // Search filter
@@ -1438,16 +1441,16 @@ export const webSearchSourceOptions = z.strictObject({
   location: z.string().optional(), // Location override for this source
 });
 
-export const imagesSearchSourceOptions = z.strictObject({
+const imagesSearchSourceOptions = z.strictObject({
   type: z.literal("images"),
 });
 
-export const newsSearchSourceOptions = z.strictObject({
+const newsSearchSourceOptions = z.strictObject({
   type: z.literal("news"),
 });
 
 // Category source type definitions
-export const pdfCategoryOptions = z.strictObject({
+const pdfCategoryOptions = z.strictObject({
   type: z.literal("pdf"),
 });
 

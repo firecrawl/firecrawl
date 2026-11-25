@@ -1,4 +1,4 @@
-import { FormatObject } from "../controllers/v2/types";
+import type { FormatObject } from "../controllers/v2/types";
 
 /**
  * Checks if a format of a specific type exists in the formats array.
