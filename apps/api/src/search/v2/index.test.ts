@@ -11,7 +11,8 @@ import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import type { SearchProvider } from "../../service";
 import { createService, replaceService } from "../../service/service";
 import { coreSearchProviders } from "../providers";
-import { search, SearchProviderUnavailableError } from "./index";
+import { SearchProviderUnavailableError } from "./errors";
+import { search } from "./index";
 
 const logger = {
   info: vi.fn(),

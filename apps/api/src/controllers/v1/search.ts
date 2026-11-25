@@ -23,7 +23,7 @@ import type { Logger } from "winston";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
 import { executeSearch } from "../../search/execute";
-import { SearchProviderUnavailableError } from "../../search/v2";
+import { SearchProviderUnavailableError } from "../../search/v2/errors";
 import { applySearchPlanHook } from "../../search/plan-hook";
 import { requestContext } from "../../lib/request-context";
 import { installedService } from "../../service/service";
