@@ -81,4 +81,6 @@ jobs:
         run: cargo install cargo-deny --locked --version 0.20.2
 
       - name: Check dependencies
-        run: cargo deny --locked check
+        run: |
+          cargo deny --locked check
+          cargo deny --locked --manifest-path ../../local/Cargo.toml check advisories licenses sources

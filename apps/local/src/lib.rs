@@ -10,9 +10,9 @@
 #![allow(dead_code)]
 
 #[cfg(not(vendored_native))]
-pub use firecrawl_crawler as crawler;
+pub use firecrawl_crawler::crawler;
 #[cfg(not(vendored_native))]
-pub use firecrawl_html as html;
+pub use firecrawl_html::html;
 #[cfg(not(vendored_native))]
 pub use firecrawl_parsers::document;
 
