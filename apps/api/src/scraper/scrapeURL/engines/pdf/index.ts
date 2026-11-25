@@ -112,12 +112,14 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
   if (!shouldParse) {
     if (prefetch !== undefined && prefetch !== null) {
+      let consumed = false;
       try {
         const prefetchSize = (await stat(prefetch.filePath)).size;
         if (prefetchSize > PDF_DOWNLOAD_MAX_FILE_SIZE) {
           throw new UnsupportedFileError("File exceeds size limit");
         }
         const content = (await readFile(prefetch.filePath)).toString("base64");
+        consumed = true;
         return {
           url: prefetch.url ?? meta.rewrittenUrl ?? meta.url,
           statusCode: prefetch.status,
@@ -127,7 +129,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           proxyUsed: prefetch.proxyUsed,
         };
       } finally {
-        if (prefetch !== meta.pdfPrefetch) {
+        if (consumed || prefetch !== meta.pdfPrefetch) {
           try {
             await unlink(prefetch.filePath);
           } catch (error) {
