@@ -4,10 +4,13 @@
 use kuchikiki::NodeRef;
 
 use super::RenderCtx;
-use super::block_map::{attr, collect_flat_text_iterative, normalize_inline, tag_of};
+use super::block_map::{attr, normalize_inline, tag_of};
 use super::blocks::render_blocks;
 use super::code::is_gutter_class;
 use super::inline::{InlineState, inline_children};
+
+const MAX_TABLE_COLUMNS: usize = 64;
+const MAX_TABLE_CELLS: usize = 16_384;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ColAlign {
@@ -159,12 +162,6 @@ pub(crate) fn render_table(
   depth: usize,
   state: InlineState,
 ) -> String {
-  if depth >= ctx.opts.max_dom_depth {
-    let mut flat = String::new();
-    collect_flat_text_iterative(node, ctx.opts, &mut flat);
-    return normalize_inline(&flat);
-  }
-
   let next_depth = depth.saturating_add(1);
   let mut rows = Vec::new();
   let mut caption = None;
@@ -203,8 +200,11 @@ pub(crate) fn render_table(
       })
     });
 
-  let unwrap = ctx.opts.unwrap_layout_tables
-    && (columns <= 1 || ctx.block_map.has_nested_table(node) || presentational || prose_cells);
+  let too_large =
+    columns > MAX_TABLE_COLUMNS || rows.len().saturating_mul(columns) > MAX_TABLE_CELLS;
+  let unwrap = too_large
+    || (ctx.opts.unwrap_layout_tables
+      && (columns <= 1 || ctx.block_map.has_nested_table(node) || presentational || prose_cells));
   if unwrap {
     let mut parts = Vec::new();
     if let Some(c) = caption {

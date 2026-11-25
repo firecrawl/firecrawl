@@ -7,8 +7,8 @@ use super::block_map::{
   attr, collect_flat_text_iterative, is_block, is_skipped, normalize_inline, tag_of,
 };
 use super::escape::{
-  encode_url, escape_heading_trailing_hash, escape_line_starts, guard_trailing_backslash,
-  is_javascript_uri,
+  encode_url, escape_heading_trailing_hash, escape_line_starts, escape_link_label_text,
+  escape_plain_text_brackets, guard_trailing_backslash, is_javascript_uri,
 };
 use super::iframe::{is_data_text_html, render_data_iframe_blocks};
 use super::inline::{
@@ -106,7 +106,7 @@ fn format_card_block(block: &str) -> String {
     if text.contains("**") {
       return text.to_string();
     }
-    return format!("**{text}**");
+    return format!("**{}**", guard_trailing_backslash(text));
   }
   escape_card_newlines(trimmed)
 }
@@ -161,7 +161,8 @@ fn render_block_link(
 
   let card_parts: Vec<String> = inner
     .iter()
-    .map(|b| format_card_block(b))
+    .flat_map(|b| b.split("\n\n"))
+    .map(format_card_block)
     .filter(|b| !b.is_empty())
     .collect();
   if card_parts.is_empty() {
@@ -177,6 +178,21 @@ fn render_block_link(
   vec![format!("[{safe}]({encoded_href})")]
 }
 
+fn render_depth_fallback(ctx: &RenderCtx<'_>, node: &NodeRef, state: InlineState) -> String {
+  let mut flat = String::new();
+  collect_flat_text_iterative(node, ctx.opts, &mut flat);
+  let norm = normalize_inline(&flat);
+  if norm.is_empty() {
+    return String::new();
+  }
+  let safe = if state.in_link {
+    escape_link_label_text(&norm)
+  } else {
+    escape_plain_text_brackets(&norm, false).into_owned()
+  };
+  escape_line_starts(&safe)
+}
+
 pub(crate) fn render_block(
   ctx: &RenderCtx<'_>,
   node: &NodeRef,
@@ -185,14 +201,7 @@ pub(crate) fn render_block(
   state: InlineState,
 ) -> String {
   if depth >= ctx.opts.max_dom_depth {
-    let mut flat = String::new();
-    collect_flat_text_iterative(node, ctx.opts, &mut flat);
-    let norm = normalize_inline(&flat);
-    return if norm.is_empty() {
-      String::new()
-    } else {
-      escape_line_starts(&norm)
-    };
+    return render_depth_fallback(ctx, node, state);
   }
 
   match name {
@@ -221,7 +230,7 @@ pub(crate) fn render_block(
       } else if state.in_strong || text.contains("**") {
         text
       } else {
-        format!("**{text}**")
+        format!("**{}**", guard_trailing_backslash(&text))
       }
     }
     _ => render_blocks(ctx, node, depth, state).join("\n\n"),
@@ -236,13 +245,11 @@ pub(crate) fn render_blocks(
   state: InlineState,
 ) -> Vec<String> {
   if depth >= ctx.opts.max_dom_depth {
-    let mut flat = String::new();
-    collect_flat_text_iterative(parent, ctx.opts, &mut flat);
-    let norm = normalize_inline(&flat);
-    return if norm.is_empty() {
+    let text = render_depth_fallback(ctx, parent, state);
+    return if text.is_empty() {
       Vec::new()
     } else {
-      vec![escape_line_starts(&norm)]
+      vec![text]
     };
   }
 
@@ -287,7 +294,7 @@ pub(crate) fn render_blocks(
       let src = src_raw.trim();
       if is_data_text_html(src) {
         flush(&mut run, &mut out);
-        out.extend(render_data_iframe_blocks(ctx, src, state));
+        out.extend(render_data_iframe_blocks(ctx, src, next_depth, state));
       } else {
         inline(ctx, &child, state, &mut run, next_depth);
       }

@@ -8,7 +8,7 @@ use super::block_map::{
   tag_of,
 };
 use super::blocks::{render_block, render_blocks};
-use super::escape::escape_line_starts;
+use super::escape::{escape_line_starts, escape_link_label_text, escape_plain_text_brackets};
 use super::inline::{InlineState, inline};
 use super::{MarkdownOptions, RenderCtx};
 
@@ -105,7 +105,16 @@ pub(crate) fn render_list(
   if depth >= ctx.opts.max_dom_depth {
     let mut flat = String::new();
     collect_flat_text_iterative(node, ctx.opts, &mut flat);
-    return normalize_inline(&flat);
+    let norm = normalize_inline(&flat);
+    if norm.is_empty() {
+      return String::new();
+    }
+    let safe = if state.in_link {
+      escape_link_label_text(&norm)
+    } else {
+      escape_plain_text_brackets(&norm, false).into_owned()
+    };
+    return escape_line_starts(&safe);
   }
 
   let next_depth = depth.saturating_add(1);
@@ -133,11 +142,15 @@ pub(crate) fn render_list(
     match name {
       "li" => {
         if is_wrapper_li(&child, ctx.opts) {
+          let was_empty = items.is_empty();
           for sub in child.children() {
             if let Some(sub_name @ ("ul" | "ol")) = tag_of(&sub) {
               let nested = render_list(ctx, &sub, sub_name == "ol", next_depth, state);
               attach_nested_list(&mut items, nested);
             }
+          }
+          if ordered && was_empty && !items.is_empty() {
+            number = number.saturating_add(1);
           }
           continue;
         }
@@ -210,6 +223,21 @@ mod tests {
     assert_eq!(
       html_to_markdown(wide, &MarkdownOptions::default()),
       "10. Ten\n    1. Sub"
+    );
+  }
+
+  #[test]
+  fn wrapper_li_numbering_attached_vs_leading() {
+    let attached = "<ol><li>One</li><li>Two</li><li><ol><li>Sub</li></ol></li><li>Three</li></ol>";
+    assert_eq!(
+      html_to_markdown(attached, &MarkdownOptions::default()),
+      "1. One\n2. Two\n   1. Sub\n3. Three"
+    );
+
+    let leading = "<ol><li><ol><li>Sub</li></ol></li><li>Two</li></ol>";
+    assert_eq!(
+      html_to_markdown(leading, &MarkdownOptions::default()),
+      "1. Sub\n2. Two"
     );
   }
 }

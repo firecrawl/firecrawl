@@ -104,18 +104,45 @@ fn clean_language(token: &str) -> Option<String> {
   }
 }
 
-fn language_from_classes(classes: &str) -> Option<String> {
-  for token in classes.split_whitespace() {
-    let lower = token.to_ascii_lowercase();
-    for prefix in [
-      "language-",
-      "lang-",
-      "highlight-source-",
-      "highlight-",
-      "brush:",
-      "sourcecode-",
-      "hljs-language-",
-    ] {
+fn language_from_classes(classes: &str, is_ancestor: bool) -> Option<String> {
+  let tokens: Vec<String> = classes
+    .split_whitespace()
+    .map(str::to_ascii_lowercase)
+    .collect();
+  let is_sphinx_wrapper = tokens.iter().any(|t| t == "notranslate");
+
+  for lower in &tokens {
+    let prefixes: &[&str] = if is_ancestor {
+      if is_sphinx_wrapper {
+        &[
+          "language-",
+          "highlight-source-",
+          "highlight-",
+          "brush:",
+          "sourcecode-",
+          "hljs-language-",
+        ]
+      } else {
+        &[
+          "language-",
+          "highlight-source-",
+          "brush:",
+          "sourcecode-",
+          "hljs-language-",
+        ]
+      }
+    } else {
+      &[
+        "language-",
+        "lang-",
+        "highlight-source-",
+        "highlight-",
+        "brush:",
+        "sourcecode-",
+        "hljs-language-",
+      ]
+    };
+    for prefix in prefixes {
       if let Some(lang) = lower.strip_prefix(prefix).and_then(clean_language) {
         return Some(lang);
       }
@@ -152,26 +179,26 @@ fn first_inner_code(pre: &NodeRef) -> Option<NodeRef> {
 }
 
 fn code_language(pre: &NodeRef) -> Option<String> {
-  let mut candidates: Vec<NodeRef> = Vec::with_capacity(7);
+  let mut candidates: Vec<(NodeRef, bool)> = Vec::with_capacity(7);
   if let Some(code) = first_inner_code(pre) {
-    candidates.push(code);
+    candidates.push((code, false));
   }
-  candidates.push(pre.clone());
+  candidates.push((pre.clone(), false));
   let mut up = pre.parent();
   for _ in 0..5 {
     match up {
       Some(p) => {
-        candidates.push(p.clone());
+        candidates.push((p.clone(), true));
         up = p.parent();
       }
       None => break,
     }
   }
-  for node in candidates {
+  for (node, is_ancestor) in candidates {
     for name in ["class", "data-lang", "data-language"] {
       if let Some(value) = attr(&node, name) {
         let found = if name == "class" {
-          language_from_classes(&value)
+          language_from_classes(&value, is_ancestor)
         } else {
           clean_language(&value)
         };
@@ -189,7 +216,7 @@ fn code_language(pre: &NodeRef) -> Option<String> {
 fn extract_code_text(root: &NodeRef, opts: &MarkdownOptions, block_breaks: bool) -> String {
   enum Frame {
     Enter(NodeRef),
-    LeaveBlock,
+    LeaveBlock { start_len: usize },
   }
 
   let mut out = String::new();
@@ -201,8 +228,8 @@ fn extract_code_text(root: &NodeRef, opts: &MarkdownOptions, block_breaks: bool)
 
   while let Some(frame) = stack.pop() {
     match frame {
-      Frame::LeaveBlock => {
-        if !out.is_empty() && !out.ends_with('\n') {
+      Frame::LeaveBlock { start_len } => {
+        if !out.is_empty() && (out.len() == start_len || !out.ends_with('\n')) {
           out.push('\n');
         }
       }
@@ -222,7 +249,9 @@ fn extract_code_text(root: &NodeRef, opts: &MarkdownOptions, block_breaks: bool)
           continue;
         }
         if block_breaks && is_pre_line_break_tag(name) {
-          stack.push(Frame::LeaveBlock);
+          stack.push(Frame::LeaveBlock {
+            start_len: out.len(),
+          });
         }
         buf.clear();
         buf.extend(node.children());

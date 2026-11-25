@@ -29,3 +29,19 @@ pub fn html_to_markdown(html: &str) -> String {
 pub fn document_to_markdown(document: &NodeRef) -> String {
   core::node_to_markdown(document, &local_options())
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn local_options_drop_base64_skip_iframes_and_defer_post_process() {
+    let html = "<p><img src=\"/a.png\" alt=\"ok\"><img src=\"data:image/png;base64,AAAA\" alt=\"inline\"></p>\
+                <iframe src=\"https://example.com/embed\"></iframe>\
+                <p><a href=\"#main\">Skip to Content</a></p>";
+    assert_eq!(
+      html_to_markdown(html),
+      "![ok](/a.png)\n\n[Skip to Content](#main)"
+    );
+  }
+}

@@ -23,24 +23,27 @@ fn run_on_2mb_stack<R: Send + 'static>(f: impl FnOnce() -> R + Send + 'static) -
       .stack_size(2 * 1024 * 1024)
       .spawn(move || {
         while let Ok(job) = rx.recv() {
-          job();
+          let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job));
         }
       })
       .expect("failed to spawn 2 MiB worker thread");
     Mutex::new(tx)
   });
 
-  let (res_tx, res_rx) = mpsc::sync_channel::<R>(1);
+  let (res_tx, res_rx) = mpsc::sync_channel::<std::thread::Result<R>>(1);
   let job: BoxedJob = Box::new(move || {
-    let value = f();
-    let _ = res_tx.send(value);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    let _ = res_tx.send(result);
   });
   sender
     .lock()
     .expect("2 MiB worker lock poisoned")
     .send(job)
     .expect("2 MiB worker channel closed");
-  res_rx.recv().expect("2 MiB worker panicked")
+  match res_rx.recv().expect("2 MiB worker channel closed") {
+    Ok(value) => value,
+    Err(payload) => std::panic::resume_unwind(payload),
+  }
 }
 
 fn max_backtick_run(s: &str) -> usize {
@@ -399,6 +402,9 @@ fn prop_post_process_idempotent_and_utf8_safe(tc: TestCase) {
       "\n",
       "[Skip to Content](#main)",
       "[skip to content](#top)",
+      "[Skip to Content](#",
+      "```",
+      "~~~",
       "(",
       ")",
       "#",

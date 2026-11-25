@@ -123,6 +123,20 @@ fn is_task_list_checkbox(node: &NodeRef) -> bool {
   }
 }
 
+fn push_flat_escaped(ctx: &RenderCtx<'_>, node: &NodeRef, state: InlineState, out: &mut String) {
+  let mut flat = String::new();
+  collect_flat_text_iterative(node, ctx.opts, &mut flat);
+  if flat.is_empty() {
+    return;
+  }
+  if state.in_link {
+    out.push_str(&escape_link_label_text(&flat));
+  } else {
+    let sib = next_sibling_continues_link(node);
+    out.push_str(&escape_plain_text_brackets(&flat, sib));
+  }
+}
+
 pub(crate) fn inline_children(
   ctx: &RenderCtx<'_>,
   node: &NodeRef,
@@ -131,7 +145,7 @@ pub(crate) fn inline_children(
 ) -> String {
   let mut out = String::new();
   if depth >= ctx.opts.max_dom_depth {
-    collect_flat_text_iterative(node, ctx.opts, &mut out);
+    push_flat_escaped(ctx, node, state, &mut out);
     return out;
   }
   let next_depth = depth.saturating_add(1);
@@ -149,7 +163,7 @@ pub(crate) fn inline(
   depth: usize,
 ) {
   if depth >= ctx.opts.max_dom_depth {
-    collect_flat_text_iterative(node, ctx.opts, out);
+    push_flat_escaped(ctx, node, state, out);
     return;
   }
 
@@ -192,7 +206,7 @@ pub(crate) fn inline(
   }
 
   if name == "iframe" {
-    render_iframe_inline(ctx, node, state, out);
+    render_iframe_inline(ctx, node, depth.saturating_add(1), state, out);
     return;
   }
 

@@ -6,12 +6,12 @@ use std::borrow::Cow;
 use kuchikiki::NodeRef;
 
 /// Percent-encode characters that break inline Markdown link destinations and
-/// strip embedded line breaks.
+/// strip ASCII tab/CR/LF bytes per WHATWG URL parsing.
 pub(crate) fn encode_url(url: &str) -> String {
   let mut out = String::with_capacity(url.len());
   for ch in url.chars() {
     match ch {
-      '\r' | '\n' => {}
+      '\t' | '\r' | '\n' => {}
       ' ' => out.push_str("%20"),
       '(' => out.push_str("%28"),
       ')' => out.push_str("%29"),
@@ -21,23 +21,34 @@ pub(crate) fn encode_url(url: &str) -> String {
   out
 }
 
+/// Match a URL scheme case-insensitively after stripping leading ASCII control
+/// characters and embedded tab/CR/LF bytes (matching WHATWG URL parsing).
+fn has_scheme(uri: &str, scheme: &[u8]) -> bool {
+  let mut iter = uri
+    .bytes()
+    .skip_while(|&b| b <= 0x20)
+    .filter(|&b| !matches!(b, b'\t' | b'\r' | b'\n'));
+  for &expected in scheme {
+    let Some(actual) = iter.next() else {
+      return false;
+    };
+    if !actual.eq_ignore_ascii_case(&expected) {
+      return false;
+    }
+  }
+  true
+}
+
 pub(crate) fn is_javascript_uri(uri: &str) -> bool {
-  uri
-    .get(..11)
-    .is_some_and(|prefix| prefix.eq_ignore_ascii_case("javascript:"))
+  has_scheme(uri, b"javascript:")
 }
 
 pub(crate) fn is_data_uri(uri: &str) -> bool {
-  uri
-    .get(..5)
-    .is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:"))
+  has_scheme(uri, b"data:")
 }
 
 pub(crate) fn is_base64_image_data_uri(uri: &str) -> bool {
-  if !uri
-    .get(..11)
-    .is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:image/"))
-  {
+  if !has_scheme(uri, b"data:image/") {
     return false;
   }
   uri
@@ -100,9 +111,13 @@ pub(crate) fn escape_line_starts(paragraph: &str) -> String {
         out.push_str(line);
       }
       Some(b'-' | b'+' | b'*') => {
-        if bytes.get(1) == Some(&b' ') {
+        if bytes.get(1) == Some(&b' ') || line.trim_end().bytes().all(|b| b == b'-') {
           out.push('\\');
         }
+        out.push_str(line);
+      }
+      Some(b'=') if line.trim_end().bytes().all(|b| b == b'=') => {
+        out.push('\\');
         out.push_str(line);
       }
       Some(c) if c.is_ascii_digit() => {

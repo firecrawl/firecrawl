@@ -16,14 +16,81 @@ type BaselineMarkdownEngine = "go-http" | "go-koffi" | "turndown";
 const MAX_CONCURRENT_SHADOW_JOBS = 4;
 let activeShadowJobs = 0;
 
-function extractHttpUrls(markdown: string): Set<string> {
+function extractMarkdownLinkUrls(markdown: string): Set<string> {
   const urls = new Set<string>();
-  const matches = markdown.match(/https?:\/\/[^\s)>\]"']+/g);
-  if (matches) {
-    for (const url of matches) {
-      urls.add(url);
+  const stack: Array<{ isImage: boolean }> = [];
+
+  for (let i = 0; i < markdown.length; i++) {
+    const ch = markdown[i];
+    if (ch === "\\") {
+      i++;
+      continue;
+    }
+    if (ch === "[") {
+      const isImage =
+        i > 0 && markdown[i - 1] === "!" && (i < 2 || markdown[i - 2] !== "\\");
+      stack.push({ isImage });
+      continue;
+    }
+    if (ch === "]" && stack.length > 0) {
+      const opener = stack.pop()!;
+      if (markdown[i + 1] !== "(") {
+        continue;
+      }
+      let j = i + 2;
+      while (j < markdown.length && /\s/.test(markdown[j])) {
+        j++;
+      }
+      let dest = "";
+      if (markdown[j] === "<") {
+        const end = markdown.indexOf(">", j + 1);
+        if (end !== -1) {
+          dest = markdown.slice(j + 1, end).trim();
+          const closeParen = markdown.indexOf(")", end + 1);
+          if (closeParen !== -1) {
+            i = closeParen;
+          }
+        }
+      } else {
+        let depth = 0;
+        let k = j;
+        while (k < markdown.length) {
+          const c = markdown[k];
+          if (c === "\\") {
+            k += 2;
+            continue;
+          }
+          if (c === "(") {
+            depth++;
+          } else if (c === ")") {
+            if (depth === 0) {
+              break;
+            }
+            depth--;
+          } else if (/\s/.test(c) && depth === 0) {
+            break;
+          }
+          k++;
+        }
+        dest = markdown.slice(j, k);
+        let close = k;
+        while (close < markdown.length && markdown[close] !== ")") {
+          if (markdown[close] === "\\") {
+            close += 2;
+            continue;
+          }
+          close++;
+        }
+        if (close < markdown.length && markdown[close] === ")") {
+          i = close;
+        }
+      }
+      if (!opener.isImage && dest && !dest.toLowerCase().startsWith("data:")) {
+        urls.add(dest);
+      }
     }
   }
+
   return urls;
 }
 
@@ -107,8 +174,8 @@ function maybeRunRustShadow(params: {
     try {
       const rustMarkdown = await convertHtmlToMarkdown(html);
       const rustDurationMs = Number((performance.now() - start).toFixed(2));
-      const baselineLinks = extractHttpUrls(baselineMarkdown);
-      const rustLinks = extractHttpUrls(rustMarkdown);
+      const baselineLinks = extractMarkdownLinkUrls(baselineMarkdown);
+      const rustLinks = extractMarkdownLinkUrls(rustMarkdown);
       const baselineImages = extractNonDataImageUrls(baselineMarkdown);
       const rustImages = extractNonDataImageUrls(rustMarkdown);
       const baselineBytes = Buffer.byteLength(baselineMarkdown, "utf8");
@@ -126,7 +193,7 @@ function maybeRunRustShadow(params: {
             ? Number((rustBytes / baselineBytes).toFixed(4))
             : rustBytes === 0
               ? 1
-              : 0,
+              : null,
         exact_match: baselineMarkdown === rustMarkdown,
         link_recall: Number(computeRecall(baselineLinks, rustLinks).toFixed(4)),
         baseline_link_count: baselineLinks.size,
