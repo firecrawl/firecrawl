@@ -157,6 +157,7 @@ export type ScrapeUrlResponse =
       success: false;
       error: any;
       threatDecisions?: ThreatDecision[];
+      redactPII?: RedactPIIOutcome;
       state?: ScrapeState;
     };
 
@@ -2177,6 +2178,9 @@ export async function scrapeURL(
           error,
           ...(meta.threatDecisions.length > 0
             ? { threatDecisions: meta.threatDecisions }
+            : {}),
+          ...(meta.redactPII.current
+            ? { redactPII: meta.redactPII.current }
             : {}),
           state: meta.state,
         };

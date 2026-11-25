@@ -1389,7 +1389,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         is_parse: Boolean(job.data.internalOptions?.isParse),
         monitor_id: job.data.monitoring?.monitorId,
         monitor_check_id: job.data.monitoring?.checkId,
-        redactPII: pipeline?.success ? pipeline.redactPII : undefined,
+        redactPII: pipeline?.redactPII,
       });
 
       trackScrape({
