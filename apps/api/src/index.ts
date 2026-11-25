@@ -421,6 +421,16 @@ app.use(
 
 logger.info(`Worker ${process.pid} started`);
 
+for (const provider of service.searchProviders.all()) {
+  logger.info("Search provider registered", {
+    provider: provider.name,
+    priority: provider.priority,
+    usOnly: provider.supportsUsOnly === true,
+    zdr: provider.supportsZdr === true,
+    anon: provider.supportsAnon === true,
+  });
+}
+
 if (require.main === module) {
   void startRole("api");
 }
