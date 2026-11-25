@@ -185,3 +185,50 @@ describe("the ACUC the caller supplies", () => {
     expect(getACUCTeam).toHaveBeenCalledWith("team1");
   });
 });
+
+describe("when Redis has stopped answering", () => {
+  const never = () => new Promise<never>(() => {});
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("gives a job its base priority after one second", async () => {
+    (redisEvictConnection.scard as Mock).mockImplementation(never);
+    mockMultiplier(STANDARD_MULTIPLIER);
+
+    const priority = getJobPriority({ team_id: "team1", basePriority: 20 });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(await priority).toBe(20);
+  });
+
+  it("stops waiting to record a job after one second", async () => {
+    (redisEvictConnection.sadd as Mock).mockImplementation(never);
+    let settled = false;
+
+    const added = addJobPriority("team1", "job1").then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await added;
+
+    expect(settled).toBe(true);
+    expect(redisEvictConnection.expire).not.toHaveBeenCalled();
+  });
+
+  it("stops waiting to remove a job after one second", async () => {
+    (redisEvictConnection.srem as Mock).mockImplementation(never);
+
+    const removed = deleteJobPriority("team1", "job1");
+    await vi.advanceTimersByTimeAsync(1000);
+
+    await expect(removed).resolves.toBeUndefined();
+  });
+});
