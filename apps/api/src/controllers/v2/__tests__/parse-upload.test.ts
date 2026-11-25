@@ -74,10 +74,6 @@ vi.mock("../../../lib/image-ocr-gate", () => ({
   isImageOcrEnabled: () => mocks.imageOcrEnabled,
 }));
 
-vi.mock("../../../lib/zdr-helpers", () => ({
-  getScrapeZDR: () => false,
-}));
-
 import {
   parseLocalUploadController,
   parseLocalUploadStorageGuard,

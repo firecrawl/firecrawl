@@ -43,10 +43,6 @@ const workers: Record<string, Worker> = {
     () =>
       require("../services/queue-worker") as typeof import("../services/queue-worker"),
   ),
-  "extract-worker": role(
-    () =>
-      require("../services/extract-worker") as typeof import("../services/extract-worker"),
-  ),
   "nuq-worker": role(
     () =>
       require("../services/worker/nuq-worker") as typeof import("../services/worker/nuq-worker"),
@@ -62,18 +58,6 @@ const workers: Record<string, Worker> = {
   "nuq-reconciler-worker": role(
     () =>
       require("../services/worker/nuq-reconciler-worker") as typeof import("../services/worker/nuq-reconciler-worker"),
-  ),
-  "index-worker": role(
-    () =>
-      require("../services/indexing/index-worker") as typeof import("../services/indexing/index-worker"),
-  ),
-  "cclog-worker": role(
-    () =>
-      require("../services/cclog-worker") as typeof import("../services/cclog-worker"),
-  ),
-  "zdr-worker": role(
-    () =>
-      require("../services/zdr-worker") as typeof import("../services/zdr-worker"),
   ),
   harness: role(() => require("../harness") as typeof import("../harness")),
 };
@@ -101,6 +85,11 @@ export function coreParts(): CoreParts {
       quality: spec.quality,
       features: spec.features,
       ...(spec.explicitOnly ? { explicitOnly: true } : {}),
+      ...(spec.cache ? { cache: true } : {}),
+      ...(spec.fileOnly ? { fileOnly: true } : {}),
+      ...(spec.supportsProfile ? { supportsProfile: true } : {}),
+      ...(spec.prefetchesFiles ? { prefetchesFiles: true } : {}),
+      ...(spec.allowEmptyContent ? { allowEmptyContent: true } : {}),
       enabled: () => loadCoreEngine(spec.name).enabled(),
       scrape,
       maxReasonableTime: meta => {

@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => {
   return {
     pipeline,
     redis,
-    isSelfHosted: vi.fn(() => false),
+    unlimitedConcurrency: vi.fn(() => false),
     resolveJobBackend: vi.fn(async (): Promise<"pg" | "fdb"> => "pg"),
     fdbEnqueueScrapeJobs: vi.fn(),
     addJob: vi.fn(async (id: string, data: any) => ({ id, data })),
@@ -80,10 +80,6 @@ vi.mock("../lib/logger", () => ({
   },
 }));
 
-vi.mock("./ab-test", () => ({
-  abTestJob: mocks.abTestJob,
-}));
-
 vi.mock("./worker/nuq", () => ({
   scrapeQueue: {
     addJob: mocks.addJob,
@@ -111,48 +107,19 @@ vi.mock("./worker/nuq-fdb", () => ({
   withFdbTimeout: <T>(promise: Promise<T>) => promise,
 }));
 
-vi.mock("../controllers/auth", () => ({
-  getACUCTeam: mocks.getACUCTeam,
-}));
-
-vi.mock("./autumn/autumn.service", () => ({
-  DEFAULT_TEAM_LIMITS: { concurrency_limit: 2 },
-}));
-
-vi.mock("./notification/email_notification", () => ({
-  sendNotificationWithCustomDays: mocks.sendNotificationWithCustomDays,
-}));
-
-vi.mock("./notification/notification-check", () => ({
-  shouldSendConcurrencyLimitNotification:
-    mocks.shouldSendConcurrencyLimitNotification,
-}));
-
-vi.mock("../lib/gcs-jobs", () => ({
-  getJobFromGCS: vi.fn(),
-  removeJobFromGCS: vi.fn(),
-}));
-
 vi.mock("../lib/otel-tracer", () => ({
   serializeTraceContext: vi.fn(() => undefined),
-}));
-
-vi.mock("../lib/deployment", () => ({
-  isSelfHosted: mocks.isSelfHosted,
 }));
 
 vi.mock("../lib/redis-pipeline", () => ({
   reportPipelineError: vi.fn(),
 }));
 
-vi.mock("./monitoring/stale", () => ({
-  MONITOR_CHECK_STALE_TIMEOUT_MS: 300_000,
-}));
-
 import { concurrentJobDone } from "../lib/concurrency-limit";
 import { reconcileConcurrencyQueue } from "../lib/concurrency-queue-reconciler";
 import { requestContext } from "../lib/request-context";
 import type { HookHandlers } from "../service/hooks";
+import { noLimits } from "../service/defaults";
 import { createService, replaceService } from "../service/service";
 import { addScrapeJob, addScrapeJobs } from "./queue-jobs";
 
@@ -160,7 +127,19 @@ function installHooks(hooks?: HookHandlers, report = vi.fn()) {
   replaceService(
     createService(
       {
-        modules: {},
+        modules: {
+          limits: {
+            ...noLimits(),
+            concurrency: async () =>
+              mocks.unlimitedConcurrency()
+                ? null
+                : ((await mocks.getACUCTeam())?.concurrency_limit ?? 2),
+            teamConcurrency: async () =>
+              mocks.unlimitedConcurrency()
+                ? null
+                : ((await mocks.getACUCTeam())?.concurrency_limit ?? 2),
+          },
+        },
         extensions: hooks ? [{ name: "test-hooks", hooks }] : [],
       },
       {
@@ -196,7 +175,7 @@ describe("queue and concurrency hooks", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     replaceService(undefined);
-    mocks.isSelfHosted.mockReturnValue(false);
+    mocks.unlimitedConcurrency.mockReturnValue(false);
     mocks.resolveJobBackend.mockResolvedValue("pg");
     mocks.redis.zrangebyscore.mockResolvedValue([]);
     mocks.redis.zcount.mockResolvedValue(0);

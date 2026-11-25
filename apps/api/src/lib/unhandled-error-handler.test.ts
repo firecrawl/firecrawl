@@ -5,7 +5,7 @@ import {
 } from "@opentelemetry/sdk-trace-node";
 import express from "express";
 import request from "supertest";
-import type { TeamFlags } from "../controllers/v2/types";
+import type { RequestContext } from "../service/request-context";
 import { requestTimingMiddleware } from "../routes/shared";
 import { createTracerProvider, withSpan } from "./otel-tracer";
 import { unhandledErrorHandler } from "./unhandled-error-handler";
@@ -13,17 +13,25 @@ import { createService, replaceService } from "../service/service";
 
 // Mirrors how src/index.ts mounts the handler: after the routers, as the
 // terminal error middleware.
-function appUnderTest(acuc?: { team_id: string; flags: TeamFlags }) {
+function appUnderTest(
+  team?: { team_id: string },
+  ctx?: Partial<RequestContext>,
+) {
   const app = express();
   app.use(express.json());
 
   const v2 = express.Router();
   v2.use(requestTimingMiddleware("v2"));
-  if (acuc) {
-    // Stands in for the auth middleware, which attaches the team's limits
-    // and flags to the request.
+  if (team) {
+    // Stands in for the auth middleware, which attaches the team and the
+    // terms the request runs under.
     v2.use((req, _res, next) => {
-      (req as unknown as { acuc: typeof acuc }).acuc = acuc;
+      (req as unknown as { acuc: typeof team }).acuc = team;
+      req.ctx = {
+        teamId: team.team_id,
+        zeroDataRetention: false,
+        ...ctx,
+      };
       next();
     });
   }
@@ -149,12 +157,10 @@ describe("unhandledErrorHandler", () => {
     expect(await exportedSpans()).toHaveLength(0);
   });
 
-  it("records nothing for a Safe Mode lockdown team", async () => {
-    const lockdownTeam = {
-      team_id: "team-lockdown",
-      flags: { safeMode: true, safeModeConfig: { lockdown: true } },
-    };
-    const response = await request(appUnderTest(lockdownTeam))
+  it("records nothing for a request accepted under lockdown", async () => {
+    const response = await request(
+      appUnderTest({ team_id: "team-lockdown" }, { lockdown: true }),
+    )
       .post("/v2/boom")
       .send({});
 
@@ -162,12 +168,10 @@ describe("unhandledErrorHandler", () => {
     expect(await exportedSpans()).toHaveLength(0);
   });
 
-  it("records nothing for a team whose search is forced zero data retention", async () => {
-    const searchZdrTeam = {
-      team_id: "team-search-zdr",
-      flags: { searchZDR: "forced-zdr" as const },
-    };
-    const response = await request(appUnderTest(searchZdrTeam))
+  it("records nothing for a request accepted under zero data retention", async () => {
+    const response = await request(
+      appUnderTest({ team_id: "team-zdr" }, { zeroDataRetention: true }),
+    )
       .post("/v2/boom")
       .send({});
 
@@ -184,12 +188,8 @@ describe("unhandledErrorHandler", () => {
     expect(await exportedSpans()).toHaveLength(0);
   });
 
-  it("records for a team whose flags do not force zero data retention", async () => {
-    const plainTeam = {
-      team_id: "team-plain",
-      flags: { safeMode: true, safeModeConfig: { lockdown: false } },
-    };
-    const response = await request(appUnderTest(plainTeam))
+  it("records for a request accepted without zero data retention", async () => {
+    const response = await request(appUnderTest({ team_id: "team-plain" }))
       .post("/v2/boom")
       .send({});
 

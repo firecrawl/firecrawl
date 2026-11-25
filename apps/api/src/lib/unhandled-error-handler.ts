@@ -3,13 +3,11 @@ import { v7 as uuidv7 } from "uuid";
 import type {
   ErrorResponse,
   RequestWithMaybeACUC,
-} from "../controllers/v1/types";
+} from "../controllers/v2/types";
 import { redactAdminKey } from "./admin-auth";
 import { getRoutePattern } from "./http-metrics";
 import { logger } from "./logger";
 import { recordUnhandledException } from "./otel-tracer";
-import { isLockdownZeroDataRetention } from "./safe-mode";
-import { getScrapeZDR, getSearchForcedKind } from "./zdr-helpers";
 import { service } from "../service";
 
 /**
@@ -59,33 +57,25 @@ export function unhandledErrorHandler(
     teamId: req.acuc?.team_id,
     team_id: req.acuc?.team_id,
   });
-  // Zero data retention is decided per request by the controllers (and the
-  // tracer keeps those request spans unrecorded); a route that never started
-  // a span makes the same call here, since an error message can quote the
-  // URL. Only the log line is kept for those, as before. The gate is the
-  // union of the scrape and search controllers' conditions: any team flag
-  // that forces retention-free handling, Safe Mode lockdown, or a request
-  // that asks for it.
+  // Zero data retention is decided once, when the request is accepted, and
+  // travels on its context (the tracer keeps those request spans unrecorded).
+  // A route that never started a span makes the same call here, since an error
+  // message can quote the URL. Only the log line is kept for those, as before.
+  // A request that fails before it has a context is judged by what its body
+  // asks for.
   const body = req.body as
     | {
         zeroDataRetention?: unknown;
         lockdown?: unknown;
-        safeMode?: unknown;
         enterprise?: unknown;
-        scrapeOptions?: { safeMode?: unknown };
       }
     | undefined;
-  const requestSafeMode = body?.safeMode ?? body?.scrapeOptions?.safeMode;
   const enterprise: unknown[] = Array.isArray(body?.enterprise)
     ? body.enterprise
     : [];
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
-    Boolean(getSearchForcedKind(req.acuc?.flags)) ||
-    isLockdownZeroDataRetention(
-      req.acuc?.flags,
-      typeof requestSafeMode === "boolean" ? requestSafeMode : undefined,
-    ) ||
+    req.ctx?.zeroDataRetention === true ||
+    req.ctx?.lockdown === true ||
     body?.zeroDataRetention === true ||
     body?.lockdown === true ||
     enterprise.includes("zdr") ||

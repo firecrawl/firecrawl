@@ -19,15 +19,19 @@ export interface BaseRequestContext {
   teamId: string;
   /** Nothing of this request's content may be stored or logged. */
   zeroDataRetention: boolean;
+  /** Restrict outbound processing and providers to US regions. */
+  usOnly?: boolean;
   /**
-   * Settings a request can be accepted with. Nothing sets them yet, so the
-   * code they are for does not read them yet. When it does, an absent flag
-   * is off and an absent value means the service's default.
+   * Settings a request can be accepted with. An absent flag is off and an
+   * absent value means the service's default.
    */
   checkRobotsOnScrape?: boolean;
+  ignoreRobotsTxt?: boolean;
   robotsUserAgent?: string;
   crawlTtlHours?: number;
   skipCountryCheck?: boolean;
+  /** Serve from cached sources only without making outbound requests to target origins. */
+  lockdown?: boolean;
 }
 
 /**
@@ -47,6 +51,11 @@ declare global {
     interface Request {
       caller?: Caller;
       ctx?: RequestContext;
+      requestId?: string;
+      requestWarnings?: string[];
+      requestDroppedUrls?: string[];
+      requestBlocklistChecked?: boolean;
+      rawRequestBody?: unknown;
     }
   }
 }

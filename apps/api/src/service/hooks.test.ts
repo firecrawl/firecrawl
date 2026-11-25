@@ -40,8 +40,8 @@ afterEach(() => {
 });
 
 describe("hookPoints", () => {
-  it("defines all 25 hook points with frozen null-prototype metadata", () => {
-    expect(hookPointNames).toHaveLength(25);
+  it("defines all 26 hook points with frozen null-prototype metadata", () => {
+    expect(hookPointNames).toHaveLength(26);
     expect(Object.isFrozen(hookPointNames)).toBe(true);
     expect(Object.isFrozen(hookPoints)).toBe(true);
     expect(Object.getPrototypeOf(hookPoints)).toBeNull();
@@ -53,11 +53,11 @@ describe("hookPoints", () => {
       expect(Object.isFrozen(spec)).toBe(true);
       byKind[spec.kind]++;
     }
-    expect(byKind).toEqual({ observe: 5, await: 5, transform: 15 });
+    expect(byKind).toEqual({ observe: 5, await: 5, transform: 16 });
 
     expect(hookPoints["process.stop"]).toEqual({
       kind: "await",
-      timeoutMs: 10_000,
+      timeoutMs: 45_000,
       isolate: true,
       reverse: true,
     });
@@ -489,7 +489,7 @@ describe("buildHooks", () => {
       expect(order).toEqual(["failing-stop", "cleanup-still-runs"]);
     });
 
-    it("times out a hanging process.stop handler after 10_000ms, isolates it, and runs remaining handlers", async () => {
+    it("times out a hanging process.stop handler after 45_000ms, isolates it, and runs remaining handlers", async () => {
       vi.useFakeTimers();
       const report = vi.fn();
       const order: string[] = [];
@@ -517,7 +517,7 @@ describe("buildHooks", () => {
       process.on("unhandledRejection", unhandled);
       try {
         const pending = hooks.run("process.stop", { role: "api" });
-        await vi.advanceTimersByTimeAsync(9_999);
+        await vi.advanceTimersByTimeAsync(44_999);
         expect(order).toEqual(["hanging-started"]);
         expect(report).not.toHaveBeenCalled();
 
@@ -532,7 +532,7 @@ describe("buildHooks", () => {
         expect(report.mock.calls[0][0]).toBe("process.stop");
         expect(report.mock.calls[0][1]).toBeInstanceOf(Error);
         expect((report.mock.calls[0][1] as Error).message).toBe(
-          'Hook "process.stop" timed out after 10000ms',
+          'Hook "process.stop" timed out after 45000ms',
         );
         expect(vi.getTimerCount()).toBe(0);
 

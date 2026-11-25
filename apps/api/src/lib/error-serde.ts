@@ -37,10 +37,6 @@ import {
   LockdownMissError,
   ScrapeJobCancelledError,
   ScrapeRetryLimitError,
-  BrandingNotSupportedError,
-  AudioUnsupportedUrlError,
-  VideoUnsupportedUrlError,
-  MediaAccessDeniedError,
   PromptInjectionDetectedError,
   PaywalledContentError,
   JsonExtractionContentTooLargeError,
@@ -48,11 +44,6 @@ import {
   ReservedCapacityUnavailableError,
   ExchangeRefusedError,
 } from "../scraper/scrapeURL/error";
-import { UnsafeDomainBlockedError } from "./threat-protection/error";
-import {
-  ThirdPartyDataTermsRequiredError,
-  ThirdPartyDataUnsupportedOptionError,
-} from "./exchange-errors";
 import { service } from "../service";
 
 /**
@@ -60,9 +51,7 @@ import { service } from "../service";
  * a plain TransportableError.
  */
 export const coreErrors: TransportableErrorClass[] = [
-  ThirdPartyDataTermsRequiredError,
   ExchangeRefusedError,
-  ThirdPartyDataUnsupportedOptionError,
   SiteRestrictionError,
   ScrapeJobTimeoutError,
   MapTimeoutError,
@@ -88,15 +77,11 @@ export const coreErrors: TransportableErrorClass[] = [
   LockdownMissError,
   ActionError,
   ActionsNotSupportedError,
-  BrandingNotSupportedError,
   AgentIndexOnlyError,
   RacedRedirectError,
   SitemapError,
   CrawlDenialError,
   UnsupportedSiteError,
-  AudioUnsupportedUrlError,
-  VideoUnsupportedUrlError,
-  MediaAccessDeniedError,
   PromptInjectionDetectedError,
   PaywalledContentError,
   JsonExtractionContentTooLargeError,
@@ -104,7 +89,6 @@ export const coreErrors: TransportableErrorClass[] = [
   ReservedCapacityUnavailableError,
   MapFailedError,
   ConcurrencyQueueTimeoutError,
-  UnsafeDomainBlockedError,
 ];
 
 export function serializeTransportableError(error: TransportableError) {

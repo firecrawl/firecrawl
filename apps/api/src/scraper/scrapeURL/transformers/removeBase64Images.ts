@@ -1,5 +1,5 @@
 import { Meta } from "..";
-import { Document } from "../../../controllers/v1/types";
+import { Document } from "../../../controllers/v2/types";
 
 const regex = /(!\[.*?\])\(data:image\/.*?;base64,.*?\)/g;
 

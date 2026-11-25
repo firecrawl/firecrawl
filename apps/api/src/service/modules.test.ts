@@ -12,13 +12,24 @@ import {
   logsMessages,
   memoryUploads,
   noBlocklist,
+  noLimits,
+  openAuth,
+  queueJobStore,
   redisIdempotency,
+  unmeteredBilling,
+  unrestrictedPolicy,
 } from "./defaults";
+import { currentLimits, resolveJobPriority } from "../lib/limits";
 import type {
+  AuthModule,
+  BillingModule,
   BlocklistModule,
   IdempotencyModule,
+  JobStoreModule,
+  LimitsModule,
   MessagesModule,
   Modules,
+  PolicyModule,
   UploadsModule,
   WebhooksModule,
 } from "./modules";
@@ -29,6 +40,20 @@ const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
 
 afterEach(() => {
   replaceService(undefined);
+});
+
+describe("noLimits", () => {
+  it("returns unlimited concurrency, base priority, and no queue backend override", async () => {
+    const limits = noLimits();
+    const ctx = { teamId: "team-1", zeroDataRetention: false };
+
+    await expect(limits.concurrency(ctx)).resolves.toBeNull();
+    await expect(limits.teamConcurrency("team-1")).resolves.toBeNull();
+    expect(limits.keyConcurrency).toBeUndefined();
+    await expect(limits.jobPriority({ ctx, base: 10 })).resolves.toBe(10);
+    await expect(limits.jobPriority({ ctx, base: 21 })).resolves.toBe(21);
+    expect(limits.queueBackend(ctx)).toBeUndefined();
+  });
 });
 
 describe("logsMessages", () => {
@@ -204,6 +229,27 @@ describe("noBlocklist", () => {
   });
 });
 
+describe("openAuth", () => {
+  it("admits requests under the bypass team by default and returns fresh caller objects", async () => {
+    const auth = openAuth();
+    const first = await auth.authenticate({} as never, { kind: "scrape" });
+    const second = await auth.authenticate({} as never, { kind: "crawl" });
+
+    expect(first).toEqual({ ok: true, caller: { teamId: "bypass" } });
+    expect(second).toEqual({ ok: true, caller: { teamId: "bypass" } });
+    if (first.ok && second.ok) {
+      expect(first.caller).not.toBe(second.caller);
+    }
+  });
+
+  it("uses the supplied team id", async () => {
+    const auth = openAuth("local-team");
+    const result = await auth.authenticate({} as never, { kind: "map" });
+
+    expect(result).toEqual({ ok: true, caller: { teamId: "local-team" } });
+  });
+});
+
 describe("redisIdempotency", () => {
   it("claims team-scoped keys with the default 24h TTL and rejects duplicates", async () => {
     const seen = new Map<string, number>();
@@ -322,41 +368,93 @@ describe("directWebhooks", () => {
 });
 
 describe("service module slots", () => {
-  it("fills omitted module slots with built-in defaults", () => {
+  it("fills omitted module slots with built-in defaults", async () => {
     const built = createService({}, parts);
+    const ctx = { teamId: "team-1", zeroDataRetention: false };
 
     expect(Object.isFrozen(built.modules)).toBe(true);
+    expect(Object.isFrozen(built.modules.auth)).toBe(true);
+    expect(Object.isFrozen(built.modules.billing)).toBe(true);
     expect(Object.isFrozen(built.modules.blocklist)).toBe(true);
+    expect(Object.isFrozen(built.modules.limits)).toBe(true);
     expect(Object.isFrozen(built.modules.messages)).toBe(true);
+    expect(Object.isFrozen(built.modules.policy)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads)).toBe(true);
     expect(Object.isFrozen(built.modules.uploads.driver())).toBe(true);
+    expect(Object.isFrozen(built.modules.jobStore)).toBe(true);
     expect(Object.isFrozen(built.modules.idempotency)).toBe(true);
     expect(Object.isFrozen(built.modules.webhooks)).toBe(true);
     expect(built.describe().modules).toEqual([
+      "auth",
+      "billing",
       "blocklist",
       "idempotency",
+      "jobStore",
+      "limits",
       "messages",
+      "policy",
       "uploads",
       "webhooks",
     ]);
-    expect(
-      built.modules.blocklist.isBlocked("https://example.com", {
-        teamId: "team-1",
-        zeroDataRetention: false,
+    await expect(
+      built.modules.auth.authenticate({} as never, { kind: "scrape" }),
+    ).resolves.toEqual({ ok: true, caller: { teamId: "bypass" } });
+    await expect(
+      built.modules.billing.authorize({
+        caller: { teamId: "t1" },
+        operation: "scrape",
       }),
-    ).toBe(false);
+    ).resolves.toEqual({ ok: true });
+    await expect(
+      built.modules.billing.charge({
+        kind: "map",
+        ctx: { teamId: "t1", zeroDataRetention: false },
+        requestId: "map-1",
+        urls: 5,
+      }),
+    ).resolves.toBeUndefined();
+    expect(built.modules.blocklist.isBlocked("https://example.com", ctx)).toBe(
+      false,
+    );
+    await expect(built.modules.limits.concurrency(ctx)).resolves.toBeNull();
+    await expect(
+      built.modules.limits.teamConcurrency("team-1"),
+    ).resolves.toBeNull();
+    await expect(
+      built.modules.limits.jobPriority({ ctx, base: 15 }),
+    ).resolves.toBe(15);
+    expect(built.modules.limits.queueBackend(ctx)).toBeUndefined();
     expect(built.modules.messages.errorContact()).toBe(
       logsMessages().errorContact(),
     );
     expect(built.modules.uploads.driver().name).toBe("local");
+    expect(built.modules.jobStore.storesResultsExternally?.()).toBe(false);
   });
 
   it("keeps defaults for unspecified slots and snapshots provided modules and drivers", async () => {
+    const customAuth: AuthModule = {
+      authenticate: async () => ({
+        ok: true,
+        caller: { teamId: "custom-team" },
+      }),
+    };
+    const customBilling: BillingModule = {
+      authorize: async () => ({ ok: true, maxUnits: 12 }),
+      charge: async () => 3,
+      settle: async () => {},
+    };
     const initSpy = vi.fn(async () => {});
     const customBlocklist: BlocklistModule = {
       init: initSpy,
       isBlocked: url => url.includes("blocked.example"),
       hasScopedRules: ctx => ctx.teamId === "scoped-team",
+    };
+    const customLimits: LimitsModule = {
+      concurrency: async () => 25,
+      teamConcurrency: async () => 20,
+      keyConcurrency: async () => ({ id: "7", limit: 5 }),
+      jobPriority: async ({ base }) => base + 3,
+      queueBackend: () => "fdb",
     };
     const customMessages: MessagesModule = {
       ...logsMessages(),
@@ -374,6 +472,11 @@ describe("service module slots", () => {
       delete: async () => {},
     };
     const customUploads: UploadsModule = { driver: () => customDriver };
+    const customJobStore: JobStoreModule = {
+      ...queueJobStore(),
+      storesResultsExternally: () => true,
+      usage: async () => 42,
+    };
     const customIdempotency: IdempotencyModule = {
       claim: async key => key === "allow",
     };
@@ -386,9 +489,13 @@ describe("service module slots", () => {
     const built = createService(
       {
         modules: {
+          auth: customAuth,
+          billing: customBilling,
           blocklist: customBlocklist,
+          limits: customLimits,
           messages: customMessages,
           uploads: customUploads,
+          jobStore: customJobStore,
           idempotency: customIdempotency,
           webhooks: customWebhooks,
         },
@@ -396,17 +503,30 @@ describe("service module slots", () => {
       parts,
     );
 
+    customAuth.authenticate = async () => ({
+      ok: true,
+      caller: { teamId: "mutated" },
+    });
+    customBilling.authorize = async () => ({
+      ok: false,
+      refusal: { status: 402, body: { success: false, error: "mutated" } },
+    });
+    customBilling.charge = async () => 999;
     customBlocklist.init = async () => {
       throw new Error("mutated");
     };
     customBlocklist.isBlocked = () => false;
     customBlocklist.hasScopedRules = () => false;
+    customLimits.concurrency = async () => 999;
+    customLimits.keyConcurrency = async () => ({ id: "mutated", limit: 1 });
     customMessages.errorContact = () => "mutated";
     customDriver.read = async () => Buffer.from("mutated");
     customUploads.driver = () => ({
       ...customDriver,
       name: "mutated",
     });
+    customJobStore.usage = async () => 999;
+    customJobStore.storesResultsExternally = () => false;
     customIdempotency.claim = async () => false;
     customWebhooks.signingSecret = async () => "mutated-secret";
     customWebhooks.deliver = async () => ({ delivered: true, queued: false });
@@ -428,8 +548,40 @@ describe("service module slots", () => {
         zeroDataRetention: false,
       }),
     ).toBe(true);
+    const ctx = { teamId: "team-1", zeroDataRetention: false };
+    await expect(built.modules.limits.concurrency(ctx)).resolves.toBe(25);
+    await expect(built.modules.limits.teamConcurrency("team-1")).resolves.toBe(
+      20,
+    );
+    await expect(built.modules.limits.keyConcurrency!(ctx)).resolves.toEqual({
+      id: "7",
+      limit: 5,
+    });
+    await expect(
+      built.modules.limits.jobPriority({ ctx, base: 10 }),
+    ).resolves.toBe(13);
+    expect(built.modules.limits.queueBackend(ctx)).toBe("fdb");
+    await expect(
+      built.modules.auth.authenticate({} as never, { kind: "scrape" }),
+    ).resolves.toEqual({ ok: true, caller: { teamId: "custom-team" } });
+    await expect(
+      built.modules.billing.authorize({
+        caller: { teamId: "t1" },
+        operation: "crawl",
+      }),
+    ).resolves.toEqual({ ok: true, maxUnits: 12 });
+    await expect(
+      built.modules.billing.charge({
+        kind: "map",
+        ctx: { teamId: "t1", zeroDataRetention: false },
+        requestId: "m1",
+        urls: 2,
+      }),
+    ).resolves.toBe(3);
     expect(built.modules.messages.errorContact("42")).toBe("custom:42");
     expect(built.modules.uploads.driver().name).toBe("custom");
+    expect(built.modules.jobStore.storesResultsExternally?.()).toBe(true);
+    expect(await built.modules.jobStore.usage("req-1")).toBe(42);
     const data = await built.modules.uploads.driver().read({
       uploadId: "u1",
       teamId: "t1",
@@ -466,6 +618,15 @@ describe("service module slots", () => {
 
   it("rejects invalid, null, or unknown module slots and malformed upload drivers at service creation", () => {
     expect(() =>
+      createService({ modules: { auth: {} as unknown as AuthModule } }, parts),
+    ).toThrow("Invalid auth module");
+    expect(() =>
+      createService(
+        { modules: { auth: null as unknown as AuthModule } },
+        parts,
+      ),
+    ).toThrow("Invalid auth module");
+    expect(() =>
       createService(
         { modules: { blocklist: {} as unknown as BlocklistModule } },
         parts,
@@ -492,6 +653,56 @@ describe("service module slots", () => {
     ).toThrow("Invalid blocklist module");
     expect(() =>
       createService(
+        { modules: { limits: {} as unknown as LimitsModule } },
+        parts,
+      ),
+    ).toThrow("Invalid limits module");
+    expect(() =>
+      createService(
+        { modules: { limits: null as unknown as LimitsModule } },
+        parts,
+      ),
+    ).toThrow("Invalid limits module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            limits: {
+              ...noLimits(),
+              keyConcurrency: "not-a-function" as unknown as never,
+            },
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid limits module");
+    expect(() =>
+      createService(
+        { modules: { billing: {} as unknown as BillingModule } },
+        parts,
+      ),
+    ).toThrow("Invalid billing module");
+    expect(() =>
+      createService(
+        { modules: { billing: null as unknown as BillingModule } },
+        parts,
+      ),
+    ).toThrow("Invalid billing module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            billing: {
+              ...unmeteredBilling(),
+              settle: "not-a-function",
+            } as unknown as BillingModule,
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid billing module");
+    expect(() =>
+      createService(
         { modules: { messages: {} as unknown as MessagesModule } },
         parts,
       ),
@@ -516,6 +727,18 @@ describe("service module slots", () => {
     ).toThrow("Invalid uploads module");
     expect(() =>
       createService(
+        { modules: { jobStore: {} as unknown as JobStoreModule } },
+        parts,
+      ),
+    ).toThrow("Invalid jobStore module");
+    expect(() =>
+      createService(
+        { modules: { jobStore: null as unknown as JobStoreModule } },
+        parts,
+      ),
+    ).toThrow("Invalid jobStore module");
+    expect(() =>
+      createService(
         { modules: { idempotency: {} as unknown as IdempotencyModule } },
         parts,
       ),
@@ -538,6 +761,57 @@ describe("service module slots", () => {
         parts,
       ),
     ).toThrow("Invalid webhooks module");
+    expect(() =>
+      createService(
+        { modules: { policy: {} as unknown as PolicyModule } },
+        parts,
+      ),
+    ).toThrow("Invalid policy module");
+    expect(() =>
+      createService(
+        { modules: { policy: null as unknown as PolicyModule } },
+        parts,
+      ),
+    ).toThrow("Invalid policy module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            policy: {
+              ...unrestrictedPolicy(),
+              context: "not-a-function",
+            } as unknown as PolicyModule,
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid policy module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            jobStore: {
+              ...queueJobStore(),
+              readMany: "not-a-function",
+            } as unknown as JobStoreModule,
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid jobStore module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            jobStore: {
+              ...queueJobStore(),
+              storesResultsExternally: "not-a-function",
+            } as unknown as JobStoreModule,
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid jobStore module");
     expect(() =>
       createService(
         {
@@ -645,5 +919,101 @@ describe("scrape error messages", () => {
         );
       },
     );
+  });
+});
+
+describe("currentLimits", () => {
+  it("falls back to noLimits when no service is installed and reads the installed module otherwise", async () => {
+    const ctx = { teamId: "team-1", zeroDataRetention: false };
+
+    await expect(currentLimits().concurrency(ctx)).resolves.toBeNull();
+    await expect(currentLimits().teamConcurrency("team-1")).resolves.toBeNull();
+    await expect(currentLimits().jobPriority({ ctx, base: 10 })).resolves.toBe(
+      10,
+    );
+    expect(currentLimits().queueBackend(ctx)).toBeUndefined();
+
+    const customLimits: LimitsModule = {
+      concurrency: async () => 12,
+      teamConcurrency: async () => 8,
+      jobPriority: async ({ base }) => base + 5,
+      queueBackend: () => "fdb",
+    };
+
+    await withService(
+      testService(defaultModules(), parts, { limits: customLimits }),
+      async () => {
+        await expect(currentLimits().concurrency(ctx)).resolves.toBe(12);
+        await expect(currentLimits().teamConcurrency("team-1")).resolves.toBe(
+          8,
+        );
+        await expect(
+          currentLimits().jobPriority({ ctx, base: 10 }),
+        ).resolves.toBe(15);
+        expect(currentLimits().queueBackend(ctx)).toBe("fdb");
+      },
+    );
+
+    await expect(currentLimits().concurrency(ctx)).resolves.toBeNull();
+
+    const onError = vi.fn();
+    await withService(
+      testService(defaultModules(), parts, {
+        limits: {
+          ...noLimits(),
+          jobPriority: async () => {
+            throw new Error("priority failed");
+          },
+        },
+      }),
+      async () => {
+        await expect(resolveJobPriority(ctx, 21, onError)).resolves.toBe(21);
+      },
+    );
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("unrestrictedPolicy", () => {
+  it("admits requests and preserves caller-requested zeroDataRetention and robotsUserAgent", async () => {
+    const policy = unrestrictedPolicy();
+    const admitted = await policy.admit({
+      kind: "scrape",
+      caller: { teamId: "team-1" },
+      body: {
+        url: "https://example.com",
+        zeroDataRetention: true,
+        robotsUserAgent: "CustomBot",
+      } as never,
+    });
+
+    expect(admitted.ok).toBe(true);
+    if (admitted.ok) {
+      expect(admitted.ctx).toEqual({
+        teamId: "team-1",
+        zeroDataRetention: true,
+        robotsUserAgent: "CustomBot",
+      });
+    }
+  });
+
+  it("propagates zeroDataRetention and usOnly on system contexts", () => {
+    const policy = unrestrictedPolicy();
+
+    expect(policy.system("robots-txt")).toEqual({
+      teamId: "robots-txt",
+      zeroDataRetention: false,
+    });
+    expect(
+      policy.system("sitemap", {
+        teamId: "team-1",
+        zeroDataRetention: true,
+        usOnly: true,
+      }),
+    ).toEqual({
+      teamId: "sitemap",
+      zeroDataRetention: true,
+      usOnly: true,
+    });
   });
 });

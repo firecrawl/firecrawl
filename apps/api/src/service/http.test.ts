@@ -1,61 +1,367 @@
 import express, { type Request, type Response } from "express";
 import request from "supertest";
+import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import {
+  authenticate,
+  createService,
+  finalizeResponse,
+  openAuth,
+  openRequest,
+  resolveRequestContext,
+  type AuthModule,
+  type BillingModule,
+  type BlocklistModule,
+  type CoreParts,
+  type PolicyModule,
+  type RequestSchemas,
+} from "./index";
+import { testService, withService } from "./testing";
 
-vi.mock("../controllers/auth", () => ({
-  authenticateUser: vi.fn(),
-}));
+const parts: CoreParts = {
+  core: { name: "core" },
+  logger: { error: vi.fn() },
+};
 
-import { authenticateUser } from "../controllers/auth";
-import { authenticate } from "./index";
-
-function appWithProbe() {
+function appWithProbe(kind = "scrape") {
   const handler = vi.fn((req: Request, res: Response) => {
     res.status(200).json({ caller: req.caller });
   });
   const app = express();
-  app.get("/probe", authenticate("scrape"), handler);
+  app.get("/probe", authenticate(kind), handler);
   return { app, handler };
 }
 
 describe("authenticate", () => {
-  afterEach(() => {
-    vi.clearAllMocks();
+  it("admits requests under the default openAuth team", async () => {
+    const { app, handler } = appWithProbe("scrape");
+
+    await withService(createService({}, parts), async () => {
+      const response = await request(app).get("/probe");
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ caller: { teamId: "bypass" } });
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it("lets an identified sender through and says who it is", async () => {
-    vi.mocked(authenticateUser).mockResolvedValue({
-      success: true,
-      team_id: "team-1",
-      org_id: "org-1",
-      chunk: null,
-    });
+  it("supports a custom fixed team id on openAuth", async () => {
+    const { app } = appWithProbe("crawl");
 
-    const { app, handler } = appWithProbe();
-    const first = await request(app).get("/probe");
-    const second = await request(app).get("/probe");
+    await withService(
+      testService({}, parts, { auth: openAuth("self-host") }),
+      async () => {
+        const response = await request(app).get("/probe");
 
-    expect(first.status).toBe(200);
-    expect(first.body).toEqual({ caller: { teamId: "team-1" } });
-    expect(second.body).toEqual(first.body);
-    expect(handler).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(authenticateUser).mock.calls[0][2]).toBe("scrape");
+        expect(response.status).toBe(200);
+        expect(response.body).toEqual({ caller: { teamId: "self-host" } });
+      },
+    );
   });
 
-  it("answers a request it refuses and does not run the handler", async () => {
-    vi.mocked(authenticateUser).mockResolvedValue({
-      success: false,
-      error: "Unauthorized: Invalid token",
-      status: 401,
-    });
+  it("passes the route kind, sets req.caller, and applies success headers", async () => {
+    const authFn = vi.fn<AuthModule["authenticate"]>(async () => ({
+      ok: true,
+      caller: { teamId: "team-1" },
+      headers: { "X-Auth-Scope": "full" },
+    }));
+    const { app, handler } = appWithProbe("custom-route");
 
-    const { app, handler } = appWithProbe();
-    const response = await request(app).get("/probe");
+    await withService(
+      testService({}, parts, { auth: { authenticate: authFn } }),
+      async () => {
+        const first = await request(app).get("/probe");
+        const second = await request(app).get("/probe");
 
-    expect(response.status).toBe(401);
-    expect(response.body).toEqual({
-      success: false,
-      error: "Unauthorized: Invalid token",
+        expect(first.status).toBe(200);
+        expect(first.headers["x-auth-scope"]).toBe("full");
+        expect(first.body).toEqual({ caller: { teamId: "team-1" } });
+        expect(second.body).toEqual(first.body);
+        expect(handler).toHaveBeenCalledTimes(2);
+        expect(authFn.mock.calls[0]?.[1]).toEqual({ kind: "custom-route" });
+      },
+    );
+  });
+
+  it("answers a refusal with its status, headers, code, and body without calling the handler", async () => {
+    const auth: AuthModule = {
+      authenticate: async () => ({
+        ok: false,
+        refusal: {
+          status: 429,
+          headers: {
+            "Retry-After": "42",
+            "WWW-Authenticate":
+              'Bearer resource_metadata="https://example.test"',
+          },
+          body: {
+            success: false,
+            code: "UNKNOWN_ERROR",
+            error: "Rate limit exceeded",
+            retry_after_seconds: 42,
+          },
+        },
+      }),
+    };
+    const { app, handler } = appWithProbe("scrape");
+
+    await withService(testService({}, parts, { auth }), async () => {
+      const response = await request(app).get("/probe");
+
+      expect(response.status).toBe(429);
+      expect(response.headers["retry-after"]).toBe("42");
+      expect(response.headers["www-authenticate"]).toBe(
+        'Bearer resource_metadata="https://example.test"',
+      );
+      expect(response.body).toEqual({
+        success: false,
+        code: "UNKNOWN_ERROR",
+        error: "Rate limit exceeded",
+        retry_after_seconds: 42,
+      });
+      expect(handler).not.toHaveBeenCalled();
     });
-    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("forwards thrown auth errors to Express error middleware", async () => {
+    const auth: AuthModule = {
+      authenticate: () => {
+        throw new Error("auth backend down");
+      },
+    };
+    const app = express();
+    app.get("/probe", authenticate("scrape"), (_req, res) =>
+      res.status(200).json({ ok: true }),
+    );
+    app.use(
+      (
+        err: Error,
+        _req: Request,
+        res: Response,
+        _next: express.NextFunction,
+      ) => {
+        res.status(500).json({ caught: err.message });
+      },
+    );
+
+    await withService(testService({}, parts, { auth }), async () => {
+      const response = await request(app).get("/probe");
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ caught: "auth backend down" });
+    });
+  });
+});
+
+function stubSchemas(): RequestSchemas {
+  const pass = z.object({}).passthrough();
+  return {
+    scrape: z
+      .object({
+        url: z.string().url(),
+        zeroDataRetention: z.boolean().optional(),
+      })
+      .passthrough(),
+    parse: pass,
+    crawl: z
+      .object({
+        url: z.string().url(),
+        limit: z.number().optional(),
+      })
+      .passthrough(),
+    batchScrape: z
+      .object({
+        urls: z.array(z.string().url()),
+        ignoreInvalidURLs: z.boolean().optional(),
+      })
+      .passthrough(),
+    batchScrapeNoURLValidation: z
+      .object({
+        urls: z.array(z.string()),
+        ignoreInvalidURLs: z.boolean().optional(),
+      })
+      .passthrough(),
+    map: z.object({ url: z.string().url() }).passthrough(),
+    search: z.object({ query: z.string() }).passthrough(),
+    scrapeOptions: pass,
+  } as unknown as RequestSchemas;
+}
+
+const schemaParts: CoreParts = {
+  ...parts,
+  buildRequestSchemas: stubSchemas,
+};
+
+describe("openRequest", () => {
+  it("parses, admits, authorizes, emits request.accepted, and transforms request.responding", async () => {
+    const accepted = vi.fn();
+    const app = express();
+    app.use(express.json());
+    app.post(
+      "/scrape",
+      authenticate("scrape"),
+      openRequest("scrape"),
+      async (req, res) => {
+        const body = await finalizeResponse(req, "scrape", {
+          success: true,
+          ctx: req.ctx,
+          id: req.requestId,
+        });
+        res.status(200).json(body);
+      },
+    );
+
+    const svc = testService({}, schemaParts, {}, [
+      {
+        name: "hooks-ext",
+        hooks: {
+          "request.accepted": accepted,
+          "request.responding": (payload, info) => ({
+            ...payload,
+            transformedFor: info.kind,
+          }),
+        },
+      },
+    ]);
+
+    await withService(svc, async () => {
+      const response = await request(app)
+        .post("/scrape")
+        .send({ url: "https://example.com", zeroDataRetention: true });
+
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.ctx).toEqual({
+        teamId: "bypass",
+        zeroDataRetention: true,
+      });
+      expect(response.body.transformedFor).toBe("scrape");
+      expect(accepted).toHaveBeenCalledTimes(1);
+      expect(accepted.mock.calls[0]?.[0]).toMatchObject({
+        kind: "scrape",
+        id: response.body.id,
+        ctx: { teamId: "bypass", zeroDataRetention: true },
+      });
+    });
+  });
+
+  it("emits request.rejected and halts when policy, billing, or blocklist refuses", async () => {
+    const rejected = vi.fn();
+    const handler = vi.fn((_req: Request, res: Response) => {
+      res.status(200).json({ ok: true });
+    });
+    const app = express();
+    app.use(express.json());
+    app.post("/scrape", authenticate("scrape"), openRequest("scrape"), handler);
+
+    const policy: PolicyModule = {
+      admit: async () => ({
+        ok: false,
+        refusal: {
+          status: 403,
+          body: { success: false, error: "Policy denied" },
+        },
+      }),
+      system: purpose => ({ teamId: purpose, zeroDataRetention: false }),
+    };
+
+    await withService(
+      testService({}, schemaParts, { policy }, [
+        { name: "obs", hooks: { "request.rejected": rejected } },
+      ]),
+      async () => {
+        const res = await request(app)
+          .post("/scrape")
+          .send({ url: "https://example.com" });
+        expect(res.status).toBe(403);
+        expect(res.body).toEqual({ success: false, error: "Policy denied" });
+        expect(handler).not.toHaveBeenCalled();
+        expect(rejected).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    const billing: BillingModule = {
+      authorize: async () => ({
+        ok: false,
+        refusal: {
+          status: 402,
+          body: { success: false, error: "Insufficient credits" },
+        },
+      }),
+      charge: async () => undefined,
+    };
+
+    await withService(
+      testService({}, schemaParts, { billing }, [
+        { name: "obs", hooks: { "request.rejected": rejected } },
+      ]),
+      async () => {
+        const res = await request(app)
+          .post("/scrape")
+          .send({ url: "https://example.com" });
+        expect(res.status).toBe(402);
+        expect(rejected).toHaveBeenCalledTimes(2);
+      },
+    );
+
+    const blocklist: BlocklistModule = {
+      init: async () => {},
+      isBlocked: url => url.includes("blocked.example"),
+      hasScopedRules: () => false,
+    };
+
+    await withService(
+      testService({}, schemaParts, { blocklist }, [
+        { name: "obs", hooks: { "request.rejected": rejected } },
+      ]),
+      async () => {
+        const res = await request(app)
+          .post("/scrape")
+          .send({ url: "https://blocked.example/page" });
+        expect(res.status).toBe(403);
+        expect(rejected).toHaveBeenCalledTimes(3);
+      },
+    );
+  });
+
+  it("uses batchScrapeNoURLValidation when ignoreInvalidURLs is true", async () => {
+    const app = express();
+    app.use(express.json());
+    app.post(
+      "/batch",
+      authenticate("scrape"),
+      openRequest("batchScrape"),
+      (req, res) => {
+        res.status(200).json({ urls: req.body.urls });
+      },
+    );
+
+    await withService(testService({}, schemaParts), async () => {
+      const res = await request(app)
+        .post("/batch")
+        .send({ urls: ["not-a-url"], ignoreInvalidURLs: true });
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ urls: ["not-a-url"] });
+    });
+  });
+
+  it("resolves context for auxiliary routes via resolveRequestContext", async () => {
+    const app = express();
+    app.post(
+      "/aux",
+      authenticate("scrape"),
+      resolveRequestContext("parse-upload-url"),
+      (req, res) => {
+        res.status(200).json({ ctx: req.ctx });
+      },
+    );
+
+    await withService(testService({}, schemaParts), async () => {
+      const res = await request(app).post("/aux");
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        ctx: { teamId: "bypass", zeroDataRetention: false },
+      });
+    });
   });
 });
