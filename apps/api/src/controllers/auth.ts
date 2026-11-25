@@ -2,7 +2,10 @@ import { RateLimiterRedis } from "rate-limiter-flexible";
 import { isValidUuid } from "../lib/owner-id";
 import { config } from "../config";
 import { logger } from "../lib/logger";
-import { timingSafeSecretEqual } from "../lib/secret-compare";
+import {
+  hasHostedMcpProxySecret,
+  timingSafeSecretEqual,
+} from "../lib/secret-compare";
 import { parseApi } from "../lib/parseApi";
 import { withAuth } from "../lib/withAuth";
 import { getAgentSponsorStatus } from "../services/agent-sponsor";
@@ -232,9 +235,7 @@ async function getACUC(
   if (requiresPrimaryRead) useCache = false;
 
   let isExtract =
-    mode === RateLimiterMode.Extract ||
-    mode === RateLimiterMode.ExtractStatus ||
-    mode === RateLimiterMode.ExtractAgentPreview;
+    mode === RateLimiterMode.Extract || mode === RateLimiterMode.ExtractStatus;
 
   if (timingSafeSecretEqual(api_key, config.PREVIEW_TOKEN)) {
     const acuc = mockPreviewACUC(api_key, isExtract);
@@ -405,9 +406,7 @@ export async function getACUCTeam(
   mode?: RateLimiterMode,
 ): Promise<AuthCreditUsageChunkFromTeam | null> {
   let isExtract =
-    mode === RateLimiterMode.Extract ||
-    mode === RateLimiterMode.ExtractStatus ||
-    mode === RateLimiterMode.ExtractAgentPreview;
+    mode === RateLimiterMode.Extract || mode === RateLimiterMode.ExtractStatus;
 
   if (team_id.startsWith("preview")) {
     const acuc = mockPreviewACUC(team_id, isExtract);
@@ -858,9 +857,7 @@ export async function authenticateUser(
 ): Promise<AuthResponse> {
   const bypassChunk = mockACUC();
   bypassChunk.is_extract =
-    mode === RateLimiterMode.Extract ||
-    mode === RateLimiterMode.ExtractStatus ||
-    mode === RateLimiterMode.ExtractAgentPreview;
+    mode === RateLimiterMode.Extract || mode === RateLimiterMode.ExtractStatus;
 
   return withAuth(supaAuthenticateUser, {
     success: true,
@@ -1271,18 +1268,16 @@ async function supaAuthenticateUser(
     // Calls the hosted MCP makes on routes that opt in (every v2 route) get a
     // raised per-minute minimum, and scrape calls a raised concurrency
     // minimum. Two signals prove the hosted MCP made the call: a verified
-    // delegated credential (managed OAuth sessions) or the proxy secret it
-    // shares with the API (sessions that send a plain API key).
-    // `fco_` tokens never qualify: the hosted MCP keeps those for the issuer,
-    // so a REST call carrying one comes from the client itself. Origin and
-    // integration are client-set, so they never change the limit.
+    // delegated credential (managed OAuth sessions) or the hosted MCP proxy
+    // secret (with KEYLESS_PROXY_SECRET accepted as a rollout fallback) for
+    // plain API-key sessions. `fco_` tokens never qualify: the hosted MCP
+    // keeps those for the issuer, so a REST call carrying one comes from the
+    // client itself. Origin and integration are client-set, so they never
+    // change the limit.
     hostedMcpCall =
       hostedMcpDelegation ||
       (!token.startsWith("fco_") &&
-        timingSafeSecretEqual(
-          req.headers["x-firecrawl-keyless-secret"],
-          config.KEYLESS_PROXY_SECRET,
-        ));
+        hasHostedMcpProxySecret(req.headers, config));
     const hostedMcpRaise =
       options?.hostedMcpRateLimit === true && hostedMcpCall;
     // The tiers follow the team's own plan multiplier, not the one trusted

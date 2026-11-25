@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import http from "http";
 import { AddressInfo } from "net";
-import { config } from "../../../../config";
+import { threatProtectionEnv } from "../../env";
 import { runThreatListSyncPass } from "./sync";
 import { WEB_RISK_THREAT_TYPES, WebRiskListStore } from "./store";
 import { createFakeWebRiskRedis } from "./testing";
@@ -17,8 +17,8 @@ let diffCalls: { threatType: string; versionToken: string | null }[] = [];
 let diffHandler: DiffHandler = () => ({});
 
 const originalConfig = {
-  url: config.GOOGLE_WEB_RISK_API_URL,
-  key: config.GOOGLE_WEB_RISK_API_KEY,
+  url: threatProtectionEnv.GOOGLE_WEB_RISK_API_URL,
+  key: threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY,
 };
 
 beforeAll(async () => {
@@ -38,16 +38,16 @@ beforeAll(async () => {
     });
     server.listen(0, "127.0.0.1", () => {
       baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-      config.GOOGLE_WEB_RISK_API_URL = baseUrl;
-      config.GOOGLE_WEB_RISK_API_KEY = "test-key";
+      threatProtectionEnv.GOOGLE_WEB_RISK_API_URL = baseUrl;
+      threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY = "test-key";
       resolve();
     });
   });
 });
 
 afterAll(async () => {
-  config.GOOGLE_WEB_RISK_API_URL = originalConfig.url;
-  config.GOOGLE_WEB_RISK_API_KEY = originalConfig.key;
+  threatProtectionEnv.GOOGLE_WEB_RISK_API_URL = originalConfig.url;
+  threatProtectionEnv.GOOGLE_WEB_RISK_API_KEY = originalConfig.key;
   await new Promise<void>(resolve => server.close(() => resolve()));
 });
 

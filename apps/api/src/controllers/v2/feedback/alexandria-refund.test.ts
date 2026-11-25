@@ -63,15 +63,15 @@ vi.mock("../../../lib/logger", () => {
   return { logger: { child: () => child } };
 });
 
-import { config } from "../../../config";
+import { feedbackEnv } from "../../../lib/feedback-env";
 import { refundAlexandriaFeedback } from "./alexandria-refund";
 
 const teamId = "01933161-0000-7000-8000-000000000001";
 const now = new Date("2026-10-06T18:00:00.000Z");
 const original = {
-  enabled: config.FEEDBACK_REFUND_ENABLED,
-  cap: config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS,
-  websiteCap: config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS,
+  enabled: feedbackEnv.FEEDBACK_REFUND_ENABLED,
+  cap: feedbackEnv.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS,
+  websiteCap: feedbackEnv.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS,
 };
 const call = (requestId: string, provider = "fred") => ({
   requestId,
@@ -104,9 +104,9 @@ const persisted = () => mocks.update.mock.calls.at(-1)?.[0];
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.events.length = 0;
-  config.FEEDBACK_REFUND_ENABLED = true;
-  config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS = 10;
-  config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS = 3;
+  feedbackEnv.FEEDBACK_REFUND_ENABLED = true;
+  feedbackEnv.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS = 10;
+  feedbackEnv.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS = 3;
   mocks.lock.mockResolvedValue(undefined);
   mocks.todayRows.mockResolvedValue([]);
   mocks.refundedCalls.mockResolvedValue([]);
@@ -114,9 +114,10 @@ beforeEach(() => {
   mocks.refundCredits.mockResolvedValue(true);
 });
 afterAll(() => {
-  config.FEEDBACK_REFUND_ENABLED = original.enabled;
-  config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS = original.cap;
-  config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS = original.websiteCap;
+  feedbackEnv.FEEDBACK_REFUND_ENABLED = original.enabled;
+  feedbackEnv.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS = original.cap;
+  feedbackEnv.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS =
+    original.websiteCap;
 });
 
 it("reserves the refund under a per-team lock before billing, then reports it", async () => {
@@ -226,7 +227,7 @@ it("stops refunding a website at its daily cap, while other websites still refun
 });
 
 it("stops refunding at the daily Alexandria cap", async () => {
-  config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS = 2;
+  feedbackEnv.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS = 2;
   mocks.todayRows.mockResolvedValue([
     { requested_host: "a.example", credits_refunded: 1 },
     { requested_host: "b.example", credits_refunded: 1 },
@@ -245,7 +246,7 @@ it("stops refunding at the daily Alexandria cap", async () => {
 });
 
 it("flags the cap as reached on the refund that fills it", async () => {
-  config.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS = 1;
+  feedbackEnv.ALEXANDRIA_FEEDBACK_DAILY_CAP_CREDITS = 1;
   await expect(refund()).resolves.toMatchObject({
     creditsRefunded: 1,
     creditsRefundedToday: 1,
@@ -254,7 +255,7 @@ it("flags the cap as reached on the refund that fills it", async () => {
 });
 
 it("records no refund when refunds are disabled", async () => {
-  config.FEEDBACK_REFUND_ENABLED = false;
+  feedbackEnv.FEEDBACK_REFUND_ENABLED = false;
   await expect(refund()).resolves.toMatchObject({ creditsRefunded: 0 });
   expect(mocks.events).toEqual(["db:update:0"]);
   expect(persisted()).toMatchObject({

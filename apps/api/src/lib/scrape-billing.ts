@@ -7,9 +7,10 @@ import {
 } from "../controllers/v2/types";
 import { CostTracking } from "./cost-tracking";
 import { hasFormatOfType } from "./format-utils";
-import { TransportableError } from "./error";
+import { isTransportableError } from "./error";
 import { FeatureFlag } from "../scraper/scrapeURL/engines";
-import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
+import { requestContext } from "./request-context";
+import { service } from "../service";
 import { ExchangeScrapeMetadata, getExchangeSuccessCredits } from "./exchange";
 import type { ThreatDecision } from "./threat-protection/types";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
@@ -122,18 +123,10 @@ export async function calculateCreditsToBeBilled(
   );
 
   if (document === null) {
-    // Failure -- check cost tracking if FIRE-1
     let creditsToBeBilled = 0;
 
     if (
-      internalOptions.v1Agent?.model?.toLowerCase() === "fire-1" ||
-      internalOptions.v1JSONAgent?.model?.toLowerCase() === "fire-1"
-    ) {
-      creditsToBeBilled = Math.ceil((costTrackingJSON.totalCost ?? 1) * 1800);
-    }
-
-    if (
-      error instanceof TransportableError &&
+      isTransportableError(error) &&
       error.code === "SCRAPE_LOCKDOWN_CACHE_MISS"
     ) {
       creditsToBeBilled = 1;
@@ -195,15 +188,6 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled += 4;
   }
 
-  if (
-    internalOptions.v1Agent?.model === "fire-1" ||
-    internalOptions.v1JSONAgent?.model?.toLowerCase() === "fire-1"
-  ) {
-    creditsToBeBilled =
-      (exchangeCredits ?? 0) +
-      Math.ceil((costTrackingJSON.totalCost ?? 1) * 1800);
-  }
-
   const hasQuestionFormat =
     hasFormatOfType(options.formats, "question") ||
     hasFormatOfType(options.formats, "query");
@@ -258,11 +242,33 @@ export async function calculateCreditsToBeBilled(
     document.metadata?.url,
     document.metadata?.sourceURL,
   ].filter((u): u is string => !!u);
-  if (
-    exchangeCredits === null &&
-    urlsToCheck.some(u => isUrlBlocked(u, null) && !isUrlBlocked(u, flags))
-  ) {
-    creditsToBeBilled += unblockedDomainCostBonus;
+  if (exchangeCredits === null && urlsToCheck.length > 0) {
+    // Check global rules only (orgId: null) so org-scoped rules do not trigger the surcharge.
+    const globalCtx = requestContext({
+      teamId: "",
+      zeroDataRetention: true,
+      flags: null,
+      orgId: null,
+    });
+    const teamCtx = requestContext({
+      teamId: internalOptions.teamId ?? "",
+      zeroDataRetention: true,
+      flags: flags ?? null,
+      orgId: null,
+    });
+    if (
+      urlsToCheck.some(
+        u =>
+          service.modules.blocklist.isBlocked(u, globalCtx, {
+            record: false,
+          }) &&
+          !service.modules.blocklist.isBlocked(u, teamCtx, {
+            record: false,
+          }),
+      )
+    ) {
+      creditsToBeBilled += unblockedDomainCostBonus;
+    }
   }
 
   creditsToBeBilled += threatScanCredits;

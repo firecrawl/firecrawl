@@ -1,7 +1,7 @@
 import type { MockedFunction } from "vitest";
 import { sendDocumentToSearchIndex } from "../sendToSearchIndex";
 import { indexDocumentIfEnabled } from "../../../../lib/search-index-client";
-import { config } from "../../../../config";
+import { searchIndexEnv } from "../../../../lib/search-index-env";
 
 vi.mock("../../../../lib/search-index-client", () => ({
   indexDocumentIfEnabled: vi.fn(),
@@ -12,23 +12,23 @@ const mockedIndex = indexDocumentIfEnabled as MockedFunction<
 >;
 
 describe("sendDocumentToSearchIndex lockdown guard", () => {
-  const originalEnabled = config.ENABLE_SEARCH_INDEX;
-  const originalServiceUrl = config.SEARCH_SERVICE_URL;
-  const originalSampleRate = config.SEARCH_INDEX_SAMPLE_RATE;
+  const originalEnabled = searchIndexEnv.ENABLE_SEARCH_INDEX;
+  const originalServiceUrl = searchIndexEnv.SEARCH_SERVICE_URL;
+  const originalSampleRate = searchIndexEnv.SEARCH_INDEX_SAMPLE_RATE;
 
   beforeEach(() => {
     // Force the transformer past the "enabled" and "sampling" early-returns so
     // only the lockdown / should-index checks can stop it.
-    (config as any).ENABLE_SEARCH_INDEX = true;
-    (config as any).SEARCH_SERVICE_URL = "https://search.internal";
-    (config as any).SEARCH_INDEX_SAMPLE_RATE = 1;
+    searchIndexEnv.ENABLE_SEARCH_INDEX = true;
+    searchIndexEnv.SEARCH_SERVICE_URL = "https://search.internal";
+    searchIndexEnv.SEARCH_INDEX_SAMPLE_RATE = 1;
     mockedIndex.mockClear();
   });
 
   afterAll(() => {
-    (config as any).ENABLE_SEARCH_INDEX = originalEnabled;
-    (config as any).SEARCH_SERVICE_URL = originalServiceUrl;
-    (config as any).SEARCH_INDEX_SAMPLE_RATE = originalSampleRate;
+    searchIndexEnv.ENABLE_SEARCH_INDEX = originalEnabled;
+    searchIndexEnv.SEARCH_SERVICE_URL = originalServiceUrl;
+    searchIndexEnv.SEARCH_INDEX_SAMPLE_RATE = originalSampleRate;
   });
 
   const baseDocument: any = {

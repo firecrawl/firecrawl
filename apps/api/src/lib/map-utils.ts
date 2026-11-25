@@ -19,12 +19,16 @@ import { fireEngineMap } from "../search/fireEngine";
 import { isUsOnly } from "./us-only";
 import { redisEvictConnection } from "../services/redis";
 import {
+  generateDomainSplits,
   generateURLSplits,
   queryIndexAtDomainSplitLevelWithMeta,
   queryIndexAtSplitLevelWithMeta,
 } from "../services/index";
 import { performCosineSimilarityV2 } from "./map-cosine";
 import { Logger } from "winston";
+import { requestContext } from "./request-context";
+import type { RequestContext } from "../service/request-context";
+import { installedService } from "../service/service";
 
 // Max Links that "Smart /map" can return
 const MAX_FIRE_ENGINE_RESULTS = 100;
@@ -63,22 +67,137 @@ export async function queryIndex(
   }
 
   const urlSplits = generateURLSplits(url);
-  if (urlSplits.length === 1) {
-    const urlObj = new URL(url);
-    const hostname = urlObj.hostname;
-
-    // TEMP: this should be altered on June 15th 2025 7AM PT - mogery
-    const [domainLinks, splitLinks] = await Promise.all([
-      includeSubdomains
-        ? queryIndexAtDomainSplitLevelWithMeta(hostname, limit)
-        : [],
-      queryIndexAtSplitLevelWithMeta(url, limit),
-    ]);
-
-    return dedupeMapDocumentArray([...domainLinks, ...splitLinks]);
-  } else {
-    return await queryIndexAtSplitLevelWithMeta(url, limit);
+  if (urlSplits.length === 1 && includeSubdomains) {
+    const hostname = new URL(urlSplits[0]).hostname;
+    const domainSplits = generateDomainSplits(hostname);
+    // domain_splits_0..4_hash cover hosts with a registrable domain up to 5
+    // levels (excluding experimental __experimental_omceDomain overrides);
+    // IP literals, localhost, and deeper subdomains fall back to url_split_0_hash.
+    if (domainSplits.length > 0 && domainSplits.length <= 5) {
+      return await queryIndexAtDomainSplitLevelWithMeta(hostname, limit);
+    }
   }
+
+  return await queryIndexAtSplitLevelWithMeta(url, limit);
+}
+
+interface MapScopeOptions {
+  ignoreQueryParameters?: boolean;
+  includeSubdomains?: boolean;
+  filterByPath?: boolean;
+  allowExternalLinks?: boolean;
+}
+
+function applyMapScope(
+  documents: MapDocument[],
+  baseUrl: string,
+  {
+    ignoreQueryParameters = true,
+    includeSubdomains = true,
+    filterByPath = true,
+    allowExternalLinks = false,
+  }: MapScopeOptions = {},
+): MapDocument[] {
+  let scoped = documents
+    .map(x => {
+      try {
+        return {
+          ...x,
+          url: checkAndUpdateURLForMap(x.url, ignoreQueryParameters).url.trim(),
+        };
+      } catch (_) {
+        return null;
+      }
+    })
+    .filter((x): x is MapDocument => x !== null);
+
+  scoped = scoped.filter(x => isSameDomain(x.url, baseUrl));
+
+  if (!includeSubdomains) {
+    scoped = scoped.filter(x => isSameSubdomain(x.url, baseUrl));
+  }
+
+  if (filterByPath && !allowExternalLinks) {
+    try {
+      const urlObj = new URL(baseUrl);
+      const urlPath = urlObj.pathname;
+      if (urlPath && urlPath !== "/" && urlPath.length > 1) {
+        scoped = scoped.filter(x => {
+          try {
+            const linkObj = new URL(x.url);
+            return linkObj.pathname.startsWith(urlPath);
+          } catch {
+            return false;
+          }
+        });
+      }
+    } catch {
+      // If URL parsing fails, continue without path filtering
+    }
+  }
+
+  return dedupeMapDocumentArray(scoped);
+}
+
+/**
+ * Applies registered `map.collect` hooks to candidate map documents,
+ * preserving existing metadata, reapplying map scope when provided,
+ * deduplicating, and slicing to `limit`.
+ */
+export async function applyMapCollectHook(
+  mapResults: MapDocument[],
+  {
+    ctx,
+    url,
+    limit,
+    scope,
+  }: {
+    ctx: RequestContext;
+    url: string;
+    limit: number;
+    scope?: MapScopeOptions;
+  },
+): Promise<MapDocument[]> {
+  const hooks = installedService()?.hooks;
+  if (!hooks?.has("map.collect")) {
+    return mapResults;
+  }
+  const deduped = dedupeMapDocumentArray(mapResults);
+  const currentUrls = deduped.map(doc => doc.url);
+  const collectedUrls = await hooks.transform("map.collect", currentUrls, {
+    ctx,
+    url,
+    limit,
+  });
+  const byUrl = new Map<string, MapDocument>();
+  for (const doc of deduped) {
+    byUrl.set(doc.url, doc);
+  }
+  const collectedDocs = collectedUrls.map(collectedUrl => {
+    const existing = byUrl.get(collectedUrl);
+    if (existing) {
+      return existing;
+    }
+    if (scope) {
+      try {
+        const normalized = checkAndUpdateURLForMap(
+          collectedUrl,
+          scope.ignoreQueryParameters ?? true,
+        ).url.trim();
+        const normalizedExisting = byUrl.get(normalized);
+        if (normalizedExisting) {
+          return normalizedExisting;
+        }
+      } catch {
+        // Invalid URL is dropped when applyMapScope runs below.
+      }
+    }
+    return { url: collectedUrl };
+  });
+  const finalDocs = scope
+    ? applyMapScope(collectedDocs, url, scope)
+    : dedupeMapDocumentArray(collectedDocs);
+  return finalDocs.slice(0, limit);
 }
 
 export async function getMapResults({
@@ -91,6 +210,7 @@ export async function getMapResults({
   orgId,
   allowExternalLinks,
   abort = new AbortController().signal,
+  mock,
   filterByPath = true,
   flags,
   useIndex = true,
@@ -100,6 +220,7 @@ export async function getMapResults({
   maxFireEngineResults = MAX_FIRE_ENGINE_RESULTS,
   id: providedId,
   zeroDataRetention: requestZeroDataRetention = false,
+  ctx,
 }: {
   url: string;
   search?: string;
@@ -123,6 +244,7 @@ export async function getMapResults({
   id?: string;
   /** The calling request's own zero data retention, on top of the team's. */
   zeroDataRetention?: boolean;
+  ctx?: RequestContext;
 }): Promise<MapResult> {
   const functionStartTime = Date.now();
 
@@ -134,7 +256,9 @@ export async function getMapResults({
 
   // Under lockdown (index-only) resolving redirects would HEAD/GET the target,
   // which the zero-outbound guarantee forbids — use the URL as given.
-  const resolvedUrl = indexOnly ? url : await resolveRedirects(url, abort);
+  const resolvedUrl = indexOnly
+    ? url
+    : await resolveRedirects(url, abort, mock);
 
   // If the resolved URL is on a different domain, replace the hostname
   if (!isSameDomain(url, resolvedUrl)) {
@@ -338,51 +462,33 @@ export async function getMapResults({
     }
   }
 
-  mapResults = mapResults
-    .map(x => {
-      try {
-        return {
-          ...x,
-          url: checkAndUpdateURLForMap(
-            x.url,
-            crawlerOptions.ignoreQueryParameters ?? true,
-          ).url.trim(),
-        };
-      } catch (_) {
-        return null;
-      }
-    })
-    .filter(x => x !== null) as MapDocument[];
+  const scope: MapScopeOptions = {
+    ignoreQueryParameters: crawlerOptions.ignoreQueryParameters ?? true,
+    includeSubdomains,
+    filterByPath,
+    allowExternalLinks,
+  };
+  mapResults = applyMapScope(mapResults, url, scope);
 
-  mapResults = mapResults.filter(x => isSameDomain(x.url, url));
-
-  if (!includeSubdomains) {
-    mapResults = mapResults.filter(x => isSameSubdomain(x.url, url));
+  const hooks = installedService()?.hooks;
+  if (hooks?.has("map.collect")) {
+    const mapCtx =
+      ctx ??
+      requestContext({
+        teamId,
+        zeroDataRetention,
+        flags: flags ?? undefined,
+        orgId: orgId ?? null,
+      });
+    mapResults = await applyMapCollectHook(mapResults, {
+      ctx: mapCtx,
+      url,
+      limit,
+      scope,
+    });
+  } else {
+    mapResults = mapResults.slice(0, limit);
   }
-
-  if (filterByPath && !allowExternalLinks) {
-    try {
-      const urlObj = new URL(url);
-      const urlPath = urlObj.pathname;
-      // Only apply path filtering if the URL has a significant path (not just '/' or empty)
-      // This means we only filter by path if the user has not selected a root domain
-      if (urlPath && urlPath !== "/" && urlPath.length > 1) {
-        mapResults = mapResults.filter(x => {
-          try {
-            const linkObj = new URL(x.url);
-            return linkObj.pathname.startsWith(urlPath);
-          } catch (e) {
-            return false;
-          }
-        });
-      }
-    } catch (e) {
-      // If URL parsing fails, continue without path filtering
-    }
-  }
-
-  mapResults = dedupeMapDocumentArray(mapResults);
-  mapResults = mapResults.slice(0, limit);
 
   const totalTimeMs = Date.now() - functionStartTime;
 
@@ -407,6 +513,7 @@ export async function buildPromptWithWebsiteStructure({
   useIndex = true,
   maxFireEngineResults = 500,
   zeroDataRetention = false,
+  ctx,
 }: {
   basePrompt: string;
   url: string;
@@ -420,6 +527,7 @@ export async function buildPromptWithWebsiteStructure({
   useIndex?: boolean;
   maxFireEngineResults?: number;
   zeroDataRetention?: boolean;
+  ctx?: RequestContext;
 }): Promise<{ prompt: string; websiteUrls: string[] }> {
   try {
     logger.debug("Getting website structure for prompt enhancement");
@@ -436,6 +544,7 @@ export async function buildPromptWithWebsiteStructure({
       useIndex,
       maxFireEngineResults,
       zeroDataRetention,
+      ctx,
     });
 
     const websiteUrls = mapResult.mapResults.map(doc => doc.url);

@@ -23,7 +23,8 @@ import { addScrapeJobs } from "../../services/queue-jobs";
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 import { logger as _logger } from "../../lib/logger";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
-import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
+import { requestContext } from "../../lib/request-context";
+import { service } from "../../service";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { checkPermissions } from "../../lib/permissions";
 import { resolveSafeMode } from "../../lib/safe-mode";
@@ -146,6 +147,13 @@ export async function batchScrapeController(
   let unnormalizedURLs = preNormalizedBody.urls;
   let invalidURLs: string[] | undefined = undefined;
   const locallyBlockedURLs: string[] = [];
+  const blockCtx = requestContext({
+    teamId: req.auth.team_id,
+    zeroDataRetention:
+      zeroDataRetention || appendTarget?.zeroDataRetention === true,
+    flags: req.acuc?.flags ?? null,
+    orgId: req.acuc?.org_id ?? null,
+  });
 
   if (req.body.ignoreInvalidURLs) {
     invalidURLs = [];
@@ -157,9 +165,7 @@ export async function batchScrapeController(
       try {
         const nu = urlSchema.parse(u);
         if (
-          !isUrlBlocked(nu, req.acuc?.flags ?? null, {
-            team_id: req.auth.team_id,
-            org_id: req.acuc?.org_id ?? null,
+          !service.modules.blocklist.isBlocked(nu, blockCtx, {
             origin: req.body.origin ?? null,
           })
         ) {
@@ -176,9 +182,7 @@ export async function batchScrapeController(
   } else {
     const blockedURLs =
       req.body.urls?.filter((url: string) =>
-        isUrlBlocked(url, req.acuc?.flags ?? null, {
-          team_id: req.auth.team_id,
-          org_id: req.acuc?.org_id ?? null,
+        service.modules.blocklist.isBlocked(url, blockCtx, {
           origin: req.body.origin ?? null,
         }),
       ) ?? [];
@@ -347,10 +351,11 @@ export async function batchScrapeController(
     req.body.timeout,
     req.auth.team_id,
   );
-  // v1 prefaults maxAge (1 day), which would shadow the lockdown default the
-  // scrape backstop applies — keep only a maxAge the request actually sent.
-  if (safeMode.safeMode?.lockdown && preNormalizedBody.maxAge === undefined) {
-    scrapeOptions.maxAge = undefined;
+  if (safeMode.safeMode?.lockdown) {
+    scrapeOptions.maxAge =
+      typeof preNormalizedBody.maxAge === "number"
+        ? preNormalizedBody.maxAge
+        : undefined;
   }
 
   const sc: StoredCrawl = appendTarget

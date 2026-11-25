@@ -1,4 +1,4 @@
-import { config } from "../../../../config";
+import { threatProtectionEnv } from "../../env";
 import {
   WEB_RISK_THREAT_TYPES,
   WebRiskListStore,
@@ -90,7 +90,8 @@ describe("WebRiskListStore", () => {
     const redis = createFakeWebRiskRedis();
     const store = new WebRiskListStore(redis);
     const staleSyncedAt = new Date(
-      Date.now() - (config.THREAT_LIST_STALENESS_SECONDS + 60) * 1000,
+      Date.now() -
+        (threatProtectionEnv.THREAT_LIST_STALENESS_SECONDS + 60) * 1000,
     ).toISOString();
 
     await store.writeVersion("MALWARE", [], meta({ syncedAt: staleSyncedAt }));
@@ -101,7 +102,7 @@ describe("WebRiskListStore", () => {
     expect(result).toMatchObject({ status: "stale" });
     if (result.status === "stale") {
       expect(result.ageSeconds).toBeGreaterThan(
-        config.THREAT_LIST_STALENESS_SECONDS,
+        threatProtectionEnv.THREAT_LIST_STALENESS_SECONDS,
       );
     }
   });

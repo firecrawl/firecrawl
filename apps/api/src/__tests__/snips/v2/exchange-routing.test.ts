@@ -14,9 +14,6 @@ const mocks = vi.hoisted(() => ({
   exchangeRequest: vi.fn(),
 }));
 
-vi.mock("../../../scraper/WebScraper/utils/blocklist", () => ({
-  isUrlBlocked: mocks.isUrlBlocked,
-}));
 vi.mock("../../../scraper/scrapeURL/lib/fetch", () => ({
   robustFetch: mocks.robustFetch,
 }));
@@ -26,6 +23,9 @@ vi.mock("../../../services/alexandria/client", () => ({
 
 describe("Exchange routing", () => {
   let buildFallbackList: typeof import("../../../scraper/scrapeURL/engines/index.js").buildFallbackList;
+  let replaceService:
+    | typeof import("../../../service/service.js").replaceService
+    | undefined;
   let scrapeURLWithExchange: typeof import("../../../scraper/scrapeURL/engines/exchange.js").scrapeURLWithExchange;
   let scrapeBlocklistMiddleware: typeof import("../../../routes/shared.js").scrapeBlocklistMiddleware;
   let exchange: typeof import("../../../lib/exchange.js");
@@ -58,9 +58,33 @@ describe("Exchange routing", () => {
 
     // Re-import so modules read the env vars set above at eval time.
     vi.resetModules();
-    ({ buildFallbackList } = await import(
+    const enginesModule = await import(
       "../../../scraper/scrapeURL/engines/index.js"
-    ));
+    );
+    const serviceModule = await import("../../../service/service.js");
+    const defaultsModule = await import("../../../service/defaults.js");
+    buildFallbackList = enginesModule.buildFallbackList;
+    replaceService = serviceModule.replaceService;
+    replaceService(
+      serviceModule.createService(
+        {
+          modules: {
+            blocklist: {
+              ...defaultsModule.noBlocklist(),
+              isBlocked: mocks.isUrlBlocked,
+            },
+          },
+        },
+        {
+          core: {
+            name: "core",
+            engines: enginesModule.coreEngines,
+            engineFeatures: enginesModule.coreEngineFeatures,
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
     ({ scrapeURLWithExchange } = await import(
       "../../../scraper/scrapeURL/engines/exchange.js"
     ));
@@ -92,6 +116,7 @@ describe("Exchange routing", () => {
   });
 
   afterAll(() => {
+    replaceService?.(undefined);
     if (originalFireEngineUrl === undefined) {
       delete process.env.FIRE_ENGINE_BETA_URL;
     } else {
@@ -115,7 +140,7 @@ describe("Exchange routing", () => {
       internalOptions: { teamId: "team-1", orgId: "org-1", teamFlags },
       featureFlags: new Set(),
       mock: null,
-      abort: { asSignal: () => undefined },
+      abort: { asSignal: () => undefined, scrapeTimeout: () => undefined },
       logger: {
         info: vi.fn(),
         warn: vi.fn(),
@@ -434,6 +459,74 @@ describe("Exchange routing", () => {
           accessEventId: "access-1",
           provider: { id: "acme", creditsCost: 12 },
         },
+      });
+    });
+
+    describe("deadline", () => {
+      const served = {
+        success: true,
+        creditsCost: 12,
+        data: { markdown: "# Example Person", source: { provider: "acme" } },
+      };
+
+      it("tells the Exchange when the scrape times out, less a margin to answer", async () => {
+        mocks.robustFetch.mockResolvedValue(served);
+        const meta = buildStubMeta(BLOCKED_URL, ACCEPTED_FLAGS);
+        meta.abort.scrapeTimeout = () => 40000;
+
+        const before = Date.now();
+        await scrapeURLWithExchange(meta);
+        const after = Date.now();
+
+        const deadline = Number(
+          mocks.robustFetch.mock.calls[0][0].headers["x-exchange-deadline"],
+        );
+        expect(Number.isSafeInteger(deadline)).toBe(true);
+        expect(deadline).toBeGreaterThanOrEqual(before + 38000);
+        expect(deadline).toBeLessThanOrEqual(after + 38000);
+      });
+
+      it("sends no deadline for a scrape without a timeout", async () => {
+        mocks.robustFetch.mockResolvedValue(served);
+
+        await scrapeURLWithExchange(buildStubMeta(BLOCKED_URL, ACCEPTED_FLAGS));
+
+        expect(mocks.robustFetch.mock.calls[0][0].headers).not.toHaveProperty(
+          "x-exchange-deadline",
+        );
+      });
+    });
+
+    describe("work contact details only", () => {
+      const served = {
+        success: true,
+        creditsCost: 12,
+        data: { markdown: "# Example Person", source: { provider: "acme" } },
+      };
+
+      it("asks the Exchange for work contact details only when set", async () => {
+        mocks.robustFetch.mockResolvedValue(served);
+        const meta = buildStubMeta(BLOCKED_URL, ACCEPTED_FLAGS);
+        (meta.internalOptions as Record<string, unknown>).workContactOnly =
+          true;
+
+        await scrapeURLWithExchange(meta);
+
+        expect(
+          mocks.robustFetch.mock.calls[0][0].headers[
+            "x-exchange-work-contact-only"
+          ],
+        ).toBe("true");
+      });
+
+      it("sends nothing when not set", async () => {
+        mocks.robustFetch.mockResolvedValue(served);
+
+        await scrapeURLWithExchange(buildStubMeta(BLOCKED_URL, ACCEPTED_FLAGS));
+
+        expect(mocks.robustFetch.mock.calls[0][0].headers).not.toHaveProperty(
+          "x-exchange-work-contact-only",
+        );
       });
     });
 

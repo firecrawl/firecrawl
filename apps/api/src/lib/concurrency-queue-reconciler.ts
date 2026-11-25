@@ -7,6 +7,7 @@ import {
   getConcurrencyLimitActiveJobs,
   getNextConcurrentJob,
   MAX_BACKLOG_TIMEOUT_MS,
+  observeJobEnqueued,
   pushConcurrencyLimitActiveJob,
   pushConcurrencyLimitedJob,
   pushCrawlConcurrencyLimitActiveJob,
@@ -182,6 +183,7 @@ async function reconcileTeam(
         }
       }
 
+      observeJobEnqueued(job.id, job.data);
       jobsStarted++;
     } else {
       teamLogger.warn("Job promotion failed, re-queuing job", {
@@ -280,6 +282,7 @@ async function drainQueue(
     );
 
     if (promoted !== null) {
+      observeJobEnqueued(nextJob.job.id, nextJob.job.data);
       if (isExtract) extractCount++;
       else crawlCount++;
       jobsPromoted++;

@@ -1,4 +1,4 @@
-import { config } from "../../../config";
+import { notificationsEnv } from "../../notification/env";
 import { logger as _logger } from "../../../lib/logger";
 import type { SlackChannel, SlackOAuthResult } from "./types";
 
@@ -59,8 +59,8 @@ export async function exchangeOAuthCode(params: {
   code: string;
   redirectUri: string;
 }): Promise<SlackOAuthResult> {
-  const clientId = config.SLACK_CLIENT_ID;
-  const clientSecret = config.SLACK_CLIENT_SECRET;
+  const clientId = notificationsEnv.SLACK_CLIENT_ID;
+  const clientSecret = notificationsEnv.SLACK_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
     return { ok: false, error: "slack_not_configured" };
   }

@@ -9,14 +9,18 @@ import Express from "express";
 import { startNodeRuntimeMetrics } from "../../lib/node-runtime-metrics";
 import { Worker } from "bullmq";
 import {
+  getBillingQueue,
   getFirebillTrackRetryQueue,
+  getPrecrawlQueue,
   getRedisConnection,
 } from "../queue-service";
+import { startBullmqQueueMetrics } from "../queue-metrics";
 import {
   firebillConfigured,
   processFirebillTrackRetry,
 } from "../autumn/firebill";
 import { startRole } from "../../main";
+import { runProcessStop } from "../../service/service";
 
 const RECONCILER_INTERVAL_MS = 60 * 1000;
 
@@ -41,6 +45,13 @@ export async function start() {
 
   const app = Express();
   startNodeRuntimeMetrics();
+  // Exported here because this deployment runs one replica, so each queue
+  // gets one series, not a copy per app pod.
+  startBullmqQueueMetrics([
+    getFirebillTrackRetryQueue(),
+    getBillingQueue(),
+    getPrecrawlQueue(),
+  ]);
 
   app.get("/metrics", async (_, res) => {
     try {
@@ -98,6 +109,7 @@ export async function start() {
     }
 
     server.close(async () => {
+      await runProcessStop("nuq-reconciler-worker");
       await shutdownTracing();
       _logger.info("NuQ reconciler worker shut down");
       process.exit(0);

@@ -1,5 +1,7 @@
 import { generateText } from "ai";
 import { jsonrepair } from "jsonrepair";
+import { config } from "../../../config";
+import { service } from "../../../service";
 import { getModel } from "../../generic-ai";
 import { CostTracking } from "../../cost-tracking";
 import {
@@ -12,7 +14,7 @@ import {
   LIGHT_MODEL,
 } from "../config";
 import { type CacheBackend } from "../core/cache";
-import { modelPrices } from "../../extract/usage/model-prices";
+import { modelPrices } from "../../model-prices";
 import { ASK_LLM_SYSTEM, type ChatMessage } from "./prompts";
 import { errorMessage, log, sha } from "../core/util";
 
@@ -63,14 +65,40 @@ function splitInstructions(messages: ChatMessage[]) {
   };
 }
 
+const FALLBACK_MODEL = "gpt-4o-mini";
+
+function resolveDeterministicModel(
+  preferredModel: string,
+  preferredProvider: string,
+) {
+  if (service.llmProviders.get(preferredProvider)?.enabled()) {
+    return {
+      provider: preferredProvider,
+      modelName: preferredModel,
+      model: getModel(preferredModel, preferredProvider),
+    };
+  }
+  const provider = service.llmProviders.get("ollama")?.enabled()
+    ? "ollama"
+    : "openai";
+  const modelName = config.MODEL_NAME || FALLBACK_MODEL;
+  return {
+    provider,
+    modelName,
+    model: getModel(modelName, provider),
+  };
+}
+
 export async function generateCode(
   messages: ChatMessage[],
   costTracking: CostTracking,
 ): Promise<Generation> {
   let res;
+  let resolved: ReturnType<typeof resolveDeterministicModel>;
   try {
+    resolved = resolveDeterministicModel(CODEGEN_MODEL, "vertex");
     res = await generateText({
-      model: getModel(CODEGEN_MODEL, "vertex"),
+      model: resolved.model,
       ...splitInstructions(messages),
       temperature: 1.0, // even though it would be nice to have more deterministic output, google recommends keeping this at 1 for complex tasks
       maxOutputTokens: CODEGEN_MAX_TOKENS,
@@ -78,7 +106,13 @@ export async function generateCode(
   } catch (err) {
     throw new Error(`codegen API call failed: ${errorMessage(err)}`);
   }
-  record(costTracking, "codegen", "vertex", CODEGEN_MODEL, res.usage);
+  record(
+    costTracking,
+    "codegen",
+    resolved.provider,
+    resolved.modelName,
+    res.usage,
+  );
   return { content: res.text ?? "", truncated: res.finishReason === "length" };
 }
 
@@ -87,9 +121,11 @@ export async function pickSnippets(
   costTracking: CostTracking,
 ): Promise<string[]> {
   let res;
+  let resolved: ReturnType<typeof resolveDeterministicModel>;
   try {
+    resolved = resolveDeterministicModel(ANCHOR_MODEL, "groq");
     res = await generateText({
-      model: getModel(ANCHOR_MODEL, "groq"),
+      model: resolved.model,
       ...splitInstructions(messages),
       temperature: 0,
       maxOutputTokens: ANCHOR_PICKER_MAX_TOKENS,
@@ -97,7 +133,13 @@ export async function pickSnippets(
   } catch (err) {
     throw new Error(`anchor-picker API call failed: ${errorMessage(err)}`);
   }
-  record(costTracking, "anchor", "groq", ANCHOR_MODEL, res.usage);
+  record(
+    costTracking,
+    "anchor",
+    resolved.provider,
+    resolved.modelName,
+    res.usage,
+  );
   return parseSnippets(res.text?.trim() ?? "");
 }
 
@@ -191,8 +233,17 @@ export function makeAskLlm(
       return typeof value === "string" ? normalizePlainText(value) : value;
     };
 
+    const resolvedProvider = service.llmProviders.get("groq")?.enabled()
+      ? "groq"
+      : service.llmProviders.get("ollama")?.enabled()
+        ? "ollama"
+        : "openai";
+    const resolvedModelName =
+      resolvedProvider === "groq"
+        ? LIGHT_MODEL
+        : config.MODEL_NAME || FALLBACK_MODEL;
     const cacheKey = sha(
-      `${LIGHT_MODEL}\0${ASK_LLM_SYSTEM}\0${userContent}\0${structured ? "json" : "text"}`,
+      `${resolvedProvider}\0${resolvedModelName}\0${ASK_LLM_SYSTEM}\0${userContent}\0${structured ? "json" : "text"}`,
     );
     const cached = await cache.getLlm(cacheKey);
     if (cached) {
@@ -219,15 +270,22 @@ export function makeAskLlm(
 
       let raw = "";
       try {
+        const resolved = resolveDeterministicModel(LIGHT_MODEL, "groq");
         const res = await generateText({
-          model: getModel(LIGHT_MODEL, "groq"),
+          model: resolved.model,
           temperature: 0,
           maxOutputTokens: ASK_LLM_MAX_TOKENS,
           instructions: ASK_LLM_SYSTEM,
           messages: [{ role: "user", content: userContent }],
         });
         raw = res.text?.trim() ?? "";
-        record(costTracking, "askLlm", "groq", LIGHT_MODEL, res.usage);
+        record(
+          costTracking,
+          "askLlm",
+          resolved.provider,
+          resolved.modelName,
+          res.usage,
+        );
       } catch (err) {
         lastError = errorMessage(err);
         continue;

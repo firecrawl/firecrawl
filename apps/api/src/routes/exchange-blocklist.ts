@@ -1,6 +1,9 @@
 import type { NextFunction, Request, Response } from "express";
 import { parse } from "tldts";
-import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
+import { requestContext } from "../lib/request-context";
+import { isLockdownZeroDataRetention } from "../lib/safe-mode";
+import { isAlexandriaZDRForced } from "../lib/zdr-helpers";
+import { service } from "../service";
 import type { RequestWithAuth } from "../controllers/v1/types";
 
 function bountyDomains(body: Record<string, unknown>): string[] {
@@ -40,16 +43,23 @@ export function bountyBlocklistMiddleware(
 ) {
   try {
     const request = req as RequestWithAuth<any, any, any>;
-    const blocked = bountyDomains(req.body ?? {}).filter(domain =>
-      isUrlBlocked(
-        `https://${domain}/`,
-        {},
-        {
-          team_id: request.auth.team_id,
-          org_id: request.acuc?.org_id ?? null,
-          origin: "exchange-bounty",
-        },
-      ),
+    const domains = bountyDomains(req.body ?? {});
+    if (domains.length === 0) {
+      return next();
+    }
+    const blockCtx = requestContext({
+      teamId: request.auth.team_id,
+      zeroDataRetention:
+        isAlexandriaZDRForced(request.acuc?.flags) ||
+        isLockdownZeroDataRetention(request.acuc?.flags, undefined),
+      // Omit team flags so team unblockedDomains cannot permit public bounties.
+      flags: null,
+      orgId: request.acuc?.org_id ?? null,
+    });
+    const blocked = domains.filter(domain =>
+      service.modules.blocklist.isBlocked(`https://${domain}/`, blockCtx, {
+        origin: "exchange-bounty",
+      }),
     );
     if (blocked.length) {
       return res.status(403).json({

@@ -20,7 +20,14 @@ import { encoding_for_model } from "@dqbd/tiktoken";
 import type { Mock } from "vitest";
 import { keepWholeLines, performQuery } from "./query";
 import { CostTracking } from "../../../lib/cost-tracking";
-import { modelPrices } from "../../../lib/extract/usage/model-prices";
+import { getModel } from "../../../lib/generic-ai";
+import { modelPrices } from "../../../lib/model-prices";
+import {
+  createService,
+  replaceService,
+  service,
+} from "../../../service/service";
+import type { LlmModel, LlmProvider } from "../../../service/llm-providers";
 
 const noopLogger = {
   info: () => {},
@@ -80,11 +87,53 @@ beforeAll(async () => {
     await vi.importActual<typeof import("@dqbd/tiktoken")>("@dqbd/tiktoken"));
 });
 
+const stubProvider = (name: string, enabled: () => boolean): LlmProvider =>
+  ({
+    name,
+    enabled,
+    model: (id: string) => ({ modelId: id }) as unknown as LlmModel,
+  }) as unknown as LlmProvider;
+
+let vertexEnabled = false;
+
 beforeEach(() => {
+  vertexEnabled = false;
+  replaceService(
+    createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "extra-llm",
+            llmProviders: [
+              stubProvider("vertex", () => vertexEnabled),
+              stubProvider("google", () => true),
+              stubProvider("fireworks", () => true),
+            ],
+          },
+        ],
+      },
+      {
+        core: {
+          name: "core",
+          llmProviders: [
+            stubProvider("openai", () => true),
+            stubProvider("ollama", () => false),
+          ],
+        },
+        logger: { error: vi.fn() },
+      },
+    ),
+  );
   (generateText as Mock).mockReset();
+  (getModel as Mock).mockClear();
   (encoding_for_model as Mock)
     .mockReset()
     .mockImplementation(realEncodingForModel);
+});
+
+afterEach(() => {
+  replaceService(undefined);
 });
 
 describe("keepWholeLines", () => {
@@ -223,6 +272,176 @@ describe("performQuery freeform", () => {
     expect(document.answer).toBe("the answer");
     expect(document.warning).toContain(
       "the answer was generated from the first part of it",
+    );
+  });
+
+  it("picks vertex when the registered vertex provider is enabled, otherwise google", async () => {
+    respond("from google");
+    const docGoogle: any = { markdown: "hello", metadata: {} };
+    await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), docGoogle);
+    expect((getModel as Mock).mock.calls[0]).toEqual([
+      "gemini-3.5-flash-lite",
+      "google",
+    ]);
+
+    (getModel as Mock).mockClear();
+    vertexEnabled = true;
+    respond("from vertex");
+    const docVertex: any = { markdown: "hello", metadata: {} };
+    await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), docVertex);
+    expect((getModel as Mock).mock.calls[0]).toEqual([
+      "gemini-3.5-flash-lite",
+      "vertex",
+    ]);
+  });
+
+  it("uses openai directly when only core LLM providers are registered", async () => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            llmProviders: [
+              stubProvider("openai", () => true),
+              stubProvider("ollama", () => false),
+            ],
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+
+    respond("from openai");
+    const doc: any = { markdown: "hello", metadata: {} };
+    await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), doc);
+
+    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", "openai"]]);
+    expect(doc.answer).toBe("from openai");
+  });
+
+  it("skips disabled google and vertex providers in freeform mode", async () => {
+    replaceService(
+      createService(
+        {
+          modules: {},
+          extensions: [
+            {
+              name: "extra-llm",
+              llmProviders: [
+                stubProvider("vertex", () => false),
+                stubProvider("google", () => false),
+              ],
+            },
+          ],
+        },
+        {
+          core: {
+            name: "core",
+            llmProviders: [
+              stubProvider("openai", () => true),
+              stubProvider("ollama", () => false),
+            ],
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+
+    respond("from openai");
+    const doc: any = { markdown: "hello", metadata: {} };
+    await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), doc);
+
+    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", "openai"]]);
+    expect(doc.answer).toBe("from openai");
+  });
+
+  it("uses ollama in freeform mode when ollama is enabled and optional providers are absent", async () => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            llmProviders: [
+              stubProvider("openai", () => false),
+              stubProvider("ollama", () => true),
+            ],
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+
+    respond("from ollama");
+    const doc: any = { markdown: "hello", metadata: {} };
+    await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), doc);
+
+    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", "ollama"]]);
+    expect(doc.answer).toBe("from ollama");
+  });
+
+  it("falls back to the default core provider in directQuote/highlights when fireworks is unregistered", async () => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            llmProviders: [
+              stubProvider("openai", () => true),
+              stubProvider("ollama", () => false),
+            ],
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+
+    respond("[0]");
+    const doc: any = { markdown: "hello world.", metadata: {} };
+    await performQuery(
+      makeMeta([{ type: "highlights", query: "what does it say?" }]),
+      doc,
+    );
+
+    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", "openai"]]);
+    expect(doc.highlights).toBe("hello world.");
+  });
+
+  it("sets a warning instead of throwing when no matching provider is registered", async () => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            llmProviders: [],
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+    (getModel as Mock).mockImplementationOnce(
+      (name: string, provider?: string) => {
+        const providerName = provider ?? "openai";
+        const registered = service.llmProviders.get(providerName);
+        if (!registered) {
+          throw new Error(`LLM provider "${providerName}" is not registered`);
+        }
+        return registered.model(name);
+      },
+    );
+
+    const doc: any = { markdown: "hello world.", metadata: {} };
+    await performQuery(
+      makeMeta([{ type: "highlights", query: "what does it say?" }]),
+      doc,
+    );
+
+    expect(doc.highlights).toBeUndefined();
+    expect(doc.warning).toContain(
+      "Highlights generation failed after all models.",
     );
   });
 });

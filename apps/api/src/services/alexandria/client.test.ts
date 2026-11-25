@@ -130,6 +130,26 @@ describe("exchangeRequest", () => {
     expect(headersOf()).not.toHaveProperty("x-exchange-alexandria-verified");
   });
 
+  it("asks for work contact details only when set", async () => {
+    await exchangeRequest({
+      teamId: "team",
+      path: "/v1/retrieve",
+      body: {},
+      timeoutMs: 1000,
+      workContactOnly: true,
+    });
+    expect(headersOf()["x-exchange-work-contact-only"]).toBe("true");
+
+    mocks.fetch.mockClear();
+    await exchangeRequest({
+      teamId: "team",
+      path: "/v1/retrieve",
+      body: {},
+      timeoutMs: 1000,
+    });
+    expect(headersOf()).not.toHaveProperty("x-exchange-work-contact-only");
+  });
+
   it("sends no connectors grant by default", async () => {
     await exchangeRequest({
       teamId: "team",
@@ -218,6 +238,114 @@ describe("exchangeRequest", () => {
       expect(headersOf()).not.toHaveProperty("x-exchange-client-integration");
     },
   );
+
+  describe("search context", () => {
+    const SEARCH_HEADERS = [
+      "x-exchange-search-route",
+      "x-exchange-search-rewritten",
+      "x-exchange-client-session",
+      "x-exchange-client-thread",
+    ];
+    const send = (context: Record<string, unknown>) =>
+      exchangeRequest({
+        teamId: "team",
+        path: "/v1/retrieve",
+        body: {},
+        timeoutMs: 1000,
+        ...context,
+      });
+
+    afterEach(() => {
+      config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED = true;
+    });
+
+    it("names the route, the rewrite and the caller's session and conversation only when given", async () => {
+      await send({
+        searchRoute: "search_auto",
+        searchRewritten: true,
+        clientSession: "sess_01A",
+        clientThread: "thread:42.a-b",
+      });
+      expect(headersOf()).toMatchObject({
+        "x-exchange-search-route": "search_auto",
+        "x-exchange-search-rewritten": "true",
+        "x-exchange-client-session": "sess_01A",
+        "x-exchange-client-thread": "thread:42.a-b",
+      });
+
+      mocks.fetch.mockClear();
+      await send({});
+      for (const header of SEARCH_HEADERS)
+        expect(headersOf()).not.toHaveProperty(header);
+    });
+
+    it.each(["search_auto", "search_source", "catalogue"])(
+      "sends the %s route",
+      async searchRoute => {
+        await send({ searchRoute });
+        expect(headersOf()["x-exchange-search-route"]).toBe(searchRoute);
+      },
+    );
+
+    it.each([undefined, false, "true"])(
+      "marks no rewrite unless the query was rewritten (%j)",
+      async searchRewritten => {
+        await send({ searchRoute: "search_source", searchRewritten });
+        expect(headersOf()).not.toHaveProperty("x-exchange-search-rewritten");
+      },
+    );
+
+    it.each([
+      null,
+      "",
+      "two words",
+      "line\r\nx-injected: 1",
+      "caf\u00e9",
+      "a".repeat(129),
+      42,
+    ])("drops a malformed session or conversation id (%j)", async id => {
+      await send({ clientSession: id, clientThread: id });
+      expect(headersOf()).not.toHaveProperty("x-exchange-client-session");
+      expect(headersOf()).not.toHaveProperty("x-exchange-client-thread");
+    });
+
+    it("names no session or conversation under zero data retention", async () => {
+      await send({
+        zeroDataRetention: true,
+        searchRoute: "catalogue",
+        clientSession: "sess_01A",
+        clientThread: "thread:42.a-b",
+      });
+      expect(headersOf()["x-exchange-search-route"]).toBe("catalogue");
+      expect(headersOf()).not.toHaveProperty("x-exchange-client-session");
+      expect(headersOf()).not.toHaveProperty("x-exchange-client-thread");
+    });
+
+    it("drops a route it does not know", async () => {
+      await send({ searchRoute: "elsewhere" });
+      expect(headersOf()).not.toHaveProperty("x-exchange-search-route");
+    });
+
+    it("sends none of it when the switch is off, and the caller labels as before", async () => {
+      config.ALEXANDRIA_SEARCH_CONTEXT_ENABLED = false;
+      await send({
+        feedbackStorage: "allowed",
+        clientOrigin: "mcp-cursor",
+        clientIntegration: "n8n",
+        searchRoute: "catalogue",
+        searchRewritten: true,
+        clientSession: "sess_01A",
+        clientThread: "thread:42.a-b",
+      });
+      for (const header of SEARCH_HEADERS)
+        expect(headersOf()).not.toHaveProperty(header);
+      expect(headersOf()).toMatchObject({
+        "x-exchange-feedback-storage": "allowed",
+        "x-exchange-client-origin": "mcp-cursor",
+        "x-exchange-client-integration": "n8n",
+      });
+    });
+  });
 
   it("sends the deadline as a whole number of milliseconds", async () => {
     await exchangeRequest({

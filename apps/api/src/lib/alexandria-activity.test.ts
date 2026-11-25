@@ -24,7 +24,7 @@ vi.mock("../services/rate-limiter", () => ({
 }));
 vi.mock("./logger", () => ({ logger: { warn: mocks.warn } }));
 
-import { config } from "../config";
+import { feedbackEnv } from "./feedback-env";
 import {
   getRecentAlexandriaCalls,
   hasRecentAlexandriaActivity,
@@ -46,16 +46,16 @@ beforeEach(() => {
 
 it("opens the Alexandria window, independent of the search feedback window", async () => {
   const original = {
-    alexandria: config.ALEXANDRIA_FEEDBACK_WINDOW_SEC,
-    search: config.SEARCH_FEEDBACK_MAX_AGE_SEC,
+    alexandria: feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC,
+    search: feedbackEnv.SEARCH_FEEDBACK_MAX_AGE_SEC,
   };
-  config.ALEXANDRIA_FEEDBACK_WINDOW_SEC = 1500;
-  config.SEARCH_FEEDBACK_MAX_AGE_SEC = 90;
+  feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC = 1500;
+  feedbackEnv.SEARCH_FEEDBACK_MAX_AGE_SEC = 90;
   try {
     await recordAlexandriaActivity(teamId);
   } finally {
-    config.ALEXANDRIA_FEEDBACK_WINDOW_SEC = original.alexandria;
-    config.SEARCH_FEEDBACK_MAX_AGE_SEC = original.search;
+    feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC = original.alexandria;
+    feedbackEnv.SEARCH_FEEDBACK_MAX_AGE_SEC = original.search;
   }
   expect(mocks.set).toHaveBeenCalledExactlyOnceWith(
     `alexandria:activity:${teamId}`,
@@ -104,13 +104,13 @@ const calls = [
 ];
 
 it("keeps the last 20 provider calls for the feedback window's lifetime", async () => {
-  const original = config.ALEXANDRIA_FEEDBACK_WINDOW_SEC;
-  config.ALEXANDRIA_FEEDBACK_WINDOW_SEC = 1500;
+  const original = feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC;
+  feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC = 1500;
   const clock = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
   try {
     await recordAlexandriaCalls(teamId, calls);
   } finally {
-    config.ALEXANDRIA_FEEDBACK_WINDOW_SEC = original;
+    feedbackEnv.ALEXANDRIA_FEEDBACK_WINDOW_SEC = original;
     clock.mockRestore();
   }
   const key = `alexandria:calls:${teamId}`;

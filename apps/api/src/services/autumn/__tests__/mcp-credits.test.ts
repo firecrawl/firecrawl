@@ -142,6 +142,32 @@ describe("the entity a charge is made against", () => {
       ]);
     });
 
+    // MCP credits are held against the customer, not a team, so a confirm
+    // says so with an empty entity rather than leaving it unknown.
+    it("confirms an MCP credits hold with an empty entity", async () => {
+      mockFetch.mockImplementation(
+        async () => new Response(JSON.stringify({ success: true })),
+      );
+
+      await new AutumnService().finalizeCreditsLock({
+        lockId: "mcp_lock-1",
+        action: "confirm",
+        overrideValue: 7,
+        team: { teamId: "team-1", orgId: "org-1" },
+        featureId: MCP_CREDITS_FEATURE_ID,
+        heldValue: 5,
+      });
+
+      expect(bodies("/v1/finalize")).toEqual([
+        expect.objectContaining({
+          customer_id: "org-1",
+          entity_id: "",
+          feature_id: MCP_CREDITS_FEATURE_ID,
+          held_value: 5,
+        }),
+      ]);
+    });
+
     it("refunds MCP credits with an empty entity and other features on the team", async () => {
       mockFetch.mockImplementation(
         async () => new Response(JSON.stringify({ success: true })),

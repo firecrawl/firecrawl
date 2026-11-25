@@ -42,6 +42,11 @@ CREATE TABLE alexandria_feedback (
   schema_version integer NOT NULL DEFAULT 2,
   credits_refunded integer NOT NULL DEFAULT 0 CHECK (credits_refunded >= 0),
   refund_policy jsonb,
+  external_request_id text,
+  session_id text,
+  session_source text,
+  thread_id text,
+  thread_source text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -78,6 +83,7 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
   let admin: Pool;
   let app: express.Express;
   let config: typeof import("../../../config").config;
+  let feedbackEnv: typeof import("../../../lib/feedback-env").feedbackEnv;
   let originalAuthentication: boolean | undefined;
   const minimal = {
     endpoint: "alexandria",
@@ -108,6 +114,7 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
     await pool.query(ddl);
     fixture.db = drizzle({ client: pool });
     config = (await import("../../../config.js")).config;
+    feedbackEnv = (await import("../../../lib/feedback-env.js")).feedbackEnv;
     originalAuthentication = config.USE_DB_AUTHENTICATION;
     config.USE_DB_AUTHENTICATION = true;
     const { feedbackController } = await import("./controller.js");
@@ -133,15 +140,16 @@ suite("Alexandria feedback HTTP and PostgreSQL persistence", () => {
   });
 
   it("persists the minimum payload and independent sessions without inventing job IDs", async () => {
-    const websiteCap = config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS;
-    config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS = 1;
+    const websiteCap =
+      feedbackEnv.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS;
+    feedbackEnv.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS = 1;
     let first: request.Response;
     let second: request.Response;
     try {
       first = await submit(minimal);
       second = await submit(minimal);
     } finally {
-      config.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS = websiteCap;
+      feedbackEnv.ALEXANDRIA_FEEDBACK_WEBSITE_DAILY_CAP_CREDITS = websiteCap;
     }
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);

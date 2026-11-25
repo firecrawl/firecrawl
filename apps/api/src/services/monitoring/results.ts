@@ -2,6 +2,7 @@ import { NuQJob } from "../worker/nuq";
 import { ScrapeJobData } from "../../types";
 import { logger as _logger } from "../../lib/logger";
 import { createWebhookSender, WebhookEvent } from "../webhook";
+import { jobContext } from "../../lib/request-context";
 import { redisEvictConnection } from "../redis";
 import { computeAndPersistPageDiff } from "./diff-orchestrator";
 import { derivePageIsMeaningful } from "./page-events";
@@ -259,7 +260,7 @@ export async function recordMonitorScrapeSuccess(
           ? monitorForRun.goal
           : null,
       extractionPrompt: targetCtFormat?.prompt ?? null,
-      teamFlags: job.data.internalOptions?.teamFlags,
+      teamFlags: jobContext(job.data).flags,
     });
   } catch (error) {
     // A transient diff/persist failure (e.g. GCS) must not strand the check:

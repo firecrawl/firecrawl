@@ -2,6 +2,7 @@ import { Pool } from "pg";
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { config } from "../config";
 import { logger } from "../lib/logger";
+import { dbEnv } from "./env";
 import {
   keepPoolWarm,
   pickMaxLifetimeSeconds,
@@ -37,7 +38,7 @@ function makeDb(
   // keeps connections warm across traffic dips so a burst never has the whole
   // fleet re-opening connections at once.
   const options = resolveDbPoolOptions(
-    config.DB_POOL_PROFILE,
+    dbEnv.DB_POOL_PROFILE,
     poolName,
     poolMaxLifetimeSeconds,
   );
@@ -63,7 +64,7 @@ function makeDb(
   logger.info("Postgres pool configured", {
     module: "db",
     applicationName,
-    profile: config.DB_POOL_PROFILE ?? "default",
+    profile: dbEnv.DB_POOL_PROFILE ?? "default",
     ...options,
   });
   pool.on("error", err =>
@@ -161,19 +162,19 @@ export function getDbPoolMetrics(): string {
 const useDbAuthentication = config.USE_DB_AUTHENTICATION;
 
 const mainDb = useDbAuthentication
-  ? makeDb(config.DATABASE_URL, "firecrawl-api", "main")
+  ? makeDb(dbEnv.DATABASE_URL, "firecrawl-api", "main")
   : null;
 // Without a distinct replica URL the "replica" pool points at the primary's
 // pooler, so it must not hold a second warm set of connections there.
 const replicaDb = useDbAuthentication
   ? makeDb(
-      config.DATABASE_REPLICA_URL ?? config.DATABASE_URL,
+      dbEnv.DATABASE_REPLICA_URL ?? dbEnv.DATABASE_URL,
       "firecrawl-api-rr",
       "replica",
       {
         keepWarm:
-          config.DATABASE_REPLICA_URL !== undefined &&
-          config.DATABASE_REPLICA_URL !== config.DATABASE_URL,
+          dbEnv.DATABASE_REPLICA_URL !== undefined &&
+          dbEnv.DATABASE_REPLICA_URL !== dbEnv.DATABASE_URL,
       },
     )
   : null;

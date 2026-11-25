@@ -2,12 +2,8 @@ import { Response } from "express";
 import { externalRequestId } from "../../lib/external-request-id";
 import { config } from "../../config";
 import { timingSafeSecretEqual } from "../../lib/secret-compare";
-import {
-  RequestWithAuth,
-  SearchRequest,
-  SearchResponse,
-  searchRequestSchema,
-} from "./types";
+import { getV2RequestSchemas, RequestWithAuth, SearchResponse } from "./types";
+import type { SearchRequest } from "../../service/request";
 import { billTeam } from "../../services/billing/credit_billing";
 import {
   adjustKeylessCredits,
@@ -23,13 +19,18 @@ import {
   logResearchEndpoint,
 } from "../../services/logging/log_job";
 import { logger as _logger } from "../../lib/logger";
-import { ScrapeJobTimeoutError } from "../../lib/error";
+import { getErrorHttpResponse, ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
 import { CategoryOption, hasCategory } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
+import { applySearchPlanHook } from "../../search/plan-hook";
 import { SearchProviderError } from "../../search/v2";
 import type { BillingMetadata } from "../../services/billing/types";
-import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
+import {
+  getSearchForcedKind,
+  getSearchZDR,
+  isAlexandriaZDRForced,
+} from "../../lib/zdr-helpers";
 import { teamPlanClass } from "../../lib/team-plan-class";
 import {
   withSpan,
@@ -68,14 +69,16 @@ import { requestOrigin } from "../../lib/request-origin";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { markAlexandriaActivity } from "../../lib/alexandria-activity";
 import { recordDiscoveredTools } from "../../lib/alexandria-discovery";
+import { lineageIds } from "../../lib/feedback-trace";
 import {
   autoToolsEnabled,
   queryInferenceEnabled,
   toolFusionEnabled,
 } from "../../search/tool-intent";
 import { isUsOnly, usOnlyLocationRefusal } from "../../lib/us-only";
-import { UsOnlyUpstreamRefusalError } from "../../lib/research-upstream";
-import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+import { isSelfHosted } from "../../lib/deployment";
+import { requestContext } from "../../lib/request-context";
+import { installedService } from "../../service/service";
 
 const IMAGE_SEARCH_US_ONLY_MESSAGE =
   "Image search is not available for teams restricted to US-only processing.";
@@ -151,12 +154,19 @@ async function searchControllerInner(
   let zeroDataRetention = teamForcedKind !== null;
   let reservedKeylessCredits = 0;
   let reconciledKeylessCredits = false;
+  let jobIdField: { jobId?: string } = {};
 
   try {
     const rawOrigin =
       typeof req.body?.origin === "string" ? req.body.origin : undefined;
-    delete (req.body as Record<string, unknown>)?.objective;
-    delete (req.body as Record<string, unknown>)?.clientModel;
+    const headerOrigin = req.headers["x-origin"];
+    // A team held to Alexandria zero data retention names no session or conversation.
+    const lineage = isAlexandriaZDRForced(req.acuc?.flags ?? undefined)
+      ? {}
+      : lineageIds(req);
+    const rawBody = req.body as unknown as Record<string, unknown> | undefined;
+    delete rawBody?.objective;
+    delete rawBody?.clientModel;
     if (hasCategory(req.body?.categories, "github")) {
       logger.warn("Removed search category requested", {
         module: "deprecations",
@@ -171,9 +181,8 @@ async function searchControllerInner(
         documentation_url: "https://docs.firecrawl.dev/features/developer",
       });
     }
-    const sourcesOmitted =
-      (req.body as Record<string, unknown>)?.sources === undefined;
-    req.body = searchRequestSchema.parse(req.body);
+    const sourcesOmitted = rawBody?.sources === undefined;
+    req.body = getV2RequestSchemas().search.parse(req.body);
 
     const wantsTools = req.body.sources.some(
       source => source.type === "alexandria",
@@ -426,6 +435,18 @@ async function searchControllerInner(
       }
     }
 
+    const ctx =
+      req.ctx ??
+      requestContext({
+        teamId: req.auth.team_id,
+        zeroDataRetention,
+        flags: req.acuc?.flags ?? null,
+        orgId: req.acuc?.org_id ?? null,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+        billing,
+      });
+    req.ctx = ctx;
+
     // Kick off the `requests` row insert without blocking: it queues on the
     // Postgres pool and can take seconds under pool pressure. We only need it
     // committed before the child-row writes (logSearch et al. below) to keep
@@ -449,28 +470,6 @@ async function searchControllerInner(
       logRequestPromise.catch(() => {});
     }
 
-    const toolsOnly = isToolsOnlySearch(req.body.sources, req.body.categories);
-    const freeCatalogue = isFreeCatalogueSearch(
-      req.body.sources,
-      req.body.categories,
-    );
-    const govSearch = wantsGovCategory(categories);
-    const projectedKeylessCredits =
-      !isSearchPreview &&
-      shouldBill &&
-      !freeCatalogue &&
-      (!govSearch || requestedFormats.length > 0)
-        ? projectSearchTotalCredits(
-            {
-              limit: req.body.limit,
-              enterprise: req.body.enterprise,
-              scrapeOptions: req.body.scrapeOptions,
-              freeSearch: govSearch,
-            },
-            req.acuc?.flags ?? null,
-            zeroDataRetention,
-          )
-        : 0;
     // The request must be on record before anything is reserved, runs, or
     // bills. A failed log fails the request here, ahead of the keyless
     // reservation and the search, so there is nothing to refund or unbill.
@@ -481,6 +480,99 @@ async function searchControllerInner(
       logger.warn("Had to wait for log request promise to complete", {
         timeMs: waited,
       });
+    if (!agentRequestId) jobIdField = { jobId };
+
+    const planHooks = installedService()?.hooks;
+    const planned = planHooks?.has("search.plan")
+      ? await applySearchPlanHook(
+          {
+            query: req.body.query,
+            limit: req.body.limit,
+            sources: req.body.sources as Array<{ type: string }>,
+          },
+          { ctx, body: req.body },
+        )
+      : {
+          query: req.body.query,
+          limit: req.body.limit,
+          sources: req.body.sources as Array<{ type: string }>,
+        };
+
+    if (planHooks?.has("search.plan")) {
+      const plannedWantsTools = planned.sources.some(
+        source => source.type === "alexandria",
+      );
+      const plannedWantsSkills = planned.sources.some(
+        source => source.type === "skills",
+      );
+      if (
+        (plannedWantsTools || plannedWantsSkills) &&
+        req.auth.team_id.startsWith("preview_keyless_")
+      ) {
+        applyAgentAuthDiscoveryHeader(res);
+        return res
+          .status(403)
+          .json(keylessProviderToolsBody(req.auth.team_id, req));
+      }
+      if ((plannedWantsTools || plannedWantsSkills) && !planned.query.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: plannedWantsTools
+            ? "A query is required for tool search."
+            : "A query is required for skill search.",
+        });
+      }
+      if (
+        (plannedWantsTools || plannedWantsSkills) &&
+        (teamForcedKind ||
+          req.body.enterprise?.some(mode => mode === "zdr" || mode === "anon"))
+      ) {
+        return res.status(403).json({
+          success: false,
+          error:
+            "Provider discovery requires access and does not support zero data retention.",
+        });
+      }
+      if (
+        isUsOnly(req.acuc?.flags) &&
+        planned.sources.some(source => source.type === "images")
+      ) {
+        planned.sources = planned.sources.filter(
+          source => source.type !== "images",
+        );
+        if (planned.sources.length === 0 && !indexCategory) {
+          return res.status(403).json({
+            success: false,
+            code: "US_ONLY_UNAVAILABLE",
+            error: IMAGE_SEARCH_US_ONLY_MESSAGE,
+          });
+        }
+        usOnlyImagesWarning = IMAGE_SEARCH_US_ONLY_MESSAGE;
+      }
+    }
+
+    const toolsOnly = isToolsOnlySearch(planned.sources, req.body.categories);
+    const freeCatalogue = isFreeCatalogueSearch(
+      planned.sources,
+      req.body.categories,
+    );
+    const govSearch = wantsGovCategory(categories);
+    const projectedKeylessCredits =
+      !isSearchPreview &&
+      shouldBill &&
+      !freeCatalogue &&
+      (!govSearch || requestedFormats.length > 0)
+        ? projectSearchTotalCredits(
+            {
+              limit: planned.limit,
+              enterprise: req.body.enterprise,
+              scrapeOptions: req.body.scrapeOptions,
+              freeSearch: govSearch,
+            },
+            req.acuc?.flags ?? null,
+            zeroDataRetention,
+          )
+        : 0;
 
     if (govSearch) {
       const perMinute = await consumeIndexRateLimit(
@@ -496,6 +588,7 @@ async function searchControllerInner(
           success: false,
           error: perMinute.error,
           retry_after_seconds: perMinute.retryAfterSeconds,
+          ...jobIdField,
         });
       }
     }
@@ -507,9 +600,10 @@ async function searchControllerInner(
       );
       if (!reservation.ok) {
         applyAgentAuthDiscoveryHeader(res);
-        return res
-          .status(429)
-          .json(await keylessLimitBody(req.auth.team_id, "v2_search", req));
+        return res.status(429).json({
+          ...(await keylessLimitBody(req.auth.team_id, "v2_search", req)),
+          ...jobIdField,
+        });
       }
       reservedKeylessCredits = projectedKeylessCredits;
     }
@@ -531,21 +625,22 @@ async function searchControllerInner(
           success: false,
           code: "INDEX_DAILY_LIMIT",
           ...indexDailyLimitRefusal("gov", req.auth.team_id, indexBudget),
+          ...jobIdField,
         });
       }
     }
 
     const result = await executeSearch(
       {
-        query: req.body.query,
-        limit: req.body.limit,
+        query: planned.query,
+        limit: planned.limit,
         tbs: req.body.tbs,
         filter: req.body.filter,
         lang: req.body.lang,
         country: req.body.country,
         location: req.body.location,
         safe: req.body.safe,
-        sources: req.body.sources as Array<{ type: string }>,
+        sources: planned.sources,
         categories: req.body.categories as CategoryOption[],
         includeDomains: req.body.includeDomains,
         excludeDomains: req.body.excludeDomains,
@@ -568,6 +663,12 @@ async function searchControllerInner(
         orgId: req.acuc?.org_id ?? null,
         origin: req.body.origin,
         integration: req.body.integration,
+        // The origin as the caller named it: the schema default would label every caller "api".
+        clientOrigin:
+          rawOrigin ??
+          (typeof headerOrigin === "string" ? headerOrigin : undefined),
+        clientSession: lineage.sessionId,
+        clientThread: lineage.threadId,
         apiKeyId: req.acuc?.api_key_id ?? null,
         flags: req.acuc?.flags ?? null,
         teamPlanClass: teamPlanClass(req.acuc),
@@ -581,6 +682,12 @@ async function searchControllerInner(
         keylessReserved: reservedKeylessCredits > 0,
         threatProtectionPolicy: threatProtection.policy,
         safeModeBypassed: safeMode.bypassed === true,
+        ...(req.headers["x-firecrawl-work-contact-only"] === "true"
+          ? { workContactOnly: true }
+          : {}),
+        ctx,
+        body: req.body,
+        planApplied: true,
       },
       logger,
     );
@@ -605,10 +712,21 @@ async function searchControllerInner(
       }).catch(error => {
         logger.error("Failed to log search", { error, jobId });
       });
+      const hooks = installedService()?.hooks;
+      if (hooks?.has("search.finished")) {
+        hooks.observe("search.finished", {
+          id: jobId,
+          ctx,
+          results: 0,
+          charged:
+            !isSelfHosted() && !isSearchPreview && shouldBill ? 0 : undefined,
+        });
+      }
       return res.status(503).json({
         success: false,
         code: "TOOL_DISCOVERY_UNAVAILABLE",
         error,
+        ...jobIdField,
       });
     }
 
@@ -721,7 +839,20 @@ async function searchControllerInner(
         result.toolsAuto ? "auto_search" : "search",
         jobId,
         result.response.tools,
+        lineage,
       );
+    }
+    const hooks = installedService()?.hooks;
+    if (hooks?.has("search.finished")) {
+      hooks.observe("search.finished", {
+        id: jobId,
+        ctx,
+        results: result.totalResultsCount,
+        charged:
+          !isSelfHosted() && !isSearchPreview && shouldBill
+            ? result.searchCredits
+            : undefined,
+      });
     }
     const warning = [
       usOnlyImagesWarning,
@@ -759,26 +890,19 @@ async function searchControllerInner(
         success: false,
         code: error.code,
         error: error.message,
+        ...jobIdField,
       });
     }
 
-    if (error instanceof UsOnlyUnavailableError) {
-      setSpanAttributes(span, { "search.status_code": 403 });
-      return res.status(403).json({
+    const httpResponse = getErrorHttpResponse(error);
+    if (httpResponse) {
+      setSpanAttributes(span, { "search.status_code": httpResponse.status });
+      return res.status(httpResponse.status).json({
+        ...httpResponse.extraFields,
         success: false,
-        code: error.code,
-        error: error.message,
-      });
-    }
-
-    if (error instanceof UsOnlyUpstreamRefusalError) {
-      setSpanAttributes(span, { "search.status_code": error.status });
-      return res.status(error.status).json({
-        success: false,
-        ...(error.status === 403
-          ? { code: "US_ONLY_UNAVAILABLE" as const }
-          : {}),
-        error: error.message,
+        ...(httpResponse.code ? { code: httpResponse.code } : {}),
+        error: httpResponse.message,
+        ...jobIdField,
       });
     }
 
@@ -796,6 +920,7 @@ async function searchControllerInner(
     return res.status(500).json({
       success: false,
       error: error.message,
+      ...jobIdField,
     });
   }
 }

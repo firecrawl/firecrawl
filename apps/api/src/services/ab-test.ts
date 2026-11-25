@@ -8,6 +8,7 @@ import {
   FireEngineScrapeRequestTLSClient,
 } from "../scraper/scrapeURL/engines/fire-engine/scrape";
 import { getDocFromGCS } from "../lib/gcs-jobs";
+import { jobContext } from "../lib/request-context";
 import { MirrorResult, FireEngineResponse } from "./ab-test-comparison";
 
 export function abTestJob(webScraperOptions: ScrapeJobData) {
@@ -19,13 +20,11 @@ export function abTestJob(webScraperOptions: ScrapeJobData) {
 
     const shouldABTest =
       webScraperOptions.mode === "single_urls" &&
-      !webScraperOptions.zeroDataRetention &&
+      !jobContext(webScraperOptions).zeroDataRetention &&
       !webScraperOptions.internalOptions?.zeroDataRetention &&
       abRate > 0 &&
       Math.random() <= abRate &&
-      config.SCRAPEURL_AB_HOST &&
-      webScraperOptions.internalOptions?.v1Agent === undefined &&
-      webScraperOptions.internalOptions?.v1JSONAgent === undefined;
+      config.SCRAPEURL_AB_HOST;
 
     if (shouldABTest) {
       const timeout = Math.min(

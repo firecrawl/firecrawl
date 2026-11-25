@@ -5,7 +5,6 @@ import {
   insertOmceJobIfNeeded,
   queryIndexAtSplitLevel as rpcQueryIndexAtSplitLevel,
   queryOmceSignatures as rpcQueryOmceSignatures,
-  queryEngpickerVerdict as rpcQueryEngpickerVerdict,
   queryIndexAtSplitLevelWithMeta as rpcQueryIndexAtSplitLevelWithMeta,
   queryIndexAtDomainSplitLevelWithMeta as rpcQueryIndexAtDomainSplitLevelWithMeta,
   queryDomainPriority as rpcQueryDomainPriority,
@@ -27,6 +26,7 @@ import type { PdfMetadata } from "../scraper/scrapeURL/engines/pdf/types";
 import { storage } from "../lib/gcs-jobs";
 import { withSpan, setSpanAttributes } from "../lib/otel-tracer";
 import { config } from "../config";
+import { searchIndexEnv } from "../lib/search-index-env";
 import { getGcsScreenshotUrlResignReason } from "./index-screenshot-url";
 configDotenv();
 
@@ -170,7 +170,8 @@ export const useIndex =
   config.INDEX_DATABASE_URL !== "" && config.INDEX_DATABASE_URL !== undefined;
 
 export const useSearchIndex =
-  config.SEARCH_SERVICE_URL !== "" && config.SEARCH_SERVICE_URL !== undefined;
+  searchIndexEnv.SEARCH_SERVICE_URL !== "" &&
+  searchIndexEnv.SEARCH_SERVICE_URL !== undefined;
 
 export function normalizeURLForIndex(url: string): string {
   const urlObj = new URL(url);
@@ -495,43 +496,6 @@ export async function queryOMCESignatures(
   } catch (error) {
     _logger.warn("Error querying index (omce)", { error, hostname });
     return [];
-  }
-}
-
-export async function queryEngpickerVerdict(
-  hostname: string,
-): Promise<"TlsClientOk" | "ChromeCdpRequired" | "Uncertain" | "Unknown"> {
-  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
-    return "Unknown";
-  }
-
-  const domainSplitsHash = generateDomainSplits(hostname).map(x => hashURL(x));
-
-  const level = domainSplitsHash.length - 1;
-  if (domainSplitsHash.length === 0) {
-    return "Unknown";
-  }
-
-  // 250ms max time taken
-  try {
-    const data = await Promise.race([
-      rpcQueryEngpickerVerdict(domainSplitsHash[level]),
-      new Promise<{ verdict: string }[]>(resolve =>
-        setTimeout(() => resolve([{ verdict: "Unknown" }]), 250),
-      ),
-    ]);
-
-    return (data?.[0]?.verdict ?? "Unknown") as
-      | "TlsClientOk"
-      | "ChromeCdpRequired"
-      | "Uncertain"
-      | "Unknown";
-  } catch (error) {
-    _logger.warn("Error querying index (engpicker)", {
-      error,
-      hostname,
-    });
-    return "Unknown";
   }
 }
 

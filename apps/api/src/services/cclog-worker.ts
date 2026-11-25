@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { config } from "../config";
 import { shutdownTracing } from "../otel";
 import Express from "express";
 import { logger as _logger } from "../lib/logger";
@@ -10,6 +9,8 @@ import {
 } from "../lib/cclog";
 import { getRedisConnection } from "./queue-service";
 import { startRole } from "../main";
+import { runProcessStop } from "../service/service";
+import { cclogWorkerEnv } from "./cclog-worker-env";
 
 const CCLOG_WORKER_LOCK_KEY = "cclog:worker:tick-lock";
 const CCLOG_WORKER_LOCK_TTL_SECONDS = 55;
@@ -25,9 +26,9 @@ async function sleepUntilNextMinute() {
 }
 
 async function sendHeartbeat() {
-  if (config.CCLOG_WORKER_HEARTBEAT_URL) {
+  if (cclogWorkerEnv.CCLOG_WORKER_HEARTBEAT_URL) {
     try {
-      const response = await fetch(config.CCLOG_WORKER_HEARTBEAT_URL, {
+      const response = await fetch(cclogWorkerEnv.CCLOG_WORKER_HEARTBEAT_URL, {
         signal: AbortSignal.timeout(5000),
       });
       if (!response.ok) {
@@ -50,19 +51,22 @@ export async function start() {
     res.status(200).send("OK");
   });
 
-  const server = app.listen(config.CCLOG_WORKER_PORT, (error?: Error) => {
-    if (error) {
-      _logger.error("Failed to start cclog worker", {
-        error,
-        port: config.CCLOG_WORKER_PORT,
-      });
-      throw error;
-    }
+  const server = app.listen(
+    cclogWorkerEnv.CCLOG_WORKER_PORT,
+    (error?: Error) => {
+      if (error) {
+        _logger.error("Failed to start cclog worker", {
+          error,
+          port: cclogWorkerEnv.CCLOG_WORKER_PORT,
+        });
+        throw error;
+      }
 
-    _logger.info("cclog worker started", {
-      port: config.CCLOG_WORKER_PORT,
-    });
-  });
+      _logger.info("cclog worker started", {
+        port: cclogWorkerEnv.CCLOG_WORKER_PORT,
+      });
+    },
+  );
 
   async function shutdown() {
     if (isShuttingDown) return;
@@ -75,6 +79,7 @@ export async function start() {
     }
 
     server.close(async () => {
+      await runProcessStop("cclog-worker");
       await shutdownTracing();
       _logger.info("cclog worker shut down");
       process.exit(0);
