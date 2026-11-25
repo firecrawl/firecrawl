@@ -1217,6 +1217,10 @@ export type AuthCreditUsageChunk = {
   // and the bypass/preview mocks omit it (treated as not banned).
   is_banned?: boolean;
 
+  // api_keys.expires_at; null or absent means the key never expires. Checked
+  // on every request, including cache hits.
+  expires_at?: string | Date | null;
+
   // appended on JS-side
   is_extract?: boolean;
 

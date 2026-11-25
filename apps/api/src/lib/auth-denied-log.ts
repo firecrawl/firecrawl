@@ -16,6 +16,7 @@ export type AuthDenialReason =
   | "invalid_vercel_oidc_token"
   | "vercel_oidc_team_mismatch"
   | "team_banned"
+  | "key_expired"
   | "ip_restricted"
   | "endpoint_restricted"
   | "keyless_ip_ineligible"
