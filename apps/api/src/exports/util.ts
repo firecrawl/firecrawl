@@ -24,6 +24,10 @@ export { countries } from "../lib/validate-country";
 export { currentLimits, resolveJobPriority } from "../lib/limits";
 export { integrationSchema, resolveIntegration } from "../utils/integration";
 export { createWebhookSchema, webhookSchema } from "../services/webhook/schema";
+export {
+  summarizeWebhookForLog,
+  withWebhookSummaryForLog,
+} from "../services/webhook/log";
 export { addStrictSchemaIssue } from "../lib/openai-strict-schema";
 export { CostLimitExceededError, CostTracking } from "../lib/cost-tracking";
 export {

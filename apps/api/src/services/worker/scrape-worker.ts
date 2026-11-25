@@ -84,6 +84,7 @@ import {
   type ScrapeFinishedOutcome,
 } from "../../scraper/scrapeURL/hooks";
 import type { JobKind } from "../../service/hooks";
+import { summarizeWebhookForLog } from "../webhook/log";
 
 configDotenv();
 
@@ -704,7 +705,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         });
         if (sender) {
           logger.debug("Calling webhook with success...", {
-            webhook: job.data.webhook,
+            webhook: summarizeWebhookForLog(job.data.webhook),
           });
           const documents = Array.isArray(data?.result?.links)
             ? data.result.links.map(x => x.content)
@@ -1268,7 +1269,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
 
     if (job.data.webhook) {
       logger.debug("Calling webhook with crawl.started...", {
-        webhook: job.data.webhook,
+        webhook: summarizeWebhookForLog(job.data.webhook),
       });
       const sender = await createWebhookSender({
         teamId: job.data.team_id,
