@@ -4,6 +4,17 @@ import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import type { TeamPlanClass } from "../../lib/team-plan-class";
 import { service, type SearchQuery } from "../../service";
 import { searchWithProvider } from "../../lib/search-metrics";
+import type { ErrorCode } from "../../lib/error";
+
+/** Every search provider failed, so the search has no answer to give. */
+export class SearchProviderUnavailableError extends Error {
+  readonly code: ErrorCode = "SEARCH_PROVIDER_UNAVAILABLE";
+  readonly httpStatus = 503;
+
+  constructor(options?: ErrorOptions) {
+    super("Search is temporarily unavailable. Retry the request.", options);
+  }
+}
 
 export async function search({
   query,
@@ -83,18 +94,23 @@ export async function search({
     teamPlanClass,
   };
 
-  try {
-    for (const provider of providers) {
+  let answered = false;
+  let failure: unknown;
+  for (const provider of providers) {
+    try {
       const result = await searchWithProvider(provider, searchQuery);
       if (result != null) {
         return result;
       }
+      answered = true;
+    } catch (error) {
+      logger.error(`Error in search function`, { error });
+      failure = error;
     }
-
-    // Fallback to empty response
-    return {};
-  } catch (error) {
-    logger.error(`Error in search function`, { error });
-    return {};
   }
+
+  if (!answered && failure !== undefined) {
+    throw new SearchProviderUnavailableError({ cause: failure });
+  }
+  return {};
 }
