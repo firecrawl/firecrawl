@@ -4,6 +4,7 @@
  * This file imports only module types so constructing default modules or
  * describing a service never loads configuration, queues, or storage clients.
  */
+import type { z as Zod } from "zod";
 import type { Document } from "../controllers/v2/types";
 import type { JobKind } from "./hooks";
 import type {
@@ -191,26 +192,8 @@ export function memoryUploads(): UploadsModule {
   return { driver: () => driver };
 }
 
-let queueJobStoreSchemasPromise: Promise<{
-  singleUrlJobDataSchema: {
-    safeParse: (
-      value: unknown,
-    ) =>
-      | { success: true; data: { mode: "single_urls"; team_id?: string } }
-      | { success: false };
-  };
-  singleUrlModeSchema: {
-    safeParse: (value: unknown) => { success: boolean };
-  };
-  storedDocumentSchema: {
-    safeParse: (
-      value: unknown,
-    ) => { success: true; data: Document } | { success: false };
-  };
-}> | null = null;
-
-function getQueueJobStoreSchemas() {
-  queueJobStoreSchemasPromise ??= import("zod").then(({ z }) => ({
+function buildQueueJobStoreSchemas(z: typeof Zod) {
+  return {
     singleUrlJobDataSchema: z.object({
       mode: z.literal("single_urls"),
       team_id: z
@@ -225,7 +208,17 @@ function getQueueJobStoreSchemas() {
       value =>
         typeof value === "object" && value !== null && !Array.isArray(value),
     ),
-  }));
+  };
+}
+
+let queueJobStoreSchemasPromise: Promise<
+  ReturnType<typeof buildQueueJobStoreSchemas>
+> | null = null;
+
+function getQueueJobStoreSchemas() {
+  queueJobStoreSchemasPromise ??= import("zod").then(({ z }) =>
+    buildQueueJobStoreSchemas(z),
+  );
   return queueJobStoreSchemasPromise;
 }
 

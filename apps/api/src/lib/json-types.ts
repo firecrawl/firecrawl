@@ -13,14 +13,30 @@ const parsedJsonValueSchema = z.custom<StrictJsonValue>(() => true);
  * recursive validation walk, rejecting non-finite numbers such as `1e400`.
  */
 export function parseJsonString(text: string): StrictJsonValue {
-  return parsedJsonValueSchema.parse(
-    JSON.parse(text, (_key, value: unknown) => {
-      if (typeof value === "number" && !Number.isFinite(value)) {
+  const parsed = parsedJsonValueSchema.parse(JSON.parse(text));
+  const stack: Array<StrictJsonValue> = [parsed];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (typeof current === "number") {
+      if (!Number.isFinite(current)) {
         throw new SyntaxError("JSON numbers must be finite");
       }
-      return value;
-    }),
-  );
+      continue;
+    }
+    if (current === null || typeof current !== "object") {
+      continue;
+    }
+    if (Array.isArray(current)) {
+      for (const item of current) {
+        stack.push(item);
+      }
+    } else {
+      for (const value of Object.values(current)) {
+        stack.push(value);
+      }
+    }
+  }
+  return parsed;
 }
 
 /** Zod schema matching a plain JSON object (string keys mapped to JSON values). */
