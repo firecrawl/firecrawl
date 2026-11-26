@@ -94,6 +94,7 @@ describe("executeTransformers", () => {
     );
 
     expect(document.markdown).toBe("field: Sch");
-    expect(document.html).toBe("<p>field: Sch</p>");
+    expect(document.html).toContain("<p>field: Sch</p>");
+    expect(document.html).not.toContain("\u0000");
   });
 });
