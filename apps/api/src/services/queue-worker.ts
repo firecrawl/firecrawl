@@ -83,21 +83,42 @@ const crawlFinishWorker = async () => {
 
     logger.info("Acquired job");
 
-    const jobLock = job.lock;
+    let jobLock = job.lock;
     if (!jobLock) {
-      logger.warn("Acquired job without lock");
-      continue;
+      const reclaimedLock = await crawlFinishedQueue.reclaimLock(
+        job.id,
+        logger,
+      );
+      if (reclaimedLock) {
+        logger.warn("Acquired job without lock; reclaimed lock from database", {
+          jobId: job.id,
+        });
+        jobLock = reclaimedLock;
+      } else {
+        logger.warn("Acquired job without lock; no active database row found", {
+          jobId: job.id,
+        });
+        continue;
+      }
     }
 
+    const activeLock = jobLock;
     const lockRenewInterval = setInterval(() => {
       void (async () => {
-        logger.info("Renewing lock");
-        if (!(await crawlFinishedQueue.renewLock(job.id, jobLock, logger))) {
-          logger.warn("Failed to renew lock");
+        try {
+          logger.info("Renewing lock");
+          if (
+            !(await crawlFinishedQueue.renewLock(job.id, activeLock, logger))
+          ) {
+            logger.warn("Failed to renew lock");
+            clearInterval(lockRenewInterval);
+            return;
+          }
+          logger.info("Renewed lock");
+        } catch (error: unknown) {
+          logger.warn("Failed to renew lock", { error });
           clearInterval(lockRenewInterval);
-          return;
         }
-        logger.info("Renewed lock");
       })();
     }, 15_000);
 

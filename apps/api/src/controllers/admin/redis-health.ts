@@ -15,7 +15,10 @@ async function retryOperation<T>(
         throw error;
       }
       const message = error instanceof Error ? error.message : String(error);
-      logger.warn(`Attempt ${attempt} failed: ${message}. Retrying...`);
+      logger.warn("Redis operation failed; retrying", {
+        attempt,
+        error: message,
+      });
       await new Promise<void>(resolve => {
         setTimeout(resolve, 2000);
       });
@@ -38,7 +41,7 @@ export async function redisHealthController(req: Request, res: Response) {
       queueRedisHealth = await retryOperation(() => queueRedis.get(testKey));
       await retryOperation(() => queueRedis.del(testKey));
     } catch (error: unknown) {
-      logger.error(`queueRedis health check failed: ${String(error)}`);
+      logger.error("queueRedis health check failed", { error });
       queueRedisHealth = null;
     }
 
@@ -51,9 +54,7 @@ export async function redisHealthController(req: Request, res: Response) {
       );
       await retryOperation(() => redisRateLimitClient.del(testKey));
     } catch (error: unknown) {
-      logger.error(
-        `redisRateLimitClient health check failed: ${String(error)}`,
-      );
+      logger.error("redisRateLimitClient health check failed", { error });
       redisRateLimitHealth = null;
     }
 
@@ -70,15 +71,13 @@ export async function redisHealthController(req: Request, res: Response) {
       logger.info("Both Redis instances are healthy");
       return res.status(200).json({ status: "healthy", details: healthStatus });
     } else {
-      logger.info(
-        `Redis instances health check: ${JSON.stringify(healthStatus)}`,
-      );
+      logger.info("Redis instances health check", { details: healthStatus });
       return res
         .status(500)
         .json({ status: "unhealthy", details: healthStatus });
     }
   } catch (error: unknown) {
-    logger.error(`Redis health check failed: ${String(error)}`);
+    logger.error("Redis health check failed", { error });
     return res.status(500).json({
       status: "unhealthy",
       message: error instanceof Error ? error.message : String(error),

@@ -42,7 +42,7 @@ vi.mock("../../../lib/logger", () => ({
 import express from "express";
 import request from "supertest";
 import { afterAll, beforeAll } from "vitest";
-import { isJsonObject } from "../../../lib/json-types";
+import { jsonObjectSchema } from "../../../lib/json-types";
 import type { JsonObject } from "../../../lib/json-types";
 import { queueJobStore } from "../../../service/defaults";
 import { createService, replaceService } from "../../../service/service";
@@ -120,10 +120,7 @@ async function getStatus(
     .query(query)
     .set("Host", "localhost");
   const parsed: unknown = JSON.parse(response.text);
-  if (!isJsonObject(parsed)) {
-    throw new Error("Expected crawl status response");
-  }
-  return parsed;
+  return jsonObjectSchema.parse(parsed);
 }
 
 describe("crawl status next cursor", () => {

@@ -18,7 +18,11 @@ import {
   coreEngineSpecs,
 } from "../scraper/scrapeURL/engines/metadata";
 import type { CoreEngineSpec } from "../scraper/scrapeURL/engines/metadata";
-import type { TransportableErrorClass } from "../lib/error";
+import type { coreErrors } from "../lib/error-serde";
+import type { coreLlmProviders } from "../lib/generic-ai";
+import type { logger } from "../lib/logger";
+import type { coreEngines } from "../scraper/scrapeURL/engines";
+import type { coreSearchProviders } from "../search/providers";
 import type { Engine, EngineName } from "./engines";
 import { coreLlmProviderNames } from "./llm-providers";
 import type { LlmProvider, LlmProviderName } from "./llm-providers";
@@ -29,7 +33,7 @@ import type {
   SearchProviderName,
 } from "./search-providers";
 import { defaultBuildRequestSchemas } from "./request";
-import type { CoreParts, ServiceLogMeta, Worker } from "./service";
+import type { CoreParts, Worker } from "./service";
 
 interface StartableModule {
   start: Worker["run"];
@@ -54,7 +58,7 @@ function requireRoleModule(modulePath: string): StartableModule {
 
 function isCoreEnginesModule(
   value: unknown,
-): value is { coreEngines: ReadonlyArray<Engine> } {
+): value is { coreEngines: typeof coreEngines } {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -65,7 +69,7 @@ function isCoreEnginesModule(
 
 function isCoreSearchProvidersModule(
   value: unknown,
-): value is { coreSearchProviders: ReadonlyArray<SearchProvider> } {
+): value is { coreSearchProviders: typeof coreSearchProviders } {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -76,7 +80,7 @@ function isCoreSearchProvidersModule(
 
 function isCoreLlmProvidersModule(
   value: unknown,
-): value is { coreLlmProviders: ReadonlyArray<LlmProvider> } {
+): value is { coreLlmProviders: typeof coreLlmProviders } {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -87,7 +91,7 @@ function isCoreLlmProvidersModule(
 
 function isCoreErrorsModule(
   value: unknown,
-): value is { coreErrors: Array<TransportableErrorClass> } {
+): value is { coreErrors: typeof coreErrors } {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -97,7 +101,7 @@ function isCoreErrorsModule(
 }
 
 function isLoggerModule(value: unknown): value is {
-  logger: { error(message: string, meta: ServiceLogMeta): void };
+  logger: typeof logger;
 } {
   return (
     typeof value === "object" &&

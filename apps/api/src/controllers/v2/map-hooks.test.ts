@@ -44,7 +44,7 @@ vi.mock("../../lib/validateUrl", async importOriginal => {
   };
 });
 
-import { isJsonObject } from "../../lib/json-types";
+import { jsonRecordSchema } from "../../lib/json-types";
 import type { JsonObject } from "../../lib/json-types";
 import {
   applyMapCollectHook,
@@ -120,10 +120,7 @@ async function postMap(body: JsonObject): Promise<{
     },
   );
   const response = await request(app).post("/v2/map").send(body);
-  if (!isJsonObject(captured)) {
-    throw new Error("Expected JSON object response from mapController");
-  }
-  return { status: response.status, body: captured };
+  return { status: response.status, body: jsonRecordSchema.parse(captured) };
 }
 
 describe("map lifecycle hooks", () => {

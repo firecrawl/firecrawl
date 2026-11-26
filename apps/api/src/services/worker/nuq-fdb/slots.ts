@@ -1,4 +1,5 @@
 import type { Transaction } from "foundationdb";
+import { z } from "zod";
 import { getNuqFdbDatabase } from "./client";
 import type { NuqFdbKeyspace, QueueEntry } from "./keyspace";
 import {
@@ -16,9 +17,15 @@ import { bumpTeamActive, newTxContext, releaseSlotsAndPromote } from "./ops";
 // limit or mirror a holder admitted elsewhere. Released slots go through the
 // normal promotion chain.
 
-type ExternalSlotRecord = {
-  e: number; // expiry ms
-};
+const externalSlotRecordSchema = z.object({
+  e: z.number(), // expiry ms
+});
+
+type ExternalSlotRecord = z.infer<typeof externalSlotRecordSchema>;
+
+const externalSlotExpiryRefSchema = z.object({
+  t: z.string(),
+});
 
 export class NuqFdbExternalSlots {
   constructor(public readonly ks: NuqFdbKeyspace) {}
@@ -57,8 +64,9 @@ export class NuqFdbExternalSlots {
     const now = Date.now();
     const exp = now + ttlMs;
     return this.db.doTn(async tn => {
-      const existing = decodeJson<ExternalSlotRecord>(
+      const existing = decodeJson(
         await tn.get(this.key(owner, holderId)),
+        externalSlotRecordSchema,
       );
       if (existing) {
         tn.clear(this.expiryKey(timeBucket(holderId), existing.e, holderId));
@@ -99,8 +107,9 @@ export class NuqFdbExternalSlots {
     owner: string,
     holderId: string,
   ): Promise<boolean> {
-    const existing = decodeJson<ExternalSlotRecord>(
+    const existing = decodeJson(
       await tn.get(this.key(owner, holderId)),
+      externalSlotRecordSchema,
     );
     if (!existing) {
       return false;
@@ -134,7 +143,7 @@ export class NuqFdbExternalSlots {
       );
       for (const [key, value] of due) {
         const holderId = this.ks.unpackId(key);
-        const rec = decodeJson<{ t: string }>(value);
+        const rec = decodeJson(value, externalSlotExpiryRefSchema);
         if (!rec) {
           continue;
         }

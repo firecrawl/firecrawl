@@ -1,4 +1,5 @@
 import type { Logger } from "winston";
+import { z } from "zod";
 import { config } from "../../config";
 import {
   withSpan,
@@ -12,7 +13,6 @@ import {
 } from "../../controllers/v2/types";
 import type { Document, TeamFlags } from "../../controllers/v2/types";
 import type { ScrapeOptions } from "../../service/request";
-import { isJsonObject } from "../../lib/json-types";
 import type { JsonObject, JsonValue } from "../../lib/json-types";
 import { logger as _logger } from "../../lib/logger";
 import type { Engine, EngineScrapeResult, FeatureFlag } from "./engines";
@@ -147,14 +147,17 @@ type BuiltDocumentMetadata = Document["metadata"] & {
   provider?: JsonValue;
 };
 
+const optionLockdownSchema = z.object({ lockdown: z.boolean() });
+const optionMaxAgeSchema = z.object({ maxAge: z.number() });
+
 function getOptionLockdown(options: ScrapeOptions): boolean {
-  return isJsonObject(options) && options.lockdown === true;
+  const parsed = optionLockdownSchema.safeParse(options);
+  return parsed.success && parsed.data.lockdown;
 }
 
 function getOptionMaxAge(options: ScrapeOptions): number | undefined {
-  return isJsonObject(options) && typeof options.maxAge === "number"
-    ? options.maxAge
-    : undefined;
+  const parsed = optionMaxAgeSchema.safeParse(options);
+  return parsed.success ? parsed.data.maxAge : undefined;
 }
 
 export type Meta = {

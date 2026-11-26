@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Logger } from "winston";
-import { isJsonObject } from "../../../lib/json-types";
+import { z } from "zod";
 import { logger as _logger } from "../../../lib/logger";
 import { getNuqFdbDatabase } from "./client";
 import type { NuqFdbGroupOps } from "./groups";
@@ -15,10 +15,10 @@ import {
   encodeI64,
   decodeJson,
   encodeJson,
-  isGroupMeta,
-  isJobMeta,
-  isJobStatusRecord,
-  isQueueEntry,
+  groupMetaSchema,
+  jobMetaSchema,
+  jobStatusRecordSchema,
+  queueEntrySchema,
   timeBucket,
   TIME_BUCKETS,
   F_CRAWL_GATED,
@@ -44,7 +44,7 @@ import {
   popKeyPending,
   bumpGroupStatusCount,
   bumpTeamActive,
-  isGroupJobIndexValue,
+  groupJobIndexValueSchema,
 } from "./ops";
 import type { NuqFdbExternalSlots } from "./slots";
 
@@ -54,26 +54,14 @@ type SweepableQueue = {
   readonly groupOps: NuqFdbGroupOps | null;
 };
 
-type SweeperLockRecord = {
-  w: string;
-  x: number;
-};
+const sweeperLockRecordSchema = z.object({
+  w: z.string(),
+  x: z.number(),
+});
 
-type LeaseRecord = {
-  l: string;
-};
-
-function isSweeperLockRecord(value: unknown): value is SweeperLockRecord {
-  return (
-    isJsonObject(value) &&
-    typeof value.w === "string" &&
-    typeof value.x === "number"
-  );
-}
-
-function isLeaseRecord(value: unknown): value is LeaseRecord {
-  return isJsonObject(value) && typeof value.l === "string";
-}
+const leaseRecordSchema = z.object({
+  l: z.string(),
+});
 
 const SWEEP_LOCK_TTL_MS = 15_000;
 const SWEEP_BATCH = 50;
@@ -182,7 +170,7 @@ export class NuqFdbSweeper {
     return await this.db.doTn(async tn => {
       const rec = decodeJson(
         await tn.get(this.lockKs.sweeperLock()),
-        isSweeperLockRecord,
+        sweeperLockRecordSchema,
       );
       if (rec && rec.x > now && rec.w !== this.sweeperId) {
         return false;
@@ -266,12 +254,12 @@ export class NuqFdbSweeper {
       addDueKeysToLagStats(stats, ks, due, now);
       for (const [key, value] of due) {
         const id = ks.unpackId(key);
-        const lease = decodeJson(value, isLeaseRecord);
+        const lease = decodeJson(value, leaseRecordSchema);
         await this.db.doTn(async tn => {
           const txc = newTxContext();
           const st = decodeJson(
             await tn.get(ks.jobStatus(id)),
-            isJobStatusRecord,
+            jobStatusRecordSchema,
           );
           // stale entries: job moved on (renewal, finish) or was reaped already
           if (!st || st.s !== "active" || st.l !== lease?.l) {
@@ -283,7 +271,7 @@ export class NuqFdbSweeper {
             tn.clear(key);
             return;
           }
-          const meta = decodeJson(await tn.get(ks.jobMeta(id)), isJobMeta);
+          const meta = decodeJson(await tn.get(ks.jobMeta(id)), jobMetaSchema);
           tn.clear(key);
           if (!meta) {
             return;
@@ -373,12 +361,12 @@ export class NuqFdbSweeper {
           tn.clear(key);
           const st = decodeJson(
             await tn.get(ks.jobStatus(id)),
-            isJobStatusRecord,
+            jobStatusRecordSchema,
           );
           if (!st || st.s !== "pending" || !st.loc) {
             return;
           }
-          const meta = decodeJson(await tn.get(ks.jobMeta(id)), isJobMeta);
+          const meta = decodeJson(await tn.get(ks.jobMeta(id)), jobMetaSchema);
           if (!meta) {
             return;
           }
@@ -436,7 +424,7 @@ export class NuqFdbSweeper {
       );
       addDueKeysToLagStats(stats, ks, due, now);
       for (const [key, value] of due) {
-        const e = decodeJson(value, isQueueEntry);
+        const e = decodeJson(value, queueEntrySchema);
         if (!e) {
           continue;
         }
@@ -444,7 +432,7 @@ export class NuqFdbSweeper {
           const txc = newTxContext();
           const st = decodeJson(
             await tn.get(ks.jobStatus(e.i)),
-            isJobStatusRecord,
+            jobStatusRecordSchema,
           );
           tn.clear(key);
           if (!st || st.s !== "pending" || st.loc?.k !== "dl") {
@@ -522,7 +510,7 @@ export class NuqFdbSweeper {
             .getRangeAll(rangeBegin, jr.end, { limit: 500 });
           let cleaned = 0;
           for (const [mKey, mValue] of members) {
-            const gj = decodeJson(mValue, isGroupJobIndexValue);
+            const gj = decodeJson(mValue, groupJobIndexValueSchema);
             if (!gj || gj.s !== "pending") {
               continue;
             }
@@ -532,13 +520,16 @@ export class NuqFdbSweeper {
             const id = ks.unpackId(mKey);
             const st = decodeJson(
               await tn.get(ks.jobStatus(id)),
-              isJobStatusRecord,
+              jobStatusRecordSchema,
             );
             if (!st || st.s !== "pending" || !st.loc) {
               // moved on; fix the index lazily
               continue;
             }
-            const meta = decodeJson(await tn.get(ks.jobMeta(id)), isJobMeta);
+            const meta = decodeJson(
+              await tn.get(ks.jobMeta(id)),
+              jobMetaSchema,
+            );
             if (!meta) {
               continue;
             }
@@ -696,7 +687,7 @@ export class NuqFdbSweeper {
           tn.clear(key);
           const st = decodeJson(
             await tn.get(ks.jobStatus(id)),
-            isJobStatusRecord,
+            jobStatusRecordSchema,
           );
           if (
             st &&
@@ -742,7 +733,7 @@ export class NuqFdbSweeper {
         });
       }
       await this.db.doTn(async tn => {
-        const g = decodeJson(await tn.get(ks.groupMeta(gid)), isGroupMeta);
+        const g = decodeJson(await tn.get(ks.groupMeta(gid)), groupMetaSchema);
         // the crawl-finished job for this group lives in the finished queue
         const fjobBuf = await tn.get(ks.groupFinishedJob(gid));
         const finishedKs = groupOps.finishedKs;

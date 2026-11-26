@@ -114,13 +114,6 @@ interface SearchExecuteResult {
   shouldScrape: boolean;
 }
 
-type FallbackSearchSource =
-  | { type: "web" }
-  | { type: "images" }
-  | { type: "news" };
-
-type FallbackSearchCategory = { type: "pdf" };
-
 type SearchRequestFallback = SearchRequest & {
   enterprise?: SearchOptions["enterprise"];
   highlights?: SearchOptions["highlights"];
@@ -140,27 +133,17 @@ function buildSearchRequestFallback(
   options: SearchOptions,
   context: SearchContext,
 ): SearchRequest {
-  const fallbackSources: Array<FallbackSearchSource> = [];
-  for (const source of options.sources) {
-    if (isCoreSearchSource(source.type)) {
-      fallbackSources.push({ type: source.type });
-    }
-  }
-  const fallbackCategories: Array<FallbackSearchCategory> = [];
-  for (const category of options.categories ?? []) {
-    if (
-      category === "pdf" ||
-      (typeof category !== "string" && category.type === "pdf")
-    ) {
-      fallbackCategories.push({ type: "pdf" });
-    }
-  }
+  const fallbackCategories: NonNullable<SearchRequest["categories"]> = (
+    options.categories ?? []
+  ).map(category =>
+    typeof category === "string" ? { type: category } : category,
+  );
   const fallback: SearchRequestFallback = {
     query: options.query,
     limit: options.limit,
     tbs: options.tbs,
     filter: options.filter,
-    sources: fallbackSources,
+    sources: options.sources,
     categories: fallbackCategories,
     includeDomains: options.includeDomains,
     excludeDomains: options.excludeDomains,

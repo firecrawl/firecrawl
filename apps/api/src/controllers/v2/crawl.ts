@@ -31,9 +31,14 @@ import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { getErrorHttpResponse } from "../../lib/error";
 import { currentLimits } from "../../lib/limits";
 import { withWebhookSummaryForLog } from "../../services/webhook/log";
-import { isJsonObject } from "../../lib/json-types";
+import { jsonRecordSchema } from "../../lib/json-types";
 import type { JsonObject } from "../../lib/json-types";
 import type { InternalOptions } from "../../scraper/scrapeURL";
+import { readBooleanField } from "./agent-interop";
+import {
+  applyPromptCrawlerOptions,
+  shouldApplyPromptOption,
+} from "./crawl-prompt-options";
 
 type FinalCrawlerOptions = Omit<
   CrawlRequest,
@@ -46,121 +51,8 @@ type FinalCrawlerOptions = Omit<
 };
 
 function toJsonObject(value: unknown): JsonObject {
-  return isJsonObject(value) ? value : {};
-}
-
-function isStringArray(value: unknown): value is Array<string> {
-  return Array.isArray(value) && value.every(item => typeof item === "string");
-}
-
-function readBooleanField(source: unknown, key: string): boolean {
-  return isJsonObject(source) && source[key] === true;
-}
-
-function applyPromptOptions(
-  target: FinalCrawlerOptions,
-  promptGeneratedOptions: JsonObject,
-  preNormalizedBody: JsonObject,
-): void {
-  const shouldApply = (key: string): boolean =>
-    Object.hasOwn(promptGeneratedOptions, key) &&
-    (!Object.hasOwn(preNormalizedBody, key) ||
-      preNormalizedBody[key] === undefined ||
-      preNormalizedBody[key] === null);
-
-  if (
-    shouldApply("includePaths") &&
-    isStringArray(promptGeneratedOptions.includePaths)
-  ) {
-    target.includePaths = promptGeneratedOptions.includePaths;
-  }
-  if (
-    shouldApply("excludePaths") &&
-    isStringArray(promptGeneratedOptions.excludePaths)
-  ) {
-    target.excludePaths = promptGeneratedOptions.excludePaths;
-  }
-  if (
-    shouldApply("maxDiscoveryDepth") &&
-    typeof promptGeneratedOptions.maxDiscoveryDepth === "number"
-  ) {
-    target.maxDiscoveryDepth = promptGeneratedOptions.maxDiscoveryDepth;
-  }
-  if (
-    shouldApply("maxDepth") &&
-    typeof promptGeneratedOptions.maxDepth === "number"
-  ) {
-    target.maxDepth = promptGeneratedOptions.maxDepth;
-  }
-  if (
-    shouldApply("limit") &&
-    typeof promptGeneratedOptions.limit === "number"
-  ) {
-    target.limit = promptGeneratedOptions.limit;
-  }
-  if (
-    shouldApply("crawlEntireDomain") &&
-    typeof promptGeneratedOptions.crawlEntireDomain === "boolean"
-  ) {
-    target.crawlEntireDomain = promptGeneratedOptions.crawlEntireDomain;
-  }
-  if (
-    shouldApply("allowExternalLinks") &&
-    typeof promptGeneratedOptions.allowExternalLinks === "boolean"
-  ) {
-    target.allowExternalLinks = promptGeneratedOptions.allowExternalLinks;
-  }
-  if (
-    shouldApply("allowSubdomains") &&
-    typeof promptGeneratedOptions.allowSubdomains === "boolean"
-  ) {
-    target.allowSubdomains = promptGeneratedOptions.allowSubdomains;
-  }
-  if (
-    shouldApply("ignoreRobotsTxt") &&
-    typeof promptGeneratedOptions.ignoreRobotsTxt === "boolean"
-  ) {
-    target.ignoreRobotsTxt = promptGeneratedOptions.ignoreRobotsTxt;
-  }
-  if (
-    shouldApply("robotsUserAgent") &&
-    typeof promptGeneratedOptions.robotsUserAgent === "string"
-  ) {
-    target.robotsUserAgent = promptGeneratedOptions.robotsUserAgent;
-  }
-  if (
-    shouldApply("sitemap") &&
-    (promptGeneratedOptions.sitemap === "skip" ||
-      promptGeneratedOptions.sitemap === "include" ||
-      promptGeneratedOptions.sitemap === "only")
-  ) {
-    target.sitemap = promptGeneratedOptions.sitemap;
-  }
-  if (
-    shouldApply("deduplicateSimilarURLs") &&
-    typeof promptGeneratedOptions.deduplicateSimilarURLs === "boolean"
-  ) {
-    target.deduplicateSimilarURLs =
-      promptGeneratedOptions.deduplicateSimilarURLs;
-  }
-  if (
-    shouldApply("ignoreQueryParameters") &&
-    typeof promptGeneratedOptions.ignoreQueryParameters === "boolean"
-  ) {
-    target.ignoreQueryParameters = promptGeneratedOptions.ignoreQueryParameters;
-  }
-  if (
-    shouldApply("regexOnFullURL") &&
-    typeof promptGeneratedOptions.regexOnFullURL === "boolean"
-  ) {
-    target.regexOnFullURL = promptGeneratedOptions.regexOnFullURL;
-  }
-  if (
-    shouldApply("delay") &&
-    typeof promptGeneratedOptions.delay === "number"
-  ) {
-    target.delay = promptGeneratedOptions.delay;
-  }
+  const parsed = jsonRecordSchema.safeParse(value);
+  return parsed.success ? parsed.data : {};
 }
 
 export async function crawlController(
@@ -260,7 +152,7 @@ export async function crawlController(
           return rawExtract;
         },
       );
-      promptGeneratedOptions = isJsonObject(extracted) ? extracted : {};
+      promptGeneratedOptions = toJsonObject(extracted);
       logger.debug("Generated crawler options from prompt", {
         prompt: req.body.prompt,
         generatedOptions: promptGeneratedOptions,
@@ -297,16 +189,19 @@ export async function crawlController(
   // excludePaths. Options generated from a prompt bypass the schema, so hold
   // the merged result to the same caps, budget, and engine syntax.
   if (req.body.prompt) {
-    const shouldOverlayPath = (key: string): boolean =>
-      Object.hasOwn(promptGeneratedOptions, key) &&
-      (!Object.hasOwn(preNormalizedBody, key) ||
-        preNormalizedBody[key] === undefined ||
-        preNormalizedBody[key] === null);
     const pathPatternIssues = collectPathPatternIssues({
-      includePaths: shouldOverlayPath("includePaths")
+      includePaths: shouldApplyPromptOption(
+        promptGeneratedOptions,
+        preNormalizedBody,
+        "includePaths",
+      )
         ? promptGeneratedOptions.includePaths
         : crawlerOptions.includePaths,
-      excludePaths: shouldOverlayPath("excludePaths")
+      excludePaths: shouldApplyPromptOption(
+        promptGeneratedOptions,
+        preNormalizedBody,
+        "excludePaths",
+      )
         ? promptGeneratedOptions.excludePaths
         : crawlerOptions.excludePaths,
     });
@@ -325,7 +220,7 @@ export async function crawlController(
   //   in the original request (preNormalizedBody) or provided as null/undefined.
   // This prevents empty defaults like [] from overwriting meaningful prompt-generated values.
   const finalCrawlerOptions: FinalCrawlerOptions = { ...crawlerOptions };
-  applyPromptOptions(
+  applyPromptCrawlerOptions(
     finalCrawlerOptions,
     promptGeneratedOptions,
     preNormalizedBody,

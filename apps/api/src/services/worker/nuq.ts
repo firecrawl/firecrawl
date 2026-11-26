@@ -1,8 +1,9 @@
 import type { Logger } from "winston";
+import { z } from "zod";
 import { logger } from "../../lib/logger";
 import { Client, Pool } from "pg";
 import type { Document } from "../../controllers/v2/types";
-import { isJsonObject } from "../../lib/json-types";
+import { jsonValueSchema } from "../../lib/json-types";
 import type { JsonValue } from "../../lib/json-types";
 import type { ScrapeJobData } from "../../types";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
@@ -10,6 +11,7 @@ import { storedZeroDataRetention } from "../../lib/request-context";
 import amqp from "amqplib";
 import { normalizeOwnerId } from "../../lib/owner-id";
 import { config } from "../../config";
+import { decodeScrapeJobData, decodeScrapeReturnValue } from "./nuq-decoders";
 import { nuqRedis } from "./redis";
 
 // === Basics
@@ -23,78 +25,49 @@ nuqPool.on("error", err =>
   logger.error("Error in NuQ idle client", { err, module: "nuq" }),
 );
 
-export type NuQJobStatus =
-  | "queued"
-  | "active"
-  | "completed"
-  | "failed"
-  | "backlog";
+const nuqJobStatusSchema = z.enum([
+  "queued",
+  "active",
+  "completed",
+  "failed",
+  "backlog",
+]);
 
-function isNuQJobStatus(value: unknown): value is NuQJobStatus {
-  return (
-    value === "queued" ||
-    value === "active" ||
-    value === "completed" ||
-    value === "failed" ||
-    value === "backlog"
-  );
+export type NuQJobStatus = z.infer<typeof nuqJobStatusSchema>;
+
+const terminalJobStatusSchema = z.enum(["completed", "failed"]);
+
+const stringSchema = z.string();
+const timestampLikeSchema = z.union([z.string(), z.number()]);
+
+const rabbitJobEnvelopeSchema = z.object({
+  id: z.string(),
+  status: nuqJobStatusSchema,
+  createdAt: timestampLikeSchema,
+  priority: z.number(),
+  data: z.unknown(),
+  finishedAt: z.unknown().optional(),
+  listenChannelId: z.unknown().optional(),
+  returnvalue: z.unknown().optional(),
+  failedReason: z.unknown().optional(),
+  lock: z.unknown().optional(),
+  ownerId: z.unknown().optional(),
+  groupId: z.unknown().optional(),
+});
+
+function optionalString(value: unknown): string | undefined {
+  const parsed = stringSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
-function isTerminalJobStatus(value: string): value is "completed" | "failed" {
-  return value === "completed" || value === "failed";
-}
-
-function isJsonValue(value: unknown): value is JsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return true;
-  }
-  if (Array.isArray(value)) {
-    return value.every(isJsonValue);
-  }
-  if (typeof value === "object") {
-    return Object.values(value).every(isJsonValue);
-  }
-  return false;
+function optionalDate(value: unknown): Date | undefined {
+  const parsed = timestampLikeSchema.safeParse(value);
+  return parsed.success ? new Date(parsed.data) : undefined;
 }
 
 function decodeJsonValue(raw: unknown): JsonValue {
-  return isJsonValue(raw) ? raw : null;
-}
-
-function isStoredScrapeJobData(value: unknown): value is ScrapeJobData {
-  if (value === null) {
-    return true;
-  }
-  return (
-    isJsonObject(value) &&
-    (value.mode === "single_urls" ||
-      value.mode === "kickoff" ||
-      value.mode === "kickoff_sitemap")
-  );
-}
-
-function decodeScrapeJobData(raw: unknown): ScrapeJobData {
-  if (!isStoredScrapeJobData(raw)) {
-    throw new Error("Invalid NuQ scrape job data payload");
-  }
-  return raw;
-}
-
-function isStoredDocument(value: unknown): value is Document {
-  return isJsonObject(value);
-}
-
-function decodeScrapeReturnValue(raw: unknown): Document | null {
-  if (raw === null || raw === undefined) {
-    return null;
-  }
-  const candidate: unknown = Array.isArray(raw) ? raw[0] : raw;
-  return isStoredDocument(candidate) ? candidate : null;
+  const parsed = jsonValueSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
 }
 
 export type NuQJob<Data = unknown, ReturnValue = unknown> = {
@@ -127,7 +100,7 @@ type NuQOptions<JobData, JobReturnValue> = {
   decodeReturnvalue: (raw: unknown) => JobReturnValue;
 };
 
-type JobRow<JobData, JobReturnValue> = {
+type JobRow<JobData, _JobReturnValue = unknown> = {
   id: string;
   status?: NuQJobStatus;
   created_at: string | Date;
@@ -135,11 +108,15 @@ type JobRow<JobData, JobReturnValue> = {
   data: JobData;
   finished_at?: string | Date | null;
   listen_channel_id?: string | null;
-  returnvalue?: JobReturnValue | null;
+  returnvalue?: unknown;
   failedreason?: string | null;
   lock?: string | null;
   owner_id?: string | null;
   group_id?: string | null;
+};
+
+type LockRow = {
+  lock: string;
 };
 
 type StatusCountRow = {
@@ -324,9 +301,12 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
             status: rawStatus,
           });
 
-          if (typeof rawJobId === "string" && isTerminalJobStatus(rawStatus)) {
+          const parsedStatus = terminalJobStatusSchema.safeParse(rawStatus);
+          if (typeof rawJobId === "string" && parsedStatus.success) {
             if (rawJobId in this.listens) {
-              this.listens[rawJobId].forEach(listener => listener(rawStatus));
+              this.listens[rawJobId].forEach(listener =>
+                listener(parsedStatus.data),
+              );
             }
             delete this.listens[rawJobId];
           }
@@ -358,8 +338,11 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
           const tok = (msg.payload ?? "unknown|unknown").split("|");
           const jobId = tok[0];
           const status = tok[1];
-          if (jobId in this.listens && isTerminalJobStatus(status)) {
-            this.listens[jobId].forEach(listener => listener(status));
+          const parsedStatus = terminalJobStatusSchema.safeParse(status);
+          if (jobId in this.listens && parsedStatus.success) {
+            this.listens[jobId].forEach(listener =>
+              listener(parsedStatus.data),
+            );
             delete this.listens[jobId];
           }
         });
@@ -601,7 +584,10 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
       data: row.data,
       finishedAt: row.finished_at ? new Date(row.finished_at) : undefined,
       listenChannelId: row.listen_channel_id ?? undefined,
-      returnvalue: row.returnvalue ?? undefined,
+      returnvalue:
+        row.returnvalue !== undefined && row.returnvalue !== null
+          ? this.options.decodeReturnvalue(row.returnvalue)
+          : undefined,
       failedReason: row.failedreason ?? undefined,
       lock: row.lock ?? undefined,
       ownerId: row.owner_id ?? undefined,
@@ -620,42 +606,27 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
   // serialized to JSON, so dates arrive as strings. Revive them here instead
   // of running the payload back through rowToJob (which expects raw DB rows).
   private rabbitRowToJob(raw: unknown): NuQJob<JobData, JobReturnValue> | null {
-    if (!isJsonObject(raw)) {
+    const parsed = rabbitJobEnvelopeSchema.safeParse(raw);
+    if (!parsed.success) {
       return null;
     }
-    if (
-      typeof raw.id !== "string" ||
-      !isNuQJobStatus(raw.status) ||
-      (typeof raw.createdAt !== "string" &&
-        typeof raw.createdAt !== "number") ||
-      typeof raw.priority !== "number"
-    ) {
-      return null;
-    }
-    const finishedAt =
-      typeof raw.finishedAt === "string" || typeof raw.finishedAt === "number"
-        ? new Date(raw.finishedAt)
-        : undefined;
+    const row = parsed.data;
     return {
-      id: raw.id,
-      status: raw.status,
-      createdAt: new Date(raw.createdAt),
-      priority: raw.priority,
-      data: this.options.decodeData(raw.data),
-      finishedAt,
-      listenChannelId:
-        typeof raw.listenChannelId === "string"
-          ? raw.listenChannelId
-          : undefined,
+      id: row.id,
+      status: row.status,
+      createdAt: new Date(row.createdAt),
+      priority: row.priority,
+      data: this.options.decodeData(row.data),
+      finishedAt: optionalDate(row.finishedAt),
+      listenChannelId: optionalString(row.listenChannelId),
       returnvalue:
-        raw.returnvalue !== undefined
-          ? this.options.decodeReturnvalue(raw.returnvalue)
+        row.returnvalue !== undefined && row.returnvalue !== null
+          ? this.options.decodeReturnvalue(row.returnvalue)
           : undefined,
-      failedReason:
-        typeof raw.failedReason === "string" ? raw.failedReason : undefined,
-      lock: typeof raw.lock === "string" ? raw.lock : undefined,
-      ownerId: typeof raw.ownerId === "string" ? raw.ownerId : undefined,
-      groupId: typeof raw.groupId === "string" ? raw.groupId : undefined,
+      failedReason: optionalString(row.failedReason),
+      lock: optionalString(row.lock),
+      ownerId: optionalString(row.ownerId),
+      groupId: optionalString(row.groupId),
     };
   }
 
@@ -859,8 +830,9 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
         backlog: 0,
       };
       for (const row of rows) {
-        if (isNuQJobStatus(row.status)) {
-          stats[row.status] = Number.parseInt(row.count, 10);
+        const parsedStatus = nuqJobStatusSchema.safeParse(row.status);
+        if (parsedStatus.success) {
+          stats[parsedStatus.data] = Number.parseInt(row.count, 10);
         }
       }
       return stats;
@@ -1536,17 +1508,14 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
         await this.startSender();
 
         if (this.sender) {
+          let message: amqp.GetMessage | false = false;
+          let transportOk = false;
           try {
-            const job = await this.sender.channel.get(
+            message = await this.sender.channel.get(
               this.queueName + ".prefetch",
               { noAck: true },
             );
-            if (job !== false) {
-              const parsed: unknown = JSON.parse(job.content.toString());
-              return this.rabbitRowToJob(parsed);
-            } else {
-              return null;
-            }
+            transportOk = true;
           } catch (error: unknown) {
             logger.warn("NuQ sender get failed, falling back to postgres", {
               module: "nuq/rabbitmq",
@@ -1554,6 +1523,22 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
             });
             // Reset sender so it can be re-established on next call
             this.sender = null;
+          }
+          if (transportOk) {
+            if (message === false) {
+              return null;
+            }
+            try {
+              const parsed: unknown = JSON.parse(message.content.toString());
+              return this.rabbitRowToJob(parsed);
+            } catch (error: unknown) {
+              logger.error("Failed to decode NuQ RabbitMQ job payload", {
+                module: "nuq/rabbitmq",
+                queueName: this.queueName,
+                err: error,
+              });
+              return null;
+            }
           }
         } else {
           logger.warn("NuQ sender not started, falling back to postgres", {
@@ -1577,6 +1562,29 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
         module: "nuq/metrics",
         method: "nuqGetJobToProcess",
         duration: Date.now() - start,
+      });
+    }
+  }
+
+  public async reclaimLock(
+    id: string,
+    _logger: Logger = logger,
+  ): Promise<string | null> {
+    const start = Date.now();
+    try {
+      const row = (
+        await nuqPool.query<LockRow>(
+          `UPDATE ${this.queueName} SET lock = COALESCE(lock, gen_random_uuid()), locked_at = now() WHERE id = $1 AND status = 'active'::nuq.job_status RETURNING lock;`,
+          [id],
+        )
+      ).rows[0];
+      return row?.lock ?? null;
+    } finally {
+      _logger.info("nuqReclaimLock metrics", {
+        module: "nuq/metrics",
+        method: "nuqReclaimLock",
+        duration: Date.now() - start,
+        scrapeId: id,
       });
     }
   }
@@ -1748,8 +1756,9 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
     ]);
 
     result.rows.forEach(x => {
-      if (isNuQJobStatus(x.status)) {
-        statusCounts.set(x.status, Number.parseInt(x.count, 10));
+      const parsedStatus = nuqJobStatusSchema.safeParse(x.status);
+      if (parsedStatus.success) {
+        statusCounts.set(parsedStatus.data, Number.parseInt(x.count, 10));
       }
     });
 

@@ -43,8 +43,9 @@ import {
   ReservedCapacityUnavailableError,
   ExchangeRefusedError,
 } from "../scraper/scrapeURL/error";
+import { z } from "zod";
 import { service } from "../service";
-import { isJsonObject } from "./json-types";
+import { jsonObjectSchema } from "./json-types";
 
 /**
  * The service's own error classes. Reading a code that no class carries gives
@@ -115,6 +116,22 @@ function shortened(text: string) {
   return `${kept}... [truncated]`;
 }
 
+// A code has no whitespace in it.
+const CODE = /^\S+$/;
+
+// ErrorCodes is open via declaration merging and rolling builds may emit
+// unregistered codes, so any non-whitespace wire token revives as a plain
+// TransportableError when no registered class claims it.
+const wireErrorCodeSchema = z.custom<ErrorCode>(
+  value => typeof value === "string" && CODE.test(value),
+);
+
+const plainErrorPayloadSchema = z.object({
+  message: z.string(),
+  stack: z.unknown().optional(),
+  cause: z.unknown().optional(),
+});
+
 // What the queue keeps whole and every reader takes, whether or not it has
 // a class for the code.
 function crosses(serialized: string): boolean {
@@ -127,10 +144,6 @@ function crosses(serialized: string): boolean {
     CODE.test(written.code) &&
     typeof written.payload.message === "string"
   );
-}
-
-function isWireErrorCode(code: string): code is ErrorCode {
-  return CODE.test(code);
 }
 
 // What serializeThrownError returns for a value that can be read. Reading a
@@ -217,9 +230,6 @@ export function serializeThrownError(error: unknown) {
   }
 }
 
-// A code has no whitespace in it.
-const CODE = /^\S+$/;
-
 /**
  * Splits a serialized error into its code and the object written after it.
  * Returns null for a string that is not written that way.
@@ -229,16 +239,17 @@ function parseSerializedError(data: string) {
   if (serialized.length === 0) {
     return null;
   }
-  let payload: unknown;
+  let raw: unknown;
   try {
-    payload = JSON.parse(serialized.join("|"));
+    raw = JSON.parse(serialized.join("|"));
   } catch {
     return null;
   }
-  if (!isJsonObject(payload)) {
+  const parsed = jsonObjectSchema.safeParse(raw);
+  if (!parsed.success) {
     return null;
   }
-  return { code, payload };
+  return { code, payload: parsed.data };
 }
 
 /**
@@ -263,13 +274,17 @@ export function deserializeTransportableError(
     }
   }
 
-  const { message, stack, cause } = payload;
-  if (!isWireErrorCode(code) || typeof message !== "string") {
+  const wireCode = wireErrorCodeSchema.safeParse(code);
+  const plainPayload = plainErrorPayloadSchema.safeParse(payload);
+  if (!wireCode.success || !plainPayload.success) {
     return null;
   }
-  return TransportableError.deserialize(code, {
-    message,
-    stack: typeof stack === "string" ? stack : undefined,
-    cause,
+  return TransportableError.deserialize(wireCode.data, {
+    message: plainPayload.data.message,
+    stack:
+      typeof plainPayload.data.stack === "string"
+        ? plainPayload.data.stack
+        : undefined,
+    cause: plainPayload.data.cause,
   });
 }

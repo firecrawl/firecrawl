@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { z } from "zod";
 
 import { logger as _logger } from "../../lib/logger";
 import type {
@@ -35,8 +36,9 @@ import type {
 import type { EngineName } from "../../service/engines";
 import { installedService } from "../../service/service";
 import type { BillingMetadata } from "../../lib/billing-types";
-import { isJsonObject } from "../../lib/json-types";
+import { jsonObjectSchema, jsonValueSchema } from "../../lib/json-types";
 import type { JsonObject } from "../../lib/json-types";
+import { readAgentInterop, readBooleanField } from "./agent-interop";
 import type { InternalOptions } from "../../scraper/scrapeURL";
 import path from "node:path";
 import {
@@ -160,46 +162,41 @@ function getParseForceEngine(
   return "fetch";
 }
 
-interface AgentInteropPayload {
-  shouldBill?: boolean;
-  requestId?: string;
-  boostConcurrency?: boolean;
+function softOptional<T extends z.ZodType>(schema: T) {
+  return schema.optional().catch(undefined);
 }
 
-function readAgentInterop(body: unknown): AgentInteropPayload | undefined {
-  if (!isJsonObject(body) || !isJsonObject(body.__agentInterop)) {
-    return undefined;
-  }
-  const raw = body.__agentInterop;
-  return {
-    shouldBill:
-      typeof raw.shouldBill === "boolean" ? raw.shouldBill : undefined,
-    requestId: typeof raw.requestId === "string" ? raw.requestId : undefined,
-    boostConcurrency:
-      typeof raw.boostConcurrency === "boolean"
-        ? raw.boostConcurrency
-        : undefined,
-  };
-}
+const uploadedFileLogSchema = z.object({
+  filename: softOptional(z.string()),
+  contentType: softOptional(z.string()),
+  kind: softOptional(z.string()),
+  buffer: softOptional(z.custom<Buffer>(value => Buffer.isBuffer(value))),
+});
 
-function readBooleanField(source: unknown, key: string): boolean {
-  return isJsonObject(source) && source[key] === true;
-}
+const parseRequestLogSchema = z
+  .object({
+    file: softOptional(uploadedFileLogSchema),
+  })
+  .catchall(softOptional(jsonValueSchema));
+
+const multipartOptionsFieldSchema = z.object({
+  options: z.unknown().optional(),
+});
 
 function sanitizeParseRequestForLogs(body: unknown): JsonObject {
-  if (!isJsonObject(body)) {
+  const parsed = parseRequestLogSchema.safeParse(body);
+  if (!parsed.success) {
     return {};
   }
-  const { file, ...rest } = body;
-  if (!isJsonObject(file)) {
-    return body;
+  const { file, ...rest } = parsed.data;
+  if (!file) {
+    return rest;
   }
   const sanitizedFile: JsonObject = {
-    filename: typeof file.filename === "string" ? file.filename : undefined,
-    contentType:
-      typeof file.contentType === "string" ? file.contentType : undefined,
-    kind: typeof file.kind === "string" ? file.kind : undefined,
-    size: Buffer.isBuffer(file.buffer) ? file.buffer.length : undefined,
+    filename: file.filename,
+    contentType: file.contentType,
+    kind: file.kind,
+    size: file.buffer?.length,
   };
   return {
     ...rest,
@@ -252,8 +249,8 @@ export function parseMultipartPayloadMiddleware(
   }
 
   let optionsPayload: JsonObject = {};
-  const rawBody: unknown = req.body;
-  const rawOptions = isJsonObject(rawBody) ? rawBody.options : undefined;
+  const parsedBody = multipartOptionsFieldSchema.safeParse(req.body);
+  const rawOptions = parsedBody.success ? parsedBody.data.options : undefined;
 
   if (rawOptions !== undefined) {
     if (typeof rawOptions !== "string") {
@@ -266,8 +263,8 @@ export function parseMultipartPayloadMiddleware(
     }
 
     try {
-      const parsed: unknown = JSON.parse(rawOptions);
-      if (!isJsonObject(parsed)) {
+      const parsedOptions = jsonObjectSchema.safeParse(JSON.parse(rawOptions));
+      if (!parsedOptions.success) {
         res.status(400).json({
           success: false,
           code: "BAD_REQUEST",
@@ -275,7 +272,7 @@ export function parseMultipartPayloadMiddleware(
         });
         return;
       }
-      optionsPayload = parsed;
+      optionsPayload = parsedOptions.data;
     } catch {
       res.status(400).json({
         success: false,
@@ -696,15 +693,35 @@ export async function parseController(
         }
       }
 
+      if (!doc) {
+        await settleBilling({ ok: false });
+        const id = uuidv7();
+        logger.error("Parse completed without document", {
+          version: "v2",
+          parseId: jobId,
+          errorId: id,
+          teamId: req.auth.team_id,
+        });
+        setSpanAttributes(span, {
+          "parse.status_code": 500,
+          "parse.error_id": id,
+        });
+        return res.status(500).json({
+          success: false,
+          code: "UNKNOWN_ERROR",
+          error: service.modules.messages.errorContact(id),
+        });
+      }
+
       if (!hasFormatOfType(req.body.formats, "rawHtml")) {
-        if (doc && doc.rawHtml) {
+        if (doc.rawHtml) {
           delete doc.rawHtml;
         }
       }
 
       void settleBilling({
         ok: true,
-        charged: doc?.metadata?.creditsUsed,
+        charged: doc.metadata?.creditsUsed,
       });
 
       const totalRequestTime = new Date().getTime() - middlewareStartTime;
@@ -716,9 +733,9 @@ export async function parseController(
         "parse.total_request_time_ms": totalRequestTime,
         "parse.controller_time_ms": controllerTime,
         "parse.total_wait_time_ms": totalWait,
-        "parse.document.status_code": doc?.metadata?.statusCode,
-        "parse.document.content_type": doc?.metadata?.contentType,
-        "parse.document.error": doc?.metadata?.error,
+        "parse.document.status_code": doc.metadata?.statusCode,
+        "parse.document.content_type": doc.metadata?.contentType,
+        "parse.document.error": doc.metadata?.error,
       });
 
       const rawFormats = (req.body.formats ?? []) as Array<{
@@ -760,21 +777,6 @@ export async function parseController(
         concurrencyLimited,
         concurrencyQueueDurationMs: lockTime || undefined,
       });
-
-      if (!doc) {
-        const id = uuidv7();
-        logger.error("Parse completed without document", {
-          version: "v2",
-          parseId: jobId,
-          errorId: id,
-          teamId: req.auth.team_id,
-        });
-        return res.status(500).json({
-          success: false,
-          code: "UNKNOWN_ERROR",
-          error: service.modules.messages.errorContact(id),
-        });
-      }
 
       const responseDocument: Document = {
         ...doc,

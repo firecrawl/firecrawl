@@ -1,28 +1,26 @@
 import type { Logger } from "winston";
-import { isJsonObject } from "./json-types";
-import type { JsonObject } from "./json-types";
+import { z } from "zod";
+import { jsonObjectSchema } from "./json-types";
 
 const NATIVE_LOGS_SEPARATOR = "\n__native_logs__:";
 
-/** Matches the NativeLogEntry struct from Rust (@mendable/firecrawl-rs). */
-interface NativeLogEntry {
-  level: string;
-  target: string;
-  message: string;
-  fields: JsonObject;
-  timestampMs: number;
-}
+const nativeLogEntryFieldsSchema = z.object({
+  level: z.string(),
+  target: z.string(),
+  message: z.string(),
+  fields: jsonObjectSchema,
+});
 
-function isNativeLogEntry(value: unknown): value is NativeLogEntry {
-  return (
-    isJsonObject(value) &&
-    typeof value.level === "string" &&
-    typeof value.target === "string" &&
-    typeof value.message === "string" &&
-    isJsonObject(value.fields) &&
-    typeof value.timestampMs === "number"
-  );
-}
+// serde_json writes `timestamp_ms`, while NAPI object bindings expose `timestampMs`.
+const nativeLogEntrySchema = z.union([
+  nativeLogEntryFieldsSchema.extend({ timestamp_ms: z.number() }),
+  nativeLogEntryFieldsSchema.extend({ timestampMs: z.number() }),
+]);
+
+/** Matches the NativeLogEntry struct from Rust (@mendable/firecrawl-rs). */
+type NativeLogEntry = z.infer<typeof nativeLogEntrySchema>;
+
+const nativeLogsArraySchema = z.array(nativeLogEntrySchema);
 
 /**
  * Extract native logs embedded in a NAPI error message by `embed_logs_in_error`.
@@ -45,15 +43,15 @@ export function extractAndEmitNativeLogs(
 
   try {
     const parsed: unknown = JSON.parse(logsJson);
-    if (!Array.isArray(parsed)) {
+    const validated = nativeLogsArraySchema.safeParse(parsed);
+    if (!validated.success) {
       return;
     }
-    const logs = parsed.filter(isNativeLogEntry);
-    // Only strip after successful parse so we don't lose data on failure
+    // Only strip after successful validation so we don't lose data on failure
     error.message = error.message.slice(0, idx);
-    emitNativeLogs(logs, parentLogger, module);
+    emitNativeLogs(validated.data, parentLogger, module);
   } catch {
-    // JSON parse failed — leave the original error message intact
+    // JSON parse failed, leave the original error message intact
   }
 }
 

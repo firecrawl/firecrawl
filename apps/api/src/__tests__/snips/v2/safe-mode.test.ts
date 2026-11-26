@@ -1,5 +1,5 @@
 import request from "supertest";
-import { isJsonObject } from "../../../lib/json-types";
+import { z } from "zod";
 import type { Identity } from "../lib";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
@@ -16,20 +16,13 @@ import { scrape, scrapeRaw, crawlStart } from "./lib";
 
 const TEST_SUITE_HOST = new URL(TEST_SUITE_WEBSITE).hostname;
 
-type SafeModeBlockedBody = {
-  success: false;
-  code: string;
-  error: string;
-};
+const safeModeBlockedBodySchema = z.object({
+  success: z.literal(false),
+  code: z.string(),
+  error: z.string(),
+});
 
-function isSafeModeBlockedBody(value: unknown): value is SafeModeBlockedBody {
-  return (
-    isJsonObject(value) &&
-    value.success === false &&
-    typeof value.code === "string" &&
-    typeof value.error === "string"
-  );
-}
+type SafeModeBlockedBody = z.infer<typeof safeModeBlockedBodySchema>;
 
 async function expectSafeModeBlocked(
   body: Parameters<typeof scrapeRaw>[0],
@@ -39,11 +32,11 @@ async function expectSafeModeBlocked(
   expect(res.statusCode).toBe(403);
   expect(res.body.success).toBe(false);
   expect(res.body.code).toBe("SAFE_MODE_BLOCKED");
-  const parsed: unknown = res.body;
-  if (!isSafeModeBlockedBody(parsed)) {
+  const parsed = safeModeBlockedBodySchema.safeParse(res.body);
+  if (!parsed.success) {
     throw new Error("Unexpected safe-mode error response shape");
   }
-  return parsed;
+  return parsed.data;
 }
 
 describeIf(TEST_PRODUCTION)("Safe Mode (v2 scrape, request-time)", () => {

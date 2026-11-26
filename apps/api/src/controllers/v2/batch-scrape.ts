@@ -33,29 +33,8 @@ import {
 import type {} from "../../lib/billing-state";
 import type { BillingMetadata } from "../../lib/billing-types";
 import { summarizeWebhookForLog } from "../../services/webhook/log";
-import { isJsonObject } from "../../lib/json-types";
+import { readAgentInterop, readBooleanField } from "./agent-interop";
 import type { InternalOptions } from "../../scraper/scrapeURL";
-
-interface AgentInteropPayload {
-  shouldBill?: boolean;
-  requestId?: string;
-}
-
-function readAgentInterop(body: unknown): AgentInteropPayload | undefined {
-  if (!isJsonObject(body) || !isJsonObject(body.__agentInterop)) {
-    return undefined;
-  }
-  const raw = body.__agentInterop;
-  return {
-    shouldBill:
-      typeof raw.shouldBill === "boolean" ? raw.shouldBill : undefined,
-    requestId: typeof raw.requestId === "string" ? raw.requestId : undefined,
-  };
-}
-
-function readBooleanField(source: unknown, key: string): boolean {
-  return isJsonObject(source) && source[key] === true;
-}
 
 export async function batchScrapeController(
   req: RequestWithAuth<

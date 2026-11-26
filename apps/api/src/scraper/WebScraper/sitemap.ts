@@ -18,12 +18,11 @@ import type {
 } from "@mendable/firecrawl-rs";
 import { parseSitemapXml, processSitemap } from "@mendable/firecrawl-rs";
 import { fetchFileToBuffer } from "../scrapeURL/engines/utils/downloadFile";
+import { z } from "zod";
 import {
   gunzipBounded,
   MAX_GUNZIPPED_FILE_SIZE,
 } from "../scrapeURL/engines/utils/gunzip";
-import { isJsonObject } from "../../lib/json-types";
-import type { JsonValue } from "../../lib/json-types";
 
 interface SitemapScrapeOptionsInput {
   formats: Array<string>;
@@ -33,20 +32,33 @@ interface SitemapScrapeOptionsInput {
   headers?: Record<string, string>;
 }
 
+const xml2jsSitemapEntrySchema = z.object({
+  loc: z.array(z.unknown()),
+});
+
+const xml2jsUrlsetSchema = z.object({
+  url: z.array(z.unknown()),
+});
+
+const xml2jsSitemapIndexSchema = z.object({
+  sitemap: z.array(z.unknown()),
+});
+
+const xml2jsSitemapRootSchema = z.object({
+  urlset: z.unknown().optional(),
+  sitemapindex: z.unknown().optional(),
+});
+
 function extractSitemapEntries(
-  value: JsonValue | undefined,
+  items: ReadonlyArray<unknown>,
 ): Array<{ loc: Array<string> }> {
-  if (!Array.isArray(value)) {
-    return [];
-  }
   const entries: Array<{ loc: Array<string> }> = [];
-  for (const item of value) {
-    if (!isJsonObject(item) || !Array.isArray(item.loc)) {
+  for (const item of items) {
+    const parsedItem = xml2jsSitemapEntrySchema.safeParse(item);
+    if (!parsedItem.success) {
       continue;
     }
-    const locs = item.loc.filter(
-      (loc): loc is string => typeof loc === "string",
-    );
+    const locs = parsedItem.data.loc.filter(loc => typeof loc === "string");
     if (locs.length > 0) {
       entries.push({ loc: locs });
     }
@@ -54,20 +66,22 @@ function extractSitemapEntries(
   return entries;
 }
 
-function parseXml2jsSitemap(raw: JsonValue): ParsedSitemap {
-  if (!isJsonObject(raw)) {
+function parseXml2jsSitemap(raw: unknown): ParsedSitemap {
+  const parsed = xml2jsSitemapRootSchema.safeParse(raw);
+  if (!parsed.success) {
     return {};
   }
   const result: ParsedSitemap = {};
-  if (isJsonObject(raw.urlset) && Array.isArray(raw.urlset.url)) {
-    result.urlset = { url: extractSitemapEntries(raw.urlset.url) };
+  const parsedUrlset = xml2jsUrlsetSchema.safeParse(parsed.data.urlset);
+  if (parsedUrlset.success) {
+    result.urlset = { url: extractSitemapEntries(parsedUrlset.data.url) };
   }
-  if (
-    isJsonObject(raw.sitemapindex) &&
-    Array.isArray(raw.sitemapindex.sitemap)
-  ) {
+  const parsedSitemapIndex = xml2jsSitemapIndexSchema.safeParse(
+    parsed.data.sitemapindex,
+  );
+  if (parsedSitemapIndex.success) {
     result.sitemapindex = {
-      sitemap: extractSitemapEntries(raw.sitemapindex.sitemap),
+      sitemap: extractSitemapEntries(parsedSitemapIndex.data.sitemap),
     };
   }
   return result;

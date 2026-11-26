@@ -1,4 +1,5 @@
 import type { Logger } from "winston";
+import { z } from "zod";
 import type { GenerateCompletionsOptions } from "../transformers/llmExtract";
 import {
   generateCompletions,
@@ -6,7 +7,7 @@ import {
 } from "../transformers/llmExtract";
 import { CostLimitExceededError } from "../../../lib/cost-tracking";
 import { shouldPropagateFromExtraction } from "../../../lib/error";
-import { isJsonObject } from "../../../lib/json-types";
+import { jsonRecordSchema, jsonValueSchema } from "../../../lib/json-types";
 import type { JsonObject, JsonValue } from "../../../lib/json-types";
 import { JsonExtractionContentTooLargeError } from "../error";
 import { toRootSchema, typeIncludes } from "../../../lib/openai-strict-schema";
@@ -14,28 +15,10 @@ import { toRootSchema, typeIncludes } from "../../../lib/openai-strict-schema";
 // ~2MB of markdown, well past typical page sizes -- caps worst-case JSON extraction cost/latency.
 export const MAX_JSON_EXTRACTION_MARKDOWN_CHARS = 2_000_000;
 
-function isJsonValue(value: unknown): value is JsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return true;
-  }
-  if (Array.isArray(value)) {
-    return value.every(
-      (item: unknown) => item === undefined || isJsonValue(item),
-    );
-  }
-  return isJsonObject(value);
-}
-
-function isJsonArray(
-  value: JsonValue | undefined,
-): value is ReadonlyArray<JsonValue | undefined> {
-  return Array.isArray(value);
-}
+const jsonOrRecordSchema = z.union([jsonValueSchema, jsonRecordSchema]);
+const jsonArraySchema = z.array(jsonOrRecordSchema.optional());
+const jsonRefSchema = z.object({ $ref: z.string() });
+const wrappedItemsSchema = z.object({ items: jsonValueSchema });
 
 // Resolve all $defs references in the schema
 const resolveRefs = (
@@ -57,29 +40,41 @@ const resolveRefs = (
   }
   visited.add(obj);
 
-  // Handle arrays
-  if (isJsonArray(obj)) {
-    return obj.map(item => resolveRefs(item, defs, logger, visited, depth + 1));
+  const parsedArray = jsonArraySchema.safeParse(obj);
+  if (parsedArray.success) {
+    return parsedArray.data.map(item =>
+      resolveRefs(item, defs, logger, visited, depth + 1),
+    );
   }
 
-  if (isJsonObject(obj) && typeof obj.$ref === "string") {
-    // Handle $ref references
-    const refPath = obj.$ref.split("/");
+  const parsedRef = jsonRefSchema.safeParse(obj);
+  if (parsedRef.success) {
+    const refPath = parsedRef.data.$ref.split("/");
     if (refPath[0] === "#" && refPath[1] === "$defs") {
       const defName = refPath.at(-1);
       if (defName !== undefined) {
-        const def = defs[defName];
-        if (isJsonObject(def)) {
-          return resolveRefs({ ...def }, defs, logger, visited, depth + 1);
+        const parsedDef = jsonRecordSchema.safeParse(defs[defName]);
+        if (parsedDef.success) {
+          return resolveRefs(
+            { ...parsedDef.data },
+            defs,
+            logger,
+            visited,
+            depth + 1,
+          );
         }
       }
     }
     return obj; // Return original if ref can't be resolved
   }
 
-  // Handle objects
+  const parsedObj = jsonRecordSchema.safeParse(obj);
+  if (!parsedObj.success) {
+    return obj;
+  }
+
   const resolved: JsonObject = {};
-  for (const [key, value] of Object.entries(obj)) {
+  for (const [key, value] of Object.entries(parsedObj.data)) {
     if (key === "$defs") {
       continue;
     }
@@ -94,12 +89,11 @@ function unwrapRootArray(
   schema: JsonObject | undefined,
   extract: JsonValue | undefined,
 ): JsonValue | undefined {
-  if (
-    typeIncludes(toRootSchema(schema)?.type, "array") &&
-    isJsonObject(extract) &&
-    "items" in extract
-  ) {
-    return extract.items;
+  if (typeIncludes(toRootSchema(schema)?.type, "array")) {
+    const parsedExtract = wrappedItemsSchema.safeParse(extract);
+    if (parsedExtract.success) {
+      return parsedExtract.data.items;
+    }
   }
   return extract;
 }
@@ -118,9 +112,11 @@ export async function extractData({
   extractedDataArray: Array<JsonValue | undefined>;
   warning: string | undefined;
 }> {
-  const initialSchema: unknown = extractOptions.options.schema;
-  let schema: JsonValue | undefined = isJsonValue(initialSchema)
-    ? initialSchema
+  const parsedInitialSchema = jsonOrRecordSchema.safeParse(
+    extractOptions.options.schema,
+  );
+  let schema: JsonValue | undefined = parsedInitialSchema.success
+    ? parsedInitialSchema.data
     : undefined;
   const logger = extractOptions.logger;
 
@@ -149,15 +145,20 @@ export async function extractData({
       extractOptions.zeroDataRetention,
       extractOptions.teamFlags,
     );
-    const generatedSchema: unknown = genRes.extract;
-    schema = isJsonValue(generatedSchema) ? generatedSchema : undefined;
+    const parsedGeneratedSchema = jsonOrRecordSchema.safeParse(genRes.extract);
+    schema = parsedGeneratedSchema.success
+      ? parsedGeneratedSchema.data
+      : undefined;
   }
 
-  if (isJsonObject(schema)) {
-    const defs: JsonObject = isJsonObject(schema.$defs) ? schema.$defs : {};
-    const schemaString = JSON.stringify(schema);
+  const parsedSchema = jsonRecordSchema.safeParse(schema);
+  if (parsedSchema.success) {
+    const schemaObj = parsedSchema.data;
+    const parsedDefs = jsonRecordSchema.safeParse(schemaObj.$defs);
+    const defs: JsonObject = parsedDefs.success ? parsedDefs.data : {};
+    const schemaString = JSON.stringify(schemaObj);
     const hasAnyRefs =
-      Boolean(schema.$defs) ||
+      Boolean(schemaObj.$defs) ||
       schemaString.includes('"$ref"') ||
       schemaString.includes("#/$defs/");
 
@@ -165,14 +166,14 @@ export async function extractData({
       logger.info(
         "Detected schema with references, attempting to resolve refs",
         {
-          hasDefsProperty: Boolean(schema.$defs),
+          hasDefsProperty: Boolean(schemaObj.$defs),
           hasRefInString: schemaString.includes('"$ref"'),
           hasRefPathInString: schemaString.includes("#/$defs/"),
         },
       );
 
       try {
-        const resolvedSchema = resolveRefs(schema, defs, logger);
+        const resolvedSchema = resolveRefs(schemaObj, defs, logger);
 
         const resolvedString = JSON.stringify(resolvedSchema);
         const hasRemainingRefs =
@@ -180,8 +181,9 @@ export async function extractData({
           resolvedString.includes("#/$defs/");
 
         if (!hasRemainingRefs) {
-          if (isJsonObject(resolvedSchema)) {
-            const cleanedSchema: JsonObject = { ...resolvedSchema };
+          const parsedResolved = jsonRecordSchema.safeParse(resolvedSchema);
+          if (parsedResolved.success) {
+            const cleanedSchema: JsonObject = { ...parsedResolved.data };
             delete cleanedSchema.$defs;
             schema = cleanedSchema;
           } else {
@@ -203,11 +205,12 @@ export async function extractData({
       }
     } else {
       logger.info("No recursive references detected, resolving refs", {
-        schema,
+        schema: schemaObj,
       });
-      const resolvedSchema = resolveRefs(schema, defs, logger);
-      if (isJsonObject(resolvedSchema)) {
-        const cleanedSchema: JsonObject = { ...resolvedSchema };
+      const resolvedSchema = resolveRefs(schemaObj, defs, logger);
+      const parsedResolved = jsonRecordSchema.safeParse(resolvedSchema);
+      if (parsedResolved.success) {
+        const cleanedSchema: JsonObject = { ...parsedResolved.data };
         delete cleanedSchema.$defs;
         schema = cleanedSchema;
       } else {
@@ -241,8 +244,8 @@ export async function extractData({
         },
       },
     });
-    const rawExtract: unknown = completion.extract;
-    extract = isJsonValue(rawExtract) ? rawExtract : undefined;
+    const parsedExtract = jsonOrRecordSchema.safeParse(completion.extract);
+    extract = parsedExtract.success ? parsedExtract.data : undefined;
     warning = completion.warning;
   } catch (error: unknown) {
     if (
@@ -265,9 +268,13 @@ export async function extractData({
     warning = `JSON extraction failed: ${reason.slice(0, 300)}`;
   }
 
+  const finalSchemaObj = jsonRecordSchema.safeParse(schema);
   return {
     extractedDataArray: [
-      unwrapRootArray(isJsonObject(schema) ? schema : undefined, extract),
+      unwrapRootArray(
+        finalSchemaObj.success ? finalSchemaObj.data : undefined,
+        extract,
+      ),
     ],
     warning,
   };

@@ -75,7 +75,7 @@ import type {
   ScrapeJobKickoffSitemap,
   ScrapeJobSingleUrls,
 } from "../../types";
-import { isJsonObject } from "../../lib/json-types";
+import { z } from "zod";
 import type { JsonObject } from "../../lib/json-types";
 import { scrapeSitemap } from "../../scraper/crawler/sitemap";
 import {
@@ -106,33 +106,24 @@ type StoredCrawlerOptions = JobCrawlerOptions & {
   maxDepth?: number;
 };
 
-function isStoredCrawlerOptions(value: unknown): value is StoredCrawlerOptions {
-  if (!isJsonObject(value)) {
-    return false;
-  }
-  if (value.limit !== undefined && typeof value.limit !== "number") {
-    return false;
-  }
-  if (value.maxDepth !== undefined && typeof value.maxDepth !== "number") {
-    return false;
-  }
-  if (
-    value.sitemapOnly !== undefined &&
-    typeof value.sitemapOnly !== "boolean"
-  ) {
-    return false;
-  }
-  if (
-    value.ignoreSitemap !== undefined &&
-    typeof value.ignoreSitemap !== "boolean"
-  ) {
-    return false;
-  }
-  return true;
-}
+const storedCrawlerOptionsShapeSchema = z.looseObject({
+  limit: z.number().optional(),
+  maxDepth: z.number().optional(),
+  sitemapOnly: z.boolean().optional(),
+  ignoreSitemap: z.boolean().optional(),
+});
+
+const storedCrawlerOptionsSchema = z.custom<StoredCrawlerOptions>(
+  value => storedCrawlerOptionsShapeSchema.safeParse(value).success,
+);
+
+const errorWithMessageSchema = z.object({
+  message: z.string(),
+});
 
 function getStoredCrawlerOptions(sc: StoredCrawl): StoredCrawlerOptions | null {
-  return isStoredCrawlerOptions(sc.crawlerOptions) ? sc.crawlerOptions : null;
+  const parsed = storedCrawlerOptionsSchema.safeParse(sc.crawlerOptions);
+  return parsed.success ? parsed.data : null;
 }
 
 function enrichContextWithTeam(
@@ -337,6 +328,13 @@ async function processJob(
 
     if (job.data.crawl_id) {
       const sc = await getCrawl(job.data.crawl_id);
+      if (
+        !sc &&
+        job.data.crawlerOptions !== null &&
+        job.data.crawlerOptions !== undefined
+      ) {
+        throw new Error("Crawl not found");
+      }
       if (sc && sc.cancelled) {
         throw new JobCancelledError();
       }
@@ -492,7 +490,13 @@ async function processJob(
       const sc = await getCrawl(job.data.crawl_id);
 
       let crawler: WebCrawler | null = null;
-      if (sc && job.data.crawlerOptions !== null) {
+      if (
+        job.data.crawlerOptions !== null &&
+        job.data.crawlerOptions !== undefined
+      ) {
+        if (!sc) {
+          throw new Error("Crawl not found");
+        }
         const teamFlags =
           (
             await installedService()?.modules.auth.lookupTeam?.(
@@ -1025,7 +1029,7 @@ async function processJob(
       } else if (isCancelled) {
         logger.warn(`🐂 Job got cancelled, silently failing`);
       } else {
-        logger.error(`🐂 Job errored ${job.id} - ${String(error)}`, { error });
+        logger.error("🐂 Job errored", { jobId: job.id, error });
 
         logger.error(error);
         if (error instanceof Error && error.stack) {
@@ -1121,13 +1125,14 @@ async function processJob(
           );
 
       const requestId = job.data.requestId ?? job.data.crawl_id ?? job.id;
+      const parsedError = errorWithMessageSchema.safeParse(error);
       const errorMessage =
         typeof error === "string"
           ? error
           : error instanceof Error
             ? error.message
-            : isJsonObject(error) && typeof error.message === "string"
-              ? error.message
+            : parsedError.success
+              ? parsedError.data.message
               : "Something went wrong... Contact help@mendable.ai";
 
       try {

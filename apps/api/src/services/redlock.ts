@@ -1,7 +1,7 @@
 import type { EventEmitter } from "node:events";
 import Redlock from "redlock";
+import { z } from "zod";
 import { config } from "../config";
-import { isJsonObject } from "../lib/json-types";
 import Client from "ioredis";
 
 interface RedlockSettings {
@@ -75,23 +75,23 @@ interface RedlockConstructor {
   ): RedlockInstance;
 }
 
-function isRedlockConstructor(value: unknown): value is RedlockConstructor {
-  if (typeof value !== "function") {
-    return false;
-  }
-  const proto: unknown = value.prototype;
-  return (
-    isJsonObject(proto) &&
-    typeof proto.using === "function" &&
-    typeof proto.acquire === "function"
-  );
-}
+const redlockPrototypeSchema = z.object({
+  using: z.function(),
+  acquire: z.function(),
+});
+
+const redlockConstructorSchema = z.custom<RedlockConstructor>(
+  value =>
+    typeof value === "function" &&
+    redlockPrototypeSchema.safeParse(value.prototype).success,
+);
 
 function resolveRedlockConstructor(value: unknown): RedlockConstructor {
-  if (!isRedlockConstructor(value)) {
+  const parsed = redlockConstructorSchema.safeParse(value);
+  if (!parsed.success) {
     throw new Error("Failed to load Redlock constructor");
   }
-  return value;
+  return parsed.data;
 }
 
 const RedlockCtor = resolveRedlockConstructor(Redlock);

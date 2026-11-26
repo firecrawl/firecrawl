@@ -1,7 +1,7 @@
 import { Histogram } from "prom-client";
 import type { Request } from "express";
+import { z } from "zod";
 import { redactAdminKey } from "./admin-auth";
-import { isJsonObject } from "./json-types";
 
 const UUID_REGEX =
   /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
@@ -21,19 +21,23 @@ export const httpRequestDurationSeconds = new Histogram({
  */
 const UNMATCHED_ROUTE = "unmatched";
 
-const unmatchedRequests = new WeakSet<Request>();
+const UNMATCHED_FLAG = Symbol.for("firecrawl.httpMetrics.unmatchedRoute");
+
+const routeWithPathSchema = z.object({
+  path: z.string().min(1),
+});
 
 /** Called by the terminal not-found handler before it answers. */
 export function markRouteUnmatched(req: Request): void {
-  unmatchedRequests.add(req);
+  Reflect.set(req, UNMATCHED_FLAG, true);
 }
 
 export function getRoutePattern(req: Request): string {
-  const route: unknown = req.route;
-  if (isJsonObject(route) && typeof route.path === "string" && route.path) {
-    return route.path;
+  const route = routeWithPathSchema.safeParse(req.route);
+  if (route.success) {
+    return route.data.path;
   }
-  if (unmatchedRequests.has(req)) {
+  if (UNMATCHED_FLAG in req && req[UNMATCHED_FLAG] === true) {
     return UNMATCHED_ROUTE;
   }
   return redactAdminKey(req.path).replaceAll(UUID_REGEX, ":id");

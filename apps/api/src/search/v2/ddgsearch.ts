@@ -3,13 +3,23 @@ import type { Response as UndiciResponse } from "undici";
 import { config } from "../../config";
 import { JSDOM } from "jsdom";
 import type { SearchV2Response, WebSearchResult } from "../../lib/entities";
-import { isJsonObject } from "../../lib/json-types";
 import { logger } from "../../lib/logger";
 import { getSecureDispatcher } from "../../scraper/scrapeURL/engines/utils/safeFetch";
 
 class DDGAntiBotError extends Error {
   constructor() {
     super("Blocked by DuckDuckGo Anti-Bot measures");
+  }
+}
+
+class DDGRateLimitError extends Error {
+  readonly status: number;
+  readonly statusText: string;
+
+  constructor(status: number, statusText: string) {
+    super("DuckDuckGo: Too many requests, try again later.");
+    this.status = status;
+    this.statusText = statusText;
   }
 }
 
@@ -187,6 +197,10 @@ export async function ddgSearch(
           });
         }
 
+        if (response.status === 429) {
+          throw new DDGRateLimitError(response.status, response.statusText);
+        }
+
         const buf = Buffer.from(await response.arrayBuffer());
         const dom = new JSDOM(buf.toString("utf8"));
         const doc = dom.window.document;
@@ -268,18 +282,12 @@ export async function ddgSearch(
       });
     }
 
-    if (
-      isJsonObject(error) &&
-      isJsonObject(error.response) &&
-      error.response.status === 429
-    ) {
+    if (error instanceof DDGRateLimitError) {
       logger.warn("DuckDuckGo: Too many requests, try again later.", {
-        status: error.response.status,
-        statusText: error.response.statusText,
+        status: error.status,
+        statusText: error.statusText,
       });
-      throw new Error("DuckDuckGo: Too many requests, try again later.", {
-        cause: error,
-      });
+      throw error;
     }
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error("DuckDuckGo search error", { error: errorMessage, term });

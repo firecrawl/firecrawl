@@ -37,7 +37,13 @@ export interface RoleRegistry {
   owner(name: string): string | undefined;
 }
 
-import { isPlainObject } from "../lib/json-types";
+function isPlainRecord(value: unknown): value is Record<string, Worker> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
 
 /** @internal */
 export interface WorkerRegistrySource {
@@ -81,7 +87,7 @@ export function buildWorkerRegistry(
     if (source.workers === undefined) {
       continue;
     }
-    if (!isPlainObject(source.workers)) {
+    if (!isPlainRecord(source.workers)) {
       throw new Error(
         `Extension "${source.owner}" workers must be a plain object`,
       );

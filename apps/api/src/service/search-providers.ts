@@ -40,9 +40,15 @@ const builtInSearchProviders: Record<
   duckduckgo: { priority: 0 },
 };
 
+function isBuiltInSearchProviderName(name: string): name is SearchProviderName {
+  return Object.hasOwn(builtInSearchProviders, name);
+}
+
 /** Built-in search provider names, in default priority order. */
 export const coreSearchProviderNames: ReadonlyArray<SearchProviderName> =
-  Object.freeze(["searxng", "duckduckgo"]);
+  Object.freeze(
+    Object.keys(builtInSearchProviders).filter(isBuiltInSearchProviderName),
+  );
 
 /**
  * Static metadata for built-in search providers, in default priority order.

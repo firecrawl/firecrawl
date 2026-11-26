@@ -1,26 +1,24 @@
 import express from "express";
 import request from "supertest";
+import { z } from "zod";
 import { config } from "../../config";
 import {
   ADMIN_KEY_HEADER,
   adminAuth,
   adminKeyHeaderAuth,
 } from "../../lib/admin-auth";
-import { isJsonObject } from "../../lib/json-types";
 import { logger } from "../../lib/logger";
 
 const CURRENT = "current-admin-key-0001";
 const PREVIOUS = "previous-admin-key-0002";
 
+const matchedKeyMetaSchema = z.object({ matchedKey: z.string().min(1) });
+
 function matchedKeys(spy: { mock: { calls: Array<Array<unknown>> } }) {
-  return spy.mock.calls
-    .map(call => {
-      const meta = call[1];
-      return isJsonObject(meta) && typeof meta.matchedKey === "string"
-        ? meta.matchedKey
-        : undefined;
-    })
-    .filter((key): key is string => Boolean(key));
+  return spy.mock.calls.flatMap(call => {
+    const parsed = matchedKeyMetaSchema.safeParse(call[1]);
+    return parsed.success ? [parsed.data.matchedKey] : [];
+  });
 }
 
 function appWithAdminAuth() {

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { ErrorCode, ErrorScrapeLog } from "../../lib/error";
 import type { JsonObject } from "../../lib/json-types";
 import { TransportableError } from "../../lib/error";
@@ -191,35 +192,22 @@ export class SSLError extends TransportableError {
   }
 }
 
-type ExchangeRefusalCode =
-  | "THIRD_PARTY_DATA_NOT_FOUND"
-  | "THIRD_PARTY_DATA_UNSUPPORTED_URL"
-  | "THIRD_PARTY_DATA_NOT_ENABLED"
-  | "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED";
+const exchangeRefusalCodeSchema = z.enum([
+  "THIRD_PARTY_DATA_NOT_FOUND",
+  "THIRD_PARTY_DATA_UNSUPPORTED_URL",
+  "THIRD_PARTY_DATA_NOT_ENABLED",
+  "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED",
+]);
 
-const exchangeRefusalCodes: ReadonlySet<ErrorCode> =
-  new Set<ExchangeRefusalCode>([
-    "THIRD_PARTY_DATA_NOT_FOUND",
-    "THIRD_PARTY_DATA_UNSUPPORTED_URL",
-    "THIRD_PARTY_DATA_NOT_ENABLED",
-    "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED",
-  ]);
-
-function isExchangeRefusalCode(code: ErrorCode): code is ExchangeRefusalCode {
-  return exchangeRefusalCodes.has(code);
-}
+type ExchangeRefusalCode = z.infer<typeof exchangeRefusalCodeSchema>;
 
 // A definitive answer from the Exchange about this URL: the provider holds no
 // record for it, does not serve it, or the team is not entitled to the
 // provider. Another attempt cannot change it, so it surfaces as-is instead of
 // as an engine failure.
 export class ExchangeRefusedError extends TransportableError {
-  static readonly codes: ReadonlyArray<ErrorCode> = [
-    "THIRD_PARTY_DATA_NOT_FOUND",
-    "THIRD_PARTY_DATA_UNSUPPORTED_URL",
-    "THIRD_PARTY_DATA_NOT_ENABLED",
-    "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED",
-  ];
+  static readonly codes: ReadonlyArray<ErrorCode> =
+    exchangeRefusalCodeSchema.options;
 
   public override readonly code: ExchangeRefusalCode;
 
@@ -248,10 +236,11 @@ export class ExchangeRefusedError extends TransportableError {
     code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
-    if (!isExchangeRefusalCode(code)) {
+    const parsed = exchangeRefusalCodeSchema.safeParse(code);
+    if (!parsed.success) {
       throw new Error(`Unexpected ExchangeRefusedError code: ${code}`);
     }
-    const x = new ExchangeRefusedError(code, data.message);
+    const x = new ExchangeRefusedError(parsed.data, data.message);
     x.stack = data.stack;
     return x;
   }

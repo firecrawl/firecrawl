@@ -1,5 +1,6 @@
 import koffi from "koffi";
 import type { IKoffiLib } from "koffi";
+import { z } from "zod";
 import { config } from "../config";
 import { logger } from "./logger";
 import type { Logger } from "winston";
@@ -36,46 +37,25 @@ interface TurndownInstance {
 
 type TurndownConstructor = new () => TurndownInstance;
 
-function isTurndownConstructor(value: unknown): value is TurndownConstructor {
-  return typeof value === "function";
-}
+const turndownConstructorSchema = z.custom<TurndownConstructor>(
+  value => typeof value === "function",
+);
 
-function isTurndownPlugin(value: unknown): value is TurndownPlugin {
-  return typeof value === "function";
-}
+const turndownModuleSchema = z.union([
+  turndownConstructorSchema,
+  z.object({ default: turndownConstructorSchema }).transform(m => m.default),
+]);
 
-function extractTurndownConstructor(mod: unknown): TurndownConstructor | null {
-  if (isTurndownConstructor(mod)) {
-    return mod;
-  }
-  if (
-    typeof mod === "object" &&
-    mod !== null &&
-    "default" in mod &&
-    isTurndownConstructor(mod.default)
-  ) {
-    return mod.default;
-  }
-  return null;
-}
+const turndownPluginSchema = z.custom<TurndownPlugin>(
+  value => typeof value === "function",
+);
 
-function extractGfmPlugin(mod: unknown): TurndownPlugin | null {
-  if (typeof mod === "object" && mod !== null) {
-    if ("gfm" in mod && isTurndownPlugin(mod.gfm)) {
-      return mod.gfm;
-    }
-    if (
-      "default" in mod &&
-      typeof mod.default === "object" &&
-      mod.default !== null &&
-      "gfm" in mod.default &&
-      isTurndownPlugin(mod.default.gfm)
-    ) {
-      return mod.default.gfm;
-    }
-  }
-  return null;
-}
+const gfmPluginModuleSchema = z.union([
+  z.object({ gfm: turndownPluginSchema }).transform(m => m.gfm),
+  z
+    .object({ default: z.object({ gfm: turndownPluginSchema }) })
+    .transform(m => m.default.gfm),
+]);
 
 // TODO: add a timeout to the Go parser
 
@@ -165,9 +145,9 @@ export async function parseMarkdown(
       !(error instanceof Error) ||
       error.message !== "Go shared library not found"
     ) {
-      contextLogger.error(
-        `Error converting HTML to Markdown with Go parser: ${String(error)}`,
-      );
+      contextLogger.error("Error converting HTML to Markdown with Go parser", {
+        error,
+      });
     } else {
       contextLogger.warn(
         "Tried to use Go parser, but it doesn't exist in the file system.",
@@ -180,14 +160,16 @@ export async function parseMarkdown(
   const turndownModule: unknown = await import("turndown");
   const turndownPluginGfmModule: unknown =
     await import("joplin-turndown-plugin-gfm");
-  const TurndownService = extractTurndownConstructor(turndownModule);
-  const gfm = extractGfmPlugin(turndownPluginGfmModule);
-  if (!TurndownService || !gfm) {
+  const parsedTurndown = turndownModuleSchema.safeParse(turndownModule);
+  const parsedGfm = gfmPluginModuleSchema.safeParse(turndownPluginGfmModule);
+  if (!parsedTurndown.success || !parsedGfm.success) {
     contextLogger.error(
       "Error loading Turndown fallback for HTML to Markdown conversion",
     );
     return "";
   }
+  const TurndownService = parsedTurndown.data;
+  const gfm = parsedGfm.data;
 
   const turndownService = new TurndownService();
   turndownService.addRule("inlineLink", {

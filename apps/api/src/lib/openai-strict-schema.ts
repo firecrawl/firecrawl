@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { isJsonObject } from "./json-types";
+import { jsonRecordSchema, jsonValueSchema } from "./json-types";
 import type { JsonObject, JsonValue } from "./json-types";
 
 // OpenAI structured outputs (strict mode) accept only a subset of JSON Schema.
@@ -62,21 +62,6 @@ type WrappedRootSchema = {
   $defs?: JsonObject;
 };
 
-function isJsonValue(value: unknown): value is JsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return true;
-  }
-  if (Array.isArray(value)) {
-    return true;
-  }
-  return isJsonObject(value);
-}
-
 function mapValues(
   obj: JsonObject,
   fn: (v: JsonValue | undefined) => JsonValue | undefined,
@@ -106,10 +91,11 @@ export function typeIncludes(type: unknown, name: string): boolean {
 // "properties" maps names to schemas instead of being a schema itself (a
 // field that happens to be called "properties").
 function isTypelessRootSchema(node: JsonObject): boolean {
-  if (!isJsonObject(node.properties)) {
+  const properties = jsonRecordSchema.safeParse(node.properties);
+  if (!properties.success) {
     return false;
   }
-  if (typeof node.properties.type === "string") {
+  if (typeof properties.data.type === "string") {
     return false;
   }
   return Object.entries(node).every(([key, value]) => {
@@ -127,22 +113,11 @@ function isTypelessRootSchema(node: JsonObject): boolean {
       case "properties":
       case "$defs":
       case "definitions":
-        return isJsonObject(value);
+        return jsonRecordSchema.safeParse(value).success;
       default:
         return false;
     }
   });
-}
-
-function isBareRootMap(node: unknown): node is JsonObject {
-  return (
-    isJsonObject(node) &&
-    node.type === undefined &&
-    node.anyOf === undefined &&
-    node.oneOf === undefined &&
-    node.$ref === undefined &&
-    !isTypelessRootSchema(node)
-  );
 }
 
 /**
@@ -160,20 +135,29 @@ export function normalizeSchemaKeywords(
 export function normalizeSchemaKeywords(
   schema: unknown,
 ): JsonValue | undefined {
-  if (schema === undefined || !isJsonValue(schema)) {
+  if (schema === undefined) {
     return undefined;
   }
-  return normalizeNode(schema, true);
+  const parsedObject = jsonRecordSchema.safeParse(schema);
+  if (parsedObject.success) {
+    return normalizeNode(parsedObject.data, true);
+  }
+  const parsedValue = jsonValueSchema.safeParse(schema);
+  if (!parsedValue.success) {
+    return undefined;
+  }
+  return normalizeNode(parsedValue.data, true);
 }
 
 function normalizeNode(
   node: JsonValue | undefined,
   isRoot: boolean,
 ): JsonValue | undefined {
-  if (!isJsonObject(node)) {
+  const parsedNode = jsonRecordSchema.safeParse(node);
+  if (!parsedNode.success) {
     return node;
   }
-  const out = { ...node };
+  const out: JsonObject = { ...parsedNode.data };
 
   if (out.type !== undefined) {
     out.type = lowercaseType(out.type);
@@ -184,19 +168,24 @@ function normalizeNode(
     delete out.oneOf;
   }
 
+  const outProperties = jsonRecordSchema.safeParse(out.properties);
+  const outItems = jsonRecordSchema.safeParse(out.items);
+
   if (out.type === undefined) {
-    if (isRoot ? isTypelessRootSchema(out) : isJsonObject(out.properties)) {
+    if (isRoot ? isTypelessRootSchema(out) : outProperties.success) {
       out.type = "object";
-    } else if (!isRoot && isJsonObject(out.items)) {
+    } else if (!isRoot && outItems.success) {
       out.type = "array";
     }
   }
 
-  if (isJsonObject(out.properties)) {
-    out.properties = mapValues(out.properties, v => normalizeNode(v, false));
+  if (outProperties.success) {
+    out.properties = mapValues(outProperties.data, v =>
+      normalizeNode(v, false),
+    );
   }
-  if (isJsonObject(out.items)) {
-    out.items = normalizeNode(out.items, false);
+  if (outItems.success) {
+    out.items = normalizeNode(outItems.data, false);
   }
   if (Array.isArray(out.anyOf)) {
     out.anyOf = out.anyOf.map((v: JsonValue | undefined) =>
@@ -207,15 +196,18 @@ function normalizeNode(
   // beyond "properties" never come back; a schema for them is dropped here
   // rather than validated. Without "properties", it's a typed dictionary,
   // which findStrictSchemaViolation reports.
-  if (isJsonObject(out.additionalProperties)) {
-    out.additionalProperties = isJsonObject(out.properties)
+  const outAdditionalProperties = jsonRecordSchema.safeParse(
+    out.additionalProperties,
+  );
+  if (outAdditionalProperties.success) {
+    out.additionalProperties = outProperties.success
       ? false
-      : normalizeNode(out.additionalProperties, false);
+      : normalizeNode(outAdditionalProperties.data, false);
   }
   for (const defsKey of ["$defs", "definitions"]) {
-    const defs = out[defsKey];
-    if (isJsonObject(defs)) {
-      out[defsKey] = mapValues(defs, v => normalizeNode(v, false));
+    const defs = jsonRecordSchema.safeParse(out[defsKey]);
+    if (defs.success) {
+      out[defsKey] = mapValues(defs.data, v => normalizeNode(v, false));
     }
   }
 
@@ -239,15 +231,32 @@ export function toRootSchema(
   schema: JsonObject | null | undefined,
 ): SchemaNode | null | undefined;
 export function toRootSchema(schema: unknown): JsonValue | undefined {
-  if (!isBareRootMap(schema)) {
-    if (schema === undefined || !isJsonValue(schema)) {
+  if (schema === undefined) {
+    return undefined;
+  }
+  const parsedObject = jsonRecordSchema.safeParse(schema);
+  if (!parsedObject.success) {
+    const parsedValue = jsonValueSchema.safeParse(schema);
+    if (!parsedValue.success) {
       return undefined;
     }
-    return normalizeNode(schema, true);
+    return normalizeNode(parsedValue.data, true);
   }
-  const { $defs, ...rest } = schema;
-  const hasDefs = isJsonObject($defs) && typeof $defs.type !== "string";
-  const fields = hasDefs ? rest : schema;
+  const obj = parsedObject.data;
+  const isBareRoot =
+    obj.type === undefined &&
+    obj.anyOf === undefined &&
+    obj.oneOf === undefined &&
+    obj.$ref === undefined &&
+    !isTypelessRootSchema(obj);
+  if (!isBareRoot) {
+    return normalizeNode(obj, true);
+  }
+  const { $defs, ...rest } = obj;
+  const parsedDefs = jsonRecordSchema.safeParse($defs);
+  const hasDefs =
+    parsedDefs.success && typeof parsedDefs.data.type !== "string";
+  const fields = hasDefs ? rest : obj;
   const entries = Object.entries(fields).filter(
     ([key]) => !ROOT_ANNOTATIONS.has(key),
   );
@@ -258,7 +267,7 @@ export function toRootSchema(schema: unknown): JsonValue | undefined {
     additionalProperties: false,
   };
   if (hasDefs) {
-    wrapped.$defs = $defs;
+    wrapped.$defs = parsedDefs.data;
   }
   return normalizeNode(wrapped, true);
 }
@@ -278,13 +287,16 @@ export function findStrictSchemaViolation(schema: unknown): string | null {
   if (schema === undefined || schema === null) {
     return null;
   }
-  if (!isJsonObject(schema)) {
+  const parsedSchema = jsonRecordSchema.safeParse(schema);
+  if (!parsedSchema.success) {
     return `Invalid JSON schema: expected an object, got ${describe(schema)}.`;
   }
-  const root = toRootSchema(schema);
-  if (!isJsonObject(root)) {
-    return `Invalid JSON schema: expected an object, got ${describe(root)}.`;
+  const rawRoot = toRootSchema(parsedSchema.data);
+  const parsedRoot = jsonRecordSchema.safeParse(rawRoot);
+  if (!parsedRoot.success) {
+    return `Invalid JSON schema: expected an object, got ${describe(rawRoot)}.`;
   }
+  const root = parsedRoot.data;
 
   // Structured outputs need an object at the root; JSON extraction wraps a
   // root array in one, but nothing else.
@@ -303,13 +315,15 @@ export function findStrictSchemaViolation(schema: unknown): string | null {
   return checkNode(root, "");
 }
 
-function checkNode(node: unknown, path: string): string | null {
+function checkNode(rawNode: unknown, path: string): string | null {
   const at = path ? ` at "${path}"` : "";
   const child = (segment: string) => (path ? `${path}.${segment}` : segment);
 
-  if (!isJsonObject(node)) {
-    return `Invalid JSON schema${at}: expected a schema object, got ${describe(node)}.`;
+  const parsedNode = jsonRecordSchema.safeParse(rawNode);
+  if (!parsedNode.success) {
+    return `Invalid JSON schema${at}: expected a schema object, got ${describe(rawNode)}.`;
   }
+  const node = parsedNode.data;
 
   for (const keyword of UNSUPPORTED_KEYWORDS) {
     if (node[keyword] !== undefined) {
@@ -343,10 +357,11 @@ function checkNode(node: unknown, path: string): string | null {
     }
   }
 
+  const parsedItems = jsonRecordSchema.safeParse(node.items);
   if (
     !isReference &&
     typeIncludes(node.type, "array") &&
-    !isJsonObject(node.items)
+    !parsedItems.success
   ) {
     return node.items === undefined
       ? `Invalid JSON schema${at}: arrays must define "items".`
@@ -356,16 +371,17 @@ function checkNode(node: unknown, path: string): string | null {
   if (
     typeIncludes(node.type, "object") &&
     node.properties === undefined &&
-    isJsonObject(node.additionalProperties)
+    jsonRecordSchema.safeParse(node.additionalProperties).success
   ) {
     return `Invalid JSON schema${at}: objects must list their "properties"; a dictionary described only by "additionalProperties" is not supported for JSON extraction.`;
   }
 
   if (node.properties !== undefined) {
-    if (!isJsonObject(node.properties)) {
+    const parsedProperties = jsonRecordSchema.safeParse(node.properties);
+    if (!parsedProperties.success) {
       return `Invalid JSON schema${at}: "properties" must be an object, got ${describe(node.properties)}.`;
     }
-    for (const [key, value] of Object.entries(node.properties)) {
+    for (const [key, value] of Object.entries(parsedProperties.data)) {
       const violation = checkNode(value, child(`properties.${key}`));
       if (violation) {
         return violation;
@@ -373,8 +389,8 @@ function checkNode(node: unknown, path: string): string | null {
     }
   }
 
-  if (isJsonObject(node.items)) {
-    const violation = checkNode(node.items, child("items"));
+  if (parsedItems.success) {
+    const violation = checkNode(parsedItems.data, child("items"));
     if (violation) {
       return violation;
     }
@@ -393,9 +409,9 @@ function checkNode(node: unknown, path: string): string | null {
   }
 
   for (const defsKey of ["$defs", "definitions"]) {
-    const defs = node[defsKey];
-    if (isJsonObject(defs)) {
-      for (const [key, value] of Object.entries(defs)) {
+    const parsedDefs = jsonRecordSchema.safeParse(node[defsKey]);
+    if (parsedDefs.success) {
+      for (const [key, value] of Object.entries(parsedDefs.data)) {
         const violation = checkNode(value, child(`${defsKey}.${key}`));
         if (violation) {
           return violation;

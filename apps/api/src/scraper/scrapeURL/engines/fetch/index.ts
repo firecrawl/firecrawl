@@ -35,16 +35,11 @@ function makeRequestTypeId(
   return request.url + ";" + request.method;
 }
 
+const errorWithCodeSchema = z.object({ code: z.string() });
+
 function getErrorCode(value: unknown): string | undefined {
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    "code" in value &&
-    typeof value.code === "string"
-  ) {
-    return value.code;
-  }
-  return undefined;
+  const parsed = errorWithCodeSchema.safeParse(value);
+  return parsed.success ? parsed.data.code : undefined;
 }
 
 function decodeHtmlBuffer(
@@ -171,7 +166,10 @@ export async function scrapeURLWithFetch(
       throw new Error("Failed to mock request -- no mock targets found.");
     }
 
-    response = fetchResponseDataSchema.parse(matchingMocks[nextI].result);
+    response = fetchResponseDataSchema.parse({
+      ...matchingMocks[nextI].result,
+      url: matchingMocks[nextI].result.url ?? meta.rewrittenUrl ?? meta.url,
+    });
   } else {
     try {
       const x = await undiciFetch(meta.rewrittenUrl ?? meta.url, {

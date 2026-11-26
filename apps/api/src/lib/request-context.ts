@@ -6,12 +6,13 @@
  * that starts work of the service's own, calls `requestContext` once, with
  * the facts it has resolved, and everything after that copies the value.
  */
+import { z } from "zod";
 import type { TeamFlags } from "../controllers/v2/types";
 import type { RequestContext } from "../service/request-context";
 import type { BillingMetadata } from "./billing-types";
 import type { ScrapeJobData } from "../types";
 import type { StoredCrawl } from "./crawl-redis";
-import { isJsonObject } from "./json-types";
+import { jsonRecordSchema, jsonValueSchema } from "./json-types";
 import type { JsonValue } from "./json-types";
 
 declare module "../service/request-context" {
@@ -85,25 +86,32 @@ export function jobContext(data: ScrapeJobData): RequestContext {
   );
 }
 
+const nestedZdrSchema = z.object({
+  ctx: z.object({ zeroDataRetention: z.boolean() }),
+});
+
+const topLevelZdrSchema = z.object({
+  zeroDataRetention: z.boolean(),
+});
+
+const policyThreatProtectionSchema = z.object({
+  policy: z.object({
+    threatProtection: z.union([jsonValueSchema, jsonRecordSchema]).optional(),
+  }),
+});
+
 /**
  * Whether a stored payload or crawl record is under zero data retention,
  * `undefined` when it does not say. For code that carries the payloads of
  * every queue, or that may be handed a job whose data is gone.
  */
 export function storedZeroDataRetention(stored: unknown): boolean | undefined {
-  if (!isJsonObject(stored)) {
-    return undefined;
+  const nested = nestedZdrSchema.safeParse(stored);
+  if (nested.success) {
+    return nested.data.ctx.zeroDataRetention;
   }
-  const nestedCtx = stored.ctx;
-  if (
-    isJsonObject(nestedCtx) &&
-    typeof nestedCtx.zeroDataRetention === "boolean"
-  ) {
-    return nestedCtx.zeroDataRetention;
-  }
-  return typeof stored.zeroDataRetention === "boolean"
-    ? stored.zeroDataRetention
-    : undefined;
+  const topLevel = topLevelZdrSchema.safeParse(stored);
+  return topLevel.success ? topLevel.data.zeroDataRetention : undefined;
 }
 
 /**
@@ -114,10 +122,8 @@ export function storedZeroDataRetention(stored: unknown): boolean | undefined {
 export function contextThreatProtection(
   ctx: RequestContext,
 ): JsonValue | undefined {
-  if (!("policy" in ctx) || !isJsonObject(ctx.policy)) {
-    return undefined;
-  }
-  return ctx.policy.threatProtection;
+  const parsed = policyThreatProtectionSchema.safeParse(ctx);
+  return parsed.success ? parsed.data.policy.threatProtection : undefined;
 }
 
 /** The context a crawl runs under, with the same fallback as `jobContext`. */

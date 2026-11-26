@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { getRedisConnection } from "../services/queue-service";
 import type { StoredCrawl } from "./crawl-redis";
 import { getCrawl } from "./crawl-redis";
@@ -26,7 +27,7 @@ import { installedService } from "../service/service";
 import type { ScrapeJobData } from "../types";
 import { currentLimits } from "./limits";
 import { recordCrawlStateMissing } from "./crawl-state-metrics";
-import { isJsonObject } from "./json-types";
+import { jsonObjectSchema } from "./json-types";
 
 interface JobEnqueuedEvent {
   jobId: string;
@@ -126,27 +127,50 @@ export async function removeConcurrencyLimitedJobs(
   }
 }
 
-type ConcurrencyLimitedJob = {
-  id: string;
-  data: ScrapeJobData;
-  priority: number;
-  listenable: boolean;
+const scrapeJobCommonFields = {
+  team_id: z.string(),
+  zeroDataRetention: z.boolean(),
+  origin: z.string(),
+  apiKeyId: z.number().nullable(),
 };
 
-function isConcurrencyLimitedJob(
-  value: unknown,
-): value is ConcurrencyLimitedJob {
-  if (!isJsonObject(value)) {
-    return false;
-  }
-  return (
-    typeof value.id === "string" &&
-    typeof value.priority === "number" &&
-    typeof value.listenable === "boolean" &&
-    isJsonObject(value.data) &&
-    typeof value.data.team_id === "string"
-  );
-}
+const scrapeJobDataSchema = z.discriminatedUnion("mode", [
+  z.object({
+    ...scrapeJobCommonFields,
+    mode: z.literal("single_urls"),
+    url: z.string(),
+    scrapeOptions: jsonObjectSchema,
+    crawl_id: z.string().optional(),
+    crawlerOptions: jsonObjectSchema.nullable().optional(),
+  }),
+  z.object({
+    ...scrapeJobCommonFields,
+    mode: z.literal("kickoff"),
+    url: z.string(),
+    crawl_id: z.string(),
+    scrapeOptions: jsonObjectSchema,
+    v1: z.boolean(),
+    crawlerOptions: jsonObjectSchema.nullable().optional(),
+  }),
+  z.object({
+    ...scrapeJobCommonFields,
+    mode: z.literal("kickoff_sitemap"),
+    crawl_id: z.string(),
+    sitemapUrl: z.string(),
+    v1: z.boolean(),
+  }),
+]);
+
+const concurrencyLimitedJobSchema = z.object({
+  id: z.string(),
+  priority: z.number(),
+  listenable: z.boolean(),
+  data: z.custom<ScrapeJobData>(
+    value => scrapeJobDataSchema.safeParse(value).success,
+  ),
+});
+
+type ConcurrencyLimitedJob = z.infer<typeof concurrencyLimitedJobSchema>;
 
 export async function cleanOldConcurrencyLimitedJobs(
   team_id: string,
@@ -316,12 +340,19 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
         continue;
       }
 
-      const parsedJob: unknown = JSON.parse(jobData);
-      if (!isConcurrencyLimitedJob(parsedJob)) {
+      let parsedJob: unknown;
+      try {
+        parsedJob = JSON.parse(jobData);
+      } catch {
         await redis.del(constructJobKey(member));
         continue;
       }
-      const job = parsedJob;
+      const validated = concurrencyLimitedJobSchema.safeParse(parsedJob);
+      if (!validated.success) {
+        await redis.del(constructJobKey(member));
+        continue;
+      }
+      const job = validated.data;
 
       // Check crawl concurrency limit
       if (job.data.crawl_id) {

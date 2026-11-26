@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { isJsonObject } from "../../lib/json-types";
 import type { CategoryOption } from "../../lib/search-query-builder";
 import {
   buildSearchQuery,
@@ -94,8 +93,11 @@ describe("Search Query Builder", () => {
     });
 
     it("should ignore invalid category objects", () => {
+      const invalidCategoryShape = z.object({ type: z.string() });
       const invalidCategory = z
-        .custom<CategoryOption>(isJsonObject)
+        .custom<CategoryOption>(
+          value => invalidCategoryShape.safeParse(value).success,
+        )
         .parse({ type: "invalid" });
       const result = buildSearchQuery("test", [invalidCategory]);
       expect(result.query).toBe("test");

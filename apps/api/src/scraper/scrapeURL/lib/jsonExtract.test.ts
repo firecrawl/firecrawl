@@ -11,7 +11,8 @@ vi.mock("./promptInjectionGuard", () => ({
   createPromptInjectionGuardLimiter: vi.fn(),
 }));
 
-import { isJsonObject } from "../../../lib/json-types";
+import { z } from "zod";
+import { jsonRecordSchema, jsonValueSchema } from "../../../lib/json-types";
 import type { JsonObject, JsonValue } from "../../../lib/json-types";
 import { extractData } from "./jsonExtract";
 import { generateCompletions } from "../transformers/llmExtract";
@@ -20,23 +21,7 @@ import { JsonExtractionContentTooLargeError } from "../error";
 import { CostTracking } from "../../../lib/cost-tracking";
 
 const noopLogger = createLogger({ silent: true });
-
-function isJsonValue(value: unknown): value is JsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return true;
-  }
-  if (Array.isArray(value)) {
-    return value.every(
-      (item: unknown) => item === undefined || isJsonValue(item),
-    );
-  }
-  return isJsonObject(value);
-}
+const jsonOrRecordSchema = z.union([jsonValueSchema, jsonRecordSchema]);
 
 function runExtract(schema: JsonObject | undefined) {
   return extractData({
@@ -57,8 +42,8 @@ function runExtract(schema: JsonObject | undefined) {
 function sentSchema(): JsonValue | undefined {
   const calls = vi.mocked(generateCompletions).mock.calls;
   const lastCall = calls.at(-1);
-  const schema: unknown = lastCall?.[0].options.schema;
-  return isJsonValue(schema) ? schema : undefined;
+  const parsed = jsonOrRecordSchema.safeParse(lastCall?.[0].options.schema);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function mockExtract(extract: JsonValue | undefined) {

@@ -113,7 +113,12 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
     response.document.metadata.statusCode >= 200 &&
     response.document.metadata.statusCode < 300
   ) {
-    return response.document.rawHtml ?? "";
+    if (response.document.rawHtml === undefined) {
+      throw new SitemapError(
+        "The sitemap fetch succeeded but returned no HTML body.",
+      );
+    }
+    return response.document.rawHtml;
   } else if (!response.success) {
     throw new SitemapError(
       `Failed to fetch the sitemap from the website. The request failed with an error. This usually happens when: (1) The sitemap URL is incorrect, (2) The website is blocking access to the sitemap, (3) The website is down or unreachable, or (4) The sitemap requires authentication. Error details: ${response.error}`,

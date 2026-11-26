@@ -165,7 +165,8 @@ function getRouterStack(
     }
     if (
       "router" in router &&
-      typeof router.router === "object" &&
+      (typeof router.router === "object" ||
+        typeof router.router === "function") &&
       router.router !== null &&
       "stack" in router.router &&
       isInternalExpressLayerArray(router.router.stack)
@@ -266,7 +267,7 @@ function middlewareApplies(
   }
   candidatePath = joinRoutePaths(candidatePath, rawPath);
 
-  if (layer.matchers && layer.matchers.length > 0) {
+  if (layer.matchers !== undefined) {
     const alignedMountMatchers =
       mountMatchers && mountMatchers.length === layer.matchers.length
         ? mountMatchers

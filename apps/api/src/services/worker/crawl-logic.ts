@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { logger as _logger } from "../../lib/logger";
 import {
   finishCrawl,
@@ -9,7 +10,10 @@ import {
 import type { StoredCrawl } from "../../lib/crawl-redis";
 import { recordCrawlStateMissing } from "../../lib/crawl-state-metrics";
 import { getJobs } from "../../controllers/v2/crawl-status";
-import type { ScrapeOptions } from "../../controllers/v2/types";
+import type {
+  DocumentMetadata,
+  ScrapeOptions,
+} from "../../controllers/v2/types";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import type { NuQJob } from "./nuq";
 import { crawlContext, jobContext } from "../../lib/request-context";
@@ -17,8 +21,6 @@ import type { RequestContext } from "../../service/request-context";
 import type { CrawlFinished } from "../../service/hooks";
 import { installedService } from "../../service/service";
 import { service } from "../../service";
-import { isJsonObject } from "../../lib/json-types";
-import type { JsonObject } from "../../lib/json-types";
 import type { JobCrawlerOptions, ScrapeJobData } from "../../types";
 
 type FinishCrawlJob = Pick<
@@ -29,7 +31,7 @@ type FinishCrawlJob = Pick<
 type V0CrawlDoc = {
   content: string;
   markdown?: string;
-  metadata: JsonObject;
+  metadata: Partial<DocumentMetadata>;
   source: string;
   creditsUsed: number;
 };
@@ -47,53 +49,60 @@ const defaultStoredScrapeOptions: Omit<ScrapeOptions, "timeout"> = {
   checkPromptInjection: false,
 };
 
-function isJobCrawlerOptions(value: unknown): value is JobCrawlerOptions {
-  if (!isJsonObject(value)) {
-    return false;
-  }
-  if (value.limit !== undefined && typeof value.limit !== "number") {
-    return false;
-  }
-  if (
-    value.maxDiscoveryDepth !== undefined &&
-    typeof value.maxDiscoveryDepth !== "number"
-  ) {
-    return false;
-  }
-  if (
-    value.currentDiscoveryDepth !== undefined &&
-    typeof value.currentDiscoveryDepth !== "number"
-  ) {
-    return false;
-  }
-  return true;
-}
+const jobCrawlerOptionsShapeSchema = z.looseObject({
+  limit: z.number().optional(),
+  maxDiscoveryDepth: z.number().optional(),
+  currentDiscoveryDepth: z.number().optional(),
+});
+
+const jobCrawlerOptionsSchema = z.custom<JobCrawlerOptions>(
+  value => jobCrawlerOptionsShapeSchema.safeParse(value).success,
+);
+
+const v0DocumentMetadataShapeSchema = z.looseObject({
+  sourceURL: z.string().optional(),
+  creditsUsed: z.number().optional(),
+});
+
+const v0DocumentMetadataSchema = z.custom<Partial<DocumentMetadata>>(
+  value => v0DocumentMetadataShapeSchema.safeParse(value).success,
+);
+
+const stringSchema = z.string();
+
+const v0CrawlDocRawSchema = z.object({
+  content: z.unknown().optional(),
+  rawHtml: z.unknown().optional(),
+  markdown: z.unknown().optional(),
+  url: z.unknown().optional(),
+  metadata: z.unknown().optional(),
+});
 
 function extractV0CrawlDoc(returnvalue: unknown): V0CrawlDoc | null {
   const raw: unknown = Array.isArray(returnvalue)
     ? returnvalue[0]
     : returnvalue;
-  if (!isJsonObject(raw)) {
+  const parsed = v0CrawlDocRawSchema.safeParse(raw);
+  if (!parsed.success) {
     return null;
   }
-  const metadata = isJsonObject(raw.metadata) ? raw.metadata : {};
-  const content =
-    typeof raw.content === "string"
-      ? raw.content
-      : typeof raw.rawHtml === "string"
-        ? raw.rawHtml
-        : typeof raw.markdown === "string"
-          ? raw.markdown
-          : "";
-  const markdown = typeof raw.markdown === "string" ? raw.markdown : undefined;
+  const metadataParsed = v0DocumentMetadataSchema.safeParse(
+    parsed.data.metadata,
+  );
+  const metadata = metadataParsed.success ? metadataParsed.data : {};
+  const contentParsed = stringSchema.safeParse(parsed.data.content);
+  const rawHtmlParsed = stringSchema.safeParse(parsed.data.rawHtml);
+  const markdownParsed = stringSchema.safeParse(parsed.data.markdown);
+  const urlParsed = stringSchema.safeParse(parsed.data.url);
+  const markdown = markdownParsed.success ? markdownParsed.data : undefined;
+  const content = contentParsed.success
+    ? contentParsed.data
+    : rawHtmlParsed.success
+      ? rawHtmlParsed.data
+      : (markdown ?? "");
   const source =
-    typeof metadata.sourceURL === "string"
-      ? metadata.sourceURL
-      : typeof raw.url === "string"
-        ? raw.url
-        : "";
-  const creditsUsed =
-    typeof metadata.creditsUsed === "number" ? metadata.creditsUsed : 0;
+    metadata.sourceURL ?? (urlParsed.success ? urlParsed.data : "");
+  const creditsUsed = metadata.creditsUsed ?? 0;
   return { content, markdown, metadata, source, creditsUsed };
 }
 
@@ -142,8 +151,11 @@ export async function finishCrawlSuper(job: FinishCrawlJob) {
       : baseCtx;
   const webhook = data?.webhook ?? sc.webhook;
   const monitoring = data?.monitoring;
-  const crawlerOptions = isJobCrawlerOptions(sc.crawlerOptions)
-    ? sc.crawlerOptions
+  const parsedCrawlerOptions = jobCrawlerOptionsSchema.safeParse(
+    sc.crawlerOptions,
+  );
+  const crawlerOptions = parsedCrawlerOptions.success
+    ? parsedCrawlerOptions.data
     : null;
 
   logger.info("Finishing crawl");

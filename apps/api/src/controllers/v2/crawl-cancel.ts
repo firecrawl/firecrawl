@@ -45,7 +45,13 @@ export async function crawlCancelController(
       sc.cancelled = true;
       await saveCrawl(req.params.jobId, sc);
     } catch (error: unknown) {
-      logger.error(error);
+      logger.error("Failed to persist crawl cancellation", {
+        error,
+        jobId: req.params.jobId,
+      });
+      return res
+        .status(500)
+        .json({ error: "Failed to persist crawl cancellation" });
     }
 
     if (sc.queueBackend === "fdb") {
@@ -59,7 +65,10 @@ export async function crawlCancelController(
       status: "cancelled",
     });
   } catch (error: unknown) {
-    logger.error(error);
+    logger.error("Failed to cancel crawl", {
+      error,
+      jobId: req.params.jobId,
+    });
     return res.status(500).json({
       error: error instanceof Error ? error.message : String(error),
     });

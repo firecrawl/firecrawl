@@ -2,8 +2,8 @@ import { configDotenv } from "dotenv";
 import { config } from "../../config";
 configDotenv();
 
+import { z } from "zod";
 import type { TeamFlags } from "../../controllers/v2/types";
-import { isJsonObject } from "../../lib/json-types";
 
 // =========================================
 // Configuration
@@ -144,22 +144,16 @@ export async function idmux(req: IdmuxRequest): Promise<Identity> {
   }
 
   expect(res.ok).toBe(true);
-  const body: unknown = await res.json();
-  if (!isIdentity(body)) {
+  const parsed = identitySchema.safeParse(await res.json());
+  if (!parsed.success) {
     throw new Error("Unexpected identity response from idmux");
   }
-  return body;
+  return parsed.data;
 }
 
-function isIdentity(value: unknown): value is Identity {
-  return (
-    isJsonObject(value) &&
-    typeof value.apiKey === "string" &&
-    typeof value.teamId === "string"
-  );
-}
+const identitySchema = z.object({
+  apiKey: z.string(),
+  teamId: z.string(),
+});
 
-export type Identity = {
-  apiKey: string;
-  teamId: string;
-};
+export type Identity = z.infer<typeof identitySchema>;

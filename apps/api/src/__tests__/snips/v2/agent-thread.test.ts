@@ -1,6 +1,7 @@
 import request from "supertest";
-import { isJsonObject } from "../../../lib/json-types";
-import type { JsonObject, JsonValue } from "../../../lib/json-types";
+import { z } from "zod";
+import { jsonRecordSchema, jsonValueSchema } from "../../../lib/json-types";
+import type { JsonObject } from "../../../lib/json-types";
 import type { Identity } from "../lib";
 import {
   describeIf,
@@ -68,48 +69,59 @@ const cancel = (jobId: string) =>
     .delete(`/v2/agent/${jobId}`)
     .set("Authorization", `Bearer ${identity.apiKey}`);
 
-type ListedAgent = {
-  id: string;
-  options?: { threadId?: string; threadTurn?: number };
-};
+const listedAgentSchema = z.object({
+  id: z.string(),
+  options: z
+    .object({
+      threadId: z.string().optional(),
+      threadTurn: z.number().optional(),
+    })
+    .optional(),
+});
 
-type AgentStatusBody = {
-  status: string;
-  threadId?: string;
-  threadTurn?: number;
-  mode?: string;
-  message?: string;
-  data?: JsonValue;
-};
+type ListedAgent = z.infer<typeof listedAgentSchema>;
 
-type StartTurnBody = {
-  id: string;
-  threadId: string;
-  threadTurn?: number;
-};
+const agentListBodySchema = z.object({
+  agents: z.array(listedAgentSchema).optional(),
+});
 
-function isListedAgent(value: unknown): value is ListedAgent {
-  if (!isJsonObject(value) || typeof value.id !== "string") {
-    return false;
-  }
-  if (value.options !== undefined && !isJsonObject(value.options)) {
-    return false;
-  }
-  return true;
-}
+const agentStatusBodySchema = z.object({
+  status: z.string(),
+  threadId: z.string().optional(),
+  threadTurn: z.number().optional(),
+  mode: z.string().optional(),
+  message: z.string().optional(),
+  data: jsonValueSchema.optional(),
+});
 
-function isAgentStatusBody(value: unknown): value is AgentStatusBody {
-  return isJsonObject(value) && typeof value.status === "string";
-}
+type AgentStatusBody = z.infer<typeof agentStatusBodySchema>;
 
-function isStartTurnBody(value: unknown): value is StartTurnBody {
-  return (
-    isJsonObject(value) &&
-    typeof value.id === "string" &&
-    typeof value.threadId === "string" &&
-    (value.threadTurn === undefined || typeof value.threadTurn === "number")
-  );
-}
+const startTurnBodySchema = z.object({
+  id: z.string(),
+  threadId: z.string(),
+  threadTurn: z.number().optional(),
+});
+
+type StartTurnBody = z.infer<typeof startTurnBodySchema>;
+
+const threadBodySchema = z.object({
+  thread: z.object({
+    runs: z.array(
+      z.object({
+        status: z.string().optional(),
+        turn: z.number().optional(),
+      }),
+    ),
+  }),
+});
+
+const traceBodySchema = z.object({
+  events: z.array(
+    z.object({
+      type: z.string().optional(),
+    }),
+  ),
+});
 
 const listAgents = async (): Promise<Array<ListedAgent>> => {
   const response = await request(TEST_API_URL)
@@ -117,14 +129,11 @@ const listAgents = async (): Promise<Array<ListedAgent>> => {
     .set("Authorization", `Bearer ${identity.apiKey}`);
 
   expect(response.statusCode).toBe(200);
-  const body: unknown = response.body;
-  if (!isJsonObject(body) || body.agents === undefined) {
-    return [];
-  }
-  if (!Array.isArray(body.agents) || !body.agents.every(isListedAgent)) {
+  const parsed = agentListBodySchema.safeParse(response.body);
+  if (!parsed.success) {
     throw new Error("Unexpected /v2/agent list response shape");
   }
-  return [...body.agents];
+  return parsed.data.agents ?? [];
 };
 
 const listAgentIds = async () => (await listAgents()).map(a => a.id);
@@ -135,12 +144,12 @@ async function waitForTerminal(jobId: string): Promise<AgentStatusBody> {
   while (Date.now() < deadline) {
     const status = await statusOf(jobId);
     expect(status.statusCode).toBe(200);
-    const body: unknown = status.body;
-    if (!isAgentStatusBody(body)) {
+    const parsed = agentStatusBodySchema.safeParse(status.body);
+    if (!parsed.success) {
       throw new Error("Unexpected /v2/agent status response shape");
     }
-    if (body.status !== "processing") {
-      return body;
+    if (parsed.data.status !== "processing") {
+      return parsed.data;
     }
     await new Promise<void>(resolve => {
       setTimeout(resolve, 2000);
@@ -164,11 +173,11 @@ async function startTurn(body: JsonObject): Promise<StartTurnBody> {
   expect(response.body.success).toBe(true);
   expect(typeof response.body.id).toBe("string");
   expect(typeof response.body.threadId).toBe("string");
-  const parsed: unknown = response.body;
-  if (!isStartTurnBody(parsed)) {
+  const parsed = startTurnBodySchema.safeParse(response.body);
+  if (!parsed.success) {
     throw new Error("Unexpected /v2/agent start response shape");
   }
-  return parsed;
+  return parsed.data;
 }
 
 // agentRequestSchema.parse runs at the top of agentController, before the
@@ -297,28 +306,25 @@ describeIf(REQUIRES_FIRE_ENGINE && REQUIRES_AI && HAS_AGENT_BETA)(
         const secondStatus = await waitForTerminal(second.id);
         expect(secondStatus.status).toBe("completed");
         expect(secondStatus.threadTurn).toBe(2);
-        expect(
-          isJsonObject(secondStatus.data) ? Object.keys(secondStatus.data) : [],
-        ).toEqual(expect.arrayContaining(["title", "heading"]));
+        const parsedData = jsonRecordSchema.safeParse(secondStatus.data);
+        expect(parsedData.success ? Object.keys(parsedData.data) : []).toEqual(
+          expect.arrayContaining(["title", "heading"]),
+        );
 
         const thread = await threadOf(first.threadId, { includeData: true });
         expect(thread.statusCode).toBe(200);
         expect(thread.body.success).toBe(true);
         expect(thread.body.thread.id).toBe(first.threadId);
-        const threadBody: unknown = thread.body;
-        const threadRuns =
-          isJsonObject(threadBody) &&
-          isJsonObject(threadBody.thread) &&
-          Array.isArray(threadBody.thread.runs)
-            ? threadBody.thread.runs
-            : [];
+        const parsedThread = threadBodySchema.safeParse(thread.body);
+        const threadRuns = parsedThread.success
+          ? parsedThread.data.thread.runs
+          : [];
         expect(threadRuns).toHaveLength(2);
-        expect(
-          threadRuns.map(run => (isJsonObject(run) ? run.status : undefined)),
-        ).toEqual(["succeeded", "succeeded"]);
-        expect(
-          threadRuns.map(run => (isJsonObject(run) ? run.turn : undefined)),
-        ).toEqual([1, 2]);
+        expect(threadRuns.map(run => run.status)).toEqual([
+          "succeeded",
+          "succeeded",
+        ]);
+        expect(threadRuns.map(run => run.turn)).toEqual([1, 2]);
       },
       TURN_TIMEOUT * 2,
     );
@@ -399,15 +405,10 @@ describeIf(REQUIRES_FIRE_ENGINE && REQUIRES_AI && HAS_AGENT_BETA)(
 
         const trace = await traceOf(second.id);
         expect(trace.statusCode).toBe(200);
-        const traceBody: unknown = trace.body;
-        const traceEvents =
-          isJsonObject(traceBody) && Array.isArray(traceBody.events)
-            ? traceBody.events
-            : [];
+        const parsedTrace = traceBodySchema.safeParse(trace.body);
+        const traceEvents = parsedTrace.success ? parsedTrace.data.events : [];
         expect(
-          traceEvents.some(
-            event => isJsonObject(event) && event.type === "assistant.message",
-          ),
+          traceEvents.some(event => event.type === "assistant.message"),
         ).toBe(true);
       },
       TURN_TIMEOUT * 2,

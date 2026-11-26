@@ -1,10 +1,24 @@
-import { isJsonObject } from "../../lib/json-types";
+import { z } from "zod";
 
 type WebhookLogFields = {
   host: string | null;
   events?: Array<string>;
   headerCount: number;
 };
+
+const stringSchema = z.string();
+const unknownArraySchema = z.array(z.unknown());
+const headersObjectSchema = z.looseObject({});
+
+const webhookObjectSchema = z.object({
+  url: z.unknown().optional(),
+  events: z.unknown().optional(),
+  headers: z.unknown().optional(),
+});
+
+const webhookFieldSchema = z.object({
+  webhook: z.unknown(),
+});
 
 function hostOf(url: string): string | null {
   try {
@@ -27,18 +41,22 @@ export function summarizeWebhookForLog(
   if (typeof webhook === "string") {
     return { host: hostOf(webhook), headerCount: 0 };
   }
-  if (!isJsonObject(webhook)) {
+  const parsed = webhookObjectSchema.safeParse(webhook);
+  if (!parsed.success) {
     return undefined;
   }
 
-  const { url, events, headers } = webhook;
+  const urlParsed = stringSchema.safeParse(parsed.data.url);
+  const eventsParsed = unknownArraySchema.safeParse(parsed.data.events);
+  const headersParsed = headersObjectSchema.safeParse(parsed.data.headers);
   return {
-    host: typeof url === "string" ? hostOf(url) : null,
-    events: Array.isArray(events)
-      ? events.filter((e): e is string => typeof e === "string")
+    host: urlParsed.success ? hostOf(urlParsed.data) : null,
+    events: eventsParsed.success
+      ? eventsParsed.data.filter((e): e is string => typeof e === "string")
       : undefined,
-    headerCount:
-      headers && typeof headers === "object" ? Object.keys(headers).length : 0,
+    headerCount: headersParsed.success
+      ? Object.keys(headersParsed.data).length
+      : 0,
   };
 }
 
@@ -47,8 +65,12 @@ export function withWebhookSummaryForLog<T>(body: T): T {
   if (!body || typeof body !== "object" || !("webhook" in body)) {
     return body;
   }
+  const parsed = webhookFieldSchema.safeParse(body);
+  if (!parsed.success) {
+    return body;
+  }
   return {
     ...body,
-    webhook: summarizeWebhookForLog((body as { webhook: unknown }).webhook),
+    webhook: summarizeWebhookForLog(parsed.data.webhook),
   };
 }

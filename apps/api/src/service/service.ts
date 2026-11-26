@@ -18,7 +18,12 @@ import { buildLlmProviderRegistry } from "./llm-providers";
 import type { LlmProvider, LlmProviderRegistry } from "./llm-providers";
 import { freezeModules } from "./modules";
 import type { Modules } from "./modules";
-import type { BaseCaller, Caller } from "./request-context";
+import type {
+  BaseCaller,
+  BaseRequestContext,
+  Caller,
+  RequestContext,
+} from "./request-context";
 import { buildRequestSchemaRegistry } from "./request";
 import type {
   DescribedRequestSchemas,
@@ -98,8 +103,11 @@ export interface Extension {
   workers?: Record<string, Worker>;
 }
 
-type RequiredAuthSlot = BaseCaller extends Caller ? never : "auth";
-type RequiredModuleSlots = RequiredAuthSlot;
+type RequiredSlotsMap = {
+  auth: BaseCaller extends Caller ? never : "auth";
+  policy: BaseRequestContext extends RequestContext ? never : "policy";
+};
+type RequiredModuleSlots = RequiredSlotsMap[keyof RequiredSlotsMap];
 
 /**
  * Module slot configuration. When `Caller` is widened with required fields,

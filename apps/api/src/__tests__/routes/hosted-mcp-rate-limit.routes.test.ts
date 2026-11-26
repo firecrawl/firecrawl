@@ -1,7 +1,7 @@
 import express from "express";
 import type { Request, Response } from "express";
 import request from "supertest";
-import { isJsonObject } from "../../lib/json-types";
+import { z } from "zod";
 import type { authMiddleware } from "../../routes/shared";
 
 // Real routers; auth is stubbed to answer with the options its route passed,
@@ -28,14 +28,14 @@ const app = express();
 app.use(express.json());
 app.use("/v2", v2Router);
 
+const hostedMcpRateLimitBodySchema = z.object({
+  hostedMcpRateLimit: z.boolean(),
+});
+
 async function optsIn(path: string): Promise<boolean> {
   const res = await request(app).post(path).send({});
   expect(res.status).toBe(200);
-  const body: unknown = res.body;
-  if (!isJsonObject(body) || typeof body.hostedMcpRateLimit !== "boolean") {
-    throw new Error("Expected hostedMcpRateLimit boolean in response body");
-  }
-  return body.hostedMcpRateLimit;
+  return hostedMcpRateLimitBodySchema.parse(res.body).hostedMcpRateLimit;
 }
 
 describe("hosted MCP rate-limit opt-in", () => {

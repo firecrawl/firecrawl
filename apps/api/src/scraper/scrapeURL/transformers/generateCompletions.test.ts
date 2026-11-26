@@ -32,18 +32,34 @@ vi.mock("ai", async importOriginal => {
 });
 
 import { encoding_for_model } from "@dqbd/tiktoken";
+import { z } from "zod";
 import {
   generateCompletions,
   generateCrawlerOptionsFromPrompt,
 } from "./llmExtract";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { coreLlmProviders } from "../../../lib/generic-ai";
-import { isJsonObject } from "../../../lib/json-types";
+import { jsonRecordSchema } from "../../../lib/json-types";
 import type { JsonObject } from "../../../lib/json-types";
 import { modelPrices } from "../../../lib/model-prices";
 import { createService, replaceService } from "../../../service/service";
 
 const noopLogger = createLogger({ silent: true });
+
+const wrappedJsonSchema = z.object({
+  schema: z.object({
+    jsonSchema: jsonRecordSchema,
+  }),
+});
+
+const telemetrySchema = z.object({
+  functionId: z.string().optional(),
+  metadata: jsonRecordSchema.optional(),
+});
+
+const schemaWithPropertiesSchema = z.object({
+  properties: jsonRecordSchema,
+});
 
 function run(markdown: string, modelId: string, schema?: unknown) {
   return generateCompletions({
@@ -72,28 +88,21 @@ function lastCallPrompt(): string {
 }
 
 function lastCallJsonSchema(): JsonObject {
-  const call = lastCall();
-  if (!("schema" in call) || !isJsonObject(call.schema)) {
-    throw new Error("Expected schema object");
+  const parsed = wrappedJsonSchema.safeParse(lastCall());
+  if (!parsed.success) {
+    throw new Error("Expected schema.jsonSchema object");
   }
-  const raw: unknown = call.schema.jsonSchema;
-  if (!isJsonObject(raw)) {
-    throw new Error("Expected jsonSchema object");
-  }
-  return raw;
+  return parsed.data.schema.jsonSchema;
 }
 
 function lastCallTelemetry() {
-  const telemetry: unknown = lastCall().telemetry;
-  if (!isJsonObject(telemetry)) {
+  const parsed = telemetrySchema.safeParse(lastCall().telemetry);
+  if (!parsed.success) {
     throw new Error("Expected telemetry object");
   }
   return {
-    functionId:
-      typeof telemetry.functionId === "string"
-        ? telemetry.functionId
-        : undefined,
-    metadata: isJsonObject(telemetry.metadata) ? telemetry.metadata : undefined,
+    functionId: parsed.data.functionId,
+    metadata: parsed.data.metadata,
   };
 }
 
@@ -224,11 +233,11 @@ describe("generateCompletions schema normalization", () => {
       },
     });
 
-    const schema = lastCallJsonSchema();
-    const properties = isJsonObject(schema.properties)
-      ? schema.properties
-      : undefined;
-    expect(properties?.address).toEqual({
+    const parsedSchema =
+      schemaWithPropertiesSchema.safeParse(lastCallJsonSchema());
+    expect(
+      parsedSchema.success ? parsedSchema.data.properties.address : undefined,
+    ).toEqual({
       type: ["object", "null"],
       properties: { city: { type: "string" } },
       required: ["city"],

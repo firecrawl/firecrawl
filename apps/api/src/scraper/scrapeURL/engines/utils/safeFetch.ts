@@ -121,21 +121,23 @@ function attachSecurityCheck(agent: Dispatcher) {
   agent.on("connect", (_, targets) => {
     const client = targets.at(-1);
     if (!client) {
-      return;
+      throw new InsecureConnectionError();
     }
     const socketSymbol = Object.getOwnPropertySymbols(client).find(
       x => x.description === "socket",
     );
     if (!socketSymbol) {
-      return;
+      throw new InsecureConnectionError();
     }
     const socket: unknown = Object.getOwnPropertyDescriptor(
       client,
       socketSymbol,
     )?.value;
+    if (!(socket instanceof Socket)) {
+      throw new InsecureConnectionError();
+    }
 
     if (
-      socket instanceof Socket &&
       socket.remoteAddress &&
       isIPPrivate(socket.remoteAddress) &&
       config.ALLOW_LOCAL_WEBHOOKS !== true

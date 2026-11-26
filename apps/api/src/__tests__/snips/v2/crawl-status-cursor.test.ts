@@ -4,12 +4,13 @@ import {
   TEST_API_URL,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { isJsonObject } from "../../../lib/json-types";
+import { jsonValueSchema } from "../../../lib/json-types";
 import type { JsonValue } from "../../../lib/json-types";
 import type { Identity } from "./lib";
 import { idmux, scrapeTimeout } from "./lib";
 import request from "supertest";
 import { describe, expect, beforeAll } from "vitest";
+import { z } from "zod";
 
 let identity: Identity;
 let lowConcurrencyIdentity: Identity;
@@ -32,22 +33,18 @@ const sleep = (ms: number) =>
     setTimeout(r, ms);
   });
 
-type CrawlStatusPage = {
-  status: string;
-  completed: number;
-  data: Array<JsonValue | undefined>;
-  next?: string;
-};
+const crawlStatusPageSchema = z.object({
+  status: z.string(),
+  completed: z.number(),
+  data: z.array(jsonValueSchema),
+  next: z.string().optional(),
+});
 
-function isCrawlStatusPage(value: unknown): value is CrawlStatusPage {
-  return (
-    isJsonObject(value) &&
-    typeof value.status === "string" &&
-    typeof value.completed === "number" &&
-    Array.isArray(value.data) &&
-    (value.next === undefined || typeof value.next === "string")
-  );
-}
+type CrawlStatusPage = z.infer<typeof crawlStatusPageSchema>;
+
+const batchStartResponseSchema = z.object({
+  id: z.string(),
+});
 
 async function getStatus(
   path: string,
@@ -58,11 +55,11 @@ async function getStatus(
     .set("Authorization", `Bearer ${apiKey}`)
     .send();
   expect(res.statusCode).toBe(200);
-  const body: unknown = res.body;
-  if (!isCrawlStatusPage(body)) {
+  const parsed = crawlStatusPageSchema.safeParse(res.body);
+  if (!parsed.success) {
     throw new Error("Unexpected batch scrape status response shape");
   }
-  return body;
+  return parsed.data;
 }
 
 // Follows `next` like the SDKs do, with a hop cap so a cursor that never ends
@@ -91,11 +88,11 @@ async function startBatch(urls: Array<string>, apiKey: string) {
     .send({ urls });
   expect(res.statusCode).toBe(200);
   expect(res.body.success).toBe(true);
-  const body: unknown = res.body;
-  if (!isJsonObject(body) || typeof body.id !== "string") {
+  const parsed = batchStartResponseSchema.safeParse(res.body);
+  if (!parsed.success) {
     throw new Error("Expected batch scrape start response with id");
   }
-  return body.id;
+  return parsed.data.id;
 }
 
 describe("Crawl status cursor", () => {

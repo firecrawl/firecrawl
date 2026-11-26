@@ -1,4 +1,4 @@
-import { isJsonObject } from "../../../lib/json-types";
+import { z } from "zod";
 import { describeIf, itIf, TEST_PRODUCTION } from "../lib";
 import type { Identity } from "./lib";
 import {
@@ -12,6 +12,10 @@ import {
   map,
   browserCreateRaw,
 } from "./lib";
+
+const highlightsResponseSchema = z.object({
+  highlights: z.unknown().optional(),
+});
 // Without a US OpenAI key or service account, every OpenAI-backed feature is
 // refused for US-only teams.
 const HAS_US_OPENAI =
@@ -71,8 +75,9 @@ describeIf(TEST_PRODUCTION)("US-only teams", () => {
       );
 
       expect(response.markdown).toBeDefined();
+      const parsedHighlights = highlightsResponseSchema.safeParse(response);
       expect(
-        isJsonObject(response) ? response.highlights : undefined,
+        parsedHighlights.success ? parsedHighlights.data.highlights : undefined,
       ).toBeUndefined();
       expect(response.warning).toContain(
         "Query mode is not supported for teams restricted to US-only processing.",

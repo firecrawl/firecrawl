@@ -13,6 +13,7 @@ import {
   encodeJson,
   decodeJson,
   decodeI64,
+  groupMetaSchema,
   normalizeOwnerId,
 } from "./keyspace";
 import type { TxContext } from "./ops";
@@ -100,7 +101,10 @@ export class NuqFdbGroupOps {
     now: number,
     txc: TxContext,
   ): Promise<boolean> {
-    const gMeta = decodeJson<GroupMeta>(await tn.get(this.ks.groupMeta(gid)));
+    const gMeta = decodeJson(
+      await tn.get(this.ks.groupMeta(gid)),
+      groupMetaSchema,
+    );
     if (!gMeta || gMeta.s === "completed") {
       tn.clear(this.ks.taskGroupFinish(gid));
       return false;
@@ -170,7 +174,7 @@ export class NuQFdbJobGroup {
     }
     return await this.db.doTn(async tn => {
       const existingBuf = await tn.get(this.ks.groupMeta(id));
-      const existing = decodeJson<GroupMeta>(existingBuf);
+      const existing = decodeJson(existingBuf, groupMetaSchema);
       if (existing) {
         return this.toInstance(id, existing);
       }
@@ -194,7 +198,10 @@ export class NuQFdbJobGroup {
     logger: Logger = _logger,
   ): Promise<NuQFdbJobGroupInstance | null> {
     return await this.db.doTn(async tn => {
-      const g = decodeJson<GroupMeta>(await tn.get(this.ks.groupMeta(id)));
+      const g = decodeJson(
+        await tn.get(this.ks.groupMeta(id)),
+        groupMetaSchema,
+      );
       return g ? this.toInstance(id, g) : null;
     });
   }
@@ -213,8 +220,9 @@ export class NuQFdbJobGroup {
       const out: Array<NuQFdbJobGroupInstance> = [];
       for (const [key] of rows) {
         const gid = this.ks.unpackId(key);
-        const g = decodeJson<GroupMeta>(
+        const g = decodeJson(
           await tn.snapshot().get(this.ks.groupMeta(gid)),
+          groupMetaSchema,
         );
         if (g && g.s === "active") {
           out.push(this.toInstance(gid, g));
@@ -231,7 +239,10 @@ export class NuQFdbJobGroup {
     logger: Logger = _logger,
   ): Promise<boolean> {
     return await this.db.doTn(async tn => {
-      const g = decodeJson<GroupMeta>(await tn.get(this.ks.groupMeta(id)));
+      const g = decodeJson(
+        await tn.get(this.ks.groupMeta(id)),
+        groupMetaSchema,
+      );
       if (!g || g.s !== "active") {
         return false;
       }

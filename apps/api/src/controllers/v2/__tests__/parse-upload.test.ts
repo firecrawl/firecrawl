@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 interface MockUploadConfig {
   ENV: string | undefined;
@@ -99,7 +100,14 @@ import { coreParts, createService, defaultModules } from "../../../service";
 import type { UploadDriver, UploadsModule } from "../../../service";
 import { replaceService } from "../../../service/service";
 import { testService, withService } from "../../../service/testing";
-import { isJsonObject } from "../../../lib/json-types";
+
+const parsedUploadBodySchema = z.object({
+  file: z.object({
+    buffer: z.custom<Buffer>(value => Buffer.isBuffer(value)),
+    filename: z.string().optional(),
+    kind: z.string().optional(),
+  }),
+});
 
 function buildApp() {
   const app = express();
@@ -123,20 +131,16 @@ function buildApp() {
       parseUploadRefPayloadMiddleware(authedReq, res, next).catch(next);
     },
     (req, res) => {
-      const body: unknown = req.body;
-      if (
-        !isJsonObject(body) ||
-        !isJsonObject(body.file) ||
-        !Buffer.isBuffer(body.file.buffer)
-      ) {
+      const parsed = parsedUploadBodySchema.safeParse(req.body);
+      if (!parsed.success) {
         res.status(500).json({ success: false, error: "Missing parsed file" });
         return;
       }
       res.status(200).json({
         success: true,
-        filename: body.file.filename,
-        kind: body.file.kind,
-        content: body.file.buffer.toString("utf8"),
+        filename: parsed.data.file.filename,
+        kind: parsed.data.file.kind,
+        content: parsed.data.file.buffer.toString("utf8"),
       });
     },
   );

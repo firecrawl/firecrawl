@@ -1,7 +1,6 @@
 import type { z } from "zod";
 import type { webhookSchema } from "./schema";
 import type { Document, DocumentMetadata } from "../../controllers/v2/types";
-import type { JsonObject } from "../../lib/json-types";
 
 interface ExtractWebhookResult {
   success: boolean;
@@ -51,7 +50,7 @@ export type WebhookConfig = z.infer<typeof webhookSchema>;
 interface WebhookDocument {
   content?: string;
   markdown?: string;
-  metadata: Partial<DocumentMetadata> | JsonObject;
+  metadata: Partial<DocumentMetadata>;
 }
 
 interface WebhookDocumentLink {

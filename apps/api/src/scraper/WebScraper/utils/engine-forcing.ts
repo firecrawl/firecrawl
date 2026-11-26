@@ -1,32 +1,43 @@
 import { configDotenv } from "dotenv";
 import { parse } from "tldts";
+import { z } from "zod";
 import type { Engine } from "../../scrapeURL/engines";
-import { isJsonObject } from "../../../lib/json-types";
+import { jsonObjectSchema } from "../../../lib/json-types";
 import { logger } from "../../../lib/logger";
 
 import { config } from "../../../config";
 configDotenv();
 
-type EngineForcingEntry = Engine | Array<Engine>;
+const engineSchema = z.custom<Engine>(
+  value => typeof value === "string" && value.length > 0,
+);
+
+const engineForcingEntrySchema = z.union([
+  engineSchema,
+  z.array(engineSchema).min(1),
+]);
+
+type EngineForcingEntry = z.infer<typeof engineForcingEntrySchema>;
 
 let engineMappings: Map<string, EngineForcingEntry> | null = null;
-
-function isEngineName(value: unknown): value is Engine {
-  return typeof value === "string" && value.length > 0;
-}
 
 function parseEngineForcingMappings(
   raw: unknown,
 ): Map<string, EngineForcingEntry> {
   const mappings = new Map<string, EngineForcingEntry>();
-  if (!isJsonObject(raw)) {
+  const parsedRoot = jsonObjectSchema.safeParse(raw);
+  if (!parsedRoot.success) {
+    logger.warn(
+      "FORCED_ENGINE_DOMAINS must be a JSON object mapping domains to engines",
+    );
     return mappings;
   }
-  for (const [domain, value] of Object.entries(raw)) {
-    if (isEngineName(value)) {
-      mappings.set(domain, value);
-    } else if (Array.isArray(value) && value.every(isEngineName)) {
-      mappings.set(domain, value);
+  for (const [domain, value] of Object.entries(parsedRoot.data)) {
+    const parsedEntry = engineForcingEntrySchema.safeParse(value);
+    if (parsedEntry.success) {
+      mappings.set(domain, parsedEntry.data);
+    } else {
+      logger.warn("Ignoring invalid FORCED_ENGINE_DOMAINS entry", { domain });
     }
   }
   return mappings;

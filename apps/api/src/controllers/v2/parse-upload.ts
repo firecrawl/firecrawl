@@ -13,7 +13,7 @@ import { isImageOcrEnabled } from "../../lib/image-ocr-gate";
 import { reportPipelineError } from "../../lib/redis-pipeline";
 import { service } from "../../service";
 import type { StoredUploadRef } from "../../service";
-import { isJsonObject } from "../../lib/json-types";
+import { jsonValueSchema } from "../../lib/json-types";
 
 const PARSE_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
 const PARSE_UPLOAD_TTL_MS = 10 * 60 * 1000;
@@ -400,13 +400,14 @@ export async function parseLocalUploadController(req: Request, res: Response) {
   }
 
   const rawBody: unknown = req.body;
-  const body = Buffer.isBuffer(rawBody)
-    ? rawBody
-    : typeof rawBody === "string"
-      ? Buffer.from(rawBody)
-      : rawBody instanceof Uint8Array
-        ? Buffer.from(rawBody)
-        : Buffer.alloc(0);
+  if (rawBody !== undefined && !Buffer.isBuffer(rawBody)) {
+    return res.status(400).json({
+      success: false,
+      code: "BAD_REQUEST",
+      error: "Upload body must be raw bytes.",
+    });
+  }
+  const body = Buffer.isBuffer(rawBody) ? rawBody : Buffer.alloc(0);
   const stored = await driver.receiveUpload({
     uploadId: payload.uploadId,
     teamId: payload.teamId,
@@ -515,18 +516,19 @@ async function resolveUploadRef(
   };
 }
 
+const uploadRefRequestBodySchema = z
+  .object({
+    uploadRef: z.string().min(1),
+  })
+  .catchall(jsonValueSchema.optional());
+
 export async function parseUploadRefPayloadMiddleware(
   req: RequestWithAuth<Record<string, string>, unknown, unknown>,
   res: Response,
   next: NextFunction,
 ) {
-  const rawBody: unknown = req.body;
-  const uploadRef = isJsonObject(rawBody) ? rawBody.uploadRef : undefined;
-  if (
-    !isJsonObject(rawBody) ||
-    typeof uploadRef !== "string" ||
-    uploadRef.length === 0
-  ) {
+  const parsedBody = uploadRefRequestBodySchema.safeParse(req.body);
+  if (!parsedBody.success) {
     res.status(400).json({
       success: false,
       code: "BAD_REQUEST",
@@ -535,6 +537,8 @@ export async function parseUploadRefPayloadMiddleware(
     });
     return;
   }
+
+  const { uploadRef, ...options } = parsedBody.data;
 
   let payload: ParseUploadRefPayload;
   try {
@@ -559,7 +563,6 @@ export async function parseUploadRefPayloadMiddleware(
 
   try {
     const resolved = await resolveUploadRef(payload, isImageOcrEnabled());
-    const { uploadRef: _uploadRef, ...options } = rawBody;
     req.body = {
       ...options,
       file: resolved.file,

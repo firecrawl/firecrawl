@@ -8,7 +8,8 @@ import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
 import { requestContext } from "../../lib/request-context";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { getErrorHttpResponse } from "../../lib/error";
-import { isJsonObject } from "../../lib/json-types";
+import { parsePromptCrawlerOptions } from "./crawl-prompt-options";
+import type { PromptCrawlerOptions } from "./crawl-prompt-options";
 
 // Define the request schema for params preview
 // Only url and prompt are required/relevant for preview
@@ -27,19 +28,7 @@ type CrawlParamsPreviewRequest = z.infer<
 
 type CrawlParamsPreviewData = {
   url: string;
-  includePaths?: Array<string>;
-  excludePaths?: Array<string>;
-  maxDepth?: number;
-  maxDiscoveryDepth?: number;
-  crawlEntireDomain?: boolean;
-  allowExternalLinks?: boolean;
-  allowSubdomains?: boolean;
-  sitemap?: "skip" | "include" | "only";
-  ignoreQueryParameters?: boolean;
-  deduplicateSimilarURLs?: boolean;
-  delay?: number;
-  limit?: number;
-};
+} & PromptCrawlerOptions;
 
 type CrawlParamsPreviewResponse =
   | {
@@ -47,60 +36,6 @@ type CrawlParamsPreviewResponse =
       data?: CrawlParamsPreviewData;
     }
   | ErrorResponse;
-
-function isStringArray(value: unknown): value is Array<string> {
-  return Array.isArray(value) && value.every(item => typeof item === "string");
-}
-
-function parseGeneratedCrawlerOptions(
-  raw: unknown,
-): Omit<CrawlParamsPreviewData, "url"> {
-  if (!isJsonObject(raw)) {
-    return {};
-  }
-  const result: Omit<CrawlParamsPreviewData, "url"> = {};
-  if (isStringArray(raw.includePaths)) {
-    result.includePaths = raw.includePaths;
-  }
-  if (isStringArray(raw.excludePaths)) {
-    result.excludePaths = raw.excludePaths;
-  }
-  if (typeof raw.maxDepth === "number") {
-    result.maxDepth = raw.maxDepth;
-  }
-  if (typeof raw.maxDiscoveryDepth === "number") {
-    result.maxDiscoveryDepth = raw.maxDiscoveryDepth;
-  }
-  if (typeof raw.crawlEntireDomain === "boolean") {
-    result.crawlEntireDomain = raw.crawlEntireDomain;
-  }
-  if (typeof raw.allowExternalLinks === "boolean") {
-    result.allowExternalLinks = raw.allowExternalLinks;
-  }
-  if (typeof raw.allowSubdomains === "boolean") {
-    result.allowSubdomains = raw.allowSubdomains;
-  }
-  if (
-    raw.sitemap === "skip" ||
-    raw.sitemap === "include" ||
-    raw.sitemap === "only"
-  ) {
-    result.sitemap = raw.sitemap;
-  }
-  if (typeof raw.ignoreQueryParameters === "boolean") {
-    result.ignoreQueryParameters = raw.ignoreQueryParameters;
-  }
-  if (typeof raw.deduplicateSimilarURLs === "boolean") {
-    result.deduplicateSimilarURLs = raw.deduplicateSimilarURLs;
-  }
-  if (typeof raw.delay === "number") {
-    result.delay = raw.delay;
-  }
-  if (typeof raw.limit === "number") {
-    result.limit = raw.limit;
-  }
-  return result;
-}
 
 export async function crawlParamsPreviewController(
   req: RequestWithAuth<
@@ -178,7 +113,7 @@ export async function crawlParamsPreviewController(
       },
     );
 
-    const generatedOptions = parseGeneratedCrawlerOptions(extract);
+    const generatedOptions = parsePromptCrawlerOptions(extract);
 
     logger.debug("Generated crawler options from enhanced prompt", {
       originalPrompt: parsedBody.prompt,

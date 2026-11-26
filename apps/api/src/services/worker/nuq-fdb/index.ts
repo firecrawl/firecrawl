@@ -1,6 +1,6 @@
 import type { Document } from "../../../controllers/v2/types";
-import { isJsonObject } from "../../../lib/json-types";
 import type { ScrapeJobData } from "../../../types";
+import { decodeScrapeJobData, decodeScrapeReturnValue } from "../nuq-decoders";
 import { NuQFdbQueue, TypedNuQFdbQueue } from "./queue";
 import { NuQFdbJobGroup } from "./groups";
 import { NuqFdbSweeper } from "./sweeper";
@@ -18,39 +18,6 @@ export type { NuQFdbJobGroupInstance, NuQFdbGroupStatus } from "./groups";
 export { NuqFdbSweeper } from "./sweeper";
 export { NuqFdbExternalSlots } from "./slots";
 export { isFdbConfigured, nuqFdbHealthCheck, withFdbTimeout } from "./client";
-
-// Shed ZDR/external-store jobs have no data chunks and read back as null,
-// matching PG's NULL data column.
-function isStoredScrapeJobData(value: unknown): value is ScrapeJobData {
-  if (value === null) {
-    return true;
-  }
-  return (
-    isJsonObject(value) &&
-    (value.mode === "single_urls" ||
-      value.mode === "kickoff" ||
-      value.mode === "kickoff_sitemap")
-  );
-}
-
-function decodeScrapeJobData(raw: unknown): ScrapeJobData {
-  if (!isStoredScrapeJobData(raw)) {
-    throw new Error("Invalid FDB scrape job data payload");
-  }
-  return raw;
-}
-
-function isStoredDocument(value: unknown): value is Document {
-  return isJsonObject(value);
-}
-
-function decodeScrapeReturnValue(raw: unknown): Document | null {
-  if (raw === null || raw === undefined) {
-    return null;
-  }
-  const candidate: unknown = Array.isArray(raw) ? raw[0] : raw;
-  return isStoredDocument(candidate) ? candidate : null;
-}
 
 export const scrapeQueueFdb = new TypedNuQFdbQueue<
   ScrapeJobData,

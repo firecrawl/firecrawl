@@ -1,33 +1,27 @@
-import { isJsonObject } from "../../../lib/json-types";
+import { z } from "zod";
 import { describeIf, TEST_PRODUCTION } from "../lib";
 import type { Identity } from "./lib";
 import request, { idmux, scrapeTimeout, TEST_API_URL } from "./lib";
 
-type ParseFormat = {
-  format: string;
-  kind: "document" | "image";
-  extensions: Array<string>;
-  mimeTypes: Array<string>;
-  available: boolean;
-};
+const parseFormatSchema = z.object({
+  format: z.string(),
+  kind: z.enum(["document", "image"]),
+  extensions: z.array(z.string()),
+  mimeTypes: z.array(z.string()),
+  available: z.boolean(),
+});
 
-function isStringArray(value: unknown): value is Array<string> {
-  return (
-    Array.isArray(value) &&
-    value.every((item: unknown) => typeof item === "string")
-  );
-}
+type ParseFormat = z.infer<typeof parseFormatSchema>;
 
-function isParseFormat(value: unknown): value is ParseFormat {
-  return (
-    isJsonObject(value) &&
-    typeof value.format === "string" &&
-    (value.kind === "document" || value.kind === "image") &&
-    isStringArray(value.extensions) &&
-    isStringArray(value.mimeTypes) &&
-    typeof value.available === "boolean"
-  );
-}
+const parseFormatsBodySchema = z.object({
+  data: z.object({
+    formats: z.array(parseFormatSchema),
+  }),
+});
+
+const errorCodeBodySchema = z.object({
+  code: z.string(),
+});
 
 let identity: Identity;
 
@@ -47,16 +41,11 @@ async function getParseFormats(): Promise<Array<ParseFormat>> {
   expect(response.statusCode, JSON.stringify(response.body)).toBe(200);
   expect(response.body.success).toBe(true);
   expect(response.headers["cache-control"]).toBe("private, max-age=3600");
-  const body: unknown = response.body;
-  if (
-    !isJsonObject(body) ||
-    !isJsonObject(body.data) ||
-    !Array.isArray(body.data.formats) ||
-    !body.data.formats.every(isParseFormat)
-  ) {
+  const parsed = parseFormatsBodySchema.safeParse(response.body);
+  if (!parsed.success) {
     throw new Error("Unexpected /v2/parse/formats response shape");
   }
-  return [...body.data.formats];
+  return parsed.data.data.formats;
 }
 
 // screenshot output is rejected after the upload type is accepted, so a
@@ -70,11 +59,11 @@ async function parseValidationCode(filename: string, contentType: string) {
     .field("options", JSON.stringify({ formats: ["screenshot"] }));
 
   expect(response.statusCode, JSON.stringify(response.body)).toBe(400);
-  const body: unknown = response.body;
-  if (!isJsonObject(body) || typeof body.code !== "string") {
+  const parsed = errorCodeBodySchema.safeParse(response.body);
+  if (!parsed.success) {
     throw new Error("Expected error code string in /v2/parse response");
   }
-  return body.code;
+  return parsed.data.code;
 }
 
 describe("GET /v2/parse/formats", () => {

@@ -19,15 +19,24 @@ let asserted = false;
 const report = (problems: Array<string>) =>
   `Invalid environment:\n${problems.map(problem => `  ${problem}`).join("\n")}`;
 
-function hasThrowingEnvGetters<Schema extends z.ZodObject>(
-  candidate: Partial<z.output<Schema>>,
+function createThrowingEnvStub<T>(
   keys: ReadonlyArray<string>,
-): candidate is z.output<Schema> {
-  return keys.every(
-    key =>
-      typeof Object.getOwnPropertyDescriptor(candidate, key)?.get ===
-      "function",
-  );
+  errorMessage: string,
+): T;
+function createThrowingEnvStub(
+  keys: ReadonlyArray<string>,
+  errorMessage: string,
+) {
+  const unreadable = {};
+  for (const key of keys) {
+    Object.defineProperty(unreadable, key, {
+      enumerable: true,
+      get(): never {
+        throw new Error(errorMessage);
+      },
+    });
+  }
+  return unreadable;
 }
 
 /**
@@ -82,19 +91,7 @@ export function defineEnv<Schema extends z.ZodObject>(
     throw new Error(report(problems));
   }
 
-  const unreadable: Partial<z.output<Schema>> = {};
-  for (const key of keys) {
-    Object.defineProperty(unreadable, key, {
-      enumerable: true,
-      get(): never {
-        throw new Error(report(problems));
-      },
-    });
-  }
-  if (!hasThrowingEnvGetters<Schema>(unreadable, keys)) {
-    throw new Error(report(problems));
-  }
-  return unreadable;
+  return createThrowingEnvStub<z.output<Schema>>(keys, report(problems));
 }
 
 /**

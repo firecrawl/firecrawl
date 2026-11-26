@@ -28,78 +28,60 @@ import {
 } from "../../lib/otel-tracer";
 import type { Span } from "../../lib/otel-tracer";
 import { installedService } from "../../service/service";
-import { isJsonObject } from "../../lib/json-types";
+import { jsonRecordSchema } from "../../lib/json-types";
+import {
+  readAgentInterop,
+  readBooleanField,
+  readOptionalBooleanField,
+} from "./agent-interop";
 
 const IMAGE_SEARCH_US_ONLY_MESSAGE =
   "Image search is not available for teams restricted to US-only processing.";
 
-type EnterpriseSearchMode = "default" | "anon" | "zdr";
-
-interface AgentInteropPayload {
-  shouldBill?: boolean;
-  requestId?: string;
-}
+const enterpriseSearchModeSchema = z.enum(["default", "anon", "zdr"]);
+type EnterpriseSearchMode = z.infer<typeof enterpriseSearchModeSchema>;
 
 interface JobIdField {
   jobId?: string;
 }
 
-function isEnterpriseSearchMode(value: unknown): value is EnterpriseSearchMode {
-  return value === "default" || value === "anon" || value === "zdr";
-}
+const enterpriseModesBodySchema = z.object({
+  enterprise: z.array(z.unknown()),
+});
+
+const callerPlanClassSchema = z.object({
+  planClass: z.enum(["free", "self_serve", "contract"]),
+});
 
 function readEnterpriseModes(
   body: unknown,
 ): Array<EnterpriseSearchMode> | undefined {
-  if (!isJsonObject(body) || !Array.isArray(body.enterprise)) {
+  const parsed = enterpriseModesBodySchema.safeParse(body);
+  if (!parsed.success) {
     return undefined;
   }
-  return body.enterprise.filter(isEnterpriseSearchMode);
-}
-
-function readAgentInterop(body: unknown): AgentInteropPayload | undefined {
-  if (!isJsonObject(body) || !isJsonObject(body.__agentInterop)) {
-    return undefined;
-  }
-  const raw = body.__agentInterop;
-  return {
-    shouldBill:
-      typeof raw.shouldBill === "boolean" ? raw.shouldBill : undefined,
-    requestId: typeof raw.requestId === "string" ? raw.requestId : undefined,
-  };
-}
-
-function readBooleanField(source: unknown, key: string): boolean {
-  return isJsonObject(source) && source[key] === true;
-}
-
-function readOptionalBooleanField(
-  source: unknown,
-  key: string,
-): boolean | undefined {
-  if (!isJsonObject(source)) {
-    return undefined;
-  }
-  const value = source[key];
-  return typeof value === "boolean" ? value : undefined;
+  return parsed.data.enterprise.flatMap(item => {
+    const mode = enterpriseSearchModeSchema.safeParse(item);
+    return mode.success ? [mode.data] : [];
+  });
 }
 
 function readTeamPlanClass(caller: unknown): TeamPlanClass | undefined {
-  if (!isJsonObject(caller)) {
-    return undefined;
-  }
-  const value = caller.planClass;
-  if (value === "free" || value === "self_serve" || value === "contract") {
-    return value;
-  }
-  return undefined;
+  const parsed = callerPlanClassSchema.safeParse(caller);
+  return parsed.success ? parsed.data.planClass : undefined;
 }
 
-function stripDeprecatedSearchFields(body: unknown): void {
-  if (isJsonObject(body)) {
-    delete body.objective;
-    delete body.clientModel;
+function parseSearchRequestBody(body: unknown): SearchRequest {
+  const parsed = jsonRecordSchema.safeParse(body);
+  if (!parsed.success) {
+    return getV2RequestSchemas().search.parse(body);
   }
+  const {
+    objective: _objective,
+    clientModel: _clientModel,
+    ...rest
+  } = parsed.data;
+  return getV2RequestSchemas().search.parse(rest);
 }
 
 export async function searchController(
@@ -175,8 +157,7 @@ async function searchControllerInner(
 
   try {
     if (!req.ctx) {
-      stripDeprecatedSearchFields(req.body);
-      req.body = getV2RequestSchemas().search.parse(req.body);
+      req.body = parseSearchRequestBody(req.body);
     }
 
     const requestedFormats = req.body.scrapeOptions?.formats ?? [];
@@ -252,11 +233,12 @@ async function searchControllerInner(
           res.setHeader(name, value);
         }
       }
-      const refusalBody: ResponsePayload = isJsonObject(
+      const parsedRefusalBody = jsonRecordSchema.safeParse(
         reservation.refusal.body,
-      )
+      );
+      const refusalBody: ResponsePayload = parsedRefusalBody.success
         ? {
-            ...reservation.refusal.body,
+            ...parsedRefusalBody.data,
             ...jobIdField,
           }
         : reservation.refusal.body;

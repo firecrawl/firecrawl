@@ -1,8 +1,8 @@
 import express from "express";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type { RequestWithAuth } from "../../controllers/v2/types";
-import { isJsonObject } from "../../lib/json-types";
 import type { JsonObject } from "../../lib/json-types";
 
 vi.mock("../../lib/logger", () => ({
@@ -55,6 +55,8 @@ function buildReq(overrides: Partial<MockReq> = {}): MockReq {
   };
 }
 
+const limitBodySchema = z.object({ limit: z.number() });
+
 async function runMiddleware(
   reqSpec: MockReq,
   middleware = checkCreditsMiddleware(),
@@ -92,9 +94,9 @@ async function runMiddleware(
         nextCalled = true;
         nextErr = err;
         reqSpec.account = authReq.account;
-        const reqBody: unknown = authReq.body;
-        if (isJsonObject(reqBody) && typeof reqBody.limit === "number") {
-          reqSpec.body.limit = reqBody.limit;
+        const parsedBody = limitBodySchema.safeParse(authReq.body);
+        if (parsedBody.success) {
+          reqSpec.body.limit = parsedBody.data.limit;
         }
         if (err) {
           next(err);

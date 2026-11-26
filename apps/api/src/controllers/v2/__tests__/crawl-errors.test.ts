@@ -24,12 +24,13 @@ vi.mock("../../../services/worker/nuq-router", () => ({
 
 import express from "express";
 import request from "supertest";
+import { z } from "zod";
 import { RacedRedirectError } from "../../../lib/error";
 import {
   coreErrors,
   serializeTransportableError,
 } from "../../../lib/error-serde";
-import { isJsonObject } from "../../../lib/json-types";
+import { jsonObjectSchema } from "../../../lib/json-types";
 import type { JsonObject } from "../../../lib/json-types";
 import { SiteError } from "../../../scraper/scrapeURL/error";
 import { createService, replaceService } from "../../../service/service";
@@ -89,6 +90,10 @@ describe.each([["v2", v2CrawlErrorsController]])(
       ]);
     });
 
+    const crawlErrorsBodySchema = z.object({
+      errors: z.array(jsonObjectSchema),
+    });
+
     async function listErrors(): Promise<{ errors: Array<JsonObject> }> {
       const app = express();
       app.get("/crawl/:jobId/errors", async (req, res) => {
@@ -99,12 +104,7 @@ describe.each([["v2", v2CrawlErrorsController]])(
       });
       const response = await request(app).get("/crawl/crawl-1/errors");
       const parsed: unknown = JSON.parse(response.text);
-      if (!isJsonObject(parsed) || !Array.isArray(parsed.errors)) {
-        throw new Error("Expected crawl errors response");
-      }
-      return {
-        errors: parsed.errors.filter(isJsonObject),
-      };
+      return crawlErrorsBodySchema.parse(parsed);
     }
 
     it("lists a code with a class by its code and message", async () => {

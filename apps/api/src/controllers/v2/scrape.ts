@@ -1,4 +1,5 @@
 import type { Response } from "express";
+import { z } from "zod";
 
 import { logger as _logger } from "../../lib/logger";
 import type {
@@ -34,56 +35,18 @@ import type {
   SettleOutcome,
 } from "../../service";
 import type { BillingMetadata } from "../../lib/billing-types";
-import { isJsonObject } from "../../lib/json-types";
+import { jsonRecordSchema } from "../../lib/json-types";
 import type { InternalOptions } from "../../scraper/scrapeURL";
+import { readAgentInterop, readBooleanField } from "./agent-interop";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
-
-interface AgentInteropPayload {
-  shouldBill?: boolean;
-  requestId?: string;
-  boostConcurrency?: boolean;
-}
 
 type ScrapeOptionsWithCache = ScrapeRequest & {
   maxAge?: number;
 };
 
-function readAgentInterop(body: unknown): AgentInteropPayload | undefined {
-  if (!isJsonObject(body) || !isJsonObject(body.__agentInterop)) {
-    return undefined;
-  }
-  const raw = body.__agentInterop;
-  return {
-    shouldBill:
-      typeof raw.shouldBill === "boolean" ? raw.shouldBill : undefined,
-    requestId: typeof raw.requestId === "string" ? raw.requestId : undefined,
-    boostConcurrency:
-      typeof raw.boostConcurrency === "boolean"
-        ? raw.boostConcurrency
-        : undefined,
-  };
-}
-
-function readBooleanField(source: unknown, key: string): boolean {
-  return isJsonObject(source) && source[key] === true;
-}
-
-function readNumberField(source: unknown, key: string): number | undefined {
-  if (!isJsonObject(source)) {
-    return undefined;
-  }
-  const value = source[key];
-  return typeof value === "number" ? value : undefined;
-}
-
-function readStringField(source: unknown, key: string): string | undefined {
-  if (!isJsonObject(source)) {
-    return undefined;
-  }
-  const value = source[key];
-  return typeof value === "string" ? value : undefined;
-}
+const rawUrlBodySchema = z.object({ url: z.string() });
+const maxAgeBodySchema = z.object({ maxAge: z.number() });
 
 export async function scrapeController(
   req: RequestWithAuth<Record<string, string>, ScrapeResponse, ScrapeRequest>,
@@ -103,11 +66,14 @@ export async function scrapeController(
       const controllerStartTime = new Date().getTime();
 
       const jobId = req.requestId ?? uuidv7();
-      const preNormalizedBody = isJsonObject(req.rawRequestBody)
-        ? req.rawRequestBody
+      const parsedRawBody = jsonRecordSchema.safeParse(req.rawRequestBody);
+      const preNormalizedBody = parsedRawBody.success
+        ? parsedRawBody.data
         : { ...req.body };
-      const unnormalizedSourceURL =
-        readStringField(req.rawRequestBody, "url") ?? req.body.url;
+      const parsedRawUrl = rawUrlBodySchema.safeParse(req.rawRequestBody);
+      const unnormalizedSourceURL = parsedRawUrl.success
+        ? parsedRawUrl.data.url
+        : req.body.url;
 
       // Set initial span attributes
       setSpanAttributes(span, {
@@ -320,8 +286,10 @@ export async function scrapeController(
                   ...req.body,
                 };
                 if (readBooleanField(req.body, "__experimental_cache")) {
-                  jobScrapeOptions.maxAge =
-                    readNumberField(req.body, "maxAge") ?? 4 * 60 * 60 * 1000; // 4 hours
+                  const parsedMaxAge = maxAgeBodySchema.safeParse(req.body);
+                  jobScrapeOptions.maxAge = parsedMaxAge.success
+                    ? parsedMaxAge.data.maxAge
+                    : 4 * 60 * 60 * 1000; // 4 hours
                 }
                 const internalOptions: InternalOptions = {
                   ctx,
@@ -529,15 +497,35 @@ export async function scrapeController(
         }
       }
 
+      if (!doc) {
+        await settleBilling({ ok: false });
+        const id = uuidv7();
+        logger.error("Scrape completed without document", {
+          version: "v2",
+          scrapeId: jobId,
+          errorId: id,
+          teamId: req.auth.team_id,
+        });
+        setSpanAttributes(span, {
+          "scrape.status_code": 500,
+          "scrape.error_id": id,
+        });
+        return res.status(500).json({
+          success: false,
+          code: "UNKNOWN_ERROR",
+          error: service.modules.messages.errorContact(id),
+        });
+      }
+
       if (!hasFormatOfType(req.body.formats, "rawHtml")) {
-        if (doc && doc.rawHtml) {
+        if (doc.rawHtml) {
           delete doc.rawHtml;
         }
       }
 
       await settleBilling({
         ok: true,
-        charged: doc?.metadata?.creditsUsed,
+        charged: doc.metadata?.creditsUsed,
       });
 
       const totalRequestTime = new Date().getTime() - middlewareStartTime;
@@ -550,9 +538,9 @@ export async function scrapeController(
         "scrape.total_request_time_ms": totalRequestTime,
         "scrape.controller_time_ms": controllerTime,
         "scrape.total_wait_time_ms": totalWait,
-        "scrape.document.status_code": doc?.metadata?.statusCode,
-        "scrape.document.content_type": doc?.metadata?.contentType,
-        "scrape.document.error": doc?.metadata?.error,
+        "scrape.document.status_code": doc.metadata?.statusCode,
+        "scrape.document.content_type": doc.metadata?.contentType,
+        "scrape.document.error": doc.metadata?.error,
       });
 
       const rawFormats = (req.body.formats ?? []) as Array<{
@@ -596,21 +584,6 @@ export async function scrapeController(
         concurrencyLimited,
         concurrencyQueueDurationMs: lockTime || undefined,
       });
-
-      if (!doc) {
-        const id = uuidv7();
-        logger.error("Scrape completed without document", {
-          version: "v2",
-          scrapeId: jobId,
-          errorId: id,
-          teamId: req.auth.team_id,
-        });
-        return res.status(500).json({
-          success: false,
-          code: "UNKNOWN_ERROR",
-          error: service.modules.messages.errorContact(id),
-        });
-      }
 
       const responseDocument: Document = {
         ...doc,

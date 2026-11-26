@@ -1,4 +1,5 @@
 import type { Response } from "express";
+import { z } from "zod";
 import type {
   CrawlErrorsResponse,
   CrawlStatusParams,
@@ -12,7 +13,7 @@ import { deserializeTransportableError } from "../../lib/error-serde";
 import { scrapeQueue } from "../../services/worker/nuq-router";
 import { service } from "../../service";
 import type { JobOwner } from "../../service";
-import { isJsonObject } from "../../lib/json-types";
+import { jsonValueSchema } from "../../lib/json-types";
 configDotenv();
 
 type CrawlErrorEntry = Extract<
@@ -21,28 +22,22 @@ type CrawlErrorEntry = Extract<
 >["errors"][number];
 type RequiresAction = NonNullable<CrawlErrorEntry["requiresAction"]>;
 
-function isRequiresAction(value: unknown): value is RequiresAction {
-  if (!isJsonObject(value) || typeof value.type !== "string") {
-    return false;
-  }
-  if (value.terms !== undefined && typeof value.terms !== "string") {
-    return false;
-  }
-  if (value.version !== undefined && typeof value.version !== "string") {
-    return false;
-  }
-  if (value.url !== undefined && typeof value.url !== "string") {
-    return false;
-  }
-  return true;
-}
+const requiresActionSchema = z
+  .object({
+    type: z.string(),
+    terms: z.string().optional(),
+    version: z.string().optional(),
+    url: z.string().optional(),
+  })
+  .catchall(jsonValueSchema.optional());
+
+const errorWithRequiresActionSchema = z.object({
+  requiresAction: requiresActionSchema,
+});
 
 function readRequiresAction(error: unknown): RequiresAction | undefined {
-  if (!isJsonObject(error) || !("requiresAction" in error)) {
-    return undefined;
-  }
-  const value: unknown = error.requiresAction;
-  return isRequiresAction(value) ? value : undefined;
+  const parsed = errorWithRequiresActionSchema.safeParse(error);
+  return parsed.success ? parsed.data.requiresAction : undefined;
 }
 
 export async function crawlErrorsController(

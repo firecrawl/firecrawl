@@ -1,6 +1,6 @@
 import type { Database, open, setAPIVersion, tuple } from "foundationdb";
+import { z } from "zod";
 import { config } from "../../../config";
-import { isJsonObject } from "../../../lib/json-types";
 
 interface FdbClientModule {
   setAPIVersion: typeof setAPIVersion;
@@ -8,17 +8,19 @@ interface FdbClientModule {
   tuple: typeof tuple;
 }
 
-function isFdbClientModule(value: unknown): value is FdbClientModule {
-  return (
-    isJsonObject(value) &&
-    typeof value.setAPIVersion === "function" &&
-    typeof value.open === "function" &&
-    isJsonObject(value.tuple) &&
-    typeof value.tuple.pack === "function" &&
-    typeof value.tuple.unpack === "function" &&
-    typeof value.tuple.range === "function"
-  );
-}
+const fdbClientModuleShapeSchema = z.object({
+  setAPIVersion: z.function(),
+  open: z.function(),
+  tuple: z.object({
+    pack: z.function(),
+    unpack: z.function(),
+    range: z.function(),
+  }),
+});
+
+const fdbClientModuleSchema = z.custom<FdbClientModule>(
+  value => fdbClientModuleShapeSchema.safeParse(value).success,
+);
 
 // The foundationdb package loads libfdb_c at require-time. Keep the require
 // lazy so processes that never touch the FDB backend (PG-only deploys, unit
@@ -28,11 +30,12 @@ let fdbModule: FdbClientModule | null = null;
 export function getFdb(): FdbClientModule {
   if (fdbModule === null) {
     const loaded: unknown = require("foundationdb");
-    if (!isFdbClientModule(loaded)) {
+    const parsed = fdbClientModuleSchema.safeParse(loaded);
+    if (!parsed.success) {
       throw new Error("Failed to load foundationdb module");
     }
-    loaded.setAPIVersion(720);
-    fdbModule = loaded;
+    parsed.data.setAPIVersion(720);
+    fdbModule = parsed.data;
   }
   return fdbModule;
 }

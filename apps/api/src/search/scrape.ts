@@ -11,8 +11,8 @@ import { service } from "../service";
 import type { NuQJob } from "../services/worker/nuq";
 import { processJobInternal } from "../services/worker/scrape-worker";
 import type { ScrapeJobData } from "../types";
+import { z } from "zod";
 import type { SearchV2Response, WebSearchResult } from "../lib/entities";
-import { isJsonObject } from "../lib/json-types";
 import type { BillingMetadata } from "../lib/billing-types";
 import type { InternalOptions } from "../scraper/scrapeURL";
 import {
@@ -156,7 +156,8 @@ async function scrapeSearchResultDirect(
       costTracking: new CostTracking().toJSON(),
     };
   } catch (error: unknown) {
-    logger.error(`Error in scrapeSearchResultDirect: ${String(error)}`, {
+    logger.error("Error in scrapeSearchResultDirect", {
+      error,
       url: searchResult.url,
       teamId: options.teamId,
       scrapeId: jobId,
@@ -181,16 +182,14 @@ async function scrapeSearchResultDirect(
   }
 }
 
+const forcedScrapeZdrFlagsSchema = z.union([
+  z.object({ scrapeZDR: z.literal("forced") }),
+  z.object({ forceZDR: z.literal(true) }),
+  z.object({ allowZDR: z.literal("forced") }),
+]);
+
 function hasForcedScrapeZdr(flags: TeamFlags | null | undefined): boolean {
-  const raw: unknown = flags;
-  if (!isJsonObject(raw)) {
-    return false;
-  }
-  return (
-    raw.scrapeZDR === "forced" ||
-    raw.forceZDR === true ||
-    raw.allowZDR === "forced"
-  );
+  return forcedScrapeZdrFlagsSchema.safeParse(flags).success;
 }
 
 export function getItemsToScrape(

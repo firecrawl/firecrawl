@@ -6,10 +6,14 @@ import {
   TEST_SUITE_WEBSITE,
   TEST_API_URL,
 } from "../lib";
-import { isJsonObject } from "../../../lib/json-types";
+import { z } from "zod";
 import type { Identity } from "./lib";
 import { batchScrape, scrapeTimeout, idmux } from "./lib";
 import request from "supertest";
+
+const batchStartResponseSchema = z.object({
+  id: z.string(),
+});
 
 let identity: Identity;
 let lowConcurrencyIdentity: Identity;
@@ -76,11 +80,11 @@ describe("Batch scrape tests", () => {
         .send({ urls });
       expect(start.statusCode).toBe(200);
       expect(start.body.success).toBe(true);
-      const startBody: unknown = start.body;
-      if (!isJsonObject(startBody) || typeof startBody.id !== "string") {
+      const parsedStart = batchStartResponseSchema.safeParse(start.body);
+      if (!parsedStart.success) {
         throw new Error("Expected batch scrape start response with id");
       }
-      const id = startBody.id;
+      const id = parsedStart.data.id;
 
       const cancel = await request(TEST_API_URL)
         .delete(`/v2/batch/scrape/${encodeURIComponent(id)}`)

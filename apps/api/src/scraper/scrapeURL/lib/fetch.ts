@@ -1,5 +1,5 @@
 import type { Logger } from "winston";
-import type { z } from "zod";
+import { z } from "zod";
 import type { MockState } from "./mock";
 import { saveMock } from "./mock";
 import type { RequestInit, Response } from "undici";
@@ -7,8 +7,13 @@ import { fetch, FormData, Agent, Headers as UndiciHeaders } from "undici";
 import { cacheableLookup } from "./cacheableLookup";
 import dns from "node:dns";
 import { AbortManagerThrownError } from "./abortManager";
-import { isJsonObject } from "../../../lib/json-types";
+import { jsonRecordSchema, jsonValueSchema } from "../../../lib/json-types";
 import type { JsonObject, JsonValue } from "../../../lib/json-types";
+
+const fireEngineMockBodySchema = z.object({
+  engine: jsonValueSchema.optional(),
+  url: jsonValueSchema.optional(),
+});
 
 type RobustFetchParams<Schema extends z.ZodType> = {
   url: string;
@@ -34,23 +39,6 @@ type FetchResponsePayload = {
   headers: Headers;
   body: string;
 };
-
-function isJsonValue(value: unknown): value is JsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return true;
-  }
-  if (Array.isArray(value)) {
-    return value.every(
-      (item: unknown) => item === undefined || isJsonValue(item),
-    );
-  }
-  return isJsonObject(value);
-}
 
 // Logs only, so err on the side of redacting: any header whose name looks like
 // it could carry a credential (Authorization, X-Auth-*, Cookie, X-Password,
@@ -86,10 +74,11 @@ function redactHeaderObject(headers: JsonObject): JsonObject {
 }
 
 function redactAction(action: JsonValue | undefined): JsonValue | undefined {
-  if (!isJsonObject(action)) {
+  const parsed = jsonRecordSchema.safeParse(action);
+  if (!parsed.success) {
     return action;
   }
-  const redacted: JsonObject = { ...action };
+  const redacted: JsonObject = { ...parsed.data };
   for (const field of SENSITIVE_ACTION_FIELDS) {
     if (Object.hasOwn(redacted, field)) {
       redacted[field] = "[REDACTED]";
@@ -108,15 +97,18 @@ export function redactRequestBodyForLog(
   if (body === undefined || body instanceof FormData) {
     return body;
   }
-  if (!isJsonObject(body)) {
-    return isJsonValue(body) ? body : undefined;
+  const parsedObject = jsonRecordSchema.safeParse(body);
+  if (!parsedObject.success) {
+    const parsedValue = jsonValueSchema.safeParse(body);
+    return parsedValue.success ? parsedValue.data : undefined;
   }
-  const copy: JsonObject = { ...body };
-  if (isJsonObject(body.headers)) {
-    copy.headers = redactHeaderObject(body.headers);
+  const copy: JsonObject = { ...parsedObject.data };
+  const parsedHeaders = jsonRecordSchema.safeParse(parsedObject.data.headers);
+  if (parsedHeaders.success) {
+    copy.headers = redactHeaderObject(parsedHeaders.data);
   }
-  if (Array.isArray(body.actions)) {
-    copy.actions = body.actions.map(redactAction);
+  if (Array.isArray(parsedObject.data.actions)) {
+    copy.actions = parsedObject.data.actions.map(redactAction);
   }
   return copy;
 }
@@ -135,21 +127,21 @@ function formatMockBodySegment(value: JsonValue | undefined): string {
 }
 
 function sanitizeBodyForLog(body: unknown): JsonValue | FormData | undefined {
-  if (isJsonObject(body)) {
-    if (isJsonObject(body.input)) {
+  const parsedBody = jsonRecordSchema.safeParse(body);
+  if (parsedBody.success) {
+    const parsedInput = jsonRecordSchema.safeParse(parsedBody.data.input);
+    if (parsedInput.success) {
+      const sanitizedInput: JsonObject = { ...parsedInput.data };
+      delete sanitizedInput.file_content;
       return redactRequestBodyForLog({
-        ...body,
-        input: {
-          ...body.input,
-          file_content: undefined,
-        },
+        ...parsedBody.data,
+        input: sanitizedInput,
       });
     }
-    if (body.pdf) {
-      return redactRequestBodyForLog({
-        ...body,
-        pdf: undefined,
-      });
+    if (parsedBody.data.pdf) {
+      const sanitizedBody: JsonObject = { ...parsedBody.data };
+      delete sanitizedBody.pdf;
+      return redactRequestBodyForLog(sanitizedBody);
     }
   }
   return redactRequestBodyForLog(body);
@@ -187,10 +179,10 @@ export async function robustFetch(
   params: RobustFetchParams<never> & {
     schema?: undefined;
   },
-): Promise<JsonValue>;
+): Promise<JsonValue | null>;
 export async function robustFetch<Schema extends z.ZodType = z.ZodType>(
   params: RobustFetchParams<Schema>,
-): Promise<z.infer<Schema> | JsonValue>;
+): Promise<z.infer<Schema> | JsonValue | null>;
 export async function robustFetch<Schema extends z.ZodType = z.ZodType>({
   url,
   logger,
@@ -207,7 +199,7 @@ export async function robustFetch<Schema extends z.ZodType = z.ZodType>({
   mock,
   abort,
   useCacheableLookup = true,
-}: RobustFetchParams<Schema>): Promise<z.infer<Schema> | JsonValue> {
+}: RobustFetchParams<Schema>): Promise<z.infer<Schema> | JsonValue | null> {
   abort?.throwIfAborted();
 
   const params = {
@@ -315,7 +307,8 @@ export async function robustFetch<Schema extends z.ZodType = z.ZodType>({
 
       let out = trueUrl + ";" + request.method;
       if (trueUrl.startsWith("<fire-engine>") && request.method === "POST") {
-        const bodyObj = isJsonObject(request.body) ? request.body : undefined;
+        const parsedBody = fireEngineMockBodySchema.safeParse(request.body);
+        const bodyObj = parsedBody.success ? parsedBody.data : undefined;
         out +=
           "f-e;" +
           formatMockBodySegment(bodyObj?.engine) +
@@ -472,5 +465,6 @@ export async function robustFetch<Schema extends z.ZodType = z.ZodType>({
     }
   }
 
-  return isJsonValue(parsed) ? parsed : null;
+  const parsedJson = jsonValueSchema.safeParse(parsed);
+  return parsedJson.success ? parsedJson.data : null;
 }

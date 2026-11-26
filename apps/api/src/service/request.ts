@@ -8,10 +8,10 @@
  * This file imports only types so creating or describing a service never loads
  * request schemas, configuration, or clients.
  */
-import { isPlainObject } from "../lib/json-types";
 import type { z } from "zod";
 import type {
   BatchScrapeRequest as BaseBatchScrapeRequest,
+  buildV2RequestSchemas,
   CrawlRequest as BaseCrawlRequest,
   FormatObject,
   MapRequest as BaseMapRequest,
@@ -82,7 +82,7 @@ export type ScrapeOptions = Omit<
 
 export type ScrapeRequest = Omit<
   BaseScrapeRequest,
-  "formats" | keyof ScrapeOptionsFields
+  "formats" | keyof (ScrapeOptionsFields & ScrapeRequestFields)
 > & {
   formats: Array<Format>;
 } & ScrapeOptionsFields &
@@ -90,7 +90,7 @@ export type ScrapeRequest = Omit<
 
 export type ParseRequest = Omit<
   BaseParseRequest,
-  "formats" | keyof ScrapeOptionsFields
+  "formats" | keyof (ScrapeOptionsFields & ParseRequestFields)
 > & {
   formats: Array<Format>;
 } & ScrapeOptionsFields &
@@ -105,7 +105,7 @@ export type CrawlRequest = Omit<
 
 export type BatchScrapeRequest = Omit<
   BaseBatchScrapeRequest,
-  "formats" | keyof ScrapeOptionsFields
+  "formats" | keyof (ScrapeOptionsFields & BatchScrapeRequestFields)
 > & {
   formats: Array<Format>;
 } & ScrapeOptionsFields &
@@ -272,11 +272,17 @@ const freezeNullProto = <T>(
   return Object.freeze(out);
 };
 
-interface V2TypesSchemaModule {
-  buildV2RequestSchemas: RequestSchemaBuilder;
+function isPlainObjectRecord(value: unknown): value is object {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
 }
 
-function isV2TypesSchemaModule(value: unknown): value is V2TypesSchemaModule {
+function isV2TypesSchemaModule(
+  value: unknown,
+): value is { buildV2RequestSchemas: typeof buildV2RequestSchemas } {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -328,18 +334,17 @@ function collectSchemaMap(
   if (raw === undefined) {
     return;
   }
-  if (!isPlainObject(raw)) {
+  if (!isPlainObjectRecord(raw)) {
     throw new Error(
       `Request "${bucket}" contributions from "${owner}" must be a plain object`,
     );
   }
-  for (const key of Object.keys(raw)) {
+  for (const [key, schema] of Object.entries(raw)) {
     if (isForbiddenSchemaKey(key)) {
       throw new Error(
         `Invalid request "${bucket}" key "${key}" from "${owner}"`,
       );
     }
-    const schema: unknown = raw[key];
     if (schema === undefined) {
       continue;
     }
@@ -410,13 +415,14 @@ export function buildRequestSchemaRegistry(
     if (request === undefined) {
       continue;
     }
-    if (!isPlainObject(request)) {
+    if (!isPlainObjectRecord(request)) {
       throw new Error(
         `Request contributions from "${source.owner}" must be a plain object`,
       );
     }
 
-    for (const key of Object.keys(request)) {
+    const requestEntries = new Map<string, unknown>(Object.entries(request));
+    for (const key of requestEntries.keys()) {
       if (!allowedRequestKeys.has(key)) {
         throw new Error(
           `Unknown request contribution key "${key}" from "${source.owner}"`,
@@ -428,7 +434,7 @@ export function buildRequestSchemaRegistry(
       collectSchemaMap(
         fieldSchemas[bucket],
         fieldOwners[bucket],
-        request[bucket],
+        requestEntries.get(bucket),
         bucket,
         source.owner,
       );
@@ -437,20 +443,21 @@ export function buildRequestSchemaRegistry(
     collectSchemaMap(
       formatSchemas,
       formatOwners,
-      request.formats,
+      requestEntries.get("formats"),
       "formats",
       source.owner,
     );
 
-    if (request.rules !== undefined) {
-      if (!Array.isArray(request.rules)) {
+    const rawRules = requestEntries.get("rules");
+    if (rawRules !== undefined) {
+      if (!Array.isArray(rawRules)) {
         throw new Error(
           `Request "rules" from "${source.owner}" must be an array`,
         );
       }
-      for (let i = 0; i < request.rules.length; i++) {
-        const ruleCandidate: unknown = request.rules[i];
-        if (!(i in request.rules) || !isScrapeOptionsRule(ruleCandidate)) {
+      for (let i = 0; i < rawRules.length; i++) {
+        const ruleCandidate: unknown = rawRules[i];
+        if (!(i in rawRules) || !isScrapeOptionsRule(ruleCandidate)) {
           throw new Error(
             `Request rule at index ${i} from "${source.owner}" must be a function`,
           );

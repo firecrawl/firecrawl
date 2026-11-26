@@ -1,6 +1,6 @@
 import type { TupleItem } from "foundationdb";
+import { z } from "zod";
 import { config } from "../../../config";
-import { isJsonObject } from "../../../lib/json-types";
 import { getFdb } from "./client";
 
 export { normalizeOwnerId } from "../../../lib/owner-id";
@@ -12,13 +12,16 @@ export const READY_SHARDS = config.NUQ_FDB_READY_SHARDS;
 export const TEAM_PENDING_SHARDS = config.NUQ_FDB_TEAM_PENDING_SHARDS;
 export const TIME_BUCKETS = config.NUQ_FDB_TIME_BUCKETS;
 
-export type NuqFdbJobStatus =
-  | "pending" // waiting for a concurrency slot (externally: "backlog")
-  | "queued" // holds its slots, in a ready shard
-  | "active"
-  | "completed"
-  | "failed"
-  | "cancelled";
+const nuqFdbJobStatusSchema = z.enum([
+  "pending", // waiting for a concurrency slot (externally: "backlog")
+  "queued", // holds its slots, in a ready shard
+  "active",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export type NuqFdbJobStatus = z.infer<typeof nuqFdbJobStatusSchema>;
 
 // Job flags (bitmask on job meta and queue entries)
 export const F_GATED = 1; // holds a team slot while queued/active
@@ -31,53 +34,64 @@ export const F_KEY_GATED = 64; // holds an API-key slot while team-pending/queue
 
 // Where a pending job's queue entry lives, stored on its status record so
 // sweepers and removers can clear the exact key without scanning.
-export type PendingLoc =
-  | { k: "tq"; s: number; p: number; c: number } // team-pending: shard, priority, createdAtMs
-  | { k: "kq"; p: number; c: number } // key-pending: priority, createdAtMs
-  | { k: "gq"; p: number; c: number } // crawl-pending: priority, createdAtMs
-  | { k: "dl"; at: number }; // delay index: notBeforeMs
+const pendingLocSchema = z.discriminatedUnion("k", [
+  z.object({ k: z.literal("tq"), s: z.number(), p: z.number(), c: z.number() }), // team-pending: shard, priority, createdAtMs
+  z.object({ k: z.literal("kq"), p: z.number(), c: z.number() }), // key-pending: priority, createdAtMs
+  z.object({ k: z.literal("gq"), p: z.number(), c: z.number() }), // crawl-pending: priority, createdAtMs
+  z.object({ k: z.literal("dl"), at: z.number() }), // delay index: notBeforeMs
+]);
 
-export type JobMeta = {
-  c: number; // createdAt ms
-  p: number; // priority
-  o: string; // ownerId (normalized uuid)
-  g?: string; // groupId
-  k?: string; // API key id (set only when key-gated)
-  f: number; // flags
-  to?: number; // backlog timesOutAt ms
-  dc: number; // data chunk count
-};
+export type PendingLoc = z.infer<typeof pendingLocSchema>;
 
-export type JobStatusRecord = {
-  s: NuqFdbJobStatus;
-  l?: string; // lock uuid while active
-  e?: number; // lease expiry ms while active
-  st: number; // stall count
-  fa?: number; // finishedAt ms
-  loc?: PendingLoc;
-};
+export const jobMetaSchema = z.object({
+  c: z.number(), // createdAt ms
+  p: z.number(), // priority
+  o: z.string(), // ownerId (normalized uuid)
+  g: z.string().optional(), // groupId
+  k: z.string().optional(), // API key id (set only when key-gated)
+  f: z.number(), // flags
+  to: z.number().optional(), // backlog timesOutAt ms
+  dc: z.number(), // data chunk count
+});
+
+export type JobMeta = z.infer<typeof jobMetaSchema>;
+
+export const jobStatusRecordSchema = z.object({
+  s: nuqFdbJobStatusSchema,
+  l: z.string().optional(), // lock uuid while active
+  e: z.number().optional(), // lease expiry ms while active
+  st: z.number(), // stall count
+  fa: z.number().optional(), // finishedAt ms
+  loc: pendingLocSchema.optional(),
+});
+
+export type JobStatusRecord = z.infer<typeof jobStatusRecordSchema>;
 
 // Entry stored in ready shards, pending queues and the delay index.
-export type QueueEntry = {
-  i: string; // jobId
-  o: string; // ownerId
-  g?: string; // groupId
-  k?: string; // API key id (set only when key-gated)
-  p: number; // priority
-  f: number; // flags
-  c: number; // createdAt ms
-  to?: number; // backlog timesOutAt ms
-};
+export const queueEntrySchema = z.object({
+  i: z.string(), // jobId
+  o: z.string(), // ownerId
+  g: z.string().optional(), // groupId
+  k: z.string().optional(), // API key id (set only when key-gated)
+  p: z.number(), // priority
+  f: z.number(), // flags
+  c: z.number(), // createdAt ms
+  to: z.number().optional(), // backlog timesOutAt ms
+});
 
-export type GroupMeta = {
-  o: string; // ownerId
-  c: number; // createdAt ms
-  t: number; // ttl ms
-  s: "active" | "completed" | "cancelled";
-  m?: number; // maxConcurrency
-  d?: number; // delay seconds between job starts
-  x?: number; // expiresAt ms
-};
+export type QueueEntry = z.infer<typeof queueEntrySchema>;
+
+export const groupMetaSchema = z.object({
+  o: z.string(), // ownerId
+  c: z.number(), // createdAt ms
+  t: z.number(), // ttl ms
+  s: z.enum(["active", "completed", "cancelled"]),
+  m: z.number().optional(), // maxConcurrency
+  d: z.number().optional(), // delay seconds between job starts
+  x: z.number().optional(), // expiresAt ms
+});
+
+export type GroupMeta = z.infer<typeof groupMetaSchema>;
 
 export function encodeI64(n: number): Buffer {
   const buf = Buffer.alloc(8);
@@ -92,150 +106,25 @@ export function decodeI64(buf: Buffer | undefined | null): number {
   return Number(buf.readBigInt64LE());
 }
 
-type ExternalSlotRecordShape = {
-  e: number;
-};
-
-type ExternalSlotExpiryRef = {
-  t: string;
-};
-
-function isNuqFdbJobStatus(value: unknown): value is NuqFdbJobStatus {
-  return (
-    value === "pending" ||
-    value === "queued" ||
-    value === "active" ||
-    value === "completed" ||
-    value === "failed" ||
-    value === "cancelled"
-  );
-}
-
-function isPendingLoc(value: unknown): value is PendingLoc {
-  if (!isJsonObject(value)) {
-    return false;
-  }
-  if (value.k === "tq") {
-    return (
-      typeof value.s === "number" &&
-      typeof value.p === "number" &&
-      typeof value.c === "number"
-    );
-  }
-  if (value.k === "kq" || value.k === "gq") {
-    return typeof value.p === "number" && typeof value.c === "number";
-  }
-  if (value.k === "dl") {
-    return typeof value.at === "number";
-  }
-  return false;
-}
-
-export function isJobMeta(value: unknown): value is JobMeta {
-  return (
-    isJsonObject(value) &&
-    typeof value.c === "number" &&
-    typeof value.p === "number" &&
-    typeof value.o === "string" &&
-    (value.g === undefined || typeof value.g === "string") &&
-    (value.k === undefined || typeof value.k === "string") &&
-    typeof value.f === "number" &&
-    (value.to === undefined || typeof value.to === "number") &&
-    typeof value.dc === "number"
-  );
-}
-
-export function isJobStatusRecord(value: unknown): value is JobStatusRecord {
-  return (
-    isJsonObject(value) &&
-    isNuqFdbJobStatus(value.s) &&
-    (value.l === undefined || typeof value.l === "string") &&
-    (value.e === undefined || typeof value.e === "number") &&
-    typeof value.st === "number" &&
-    (value.fa === undefined || typeof value.fa === "number") &&
-    (value.loc === undefined || isPendingLoc(value.loc))
-  );
-}
-
-export function isQueueEntry(value: unknown): value is QueueEntry {
-  return (
-    isJsonObject(value) &&
-    typeof value.i === "string" &&
-    typeof value.o === "string" &&
-    (value.g === undefined || typeof value.g === "string") &&
-    (value.k === undefined || typeof value.k === "string") &&
-    typeof value.p === "number" &&
-    typeof value.f === "number" &&
-    typeof value.c === "number" &&
-    (value.to === undefined || typeof value.to === "number")
-  );
-}
-
-export function isGroupMeta(value: unknown): value is GroupMeta {
-  return (
-    isJsonObject(value) &&
-    typeof value.o === "string" &&
-    typeof value.c === "number" &&
-    typeof value.t === "number" &&
-    (value.s === "active" ||
-      value.s === "completed" ||
-      value.s === "cancelled") &&
-    (value.m === undefined || typeof value.m === "number") &&
-    (value.d === undefined || typeof value.d === "number") &&
-    (value.x === undefined || typeof value.x === "number")
-  );
-}
-
-function isExternalSlotRecordShape(
-  value: unknown,
-): value is ExternalSlotRecordShape {
-  return isJsonObject(value) && typeof value.e === "number";
-}
-
-function isExternalSlotExpiryRef(
-  value: unknown,
-): value is ExternalSlotExpiryRef {
-  return isJsonObject(value) && typeof value.t === "string";
-}
-
 export function encodeJson(v: unknown): Buffer {
   return Buffer.from(JSON.stringify(v), "utf8");
 }
 
 export function decodeJson<T>(
   buf: Buffer | undefined | null,
-  guard: (value: unknown) => value is T,
-): T | null;
-export function decodeJson<_T extends GroupMeta>(
-  buf: Buffer | undefined | null,
-): GroupMeta | null;
-export function decodeJson<_T extends ExternalSlotRecordShape>(
-  buf: Buffer | undefined | null,
-): ExternalSlotRecordShape | null;
-export function decodeJson<_T extends ExternalSlotExpiryRef>(
-  buf: Buffer | undefined | null,
-): ExternalSlotExpiryRef | null;
-export function decodeJson<T>(
-  buf: Buffer | undefined | null,
-  guard?: (value: unknown) => value is T,
-): T | GroupMeta | ExternalSlotRecordShape | ExternalSlotExpiryRef | null {
+  schema: z.ZodType<T>,
+): T | null {
   if (!buf) {
     return null;
   }
-  const parsed: unknown = JSON.parse(buf.toString("utf8"));
-  if (guard) {
-    return guard(parsed) ? parsed : null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(buf.toString("utf8"));
+  } catch {
+    return null;
   }
-  if (isGroupMeta(parsed)) {
-    return parsed;
-  }
-  if (isExternalSlotRecordShape(parsed)) {
-    return parsed;
-  }
-  if (isExternalSlotExpiryRef(parsed)) {
-    return parsed;
-  }
-  return null;
+  const result = schema.safeParse(parsed);
+  return result.success ? result.data : null;
 }
 
 export function fnv1a(str: string): number {

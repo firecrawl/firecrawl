@@ -1,4 +1,4 @@
-import { isJsonObject } from "../../../lib/json-types";
+import { z } from "zod";
 import {
   createTestIdUrl,
   describeIf,
@@ -22,16 +22,22 @@ import {
   scrapeTimeout,
 } from "./lib";
 
-type MonitorCheckData = {
-  status: string;
-  estimatedCredits?: number;
-  actualCredits?: number;
-  reservedCredits?: number;
-};
+const monitorCheckDataSchema = z.object({
+  status: z.string(),
+  estimatedCredits: z.number().optional(),
+  actualCredits: z.number().optional(),
+  reservedCredits: z.number().optional(),
+});
 
-function isMonitorCheckData(value: unknown): value is MonitorCheckData {
-  return isJsonObject(value) && typeof value.status === "string";
-}
+type MonitorCheckData = z.infer<typeof monitorCheckDataSchema>;
+
+const monitorCheckEnvelopeSchema = z.object({
+  data: monitorCheckDataSchema,
+});
+
+const monitorListBodySchema = z.object({
+  data: z.array(z.object({ id: z.string().optional() })),
+});
 
 function externalRecipient(): string {
   const id = Math.random().toString(36).slice(2, 10);
@@ -78,11 +84,11 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         for (let i = 0; i < 90; i++) {
           const raw = await monitorCheckRaw(monitorId, run.body.id, identity);
           expect(raw.statusCode).toBe(200);
-          const rawBody: unknown = raw.body;
-          if (!isJsonObject(rawBody) || !isMonitorCheckData(rawBody.data)) {
+          const parsed = monitorCheckEnvelopeSchema.safeParse(raw.body);
+          if (!parsed.success) {
             throw new Error("Unexpected monitor check response shape");
           }
-          check = rawBody.data;
+          check = parsed.data.data;
           if (
             ["completed", "partial", "failed", "skipped_no_credits"].includes(
               check.status,
@@ -140,12 +146,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     const id = create.body.data.id;
     const list = await monitorListRaw(identity);
     expect(list.statusCode).toBe(200);
-    const listBody: unknown = list.body;
-    const listItems =
-      isJsonObject(listBody) && Array.isArray(listBody.data)
-        ? listBody.data
-        : [];
-    expect(listItems.some(x => isJsonObject(x) && x.id === id)).toBe(true);
+    const parsedList = monitorListBodySchema.safeParse(list.body);
+    const listItems = parsedList.success ? parsedList.data.data : [];
+    expect(listItems.some(x => x.id === id)).toBe(true);
 
     const get = await monitorGetRaw(id, identity);
     expect(get.statusCode).toBe(200);

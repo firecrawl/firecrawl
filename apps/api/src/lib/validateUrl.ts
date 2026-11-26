@@ -1,7 +1,6 @@
 import { fetch as undiciFetch } from "undici";
 import { getSecureDispatcher } from "../scraper/scrapeURL/engines/utils/safeFetch";
 import { loadMock } from "../scraper/scrapeURL/lib/mock";
-import { isJsonObject } from "./json-types";
 
 export const protocolIncluded = (url: string) => {
   // if :// not in the start of the url assume http (maybe https?)
@@ -197,10 +196,7 @@ export async function resolveRedirects(
       x => x.options.url === targetUrl && x.options.method === "HEAD",
     );
     if (mocked) {
-      const mockResult: unknown = mocked.result;
-      if (isJsonObject(mockResult) && typeof mockResult.url === "string") {
-        return mockResult.url;
-      }
+      return mocked.result.url ?? targetUrl;
     }
   }
 

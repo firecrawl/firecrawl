@@ -1,5 +1,5 @@
 import type { Transaction } from "foundationdb";
-import { isJsonObject } from "../../../lib/json-types";
+import { z } from "zod";
 import { logger as _logger } from "../../../lib/logger";
 import type {
   NuqFdbKeyspace,
@@ -12,14 +12,17 @@ import {
   decodeI64,
   encodeJson,
   decodeJson,
-  isGroupMeta,
-  isQueueEntry,
+  groupMetaSchema,
+  jobMetaSchema,
+  jobStatusRecordSchema,
+  queueEntrySchema,
   timeBucket,
   teamPendingShard,
   READY_SHARDS,
   F_GATED,
   F_CRAWL_GATED,
   F_COUNTABLE,
+  F_GACC,
   F_KEY_GATED,
 } from "./keyspace";
 
@@ -276,16 +279,14 @@ export async function popTeamPending(
       continue; // counter was stale
     }
     const [key, value] = head[0];
-    const e = decodeJson(value, isQueueEntry);
-    if (!e) {
-      tn.clear(key);
-      tn.add(ks.teamShardCount(tid, shard), MINUS_ONE);
-      tn.add(ks.teamPendingCount(tid), MINUS_ONE);
-      continue;
-    }
+    const e = decodeJson(value, queueEntrySchema);
     tn.clear(key);
     tn.add(ks.teamShardCount(tid, shard), MINUS_ONE);
     tn.add(ks.teamPendingCount(tid), MINUS_ONE);
+    if (!e) {
+      await failCorruptPendingEntry(tn, ks, "tq", key, tid);
+      continue;
+    }
     clearBacklogTimeout(tn, ks, e);
     _logger.debug("NuQ FDB team pending promotion", {
       canonicalLog: "nuq-fdb/team_pending_promotion",
@@ -327,10 +328,11 @@ export async function popKeyPending(
     return null;
   }
   const [key, value] = head[0];
-  const e = decodeJson(value, isQueueEntry);
+  const e = decodeJson(value, queueEntrySchema);
   tn.clear(key);
   tn.add(ks.keyPendingCount(kid), MINUS_ONE);
   if (!e) {
+    await failCorruptPendingEntry(tn, ks, "kq", key);
     return null;
   }
   tn.add(ks.teamPendingCount(e.o), MINUS_ONE);
@@ -349,10 +351,11 @@ export async function popCrawlPending(
     return null;
   }
   const [key, value] = head[0];
-  const e = decodeJson(value, isQueueEntry);
+  const e = decodeJson(value, queueEntrySchema);
   tn.clear(key);
   tn.add(ks.groupPendingCount(gid), MINUS_ONE);
   if (!e) {
+    await failCorruptPendingEntry(tn, ks, "gq", key);
     return null;
   }
   tn.add(ks.teamPendingCount(e.o), MINUS_ONE);
@@ -453,7 +456,7 @@ export async function releaseSlotsAndPromote(
   if (heldGroupId) {
     const gMeta = decodeJson(
       await tn.snapshot().get(ks.groupMeta(heldGroupId)),
-      isGroupMeta,
+      groupMetaSchema,
     );
     if (gMeta && gMeta.s === "active") {
       crawlPromoted = await popCrawlPending(tn, ks, heldGroupId);
@@ -585,22 +588,97 @@ export function deleteJobRecords(
   tn.clearRange(r.begin, r.end);
 }
 
+const CORRUPT_PENDING_ENTRY_REASON = "Corrupt pending queue entry";
+
+async function failCorruptPendingEntry(
+  tn: Transaction,
+  ks: NuqFdbKeyspace,
+  queue: "tq" | "kq" | "gq",
+  key: Buffer,
+  ownerId?: string,
+): Promise<void> {
+  const id = ks.unpackId(key);
+  const now = Date.now();
+  const [metaBuf, stBuf] = await Promise.all([
+    tn.get(ks.jobMeta(id)),
+    tn.get(ks.jobStatus(id)),
+  ]);
+  const meta = decodeJson(metaBuf, jobMetaSchema);
+  const st = decodeJson(stBuf, jobStatusRecordSchema);
+
+  _logger.warn("Dropping corrupt NuQ FDB pending queue entry", {
+    queueName: ks.queueName,
+    queue,
+    jobId: id,
+    status: st?.s,
+  });
+
+  if (queue !== "tq") {
+    const resolvedOwner = meta?.o ?? ownerId;
+    if (resolvedOwner) {
+      tn.add(ks.teamPendingCount(resolvedOwner), MINUS_ONE);
+    }
+  }
+
+  if (st?.s !== "pending" || (st.loc && st.loc.k !== queue)) {
+    return;
+  }
+
+  if (meta?.to !== undefined) {
+    clearBacklogTimeout(tn, ks, { i: id, to: meta.to });
+  }
+
+  tn.set(
+    ks.jobStatus(id),
+    encodeJson({
+      s: "failed",
+      st: st.st,
+      fa: now,
+    } satisfies JobStatusRecord),
+  );
+  tn.set(
+    ks.jobFailedReason(id),
+    Buffer.from(CORRUPT_PENDING_ENTRY_REASON, "utf8"),
+  );
+
+  if (meta) {
+    if (queue !== "gq" && meta.f & F_CRAWL_GATED && meta.g) {
+      tn.add(ks.groupCrawlActive(meta.g), MINUS_ONE);
+    }
+    if (queue === "tq" && meta.f & F_KEY_GATED && meta.k) {
+      tn.add(ks.keyActive(meta.k), MINUS_ONE);
+      tn.set(ks.taskKeyRaise(meta.k), EMPTY);
+    }
+    if (meta.g && meta.f & F_GACC) {
+      setGroupJobIndex(tn, ks, meta.g, id, !!(meta.f & F_COUNTABLE), "failed");
+      if (meta.f & F_COUNTABLE) {
+        bumpGroupStatusCount(tn, ks, meta.g, "pending", -1);
+        bumpGroupStatusCount(tn, ks, meta.g, "failed", 1);
+      }
+      tn.add(ks.groupRemaining(meta.g), MINUS_ONE);
+      tn.set(ks.taskGroupFinish(meta.g), EMPTY);
+    } else if (!meta.g) {
+      tn.set(
+        ks.jobExpiry(timeBucket(id), now + FAILED_STANDALONE_RETENTION_MS, id),
+        EMPTY,
+      );
+    }
+  } else {
+    tn.set(
+      ks.jobExpiry(timeBucket(id), now + FAILED_STANDALONE_RETENTION_MS, id),
+      EMPTY,
+    );
+  }
+}
+
 // === Group accounting helpers
 
-export type GroupJobIndexValue = {
-  m: number; // 1 if countable (single_urls)
-  s: string; // job status
-};
+export const groupJobIndexValueSchema = z.object({
+  m: z.number(), // 1 if countable (single_urls)
+  s: z.string(), // job status
+});
 
-export function isGroupJobIndexValue(
-  value: unknown,
-): value is GroupJobIndexValue {
-  return (
-    isJsonObject(value) &&
-    typeof value.m === "number" &&
-    typeof value.s === "string"
-  );
-}
+export type GroupJobIndexValue = z.infer<typeof groupJobIndexValueSchema>;
 
 export function setGroupJobIndex(
   tn: Transaction,

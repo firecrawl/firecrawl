@@ -1,7 +1,5 @@
 import { createLogger } from "winston";
 import { z } from "zod";
-import { isJsonObject } from "../../../../lib/json-types";
-import type { JsonObject } from "../../../../lib/json-types";
 import { redactHeaders, redactRequestBodyForLog, robustFetch } from "../fetch";
 import type { MockState } from "../mock";
 
@@ -47,26 +45,39 @@ function mockWith(status: number, body: string): MockState {
   };
 }
 
-async function captureCause(promise: Promise<unknown>): Promise<JsonObject> {
+const fetchErrorCauseSchema = z.object({
+  params: z.object({
+    headers: z.record(z.string(), z.string()).optional(),
+    body: z
+      .object({
+        url: z.string().optional(),
+        headers: z.record(z.string(), z.string()).optional(),
+        actions: z.array(z.object({ type: z.string().optional() })).optional(),
+      })
+      .optional(),
+  }),
+});
+
+type FetchErrorCauseParams = z.infer<typeof fetchErrorCauseSchema>["params"];
+
+async function captureCause(
+  promise: Promise<unknown>,
+): Promise<{ raw: unknown; params: FetchErrorCauseParams }> {
   try {
     await promise;
   } catch (error: unknown) {
-    if (error instanceof Error && isJsonObject(error.cause)) {
-      return error.cause;
+    if (error instanceof Error) {
+      const parsed = fetchErrorCauseSchema.safeParse(error.cause);
+      if (parsed.success) {
+        return { raw: error.cause, params: parsed.data.params };
+      }
     }
     throw new Error(
-      "expected robustFetch to throw an Error with object cause",
+      "expected robustFetch to throw an Error with structured cause",
       { cause: error },
     );
   }
   throw new Error("expected robustFetch to throw");
-}
-
-function getCauseParams(cause: JsonObject): JsonObject {
-  if (!isJsonObject(cause.params)) {
-    throw new Error("expected cause.params object");
-  }
-  return cause.params;
 }
 
 describe("redactHeaders", () => {
@@ -176,7 +187,7 @@ describe("robustFetch error logging", () => {
     async (_, mock, schema) => {
       const { logger, debugSpy } = makeLogger();
 
-      const cause = await captureCause(
+      const { raw, params } = await captureCause(
         robustFetch({
           url: "https://upstream.test/run",
           method: "POST",
@@ -188,21 +199,17 @@ describe("robustFetch error logging", () => {
         }),
       );
 
-      const serialized = JSON.stringify([cause, debugSpy.mock.calls]);
+      const serialized = JSON.stringify([raw, debugSpy.mock.calls]);
       expect(serialized).not.toContain("secret-value");
-      const params = getCauseParams(cause);
-      const loggedHeaders = isJsonObject(params.headers)
-        ? params.headers
-        : undefined;
-      expect(loggedHeaders?.Authorization).toBe("[REDACTED]");
-      expect(loggedHeaders?.["User-Agent"]).toBe("firecrawl");
+      expect(params.headers?.Authorization).toBe("[REDACTED]");
+      expect(params.headers?.["User-Agent"]).toBe("firecrawl");
     },
   );
 
   it("redacts headers forwarded inside the request body", async () => {
     const { logger, debugSpy } = makeLogger();
 
-    const cause = await captureCause(
+    const { raw, params } = await captureCause(
       robustFetch({
         url: "https://upstream.test/run",
         method: "POST",
@@ -212,21 +219,16 @@ describe("robustFetch error logging", () => {
       }),
     );
 
-    const serialized = JSON.stringify([cause, debugSpy.mock.calls]);
+    const serialized = JSON.stringify([raw, debugSpy.mock.calls]);
     expect(serialized).not.toContain("secret-value");
-    const params = getCauseParams(cause);
-    const loggedBody = isJsonObject(params.body) ? params.body : undefined;
-    const loggedHeaders = isJsonObject(loggedBody?.headers)
-      ? loggedBody.headers
-      : undefined;
-    expect(loggedBody?.url).toBe("https://example.com");
-    expect(loggedHeaders?.["User-Agent"]).toBe("firecrawl");
+    expect(params.body?.url).toBe("https://example.com");
+    expect(params.body?.headers?.["User-Agent"]).toBe("firecrawl");
   });
 
   it("redacts action payloads forwarded inside the request body", async () => {
     const { logger, debugSpy } = makeLogger();
 
-    const cause = await captureCause(
+    const { raw, params } = await captureCause(
       robustFetch({
         url: "https://upstream.test/run",
         method: "POST",
@@ -236,15 +238,10 @@ describe("robustFetch error logging", () => {
       }),
     );
 
-    const serialized = JSON.stringify([cause, debugSpy.mock.calls]);
+    const serialized = JSON.stringify([raw, debugSpy.mock.calls]);
     expect(serialized).not.toContain("secret-value");
-    const params = getCauseParams(cause);
-    const loggedBody = isJsonObject(params.body) ? params.body : undefined;
-    const loggedActions = Array.isArray(loggedBody?.actions)
-      ? loggedBody.actions
-      : [];
-    expect(
-      loggedActions.map(a => (isJsonObject(a) ? a.type : undefined)),
-    ).toEqual(secretActions.map(a => a.type));
+    expect((params.body?.actions ?? []).map(a => a.type)).toEqual(
+      secretActions.map(a => a.type),
+    );
   });
 });

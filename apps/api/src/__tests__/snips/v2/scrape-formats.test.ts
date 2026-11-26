@@ -1,4 +1,4 @@
-import { isJsonObject } from "../../../lib/json-types";
+import { z } from "zod";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   concurrentIf,
@@ -9,6 +9,10 @@ import {
 } from "../lib";
 import type { Identity } from "./lib";
 import { scrape, scrapeTimeout, idmux, scrapeRaw } from "./lib";
+
+const changeTrackingResponseSchema = z.object({
+  changeTracking: z.unknown().optional(),
+});
 
 let identity: Identity;
 
@@ -241,8 +245,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Scrape format variations", () => {
         );
 
         expect(response.markdown).toBeDefined();
+        const parsedChangeTracking =
+          changeTrackingResponseSchema.safeParse(response);
         expect(
-          isJsonObject(response) ? response.changeTracking : undefined,
+          parsedChangeTracking.success
+            ? parsedChangeTracking.data.changeTracking
+            : undefined,
         ).toBeDefined();
       },
       scrapeTimeout,

@@ -1,5 +1,5 @@
 import request from "supertest";
-import { isJsonObject } from "../../../lib/json-types";
+import { z } from "zod";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
@@ -8,6 +8,17 @@ import {
 } from "../lib";
 import type { Identity } from "./lib";
 import { idmux, scrape, scrapeTimeout, scrapeWithFailure } from "./lib";
+
+const parseFormatsResponseSchema = z.object({
+  data: z.object({
+    formats: z.array(
+      z.object({
+        kind: z.string().optional(),
+        available: z.boolean().optional(),
+      }),
+    ),
+  }),
+});
 
 let identity: Identity;
 let imageOcrOn = false;
@@ -22,19 +33,15 @@ beforeAll(async () => {
   const formatsResponse = await request(TEST_API_URL)
     .get("/v2/parse/formats")
     .set("Authorization", `Bearer ${identity.apiKey}`);
-  const formatsBody: unknown = formatsResponse.body;
-  if (
-    formatsResponse.statusCode === 200 &&
-    isJsonObject(formatsBody) &&
-    isJsonObject(formatsBody.data) &&
-    Array.isArray(formatsBody.data.formats)
-  ) {
-    imageOcrOn = formatsBody.data.formats.some(
-      format =>
-        isJsonObject(format) &&
-        format.kind === "image" &&
-        format.available === true,
+  if (formatsResponse.statusCode === 200) {
+    const parsedFormats = parseFormatsResponseSchema.safeParse(
+      formatsResponse.body,
     );
+    if (parsedFormats.success) {
+      imageOcrOn = parsedFormats.data.data.formats.some(
+        format => format.kind === "image" && format.available === true,
+      );
+    }
   }
 }, 10_000 + scrapeTimeout);
 

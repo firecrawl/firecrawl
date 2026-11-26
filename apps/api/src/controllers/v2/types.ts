@@ -9,7 +9,7 @@ import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
 import { addStrictSchemaIssue } from "../../lib/openai-strict-schema";
 export { addStrictSchemaIssue };
 import type { ScrapeActionContent, SearchV2Response } from "../../lib/entities";
-import { isJsonObject } from "../../lib/json-types";
+import { jsonRecordSchema, jsonValueSchema } from "../../lib/json-types";
 import type { JsonObject, JsonValue } from "../../lib/json-types";
 import type { TeamPlanClass } from "../../service/search-providers";
 import type { JobCrawlerOptions, RateLimiterMode } from "../../types";
@@ -86,15 +86,11 @@ function strictWithMessage<S extends z.ZodRawShape>(
   return schema.strict();
 }
 
-function isJsonPrimitive(
-  value: unknown,
-): value is string | number | boolean | null {
-  return (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  );
+const rootJsonSchema = z.union([jsonValueSchema, jsonRecordSchema]);
+type ParsedJsonValue = z.infer<typeof rootJsonSchema>;
+
+function softOptional<T extends z.ZodType>(schema: T) {
+  return schema.optional().catch(undefined);
 }
 
 export function normalizeSchemaForOpenAI(
@@ -103,47 +99,41 @@ export function normalizeSchemaForOpenAI(
   if (schema === undefined) {
     return undefined;
   }
-  if (isJsonPrimitive(schema)) {
-    return schema;
-  }
-  if (typeof schema !== "object") {
+  const parsedRoot = rootJsonSchema.safeParse(schema);
+  if (!parsedRoot.success) {
     return undefined;
   }
 
   const seen = new WeakSet<object>();
 
-  function normalizeNode(obj: unknown): JsonValue | undefined {
-    if (obj === undefined) {
-      return undefined;
-    }
-    if (isJsonPrimitive(obj)) {
+  function normalizeNode(
+    obj: ParsedJsonValue | undefined,
+  ): JsonValue | undefined {
+    if (obj === undefined || obj === null || typeof obj !== "object") {
       return obj;
     }
-    if (typeof obj !== "object") {
-      return undefined;
-    }
     if (Array.isArray(obj)) {
-      return obj.map((item: unknown) => normalizeNode(item));
+      if (seen.has(obj)) {
+        return obj;
+      }
+      seen.add(obj);
+      return obj.map(item => normalizeNode(item));
     }
 
     if (seen.has(obj)) {
-      return isJsonObject(obj) ? obj : undefined;
+      return obj;
     }
     seen.add(obj);
-
-    if (!isJsonObject(obj)) {
-      return undefined;
-    }
 
     const normalized: JsonObject = { ...obj };
 
     // Handle $ref recursion - preserve as-is for OpenAI compatibility
-    if (Object.hasOwn(normalized, "$ref")) {
+    if (Object.hasOwn(obj, "$ref")) {
       return normalized;
     }
 
-    if (Object.hasOwn(normalized, "$defs")) {
-      const { $defs, ...rest } = normalized;
+    if (Object.hasOwn(obj, "$defs")) {
+      const { $defs, ...rest } = obj;
       const processedRest: JsonObject = {};
 
       for (const [key, value] of Object.entries(rest)) {
@@ -158,7 +148,10 @@ export function normalizeSchemaForOpenAI(
         }
       }
 
-      const defsEntries = isJsonObject($defs) ? Object.entries($defs) : [];
+      const defsEntries =
+        typeof $defs === "object" && $defs !== null && !Array.isArray($defs)
+          ? Object.entries($defs)
+          : [];
       const normalizedDefs: JsonObject = Object.fromEntries(
         defsEntries.map(([key, value]) => [key, normalizeNode(value)]),
       );
@@ -179,14 +172,16 @@ export function normalizeSchemaForOpenAI(
       Object.hasOwn(normalized, "required") &&
       Object.hasOwn(normalized, "properties")
     ) {
+      const rawProperties = normalized.properties;
       if (
         Array.isArray(normalized.required) &&
-        isJsonObject(normalized.properties)
+        typeof rawProperties === "object" &&
+        rawProperties !== null &&
+        !Array.isArray(rawProperties)
       ) {
-        const props = normalized.properties;
         const validRequired = normalized.required.filter(
           (field): field is string =>
-            typeof field === "string" && Object.hasOwn(props, field),
+            typeof field === "string" && Object.hasOwn(rawProperties, field),
         );
         if (validRequired.length > 0) {
           normalized.required = validRequired;
@@ -198,8 +193,10 @@ export function normalizeSchemaForOpenAI(
       }
     }
 
-    for (const [key, value] of Object.entries(normalized)) {
+    for (const [key, value] of Object.entries(obj)) {
       if (
+        Object.hasOwn(normalized, key) &&
+        key !== "required" &&
         typeof value === "object" &&
         value !== null &&
         !Object.hasOwn(value, "$ref")
@@ -211,17 +208,18 @@ export function normalizeSchemaForOpenAI(
     return normalized;
   }
 
-  return normalizeNode(schema);
+  return normalizeNode(parsedRoot.data);
 }
 
 export function validateSchemaForOpenAI(schema: unknown): boolean {
-  if (!schema || typeof schema !== "object") {
+  const parsedRoot = rootJsonSchema.safeParse(schema);
+  if (!parsedRoot.success) {
     return true;
   }
 
   const visited = new WeakSet<object>();
 
-  function hasInvalidStructure(obj: unknown): boolean {
+  function hasInvalidStructure(obj: ParsedJsonValue | undefined): boolean {
     if (typeof obj !== "object" || obj === null) {
       return false;
     }
@@ -231,12 +229,26 @@ export function validateSchemaForOpenAI(schema: unknown): boolean {
     }
     visited.add(obj);
 
+    if (Array.isArray(obj)) {
+      for (const value of obj) {
+        if (
+          typeof value === "object" &&
+          value !== null &&
+          !Object.hasOwn(value, "$ref")
+        ) {
+          if (hasInvalidStructure(value)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
     if (Object.hasOwn(obj, "$ref")) {
       return false;
     }
 
     if (
-      isJsonObject(obj) &&
       obj.type === "object" &&
       !Object.hasOwn(obj, "properties") &&
       !Object.hasOwn(obj, "patternProperties") &&
@@ -245,35 +257,21 @@ export function validateSchemaForOpenAI(schema: unknown): boolean {
       return true;
     }
 
-    if (isJsonObject(obj)) {
-      for (const value of Object.values(obj)) {
-        if (
-          typeof value === "object" &&
-          value !== null &&
-          !Object.hasOwn(value, "$ref")
-        ) {
-          if (hasInvalidStructure(value)) {
-            return true;
-          }
-        }
-      }
-    } else if (Array.isArray(obj)) {
-      for (const value of obj as ReadonlyArray<unknown>) {
-        if (
-          typeof value === "object" &&
-          value !== null &&
-          !Object.hasOwn(value, "$ref")
-        ) {
-          if (hasInvalidStructure(value)) {
-            return true;
-          }
+    for (const value of Object.values(obj)) {
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        !Object.hasOwn(value, "$ref")
+      ) {
+        if (hasInvalidStructure(value)) {
+          return true;
         }
       }
     }
     return false;
   }
 
-  return !hasInvalidStructure(schema);
+  return !hasInvalidStructure(parsedRoot.data);
 }
 
 export const OPENAI_SCHEMA_ERROR_MESSAGE =
@@ -498,19 +496,19 @@ const parsersSchema = z
   .array(z.union([z.literal("pdf"), pdfParserWithOptions]))
   .prefault(["pdf"]);
 
+const pdfParserObjectSchema = z.object({
+  type: z.literal("pdf"),
+  mode: softOptional(pdfModeSchema),
+  maxPages: softOptional(z.number()),
+});
+
+const pdfParserEntrySchema = z.union([z.literal("pdf"), pdfParserObjectSchema]);
+
 export function shouldParsePDF(parsers?: ReadonlyArray<unknown>): boolean {
   if (!parsers) {
     return true;
   }
-  return parsers.some(parser => {
-    if (parser === "pdf") {
-      return true;
-    }
-    if (typeof parser === "object" && parser !== null && "type" in parser) {
-      return parser.type === "pdf";
-    }
-    return false;
-  });
+  return parsers.some(parser => pdfParserEntrySchema.safeParse(parser).success);
 }
 
 export function getPDFMaxPages(
@@ -519,19 +517,11 @@ export function getPDFMaxPages(
   if (!parsers) {
     return undefined;
   }
-  const pdfParser = parsers.find(parser => {
-    if (typeof parser === "object" && parser !== null && "type" in parser) {
-      return parser.type === "pdf";
+  for (const parser of parsers) {
+    const parsed = pdfParserObjectSchema.safeParse(parser);
+    if (parsed.success) {
+      return parsed.data.maxPages;
     }
-    return false;
-  });
-  if (
-    pdfParser &&
-    typeof pdfParser === "object" &&
-    "maxPages" in pdfParser &&
-    typeof pdfParser.maxPages === "number"
-  ) {
-    return pdfParser.maxPages;
   }
   return undefined;
 }
@@ -544,19 +534,9 @@ export function getPDFMode(parsers?: ReadonlyArray<unknown>): PDFMode {
     if (parser === "pdf") {
       return "auto";
     }
-    if (
-      typeof parser === "object" &&
-      parser !== null &&
-      "type" in parser &&
-      parser.type === "pdf"
-    ) {
-      if (
-        "mode" in parser &&
-        (parser.mode === "fast" || parser.mode === "auto")
-      ) {
-        return parser.mode;
-      }
-      return "auto";
+    const parsed = pdfParserObjectSchema.safeParse(parser);
+    if (parsed.success) {
+      return parsed.data.mode ?? "auto";
     }
   }
   return "auto";
@@ -819,24 +799,15 @@ export type ScrapeRequestInput = Omit<
   zeroDataRetention?: boolean;
 };
 
+const uploadedParseFileObjectSchema = z.object({
+  buffer: z.custom<Buffer>(value => Buffer.isBuffer(value)),
+  filename: z.string().refine(name => name.trim().length > 0),
+  contentType: z.string().optional(),
+  kind: z.enum(["html", "pdf", "document", "image"]).optional(),
+});
+
 const uploadedParseFileSchema = z.custom<UploadedParseFile>(
-  value =>
-    typeof value === "object" &&
-    value !== null &&
-    "buffer" in value &&
-    Buffer.isBuffer(value.buffer) &&
-    "filename" in value &&
-    typeof value.filename === "string" &&
-    value.filename.trim().length > 0 &&
-    (!("contentType" in value) ||
-      value.contentType === undefined ||
-      typeof value.contentType === "string") &&
-    (!("kind" in value) ||
-      value.kind === undefined ||
-      value.kind === "html" ||
-      value.kind === "pdf" ||
-      value.kind === "document" ||
-      value.kind === "image"),
+  value => uploadedParseFileObjectSchema.safeParse(value).success,
   {
     error: "A file upload is required.",
   },
@@ -1505,7 +1476,7 @@ export function toV2CrawlerOptions(
     ignoreRobotsTxt: x.ignoreRobotsTxt ?? false,
     robotsUserAgent: x.robotsUserAgent,
     sitemap: x.sitemapOnly ? "only" : x.ignoreSitemap ? "skip" : "include",
-    deduplicateSimilarURLs: x.deduplicateSimilarURLs ?? true,
+    deduplicateSimilarURLs: x.deduplicateSimilarURLs ?? false,
     ignoreQueryParameters: x.ignoreQueryParameters ?? false,
     regexOnFullURL: x.regexOnFullURL ?? false,
     maxDiscoveryDepth: x.maxDiscoveryDepth,
@@ -1739,8 +1710,17 @@ const transformSearchRequest = <
     }
   }
 
+  const {
+    sources: _sources,
+    categories: _categories,
+    country: _country,
+    location: _location,
+    scrapeOptions: _scrapeOptions,
+    ...rest
+  } = x;
+
   return {
-    ...x,
+    ...rest,
     country,
     location,
     sources: sources ?? [
@@ -1834,13 +1814,11 @@ const coreSearchFormatSchemas = {
   screenshot: screenshotFormatWithOptions,
 } satisfies Record<string, z.ZodType>;
 
+const formatTypeSchema = z.object({ type: z.string() });
+
 function hasFormatType(value: unknown, expected: string): boolean {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "type" in value &&
-    value.type === expected
-  );
+  const parsed = formatTypeSchema.safeParse(value);
+  return parsed.success && parsed.data.type === expected;
 }
 
 function createFormatsUnion(
@@ -2020,9 +1998,7 @@ function assertNoCoreCollision(
   }
 }
 
-function isExtendedSchemaOutput<T>(value: unknown): value is T {
-  return typeof value === "object" && value !== null;
-}
+const extendedOutputObjectSchema = z.object({});
 
 function extendStrictObject<S extends z.ZodRawShape>(
   base: z.ZodObject<S>,
@@ -2034,8 +2010,9 @@ function extendStrictObject<S extends z.ZodRawShape>(
   const merged = Object.fromEntries([...baseEntries, ...extraEntries]);
   return z
     .strictObject(merged)
-    .refine((value): value is z.output<z.ZodObject<S>> =>
-      isExtendedSchemaOutput<z.output<z.ZodObject<S>>>(value),
+    .refine(
+      (value): value is z.output<z.ZodObject<S>> =>
+        extendedOutputObjectSchema.safeParse(value).success,
     );
 }
 
@@ -2393,17 +2370,17 @@ export function getV2RequestSchemas(): RequestSchemas {
   return installedService()?.schemas ?? defaultV2RequestSchemas;
 }
 
+const ignoreInvalidURLsSchema = z.object({
+  ignoreInvalidURLs: z.literal(true),
+});
+
 /**
  * Parses a v2 batch scrape request body through the active service schemas,
  * skipping upfront URL validation when `ignoreInvalidURLs` is explicitly true.
  */
 export function parseBatchScrapeRequest(body: unknown): BatchScrapeRequest {
   const schemas = getV2RequestSchemas();
-  if (
-    typeof body === "object" &&
-    body !== null &&
-    (body as { ignoreInvalidURLs?: unknown }).ignoreInvalidURLs === true
-  ) {
+  if (ignoreInvalidURLsSchema.safeParse(body).success) {
     return schemas.batchScrapeNoURLValidation.parse(body);
   }
   return schemas.batchScrape.parse(body);

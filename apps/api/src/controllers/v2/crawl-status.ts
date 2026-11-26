@@ -1,4 +1,5 @@
 import type { Response } from "express";
+import { z } from "zod";
 import type {
   BaseScrapeOptions,
   CrawlStatusParams,
@@ -22,7 +23,7 @@ import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { storedZeroDataRetention } from "../../lib/request-context";
 import { service } from "../../service";
 import type { StoredJob } from "../../service";
-import { isJsonObject } from "../../lib/json-types";
+import { jsonRecordSchema } from "../../lib/json-types";
 configDotenv();
 
 export type PseudoJob<T> = {
@@ -44,9 +45,13 @@ interface CrawlStatusSummary {
   creditsUsed?: number;
 }
 
-function isDocument(value: unknown): value is Document {
-  return isJsonObject(value);
-}
+const documentSchema = z.custom<Document>(
+  value => jsonRecordSchema.safeParse(value).success,
+);
+
+const crawlEntireDomainSchema = z.object({
+  crawlEntireDomain: z.literal(true),
+});
 
 function extractDocument(
   storedDoc: Document | undefined,
@@ -55,17 +60,15 @@ function extractDocument(
   if (storedDoc) {
     return storedDoc;
   }
-  if (Array.isArray(rawReturnValue)) {
-    const first: unknown = rawReturnValue[0];
-    return isDocument(first) ? first : null;
-  }
-  return isDocument(rawReturnValue) ? rawReturnValue : null;
+  const candidate: unknown = Array.isArray(rawReturnValue)
+    ? rawReturnValue[0]
+    : rawReturnValue;
+  const parsed = documentSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
 }
 
 function readCrawlEntireDomain(crawlerOptions: unknown): boolean {
-  return (
-    isJsonObject(crawlerOptions) && crawlerOptions.crawlEntireDomain === true
-  );
+  return crawlEntireDomainSchema.safeParse(crawlerOptions).success;
 }
 
 const JOB_STORE_READ_CONCURRENCY = 20;
@@ -119,7 +122,7 @@ export async function getJob(
     }
   };
 
-  let nuqJob: NuQJob<ScrapeJobData> | null;
+  let nuqJob: NuQJob<ScrapeJobData | null, Document | null> | null;
   let stored: StoredJob | null = null;
   let storeReadError: Error | null = null;
   if (externalStore) {
@@ -199,7 +202,10 @@ export async function getJobs(
       : Promise.resolve(new Map<string, StoredJob>()),
   ]);
 
-  const nuqJobMap = new Map<string, NuQJob<ScrapeJobData>>();
+  const nuqJobMap = new Map<
+    string,
+    NuQJob<ScrapeJobData | null, Document | null>
+  >();
   for (const job of nuqJobs) {
     nuqJobMap.set(job.id, job);
   }

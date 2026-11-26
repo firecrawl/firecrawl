@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { InternalOptions } from "../scraper/scrapeURL";
 import type { ScrapeOptions, TeamFlags } from "../controllers/v2/types";
 import type { RequestContext } from "../service/request-context";
@@ -18,7 +19,7 @@ import {
   REDIS_COMMAND_ARG_CHUNK_SIZE,
 } from "./redis-pipeline";
 import { withWebhookSummaryForLog } from "../services/webhook/log";
-import { isJsonObject } from "./json-types";
+import { jsonObjectSchema } from "./json-types";
 
 export type StoredCrawlerOptions = JobCrawlerOptions & {
   includes?: Array<string>;
@@ -77,23 +78,25 @@ function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
-function isStoredCrawl(value: unknown): value is StoredCrawl {
-  return (
-    isJsonObject(value) &&
-    typeof value.team_id === "string" &&
-    (value.crawlerOptions === null ||
-      value.crawlerOptions === undefined ||
-      isJsonObject(value.crawlerOptions))
-  );
-}
+const storedCrawlPayloadSchema = z.object({
+  team_id: z.string(),
+  crawlerOptions: jsonObjectSchema.nullish(),
+  scrapeOptions: jsonObjectSchema.optional(),
+  internalOptions: jsonObjectSchema.optional(),
+  createdAt: z.number().optional(),
+});
 
-function hasTrueFlag(value: unknown, key: string): boolean {
-  return isJsonObject(value) && value[key] === true;
-}
+const storedCrawlSchema = z.custom<StoredCrawl>(
+  value => storedCrawlPayloadSchema.safeParse(value).success,
+);
 
-function hasStringFlag(value: unknown, key: string, expected: string): boolean {
-  return isJsonObject(value) && value[key] === expected;
-}
+const forcedAllowZdrSchema = z.object({
+  allowZDR: z.literal("forced"),
+});
+
+const lockdownFlagSchema = z.object({
+  lockdown: z.literal(true),
+});
 
 export async function saveCrawl(id: string, crawl: StoredCrawl) {
   const { zeroDataRetention } = crawlContext(crawl);
@@ -199,20 +202,28 @@ export async function getCrawl(id: string): Promise<StoredCrawl | null> {
     }
 
     await redis.expire("crawl:" + id, 24 * 60 * 60);
-    const parsed: unknown = JSON.parse(x);
-    if (!isStoredCrawl(parsed)) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(x);
+    } catch {
       setSpanAttributes(span, { "crawl.found": false });
       return null;
     }
+    const validated = storedCrawlSchema.safeParse(parsed);
+    if (!validated.success) {
+      setSpanAttributes(span, { "crawl.found": false });
+      return null;
+    }
+    const crawl = validated.data;
 
     setSpanAttributes(span, {
       "crawl.found": true,
-      "crawl.team_id": parsed.team_id,
+      "crawl.team_id": crawl.team_id,
       "crawl.zero_data_retention":
-        crawlContext(parsed).zeroDataRetention === true,
+        crawlContext(crawl).zeroDataRetention === true,
     });
 
-    return parsed;
+    return crawl;
   });
 }
 
@@ -387,24 +398,14 @@ const CRAWL_JOB_DONE_REPAIR_KEY = "crawl-job-done-repair";
 const CRAWL_JOB_DONE_REPAIR_BATCH = 100;
 const CRAWL_JOB_DONE_REPAIR_MAX = 10_000;
 
-type CrawlJobDoneRepairEntry = {
-  id: string;
-  job_id: string;
-  success: boolean;
-  at: number;
-};
+const crawlJobDoneRepairEntrySchema = z.object({
+  id: z.string(),
+  job_id: z.string(),
+  success: z.boolean(),
+  at: z.number(),
+});
 
-function isCrawlJobDoneRepairEntry(
-  value: unknown,
-): value is CrawlJobDoneRepairEntry {
-  return (
-    isJsonObject(value) &&
-    typeof value.id === "string" &&
-    typeof value.job_id === "string" &&
-    typeof value.success === "boolean" &&
-    typeof value.at === "number"
-  );
-}
+type CrawlJobDoneRepairEntry = z.infer<typeof crawlJobDoneRepairEntrySchema>;
 
 /// Best-effort durable record of a crawl completion marker that could not
 /// be written even after retries. Without it, an exhausted addCrawlJobDone
@@ -493,11 +494,12 @@ async function repairCrawlJobDoneMarkersOn(redis: IORedis, __logger: Logger) {
     let parsed: CrawlJobDoneRepairEntry;
     try {
       const raw: unknown = JSON.parse(fields[i + 1]);
-      if (!isCrawlJobDoneRepairEntry(raw)) {
+      const validated = crawlJobDoneRepairEntrySchema.safeParse(raw);
+      if (!validated.success) {
         await redis.hdel(CRAWL_JOB_DONE_REPAIR_KEY, field);
         continue;
       }
-      parsed = raw;
+      parsed = validated.data;
     } catch {
       await redis.hdel(CRAWL_JOB_DONE_REPAIR_KEY, field);
       continue;
@@ -1075,12 +1077,12 @@ export function crawlToCrawler(
   const forcedScrapeZdr =
     effectiveFlags?.scrapeZDR === "forced" ||
     effectiveFlags?.forceZDR === true ||
-    hasStringFlag(effectiveFlags, "allowZDR", "forced");
+    forcedAllowZdrSchema.safeParse(effectiveFlags).success;
 
   const lockdown =
     ctx.lockdown !== undefined
       ? ctx.lockdown
-      : hasTrueFlag(sc.scrapeOptions, "lockdown") ||
+      : lockdownFlagSchema.safeParse(sc.scrapeOptions).success ||
         (safeModeActive && safeModeConfig?.lockdown === true);
 
   const ignoreRobotsTxt =

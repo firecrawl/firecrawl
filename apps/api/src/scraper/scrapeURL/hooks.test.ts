@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createLogger } from "winston";
+import { z } from "zod";
 import type {
   Engine as RegisteredEngine,
   EngineName,
@@ -10,7 +11,7 @@ import { createService, replaceService } from "../../service/service";
 import { scrapeOptions } from "../../controllers/v2/types";
 import { CostTracking } from "../../lib/cost-tracking";
 import { ScrapeJobTimeoutError } from "../../lib/error";
-import { isJsonObject } from "../../lib/json-types";
+import { jsonRecordSchema, jsonValueSchema } from "../../lib/json-types";
 import { requestContext } from "../../lib/request-context";
 import type { htmlTransform as htmlTransformFn } from "./lib/removeUnwantedElements";
 
@@ -77,26 +78,29 @@ const makeEngine = (
   return engine;
 };
 
+const traceStateSchema = z.object({
+  trace: z.array(z.string()).optional(),
+});
+
+const metadataProviderSchema = z.object({
+  provider: jsonValueSchema.optional(),
+});
+
 function pushTrace(state: ScrapeState, label: string): void {
-  if (!isJsonObject(state)) {
-    return;
-  }
-  const existing = state.trace;
-  const trace: Array<string> = Array.isArray(existing)
-    ? existing.filter((item): item is string => typeof item === "string")
-    : [];
+  const parsed = traceStateSchema.safeParse(state);
+  const trace =
+    parsed.success && parsed.data.trace ? [...parsed.data.trace] : [];
   trace.push(label);
-  state.trace = trace;
+  Object.assign(state, { trace });
 }
 
 function setStateField(state: ScrapeState, key: string, value: string): void {
-  if (isJsonObject(state)) {
-    state[key] = value;
-  }
+  Object.assign(state, { [key]: value });
 }
 
 function readStateField(state: ScrapeState | undefined, key: string) {
-  return isJsonObject(state) ? state[key] : undefined;
+  const parsed = jsonRecordSchema.safeParse(state);
+  return parsed.success ? parsed.data[key] : undefined;
 }
 
 const installTestService = (
@@ -1026,10 +1030,11 @@ describe("scrape pipeline hook points", () => {
     }
     expect(result.document.metadata.cacheState).toBe("miss");
     expect(result.document.warning).toBeUndefined();
+    const parsedMetadata = metadataProviderSchema.safeParse(
+      result.document.metadata,
+    );
     expect(
-      isJsonObject(result.document.metadata)
-        ? result.document.metadata.provider
-        : undefined,
+      parsedMetadata.success ? parsedMetadata.data.provider : undefined,
     ).toEqual({
       id: "acme",
       creditsCost: 5,

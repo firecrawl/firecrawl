@@ -1,8 +1,8 @@
 import type { Logger } from "winston";
+import { z } from "zod";
 import { logger as _logger } from "../../lib/logger";
 import { config } from "../../config";
 import type { Document } from "../../controllers/v2/types";
-import { isJsonObject } from "../../lib/json-types";
 import type { ScrapeJobData } from "../../types";
 import { redisEvictConnection } from "../../services/redis";
 import { crawlStateStore } from "../../lib/crawl-state-store";
@@ -134,6 +134,10 @@ export async function resolveNewGroupBackend(
   return (await isFdbTeam(teamId, ctx)) ? "fdb" : "pg";
 }
 
+const crawlQueueBackendSchema = z.object({
+  queueBackend: z.unknown().optional(),
+});
+
 // Reads only the queueBackend marker off the stored crawl. Deliberately not
 // getCrawl() -- importing crawl-redis pulls the whole scraper tree in.
 async function getCrawlQueueBackend(
@@ -147,8 +151,12 @@ async function getCrawlQueueBackend(
     return null;
   }
   try {
-    const sc: unknown = JSON.parse(raw);
-    return isJsonObject(sc) ? (sc.queueBackend === "fdb" ? "fdb" : "pg") : null;
+    const parsed = crawlQueueBackendSchema.safeParse(JSON.parse(raw));
+    return parsed.success
+      ? parsed.data.queueBackend === "fdb"
+        ? "fdb"
+        : "pg"
+      : null;
   } catch {
     return null;
   }
@@ -597,7 +605,7 @@ class RoutedScrapeQueue {
   public async getJob(
     id: string,
     logger: Logger = _logger,
-  ): Promise<NuQJob<ScrapeJobData, Document | null> | null> {
+  ): Promise<NuQJob<ScrapeJobData | null, Document | null> | null> {
     if ((await getJobQueueBackend(id)) === "fdb") {
       const job = await optionalFdb(() => scrapeQueueFdb.getJob(id, logger));
       return job ? tagFdbJob(job) : null;
@@ -608,7 +616,7 @@ class RoutedScrapeQueue {
   public async getJobs(
     ids: Array<string>,
     logger: Logger = _logger,
-  ): Promise<Array<NuQJob<ScrapeJobData, Document | null>>> {
+  ): Promise<Array<NuQJob<ScrapeJobData | null, Document | null>>> {
     if (ids.length === 0) {
       return [];
     }
@@ -618,19 +626,24 @@ class RoutedScrapeQueue {
     const [fdbJobs, pgJobs] = await Promise.all([
       fdbIds.length > 0
         ? optionalFdb(() => scrapeQueueFdb.getJobs(fdbIds, logger))
-        : Promise.resolve<Array<NuQFdbJob<ScrapeJobData, Document | null>>>([]),
+        : Promise.resolve<
+            Array<NuQFdbJob<ScrapeJobData | null, Document | null>>
+          >([]),
       pgIds.length > 0
         ? scrapeQueuePg.getJobs(pgIds, logger)
         : Promise.resolve<Array<NuQJob<ScrapeJobData, Document | null>>>([]),
     ]);
-    const byId = new Map<string, NuQJob<ScrapeJobData, Document | null>>();
+    const byId = new Map<
+      string,
+      NuQJob<ScrapeJobData | null, Document | null>
+    >();
     for (const j of fdbJobs) {
       byId.set(j.id, tagFdbJob(j));
     }
     for (const j of pgJobs) {
       byId.set(j.id, j);
     }
-    const ordered: Array<NuQJob<ScrapeJobData, Document | null>> = [];
+    const ordered: Array<NuQJob<ScrapeJobData | null, Document | null>> = [];
     for (const id of ids) {
       const job = byId.get(id);
       if (job !== undefined) {
@@ -644,7 +657,7 @@ class RoutedScrapeQueue {
     ids: Array<string>,
     status: NuQJobStatus,
     logger: Logger = _logger,
-  ): Promise<Array<NuQJob<ScrapeJobData, Document | null>>> {
+  ): Promise<Array<NuQJob<ScrapeJobData | null, Document | null>>> {
     return (await this.getJobs(ids, logger)).filter(j => j.status === status);
   }
 
@@ -652,7 +665,7 @@ class RoutedScrapeQueue {
     ids: Array<string>,
     statuses: Array<NuQJobStatus>,
     logger: Logger = _logger,
-  ): Promise<Array<NuQJob<ScrapeJobData, Document | null>>> {
+  ): Promise<Array<NuQJob<ScrapeJobData | null, Document | null>>> {
     const set = new Set(statuses);
     return (await this.getJobs(ids, logger)).filter(j => set.has(j.status));
   }
@@ -661,7 +674,7 @@ class RoutedScrapeQueue {
     groupId: string,
     ownerId: string,
     logger: Logger = _logger,
-  ): Promise<NuQJob<ScrapeJobData, Document | null> | null> {
+  ): Promise<NuQJob<ScrapeJobData | null, Document | null> | null> {
     if ((await resolveGroupBackend(groupId, logger)) === "fdb") {
       const job = await optionalFdb(() =>
         scrapeQueueFdb.getGroupAnyJob(groupId, ownerId, logger),
@@ -689,7 +702,7 @@ class RoutedScrapeQueue {
     limit?: number,
     offset = 0,
     logger: Logger = _logger,
-  ): Promise<Array<NuQJob<ScrapeJobData, Document | null>>> {
+  ): Promise<Array<NuQJob<ScrapeJobData | null, Document | null>>> {
     if ((await resolveGroupBackend(groupId, logger)) === "fdb") {
       const jobs = await optionalFdb(() =>
         scrapeQueueFdb.getGroupJobs(groupId, status, limit, offset, logger),

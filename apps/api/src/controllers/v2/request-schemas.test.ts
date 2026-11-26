@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ZodError, z } from "zod";
-import { isJsonObject } from "../../lib/json-types";
-import type { JsonObject } from "../../lib/json-types";
+import { jsonObjectSchema } from "../../lib/json-types";
 import { coreParts, createService, defaultModules } from "../../service";
 import type {
   Extension,
@@ -9,6 +8,7 @@ import type {
   ScrapeOptionsRule,
 } from "../../service";
 import { withService } from "../../service/testing";
+import type { UploadedParseFile } from "./types";
 import {
   batchScrapeRequestSchema,
   batchScrapeRequestSchemaNoURLValidation,
@@ -66,12 +66,36 @@ const customExtractRule: ScrapeOptionsRule = (options, { kind }) => {
   };
 };
 
-function expectJsonObject(value: unknown): JsonObject {
-  if (!isJsonObject(value)) {
-    throw new Error("Expected object");
-  }
-  return value;
-}
+const uploadedFileCheckSchema = z.object({
+  buffer: z.custom<Buffer>(value => Buffer.isBuffer(value)),
+  filename: z.string(),
+  kind: z.string().optional(),
+});
+
+const nestedScrapeOptionsSchema = z.object({
+  formats: z.array(jsonObjectSchema).optional(),
+  customLabel: z.string().optional(),
+  waitFor: z.number().optional(),
+});
+
+const parsedExtensionOutputSchema = z.object({
+  formats: z.array(jsonObjectSchema).optional(),
+  customLabel: z.string().optional(),
+  scrapeTag: z.string().optional(),
+  parseTag: z.string().optional(),
+  crawlTag: z.string().optional(),
+  batchTag: z.string().optional(),
+  mapTag: z.string().optional(),
+  searchTag: z.string().optional(),
+  waitFor: z.number().optional(),
+  urls: z.array(z.string()).optional(),
+  file: z
+    .custom<UploadedParseFile>(
+      value => uploadedFileCheckSchema.safeParse(value).success,
+    )
+    .optional(),
+  scrapeOptions: nestedScrapeOptionsSchema.optional(),
+});
 
 function captureZodError(fn: () => void): ZodError {
   try {
@@ -235,7 +259,7 @@ describe("v2 request schema wiring", () => {
       const schemas = getV2RequestSchemas();
 
       // Scrape: custom format (string shorthand), custom scrapeOptions + scrape fields, rule default
-      const parsedScrape = expectJsonObject(
+      const parsedScrape = parsedExtensionOutputSchema.parse(
         schemas.scrape.parse({
           url: "https://example.com",
           formats: ["markdown", "customExtract"],
@@ -252,7 +276,7 @@ describe("v2 request schema wiring", () => {
       expect(parsedScrape.waitFor).toBe(4000);
 
       // Parse: accepts custom fields, rejects customExtract via rule
-      const parsedUpload = expectJsonObject(
+      const parsedUpload = parsedExtensionOutputSchema.parse(
         schemas.parse.parse({
           file: uploadFile,
           customLabel: "parse-ok",
@@ -276,7 +300,7 @@ describe("v2 request schema wiring", () => {
       });
 
       // Crawl: validates custom crawl field, nested custom scrapeOptions field, format, and rule
-      const parsedCrawl = expectJsonObject(
+      const parsedCrawl = parsedExtensionOutputSchema.parse(
         schemas.crawl.parse({
           url: "https://example.com",
           crawlTag: "c-1",
@@ -286,7 +310,9 @@ describe("v2 request schema wiring", () => {
           },
         }),
       );
-      const crawlScrapeOptions = expectJsonObject(parsedCrawl.scrapeOptions);
+      const crawlScrapeOptions = nestedScrapeOptionsSchema.parse(
+        parsedCrawl.scrapeOptions,
+      );
       expect(parsedCrawl.crawlTag).toBe("c-1");
       expect(crawlScrapeOptions.customLabel).toBe("crawl-ok");
       expect(crawlScrapeOptions.waitFor).toBe(4000);
@@ -310,7 +336,7 @@ describe("v2 request schema wiring", () => {
       });
 
       // Batch scrape helper: strict URL mode and ignoreInvalidURLs: true mode
-      const parsedBatch = expectJsonObject(
+      const parsedBatch = parsedExtensionOutputSchema.parse(
         parseBatchScrapeRequest({
           urls: ["https://example.com"],
           formats: ["markdown", "customExtract"],
@@ -322,7 +348,7 @@ describe("v2 request schema wiring", () => {
       expect(parsedBatch.batchTag).toBe("b-1");
       expect(parsedBatch.waitFor).toBe(4000);
 
-      const parsedBatchLenient = expectJsonObject(
+      const parsedBatchLenient = parsedExtensionOutputSchema.parse(
         parseBatchScrapeRequest({
           urls: ["https://example.com", "not a url"],
           ignoreInvalidURLs: true,
@@ -346,7 +372,7 @@ describe("v2 request schema wiring", () => {
       ).toThrow(ZodError);
 
       // Map: accepts custom map field and rejects invalid values
-      const parsedMap = expectJsonObject(
+      const parsedMap = parsedExtensionOutputSchema.parse(
         schemas.map.parse({
           url: "https://example.com",
           mapTag: "m-1",
@@ -355,7 +381,7 @@ describe("v2 request schema wiring", () => {
       expect(parsedMap.mapTag).toBe("m-1");
 
       // Search: accepts custom search field and nested scrapeOptions with custom format + rule
-      const parsedSearch = expectJsonObject(
+      const parsedSearch = parsedExtensionOutputSchema.parse(
         schemas.search.parse({
           query: "firecrawl",
           searchTag: "q-1",
@@ -365,13 +391,15 @@ describe("v2 request schema wiring", () => {
           },
         }),
       );
-      const searchScrapeOptions = expectJsonObject(parsedSearch.scrapeOptions);
+      const searchScrapeOptions = nestedScrapeOptionsSchema.parse(
+        parsedSearch.scrapeOptions,
+      );
       expect(parsedSearch.searchTag).toBe("q-1");
       expect(searchScrapeOptions.customLabel).toBe("search-ok");
       expect(searchScrapeOptions.waitFor).toBe(4000);
 
       // Standalone scrapeOptions routes through service.schemas.scrapeOptions
-      const parsedOpts = expectJsonObject(
+      const parsedOpts = parsedExtensionOutputSchema.parse(
         schemas.scrapeOptions.parse({
           formats: ["markdown", "customExtract"],
           customLabel: "standalone",

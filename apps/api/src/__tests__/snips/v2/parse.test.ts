@@ -17,8 +17,9 @@ import request, {
   TEST_API_URL,
 } from "./lib";
 import { HAS_JOB_LOG, jobLogRows, waitForJobLogRow } from "../job-log";
+import { z } from "zod";
 import { config } from "../../../config";
-import { isJsonObject } from "../../../lib/json-types";
+import { jsonRecordSchema } from "../../../lib/json-types";
 import type { JsonObject } from "../../../lib/json-types";
 import { getRedisConnection } from "../../../services/queue-service";
 
@@ -54,33 +55,24 @@ function getUnparsedUploadRefsKey(teamId: string) {
   return `parse-upload-refs:${teamId}`;
 }
 
-type MintedUploadRef = {
-  uploadRef: string;
-  uploadUrl: string;
-  method: string;
-  headers?: Record<string, string>;
-  fields?: Record<string, string>;
-  maxSizeBytes: number;
-};
+const mintedUploadRefSchema = z.object({
+  uploadRef: z.string(),
+  uploadUrl: z.string(),
+  method: z.string(),
+  headers: z.record(z.string(), z.string()).optional(),
+  fields: z.record(z.string(), z.string()).optional(),
+  maxSizeBytes: z.number(),
+});
 
-function isStringRecord(value: unknown): value is Record<string, string> {
-  return (
-    isJsonObject(value) &&
-    Object.values(value).every(entry => typeof entry === "string")
-  );
-}
+type MintedUploadRef = z.infer<typeof mintedUploadRefSchema>;
 
-function isMintedUploadRef(value: unknown): value is MintedUploadRef {
-  return (
-    isJsonObject(value) &&
-    typeof value.uploadRef === "string" &&
-    typeof value.uploadUrl === "string" &&
-    typeof value.method === "string" &&
-    typeof value.maxSizeBytes === "number" &&
-    (value.headers === undefined || isStringRecord(value.headers)) &&
-    (value.fields === undefined || isStringRecord(value.fields))
-  );
-}
+const mintedUploadRefEnvelopeSchema = z.object({
+  data: mintedUploadRefSchema,
+});
+
+const errorCodeBodySchema = z.object({
+  code: z.string(),
+});
 
 function enableLocalUploadRefAdapter() {
   config.ENV = "test";
@@ -101,29 +93,30 @@ async function mintUploadRef(
       contentType,
     });
 
-  const initBody: unknown = init.body;
-  if (
-    init.statusCode === 503 &&
-    isJsonObject(initBody) &&
-    typeof initBody.code === "string" &&
-    initBody.code.startsWith("PARSE_UPLOAD_")
-  ) {
-    if (parseUploadRefTestRequired) {
-      expect(init.statusCode).toBe(200);
+  if (init.statusCode === 503) {
+    const parsedError = errorCodeBodySchema.safeParse(init.body);
+    if (
+      parsedError.success &&
+      parsedError.data.code.startsWith("PARSE_UPLOAD_")
+    ) {
+      if (parseUploadRefTestRequired) {
+        expect(init.statusCode).toBe(200);
+      }
+      console.warn(
+        `Skipping uploadRef storage-dependent test because ${TEST_API_URL} is not configured for parse upload refs: ${parsedError.data.code}`,
+      );
+      return null;
     }
-    console.warn(
-      `Skipping uploadRef storage-dependent test because ${TEST_API_URL} is not configured for parse upload refs: ${initBody.code}`,
-    );
-    return null;
   }
 
   expect(init.statusCode).toBe(200);
   expect(init.body.success).toBe(true);
   expect(init.body.data.uploadRef).toEqual(expect.any(String));
-  if (!isJsonObject(initBody) || !isMintedUploadRef(initBody.data)) {
+  const parsed = mintedUploadRefEnvelopeSchema.safeParse(init.body);
+  if (!parsed.success) {
     throw new Error("Unexpected /v2/parse/upload-url response shape");
   }
-  return initBody.data;
+  return parsed.data.data;
 }
 
 async function mintRequiredUploadRef(
@@ -143,11 +136,11 @@ async function mintRequiredUploadRef(
   expect(init.statusCode, JSON.stringify(init.body)).toBe(200);
   expect(init.body.success).toBe(true);
   expect(init.body.data.uploadRef).toEqual(expect.any(String));
-  const initBody: unknown = init.body;
-  if (!isJsonObject(initBody) || !isMintedUploadRef(initBody.data)) {
+  const parsed = mintedUploadRefEnvelopeSchema.safeParse(init.body);
+  if (!parsed.success) {
     throw new Error("Unexpected /v2/parse/upload-url response shape");
   }
-  return initBody.data;
+  return parsed.data.data;
 }
 
 async function uploadToMintedTarget(
@@ -198,13 +191,13 @@ function resignUploadRefPayload(payload: JsonObject) {
 
 function decodeUploadRefPayload(uploadRef: string): JsonObject {
   const [encodedPayload] = uploadRef.split(".");
-  const parsed: unknown = JSON.parse(
-    Buffer.from(encodedPayload, "base64url").toString("utf8"),
+  const parsed = jsonRecordSchema.safeParse(
+    JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")),
   );
-  if (!isJsonObject(parsed)) {
+  if (!parsed.success) {
     throw new Error("Expected JSON object in uploadRef payload");
   }
-  return parsed;
+  return parsed.data;
 }
 
 function withUploadRefPayload(

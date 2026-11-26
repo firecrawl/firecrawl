@@ -30,8 +30,7 @@ import type {
   ErrorResponse,
   RequestWithMaybeACUC,
 } from "./controllers/v2/types";
-import { ZodError } from "zod";
-import { isJsonObject } from "./lib/json-types";
+import { ZodError, z } from "zod";
 import { QueueFullError } from "./lib/queue-full-error";
 import { v7 as uuidv7 } from "uuid";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
@@ -54,9 +53,13 @@ class TypedExpressAdapter extends ExpressAdapter {
   }
 }
 
-function isAdminKeySlot(value: unknown): value is AdminKeySlot {
-  return value === "current" || value === "previous";
-}
+const adminKeySlotLocalsSchema = z.object({
+  adminKeySlot: z.enum(["current", "previous"]),
+});
+
+const payloadTooLargeErrorSchema = z.object({
+  status: z.literal(413),
+});
 
 const numCPUs = config.ENV === "local" ? 2 : os.cpus().length;
 logger.info(`Number of CPUs: ${numCPUs} available`);
@@ -147,10 +150,10 @@ if (!config.BULL_AUTH_KEY) {
     }
     const queuesPathRouter = express.Router({ mergeParams: true });
     queuesPathRouter.use(adminPathKeyAuth("queues"), (req, res, next) => {
-      const slot = isJsonObject(res.locals)
-        ? res.locals.adminKeySlot
+      const parsedLocals = adminKeySlotLocalsSchema.safeParse(res.locals);
+      const boardRouter = parsedLocals.success
+        ? pathBoards[parsedLocals.data.adminKeySlot]
         : undefined;
-      const boardRouter = isAdminKeySlot(slot) ? pathBoards[slot] : undefined;
       if (!boardRouter) {
         return next();
       }
@@ -405,7 +408,7 @@ app.use(
         error: "Bad request, malformed JSON",
       });
     }
-    if (isJsonObject(err) && err.status === 413) {
+    if (payloadTooLargeErrorSchema.safeParse(err).success) {
       return res.status(413).json({
         success: false,
         error: "Request body is too large",

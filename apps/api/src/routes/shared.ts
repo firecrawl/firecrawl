@@ -13,8 +13,8 @@ import {
   httpRequestDurationSeconds,
   getRoutePattern,
 } from "../lib/http-metrics";
+import { z } from "zod";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
-import { isJsonObject } from "../lib/json-types";
 import { lookup as lookupGeoIp } from "geoip-country";
 import { claimIdempotencyKey } from "../lib/idempotency";
 import { service } from "../service";
@@ -60,6 +60,57 @@ function billingOperationForPath(path: string): BillingOperation {
   }
 }
 
+const creditPreflightBodySchema = z.object({
+  limit: z.unknown().optional(),
+  urls: z.unknown().optional(),
+});
+
+const authTeamIdSchema = z.object({
+  team_id: z.string(),
+});
+
+const blocklistBodySchema = z.object({
+  url: z.string(),
+  safeMode: z.unknown().optional(),
+  zeroDataRetention: z.unknown().optional(),
+  lockdown: z.unknown().optional(),
+  origin: z.unknown().optional(),
+});
+
+const safeModeConfigSchema = z.object({
+  allowBypassSafeMode: z.unknown().optional(),
+  lockdown: z.unknown().optional(),
+});
+
+const blocklistFlagsSchema = z.object({
+  scrapeZDR: z.unknown().optional(),
+  forceZDR: z.unknown().optional(),
+  allowZDR: z.unknown().optional(),
+  safeMode: z.unknown().optional(),
+  safeModeConfig: z.unknown().optional(),
+});
+
+const nonEmptyObjectSchema = z
+  .record(z.string(), z.unknown())
+  .refine(value => Object.keys(value).length > 0);
+
+const agentOptionSchema = z.object({
+  agent: z.unknown(),
+});
+
+const restrictedOptionsBodySchema = z.object({
+  actions: z.unknown().optional(),
+  headers: z.unknown().optional(),
+  agent: z.unknown().optional(),
+  jsonOptions: z.unknown().optional(),
+  extract: z.unknown().optional(),
+  scrapeOptions: z.unknown().optional(),
+});
+
+const failureResponseBodySchema = z.object({
+  success: z.literal(false),
+});
+
 export function checkCreditsMiddleware(
   _minimum?: number,
   featureId?: string,
@@ -70,7 +121,8 @@ export function checkCreditsMiddleware(
       let requestedUnits = _minimum;
       const rawBody: unknown = req.body;
       if (requestedUnits === undefined && rawBody) {
-        const body = isJsonObject(rawBody) ? rawBody : undefined;
+        const parsedBody = creditPreflightBodySchema.safeParse(rawBody);
+        const body = parsedBody.success ? parsedBody.data : undefined;
         const urls = body?.urls;
         const derived = Number(
           body?.limit ?? (Array.isArray(urls) ? urls.length : 1),
@@ -106,8 +158,13 @@ export function checkCreditsMiddleware(
       }
 
       req.account = { remainingCredits: authz.maxUnits ?? Infinity };
-      if (authz.clampedLimit !== undefined && isJsonObject(rawBody)) {
-        rawBody.limit = authz.clampedLimit;
+      if (
+        authz.clampedLimit !== undefined &&
+        typeof rawBody === "object" &&
+        rawBody !== null &&
+        !Array.isArray(rawBody)
+      ) {
+        Object.assign(rawBody, { limit: authz.clampedLimit });
       }
       next();
     })().catch((error: unknown) => next(error));
@@ -193,10 +250,11 @@ export function authMiddleware(
 }
 
 function readAuthTeamId(req: Request): string | undefined {
-  if (!("auth" in req) || !isJsonObject(req.auth)) {
+  if (!("auth" in req)) {
     return undefined;
   }
-  return typeof req.auth.team_id === "string" ? req.auth.team_id : undefined;
+  const parsed = authTeamIdSchema.safeParse(req.auth);
+  return parsed.success ? parsed.data.team_id : undefined;
 }
 
 export function idempotencyMiddleware(
@@ -232,21 +290,25 @@ export function blocklistMiddleware(
   next: NextFunction,
 ) {
   (async () => {
-    if (!isJsonObject(req.body) || typeof req.body.url !== "string") {
+    const parsedBody = blocklistBodySchema.safeParse(req.body);
+    if (!parsedBody.success) {
       return next();
     }
-    const rawFlags: unknown = req.acuc?.flags;
-    const flags = isJsonObject(rawFlags) ? rawFlags : null;
+    const body = parsedBody.data;
+    const parsedFlags = blocklistFlagsSchema.safeParse(req.acuc?.flags);
+    const flags = parsedFlags.success ? parsedFlags.data : null;
     const forcedZdr =
       flags?.scrapeZDR === "forced" ||
       flags?.forceZDR === true ||
       flags?.allowZDR === "forced";
-    const safeModeConfig = isJsonObject(flags?.safeModeConfig)
-      ? flags.safeModeConfig
+    const parsedSafeModeConfig = safeModeConfigSchema.safeParse(
+      flags?.safeModeConfig,
+    );
+    const safeModeConfig = parsedSafeModeConfig.success
+      ? parsedSafeModeConfig.data
       : undefined;
     const safeModeBypassed =
-      req.body.safeMode === false &&
-      safeModeConfig?.allowBypassSafeMode === true;
+      body.safeMode === false && safeModeConfig?.allowBypassSafeMode === true;
     const safeModeLockdown =
       flags?.safeMode === true &&
       !safeModeBypassed &&
@@ -257,14 +319,14 @@ export function blocklistMiddleware(
         req.ctx?.zeroDataRetention === true ||
         forcedZdr ||
         safeModeLockdown ||
-        req.body.zeroDataRetention === true ||
-        req.body.lockdown === true,
+        body.zeroDataRetention === true ||
+        body.lockdown === true,
       flags: req.acuc?.flags ?? null,
       orgId: req.ctx?.orgId ?? req.acuc?.org_id ?? null,
     });
     if (
-      !service.modules.blocklist.isBlocked(req.body.url, blockCtx, {
-        origin: typeof req.body.origin === "string" ? req.body.origin : null,
+      !service.modules.blocklist.isBlocked(body.url, blockCtx, {
+        origin: typeof body.origin === "string" ? body.origin : null,
       })
     ) {
       return next();
@@ -315,35 +377,39 @@ export function countryCheck(
 }
 
 function hasNonEmptyObject(value: unknown): boolean {
-  return isJsonObject(value) && Object.keys(value).length > 0;
+  return nonEmptyObjectSchema.safeParse(value).success;
 }
 
 function hasAgentOption(value: unknown): boolean {
-  return isJsonObject(value) && Boolean(value.agent);
+  const parsed = agentOptionSchema.safeParse(value);
+  return parsed.success && Boolean(parsed.data.agent);
+}
+
+function hasRestrictedFields(
+  fields: z.infer<typeof restrictedOptionsBodySchema>,
+): boolean {
+  return Boolean(
+    fields.actions ||
+    hasNonEmptyObject(fields.headers) ||
+    fields.agent ||
+    hasAgentOption(fields.jsonOptions) ||
+    hasAgentOption(fields.extract),
+  );
 }
 
 function hasRestrictedBodyOptions(body: unknown): boolean {
-  if (!isJsonObject(body)) {
+  const parsedBody = restrictedOptionsBodySchema.safeParse(body);
+  if (!parsedBody.success) {
     return false;
   }
-  if (
-    body.actions ||
-    hasNonEmptyObject(body.headers) ||
-    body.agent ||
-    hasAgentOption(body.jsonOptions) ||
-    hasAgentOption(body.extract)
-  ) {
+  if (hasRestrictedFields(parsedBody.data)) {
     return true;
   }
-  if (!isJsonObject(body.scrapeOptions)) {
-    return false;
-  }
-  return Boolean(
-    body.scrapeOptions.actions ||
-    hasNonEmptyObject(body.scrapeOptions.headers) ||
-    body.scrapeOptions.agent ||
-    hasAgentOption(body.scrapeOptions.jsonOptions) ||
-    hasAgentOption(body.scrapeOptions.extract),
+  const parsedScrapeOptions = restrictedOptionsBodySchema.safeParse(
+    parsedBody.data.scrapeOptions,
+  );
+  return (
+    parsedScrapeOptions.success && hasRestrictedFields(parsedScrapeOptions.data)
   );
 }
 
@@ -402,7 +468,7 @@ export function requestTimingMiddleware(version: string) {
         .observe(durationSeconds);
 
       // Only log for successful responses to avoid duplicate error logs
-      if (!isJsonObject(body) || body.success !== false) {
+      if (!failureResponseBodySchema.safeParse(body).success) {
         logger.info(`${version} request completed`, {
           version,
           path: req.path,

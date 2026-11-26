@@ -1,4 +1,5 @@
-import { isJsonObject, isLogMeta } from "./json-types";
+import { z } from "zod";
+import { jsonRecordSchema, jsonValueSchema } from "./json-types";
 import type { JsonObject, LogMeta } from "./json-types";
 import { UNSUPPORTED_SITE_MESSAGE } from "./strings";
 
@@ -257,9 +258,31 @@ interface ErrorHttpResponse {
   extraFields?: JsonObject;
 }
 
-function isErrorCode(value: unknown): value is ErrorCode {
-  return typeof value === "string" && value.length > 0;
-}
+const errorHttpMetaSchema = z.object({
+  httpStatus: z.number().int().min(100).max(599),
+});
+
+// ErrorCodes is open via declaration merging, so extension errors may carry
+// codes outside core's ErrorCodes interface.
+const errorCodeSchema = z.custom<ErrorCode>(
+  value => typeof value === "string" && value.length > 0,
+);
+
+const logMetaSchema = z.record(
+  z.string(),
+  z.union([
+    jsonValueSchema,
+    z.instanceof(Error),
+    z.instanceof(Date),
+    z.undefined(),
+  ]),
+);
+
+const rawScrapeLogSchema = z.object({
+  errorType: z.string().min(1),
+  message: z.string().min(1),
+  context: z.unknown().optional(),
+});
 
 /**
  * Reads HTTP response metadata from any Error declaring an integer `httpStatus`.
@@ -267,27 +290,28 @@ function isErrorCode(value: unknown): value is ErrorCode {
 export function getErrorHttpResponse(
   error: unknown,
 ): ErrorHttpResponse | undefined {
-  if (!(error instanceof Error) || !("httpStatus" in error)) {
+  if (!(error instanceof Error)) {
     return undefined;
   }
-  const status = error.httpStatus;
-  if (
-    typeof status !== "number" ||
-    !Number.isInteger(status) ||
-    status < 100 ||
-    status > 599
-  ) {
+  const meta = errorHttpMetaSchema.safeParse(error);
+  if (!meta.success) {
     return undefined;
   }
   const response: ErrorHttpResponse = {
-    status,
+    status: meta.data.httpStatus,
     message: error.message,
   };
-  if ("code" in error && isErrorCode(error.code)) {
-    response.code = error.code;
+  if ("code" in error) {
+    const parsedCode = errorCodeSchema.safeParse(error.code);
+    if (parsedCode.success) {
+      response.code = parsedCode.data;
+    }
   }
-  if ("httpResponseFields" in error && isJsonObject(error.httpResponseFields)) {
-    response.extraFields = error.httpResponseFields;
+  if ("httpResponseFields" in error) {
+    const parsedFields = jsonRecordSchema.safeParse(error.httpResponseFields);
+    if (parsedFields.success) {
+      response.extraFields = parsedFields.data;
+    }
   }
   return response;
 }
@@ -305,24 +329,17 @@ export function getErrorScrapeLog(error: unknown): ErrorScrapeLog | undefined {
   if (!(error instanceof Error) || !("scrapeLog" in error)) {
     return undefined;
   }
-  const candidate = error.scrapeLog;
-  if (!isJsonObject(candidate)) {
-    return undefined;
-  }
-  if (
-    typeof candidate.errorType !== "string" ||
-    candidate.errorType.length === 0 ||
-    typeof candidate.message !== "string" ||
-    candidate.message.length === 0
-  ) {
+  const parsed = rawScrapeLogSchema.safeParse(error.scrapeLog);
+  if (!parsed.success) {
     return undefined;
   }
   const log: ErrorScrapeLog = {
-    errorType: candidate.errorType,
-    message: candidate.message,
+    errorType: parsed.data.errorType,
+    message: parsed.data.message,
   };
-  if (isLogMeta(candidate.context)) {
-    log.context = candidate.context;
+  const parsedContext = logMetaSchema.safeParse(parsed.data.context);
+  if (parsedContext.success) {
+    log.context = parsedContext.data;
   }
   return log;
 }
@@ -342,16 +359,18 @@ export interface TransportableErrorClass {
  * `Retry-After` header, so a retry of the same URL is a deliberate,
  * timed action instead of a blind loop.
  */
-type ScrapeTimeoutProcessingDetails = {
-  state: "processing_continues";
-  documentPages?: number;
-  jobStatus: "queued" | "running";
-  estimatedRemainingSeconds: number;
-  retryAfterSeconds: number;
-  /** Set when the document may not finish within the server-side
-   * processing ceiling even across retries. */
-  mayExceedProcessingWindow?: boolean;
-};
+const scrapeTimeoutProcessingDetailsSchema = z.object({
+  state: z.literal("processing_continues"),
+  documentPages: z.number().optional(),
+  jobStatus: z.enum(["queued", "running"]),
+  estimatedRemainingSeconds: z.number(),
+  retryAfterSeconds: z.number(),
+  mayExceedProcessingWindow: z.boolean().optional(),
+});
+
+type ScrapeTimeoutProcessingDetails = z.infer<
+  typeof scrapeTimeoutProcessingDetailsSchema
+>;
 
 /** Matches BY_REFERENCE_DEADLINE_PER_PAGE_MS (fire-pdf/utils.ts) — the
  * conservative worst-case processing rate the job deadline is built
@@ -364,6 +383,11 @@ const PROCESSING_ESTIMATE_PER_PAGE_MS = 1250;
  * pickup, render bootstrap, result assembly. */
 const PROCESSING_ESTIMATE_BASE_MS = 60_000;
 
+interface TimeoutProcessingOutcome {
+  message: string;
+  details: ScrapeTimeoutProcessingDetails;
+}
+
 /**
  * Compose the customer-facing "we're still working on it" message and
  * structured details for a timed-out large-PDF scrape. Estimates are
@@ -371,11 +395,6 @@ const PROCESSING_ESTIMATE_BASE_MS = 60_000;
  * an estimate that is early twice reads as magic, one that is late once
  * reads as broken.
  */
-interface TimeoutProcessingOutcome {
-  message: string;
-  details: ScrapeTimeoutProcessingDetails;
-}
-
 export function composeTimeoutProcessing(args: {
   pagesEstimate?: number;
   submittedAtMs: number;
@@ -440,18 +459,6 @@ export function composeTimeoutProcessing(args: {
   };
 }
 
-function isScrapeTimeoutProcessingDetails(
-  value: unknown,
-): value is ScrapeTimeoutProcessingDetails {
-  return (
-    isJsonObject(value) &&
-    value.state === "processing_continues" &&
-    (value.jobStatus === "queued" || value.jobStatus === "running") &&
-    typeof value.estimatedRemainingSeconds === "number" &&
-    typeof value.retryAfterSeconds === "number"
-  );
-}
-
 /** Safe accessor for the processing details on a (possibly deserialized)
  * SCRAPE_TIMEOUT error. */
 export function getTimeoutProcessingDetails(
@@ -462,8 +469,9 @@ export function getTimeoutProcessingDetails(
     e.code === "SCRAPE_TIMEOUT" &&
     "processing" in e
   ) {
-    if (isScrapeTimeoutProcessingDetails(e.processing)) {
-      return e.processing;
+    const parsed = scrapeTimeoutProcessingDetailsSchema.safeParse(e.processing);
+    if (parsed.success) {
+      return parsed.data;
     }
   }
   return undefined;

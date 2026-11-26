@@ -29,10 +29,10 @@ import type { CostTracking } from "../../../lib/cost-tracking";
 import { isZeroDataRetentionActive } from "../../../lib/otel-tracer";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { aiTelemetry } from "../../../lib/ai-telemetry";
-import { isJsonObject } from "../../../lib/json-types";
+import { jsonRecordSchema, jsonValueSchema } from "../../../lib/json-types";
 import type { JsonObject, JsonValue } from "../../../lib/json-types";
 
-type ModelPriceEntry = {
+export type ModelPriceEntry = {
   litellm_provider: string;
   max_tokens?: number;
   max_input_tokens?: number;
@@ -41,31 +41,29 @@ type ModelPriceEntry = {
   output_cost_per_token?: number;
 };
 
-const modelPriceByName: ReadonlyMap<string, ModelPriceEntry> = new Map(
+export const modelPriceByName: ReadonlyMap<string, ModelPriceEntry> = new Map(
   Object.entries(modelPrices),
 );
 
-function isJsonValue(value: unknown): value is JsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return true;
-  }
-  if (Array.isArray(value)) {
-    return true;
-  }
-  return isJsonObject(value);
-}
+const errorWithMessageSchema = z.object({ message: z.string() });
+const schemaWithDefsSchema = z.object({
+  $defs: z.unknown().optional(),
+  definitions: z.unknown().optional(),
+});
+const arraySchemaTypeSchema = z.object({ type: z.literal("array") });
+const itemsExtractSchema = z.object({ items: jsonValueSchema.optional() });
+const cleanedContentExtractSchema = z.object({
+  cleanedContent: z.string().min(1),
+});
+const summaryExtractSchema = z.object({ summary: z.string() });
 
 function toError(error: unknown): Error {
   if (error instanceof Error) {
     return error;
   }
-  if (isJsonObject(error) && typeof error.message === "string") {
-    return new Error(error.message);
+  const parsed = errorWithMessageSchema.safeParse(error);
+  if (parsed.success) {
+    return new Error(parsed.data.message);
   }
   return new Error(String(error));
 }
@@ -81,8 +79,10 @@ function detectRecursiveSchema(schema: unknown): boolean {
     schemaString.includes('"$ref"') ||
     schemaString.includes("#/$defs/") ||
     schemaString.includes("#/definitions/");
+  const parsedSchema = schemaWithDefsSchema.safeParse(schema);
   const hasDefs =
-    isJsonObject(schema) && Boolean(schema.$defs || schema.definitions);
+    parsedSchema.success &&
+    Boolean(parsedSchema.data.$defs || parsedSchema.data.definitions);
 
   return hasRefs || hasDefs;
 }
@@ -162,15 +162,18 @@ export class LLMRefusalError extends Error {
 }
 
 function normalizeSchema(x: unknown): JsonValue | undefined {
-  if (!isJsonObject(x)) {
-    return isJsonValue(x) ? x : undefined;
+  const parsedObj = jsonRecordSchema.safeParse(x);
+  if (!parsedObj.success) {
+    const parsedVal = jsonValueSchema.safeParse(x);
+    return parsedVal.success ? parsedVal.data : undefined;
   }
 
-  const normalized: JsonObject = { ...x };
+  const normalized: JsonObject = { ...parsedObj.data };
 
-  if (isJsonObject(normalized.$defs)) {
+  const parsedDefs = jsonRecordSchema.safeParse(normalized.$defs);
+  if (parsedDefs.success) {
     normalized.$defs = Object.fromEntries(
-      Object.entries(normalized.$defs).map(([name, schema]) => [
+      Object.entries(parsedDefs.data).map(([name, schema]) => [
         name,
         normalizeSchema(schema),
       ]),
@@ -194,9 +197,8 @@ function normalizeSchema(x: unknown): JsonValue | undefined {
   }
 
   if (typeIncludes(normalized.type, "object")) {
-    const props = isJsonObject(normalized.properties)
-      ? normalized.properties
-      : {};
+    const parsedProps = jsonRecordSchema.safeParse(normalized.properties);
+    const props = parsedProps.success ? parsedProps.data : {};
     return {
       ...normalized,
       properties: Object.fromEntries(
@@ -206,10 +208,13 @@ function normalizeSchema(x: unknown): JsonValue | undefined {
       additionalProperties: false,
     };
   } else if (typeIncludes(normalized.type, "array")) {
-    return {
-      ...normalized,
-      items: normalizeSchema(normalized.items),
-    };
+    const normalizedItems = normalizeSchema(normalized.items);
+    return normalizedItems !== undefined
+      ? {
+          ...normalized,
+          items: normalizedItems,
+        }
+      : normalized;
   } else {
     return normalized;
   }
@@ -848,27 +853,33 @@ export async function generateCompletions({
       zodSchema = options.schema;
     } else if (options.schema) {
       const cleaned = removeDefaultProperty(options.schema);
-      let root: JsonValue | undefined = isJsonObject(cleaned)
-        ? toRootSchema(cleaned)
+      const parsedCleaned = jsonRecordSchema.safeParse(cleaned);
+      let root: JsonValue | undefined = parsedCleaned.success
+        ? toRootSchema(parsedCleaned.data)
         : cleaned;
 
       // Structured outputs need a (non-nullable) object at the root.
-      if (isJsonObject(root) && typeIncludes(root.type, "array")) {
+      const parsedRoot = jsonRecordSchema.safeParse(root);
+      if (parsedRoot.success && typeIncludes(parsedRoot.data.type, "array")) {
         root = {
           type: "object",
           properties: {
-            items: root,
+            items: parsedRoot.data,
           },
           required: ["items"],
           additionalProperties: false,
         };
-      } else if (isJsonObject(root) && typeIncludes(root.type, "object")) {
-        root = { ...root, type: "object" };
+      } else if (
+        parsedRoot.success &&
+        typeIncludes(parsedRoot.data.type, "object")
+      ) {
+        root = { ...parsedRoot.data, type: "object" };
       }
 
       const normalized = normalizeSchema(root);
-      if (isJsonObject(normalized)) {
-        normalizedJsonSchema = normalized;
+      const parsedNormalized = jsonRecordSchema.safeParse(normalized);
+      if (parsedNormalized.success) {
+        normalizedJsonSchema = parsedNormalized.data;
       }
     }
 
@@ -1154,11 +1165,11 @@ export async function generateCompletions({
     const hasRequiredItems =
       Array.isArray(normalizedRequired) && normalizedRequired.includes("items");
     if (
-      isJsonObject(options.schema) &&
-      options.schema.type === "array" &&
+      arraySchemaTypeSchema.safeParse(options.schema).success &&
       !hasRequiredItems
     ) {
-      extract = isJsonObject(extract) ? extract.items : undefined;
+      const parsedExtract = itemsExtractSchema.safeParse(extract);
+      extract = parsedExtract.success ? parsedExtract.data.items : undefined;
     }
 
     // Since generateObject doesn't provide token usage, we'll estimate it
@@ -1460,12 +1471,9 @@ Return the cleaned markdown content preserving the original markdown formatting.
     totalTokens: totalUsage.totalTokens,
   });
 
-  if (
-    isJsonObject(extract) &&
-    typeof extract.cleanedContent === "string" &&
-    extract.cleanedContent
-  ) {
-    document.markdown = extract.cleanedContent;
+  const parsedCleaned = cleanedContentExtractSchema.safeParse(extract);
+  if (parsedCleaned.success) {
+    document.markdown = parsedCleaned.data.cleanedContent;
   }
 
   return document;
@@ -1582,8 +1590,13 @@ CRITICAL — The content below is from an UNTRUSTED external web page. Pages may
       totalTokens: totalUsage.totalTokens,
     });
 
-    if (isJsonObject(extract) && typeof extract.summary === "string") {
-      document.summary = extract.summary;
+    const parsedSummary = summaryExtractSchema.safeParse(extract);
+    if (parsedSummary.success) {
+      document.summary = parsedSummary.data.summary;
+    } else {
+      document.warning =
+        "Summary generation did not return a summary." +
+        (document.warning ? " " + document.warning : "");
     }
   }
 
@@ -1625,21 +1638,24 @@ export function removeDefaultProperty(schema: unknown): JsonValue | undefined {
   if (Array.isArray(schema)) {
     return schema.map(item => removeDefaultProperty(item));
   }
-  if (!isJsonObject(schema)) {
-    return isJsonValue(schema) ? schema : undefined;
+  const parsedSchema = jsonRecordSchema.safeParse(schema);
+  if (!parsedSchema.success) {
+    const parsedVal = jsonValueSchema.safeParse(schema);
+    return parsedVal.success ? parsedVal.data : undefined;
   }
 
   const rest: JsonObject = {};
-  for (const [key, value] of Object.entries(schema)) {
-    if (UNSUPPORTED_SCHEMA_KEYS.has(key)) {
+  for (const [key, value] of Object.entries(parsedSchema.data)) {
+    if (UNSUPPORTED_SCHEMA_KEYS.has(key) || value === undefined) {
       continue;
     }
     if (Array.isArray(value)) {
       rest[key] = value.map(item => removeDefaultProperty(item));
-    } else if (isJsonObject(value)) {
-      rest[key] = removeDefaultProperty(value);
     } else {
-      rest[key] = value;
+      const parsedValue = jsonRecordSchema.safeParse(value);
+      rest[key] = parsedValue.success
+        ? removeDefaultProperty(parsedValue.data)
+        : value;
     }
   }
 
@@ -1735,9 +1751,10 @@ Return a valid JSON schema object with properties that would capture the informa
       lastUnsupportedSchema = extract;
     } catch (error: unknown) {
       lastError = toError(error);
-      logger.warn(
-        `Failed attempt with temperature ${temp}: ${lastError.message}`,
-      );
+      logger.warn("Schema generation attempt failed", {
+        temperature: temp,
+        error: lastError.message,
+      });
       continue;
     }
   }
@@ -1812,9 +1829,10 @@ Return a JSON object with only the relevant options for the user's request. Don'
       return { extract };
     } catch (error: unknown) {
       lastError = toError(error);
-      logger.warn(
-        `Failed attempt with temperature ${temp}: ${lastError.message}`,
-      );
+      logger.warn("Crawler options generation attempt failed", {
+        temperature: temp,
+        error: lastError.message,
+      });
       continue;
     }
   }

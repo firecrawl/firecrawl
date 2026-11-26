@@ -21,8 +21,10 @@ import { getJobs } from "./crawl-status";
 import { getConcurrencyLimitedJobs } from "../../lib/concurrency-limit";
 import type { NuQJobStatus } from "../../services/worker/nuq-router";
 import { scrapeQueue } from "../../services/worker/nuq-router";
+import { z } from "zod";
 import { service } from "../../service";
-import type { Caller } from "../../service";
+
+const callerOrgSchema = z.object({ orgId: z.string().nullable() });
 
 type ErrorMessage = {
   type: "error";
@@ -79,6 +81,19 @@ async function crawlStatusWS(
   let doneJobIDs: Array<string> = [];
   let finished = false;
 
+  const scheduleLoop = () => {
+    setTimeout(() => {
+      loop().catch((error: unknown) => {
+        finished = true;
+        logger.error("Crawl status WS polling failed", {
+          error,
+          jobId: req.params.jobId,
+        });
+        close(ws, 1011, { type: "error", error: "Polling failed" });
+      });
+    }, 1000);
+  };
+
   const loop = async () => {
     if (finished) {
       return;
@@ -116,14 +131,10 @@ async function crawlStatusWS(
     }
 
     doneJobIDs.push(...newlyDoneJobIDs);
-    setTimeout(() => {
-      void loop();
-    }, 1000);
+    scheduleLoop();
   };
 
-  setTimeout(() => {
-    void loop();
-  }, 1000);
+  scheduleLoop();
 
   const [_doneJobIDs, initialJobIDs, throttledJobsSet] = await Promise.all([
     getDoneJobsOrdered(req.params.jobId),
@@ -226,9 +237,12 @@ export async function crawlStatusWSController(
       });
     }
 
-    const caller = auth.caller as Caller & { orgId?: string | null };
+    const orgParsed = callerOrgSchema.safeParse(auth.caller);
     req.caller = auth.caller;
-    req.auth = { team_id: caller.teamId, org_id: caller.orgId ?? null };
+    req.auth = {
+      team_id: auth.caller.teamId,
+      org_id: orgParsed.success ? orgParsed.data.orgId : null,
+    };
 
     await crawlStatusWS(ws, req);
   } catch (error) {

@@ -25,8 +25,12 @@ import {
   MAX_PATH_PATTERNS,
   MAX_TOTAL_PATH_PATTERNS,
 } from "../../../lib/crawl-regex";
-import { isJsonObject } from "../../../lib/json-types";
 import { describe, it, expect } from "vitest";
+import { z } from "zod";
+
+const validationDetailsBodySchema = z.object({
+  details: z.array(z.object({ message: z.string().optional() })),
+});
 
 let identity: Identity;
 
@@ -262,14 +266,9 @@ describe("Crawl tests", () => {
       expect(res.statusCode).toBe(400);
       expect(res.body.success).toBe(false);
       // Schema-level (non-custom) issues are reported in details, not error.
-      const resBody: unknown = res.body;
-      const details =
-        isJsonObject(resBody) && Array.isArray(resBody.details)
-          ? resBody.details
-          : [];
-      expect(
-        details.map(issue => (isJsonObject(issue) ? issue.message : undefined)),
-      ).toContainEqual(
+      const parsedBody = validationDetailsBodySchema.safeParse(res.body);
+      const details = parsedBody.success ? parsedBody.data.details : [];
+      expect(details.map(issue => issue.message)).toContainEqual(
         expect.stringMatching(
           new RegExp(`at most ${MAX_PATH_PATTERNS} patterns`),
         ),

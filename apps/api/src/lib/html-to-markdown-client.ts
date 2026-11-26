@@ -57,6 +57,7 @@ export async function convertHTMLToMarkdownWithHttpService(
   const url = config.HTML_TO_MARKDOWN_SERVICE_URL;
   const startTime = Date.now();
 
+  let failureMessage: string;
   try {
     const request: ConvertRequest = { html };
 
@@ -64,8 +65,8 @@ export async function convertHTMLToMarkdownWithHttpService(
       "Content-Type": "application/json",
     };
 
-    // Add request ID header if available, but never for ZDR — it would
-    // let the downstream service correlate logs back to a customer scrape.
+    // Add request ID header if available, but never for ZDR, so the
+    // downstream service cannot correlate logs back to a customer scrape.
     if (requestId && !zeroDataRetention) {
       headers["X-Request-ID"] = requestId;
     }
@@ -119,11 +120,9 @@ export async function convertHTMLToMarkdownWithHttpService(
       });
 
       // Include details in error message if available
-      const fullErrorMessage = errorDetails
+      failureMessage = errorDetails
         ? `HTML to Markdown conversion failed: ${errorMessage} - ${errorDetails}`
         : `HTML to Markdown conversion failed: ${errorMessage}`;
-
-      throw new Error(fullErrorMessage, { cause: error });
     } else {
       contextLogger.error(
         "Unexpected error during HTML to Markdown conversion",
@@ -134,4 +133,6 @@ export async function convertHTMLToMarkdownWithHttpService(
       throw error;
     }
   }
+
+  throw new Error(failureMessage);
 }

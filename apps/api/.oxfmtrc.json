@@ -17,7 +17,6 @@
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
     "src/__tests__/snips/mocks/**",
-    "**/*.md",
     "**/*.toml"
   ]
 }

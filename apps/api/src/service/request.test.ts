@@ -11,7 +11,7 @@ import {
   scrapeRequestSchema,
   searchRequestSchema,
 } from "../controllers/v2/types";
-import { isJsonObject } from "../lib/json-types";
+import { jsonRecordSchema } from "../lib/json-types";
 import type { JsonObject } from "../lib/json-types";
 import {
   buildRequestSchemaRegistry,
@@ -65,11 +65,12 @@ const testRule2: ScrapeOptionsRule = () => ({ set: { waitFor: 1000 } });
 const testRule3: ScrapeOptionsRule = () => undefined;
 
 function expectObject(value: unknown): JsonObject {
-  expect(isJsonObject(value)).toBe(true);
-  if (!isJsonObject(value)) {
+  const parsed = jsonRecordSchema.safeParse(value);
+  expect(parsed.success).toBe(true);
+  if (!parsed.success) {
     throw new Error("Expected parsed value to be an object");
   }
-  return value;
+  return parsed.data;
 }
 
 describe("request-schemas", () => {

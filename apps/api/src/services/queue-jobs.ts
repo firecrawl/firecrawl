@@ -36,8 +36,8 @@ import {
   scrapeQueueFdb,
   withFdbTimeout,
 } from "./worker/nuq-fdb";
+import { z } from "zod";
 import { serializeTraceContext } from "../lib/otel-tracer";
-import { isJsonObject } from "../lib/json-types";
 import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
 
@@ -48,14 +48,13 @@ interface ConcurrencyLimitedPayload {
   exceededBacklog?: boolean;
 }
 
+const crawlerDelaySchema = z.object({
+  delay: z.number(),
+});
+
 function getCrawlerDelay(crawlerOptions: unknown): number | undefined {
-  if (
-    isJsonObject(crawlerOptions) &&
-    typeof crawlerOptions.delay === "number"
-  ) {
-    return crawlerOptions.delay;
-  }
-  return undefined;
+  const parsed = crawlerDelaySchema.safeParse(crawlerOptions);
+  return parsed.success ? parsed.data.delay : undefined;
 }
 
 // Queue-wait deadline for a backlogged job (how long its owner still cares about the result)

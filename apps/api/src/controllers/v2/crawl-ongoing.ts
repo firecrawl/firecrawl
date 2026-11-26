@@ -1,72 +1,42 @@
 import type { Response } from "express";
+import { z } from "zod";
 import type { OngoingCrawlsResponse, RequestWithAuth } from "./types";
 import { toV2CrawlerOptions } from "./types";
 import { getCrawl } from "../../lib/crawl-redis";
 import { configDotenv } from "dotenv";
 import { crawlGroup } from "../../services/worker/nuq-router";
 import { requestContext } from "../../lib/request-context";
-import { isJsonObject } from "../../lib/json-types";
 configDotenv();
 
 type StoredCrawlerOptionsInput = Parameters<typeof toV2CrawlerOptions>[0];
 
-function isStringArray(value: unknown): value is Array<string> {
-  return Array.isArray(value) && value.every(item => typeof item === "string");
+function softOptional<T extends z.ZodType>(schema: T) {
+  return schema.optional().catch(undefined);
 }
+
+const storedCrawlerOptionsSchema = z.object({
+  includes: softOptional(z.array(z.string())),
+  excludes: softOptional(z.array(z.string())),
+  limit: softOptional(z.number()),
+  allowBackwardCrawling: softOptional(z.boolean()),
+  allowExternalContentLinks: softOptional(z.boolean()),
+  allowSubdomains: softOptional(z.boolean()),
+  ignoreRobotsTxt: softOptional(z.boolean()),
+  robotsUserAgent: softOptional(z.string()),
+  sitemapOnly: softOptional(z.boolean()),
+  ignoreSitemap: softOptional(z.boolean()),
+  deduplicateSimilarURLs: softOptional(z.boolean()),
+  ignoreQueryParameters: softOptional(z.boolean()),
+  regexOnFullURL: softOptional(z.boolean()),
+  maxDiscoveryDepth: softOptional(z.number()),
+  delay: softOptional(z.number()),
+});
 
 function toStoredCrawlerOptionsInput(
   value: unknown,
 ): StoredCrawlerOptionsInput | null {
-  if (!isJsonObject(value)) {
-    return null;
-  }
-  const input: StoredCrawlerOptionsInput = {};
-  if (isStringArray(value.includes)) {
-    input.includes = value.includes;
-  }
-  if (isStringArray(value.excludes)) {
-    input.excludes = value.excludes;
-  }
-  if (typeof value.limit === "number") {
-    input.limit = value.limit;
-  }
-  if (typeof value.allowBackwardCrawling === "boolean") {
-    input.allowBackwardCrawling = value.allowBackwardCrawling;
-  }
-  if (typeof value.allowExternalContentLinks === "boolean") {
-    input.allowExternalContentLinks = value.allowExternalContentLinks;
-  }
-  if (typeof value.allowSubdomains === "boolean") {
-    input.allowSubdomains = value.allowSubdomains;
-  }
-  if (typeof value.ignoreRobotsTxt === "boolean") {
-    input.ignoreRobotsTxt = value.ignoreRobotsTxt;
-  }
-  if (typeof value.robotsUserAgent === "string") {
-    input.robotsUserAgent = value.robotsUserAgent;
-  }
-  if (typeof value.sitemapOnly === "boolean") {
-    input.sitemapOnly = value.sitemapOnly;
-  }
-  if (typeof value.ignoreSitemap === "boolean") {
-    input.ignoreSitemap = value.ignoreSitemap;
-  }
-  if (typeof value.deduplicateSimilarURLs === "boolean") {
-    input.deduplicateSimilarURLs = value.deduplicateSimilarURLs;
-  }
-  if (typeof value.ignoreQueryParameters === "boolean") {
-    input.ignoreQueryParameters = value.ignoreQueryParameters;
-  }
-  if (typeof value.regexOnFullURL === "boolean") {
-    input.regexOnFullURL = value.regexOnFullURL;
-  }
-  if (typeof value.maxDiscoveryDepth === "number") {
-    input.maxDiscoveryDepth = value.maxDiscoveryDepth;
-  }
-  if (typeof value.delay === "number") {
-    input.delay = value.delay;
-  }
-  return input;
+  const parsed = storedCrawlerOptionsSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
 }
 
 export async function ongoingCrawlsController(

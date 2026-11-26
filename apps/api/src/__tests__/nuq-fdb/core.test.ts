@@ -687,7 +687,7 @@ describeIf("NuQ FDB core", () => {
       [...page1, ...page2].map(job => ({
         id: job.id,
         failedReason: job.failedReason,
-        url: job.data.url,
+        url: job.data?.url,
       })),
     ).toEqual(expectedFailed);
     expect(await queue.getGroupJobs(gid, "completed")).toEqual([]);

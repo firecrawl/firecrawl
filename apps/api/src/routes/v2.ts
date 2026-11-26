@@ -1,6 +1,6 @@
 import express from "express";
 import multer from "multer";
-import { ZodError } from "zod";
+import { ZodError, z } from "zod";
 import { RateLimiterMode } from "../types";
 import expressWs from "express-ws";
 import { searchController } from "../controllers/v2/search";
@@ -39,8 +39,9 @@ import {
 } from "./shared";
 import { queueStatusController } from "../controllers/v2/queue-status";
 import type { RequestWithAuth } from "../controllers/v2/types";
-import { isJsonObject } from "../lib/json-types";
 import { openRequest, resolveRequestContext, service } from "../service";
+
+const rawBodyRecordSchema = z.record(z.string(), z.unknown());
 
 // Every v2 route opts in to hosted MCP rate-limit minimums; /v1 routes do not.
 const authMiddleware: typeof sharedAuthMiddleware = (mode, options = {}) =>
@@ -100,7 +101,8 @@ const parsePayloadMiddleware = (
     });
   }
 
-  if (isJsonObject(req.body) && "uploadRef" in req.body) {
+  const parsedUploadRefBody = rawBodyRecordSchema.safeParse(req.body);
+  if (parsedUploadRefBody.success && "uploadRef" in parsedUploadRefBody.data) {
     parseUploadRefPayloadMiddleware(req, res, next).catch((error: unknown) =>
       next(error),
     );
@@ -127,12 +129,13 @@ v2Router.post(
   openRequest("search", {
     authorizeState: { mcpCredits: true },
     parse: rawBody => {
-      if (isJsonObject(rawBody)) {
+      const parsed = rawBodyRecordSchema.safeParse(rawBody);
+      if (parsed.success) {
         const {
           objective: _objective,
           clientModel: _clientModel,
           ...rest
-        } = rawBody;
+        } = parsed.data;
         return service.schemas.search.parse(rest);
       }
       return service.schemas.search.parse(rawBody);

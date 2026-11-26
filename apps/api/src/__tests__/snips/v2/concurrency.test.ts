@@ -1,5 +1,5 @@
 import request from "supertest";
-import { isJsonObject } from "../../../lib/json-types";
+import { z } from "zod";
 import {
   describeIf,
   TEST_API_URL,
@@ -11,6 +11,10 @@ import {
   crawlWithConcurrencyTracking,
   idmux,
 } from "./lib";
+
+const queueStatusSchema = z.object({
+  maxConcurrency: z.number(),
+});
 
 const accountConcurrencyLimit = 20;
 
@@ -29,11 +33,11 @@ describeIf(TEST_PRODUCTION)("Concurrency queue and limit", () => {
         .get("/v2/team/queue-status")
         .set("Authorization", `Bearer ${identity.apiKey}`);
       expect(res.statusCode).toBe(200);
-      const body: unknown = res.body;
-      if (!isJsonObject(body) || typeof body.maxConcurrency !== "number") {
+      const parsed = queueStatusSchema.safeParse(res.body);
+      if (!parsed.success) {
         throw new Error("Unexpected queue-status response shape");
       }
-      return body.maxConcurrency;
+      return parsed.data.maxConcurrency;
     };
 
     expect(await maxConcurrency()).toBe(accountConcurrencyLimit);

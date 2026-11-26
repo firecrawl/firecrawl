@@ -13,17 +13,9 @@ import { getMapResults } from "../../lib/map-utils";
 import { v7 as uuidv7 } from "uuid";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { installedService } from "../../service/service";
-import { isJsonObject } from "../../lib/json-types";
+import { readOptionalBooleanField } from "./agent-interop";
 
 configDotenv();
-
-function readBooleanField(source: unknown, key: string): boolean | undefined {
-  if (!isJsonObject(source)) {
-    return undefined;
-  }
-  const value = source[key];
-  return typeof value === "boolean" ? value : undefined;
-}
 
 export async function mapController(
   req: RequestWithAuth<Record<string, string>, MapResponse, MapRequest>,
@@ -48,8 +40,8 @@ export async function mapController(
   if (!req.ctx) {
     req.body = getV2RequestSchemas().map.parse(req.body);
   }
-  const useIndex = readBooleanField(req.body, "useIndex");
-  const ignoreCache = readBooleanField(req.body, "ignoreCache");
+  const useIndex = readOptionalBooleanField(req.body, "useIndex");
+  const ignoreCache = readOptionalBooleanField(req.body, "ignoreCache");
 
   const middlewareTime = controllerStartTime - middlewareStartTime;
 

@@ -120,7 +120,7 @@ export async function fetchRobotsTxt(
   }
 
   if (response.success && response.document.metadata.statusCode === 404) {
-    logger.warn("Robots.txt not found", { robotsTxtUrl }); // should probably index 404 robots.txt
+    // A missing robots.txt is expected; return empty content without logging.
     return { content: "", url: robotsTxtUrl };
   }
 

@@ -1,12 +1,12 @@
 import { generateText } from "ai";
 import { encoding_for_model } from "@dqbd/tiktoken";
+import { z } from "zod";
 import type { Document, FormatObject } from "../../../controllers/v2/types";
 import type { Meta } from "..";
 import { config } from "../../../config";
 import { getModel } from "../../../lib/generic-ai";
 import { service } from "../../../service";
-import { calculateCost } from "./llmExtract";
-import { modelPrices } from "../../../lib/model-prices";
+import { calculateCost, modelPriceByName } from "./llmExtract";
 import {
   parseMarkdownToSentences,
   assembleAnswer,
@@ -18,14 +18,7 @@ function escapePromptTags(text: string): string {
   return text.replaceAll(PROMPT_TAGS, "$1\u200B$2$3");
 }
 
-type ModelPriceEntry = {
-  litellm_provider: string;
-  max_input_tokens?: number;
-};
-
-const modelPriceByName: ReadonlyMap<string, ModelPriceEntry> = new Map(
-  Object.entries(modelPrices),
-);
+const directQuoteIndicesSchema = z.array(z.number().int());
 
 // Prefer Vertex when registered and enabled; fall back to the google provider
 // when registered, or to OpenAI otherwise.
@@ -262,12 +255,7 @@ ${escapePromptTags(indexedLines)}
 
     const cleaned = result.text.replaceAll(/^```[\w]*\n?|```$/g, "").trim();
     const parsed: unknown = JSON.parse(cleaned);
-    if (!Array.isArray(parsed)) {
-      throw new Error("Expected a JSON array of line indices");
-    }
-    const indices = parsed.filter(
-      (item): item is number => typeof item === "number",
-    );
+    const indices = directQuoteIndicesSchema.parse(parsed);
 
     if (fitted.trimmed) {
       addWarning(document, tooLongWarning(purpose));

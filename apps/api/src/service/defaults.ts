@@ -26,7 +26,6 @@ import type {
   UploadsModule,
   WebhooksModule,
 } from "./modules";
-import { isJsonObject } from "../lib/json-types";
 import type { Redis } from "ioredis";
 import type { BaseCaller, BaseRequestContext } from "./request-context";
 
@@ -192,10 +191,6 @@ export function memoryUploads(): UploadsModule {
   return { driver: () => driver };
 }
 
-function isStoredDocument(value: unknown): value is Document {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /**
  * Default open-source job store backed by the job queue and Redis crawl state.
  * Registration, terminal recording, and removal are no-ops because finished
@@ -211,26 +206,29 @@ export function queueJobStore(): JobStoreModule {
 
     async owner(id: string, kind: JobKind): Promise<JobOwner | null> {
       if (kind === "scrape") {
-        const [{ scrapeQueue }, { normalizeOwnerId }] = await Promise.all([
-          import("../services/worker/nuq-router.js"),
-          import("../lib/owner-id.js"),
-        ]);
+        const [{ scrapeQueue }, { normalizeOwnerId }, { z }] =
+          await Promise.all([
+            import("../services/worker/nuq-router.js"),
+            import("../lib/owner-id.js"),
+            import("zod"),
+          ]);
         const job = await scrapeQueue.getJob(id);
         if (!job) {
           return null;
         }
         const jobData: unknown = job.data;
-        if (
-          jobData !== null &&
-          jobData !== undefined &&
-          (!isJsonObject(jobData) || jobData.mode !== "single_urls")
-        ) {
-          return null;
+        const singleUrlJobDataSchema = z.object({
+          mode: z.literal("single_urls"),
+          team_id: z.string().optional(),
+        });
+        let rawTeamId: string | undefined;
+        if (jobData !== null && jobData !== undefined) {
+          const parsedData = singleUrlJobDataSchema.safeParse(jobData);
+          if (!parsedData.success) {
+            return null;
+          }
+          rawTeamId = parsedData.data.team_id;
         }
-        const rawTeamId =
-          isJsonObject(jobData) && typeof jobData.team_id === "string"
-            ? jobData.team_id
-            : undefined;
         const teamId = rawTeamId ?? job.ownerId;
         if (!teamId) {
           return null;
@@ -258,7 +256,10 @@ export function queueJobStore(): JobStoreModule {
       if (kind !== "scrape") {
         return null;
       }
-      const { scrapeQueue } = await import("../services/worker/nuq-router.js");
+      const [{ scrapeQueue }, { z }] = await Promise.all([
+        import("../services/worker/nuq-router.js"),
+        import("zod"),
+      ]);
       const job = await scrapeQueue.getJob(id);
       if (!job) {
         return null;
@@ -267,7 +268,7 @@ export function queueJobStore(): JobStoreModule {
       if (
         jobData !== null &&
         jobData !== undefined &&
-        (!isJsonObject(jobData) || jobData.mode !== "single_urls")
+        !z.object({ mode: z.literal("single_urls") }).safeParse(jobData).success
       ) {
         return null;
       }
@@ -277,8 +278,15 @@ export function queueJobStore(): JobStoreModule {
         const raw: unknown = job.returnvalue;
         const doc: unknown = Array.isArray(raw) ? raw[0] : raw;
         const stored: StoredJob = { state: "completed" };
-        if (isStoredDocument(doc)) {
-          stored.document = doc;
+        const storedDocumentSchema = z.custom<Document>(
+          value =>
+            typeof value === "object" &&
+            value !== null &&
+            !Array.isArray(value),
+        );
+        const parsedDoc = storedDocumentSchema.safeParse(doc);
+        if (parsedDoc.success) {
+          stored.document = parsedDoc.data;
         }
         if (completedAtMs !== undefined) {
           stored.completedAtMs = completedAtMs;

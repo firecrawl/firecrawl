@@ -1,6 +1,23 @@
-import { isJsonObject } from "../../lib/json-types";
+import { z } from "zod";
+import { jsonRecordSchema } from "../../lib/json-types";
 import type { JsonObject } from "../../lib/json-types";
 import { jobLogJson, jobLogRows } from "./job-log";
+
+const costTrackingCallSchema = z.object({
+  model: z.string(),
+  cost: z.number(),
+  metadata: jsonRecordSchema,
+  tokens: z
+    .object({
+      input: z.number(),
+      output: z.number(),
+    })
+    .optional(),
+});
+
+const costTrackingEnvelopeSchema = z.object({
+  calls: z.array(z.unknown()).optional(),
+});
 
 export type CostTrackingCall = {
   model: string;
@@ -8,28 +25,6 @@ export type CostTrackingCall = {
   metadata: JsonObject;
   tokens?: { input: number; output: number };
 };
-
-function isCostTrackingCall(value: unknown): value is CostTrackingCall {
-  if (!isJsonObject(value)) {
-    return false;
-  }
-  if (typeof value.model !== "string" || typeof value.cost !== "number") {
-    return false;
-  }
-  if (!isJsonObject(value.metadata)) {
-    return false;
-  }
-  if (value.tokens !== undefined) {
-    if (
-      !isJsonObject(value.tokens) ||
-      typeof value.tokens.input !== "number" ||
-      typeof value.tokens.output !== "number"
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
 
 // The scrape row is published when the job finishes and lands in ClickHouse a
 // few seconds later; poll until it carries parseable cost tracking.
@@ -41,10 +36,15 @@ export async function getCostTrackingCalls(
     const [row] = await jobLogRows("scrapes", "id = {id: UUID}", {
       id: scrapeId,
     });
-    const costTracking = jobLogJson(row?.cost_tracking);
-    if (isJsonObject(costTracking)) {
-      if (Array.isArray(costTracking.calls)) {
-        return costTracking.calls.filter(isCostTrackingCall);
+    const parsedTracking = costTrackingEnvelopeSchema.safeParse(
+      jobLogJson(row?.cost_tracking),
+    );
+    if (parsedTracking.success) {
+      if (parsedTracking.data.calls) {
+        return parsedTracking.data.calls.flatMap(call => {
+          const parsedCall = costTrackingCallSchema.safeParse(call);
+          return parsedCall.success ? [parsedCall.data] : [];
+        });
       }
       return [];
     }

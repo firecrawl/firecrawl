@@ -1,4 +1,5 @@
 import { v7 as uuidv7 } from "uuid";
+import { z } from "zod";
 import type {
   TeamFlags,
   MapDocument,
@@ -16,10 +17,13 @@ import {
 import { performCosineSimilarityV2 } from "./map-cosine";
 import type { Logger } from "winston";
 import { requestContext } from "./request-context";
-import type { MapState } from "../service/hooks";
+import type { HookPoints, MapState } from "../service/hooks";
 import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
-import { isJsonObject } from "./json-types";
+
+const errorWithMessageSchema = z.object({
+  message: z.unknown(),
+});
 
 const MAX_SEARCH_RESULTS = 100;
 
@@ -54,31 +58,6 @@ interface MapScopeOptions {
   includeSubdomains?: boolean;
   filterByPath?: boolean;
   allowExternalLinks?: boolean;
-}
-
-interface MapFilterHookMeta {
-  ctx: RequestContext;
-  url: string;
-  limit: number;
-  state?: MapState;
-  logger?: Logger;
-}
-
-interface MapCollectHookMeta {
-  ctx: RequestContext;
-  url: string;
-  limit: number;
-  search?: string;
-  includeSubdomains?: boolean;
-  allowExternalLinks?: boolean;
-  ignoreCache?: boolean;
-  sitemap?: "skip" | "include" | "only";
-  useIndex?: boolean;
-  maxSearchResults?: number;
-  abort?: AbortSignal;
-  documents: Map<string, MapDocument>;
-  state?: MapState;
-  logger?: Logger;
 }
 
 interface MapScrapeOptionsInput {
@@ -160,7 +139,7 @@ export async function applyMapFilterHook(
   if (!hooks?.has("map.filter")) {
     return mapResults;
   }
-  const meta: MapFilterHookMeta = { ctx, url, limit };
+  const meta: HookPoints["map.filter"]["info"] = { ctx, url, limit };
   if (state !== undefined) {
     meta.state = state;
   }
@@ -225,7 +204,12 @@ export async function applyMapCollectHook(
     for (const doc of deduped) {
       documents.set(doc.url, doc);
     }
-    const collectMeta: MapCollectHookMeta = { ctx, url, limit, documents };
+    const collectMeta: HookPoints["map.collect"]["info"] = {
+      ctx,
+      url,
+      limit,
+      documents,
+    };
     if (search !== undefined) {
       collectMeta.search = search;
     }
@@ -576,11 +560,12 @@ export async function buildPromptWithWebsiteStructure({
 
     return { prompt, websiteUrls };
   } catch (error: unknown) {
+    const parsedError = errorWithMessageSchema.safeParse(error);
     const message =
       error instanceof Error
         ? error.message
-        : isJsonObject(error) && error.message !== undefined
-          ? error.message
+        : parsedError.success
+          ? (parsedError.data.message ?? error)
           : error;
     logger.warn("Failed to get website structure for prompt enhancement", {
       error: message,

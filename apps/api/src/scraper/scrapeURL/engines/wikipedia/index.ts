@@ -141,7 +141,15 @@ async function getAccessToken(logger: Meta["logger"]): Promise<string> {
       );
     }
 
-    const data = wikimediaAuthResponseSchema.parse(await response.json());
+    const parsedAuth = wikimediaAuthResponseSchema.safeParse(
+      await response.json(),
+    );
+    if (!parsedAuth.success) {
+      throw new EngineError(
+        `Wikipedia Enterprise authentication returned an unexpected payload: ${parsedAuth.error.message}`,
+      );
+    }
+    const data = parsedAuth.data;
 
     const ttlSeconds = Math.max(data.expires_in - 300, 60);
 
@@ -335,7 +343,15 @@ export async function scrapeURLWithWikipedia(
     );
   }
 
-  const articles = wikimediaArticlesResponseSchema.parse(await response.json());
+  const parsedArticles = wikimediaArticlesResponseSchema.safeParse(
+    await response.json(),
+  );
+  if (!parsedArticles.success) {
+    throw new EngineError(
+      `Wikipedia Enterprise API returned an unexpected articles payload: ${parsedArticles.error.message}`,
+    );
+  }
+  const articles = parsedArticles.data;
 
   if (!articles || articles.length === 0) {
     throw new EngineError(

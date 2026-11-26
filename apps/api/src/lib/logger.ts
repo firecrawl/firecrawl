@@ -1,8 +1,8 @@
 import { createLogger, format, transports } from "winston";
+import { z } from "zod";
 
 import { config } from "../config";
 import { processRole } from "../service/service";
-import { isJsonObject } from "./json-types";
 import { configDotenv } from "dotenv";
 configDotenv();
 
@@ -13,33 +13,23 @@ interface SerializedLogError {
   cause: unknown;
 }
 
+const moduleMetaSchema = z.object({
+  module: z.string(),
+});
+
+const methodMetaSchema = z.object({
+  method: z.string(),
+});
+
+const zeroDataRetentionMetaSchema = z.object({
+  zeroDataRetention: z.literal(true),
+});
+
 function serializeLogError(error: Error): SerializedLogError {
-  const serialized: SerializedLogError = {
-    name: error.name,
-    message: error.message,
-    stack: error.stack,
-    cause: error.cause,
-  };
-  for (const key of Object.keys(error)) {
-    if (
-      key === "name" ||
-      key === "message" ||
-      key === "stack" ||
-      key === "cause"
-    ) {
-      continue;
-    }
-    const descriptor = Object.getOwnPropertyDescriptor(error, key);
-    if (descriptor && descriptor.enumerable) {
-      const prop: unknown = descriptor.value;
-      Object.defineProperty(serialized, key, {
-        value: prop,
-        enumerable: true,
-        writable: true,
-        configurable: true,
-      });
-    }
-  }
+  const { name, message, stack, cause } = error;
+  const serialized: SerializedLogError = { name, message, stack, cause };
+  // Copy own enumerable properties (invoking accessors) without overwriting core Error fields.
+  Object.assign(serialized, error, { name, message, stack, cause });
   return serialized;
 }
 
@@ -51,15 +41,10 @@ function logErrorReplacer(_key: string, value: unknown) {
 }
 
 const logFormat = format.printf(info => {
-  const metadata: unknown = info.metadata;
-  const moduleName =
-    isJsonObject(metadata) && typeof metadata.module === "string"
-      ? metadata.module
-      : "";
-  const methodName =
-    isJsonObject(metadata) && typeof metadata.method === "string"
-      ? metadata.method
-      : "";
+  const parsedModule = moduleMetaSchema.safeParse(info.metadata);
+  const parsedMethod = methodMetaSchema.safeParse(info.metadata);
+  const moduleName = parsedModule.success ? parsedModule.data.module : "";
+  const methodName = parsedMethod.success ? parsedMethod.data.method : "";
   const details =
     info.level.includes("error") || info.level.includes("warn")
       ? JSON.stringify(info.metadata, logErrorReplacer)
@@ -69,9 +54,8 @@ const logFormat = format.printf(info => {
 
 // Filter function to prevent logging when zeroDataRetention is true
 const zeroDataRetentionFilter = format(info => {
-  const metadata: unknown = info.metadata;
   if (
-    (isJsonObject(metadata) && metadata.zeroDataRetention === true) ||
+    zeroDataRetentionMetaSchema.safeParse(info.metadata).success ||
     info.zeroDataRetention === true
   ) {
     return false; // Don't log this message
@@ -95,7 +79,10 @@ export const logger = createLogger({
               "firecrawl-" +
               (startedAs.includes("worker") ? "worker" : "app") +
               ".log",
-            format: format.combine(zeroDataRetentionFilter, format.json()),
+            format: format.combine(
+              zeroDataRetentionFilter,
+              format.json({ replacer: logErrorReplacer }),
+            ),
             maxsize: 10 * 1024 * 1024,
             maxFiles: 3,
             tailable: true,

@@ -1,14 +1,21 @@
-import { isJsonObject } from "./json-types";
+import { z } from "zod";
 
 /**
  * Search Query Builder
  * Builds search queries with category filters for the search API
  */
 
+type KnownCategoryType = "research" | "pdf" | "developer" | "gov";
+
 interface CategoryInput {
-  type: "research" | "pdf" | "developer" | "gov";
+  type: string;
   sites?: Array<string>;
 }
+
+const categoryEntrySchema = z.union([
+  z.string(),
+  z.object({ type: z.string() }),
+]);
 
 export type CategoryOption = string | CategoryInput;
 
@@ -42,15 +49,19 @@ const DEFAULT_RESEARCH_SITES = [
 
 export function hasCategory(
   categories: unknown,
-  type: CategoryInput["type"] | "github",
+  type: KnownCategoryType | "github",
 ): boolean {
   return (
     Array.isArray(categories) &&
-    categories.some(
-      (c: unknown) =>
-        (typeof c === "string" ? c : isJsonObject(c) ? c.type : undefined) ===
-        type,
-    )
+    categories.some((c: unknown) => {
+      const parsed = categoryEntrySchema.safeParse(c);
+      if (!parsed.success) {
+        return false;
+      }
+      const entryType =
+        typeof parsed.data === "string" ? parsed.data : parsed.data.type;
+      return entryType === type;
+    })
   );
 }
 

@@ -7,7 +7,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { v7 as uuidv7 } from "uuid";
 import type { Document } from "../controllers/v2/types";
-import { isJsonObject } from "../lib/json-types";
+import { z } from "zod";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
 import type {
   Refusal,
@@ -163,7 +163,7 @@ const defaultRequestParsers: DefaultRequestParsers = {
   parse: rawBody => service.schemas.parse.parse(rawBody),
   crawl: rawBody => service.schemas.crawl.parse(rawBody),
   batchScrape: rawBody =>
-    isJsonObject(rawBody) && rawBody.ignoreInvalidURLs === true
+    z.object({ ignoreInvalidURLs: z.literal(true) }).safeParse(rawBody).success
       ? service.schemas.batchScrapeNoURLValidation.parse(rawBody)
       : service.schemas.batchScrape.parse(rawBody),
   map: rawBody => service.schemas.map.parse(rawBody),
@@ -335,8 +335,8 @@ export function openRequest<K extends RequestKind>(
         req.account = {
           remainingCredits: authz.maxUnits ?? Infinity,
         };
-        if (authz.clampedLimit !== undefined && isJsonObject(admittedBody)) {
-          admittedBody.limit = authz.clampedLimit;
+        if (authz.clampedLimit !== undefined) {
+          Object.assign(admittedBody, { limit: authz.clampedLimit });
         }
       }
 
@@ -432,17 +432,17 @@ export function resolveRequestContext(route: string): RequestHandler {
   };
 }
 
-/**
- * Runs `request.responding` transform hooks on a response payload before
- * sending it. Returns `payload` synchronously with zero overhead when no
- * handler is registered.
- */
 interface FinalizeRequest<K extends RequestKind> {
   ctx?: Request["ctx"];
   requestId?: string;
   body: RequestBodies[K];
 }
 
+/**
+ * Runs `request.responding` transform hooks on a response payload before
+ * sending it. Returns `payload` synchronously with zero overhead when no
+ * handler is registered.
+ */
 export function finalizeResponse<
   K extends RequestKind,
   T extends ResponsePayload,

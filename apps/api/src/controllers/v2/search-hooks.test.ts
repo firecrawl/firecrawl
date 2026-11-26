@@ -57,7 +57,8 @@ vi.mock("../../search/scrape", () => ({
   calculateScrapeCredits: vi.fn(() => 0),
 }));
 
-import { isJsonObject } from "../../lib/json-types";
+import { z } from "zod";
+import { jsonRecordSchema } from "../../lib/json-types";
 import type { JsonObject } from "../../lib/json-types";
 import { executeSearch } from "../../search/execute";
 import type {
@@ -105,18 +106,14 @@ function installHooks(
   return report;
 }
 
+const jsonRecordListSchema = z.array(jsonRecordSchema);
+
 function expectJsonObject(value: unknown): JsonObject {
-  if (!isJsonObject(value)) {
-    throw new Error("Expected JSON object");
-  }
-  return value;
+  return jsonRecordSchema.parse(value);
 }
 
 function expectObjectList(value: unknown): Array<JsonObject> {
-  if (!Array.isArray(value)) {
-    throw new Error("Expected JSON object array");
-  }
-  return value.map(expectJsonObject);
+  return jsonRecordListSchema.parse(value);
 }
 
 async function postSearch(
