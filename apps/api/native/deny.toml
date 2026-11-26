@@ -44,12 +44,23 @@ wildcards = "deny"
 allow-wildcard-paths = true
 highlight = "all"
 skip = [
+  { crate = "aes@0.8", reason = "tcp-stream 0.34 (via lapin 4) pulls p12-keystore 0.2 which pins aes 0.8 while lopdf 0.45 pulls aes 0.9" },
+  { crate = "base64@0.22", reason = "nodesig 2.0, p12-keystore 0.2, and postgres-protocol 0.6 pin base64 0.22 while reqwest 0.13 and hyper-util 0.1 pull base64 0.23" },
   { crate = "block-buffer@0.10", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
+  { crate = "block-padding@0.3", reason = "p12-keystore 0.2 (via lapin 4) pins cipher 0.4 / block-padding 0.3 while lopdf 0.45 pulls cipher 0.5 / block-padding 0.4" },
+  { crate = "cbc@0.1", reason = "p12-keystore 0.2 (via lapin 4) pins cbc 0.1 while lopdf 0.45 pulls cbc 0.2" },
+  { crate = "cipher@0.4", reason = "p12-keystore 0.2 (via lapin 4) pins cipher 0.4 while lopdf 0.45 pulls cipher 0.5" },
+  { crate = "const-oid@0.9", reason = "p12-keystore 0.2 and tokio-postgres-rustls 0.14 (via x509-cert 0.2) pin const-oid 0.9 while digest 0.11 pulls const-oid 0.10" },
   { crate = "cpufeatures@0.2", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
   { crate = "crypto-common@0.1", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
   { crate = "digest@0.10", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
+  { crate = "getrandom@0.2", reason = "ring 0.17 (via rustls 0.23) pins getrandom 0.2 while lopdf 0.45 and rand 0.10 pull getrandom 0.4" },
   { crate = "getrandom@0.3", reason = "nodesig 2.0 pins rand 0.9 while lopdf 0.45 and zip 9 pull getrandom 0.4" },
+  { crate = "hmac@0.12", reason = "p12-keystore 0.2 (via lapin 4) pins hmac 0.12 while postgres-protocol 0.6 pulls hmac 0.13" },
+  { crate = "inout@0.1", reason = "p12-keystore 0.2 (via lapin 4) pins cipher 0.4 / inout 0.1 while lopdf 0.45 pulls cipher 0.5 / inout 0.2" },
   { crate = "nom@7", reason = "texting_robots 0.2 pins nom 7 while lopdf 0.45 pulls nom 8" },
+  { crate = "phf@0.11", reason = "kuchikiki 0.8 and selectors 0.32 pin phf 0.11 while tokio-postgres 0.7 pulls phf 0.13" },
+  { crate = "phf_shared@0.11", reason = "kuchikiki 0.8 and selectors 0.32 pin phf_shared 0.11 while tokio-postgres 0.7 pulls phf_shared 0.13" },
   { crate = "rand@0.8", reason = "kuchikiki build-dep phf_generator 0.11 pins rand 0.8" },
   { crate = "rand@0.9", reason = "nodesig 2.0 pins rand 0.9 while lopdf 0.45 pulls rand 0.10" },
   { crate = "rand_core@0.6", reason = "kuchikiki build-dep phf_generator 0.11 pins rand 0.8" },
@@ -57,6 +68,7 @@ skip = [
   { crate = "regex-automata@0.1", reason = "texting_robots 0.2 pulls bstr 0.2 which pins regex-automata 0.1" },
   { crate = "sha2@0.10", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
   { crate = "syn@2", reason = "transitive proc macros mix syn 2 and syn 3" },
+  { crate = "synstructure@0.13", reason = "p12-keystore 0.2 (via asn1-rs 0.7) pins synstructure 0.13 while yoke-derive 0.8 pulls synstructure 0.14" },
   { crate = "thiserror@1", reason = "texting_robots 0.2 pins thiserror 1 while pdf-inspector pulls thiserror 2" },
   { crate = "thiserror-impl@1", reason = "texting_robots 0.2 pins thiserror 1 while pdf-inspector pulls thiserror 2" },
 ]

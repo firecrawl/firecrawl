@@ -106,5 +106,5 @@ jobs:
 
       - name: Check dependencies
         run: |
-          cargo deny --locked --all-features check
+          cargo deny --locked --workspace --all-features check
           cargo deny --locked --manifest-path ../../local/Cargo.toml check advisories licenses sources

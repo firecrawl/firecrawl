@@ -11,10 +11,17 @@ version = "0.1.0"
 
 [workspace.dependencies]
 anydoc = "0.2.5"
+bytes = "1"
+deadpool-postgres = { version = "0.14.2", default-features = false, features = ["rt_tokio_1", "runtime"] }
 firecrawl-core = { path = "crates/firecrawl-core" }
 firecrawl-kinded-macro = { path = "crates/firecrawl-kinded-macro" }
 hegeltest = { version = "0.54.2", features = ["serde_json"] }
+http = "1"
+http-body-util = "0.1"
+hyper = { version = "1", default-features = false, features = ["http1", "server"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
 kuchikiki = "0.8.9-speedreader"
+lapin = { version = "4.13.0", default-features = false, features = ["tokio", "rustls--ring", "rustls-platform-verifier"] }
 napi = { version = "3.0.0", features = ["serde-json", "tokio_rt"] }
 napi-build = "2"
 napi-derive = "3.0.0"
@@ -31,6 +38,8 @@ regex = "1.11.2"
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls-no-provider"] }
 roxmltree = "0.20.0"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8"
+rustls-pki-types = { version = "1", features = ["std"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
 serde_path_to_error = "0.1.20"
@@ -38,10 +47,13 @@ strum = { version = "0.28", features = ["derive"] }
 syn = { version = "2", features = ["full"] }
 texting_robots = "0.2.2"
 thiserror = "2"
+tikv-jemallocator = { version = "0.7.0", features = ["background_threads"] }
 # Transitive dep (pdf-inspector -> unicode-normalization -> tinyvec). Pinned because
 # tinyvec 1.13.0 fails to compile (https://github.com/Lokathor/tinyvec/issues/225).
 tinyvec = ">=1.12, <1.13"
 tokio = "1.48.0"
+tokio-postgres = { version = "0.7.18", default-features = false, features = ["runtime"] }
+tokio-postgres-rustls = { version = "0.14.0", default-features = false, features = ["ring"] }
 tracing = "0.1"
 tracing-opentelemetry = { version = "0.34.0", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"] }
