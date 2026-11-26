@@ -17,6 +17,9 @@ import { performAttributes } from "./performAttributes";
 import { performPromptInjectionGuard } from "./promptInjectionGuard";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { scrapeHooks, toScrapeMeta } from "../hooks";
+import { CrawlDenialError } from "../../../lib/error";
+import { shouldCheckRobots } from "../shouldCheckRobots";
+import { hasNoindexDirective } from "../lib/noindex";
 
 type Transformer = (
   meta: Meta,
@@ -37,6 +40,14 @@ async function deriveMetadataFromRawHTML(
     ...(await extractMetadata(meta, document.rawHtml)),
     ...document.metadata,
   };
+
+  // Honor noindex under the same policy that decides robots.txt checks.
+  if (shouldCheckRobots(meta.options as { lockdown?: boolean }, meta.ctx)) {
+    if (hasNoindexDirective(document.metadata)) {
+      throw new CrawlDenialError("URL blocked by noindex meta tag");
+    }
+  }
+
   return document;
 }
 
@@ -444,6 +455,7 @@ type TransformerStep = Transformer | { hook: DocumentHookName };
 
 // TODO: allow some of these to run in parallel
 const transformerStack: TransformerStep[] = [
+  deriveMetadataFromRawHTML, // Must run before link extraction to enforce noindex
   deriveHTMLFromRawHTML,
   deriveMarkdownFromHTML,
   stripNulCharacters,
@@ -452,7 +464,6 @@ const transformerStack: TransformerStep[] = [
   performPromptInjectionGuard,
   deriveLinksFromHTML,
   deriveImagesFromHTML,
-  deriveMetadataFromRawHTML,
   { hook: "scrape.document.derived" },
   performLLMExtract,
   performSummary,
