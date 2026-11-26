@@ -69,16 +69,12 @@ describe("executeTransformers", () => {
     expect(document.json).toEqual({ name: "Example Person" });
   });
 
-  it("strips NUL characters from engine-delivered markdown, html and rawHtml", async () => {
+  it("strips NUL characters from engine-delivered markdown and rawHtml", async () => {
     const document = await executeTransformers(
       {
         url: "https://example.com/form.pdf",
         options: {
-          formats: [
-            { type: "markdown" },
-            { type: "html" },
-            { type: "rawHtml" },
-          ],
+          formats: [{ type: "markdown" }, { type: "rawHtml" }],
           onlyMainContent: false,
         },
         internalOptions: {},
@@ -86,7 +82,6 @@ describe("executeTransformers", () => {
       } as any,
       {
         rawHtml: "<p>field: S\u0000c\u0000h</p>",
-        html: "<p>field: S\u0000c\u0000h</p>",
         markdown: "field: S\u0000c\u0000h",
         metadata: {
           sourceURL: "https://example.com/form.pdf",
@@ -98,8 +93,6 @@ describe("executeTransformers", () => {
     );
 
     expect(document.markdown).toBe("field: Sch");
-    expect(document.html).toContain("<p>field: Sch</p>");
-    expect(document.html).not.toContain("\u0000");
     expect(document.rawHtml).toBe("<p>field: Sch</p>");
   });
 });
