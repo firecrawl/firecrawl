@@ -1,4 +1,5 @@
 pub mod logging;
+pub mod search;
 pub mod utils;
 pub mod wrappers;
 
@@ -7,6 +8,7 @@ pub mod __deps {
   pub use firecrawl_crawler;
   pub use firecrawl_html;
   pub use firecrawl_parsers;
+  pub use firecrawl_search;
 }
 
 pub use logging::{

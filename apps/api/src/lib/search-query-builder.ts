@@ -1,3 +1,10 @@
+import {
+  buildSearchQuery as nativeBuildSearchQuery,
+  getCategoryFromUrl as nativeGetCategoryFromUrl,
+  getDefaultResearchSites as nativeGetDefaultResearchSites,
+  type SearchCategoryInput,
+} from "@mendable/firecrawl-rs";
+
 /**
  * Search Query Builder
  * Builds search queries with category filters for the search API
@@ -20,24 +27,6 @@ interface QueryBuilderResult {
   categoryMap: Map<string, string>;
 }
 
-// Default research sites
-const DEFAULT_RESEARCH_SITES = [
-  "arxiv.org",
-  "scholar.google.com",
-  "pubmed.ncbi.nlm.nih.gov",
-  "researchgate.net",
-  "nature.com",
-  "science.org",
-  "ieee.org",
-  "acm.org",
-  "springer.com",
-  "wiley.com",
-  "sciencedirect.com",
-  "plos.org",
-  "biorxiv.org",
-  "medrxiv.org",
-];
-
 export function hasCategory(
   categories: unknown,
   type: CategoryInput["type"] | "github",
@@ -59,67 +48,32 @@ export function buildSearchQuery(
   categories?: CategoryOption[],
   domainOptions: DomainFilterOptions = {},
 ): QueryBuilderResult {
-  const categoryMap = new Map<string, string>();
-
-  const siteFilters: string[] = [];
-  let hasPdfFilter = false;
-
-  for (const category of categories ?? []) {
-    if (typeof category === "string") {
-      // Simple string format
-      if (category === "research") {
-        // Use default research sites
-        for (const site of DEFAULT_RESEARCH_SITES) {
-          siteFilters.push(`site:${site}`);
-          categoryMap.set(site, "research");
+  const nativeCategories: SearchCategoryInput[] | undefined = categories
+    ? categories.reduce<SearchCategoryInput[]>((acc, category) => {
+        if (typeof category === "string") {
+          acc.push({ categoryType: category });
+        } else if (category && typeof category.type === "string") {
+          acc.push({
+            categoryType: category.type,
+            sites: category.sites,
+          });
         }
-      } else if (category === "pdf") {
-        hasPdfFilter = true;
-        categoryMap.set("__pdf__", "pdf");
-      }
-    } else {
-      // Object format with options
-      if (category.type === "research") {
-        // Use custom sites if provided, otherwise defaults
-        const sites = category.sites || DEFAULT_RESEARCH_SITES;
-        for (const site of sites) {
-          siteFilters.push(`site:${site}`);
-          categoryMap.set(site, "research");
-        }
-      } else if (category.type === "pdf") {
-        hasPdfFilter = true;
-        categoryMap.set("__pdf__", "pdf");
-      }
-    }
-  }
+        return acc;
+      }, [])
+    : undefined;
 
-  // Build the OR filter for sites
-  let categoryFilter = "";
-  if (siteFilters.length > 0) {
-    categoryFilter = " (" + siteFilters.join(" OR ") + ")";
-  }
-
-  // Add filetype:pdf filter if PDF category is requested
-  if (hasPdfFilter) {
-    categoryFilter += " filetype:pdf";
-  }
-
-  const includeDomains = domainOptions.includeDomains ?? [];
-  const excludeDomains = domainOptions.excludeDomains ?? [];
-  // Bare `site:` operators, not a parenthesized group: some backends don't
-  // parse `(site:foo.com)` and drop the filter, leaking off-domain results.
-  const includeFilter =
-    includeDomains.length > 0
-      ? " " + includeDomains.map(domain => `site:${domain}`).join(" OR ")
-      : "";
-  const excludeFilter =
-    excludeDomains.length > 0
-      ? " " + excludeDomains.map(domain => `-site:${domain}`).join(" ")
-      : "";
+  const result = nativeBuildSearchQuery(
+    baseQuery,
+    nativeCategories,
+    domainOptions.includeDomains,
+    domainOptions.excludeDomains,
+  );
 
   return {
-    query: baseQuery + categoryFilter + includeFilter + excludeFilter,
-    categoryMap,
+    query: result.query,
+    categoryMap: new Map(
+      result.categoryEntries.map(({ site, category }) => [site, category]),
+    ),
   };
 }
 
@@ -133,42 +87,16 @@ export function getCategoryFromUrl(
   url: string,
   categoryMap: Map<string, string>,
 ): string | undefined {
-  try {
-    const urlObj = new URL(url);
-    const hostname = urlObj.hostname.toLowerCase();
-    const pathname = urlObj.pathname.toLowerCase();
-
-    // Check if URL points to a PDF file
-    if (pathname.endsWith(".pdf") && categoryMap.has("__pdf__")) {
-      return "pdf";
-    }
-
-    // Direct match for GitHub
-    if (hostname === "github.com" || hostname.endsWith(".github.com")) {
-      return "github";
-    }
-
-    // Check against category map for other sites
-    for (const [site, category] of categoryMap.entries()) {
-      if (site === "__pdf__") continue; // Skip the special PDF marker
-
-      if (
-        hostname === site.toLowerCase() ||
-        hostname.endsWith("." + site.toLowerCase())
-      ) {
-        return category;
-      }
-    }
-  } catch (e) {
-    // Invalid URL, skip
-  }
-
-  return undefined;
+  const entries = Array.from(categoryMap.entries(), ([site, category]) => ({
+    site,
+    category,
+  }));
+  return nativeGetCategoryFromUrl(url, entries) ?? undefined;
 }
 
 /**
  * Get default research sites
  */
 export function getDefaultResearchSites(): string[] {
-  return [...DEFAULT_RESEARCH_SITES];
+  return nativeGetDefaultResearchSites();
 }

@@ -10,6 +10,7 @@ version.workspace = true
 firecrawl-crawler.workspace = true
 firecrawl-html.workspace = true
 firecrawl-parsers.workspace = true
+firecrawl-search.workspace = true
 napi.workspace = true
 napi-derive.workspace = true
 serde.workspace = true

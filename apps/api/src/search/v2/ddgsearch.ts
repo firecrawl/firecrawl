@@ -1,6 +1,6 @@
 import * as undici from "undici";
+import { parseDdgHtml } from "@mendable/firecrawl-rs";
 import { config } from "../../config";
-import { JSDOM } from "jsdom";
 import { SearchV2Response, WebSearchResult } from "../../lib/entities";
 import { logger } from "../../lib/logger";
 import { getSecureDispatcher } from "../../scraper/scrapeURL/engines/utils/safeFetch";
@@ -28,75 +28,6 @@ interface SearchOptions {
   location?: string;
   proxy?: string;
   timeout?: number;
-}
-
-function cleanUrl(href: string): string {
-  if (href.includes("uddg=")) {
-    const url = new URL(href, "https://duckduckgo.com");
-    const uddg = url.searchParams.get("uddg");
-    return uddg ? decodeURIComponent(uddg) : href;
-  }
-  return href;
-}
-
-function extractResults(
-  document: Document,
-  seenUrls: Set<string>,
-): WebSearchResult[] {
-  const anomalyModal = document.querySelector(".anomaly-modal__modal");
-  if (anomalyModal) {
-    throw new DDGAntiBotError();
-  }
-
-  const results: WebSearchResult[] = [];
-  const blocks = Array.from(document.querySelectorAll(".result.web-result"));
-
-  for (const block of blocks) {
-    const titleLink = block.querySelector(
-      ".result__a",
-    ) as HTMLAnchorElement | null;
-    const snippet = block.querySelector(".result__snippet");
-
-    if (!titleLink || !snippet) continue;
-
-    const rawUrl = titleLink.href?.trim();
-    const title = titleLink.textContent?.trim();
-    const description = snippet.textContent?.trim();
-
-    if (rawUrl && title && description) {
-      const url = cleanUrl(rawUrl);
-      if (!seenUrls.has(url)) {
-        seenUrls.add(url);
-        results.push({ url, title, description });
-      }
-    }
-  }
-
-  return results;
-}
-
-function getNextPageData(document: Document): URLSearchParams | null {
-  const nextButton = document.querySelector(
-    'input[type="submit"][class="btn btn--alt"][value="Next"]',
-  ) as HTMLInputElement | null;
-
-  if (!nextButton) return null;
-
-  const nextForm = nextButton.closest("form") as HTMLFormElement | null;
-  if (!nextForm) return null;
-
-  const formData = new URLSearchParams();
-  const inputs = Array.from(nextForm.querySelectorAll("input"));
-
-  for (const input of inputs) {
-    const name = input.getAttribute("name");
-    const value = input.getAttribute("value");
-    if (name && value !== null) {
-      formData.set(name, value);
-    }
-  }
-
-  return formData;
 }
 
 export async function ddgSearch(
@@ -182,19 +113,31 @@ export async function ddgSearch(
         }
 
         const buf = Buffer.from(await response.arrayBuffer());
-        const dom = new JSDOM(buf.toString("utf8"));
-        const doc = dom.window.document;
+        const parsed = await parseDdgHtml(
+          buf.toString("utf8"),
+          Array.from(seenUrls),
+        );
 
-        const newResults = extractResults(doc, seenUrls);
+        if (parsed.anomalyDetected) {
+          throw new DDGAntiBotError();
+        }
+
+        for (const result of parsed.results) {
+          seenUrls.add(result.url);
+        }
 
         isFirstPage = false;
         antiBotRetries = 0;
 
-        results.push(...newResults);
+        results.push(...parsed.results);
 
-        if (newResults.length === 0) break;
+        if (parsed.results.length === 0) break;
 
-        nextPageData = getNextPageData(doc);
+        nextPageData = parsed.nextPageParams
+          ? new URLSearchParams(
+              parsed.nextPageParams.map(({ name, value }) => [name, value]),
+            )
+          : null;
       } catch (error: any) {
         if (error instanceof DDGAntiBotError) {
           if (antiBotRetries++ > 3) {

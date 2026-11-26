@@ -703,5 +703,7 @@ macro_rules! export_oss_napi {
       let res = $crate::wrappers::detect_pdf(path, ctx).await?;
       Ok(_convert_pdf_result(res))
     }
+
+    $crate::export_search_napi!();
   };
 }

@@ -1,0 +1,19 @@
+[package]
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+name = "firecrawl-search"
+publish.workspace = true
+version.workspace = true
+
+[dependencies]
+kuchikiki.workspace = true
+regex.workspace = true
+serde.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+hegeltest.workspace = true
+
+[lints]
+workspace = true

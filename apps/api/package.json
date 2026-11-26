@@ -153,7 +153,6 @@
     "ioredis": "^5.6.1",
     "ipaddr.js": "^2.2.0",
     "joplin-turndown-plugin-gfm": "^1.0.12",
-    "jsdom": "^29.1.1",
     "koffi": "^2.9.0",
     "marked": "^14.1.2",
     "multer": "^2.5.0",
