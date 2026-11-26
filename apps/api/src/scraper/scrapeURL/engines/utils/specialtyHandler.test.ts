@@ -342,4 +342,276 @@ describe("specialtyScrapeCheck: the bytes decide when the header does not", () =
       specialtyScrapeCheck(logger, { "content-type": "text/html" }),
     ).resolves.toBeUndefined();
   });
+
+  it.each([
+    "application/octet-stream",
+    "binary/octet-stream",
+    "application/x-download",
+    "application/force-download",
+    "application/x-msdownload",
+    "application/x-apple-diskimage",
+    "Application/Zip",
+  ])("rejects non-document binary payloads served as %s", async contentType => {
+    const exe = Buffer.concat([
+      Buffer.from([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00]),
+      Buffer.alloc(64),
+    ]);
+    const message = await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "Content-Type": contentType },
+        download(exe),
+      ),
+    );
+    expect(message).toContain(contentType);
+  });
+
+  it("rejects application/octet-stream when no bytes are available to prove a document", async () => {
+    const message = await expectUnsupported(
+      specialtyScrapeCheck(logger, {
+        "content-type": "application/octet-stream",
+      }),
+    );
+    expect(message).toContain("application/octet-stream");
+  });
+
+  it("rejects ZIP-container archives when filename or URL names an archive, even under text/html", async () => {
+    const byHeader = await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        {
+          "content-type": "application/octet-stream",
+          "content-disposition": 'attachment; filename="App-macOS-arm64.zip"',
+        },
+        download(DOCX),
+      ),
+    );
+    expect(byHeader).toContain("application/octet-stream");
+
+    const byUrl = await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        download(DOCX, { url: "https://example.com/releases/App-0.2.69.apk" }),
+      ),
+    );
+    expect(byUrl).toContain("application/octet-stream");
+
+    const mislabeledHtmlZip = await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "text/html; charset=utf-8" },
+        download(DOCX, { url: "https://example.com/releases/App-1.0.0.zip" }),
+      ),
+    );
+    expect(mislabeledHtmlZip).toContain("text/html");
+  });
+
+  it("scopes gzipped fire-engine handoff exemptions to gzip media types and .xml.gz sitemaps", async () => {
+    const gzipHeader = Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00]);
+    await expect(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        download(gzipHeader, { url: "https://example.com/sitemap.xml.gz" }),
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/x-gzip" },
+        download(gzipHeader, { url: "https://example.com/sitemap.xml.gz" }),
+      ),
+    ).resolves.toBeUndefined();
+
+    // Generic octet-stream download without .xml.gz must still be rejected
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        download(gzipHeader),
+      ),
+    );
+
+    // Gzipped payload served with an executable media type or binary attachment must fail
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/x-msdownload" },
+        download(gzipHeader, { url: "https://example.com/sitemap.xml.gz" }),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        {
+          "content-type": "application/gzip",
+          "content-disposition": 'attachment; filename="installer.exe"',
+        },
+        download(gzipHeader),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/gzip" },
+        download(gzipHeader, {
+          url: "https://example.com/releases/source.tar.gz",
+        }),
+      ),
+    );
+  });
+
+  it("rejects header-less binary executables while allowing header-less HTML", async () => {
+    const exe = Buffer.from([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00]);
+    await expectUnsupported(
+      specialtyScrapeCheck(logger, undefined, inline(exe.toString("latin1"))),
+    );
+    await expect(
+      specialtyScrapeCheck(
+        logger,
+        undefined,
+        inline("<!DOCTYPE html><html><body>Hello</body></html>"),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("rejects .msi OLE2 installers and mislabeled archives even when served under Office document MIME types", async () => {
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        download(DOC, {
+          url: "https://example.com/releases/Setup-x64.msi",
+        }),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        {
+          "content-type": "application/octet-stream",
+          "content-disposition": 'attachment; filename="Setup-x64.msi"',
+        },
+        download(DOC),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/x-msi" },
+        download(DOC),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/msword" },
+        download(DOC, {
+          url: "https://example.com/releases/Setup-x64.msi",
+        }),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        {
+          "content-type": "application/msword",
+          "content-disposition": 'attachment; filename="Patch.msp"',
+        },
+        download(DOC),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        {
+          "content-type":
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        },
+        download(DOCX, {
+          url: "https://example.com/releases/App-arm64.apk",
+        }),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/msword" },
+        {
+          url: "https://example.com/releases/Setup-x64.msi",
+          content: "",
+          pageStatusCode: 200,
+        },
+      ),
+    );
+  });
+
+  it("allows UTF-8 plain text and XML served as application/octet-stream while rejecting explicit installer MIME types even with ASCII bytes", async () => {
+    const xmlSitemap = Buffer.from(
+      '<?xml version="1.0" encoding="UTF-8"?>\n<urlset><url><loc>https://example.com/café</loc></url></urlset>',
+      "utf8",
+    );
+    await expect(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        inline(xmlSitemap.toString("latin1")),
+      ),
+    ).resolves.toBeUndefined();
+
+    // Valid UTF-16LE XML with BOM passes, while binary bytes starting with FF FE or FE FF are rejected.
+    const utf16LeXml = Buffer.concat([
+      Buffer.from([0xff, 0xfe]),
+      Buffer.from('<?xml version="1.0"?><urlset></urlset>', "utf16le"),
+    ]);
+    await expect(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        inline(utf16LeXml.toString("latin1")),
+      ),
+    ).resolves.toBeUndefined();
+
+    const fakeBomBinary = Buffer.from([
+      0xff, 0xfe, 0x00, 0xd8, 0x01, 0x00, 0x85, 0x00, 0x00, 0xe0,
+    ]);
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        inline(fakeBomBinary.toString("latin1")),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        download(fakeBomBinary),
+      ),
+    );
+
+    // Printable ASCII self-extracting installer with no filename/URL extension:
+    // proves the explicit installer MIME check rejects it on Content-Type alone.
+    const asciiInstaller = Buffer.from(
+      "#!/bin/sh\necho Installing package...\nexit 0\n",
+      "utf8",
+    );
+    for (const mime of [
+      "application/x-msdownload",
+      "application/x-apple-diskimage",
+      "application/x-executable",
+      "application/x-msi",
+      "application/zip",
+    ]) {
+      const msg = await expectUnsupported(
+        specialtyScrapeCheck(
+          logger,
+          { "content-type": mime },
+          inline(asciiInstaller.toString("latin1")),
+        ),
+      );
+      expect(msg).toContain(mime);
+    }
+  });
 });

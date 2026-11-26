@@ -269,7 +269,363 @@ const ZIP_ARCHIVE_MEDIA_TYPES = new Set([
   "application/zip",
   "application/x-zip-compressed",
   "application/java-archive",
+  "application/vnd.android.package-archive",
+  "application/x-xpinstall",
+  "application/x-chrome-extension",
 ]);
+
+const ZIP_ARCHIVE_EXTENSIONS = new Set([
+  ".zip",
+  ".apk",
+  ".aab",
+  ".ipa",
+  ".jar",
+  ".war",
+  ".whl",
+  ".xpi",
+  ".crx",
+  ".nupkg",
+]);
+
+const OLE_INSTALLER_MEDIA_TYPES = new Set([
+  "application/x-msi",
+  "application/vnd.ms-msi",
+  "application/x-ole-storage",
+  "application/x-msdownload",
+  "application/x-msdos-program",
+  "application/x-dosexec",
+  "application/vnd.microsoft.portable-executable",
+]);
+
+const OLE_INSTALLER_EXTENSIONS = new Set([".msi", ".msp", ".mst"]);
+
+const BINARY_ATTACHMENT_EXTENSIONS = new Set([
+  ...ZIP_ARCHIVE_EXTENSIONS,
+  ...OLE_INSTALLER_EXTENSIONS,
+  ".exe",
+  ".msix",
+  ".dmg",
+  ".pkg",
+  ".mpkg",
+  ".iso",
+  ".img",
+  ".bin",
+  ".run",
+  ".appimage",
+  ".deb",
+  ".rpm",
+  ".tar",
+  ".tgz",
+  ".tbz2",
+  ".txz",
+  ".gz",
+  ".bz2",
+  ".xz",
+  ".zst",
+  ".7z",
+  ".rar",
+  ".wasm",
+  ".so",
+  ".dll",
+  ".dylib",
+]);
+
+const GZIP_MEDIA_TYPES = new Set(["application/gzip", "application/x-gzip"]);
+
+const GENERIC_OCTET_MEDIA_TYPES = new Set([
+  "application/octet-stream",
+  "binary/octet-stream",
+  "application/x-download",
+  "application/force-download",
+  "application/download",
+]);
+
+const utf8FatalDecoder = new TextDecoder("utf-8", { fatal: true });
+const utf16LeFatalDecoder = new TextDecoder("utf-16le", { fatal: true });
+const utf16BeFatalDecoder = new TextDecoder("utf-16be", { fatal: true });
+
+function isGzippedFileHandoff(
+  feRes: SpecialtyHandoffResponse | undefined,
+): boolean {
+  if (feRes?.file?.content === undefined) return false;
+  const head = Buffer.from(feRes.file.content.slice(0, 4), "base64");
+  return head.length >= 2 && head[0] === 0x1f && head[1] === 0x8b;
+}
+
+function hasBinaryOrGzipArchiveUrlExtension(
+  urlString: string | undefined,
+): boolean {
+  if (!urlString) return false;
+  try {
+    const lowerPath = new URL(urlString).pathname.toLowerCase();
+    if (lowerPath.endsWith(".tgz")) return true;
+    if (lowerPath.endsWith(".gz")) {
+      const stem = lowerPath.slice(0, -3);
+      return BINARY_ATTACHMENT_EXTENSIONS.has(path.extname(stem));
+    }
+    return BINARY_ATTACHMENT_EXTENSIONS.has(path.extname(lowerPath));
+  } catch {
+    return false;
+  }
+}
+
+function hasXmlGzipUrlExtension(urlString: string | undefined): boolean {
+  if (!urlString) return false;
+  try {
+    return new URL(urlString).pathname.toLowerCase().endsWith(".xml.gz");
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedGzipFileHandoff(
+  feRes: SpecialtyHandoffResponse | undefined,
+  mediaType: string | undefined,
+  attachmentBinaryExt: string | null,
+): boolean {
+  if (!isGzippedFileHandoff(feRes)) return false;
+  if (attachmentBinaryExt !== null) return false;
+  if (hasBinaryOrGzipArchiveUrlExtension(feRes?.url)) return false;
+  if (mediaType === undefined) {
+    return hasXmlGzipUrlExtension(feRes?.url);
+  }
+  return (
+    GZIP_MEDIA_TYPES.has(mediaType) ||
+    (mediaType === "application/octet-stream" &&
+      hasXmlGzipUrlExtension(feRes?.url))
+  );
+}
+
+function hasNullBytesWithoutUtf16Bom(
+  feRes: SpecialtyHandoffResponse | undefined,
+): boolean {
+  if (!feRes) return false;
+  const bytes =
+    feRes.file?.content !== undefined
+      ? Buffer.from(feRes.file.content.slice(0, 684), "base64")
+      : Buffer.from(feRes.content.slice(0, 512), "latin1");
+  if (bytes.length === 0) return false;
+  if (
+    bytes.length >= 2 &&
+    ((bytes[0] === 0xff && bytes[1] === 0xfe) ||
+      (bytes[0] === 0xfe && bytes[1] === 0xff))
+  ) {
+    return false;
+  }
+  return bytes.includes(0x00);
+}
+
+function binaryAttachmentExtension(
+  headers: Record<string, string> | undefined,
+): string | null {
+  const disposition = Object.entries(headers ?? {}).find(
+    ([k]) => k.toLowerCase() === "content-disposition",
+  )?.[1];
+  if (!disposition || !/^\s*attachment\b/i.test(disposition)) return null;
+  const utf8Match = /filename\*\s*=\s*(?:utf-8|iso-8859-1)?''([^;\s]+)/i.exec(
+    disposition,
+  );
+  const plainMatch = /filename\s*=\s*(?:"([^"]+)"|([^;\s]+))/i.exec(
+    disposition,
+  );
+  let rawName = utf8Match?.[1] ?? plainMatch?.[1] ?? plainMatch?.[2];
+  if (!rawName) return null;
+  try {
+    rawName = decodeURIComponent(rawName);
+  } catch {}
+  const ext = path.extname(rawName).toLowerCase();
+  return BINARY_ATTACHMENT_EXTENSIONS.has(ext) ? ext : null;
+}
+
+export function isDisallowedDocumentResponse(
+  url: string | undefined,
+  headers: Record<string, string> | undefined,
+): boolean {
+  return (
+    binaryAttachmentExtension(headers) !== null ||
+    hasBinaryOrGzipArchiveUrlExtension(url)
+  );
+}
+
+function hasDisallowedBinaryControlByte(bytes: Buffer): boolean {
+  for (let i = 0; i < bytes.length; i++) {
+    const b = bytes[i];
+    if (
+      (b >= 0x00 && b <= 0x08) ||
+      b === 0x0b ||
+      (b >= 0x0e && b <= 0x1f) ||
+      b === 0x7f
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function trimIncompleteTrailingUtf8(bytes: Buffer): Buffer {
+  if (bytes.length < 4) return bytes;
+  let idx = bytes.length - 1;
+  let continuations = 0;
+  while (idx >= 0 && continuations < 3 && (bytes[idx] & 0xc0) === 0x80) {
+    idx--;
+    continuations++;
+  }
+  if (idx < 0) return bytes;
+  const lead = bytes[idx];
+  const expectedLen =
+    lead >= 0xc2 && lead <= 0xdf
+      ? 2
+      : lead >= 0xe0 && lead <= 0xef
+        ? 3
+        : lead >= 0xf0 && lead <= 0xf4
+          ? 4
+          : 1;
+  if (expectedLen > 1 && continuations + 1 < expectedLen) {
+    return bytes.subarray(0, idx);
+  }
+  return bytes;
+}
+
+function hasDisallowedDecodedControlOrNonTextChar(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (
+      (code >= 0x00 && code <= 0x08) ||
+      code === 0x0b ||
+      (code >= 0x0e && code <= 0x1f) ||
+      (code >= 0x7f && code <= 0x9f) ||
+      (code >= 0xe000 && code <= 0xf8ff) ||
+      (code >= 0xfdd0 && code <= 0xfdef) ||
+      code === 0xfffe ||
+      code === 0xffff
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isValidBomUtf16TextSample(bytes: Buffer): boolean {
+  const isLe = bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xfe;
+  const isBe = bytes.length >= 4 && bytes[0] === 0xfe && bytes[1] === 0xff;
+  if (!isLe && !isBe) return false;
+
+  let end = bytes.length - ((bytes.length - 2) % 2);
+  if (end - 2 >= 2) {
+    const lastUnit = isLe
+      ? bytes[end - 2] | (bytes[end - 1] << 8)
+      : (bytes[end - 2] << 8) | bytes[end - 1];
+    // Trim a trailing high surrogate cut off at the 512-byte sniff boundary.
+    if (lastUnit >= 0xd800 && lastUnit <= 0xdbff) {
+      end -= 2;
+    }
+  }
+  if (end <= 2) return false;
+
+  let decoded: string;
+  try {
+    const payload = bytes.subarray(2, end);
+    decoded = isLe
+      ? utf16LeFatalDecoder.decode(payload)
+      : utf16BeFatalDecoder.decode(payload);
+  } catch {
+    return false;
+  }
+  if (
+    decoded.length === 0 ||
+    hasDisallowedDecodedControlOrNonTextChar(decoded)
+  ) {
+    return false;
+  }
+  let commonTextChars = 0;
+  for (let i = 0; i < decoded.length; i++) {
+    const code = decoded.charCodeAt(i);
+    if (
+      code === 0x09 ||
+      code === 0x0a ||
+      code === 0x0d ||
+      (code >= 0x20 && code <= 0x7e) ||
+      (code >= 0x3000 && code <= 0x303f)
+    ) {
+      commonTextChars++;
+    }
+  }
+  return commonTextChars >= Math.max(1, Math.ceil(decoded.length * 0.1));
+}
+
+function isValidTextByteSample(bytes: Buffer): boolean {
+  if (bytes.length === 0) return false;
+  if (
+    bytes.length >= 2 &&
+    ((bytes[0] === 0xff && bytes[1] === 0xfe) ||
+      (bytes[0] === 0xfe && bytes[1] === 0xff))
+  ) {
+    return isValidBomUtf16TextSample(bytes);
+  }
+  if (hasDisallowedBinaryControlByte(bytes)) return false;
+  try {
+    utf8FatalDecoder.decode(trimIncompleteTrailingUtf8(bytes));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isLikelyTextPayload(
+  feRes: SpecialtyHandoffResponse | undefined,
+): boolean {
+  if (!feRes) return false;
+  if (feRes.file?.content !== undefined) {
+    const bytes = Buffer.from(feRes.file.content.slice(0, 684), "base64");
+    return isValidTextByteSample(bytes);
+  }
+
+  const sample = feRes.content.slice(0, 512);
+  if (sample.length === 0) return false;
+  let hasWideChar = false;
+  for (let i = 0; i < sample.length; i++) {
+    const code = sample.charCodeAt(i);
+    if (code > 0xff) {
+      hasWideChar = true;
+      break;
+    }
+  }
+  if (hasWideChar) {
+    return !hasDisallowedDecodedControlOrNonTextChar(sample);
+  }
+
+  return isValidTextByteSample(Buffer.from(sample, "latin1"));
+}
+
+function isDisallowedContainerPayload(
+  kind: HandoffFileKind | null,
+  mediaType: string | undefined,
+  attachmentBinaryExt: string | null,
+  urlString: string | undefined,
+): boolean {
+  if (kind === "zip") {
+    return (
+      (mediaType !== undefined && ZIP_ARCHIVE_MEDIA_TYPES.has(mediaType)) ||
+      attachmentBinaryExt !== null ||
+      hasBinaryOrGzipArchiveUrlExtension(urlString)
+    );
+  }
+  if (kind === "ole") {
+    let urlExt = "";
+    if (urlString) {
+      try {
+        urlExt = path.extname(new URL(urlString).pathname).toLowerCase();
+      } catch {}
+    }
+    return (
+      (mediaType !== undefined && OLE_INSTALLER_MEDIA_TYPES.has(mediaType)) ||
+      attachmentBinaryExt !== null ||
+      OLE_INSTALLER_EXTENSIONS.has(urlExt) ||
+      hasBinaryOrGzipArchiveUrlExtension(urlString)
+    );
+  }
+  return false;
+}
 
 function matchHandoffSignature(
   head: ArrayLike<number>,
@@ -384,6 +740,8 @@ export async function specialtyScrapeCheck(
     );
   }
 
+  const attachmentBinaryExt = binaryAttachmentExtension(headers);
+
   if (!contentType) {
     // A header-less binary is still recognizable by its magic bytes.
     const headerlessImage = await sniffImageHandoff(feRes, imageOcrEnabled);
@@ -401,7 +759,13 @@ export async function specialtyScrapeCheck(
       );
     }
     const headerlessFile = sniffHandoffFileKind(feRes);
-    if (headerlessFile !== null) {
+    const isHeaderlessBinaryContainer = isDisallowedContainerPayload(
+      headerlessFile,
+      undefined,
+      attachmentBinaryExt,
+      feRes?.url,
+    );
+    if (headerlessFile !== null && !isHeaderlessBinaryContainer) {
       await handoffSniffedFile(
         headerlessFile,
         logger,
@@ -412,16 +776,49 @@ export async function specialtyScrapeCheck(
         downloadGcsFile,
       );
     }
+    if (
+      !isAllowedGzipFileHandoff(feRes, undefined, attachmentBinaryExt) &&
+      (isHeaderlessBinaryContainer ||
+        attachmentBinaryExt !== null ||
+        hasNullBytesWithoutUtf16Bom(feRes))
+    ) {
+      throw new UnsupportedFileError(
+        attachmentBinaryExt ??
+          (headerlessFile === "zip"
+            ? "application/zip"
+            : "application/octet-stream"),
+      );
+    }
     logger.warn("Failed to check contentType -- was not present in headers", {
       headers,
     });
     return;
   }
 
+  const mediaType = contentType.split(";")[0].trim().toLowerCase();
+  const sniffedFile = sniffHandoffFileKind(feRes);
+  const isBinaryContainer = isDisallowedContainerPayload(
+    sniffedFile,
+    mediaType,
+    attachmentBinaryExt,
+    feRes?.url,
+  );
+  if (
+    isBinaryContainer ||
+    (attachmentBinaryExt !== null &&
+      !isAllowedGzipFileHandoff(feRes, mediaType, attachmentBinaryExt))
+  ) {
+    throw new UnsupportedFileError(contentType);
+  }
+
   const isDocument = documentExtensionFromContentType(contentType) !== null;
   const isPdf =
     contentType === "application/pdf" ||
     contentType.startsWith("application/pdf;");
+
+  if (isDocument && hasBinaryOrGzipArchiveUrlExtension(feRes?.url)) {
+    throw new UnsupportedFileError(contentType);
+  }
 
   // Check for document types first (before PDF to prioritize documents)
   if (isDocument) {
@@ -451,8 +848,6 @@ export async function specialtyScrapeCheck(
     );
   }
 
-  const mediaType = contentType.split(";")[0].trim().toLowerCase();
-
   if (
     mediaType.startsWith("image/") ||
     mediaType === "application/octet-stream"
@@ -468,11 +863,7 @@ export async function specialtyScrapeCheck(
     }
   }
 
-  const sniffedFile = sniffHandoffFileKind(feRes);
-  if (
-    sniffedFile !== null &&
-    !(sniffedFile === "zip" && ZIP_ARCHIVE_MEDIA_TYPES.has(mediaType))
-  ) {
+  if (sniffedFile !== null) {
     await handoffSniffedFile(
       sniffedFile,
       logger,
@@ -484,22 +875,62 @@ export async function specialtyScrapeCheck(
     );
   }
 
-  // Reject unsupported binary content types (unsupported images, video, audio, archives, etc.)
-  const unsupportedBinaryPrefixes = [
+  // Reject explicit binary content types (unsupported images, video, audio,
+  // installers, disk images, archives), and reject generic octet-stream or
+  // download headers unless the leading bytes are valid UTF-8/UTF-16 text
+  // without binary attachment or archive extensions.
+  const explicitUnsupportedBinaryPrefixes = [
     "image/",
     "video/",
     "audio/",
+    "font/",
     "application/zip",
+    "application/x-zip-compressed",
     "application/x-tar",
     "application/x-rar",
+    "application/vnd.rar",
     "application/x-7z",
+    "application/gzip",
+    "application/x-gzip",
+    "application/x-bzip2",
+    "application/x-xz",
+    "application/zstd",
     "application/wasm",
     "application/x-executable",
     "application/x-sharedlib",
+    "application/x-msdownload",
+    "application/x-msdos-program",
+    "application/x-dosexec",
+    "application/vnd.microsoft.portable-executable",
+    "application/x-msi",
+    "application/vnd.ms-msi",
+    "application/x-ole-storage",
+    "application/x-apple-diskimage",
+    "application/x-dmg",
+    "application/x-iso9660-image",
+    "application/vnd.debian.binary-package",
+    "application/x-debian-package",
+    "application/x-rpm",
+    "application/x-redhat-package-manager",
+    "application/vnd.android.package-archive",
+    "application/x-xpinstall",
+    "application/x-chrome-extension",
     "application/java-archive",
+    "application/font-woff",
+    "application/vnd.ms-fontobject",
   ];
+  const isGenericBinaryPayload =
+    GENERIC_OCTET_MEDIA_TYPES.has(mediaType) &&
+    (hasBinaryOrGzipArchiveUrlExtension(feRes?.url) ||
+      !isLikelyTextPayload(feRes));
+
   if (
-    unsupportedBinaryPrefixes.some(prefix => contentType.startsWith(prefix))
+    !isAllowedGzipFileHandoff(feRes, mediaType, attachmentBinaryExt) &&
+    (explicitUnsupportedBinaryPrefixes.some(prefix =>
+      mediaType.startsWith(prefix),
+    ) ||
+      isGenericBinaryPayload ||
+      attachmentBinaryExt !== null)
   ) {
     throw new UnsupportedFileError(contentType);
   }

@@ -11,14 +11,21 @@ import {
   DocumentAntibotError,
   DocumentFetchProxyError,
   EngineUnsuccessfulError,
+  UnsupportedFileError,
 } from "../../error";
 import {
   documentContentTypeFromExtension,
   documentExtensionFromContentType,
   documentExtensionFromUrlPath,
 } from "../../../../lib/document-formats";
-import { readFile, unlink } from "node:fs/promises";
-import { hasFilePrefetchEngine } from "../utils/specialtyHandler";
+import { readFile, stat, unlink } from "node:fs/promises";
+import {
+  hasFilePrefetchEngine,
+  isDisallowedDocumentResponse,
+} from "../utils/specialtyHandler";
+import { MAX_GUNZIPPED_FILE_SIZE } from "../utils/gunzip";
+
+export const DOCUMENT_MAX_FILE_BYTES = MAX_GUNZIPPED_FILE_SIZE;
 
 export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
   // When an enabled engine prefetches files via browser handoff, this engine
@@ -51,6 +58,10 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
     if (meta.documentPrefetch !== undefined && meta.documentPrefetch !== null) {
       // Use prefetched document
       tempFilePath = meta.documentPrefetch.filePath;
+      const prefetchedStat = await stat(tempFilePath);
+      if (prefetchedStat.size > DOCUMENT_MAX_FILE_BYTES) {
+        throw new UnsupportedFileError("File exceeds size limit");
+      }
       buffer = await readFile(tempFilePath);
 
       // Create a mock response object with content-type from prefetch
@@ -67,6 +78,41 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
 
       proxyUsed = meta.documentPrefetch.proxyUsed;
     } else {
+      const validateDirectResponse = (res: Response) => {
+        if (
+          isDisallowedDocumentResponse(
+            res.url || (meta.rewrittenUrl ?? meta.url),
+            Object.fromEntries(res.headers),
+          )
+        ) {
+          throw new UnsupportedFileError(
+            res.headers.get("Content-Type") ?? "application/octet-stream",
+          );
+        }
+        // Validate content type before reading the response body so non-document
+        // payloads are rejected without buffering up to DOCUMENT_MAX_FILE_BYTES.
+        const ct = res.headers.get("Content-Type");
+        if (ct && documentExtensionFromContentType(ct) === null) {
+          // The server declared a non-document type and nothing asked for a
+          // document (no `document` flag means neither a document URL extension nor
+          // a caller-requested format), so this engine is just the tail of the
+          // stealth fallback list running against an ordinary HTML page.
+          //
+          // Escalating here is unrecoverable: DocumentAntibotError's remedy is to
+          // clear the `document` flag and re-run the waterfall, which is a no-op
+          // when the flag was never set, so the next attempt fetches the same page,
+          // raises the same error, and burns attempts until SCRAPE_MAX_ATTEMPTS.
+          // Fail this engine instead and let the waterfall move on. Mirrors the pdf
+          // engine's guard, which is why pdf never developed this loop.
+          if (!meta.featureFlags.has("document")) {
+            throw new EngineUnsuccessfulError("document");
+          }
+
+          // if downloaded file wasn't a valid document, throw antibot error
+          throw new DocumentAntibotError();
+        }
+      };
+
       // Fetch the document normally
       const result = await fetchDocumentFileGuardingProxyFailure(meta, () =>
         fetchFileToBuffer(
@@ -76,32 +122,13 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
             headers: meta.options.headers,
             signal: meta.abort.asSignal(),
           },
+          DOCUMENT_MAX_FILE_BYTES,
+          validateDirectResponse,
         ),
       );
       response = result.response;
       buffer = result.buffer;
-
-      // Validate content type only when fetching directly (not using prefetch)
-      const ct = response.headers.get("Content-Type");
-      if (ct && documentExtensionFromContentType(ct) === null) {
-        // The server declared a non-document type and nothing asked for a
-        // document (no `document` flag means neither a document URL extension nor
-        // a caller-requested format), so this engine is just the tail of the
-        // stealth fallback list running against an ordinary HTML page.
-        //
-        // Escalating here is unrecoverable: DocumentAntibotError's remedy is to
-        // clear the `document` flag and re-run the waterfall, which is a no-op
-        // when the flag was never set, so the next attempt fetches the same page,
-        // raises the same error, and burns attempts until SCRAPE_MAX_ATTEMPTS.
-        // Fail this engine instead and let the waterfall move on. Mirrors the pdf
-        // engine's guard, which is why pdf never developed this loop.
-        if (!meta.featureFlags.has("document")) {
-          throw new EngineUnsuccessfulError("document");
-        }
-
-        // if downloaded file wasn't a valid document, throw antibot error
-        throw new DocumentAntibotError();
-      }
+      validateDirectResponse(response);
     }
 
     const extension =

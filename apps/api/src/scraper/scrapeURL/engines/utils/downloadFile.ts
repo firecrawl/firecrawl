@@ -169,20 +169,27 @@ export async function fetchFileToBuffer(
   skipTlsVerification: boolean = false,
   init?: undici.RequestInit,
   maxSize?: number,
+  validateResponse?: (response: undici.Response) => void | Promise<void>,
 ): Promise<{
   response: undici.Response;
   buffer: Buffer;
 }> {
+  let response: undici.Response | undefined;
+  let bodyConsumed = false;
   try {
-    const response = await undici.fetch(url, {
+    response = await undici.fetch(url, {
       ...init,
       redirect: "follow",
       dispatcher: getSecureDispatcher(skipTlsVerification),
     });
+    if (validateResponse) {
+      await validateResponse(response);
+    }
     if (maxSize !== undefined) {
       checkContentLength(response, maxSize);
     }
     if (maxSize === undefined || response.body === null) {
+      bodyConsumed = true;
       return {
         response,
         buffer: Buffer.from(await response.arrayBuffer()),
@@ -191,6 +198,7 @@ export async function fetchFileToBuffer(
     const chunks: Uint8Array[] = [];
     let bytesRead = 0;
     const reader = response.body.getReader();
+    bodyConsumed = true;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -206,6 +214,9 @@ export async function fetchFileToBuffer(
       buffer: Buffer.concat(chunks),
     };
   } catch (e) {
+    if (response?.body && !bodyConsumed) {
+      await response.body.cancel().catch(() => {});
+    }
     if (e instanceof UnsupportedFileError) throw e;
     throw mapUndiciError(url, skipTlsVerification, e);
   }
