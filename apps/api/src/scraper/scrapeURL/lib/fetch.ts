@@ -1,6 +1,5 @@
 import type { Logger } from "winston";
 import type { z } from "zod";
-import { ZodError } from "zod";
 import type { MockState } from "./mock";
 import { saveMock } from "./mock";
 import type { RequestInit, Response } from "undici";
@@ -420,32 +419,56 @@ export async function robustFetch<Schema extends z.ZodType = z.ZodType>({
   }
 
   if (schema) {
+    let parseResult: z.ZodSafeParseResult<z.infer<Schema>> | undefined;
+    let parseFailure: unknown;
+    let didThrow = false;
     try {
-      return schema.parse(parsed);
+      parseResult = schema.safeParse(parsed);
     } catch (error: unknown) {
-      if (error instanceof ZodError) {
-        logger.debug("Response does not match provided schema", {
+      didThrow = true;
+      parseFailure = error;
+    }
+
+    if (didThrow) {
+      logger.debug("Parsing response with provided schema failed", {
+        params: logParams,
+        response: { status: response.status, body: response.body },
+        requestId,
+        error: parseFailure,
+        schema,
+      });
+      throw new Error("Parsing response with provided schema failed", {
+        cause: {
           params: logParams,
-          response: { status: response.status, body: response.body },
+          response,
           requestId,
-          error,
+          error: parseFailure,
           schema,
-        });
-        throw new Error("Response does not match provided schema", {
-          cause: error,
-        });
-      } else {
-        logger.debug("Parsing response with provided schema failed", {
+        },
+      });
+    }
+
+    if (parseResult && !parseResult.success) {
+      logger.debug("Response does not match provided schema", {
+        params: logParams,
+        response: { status: response.status, body: response.body },
+        requestId,
+        error: parseResult.error,
+        schema,
+      });
+      throw new Error("Response does not match provided schema", {
+        cause: {
           params: logParams,
-          response: { status: response.status, body: response.body },
+          response,
           requestId,
-          error,
+          error: parseResult.error,
           schema,
-        });
-        throw new Error("Parsing response with provided schema failed", {
-          cause: error,
-        });
-      }
+        },
+      });
+    }
+
+    if (parseResult) {
+      return parseResult.data;
     }
   }
 

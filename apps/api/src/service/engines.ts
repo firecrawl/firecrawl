@@ -72,10 +72,10 @@ export interface Engine {
   /** Features this engine supports. Absent or false means unsupported. */
   readonly features: { readonly [F in EngineFeatureName]?: boolean };
   /** Whether this engine is active in the current deployment. Evaluated at call time. */
-  enabled(): boolean;
-  scrape(meta: Meta): Promise<EngineScrapeResult>;
+  readonly enabled: () => boolean;
+  readonly scrape: (meta: Meta) => Promise<EngineScrapeResult>;
   /** Upper bound in milliseconds before waterfalling to the next engine. Defaults to 30000. */
-  maxReasonableTime?(meta: Meta): number;
+  readonly maxReasonableTime?: (meta: Meta) => number;
   /** When true, omitted from automatic fallback selection and only run when chosen explicitly. */
   readonly explicitOnly?: boolean;
   /** When true, serves cached scrape results (lockdown, index-only, cache state). */
@@ -160,11 +160,11 @@ function snapshotEngine(engine: Engine): Engine {
     name: engine.name,
     quality: engine.quality,
     features,
-    enabled: engine.enabled.bind(engine),
-    scrape: engine.scrape.bind(engine),
+    enabled: engine.enabled,
+    scrape: engine.scrape,
   };
   if (engine.maxReasonableTime !== undefined) {
-    frozen.maxReasonableTime = engine.maxReasonableTime.bind(engine);
+    frozen.maxReasonableTime = engine.maxReasonableTime;
   }
   if (engine.explicitOnly) {
     frozen.explicitOnly = true;

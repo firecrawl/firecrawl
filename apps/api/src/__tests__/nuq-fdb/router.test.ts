@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import IORedis from "ioredis";
 import { vi } from "vitest";
 import { config } from "../../config";
-import { scrapeOptions } from "../../controllers/v2/types";
+import type { ScrapeOptions } from "../../controllers/v2/types";
 import { redisEvictConnection } from "../../services/redis";
 import { requestContext } from "../../lib/request-context";
 import { noLimits } from "../../service/defaults";
@@ -33,6 +33,20 @@ const describeIf = config.FDB_CLUSTER_FILE ? describe : describe.skip;
 
 const prevNuqBackend = config.NUQ_BACKEND;
 
+const defaultScrapeOptions: ScrapeOptions = {
+  formats: [{ type: "markdown" }],
+  onlyMainContent: true,
+  onlyCleanContent: false,
+  waitFor: 0,
+  mobile: false,
+  skipTlsVerification: false,
+  removeBase64Images: true,
+  fastMode: false,
+  blockAds: true,
+  proxy: "auto",
+  checkPromptInjection: false,
+};
+
 function makeScrapeJobData(
   overrides: Partial<Extract<ScrapeJobData, { mode: "single_urls" }>> & {
     team_id: string;
@@ -41,7 +55,7 @@ function makeScrapeJobData(
   return {
     mode: "single_urls",
     url: "https://example.com",
-    scrapeOptions: scrapeOptions.parse({}),
+    scrapeOptions: defaultScrapeOptions,
     origin: "test",
     apiKeyId: null,
     zeroDataRetention: false,

@@ -100,7 +100,7 @@ function isExpressModuleLike(value: unknown): value is ExpressModuleLike {
   }
   const proto: unknown = value.Router.prototype;
   return (
-    typeof proto === "object" &&
+    (typeof proto === "object" || typeof proto === "function") &&
     proto !== null &&
     "use" in proto &&
     typeof proto.use === "function"

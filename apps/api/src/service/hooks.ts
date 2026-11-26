@@ -543,9 +543,12 @@ const rawHookPoints = {
  * Static metadata for every hook point, keyed by name on a null-prototype
  * frozen object so prototype keys cannot match.
  */
+const nullProtoHookPoints = { ...rawHookPoints };
+Object.setPrototypeOf(nullProtoHookPoints, null);
+
 export const hookPoints: Readonly<{
   [N in HookName]: HookPointSpec<HookPoints[N]["kind"]>;
-}> = Object.freeze({ ...rawHookPoints });
+}> = Object.freeze(nullProtoHookPoints);
 
 function isHookName(name: string): name is HookName {
   return Object.hasOwn(hookPoints, name);
