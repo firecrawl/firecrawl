@@ -1,5 +1,6 @@
 import { Counter } from "prom-client";
 import type { Logger } from "winston";
+import type { LogMeta } from "./json-types";
 
 // Fixed labels only: never add team or crawl IDs here.
 const crawlStateMissingTotal = new Counter({
@@ -13,7 +14,7 @@ export function recordCrawlStateMissing(
   site: "gate" | "finalizer",
   crawlId: string,
   logger: Logger,
-  meta: Record<string, unknown> = {},
+  meta: LogMeta = {},
 ) {
   crawlStateMissingTotal.inc({ site });
   logger.warn("Stored crawl document missing for a live crawl", {

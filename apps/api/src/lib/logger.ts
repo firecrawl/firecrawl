@@ -1,35 +1,77 @@
-import * as winston from "winston";
+import { createLogger, format, transports } from "winston";
 
 import { config } from "../config";
 import { processRole } from "../service/service";
+import { isJsonObject } from "./json-types";
 import { configDotenv } from "dotenv";
 configDotenv();
 
-const logFormat = winston.format.printf(
-  info =>
-    `${info.timestamp} ${info.level} [${info.metadata.module ?? ""}:${info.metadata.method ?? ""}]: ${info.message} ${
-      info.level.includes("error") || info.level.includes("warn")
-        ? JSON.stringify(info.metadata, (_, value) => {
-            if (value instanceof Error) {
-              return {
-                ...value,
-                name: value.name,
-                message: value.message,
-                stack: value.stack,
-                cause: value.cause,
-              };
-            } else {
-              return value;
-            }
-          })
-        : ""
-    }`,
-);
+interface SerializedLogError {
+  name: string;
+  message: string;
+  stack: string | undefined;
+  cause: unknown;
+}
+
+function serializeLogError(error: Error): SerializedLogError {
+  const serialized: SerializedLogError = {
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+    cause: error.cause,
+  };
+  for (const key of Object.keys(error)) {
+    if (
+      key === "name" ||
+      key === "message" ||
+      key === "stack" ||
+      key === "cause"
+    ) {
+      continue;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(error, key);
+    if (descriptor && descriptor.enumerable) {
+      const prop: unknown = descriptor.value;
+      Object.defineProperty(serialized, key, {
+        value: prop,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
+  }
+  return serialized;
+}
+
+function logErrorReplacer(_key: string, value: unknown) {
+  if (value instanceof Error) {
+    return serializeLogError(value);
+  }
+  return value;
+}
+
+const logFormat = format.printf(info => {
+  const metadata: unknown = info.metadata;
+  const moduleName =
+    isJsonObject(metadata) && typeof metadata.module === "string"
+      ? metadata.module
+      : "";
+  const methodName =
+    isJsonObject(metadata) && typeof metadata.method === "string"
+      ? metadata.method
+      : "";
+  const details =
+    info.level.includes("error") || info.level.includes("warn")
+      ? JSON.stringify(info.metadata, logErrorReplacer)
+      : "";
+  return `${info.timestamp} ${info.level} [${moduleName}:${methodName}]: ${info.message} ${details}`;
+});
 
 // Filter function to prevent logging when zeroDataRetention is true
-const zeroDataRetentionFilter = winston.format(info => {
+const zeroDataRetentionFilter = format(info => {
+  const metadata: unknown = info.metadata;
   if (
-    info.metadata?.zeroDataRetention === true ||
+    (isJsonObject(metadata) && metadata.zeroDataRetention === true) ||
     info.zeroDataRetention === true
   ) {
     return false; // Don't log this message
@@ -40,52 +82,37 @@ const zeroDataRetentionFilter = winston.format(info => {
 /** The role this process was started as, or the file it was started from. */
 const startedAs = processRole() ?? process.argv[1];
 
-export const logger = winston.createLogger({
+export const logger = createLogger({
   level: config.LOGGING_LEVEL?.toLowerCase() ?? "debug",
-  format: winston.format.json({
-    replacer(key, value) {
-      if (value instanceof Error) {
-        return {
-          ...value,
-          name: value.name,
-          message: value.message,
-          stack: value.stack,
-          cause: value.cause,
-        };
-      } else {
-        return value;
-      }
-    },
+  format: format.json({
+    replacer: logErrorReplacer,
   }),
   transports: [
     ...(config.FIRECRAWL_LOG_TO_FILE
       ? [
-          new winston.transports.File({
+          new transports.File({
             filename:
               "firecrawl-" +
               (startedAs.includes("worker") ? "worker" : "app") +
               ".log",
-            format: winston.format.combine(
-              zeroDataRetentionFilter,
-              winston.format.json(),
-            ),
+            format: format.combine(zeroDataRetentionFilter, format.json()),
             maxsize: 10 * 1024 * 1024,
             maxFiles: 3,
             tailable: true,
           }),
         ]
       : []),
-    new winston.transports.Console({
-      format: winston.format.combine(
+    new transports.Console({
+      format: format.combine(
         zeroDataRetentionFilter,
-        winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
-        winston.format.metadata({
+        format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
+        format.metadata({
           fillExcept: ["message", "level", "timestamp"],
         }),
         ...((config.ENV === "production" &&
           config.SENTRY_ENVIRONMENT === "dev") ||
         config.ENV !== "production"
-          ? [winston.format.colorize(), logFormat]
+          ? [format.colorize(), logFormat]
           : []),
       ),
     }),

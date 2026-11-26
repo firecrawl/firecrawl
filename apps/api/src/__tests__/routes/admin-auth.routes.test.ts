@@ -6,6 +6,7 @@ import {
   adminAuth,
   adminKeyHeaderAuth,
 } from "../../lib/admin-auth";
+import { isJsonObject } from "../../lib/json-types";
 import { logger } from "../../lib/logger";
 
 const CURRENT = "current-admin-key-0001";
@@ -13,8 +14,13 @@ const PREVIOUS = "previous-admin-key-0002";
 
 function matchedKeys(spy: { mock: { calls: Array<Array<unknown>> } }) {
   return spy.mock.calls
-    .map(call => (call[1] as { matchedKey?: string } | undefined)?.matchedKey)
-    .filter(Boolean);
+    .map(call => {
+      const meta = call[1];
+      return isJsonObject(meta) && typeof meta.matchedKey === "string"
+        ? meta.matchedKey
+        : undefined;
+    })
+    .filter((key): key is string => Boolean(key));
 }
 
 function appWithAdminAuth() {

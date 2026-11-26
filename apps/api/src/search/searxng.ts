@@ -13,6 +13,16 @@ interface SearchOptions {
   page?: number;
 }
 
+interface SearxngApiResult {
+  url: string;
+  title: string;
+  content: string;
+}
+
+interface SearxngApiResponse {
+  results?: Array<SearxngApiResult>;
+}
+
 export async function searxng_search(
   q: string,
   options: SearchOptions,
@@ -21,7 +31,10 @@ export async function searxng_search(
   const requestedResults = Math.max(options.num_results, 0);
   const startPage = options.page ?? 1;
 
-  const url = config.SEARXNG_ENDPOINT!;
+  const url = config.SEARXNG_ENDPOINT;
+  if (!url) {
+    return [];
+  }
   const cleanedUrl = url.endsWith("/") ? url.slice(0, -1) : url;
   const finalUrl = cleanedUrl + "/search";
 
@@ -38,7 +51,7 @@ export async function searxng_search(
       format: "json",
     };
 
-    const response = await axios.get(finalUrl, {
+    const response = await axios.get<SearxngApiResponse>(finalUrl, {
       headers: {
         "Content-Type": "application/json",
       },
@@ -48,7 +61,7 @@ export async function searxng_search(
     const data = response.data;
 
     if (data && Array.isArray(data.results)) {
-      return data.results.map((a: any) => ({
+      return data.results.map(a => ({
         url: a.url,
         title: a.title,
         description: a.content,
@@ -81,7 +94,7 @@ export async function searxng_search(
     }
 
     return results.slice(0, requestedResults);
-  } catch (error) {
+  } catch (error: unknown) {
     logger.error(`There was an error searching for content`, { error });
     return [];
   }

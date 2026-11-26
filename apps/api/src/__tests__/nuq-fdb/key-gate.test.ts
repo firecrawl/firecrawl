@@ -313,7 +313,9 @@ describeIf("NuQ FDB API-key gate", () => {
     const jobs = await queue.addJobs(inputs, kgate(10, kid, 1));
     expect(jobs.filter(j => j.status === "backlog").length).toBe(2);
 
-    await new Promise(resolve => setTimeout(resolve, 1200));
+    await new Promise<void>(resolve => {
+      setTimeout(resolve, 1200);
+    });
     await sweeper.sweepOnce();
 
     // the two key-pending jobs are gone; the running one is unaffected
@@ -349,7 +351,9 @@ describeIf("NuQ FDB API-key gate", () => {
     await sweeper.sweepOnce();
     expect(await queue.getJobToProcess()).toBeNull();
 
-    await new Promise(resolve => setTimeout(resolve, 1200));
+    await new Promise<void>(resolve => {
+      setTimeout(resolve, 1200);
+    });
     await sweeper.sweepOnce();
     // the wake-up acquired the key slot again
     expect(await keyActiveCount(queue, kid)).toBe(1);

@@ -1,5 +1,30 @@
+import { isJsonObject } from "../../lib/json-types";
+import type { JsonValue } from "../../lib/json-types";
+
 /** Analytics job-log queries are disabled in core test runs. */
 export const HAS_JOB_LOG = false;
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every(
+      (item: unknown) => item === undefined || isJsonValue(item),
+    );
+  }
+  if (isJsonObject(value)) {
+    return Object.values(value).every(
+      item => item === undefined || isJsonValue(item),
+    );
+  }
+  return false;
+}
 
 export async function jobLogRows<T extends Record<string, unknown>>(
   _table: string,
@@ -30,12 +55,13 @@ export async function waitForJobLogRow<T extends Record<string, unknown>>(
 }
 
 /** Parses a job log JSON column; empty or malformed text reads as null. */
-export function jobLogJson(value: unknown): unknown {
+export function jobLogJson(value: unknown): JsonValue {
   if (typeof value !== "string") {
-    return value ?? null;
+    return isJsonValue(value) ? value : null;
   }
   try {
-    return JSON.parse(value);
+    const parsed: unknown = JSON.parse(value);
+    return isJsonValue(parsed) ? parsed : null;
   } catch {
     return null;
   }

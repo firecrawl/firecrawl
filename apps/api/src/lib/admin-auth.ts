@@ -49,7 +49,9 @@ export function redactAdminKey(path: string): string {
       let decoded = segment;
       try {
         decoded = decodeURIComponent(segment);
-      } catch {}
+      } catch {
+        // Keep the raw segment when percent-decoding fails.
+      }
       return matchAdminKey(segment) || matchAdminKey(decoded)
         ? ":bullAuthKey"
         : segment;
@@ -158,8 +160,11 @@ function callerOf(req: Request): string {
  */
 export function adminPathKeyAuth(route?: string) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const params = req.params as Record<string, string | undefined>;
-    const matched = matchAdminKey(params.adminKey ?? null);
+    const rawAdminKey = req.params.adminKey;
+    const adminKey = Array.isArray(rawAdminKey)
+      ? (rawAdminKey[0] ?? null)
+      : (rawAdminKey ?? null);
+    const matched = matchAdminKey(adminKey);
     if (!matched) {
       return next("router");
     }

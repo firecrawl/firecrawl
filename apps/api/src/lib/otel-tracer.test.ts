@@ -239,9 +239,11 @@ describe("otel-tracer", () => {
     await withTraceContextAsync(undefined, () =>
       withSpan("worker.none", async () => {}),
     );
-    await withTraceContextAsync(
-      { sentryTrace: "legacy" } as unknown as SerializedTraceContext,
-      () => withSpan("worker.legacy", async () => {}),
+    const legacyContext: SerializedTraceContext & { sentryTrace: string } = {
+      sentryTrace: "legacy",
+    };
+    await withTraceContextAsync(legacyContext, () =>
+      withSpan("worker.legacy", async () => {}),
     );
 
     const spans = await exportedSpans();

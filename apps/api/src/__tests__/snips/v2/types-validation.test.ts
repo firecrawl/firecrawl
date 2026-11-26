@@ -218,7 +218,7 @@ describe("V2 Types Validation", () => {
       expect(() =>
         scrapeRequestSchema.parse({
           url: "https://example.com",
-          formats: [{ type: "question", prompt: "What is Firecrawl?" } as any],
+          formats: [{ type: "question", prompt: "What is Firecrawl?" }],
         }),
       ).toThrow();
     });
@@ -254,9 +254,12 @@ describe("V2 Types Validation", () => {
       };
 
       const result = scrapeRequestSchema.parse(input);
-      expect(result.formats[0].type).toBe("screenshot");
-      expect((result.formats[0] as any).fullPage).toBe(true);
-      expect((result.formats[0] as any).quality).toBe(90);
+      const format = result.formats[0];
+      expect(format.type).toBe("screenshot");
+      if (format.type === "screenshot") {
+        expect(format.fullPage).toBe(true);
+        expect(format.quality).toBe(90);
+      }
     });
 
     it("should accept attributes format with selectors", () => {
@@ -276,8 +279,11 @@ describe("V2 Types Validation", () => {
       };
 
       const result = scrapeRequestSchema.parse(input);
-      expect(result.formats[0].type).toBe("attributes");
-      expect((result.formats[0] as any).selectors).toHaveLength(1);
+      const format = result.formats[0];
+      expect(format.type).toBe("attributes");
+      if (format.type === "attributes") {
+        expect(format.selectors).toHaveLength(1);
+      }
     });
 
     it("should reject invalid URL", () => {
@@ -410,8 +416,12 @@ describe("V2 Types Validation", () => {
 
       const result = scrapeRequestSchema.parse(input);
       expect(result.parsers).toBeDefined();
-      expect((result.parsers as any)[0].type).toBe("pdf");
-      expect((result.parsers as any)[0].maxPages).toBe(100);
+      const firstParser = result.parsers?.[0];
+      expect(typeof firstParser).toBe("object");
+      if (typeof firstParser === "object" && firstParser !== null) {
+        expect(firstParser.type).toBe("pdf");
+        expect(firstParser.maxPages).toBe(100);
+      }
     });
 
     it("should reject PDF parser with maxPages exceeding limit", () => {
@@ -1237,7 +1247,7 @@ describe("V2 Types Validation", () => {
     });
 
     it("should reject search scrapeOptions query format with invalid mode", () => {
-      const input: SearchRequestInput = {
+      const input = {
         query: "test",
         scrapeOptions: {
           formats: [
@@ -1245,7 +1255,7 @@ describe("V2 Types Validation", () => {
               type: "query",
               prompt: "What is Firecrawl?",
               mode: "quoted",
-            } as any,
+            },
           ],
         },
       };
@@ -1254,7 +1264,7 @@ describe("V2 Types Validation", () => {
     });
 
     it("should reject search scrapeOptions query format with directQuote boolean", () => {
-      const input: SearchRequestInput = {
+      const input = {
         query: "test",
         scrapeOptions: {
           formats: [
@@ -1262,7 +1272,7 @@ describe("V2 Types Validation", () => {
               type: "query",
               prompt: "What is Firecrawl?",
               directQuote: true,
-            } as any,
+            },
           ],
         },
       };

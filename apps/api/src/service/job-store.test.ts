@@ -1,3 +1,5 @@
+import express from "express";
+import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -75,10 +77,15 @@ const TEAM_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_TEAM_ID = "22222222-2222-4222-8222-222222222222";
 const JOB_ID = "019e6f45-7778-727d-adf0-0abe9d5062b6";
 
+interface MockResponse {
+  status: ReturnType<typeof vi.fn<(code: number) => MockResponse>>;
+  json: ReturnType<typeof vi.fn<(payload: unknown) => MockResponse>>;
+}
+
 function makeRes() {
   let statusCode = 200;
-  let body: any;
-  const res: any = {
+  let body: unknown;
+  const res: MockResponse = {
     status: vi.fn((code: number) => {
       statusCode = code;
       return res;
@@ -92,6 +99,32 @@ function makeRes() {
     res,
     result: () => ({ status: statusCode, body }),
   };
+}
+
+async function requestCrawlErrors(path: string, teamId: string) {
+  const app = express();
+  app.get("/crawl/:jobId/errors", async (req, res) => {
+    const authedReq = Object.assign(req, { auth: { team_id: teamId } });
+    await crawlErrorsController(authedReq, res);
+  });
+  app.get("/batch/scrape/:jobId/errors", async (req, res) => {
+    const authedReq = Object.assign(req, { auth: { team_id: teamId } });
+    await crawlErrorsController(authedReq, res);
+  });
+  const response = await request(app).get(path);
+  const body: unknown = response.body;
+  return { status: response.status, body };
+}
+
+async function requestCrawlStatus(jobId: string, teamId: string) {
+  const app = express();
+  app.get("/crawl/:jobId", async (req, res) => {
+    const authedReq = Object.assign(req, { auth: { team_id: teamId } });
+    await crawlStatusController(authedReq, res);
+  });
+  const response = await request(app).get(`/crawl/${jobId}`);
+  const body: unknown = response.body;
+  return { status: response.status, body };
 }
 
 beforeEach(() => {
@@ -369,17 +402,9 @@ describe("crawlErrorsController with jobStore", () => {
           teamId: TEAM_ID,
           expiresAtMs: Date.now() + 60_000,
         });
-        const ok = makeRes();
-        await crawlErrorsController(
-          {
-            path: `/crawl/${JOB_ID}/errors`,
-            params: { jobId: JOB_ID },
-            auth: { team_id: TEAM_ID },
-          } as any,
-          ok.res,
-        );
+        const ok = await requestCrawlErrors(`/crawl/${JOB_ID}/errors`, TEAM_ID);
         expect(owner).toHaveBeenLastCalledWith(JOB_ID, "crawl");
-        expect(ok.result()).toEqual({
+        expect(ok).toEqual({
           status: 200,
           body: { errors: [], robotsBlocked: [] },
         });
@@ -388,17 +413,12 @@ describe("crawlErrorsController with jobStore", () => {
           teamId: TEAM_ID,
           expiresAtMs: Date.now() + 60_000,
         });
-        const batchOk = makeRes();
-        await crawlErrorsController(
-          {
-            path: `/batch/scrape/${JOB_ID}/errors`,
-            params: { jobId: JOB_ID },
-            auth: { team_id: TEAM_ID },
-          } as any,
-          batchOk.res,
+        const batchOk = await requestCrawlErrors(
+          `/batch/scrape/${JOB_ID}/errors`,
+          TEAM_ID,
         );
         expect(owner).toHaveBeenLastCalledWith(JOB_ID, "batchScrape");
-        expect(batchOk.result()).toEqual({
+        expect(batchOk).toEqual({
           status: 200,
           body: { errors: [], robotsBlocked: [] },
         });
@@ -407,12 +427,11 @@ describe("crawlErrorsController with jobStore", () => {
           teamId: OTHER_TEAM_ID,
           expiresAtMs: Date.now() + 60_000,
         });
-        const forbidden = makeRes();
-        await crawlErrorsController(
-          { params: { jobId: JOB_ID }, auth: { team_id: TEAM_ID } } as any,
-          forbidden.res,
+        const forbidden = await requestCrawlErrors(
+          `/crawl/${JOB_ID}/errors`,
+          TEAM_ID,
         );
-        expect(forbidden.result()).toEqual({
+        expect(forbidden).toEqual({
           status: 403,
           body: { success: false, error: "Forbidden" },
         });
@@ -421,23 +440,21 @@ describe("crawlErrorsController with jobStore", () => {
           teamId: TEAM_ID,
           expiresAtMs: Date.now() - 1,
         });
-        const expired = makeRes();
-        await crawlErrorsController(
-          { params: { jobId: JOB_ID }, auth: { team_id: TEAM_ID } } as any,
-          expired.res,
+        const expired = await requestCrawlErrors(
+          `/crawl/${JOB_ID}/errors`,
+          TEAM_ID,
         );
-        expect(expired.result()).toEqual({
+        expect(expired).toEqual({
           status: 404,
           body: { success: false, error: "Job expired" },
         });
 
         owner.mockResolvedValueOnce(null);
-        const missing = makeRes();
-        await crawlErrorsController(
-          { params: { jobId: JOB_ID }, auth: { team_id: TEAM_ID } } as any,
-          missing.res,
+        const missing = await requestCrawlErrors(
+          `/crawl/${JOB_ID}/errors`,
+          TEAM_ID,
         );
-        expect(missing.result()).toEqual({
+        expect(missing).toEqual({
           status: 404,
           body: { success: false, error: "Job not found" },
         });
@@ -482,22 +499,12 @@ describe("crawlStatusController and helpers with jobStore", () => {
     await withService(
       testService(defaultModules(), parts, { jobStore: customStore }),
       async () => {
-        const out = makeRes();
-        await crawlStatusController(
-          {
-            params: { jobId: JOB_ID },
-            query: {},
-            auth: { team_id: TEAM_ID },
-            protocol: "http",
-            host: "localhost",
-          } as any,
-          out.res,
-        );
+        const out = await requestCrawlStatus(JOB_ID, TEAM_ID);
 
         expect(usage).toHaveBeenCalledWith(JOB_ID, { emptyAsZero: true });
         expect(readMany).toHaveBeenCalledWith(["child-1"], "scrape");
-        expect(out.result().status).toBe(200);
-        expect(out.result().body).toMatchObject({
+        expect(out.status).toBe(200);
+        expect(out.body).toMatchObject({
           status: "completed",
           creditsUsed: 12,
           data: [externalDoc],

@@ -1,4 +1,5 @@
 import request from "supertest";
+import { isJsonObject } from "../../../lib/json-types";
 import {
   describeIf,
   TEST_API_URL,
@@ -25,12 +26,16 @@ describeIf(TEST_PRODUCTION)("Concurrency queue and limit", () => {
         credits: 100,
       });
 
-      const maxConcurrency = async () => {
+      const maxConcurrency = async (): Promise<number> => {
         const res = await request(TEST_API_URL)
           .get("/v2/team/queue-status")
           .set("Authorization", `Bearer ${identity.apiKey}`);
         expect(res.statusCode).toBe(200);
-        return res.body.maxConcurrency;
+        const body: unknown = res.body;
+        if (!isJsonObject(body) || typeof body.maxConcurrency !== "number") {
+          throw new Error("Unexpected queue-status response shape");
+        }
+        return body.maxConcurrency;
       };
 
       expect(await maxConcurrency()).toBe(accountConcurrencyLimit);

@@ -140,8 +140,8 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Screenshot Viewport", () => {
             {
               type: "screenshot",
               viewport: {
-                width: "1920" as any,
-                height: 1080.5 as any,
+                width: "1920",
+                height: 1080.5,
               },
             },
           ],

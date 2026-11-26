@@ -1,4 +1,6 @@
 import request from "supertest";
+import { isJsonObject } from "../../../lib/json-types";
+import type { JsonObject, JsonValue } from "../../../lib/json-types";
 import type { Identity } from "../lib";
 import {
   describeIf,
@@ -33,7 +35,7 @@ beforeAll(async () => {
   ]);
 }, scrapeTimeout);
 
-const agentRaw = (body: Record<string, unknown>, apiKey?: string) =>
+const agentRaw = (body: JsonObject, apiKey?: string) =>
   request(TEST_API_URL)
     .post("/v2/agent")
     .set("Authorization", `Bearer ${apiKey ?? identity.apiKey}`)
@@ -71,33 +73,84 @@ type ListedAgent = {
   options?: { threadId?: string; threadTurn?: number };
 };
 
-const listAgents = async () => {
+type AgentStatusBody = {
+  status: string;
+  threadId?: string;
+  threadTurn?: number;
+  mode?: string;
+  message?: string;
+  data?: JsonValue;
+};
+
+type StartTurnBody = {
+  id: string;
+  threadId: string;
+  threadTurn?: number;
+};
+
+function isListedAgent(value: unknown): value is ListedAgent {
+  if (!isJsonObject(value) || typeof value.id !== "string") {
+    return false;
+  }
+  if (value.options !== undefined && !isJsonObject(value.options)) {
+    return false;
+  }
+  return true;
+}
+
+function isAgentStatusBody(value: unknown): value is AgentStatusBody {
+  return isJsonObject(value) && typeof value.status === "string";
+}
+
+function isStartTurnBody(value: unknown): value is StartTurnBody {
+  return (
+    isJsonObject(value) &&
+    typeof value.id === "string" &&
+    typeof value.threadId === "string" &&
+    (value.threadTurn === undefined || typeof value.threadTurn === "number")
+  );
+}
+
+const listAgents = async (): Promise<Array<ListedAgent>> => {
   const response = await request(TEST_API_URL)
     .get("/v2/agent")
     .set("Authorization", `Bearer ${identity.apiKey}`);
 
   expect(response.statusCode).toBe(200);
-  return (response.body.agents ?? []) as Array<ListedAgent>;
+  const body: unknown = response.body;
+  if (!isJsonObject(body) || body.agents === undefined) {
+    return [];
+  }
+  if (!Array.isArray(body.agents) || !body.agents.every(isListedAgent)) {
+    throw new Error("Unexpected /v2/agent list response shape");
+  }
+  return [...body.agents];
 };
 
 const listAgentIds = async () => (await listAgents()).map(a => a.id);
 
-async function waitForTerminal(jobId: string) {
+async function waitForTerminal(jobId: string): Promise<AgentStatusBody> {
   const deadline = Date.now() + TURN_TIMEOUT - scrapeTimeout;
 
   while (Date.now() < deadline) {
     const status = await statusOf(jobId);
     expect(status.statusCode).toBe(200);
-    if (status.body.status !== "processing") {
-      return status.body;
+    const body: unknown = status.body;
+    if (!isAgentStatusBody(body)) {
+      throw new Error("Unexpected /v2/agent status response shape");
     }
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    if (body.status !== "processing") {
+      return body;
+    }
+    await new Promise<void>(resolve => {
+      setTimeout(resolve, 2000);
+    });
   }
 
   throw new Error(`Agent run ${jobId} did not reach a terminal status`);
 }
 
-async function startTurn(body: Record<string, unknown>) {
+async function startTurn(body: JsonObject): Promise<StartTurnBody> {
   const response = await agentRaw(body);
 
   if (response.statusCode !== 200) {
@@ -111,7 +164,11 @@ async function startTurn(body: Record<string, unknown>) {
   expect(response.body.success).toBe(true);
   expect(typeof response.body.id).toBe("string");
   expect(typeof response.body.threadId).toBe("string");
-  return response.body as { id: string; threadId: string; threadTurn?: number };
+  const parsed: unknown = response.body;
+  if (!isStartTurnBody(parsed)) {
+    throw new Error("Unexpected /v2/agent start response shape");
+  }
+  return parsed;
 }
 
 // agentRequestSchema.parse runs at the top of agentController, before the
@@ -240,20 +297,27 @@ describeIf(REQUIRES_FIRE_ENGINE && REQUIRES_AI && HAS_AGENT_BETA)(
         const secondStatus = await waitForTerminal(second.id);
         expect(secondStatus.status).toBe("completed");
         expect(secondStatus.threadTurn).toBe(2);
-        expect(Object.keys(secondStatus.data)).toEqual(
-          expect.arrayContaining(["title", "heading"]),
-        );
+        expect(
+          isJsonObject(secondStatus.data) ? Object.keys(secondStatus.data) : [],
+        ).toEqual(expect.arrayContaining(["title", "heading"]));
 
         const thread = await threadOf(first.threadId, { includeData: true });
         expect(thread.statusCode).toBe(200);
         expect(thread.body.success).toBe(true);
         expect(thread.body.thread.id).toBe(first.threadId);
-        expect(thread.body.thread.runs).toHaveLength(2);
+        const threadBody: unknown = thread.body;
+        const threadRuns =
+          isJsonObject(threadBody) &&
+          isJsonObject(threadBody.thread) &&
+          Array.isArray(threadBody.thread.runs)
+            ? threadBody.thread.runs
+            : [];
+        expect(threadRuns).toHaveLength(2);
         expect(
-          thread.body.thread.runs.map((run: { status: string }) => run.status),
+          threadRuns.map(run => (isJsonObject(run) ? run.status : undefined)),
         ).toEqual(["succeeded", "succeeded"]);
         expect(
-          thread.body.thread.runs.map((run: { turn: number }) => run.turn),
+          threadRuns.map(run => (isJsonObject(run) ? run.turn : undefined)),
         ).toEqual([1, 2]);
       },
       TURN_TIMEOUT * 2,
@@ -330,14 +394,19 @@ describeIf(REQUIRES_FIRE_ENGINE && REQUIRES_AI && HAS_AGENT_BETA)(
         expect(secondStatus.status).toBe("completed");
         expect(secondStatus.mode).toBe("chat");
         expect(typeof secondStatus.message).toBe("string");
-        expect(secondStatus.message.length).toBeGreaterThan(0);
+        expect(secondStatus.message?.length).toBeGreaterThan(0);
         expect(secondStatus.data).toBeNull();
 
         const trace = await traceOf(second.id);
         expect(trace.statusCode).toBe(200);
+        const traceBody: unknown = trace.body;
+        const traceEvents =
+          isJsonObject(traceBody) && Array.isArray(traceBody.events)
+            ? traceBody.events
+            : [];
         expect(
-          (trace.body.events as Array<{ type: string }>).some(
-            event => event.type === "assistant.message",
+          traceEvents.some(
+            event => isJsonObject(event) && event.type === "assistant.message",
           ),
         ).toBe(true);
       },

@@ -269,7 +269,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: ["invalid-parser" as any],
+            parsers: ["invalid-parser"],
           },
           identity,
         );
@@ -287,7 +287,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: "pdf" as any,
+            parsers: "pdf",
           },
           identity,
         );
@@ -305,7 +305,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: { pdf: true } as any,
+            parsers: { pdf: true },
           },
           identity,
         );
@@ -359,7 +359,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: [{ type: "pdf", mode: "invalid" } as any],
+            parsers: [{ type: "pdf", mode: "invalid" }],
           },
           identity,
         );
@@ -377,7 +377,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: [{ type: "pdf", pages: "yes" } as any],
+            parsers: [{ type: "pdf", pages: "yes" }],
           },
           identity,
         );
@@ -399,7 +399,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: ["pdf:fast" as any],
+            parsers: ["pdf:fast"],
           },
           identity,
         );

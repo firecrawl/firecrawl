@@ -5,7 +5,7 @@ import {
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import type { Identity } from "./lib";
-import { expectMapToSucceed, map, idmux } from "./lib";
+import { expectMapToSucceed, getMapLinks, map, idmux } from "./lib";
 
 let identity: Identity;
 
@@ -70,7 +70,7 @@ describe("Map tests", () => {
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
       expect(
-        response.body.links.some(x =>
+        getMapLinks(response).some(x =>
           x.url.match(
             /^https:\/\/www\.hfea\.gov\.uk\/choose-a-clinic\/clinic-search\/results\/?\?options=\d+$/,
           ),
@@ -83,22 +83,22 @@ describe("Map tests", () => {
   it.concurrent(
     "sitemap=only returns every URL of the sitemap",
     async () => {
-      const response = await map(
-        {
-          url: "https://www.hfea.gov.uk",
-          sitemap: "only",
-          useMock: "map-sitemap-all-urls",
-          ...(TEST_PRODUCTION ? { ignoreCache: true } : {}),
-        },
-        identity,
-      );
+      const payload: Parameters<typeof map>[0] = {
+        url: "https://www.hfea.gov.uk",
+        sitemap: "only",
+        useMock: "map-sitemap-all-urls",
+      };
+      if (TEST_PRODUCTION) {
+        payload.ignoreCache = true;
+      }
+      const response = await map(payload, identity);
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
 
       // The first URL the sitemap yields used to be discarded, so
       // /first-page never made it into the response.
-      const urls = response.body.links.map(x => x.url);
+      const urls = getMapLinks(response).map(x => x.url);
       expect(urls).toContain("https://www.hfea.gov.uk/first-page");
       expect(urls).toContain("https://www.hfea.gov.uk/second-page");
       expect(urls).toContain("https://www.hfea.gov.uk/third-page");
@@ -109,16 +109,16 @@ describe("Map tests", () => {
   it.concurrent(
     "sitemap=only still respects a limit smaller than the sitemap",
     async () => {
-      const response = await map(
-        {
-          url: "https://www.hfea.gov.uk",
-          sitemap: "only",
-          useMock: "map-sitemap-all-urls",
-          ...(TEST_PRODUCTION ? { ignoreCache: true } : {}),
-          limit: 2,
-        },
-        identity,
-      );
+      const payload: Parameters<typeof map>[0] = {
+        url: "https://www.hfea.gov.uk",
+        sitemap: "only",
+        useMock: "map-sitemap-all-urls",
+        limit: 2,
+      };
+      if (TEST_PRODUCTION) {
+        payload.ignoreCache = true;
+      }
+      const response = await map(payload, identity);
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
@@ -130,20 +130,20 @@ describe("Map tests", () => {
   it.concurrent(
     "sitemap=only skips a deeply nested sitemap and returns the others",
     async () => {
-      const response = await map(
-        {
-          url: "https://www.hfea.gov.uk",
-          sitemap: "only",
-          useMock: "map-sitemap-deeply-nested",
-          ...(TEST_PRODUCTION ? { ignoreCache: true } : {}),
-        },
-        identity,
-      );
+      const payload: Parameters<typeof map>[0] = {
+        url: "https://www.hfea.gov.uk",
+        sitemap: "only",
+        useMock: "map-sitemap-deeply-nested",
+      };
+      if (TEST_PRODUCTION) {
+        payload.ignoreCache = true;
+      }
+      const response = await map(payload, identity);
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
 
-      const urls = response.body.links.map(x => x.url);
+      const urls = getMapLinks(response).map(x => x.url);
       expect(urls).toContain("https://www.hfea.gov.uk/first-page");
       expect(urls).toContain("https://www.hfea.gov.uk/second-page");
     },
@@ -153,15 +153,15 @@ describe("Map tests", () => {
   it.concurrent(
     "sitemap=only returns no links when the only sitemap is deeply nested",
     async () => {
-      const response = await map(
-        {
-          url: "https://www.hfea.gov.uk",
-          sitemap: "only",
-          useMock: "map-sitemap-deeply-nested-only",
-          ...(TEST_PRODUCTION ? { ignoreCache: true } : {}),
-        },
-        identity,
-      );
+      const payload: Parameters<typeof map>[0] = {
+        url: "https://www.hfea.gov.uk",
+        sitemap: "only",
+        useMock: "map-sitemap-deeply-nested-only",
+      };
+      if (TEST_PRODUCTION) {
+        payload.ignoreCache = true;
+      }
+      const response = await map(payload, identity);
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
@@ -220,17 +220,17 @@ describe("Map tests", () => {
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "handles redirects correctly",
     async () => {
-      const response = await map(
-        {
-          url: "http://firecrawl.com",
-          limit: 5,
-          sitemap: "only",
-          ...(TEST_PRODUCTION ? { useIndex: false } : {}),
-          useMock: "map-redirect",
-          ...(TEST_PRODUCTION ? { ignoreCache: true } : {}),
-        },
-        identity,
-      );
+      const payload: Parameters<typeof map>[0] = {
+        url: "http://firecrawl.com",
+        limit: 5,
+        sitemap: "only",
+        useMock: "map-redirect",
+      };
+      if (TEST_PRODUCTION) {
+        payload.useIndex = false;
+        payload.ignoreCache = true;
+      }
+      const response = await map(payload, identity);
 
       if (response.statusCode !== 200) {
         console.warn(
@@ -241,14 +241,15 @@ describe("Map tests", () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(response.body.links.length).toBeGreaterThan(0);
+      const links = getMapLinks(response);
+      expect(links.length).toBeGreaterThan(0);
 
-      expect(
-        response.body.links.every(link => link.url.includes("firecrawl.dev")),
-      ).toBe(true);
-      expect(
-        response.body.links.every(link => !link.url.includes("firecrawl.com")),
-      ).toBe(true);
+      expect(links.every(link => link.url.includes("firecrawl.dev"))).toBe(
+        true,
+      );
+      expect(links.every(link => !link.url.includes("firecrawl.com"))).toBe(
+        true,
+      );
     },
     60_000,
   );

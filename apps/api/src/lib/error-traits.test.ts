@@ -48,6 +48,7 @@ import {
   serializeThrownError,
   serializeTransportableError,
 } from "./error-serde";
+import type { JsonObject } from "./json-types";
 
 const withCoreErrors = createService(
   { modules: {} },
@@ -174,7 +175,7 @@ describe("HTTP response metadata", () => {
       expected: {
         status: number;
         code: string;
-        extraFields?: Record<string, unknown>;
+        extraFields?: JsonObject;
       };
     }> = [
       {
@@ -251,14 +252,24 @@ describe("HTTP response metadata", () => {
       },
     ];
 
+    interface ExpectedErrorHttpResponse {
+      status: number;
+      code: string;
+      message: string;
+      extraFields?: JsonObject;
+    }
+
     for (const { label, error, expected } of cases) {
       const response = getErrorHttpResponse(error);
-      expect(response, label).toEqual({
+      const expectedResponse: ExpectedErrorHttpResponse = {
         status: expected.status,
         code: expected.code,
         message: error.message,
-        ...(expected.extraFields ? { extraFields: expected.extraFields } : {}),
-      });
+      };
+      if (expected.extraFields) {
+        expectedResponse.extraFields = expected.extraFields;
+      }
+      expect(response, label).toEqual(expectedResponse);
 
       const revived = deserializeTransportableError(
         serializeTransportableError(error),

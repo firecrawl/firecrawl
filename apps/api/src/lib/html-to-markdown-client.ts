@@ -5,15 +5,21 @@
  * to avoid blocking Node.js event loop with heavy conversions.
  */
 
-import type { AxiosError } from "axios";
 import axios from "axios";
-import { config } from "../config";
-import { logger } from "./logger";
 import type { Logger } from "winston";
+import { config } from "../config";
+import type { LogMeta } from "./json-types";
+import { logger } from "./logger";
 
 interface ConvertRequest {
   html: string;
 }
+
+type ConvertRequestHeaders = {
+  "Content-Type": string;
+  "X-Request-ID"?: string;
+  "X-Zero-Data-Retention"?: string;
+};
 
 interface ConvertResponse {
   markdown: string;
@@ -54,7 +60,7 @@ export async function convertHTMLToMarkdownWithHttpService(
   try {
     const request: ConvertRequest = { html };
 
-    const headers: Record<string, string> = {
+    const headers: ConvertRequestHeaders = {
       "Content-Type": "application/json",
     };
 
@@ -84,25 +90,25 @@ export async function convertHTMLToMarkdownWithHttpService(
     }
 
     if (!zeroDataRetention) {
-      contextLogger.debug("HTML to Markdown conversion successful", {
+      const debugMeta: LogMeta = {
         duration_ms: duration,
         input_size: html.length,
         output_size: response.data.markdown.length,
-        ...(requestId ? { request_id: requestId } : {}),
-      });
+      };
+      if (requestId) {
+        debugMeta.request_id = requestId;
+      }
+      contextLogger.debug("HTML to Markdown conversion successful", debugMeta);
     }
 
     return response.data.markdown;
-  } catch (error) {
+  } catch (error: unknown) {
     const duration = Date.now() - startTime;
 
-    if (axios.isAxiosError(error)) {
-      const axiosError = error as AxiosError<ErrorResponse>;
-
-      const errorMessage =
-        axiosError.response?.data?.error || axiosError.message;
-      const errorDetails = axiosError.response?.data?.details;
-      const statusCode = axiosError.response?.status;
+    if (axios.isAxiosError<ErrorResponse>(error)) {
+      const errorMessage = error.response?.data?.error || error.message;
+      const errorDetails = error.response?.data?.details;
+      const statusCode = error.response?.status;
 
       contextLogger.error("HTML to Markdown conversion failed", {
         error: errorMessage,

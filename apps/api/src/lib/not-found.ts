@@ -78,9 +78,13 @@ function walk(stack: Array<Layer>, path: string, found: Set<string>): void {
 function allowedMethodsForPath(app: unknown, path: string): Set<string> {
   const found = new Set<string>();
   try {
-    const router = (app as { router?: StackHolder }).router;
-    if (router && Array.isArray(router.stack)) {
-      walk(router.stack, path, found);
+    if (
+      (typeof app === "function" || typeof app === "object") &&
+      app !== null &&
+      "router" in app &&
+      hasStack(app.router)
+    ) {
+      walk(app.router.stack, path, found);
     }
   } catch {
     // Router internals are not part of Express's public API. If they ever move,

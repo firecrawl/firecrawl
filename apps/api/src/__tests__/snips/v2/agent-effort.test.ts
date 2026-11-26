@@ -1,4 +1,5 @@
 import request from "supertest";
+import type { JsonObject } from "../../../lib/json-types";
 import type { Identity } from "../lib";
 import {
   describeIf,
@@ -28,12 +29,22 @@ beforeAll(async () => {
   });
 }, scrapeTimeout);
 
-const agentRaw = (body: Record<string, unknown>) =>
+const agentRaw = (body: JsonObject) =>
   request(TEST_API_URL)
     .post("/v2/agent")
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .set("Content-Type", "application/json")
     .send(body);
+
+const cancel = (jobId: string) =>
+  request(TEST_API_URL)
+    .delete(`/v2/agent/${jobId}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+
+const statusOf = (jobId: string) =>
+  request(TEST_API_URL)
+    .get(`/v2/agent/${jobId}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
 
 // The /v2/agent route is not mounted in self-hosted mode, so skip these
 // parameter validation checks when running against a self-hosted server.
@@ -74,16 +85,6 @@ describeIf(REQUIRES_FIRE_ENGINE && REQUIRES_AI && HAS_AGENT_BETA)(
   () => {
     // Each accepted request starts a real run. Cancel it so the test does not
     // pay for work nobody reads.
-    const cancel = (jobId: string) =>
-      request(TEST_API_URL)
-        .delete(`/v2/agent/${jobId}`)
-        .set("Authorization", `Bearer ${identity.apiKey}`);
-
-    const statusOf = (jobId: string) =>
-      request(TEST_API_URL)
-        .get(`/v2/agent/${jobId}`)
-        .set("Authorization", `Bearer ${identity.apiKey}`);
-
     it(
       "accepts effort alone and runs spark-2",
       async () => {

@@ -32,7 +32,9 @@ describeIf(TEST_PRODUCTION)(
         const response1 = await scrape(body, identity);
         expect(response1.metadata.cacheState).toBe("miss");
 
-        await new Promise(resolve => setTimeout(resolve, indexCooldown));
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, indexCooldown);
+        });
 
         const response2 = await scrape(body, identity);
         expect(response2.metadata.cacheState).toBe("hit");
@@ -56,7 +58,9 @@ describeIf(TEST_PRODUCTION)(
         expect(response1.metadata.totalPages).toBeGreaterThan(3);
         expect(response1.metadata.numPages).toBe(3);
 
-        await new Promise(resolve => setTimeout(resolve, indexCooldown));
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, indexCooldown);
+        });
 
         const response2 = await scrape(body, identity);
         expect(response2.metadata.cacheState).toBe("miss");
@@ -78,7 +82,9 @@ describeIf(TEST_PRODUCTION)(
         const response1 = await scrape(body, identity);
         expect(response1.metadata.cacheState).toBe("miss");
 
-        await new Promise(resolve => setTimeout(resolve, indexCooldown));
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, indexCooldown);
+        });
 
         const response2 = await scrape(body, identity);
         expect(response2.metadata.cacheState).toBe("hit");

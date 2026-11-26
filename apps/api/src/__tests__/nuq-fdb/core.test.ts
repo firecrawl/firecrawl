@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { config } from "../../config";
+import type { JsonObject } from "../../lib/json-types";
 import {
   NuQFdbQueue,
   NuQFdbJobGroup,
@@ -69,7 +70,7 @@ function freshOwner(): string {
   return randomUUID();
 }
 
-function scrapeData(extra: Record<string, any> = {}): any {
+function scrapeData(extra: JsonObject = {}): JsonObject {
   return { mode: "single_urls", url: "https://example.com", ...extra };
 }
 
@@ -403,7 +404,9 @@ describeIf("NuQ FDB core", () => {
     await sweeper.sweepOnce();
     expect(await queue.getJobToProcess()).toBeNull();
 
-    await new Promise(resolve => setTimeout(resolve, 1200));
+    await new Promise<void>(resolve => {
+      setTimeout(resolve, 1200);
+    });
     await sweeper.sweepOnce();
     const [second] = await takeAll(queue, 1);
     expect(second).toBeDefined();
@@ -421,7 +424,9 @@ describeIf("NuQ FDB core", () => {
     expect(job.id).toBe(id);
 
     // let the lease expire without renewal
-    await new Promise(resolve => setTimeout(resolve, TEST_LEASE_MS + 200));
+    await new Promise<void>(resolve => {
+      setTimeout(resolve, TEST_LEASE_MS + 200);
+    });
     await sweeper.sweepOnce();
 
     let j = await queue.getJob(id);
@@ -434,7 +439,9 @@ describeIf("NuQ FDB core", () => {
     for (let i = 0; i < 9; i++) {
       const [again] = await takeAll(queue, 1);
       expect(again.id).toBe(id);
-      await new Promise(resolve => setTimeout(resolve, TEST_LEASE_MS + 200));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, TEST_LEASE_MS + 200);
+      });
       await sweeper.sweepOnce();
     }
     j = await queue.getJob(id);
@@ -451,7 +458,9 @@ describeIf("NuQ FDB core", () => {
     const [job] = await takeAll(queue, 1);
 
     for (let i = 0; i < 3; i++) {
-      await new Promise(resolve => setTimeout(resolve, TEST_LEASE_MS / 2));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, TEST_LEASE_MS / 2);
+      });
       expect(await queue.renewLock(id, job.lock)).toBe(true);
     }
     await sweeper.sweepOnce();
@@ -851,7 +860,9 @@ describeIf("NuQ FDB core", () => {
     await queue.jobFinish(j.id, j.lock, null);
 
     expect((await group.getGroup(gid))?.status).toBe("completed");
-    await new Promise(resolve => setTimeout(resolve, 1100));
+    await new Promise<void>(resolve => {
+      setTimeout(resolve, 1100);
+    });
     await sweeper.sweepOnce();
 
     expect(await group.getGroup(gid)).toBeNull();

@@ -2,7 +2,7 @@ import { config } from "./config";
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import * as net from "node:net";
+import { Socket } from "node:net";
 import { basename, join } from "node:path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
 import { startRole } from "./main";
@@ -83,17 +83,17 @@ const colors = {
   white: "\u001b[37m",
 };
 
-const processGroupColors: Record<string, string> = {
-  api: colors.green,
-  worker: colors.blue,
-  extract: colors.magenta,
-  nuq: colors.cyan,
-  index: colors.yellow,
-  go: colors.yellow,
-  command: colors.white,
-  docker: colors.blue,
-  podman: colors.blue,
-};
+const processGroupColors = new Map<string, string>([
+  ["api", colors.green],
+  ["worker", colors.blue],
+  ["extract", colors.magenta],
+  ["nuq", colors.cyan],
+  ["index", colors.yellow],
+  ["go", colors.yellow],
+  ["command", colors.white],
+  ["docker", colors.blue],
+  ["podman", colors.blue],
+]);
 
 function getProcessGroup(name: string): string {
   let group = name;
@@ -108,7 +108,7 @@ function getProcessGroup(name: string): string {
 
 function getProcessColor(name: string): string {
   const group = getProcessGroup(name);
-  return processGroupColors[group] || colors.gray;
+  return processGroupColors.get(group) || colors.gray;
 }
 
 function formatDuration(nanoseconds: bigint): string {
@@ -160,7 +160,7 @@ const logger = {
   warn(message: string) {
     console.log(`${colors.yellow}!${colors.reset} ${message}`);
   },
-  error(message: string, error?: any) {
+  error(message: string, error?: unknown) {
     if (error) {
       console.error(`${colors.red}✗${colors.reset} ${message}`, error);
     } else {
@@ -193,6 +193,18 @@ const logger = {
   },
 };
 
+function createAbortError(): Error {
+  const error = new Error("Aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function waitForPort(
   port: number,
   host: string,
@@ -203,7 +215,7 @@ function waitForPort(
 
     let settled = false;
     let retryTimer: NodeJS.Timeout | null = null;
-    let socket: net.Socket | null = null;
+    let socket: Socket | null = null;
 
     const done = (err?: Error) => {
       if (settled) {
@@ -222,15 +234,14 @@ function waitForPort(
       }
 
       signal?.removeEventListener("abort", onAbort);
-      err ? reject(err) : resolve();
+      if (err) {
+        reject(err);
+      } else {
+        resolve();
+      }
     };
 
-    const abortError = () => {
-      const e = new Error("Aborted");
-      (e as any).name = "AbortError";
-      return e;
-    };
-    const onAbort = () => done(abortError());
+    const onAbort = () => done(createAbortError());
 
     const overallTimer = setTimeout(
       () =>
@@ -243,7 +254,8 @@ function waitForPort(
     );
 
     if (signal?.aborted) {
-      return done(abortError());
+      done(createAbortError());
+      return;
     }
     signal?.addEventListener("abort", onAbort, { once: true });
 
@@ -251,7 +263,7 @@ function waitForPort(
       if (settled) {
         return;
       }
-      socket = new net.Socket();
+      socket = new Socket();
       const retry = () => {
         socket?.destroy();
         if (!settled) {
@@ -273,7 +285,7 @@ function execForward(
   env: Record<string, string> = {},
 ): ProcessResult {
   let child: ChildProcess;
-  let displayCommand = "";
+  let displayCommand: string;
   const isWindows = process.platform === "win32";
 
   const isReduceNoise = env.NUQ_REDUCE_NOISE === "true";
@@ -333,8 +345,18 @@ function execForward(
       }
     };
 
-    child.stdout?.on("data", data => processOutput(data.toString(), false));
-    child.stderr?.on("data", data => processOutput(data.toString(), true));
+    child.stdout?.on("data", (data: Buffer | string) =>
+      processOutput(
+        typeof data === "string" ? data : data.toString("utf8"),
+        false,
+      ),
+    );
+    child.stderr?.on("data", (data: Buffer | string) =>
+      processOutput(
+        typeof data === "string" ? data : data.toString("utf8"),
+        true,
+      ),
+    );
 
     child.on("close", code => {
       childProcesses.delete(child);
@@ -420,7 +442,9 @@ function terminateProcess(proc: ChildProcess, force: boolean): Promise<void> {
             } catch {
               try {
                 proc.kill("SIGKILL");
-              } catch {}
+              } catch {
+                // Process may have already exited.
+              }
             }
           }
         }, 5000);
@@ -541,7 +565,7 @@ async function waitForPostgres(
       return;
     } catch {
       // Not ready yet, wait and retry
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await sleep(500);
     }
   }
 
@@ -652,7 +676,7 @@ async function waitForRabbitMQ(
       return;
     } catch {
       // Not ready yet, wait and retry
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await sleep(500);
     }
   }
 
@@ -738,7 +762,7 @@ async function waitForFdb(
       logger.success("FoundationDB is ready");
       return;
     } catch {
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await sleep(500);
     }
   }
 
@@ -897,13 +921,16 @@ async function startServices(command?: Array<string>): Promise<Services> {
       ? execForward(
           "extract-worker",
           `${roleRunner} ${shellEscape(roleEntry)} extract-worker`,
-          {
-            NUQ_REDUCE_NOISE: "true",
-            NUQ_POD_NAME: "extract-worker",
-            ...(process.env.EXTRACT_WORKER_PORT
-              ? { EXTRACT_WORKER_PORT: process.env.EXTRACT_WORKER_PORT }
-              : {}),
-          },
+          process.env.EXTRACT_WORKER_PORT
+            ? {
+                NUQ_REDUCE_NOISE: "true",
+                NUQ_POD_NAME: "extract-worker",
+                EXTRACT_WORKER_PORT: process.env.EXTRACT_WORKER_PORT,
+              }
+            : {
+                NUQ_REDUCE_NOISE: "true",
+                NUQ_POD_NAME: "extract-worker",
+              },
         )
       : undefined;
 
@@ -1005,13 +1032,11 @@ async function stopDevelopmentServices(services: Services) {
     services.command?.process,
   ].filter((p): p is ChildProcess => !!p);
 
-  await Promise.race([
-    await Promise.all(
-      processesToStop.map(proc => terminateProcess(proc, true)),
-    ).catch(error => {
-      logger.error("Error while stopping processes", error);
-    }),
-  ]);
+  await Promise.all(
+    processesToStop.map(proc => terminateProcess(proc, true)),
+  ).catch((error: unknown) => {
+    logger.error("Error while stopping processes", error);
+  });
 
   // Stop and remove NUQ PostgreSQL container if it was started by harness
   if (services.nuqPostgres) {
@@ -1079,8 +1104,8 @@ async function runDevMode(): Promise<void> {
           await waitForPort(Number(PORT), "localhost", {
             signal: restartSignal?.signal,
           });
-        } catch (error) {
-          if (error?.name !== "AbortError") {
+        } catch (error: unknown) {
+          if (!(error instanceof Error) || error.name !== "AbortError") {
             throw error;
           }
           if (shuttingDown) {
@@ -1107,15 +1132,15 @@ async function runDevMode(): Promise<void> {
     restartSignal?.abort();
   });
 
-  watch.on("first_success", async () => {
+  watch.on("first_success", () => {
     logger.success("Initial compilation complete");
-    await restartServices();
+    void restartServices();
   });
 
-  watch.on("success", async () => {
+  watch.on("success", () => {
     if (started) {
       logger.info("Recompilation complete - restarting services");
-      await restartServices();
+      void restartServices();
     }
   });
 
@@ -1196,7 +1221,7 @@ async function waitForTermination(services: Services): Promise<void> {
 
   promises.push(...services.nuqWorkers.map(w => w.promise));
 
-  await Promise.race(promises).catch(error => {
+  await Promise.race(promises).catch((error: unknown) => {
     logger.error("A service has terminated unexpectedly", error);
     serviceError = true;
   });
@@ -1268,9 +1293,22 @@ function printUsage() {
   console.error(`  --start-docker Start services (skip install, assume built)`);
 }
 
+function logFatalError(label: string, error: unknown): void {
+  logger.error(label);
+  if (error instanceof Error) {
+    console.error(error.stack || error.message);
+  } else {
+    console.error(error);
+  }
+}
+
+function handleShutdownSignal(): void {
+  void gracefulShutdown();
+}
+
 async function main() {
-  process.on("SIGINT", gracefulShutdown);
-  process.on("SIGTERM", gracefulShutdown);
+  process.on("SIGINT", handleShutdownSignal);
+  process.on("SIGTERM", handleShutdownSignal);
 
   try {
     if (process.argv.length < 3) {
@@ -1290,9 +1328,8 @@ async function main() {
     } else {
       await runProductionMode(command);
     }
-  } catch (error: any) {
-    logger.error("Fatal error occurred");
-    console.error(error?.stack || error?.message || error);
+  } catch (error: unknown) {
+    logFatalError("Fatal error occurred", error);
     process.exit(1);
   } finally {
     await gracefulShutdown();
@@ -1301,18 +1338,18 @@ async function main() {
   }
 }
 
-process.on("unhandledRejection", async (reason, promise) => {
+process.on("unhandledRejection", reason => {
   logger.error("Unhandled rejection");
   console.error(reason);
-  await gracefulShutdown();
-  process.exit(1);
+  void gracefulShutdown().finally(() => {
+    process.exit(1);
+  });
 });
 
 export async function start(env: { entry: string }) {
   roleEntry = env.entry;
-  await main().catch(async error => {
-    logger.error("Fatal error in main");
-    console.error(error?.stack || error?.message || error);
+  await main().catch(async (error: unknown) => {
+    logFatalError("Fatal error in main", error);
     await gracefulShutdown();
     process.exit(1);
   });

@@ -4,15 +4,15 @@ import type { SearchRequest } from "../service/request";
 import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
 
-export async function applySearchPlanHook<T extends { type: string }>(
-  plan: { query: string; limit: number; sources: Array<T> },
+export async function applySearchPlanHook(
+  plan: { query: string; limit: number; sources: Array<{ type: string }> },
   info: {
     ctx: RequestContext;
     body: SearchRequest;
     state?: SearchState;
     logger?: Logger;
   },
-): Promise<{ query: string; limit: number; sources: Array<T> }> {
+): Promise<{ query: string; limit: number; sources: Array<{ type: string }> }> {
   const hooks = installedService()?.hooks;
   if (!hooks?.has("search.plan")) {
     return plan;
@@ -43,8 +43,6 @@ export async function applySearchPlanHook<T extends { type: string }>(
   return {
     query: planned.query,
     limit: planned.limit,
-    sources: planned.sources.map(
-      type => existingByType.get(type) ?? ({ type } as T),
-    ),
+    sources: planned.sources.map(type => existingByType.get(type) ?? { type }),
   };
 }

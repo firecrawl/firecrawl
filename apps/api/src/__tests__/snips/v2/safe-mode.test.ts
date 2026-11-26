@@ -1,4 +1,5 @@
 import request from "supertest";
+import { isJsonObject } from "../../../lib/json-types";
 import type { Identity } from "../lib";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
@@ -15,15 +16,34 @@ import { scrape, scrapeRaw, crawlStart } from "./lib";
 
 const TEST_SUITE_HOST = new URL(TEST_SUITE_WEBSITE).hostname;
 
+type SafeModeBlockedBody = {
+  success: false;
+  code: string;
+  error: string;
+};
+
+function isSafeModeBlockedBody(value: unknown): value is SafeModeBlockedBody {
+  return (
+    isJsonObject(value) &&
+    value.success === false &&
+    typeof value.code === "string" &&
+    typeof value.error === "string"
+  );
+}
+
 async function expectSafeModeBlocked(
   body: Parameters<typeof scrapeRaw>[0],
   identity: Identity,
-) {
+): Promise<SafeModeBlockedBody> {
   const res = await scrapeRaw(body, identity);
   expect(res.statusCode).toBe(403);
   expect(res.body.success).toBe(false);
   expect(res.body.code).toBe("SAFE_MODE_BLOCKED");
-  return res.body;
+  const parsed: unknown = res.body;
+  if (!isSafeModeBlockedBody(parsed)) {
+    throw new Error("Unexpected safe-mode error response shape");
+  }
+  return parsed;
 }
 
 describeIf(TEST_PRODUCTION)("Safe Mode (v2 scrape, request-time)", () => {

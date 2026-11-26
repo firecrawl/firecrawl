@@ -37,7 +37,7 @@ export function parseHostname(hostname: string): ReturnType<typeof parseTld> {
  * (incl. the Cyrillic ranges) or an xn-- punycode label, optionally with a port.
  */
 const LOOKS_LIKE_TLD =
-  /(\.[a-zA-Z0-9-Ѐ-ӿԀ-ԯⷠ-ⷿꙀ-ꚟ]{2,}|\.xn--[a-zA-Z0-9-]{1,})(:\d+)?([\/?#]|$)/i;
+  /(\.[a-zA-Z0-9-\p{Script=Cyrillic}]{2,}|\.xn--[a-zA-Z0-9-]{1,})(:\d+)?([/?#]|$)/iu;
 
 /**
  * Whether a URL's host is plausibly reachable. Used only for request validation.

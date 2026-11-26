@@ -18,6 +18,8 @@ import request, {
 } from "./lib";
 import { HAS_JOB_LOG, jobLogRows, waitForJobLogRow } from "../job-log";
 import { config } from "../../../config";
+import { isJsonObject } from "../../../lib/json-types";
+import type { JsonObject } from "../../../lib/json-types";
 import { getRedisConnection } from "../../../services/queue-service";
 
 const DOCX_FIXTURE_BASE64 =
@@ -52,16 +54,44 @@ function getUnparsedUploadRefsKey(teamId: string) {
   return `parse-upload-refs:${teamId}`;
 }
 
+type MintedUploadRef = {
+  uploadRef: string;
+  uploadUrl: string;
+  method: string;
+  headers?: Record<string, string>;
+  fields?: Record<string, string>;
+  maxSizeBytes: number;
+};
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return (
+    isJsonObject(value) &&
+    Object.values(value).every(entry => typeof entry === "string")
+  );
+}
+
+function isMintedUploadRef(value: unknown): value is MintedUploadRef {
+  return (
+    isJsonObject(value) &&
+    typeof value.uploadRef === "string" &&
+    typeof value.uploadUrl === "string" &&
+    typeof value.method === "string" &&
+    typeof value.maxSizeBytes === "number" &&
+    (value.headers === undefined || isStringRecord(value.headers)) &&
+    (value.fields === undefined || isStringRecord(value.fields))
+  );
+}
+
 function enableLocalUploadRefAdapter() {
-  (config as any).ENV = "test";
-  (config as any).PARSE_UPLOAD_STORAGE_DRIVER = "local";
+  config.ENV = "test";
+  config.PARSE_UPLOAD_STORAGE_DRIVER = "local";
 }
 
 async function mintUploadRef(
   owner: Identity,
   filename = "upload-ref.html",
   contentType = "text/html",
-) {
+): Promise<MintedUploadRef | null> {
   const init = await request(TEST_API_URL)
     .post("/v2/parse/upload-url")
     .set("Authorization", `Bearer ${owner.apiKey}`)
@@ -71,16 +101,18 @@ async function mintUploadRef(
       contentType,
     });
 
+  const initBody: unknown = init.body;
   if (
     init.statusCode === 503 &&
-    typeof init.body.code === "string" &&
-    init.body.code.startsWith("PARSE_UPLOAD_")
+    isJsonObject(initBody) &&
+    typeof initBody.code === "string" &&
+    initBody.code.startsWith("PARSE_UPLOAD_")
   ) {
     if (parseUploadRefTestRequired) {
       expect(init.statusCode).toBe(200);
     }
     console.warn(
-      `Skipping uploadRef storage-dependent test because ${TEST_API_URL} is not configured for parse upload refs: ${init.body.code}`,
+      `Skipping uploadRef storage-dependent test because ${TEST_API_URL} is not configured for parse upload refs: ${initBody.code}`,
     );
     return null;
   }
@@ -88,21 +120,17 @@ async function mintUploadRef(
   expect(init.statusCode).toBe(200);
   expect(init.body.success).toBe(true);
   expect(init.body.data.uploadRef).toEqual(expect.any(String));
-  return init.body.data as {
-    uploadRef: string;
-    uploadUrl: string;
-    method: string;
-    headers?: Record<string, string>;
-    fields?: Record<string, string>;
-    maxSizeBytes: number;
-  };
+  if (!isJsonObject(initBody) || !isMintedUploadRef(initBody.data)) {
+    throw new Error("Unexpected /v2/parse/upload-url response shape");
+  }
+  return initBody.data;
 }
 
 async function mintRequiredUploadRef(
   owner: Identity,
   filename = "upload-ref.html",
   contentType = "text/html",
-) {
+): Promise<MintedUploadRef> {
   const init = await request(TEST_API_URL)
     .post("/v2/parse/upload-url")
     .set("Authorization", `Bearer ${owner.apiKey}`)
@@ -115,14 +143,11 @@ async function mintRequiredUploadRef(
   expect(init.statusCode, JSON.stringify(init.body)).toBe(200);
   expect(init.body.success).toBe(true);
   expect(init.body.data.uploadRef).toEqual(expect.any(String));
-  return init.body.data as {
-    uploadRef: string;
-    uploadUrl: string;
-    method: string;
-    headers?: Record<string, string>;
-    fields?: Record<string, string>;
-    maxSizeBytes: number;
-  };
+  const initBody: unknown = init.body;
+  if (!isJsonObject(initBody) || !isMintedUploadRef(initBody.data)) {
+    throw new Error("Unexpected /v2/parse/upload-url response shape");
+  }
+  return initBody.data;
 }
 
 async function uploadToMintedTarget(
@@ -159,7 +184,7 @@ function getLocalUploadRefSecret() {
   return config.PARSE_UPLOAD_REF_SECRET;
 }
 
-function resignUploadRefPayload(payload: Record<string, unknown>) {
+function resignUploadRefPayload(payload: JsonObject) {
   const encodedPayload = Buffer.from(JSON.stringify(payload)).toString(
     "base64url",
   );
@@ -171,14 +196,22 @@ function resignUploadRefPayload(payload: Record<string, unknown>) {
   return `${encodedPayload}.${signature}`;
 }
 
-function withUploadRefPayload(
-  uploadRef: string,
-  mutate: (payload: Record<string, any>) => void,
-) {
+function decodeUploadRefPayload(uploadRef: string): JsonObject {
   const [encodedPayload] = uploadRef.split(".");
-  const payload = JSON.parse(
+  const parsed: unknown = JSON.parse(
     Buffer.from(encodedPayload, "base64url").toString("utf8"),
   );
+  if (!isJsonObject(parsed)) {
+    throw new Error("Expected JSON object in uploadRef payload");
+  }
+  return parsed;
+}
+
+function withUploadRefPayload(
+  uploadRef: string,
+  mutate: (payload: JsonObject) => void,
+) {
+  const payload = decodeUploadRefPayload(uploadRef);
   mutate(payload);
   return resignUploadRefPayload(payload);
 }
@@ -187,11 +220,6 @@ function tamperUploadRefSignature(uploadRef: string) {
   const [encodedPayload, signature] = uploadRef.split(".");
   const replacement = signature.endsWith("A") ? "B" : "A";
   return `${encodedPayload}.${signature.slice(0, -1)}${replacement}`;
-}
-
-function decodeUploadRefPayload(uploadRef: string) {
-  const [encodedPayload] = uploadRef.split(".");
-  return JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8"));
 }
 
 async function waitForSingleRow<T>(
@@ -205,15 +233,16 @@ async function waitForSingleRow<T>(
     if (row) {
       return row;
     }
-    await new Promise(resolve => setTimeout(resolve, intervalMs));
+    await new Promise<void>(resolve => {
+      setTimeout(resolve, intervalMs);
+    });
   }
   return null;
 }
 
 afterEach(() => {
-  (config as any).PARSE_UPLOAD_STORAGE_DRIVER =
-    originalParseUploadStorageDriver;
-  (config as any).ENV = originalEnv;
+  config.PARSE_UPLOAD_STORAGE_DRIVER = originalParseUploadStorageDriver;
+  config.ENV = originalEnv;
 });
 
 beforeAll(async () => {

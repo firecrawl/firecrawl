@@ -33,7 +33,9 @@ describeIf(TEST_PRODUCTION)("V2 index lookup variant matching", () => {
       );
       expect(data1.metadata.cacheState).toBe("miss");
 
-      await new Promise(resolve => setTimeout(resolve, indexCooldown));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, indexCooldown);
+      });
 
       // A request that doesn't need a screenshot matches entries with or
       // without one (p_feature_screenshot IS NOT TRUE OR has_screenshot).
@@ -63,7 +65,9 @@ describeIf(TEST_PRODUCTION)("V2 index lookup variant matching", () => {
       );
       expect(data1.metadata.cacheState).toBe("miss");
 
-      await new Promise(resolve => setTimeout(resolve, indexCooldown));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, indexCooldown);
+      });
 
       const data2 = await scrape(
         {

@@ -16,18 +16,30 @@ import {
 } from "./service";
 import type { CoreParts, Extension, Worker } from "./service";
 
+const noop = () => {};
 const worker = (): Worker => ({ run: vi.fn() });
 const parts = (core: Partial<Extension> = {}): CoreParts => ({
   core: { name: "core", ...core },
   logger: { error: vi.fn() },
 });
 
-// A test's codes are not in ErrorCodes, so a class can only be built through a cast.
-const errorClass = (...codes: Array<string>) =>
-  ({ codes, deserialize: vi.fn() }) as unknown as TransportableErrorClass;
+type V4Model = Extract<LlmModel, { specificationVersion: "v4" }>;
 
-// A test's engine and feature names are not in Engines/EngineFeatures, so they
-// are built through casts.
+const fakeModel = (id: string): LlmModel => ({
+  specificationVersion: "v4",
+  provider: "test",
+  modelId: id,
+  supportedUrls: {},
+  doGenerate: vi.fn<V4Model["doGenerate"]>(),
+  doStream: vi.fn<V4Model["doStream"]>(),
+});
+
+const errorClass = (...codes: Array<string>): TransportableErrorClass => ({
+  // @ts-expect-error: test error codes exercise open declaration-merged ErrorCode
+  codes,
+  deserialize: vi.fn<TransportableErrorClass["deserialize"]>(),
+});
+
 const engine = (
   name: string,
   overrides: {
@@ -38,18 +50,19 @@ const engine = (
     maxReasonableTime?: Engine["maxReasonableTime"];
     explicitOnly?: boolean;
   } = {},
-): Engine =>
-  ({
-    name,
-    quality: 10,
-    features: {},
-    enabled: () => true,
-    scrape: vi.fn(),
-    ...overrides,
-  }) as unknown as Engine;
+): Engine => ({
+  // @ts-expect-error: test engine names exercise open declaration-merged EngineName
+  name,
+  quality: 10,
+  features: {},
+  enabled: () => true,
+  scrape: vi.fn<Engine["scrape"]>(),
+  ...overrides,
+});
 
-const featureMap = (listed: Record<string, { priority: number }>) =>
-  listed as unknown as EngineFeatureMap;
+const featureMap = (
+  listed: Record<string, { priority: number }>,
+): EngineFeatureMap => listed;
 
 const llmProvider = (
   name: string,
@@ -57,13 +70,13 @@ const llmProvider = (
     enabled?: () => boolean;
     model?: LlmProvider["model"];
   } = {},
-): LlmProvider =>
-  ({
-    name,
-    enabled: () => true,
-    model: vi.fn((id: string) => ({ modelId: id }) as unknown as LlmModel),
-    ...overrides,
-  }) as unknown as LlmProvider;
+): LlmProvider => ({
+  // @ts-expect-error: test provider names exercise open declaration-merged LlmProviderName
+  name,
+  enabled: () => true,
+  model: vi.fn((id: string) => fakeModel(id)),
+  ...overrides,
+});
 
 const searchProvider = (
   name: string,
@@ -73,14 +86,14 @@ const searchProvider = (
     enabled?: () => boolean;
     search?: SearchProvider["search"];
   } = {},
-): SearchProvider =>
-  ({
-    name,
-    priority: 10,
-    enabled: () => true,
-    search: vi.fn(async () => ({ web: [] })),
-    ...overrides,
-  }) as unknown as SearchProvider;
+): SearchProvider => ({
+  // @ts-expect-error: test provider names exercise open declaration-merged SearchProviderName
+  name,
+  priority: 10,
+  enabled: () => true,
+  search: vi.fn(async () => ({ web: [] })),
+  ...overrides,
+});
 
 afterEach(() => {
   replaceService(undefined);
@@ -207,7 +220,8 @@ describe("createService", () => {
           extensions: [
             {
               name: "bad-name",
-              hooks: { "unknown.point": vi.fn() } as unknown as HookHandlers,
+              // @ts-expect-error: verifying runtime rejection of unknown hook point name
+              hooks: { "unknown.point": vi.fn() },
             },
           ],
         },
@@ -222,7 +236,8 @@ describe("createService", () => {
           extensions: [
             {
               name: "ctor-key",
-              hooks: { constructor: vi.fn() } as unknown as HookHandlers,
+              // @ts-expect-error: verifying runtime rejection of prototype hook key
+              hooks: { constructor: vi.fn() },
             },
           ],
         },
@@ -256,7 +271,8 @@ describe("createService", () => {
           extensions: [
             {
               name: "bad-handler",
-              hooks: { "map.finished": "not-a-fn" } as unknown as HookHandlers,
+              // @ts-expect-error: verifying runtime rejection of non-function hook handler
+              hooks: { "map.finished": "not-a-fn" },
             },
           ],
         },
@@ -338,7 +354,6 @@ describe("errors", () => {
 describe("describe", () => {
   it("lists the extensions in order, the owner of each handler, error code, engine, feature and role", () => {
     const enabled = vi.fn(() => true);
-    const noop = () => {};
     const built = createService(
       {
         modules: {},
@@ -728,9 +743,9 @@ describe("service", () => {
     expect(() => service.workers).toThrow("No service is installed");
     expect(() =>
       service.mountRoutes({
-        root: {} as never,
-        v2: {} as never,
-        admin: {} as never,
+        root: express.Router(),
+        v2: express.Router(),
+        admin: express.Router(),
       }),
     ).toThrow("No service is installed");
     expect(() => service.describe()).toThrow("No service is installed");
@@ -754,9 +769,9 @@ describe("service", () => {
     expect(service.roles).toBe(built.roles);
     expect(service.workers).toBe(built.workers);
     const routers = {
-      root: {} as never,
-      v2: {} as never,
-      admin: {} as never,
+      root: express.Router(),
+      v2: express.Router(),
+      admin: express.Router(),
     };
     service.mountRoutes(routers);
     expect(mountSpy).toHaveBeenCalledWith(routers);

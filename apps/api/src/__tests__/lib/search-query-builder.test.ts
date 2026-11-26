@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { z } from "zod";
+import { isJsonObject } from "../../lib/json-types";
+import type { CategoryOption } from "../../lib/search-query-builder";
 import {
   buildSearchQuery,
   getCategoryFromUrl,
@@ -91,7 +94,10 @@ describe("Search Query Builder", () => {
     });
 
     it("should ignore invalid category objects", () => {
-      const result = buildSearchQuery("test", [{ type: "invalid" as any }]);
+      const invalidCategory = z
+        .custom<CategoryOption>(isJsonObject)
+        .parse({ type: "invalid" });
+      const result = buildSearchQuery("test", [invalidCategory]);
       expect(result.query).toBe("test");
       expect(result.categoryMap.size).toBe(0);
     });

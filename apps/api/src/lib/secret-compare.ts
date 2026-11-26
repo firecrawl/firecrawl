@@ -13,8 +13,13 @@ export function timingSafeSecretEqual(
   return timingSafeEqual(left, right);
 }
 
+interface ProxySecretHeaders {
+  "x-firecrawl-hosted-mcp-secret"?: unknown;
+  "x-firecrawl-keyless-secret"?: unknown;
+}
+
 export function hasHostedMcpProxySecret(
-  headers: Record<string, unknown>,
+  headers: ProxySecretHeaders,
   secrets: {
     HOSTED_MCP_PROXY_SECRET?: string;
     KEYLESS_PROXY_SECRET?: string;

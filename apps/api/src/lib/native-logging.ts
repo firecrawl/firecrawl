@@ -1,4 +1,6 @@
 import type { Logger } from "winston";
+import { isJsonObject } from "./json-types";
+import type { JsonObject } from "./json-types";
 
 const NATIVE_LOGS_SEPARATOR = "\n__native_logs__:";
 
@@ -7,8 +9,19 @@ interface NativeLogEntry {
   level: string;
   target: string;
   message: string;
-  fields: Record<string, unknown>;
+  fields: JsonObject;
   timestampMs: number;
+}
+
+function isNativeLogEntry(value: unknown): value is NativeLogEntry {
+  return (
+    isJsonObject(value) &&
+    typeof value.level === "string" &&
+    typeof value.target === "string" &&
+    typeof value.message === "string" &&
+    isJsonObject(value.fields) &&
+    typeof value.timestampMs === "number"
+  );
 }
 
 /**
@@ -31,7 +44,11 @@ export function extractAndEmitNativeLogs(
   const logsJson = error.message.slice(idx + NATIVE_LOGS_SEPARATOR.length);
 
   try {
-    const logs: Array<NativeLogEntry> = JSON.parse(logsJson);
+    const parsed: unknown = JSON.parse(logsJson);
+    if (!Array.isArray(parsed)) {
+      return;
+    }
+    const logs = parsed.filter(isNativeLogEntry);
     // Only strip after successful parse so we don't lose data on failure
     error.message = error.message.slice(0, idx);
     emitNativeLogs(logs, parentLogger, module);

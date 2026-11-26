@@ -1,3 +1,4 @@
+import { isJsonObject } from "../../../lib/json-types";
 import { describeIf, itIf, TEST_PRODUCTION } from "../lib";
 import type { Identity } from "./lib";
 import {
@@ -70,7 +71,9 @@ describeIf(TEST_PRODUCTION)("US-only teams", () => {
       );
 
       expect(response.markdown).toBeDefined();
-      expect((response as any).highlights).toBeUndefined();
+      expect(
+        isJsonObject(response) ? response.highlights : undefined,
+      ).toBeUndefined();
       expect(response.warning).toContain(
         "Query mode is not supported for teams restricted to US-only processing.",
       );

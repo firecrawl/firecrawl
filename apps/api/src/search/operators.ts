@@ -123,14 +123,33 @@ export function planOperatorQuery(query: string): OperatorPlan {
   const rewritten = query
     .replaceAll(
       OPERATOR_TOKEN,
-      (token, phrase, lead, negated, name, quoted, bare, closing) => {
-        if (phrase !== undefined || name.toLowerCase() === "site") {
+      (
+        token: string,
+        phrase: string | undefined,
+        lead: string | undefined,
+        negated: string | undefined,
+        name: string | undefined,
+        quoted: string | undefined,
+        bare: string | undefined,
+        closing: string | undefined,
+      ): string => {
+        if (
+          phrase !== undefined ||
+          name === undefined ||
+          name.toLowerCase() === "site"
+        ) {
           return token;
         }
+        const prefix = lead ?? "";
+        const suffix = closing ?? "";
         if (negated) {
-          return lead + closing;
+          return prefix + suffix;
         }
-        return lead + (quoted !== undefined ? `"${quoted}"` : bare) + closing;
+        return (
+          prefix +
+          (quoted !== undefined ? `"${quoted}"` : (bare ?? "")) +
+          suffix
+        );
       },
     )
     .replaceAll(/\s+/g, " ")
@@ -140,7 +159,14 @@ export function planOperatorQuery(query: string): OperatorPlan {
 
 /** Hostnames from site: operators, for the provider-side domain filter. */
 export function siteHostnames(sites: Array<string>): Array<string> {
-  return [...new Set(sites.map(site => site.split("/")[0]).filter(Boolean))];
+  const hosts = new Set<string>();
+  for (const site of sites) {
+    const host = site.split("/")[0];
+    if (host) {
+      hosts.add(host);
+    }
+  }
+  return [...hosts];
 }
 
 function matchesSite(url: URL, site: string): boolean {

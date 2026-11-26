@@ -1,4 +1,5 @@
 import request from "supertest";
+import { isJsonObject } from "../../../lib/json-types";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
@@ -21,13 +22,18 @@ beforeAll(async () => {
   const formatsResponse = await request(TEST_API_URL)
     .get("/v2/parse/formats")
     .set("Authorization", `Bearer ${identity.apiKey}`);
+  const formatsBody: unknown = formatsResponse.body;
   if (
     formatsResponse.statusCode === 200 &&
-    Array.isArray(formatsResponse.body?.data?.formats)
+    isJsonObject(formatsBody) &&
+    isJsonObject(formatsBody.data) &&
+    Array.isArray(formatsBody.data.formats)
   ) {
-    imageOcrOn = formatsResponse.body.data.formats.some(
-      (format: { kind?: string; available?: boolean }) =>
-        format.kind === "image" && format.available === true,
+    imageOcrOn = formatsBody.data.formats.some(
+      format =>
+        isJsonObject(format) &&
+        format.kind === "image" &&
+        format.available === true,
     );
   }
 }, 10_000 + scrapeTimeout);

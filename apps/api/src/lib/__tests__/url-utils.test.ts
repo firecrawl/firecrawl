@@ -80,7 +80,9 @@ describe("URL Utils", () => {
       expect(extractBaseDomain("https://hello.vercel.app")).toBe(
         "hello.vercel.app",
       );
-      expect(extractBaseDomain("https://user.github.io")).toBe("user.github.io");
+      expect(extractBaseDomain("https://user.github.io")).toBe(
+        "user.github.io",
+      );
     });
   });
 
@@ -109,14 +111,14 @@ describe("URL Utils", () => {
   });
 });
 
-describe("parent-sitemap host filter", () => {
-  // Mirrors the filter in crawler.ts tryFetchSitemapLinks: when a subdomain crawl
-  // pulls the parent domain's sitemap, only the crawled host and its own children
-  // may be kept. A bare endsWith would also admit sibling hosts sharing a suffix
-  // of the final label.
-  const keeps = (host: string, linkHost: string) =>
-    linkHost === host || linkHost.endsWith(`.${host}`);
+// Mirrors the filter in crawler.ts tryFetchSitemapLinks: when a subdomain crawl
+// pulls the parent domain's sitemap, only the crawled host and its own children
+// may be kept. A bare endsWith would also admit sibling hosts sharing a suffix
+// of the final label.
+const keeps = (host: string, linkHost: string) =>
+  linkHost === host || linkHost.endsWith(`.${host}`);
 
+describe("parent-sitemap host filter", () => {
   const host = "crm.danetcomm.co.il";
 
   it("keeps the host itself and real child subdomains", () => {

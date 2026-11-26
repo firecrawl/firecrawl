@@ -100,9 +100,9 @@ function markTraceZeroDataRetention(traceId: string): void {
 
   zeroDataRetentionTraces.add(traceId);
   if (zeroDataRetentionTraces.size > ZERO_DATA_RETENTION_TRACE_LIMIT) {
-    const oldest = zeroDataRetentionTraces.values().next().value;
-    if (oldest !== undefined) {
-      zeroDataRetentionTraces.delete(oldest);
+    const oldest = zeroDataRetentionTraces.values().next();
+    if (!oldest.done) {
+      zeroDataRetentionTraces.delete(oldest.value);
     }
   }
 }
@@ -246,16 +246,15 @@ interface TracerProviderOptions {
 export function createTracerProvider(
   options: TracerProviderOptions,
 ): NodeTracerProvider {
+  const serviceAttributes: Attributes = {
+    [ATTR_SERVICE_NAME]: options.serviceName,
+  };
+  if (options.serviceInstanceId) {
+    serviceAttributes["service.instance.id"] = options.serviceInstanceId;
+  }
   const resource = defaultResource()
     .merge(detectResources({ detectors: [envDetector] }))
-    .merge(
-      resourceFromAttributes({
-        [ATTR_SERVICE_NAME]: options.serviceName,
-        ...(options.serviceInstanceId
-          ? { "service.instance.id": options.serviceInstanceId }
-          : {}),
-      }),
-    );
+    .merge(resourceFromAttributes(serviceAttributes));
 
   return new NodeTracerProvider({
     resource,
@@ -303,7 +302,7 @@ export async function withTraceContextAsync<T>(
     return fn();
   }
 
-  const carrier: Record<string, string> = {
+  const carrier: SerializedTraceContext = {
     traceparent: serializedContext.traceparent,
   };
   if (serializedContext.tracestate) {

@@ -1,9 +1,23 @@
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { config } from "../config";
+import { scrapeOptions } from "../controllers/v2/types";
 import { nuqShutdown, scrapeQueue } from "../services/worker/nuq";
+import type { ScrapeJobData } from "../types";
 
 const describeIf = config.NUQ_DATABASE_URL ? describe : describe.skip;
+
+function scrapeData(): ScrapeJobData {
+  return {
+    mode: "single_urls",
+    url: "https://example.com",
+    team_id: randomUUID(),
+    scrapeOptions: scrapeOptions.parse({}),
+    origin: "test",
+    apiKeyId: null,
+    zeroDataRetention: false,
+  };
+}
 
 describeIf("NuQ Postgres queue", () => {
   let cleanupPool: Pool;
@@ -35,14 +49,6 @@ describeIf("NuQ Postgres queue", () => {
     await cleanupPool.end();
     await nuqShutdown();
   });
-
-  function scrapeData() {
-    return {
-      mode: "single_urls",
-      url: "https://example.com",
-      team_id: randomUUID(),
-    } as any;
-  }
 
   test("single backlogged inserts report backlog status", async () => {
     const addJobId = randomUUID();
@@ -157,7 +163,7 @@ describeIf("NuQ Postgres queue", () => {
       failed.map(job => ({
         id: job.id,
         failedReason: job.failedReason,
-        url: (job.data as any).url,
+        url: "url" in job.data ? job.data.url : undefined,
       })),
     ).toEqual(
       expectedFailed.map(row => ({

@@ -3,7 +3,111 @@ import type express from "express";
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildRouteRegistry } from "./routes";
-import type { RouteRegistrar, Routers } from "./routes";
+import type { RouteRegistrar } from "./routes";
+
+function authGuard(
+  _req: express.Request,
+  _res: express.Response,
+  next: express.NextFunction,
+) {
+  next();
+}
+function teamRegexGuard(
+  _req: express.Request,
+  _res: express.Response,
+  next: express.NextFunction,
+) {
+  next();
+}
+function outerGuard(
+  _req: express.Request,
+  _res: express.Response,
+  next: express.NextFunction,
+) {
+  next();
+}
+function ignoreError(
+  _err: unknown,
+  _req: express.Request,
+  _res: express.Response,
+  next: express.NextFunction,
+) {
+  next();
+}
+function listItems(_req: express.Request, res: express.Response) {
+  res.end();
+}
+function createItem(_req: express.Request, res: express.Response) {
+  res.end();
+}
+function deepLeaf(_req: express.Request, res: express.Response) {
+  res.end();
+}
+const describeOnlyHandlers = {
+  teamUsage(_req: express.Request, res: express.Response) {
+    res.end();
+  },
+};
+function multiPing(_req: express.Request, res: express.Response) {
+  res.end();
+}
+function coreScrape(_req: express.Request, res: express.Response) {
+  res.end();
+}
+
+function teamGuard(
+  _req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) {
+  res.locals.ran = [...(res.locals.ran ?? []), "teamGuard"];
+  next();
+}
+function memberGuard(
+  _req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) {
+  res.locals.ran = [...(res.locals.ran ?? []), "memberGuard"];
+  next();
+}
+function multiScopeGuard(
+  _req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) {
+  res.locals.ran = [...(res.locals.ran ?? []), "multiScopeGuard"];
+  next();
+}
+function stickyGuard(
+  _req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) {
+  res.locals.ran = [...(res.locals.ran ?? []), "stickyGuard"];
+  next();
+}
+function teamUsage(_req: express.Request, res: express.Response) {
+  res.json({ ran: [...(res.locals.ran ?? []), "teamUsage"] });
+}
+function staticUsage(_req: express.Request, res: express.Response) {
+  res.json({ ran: [...(res.locals.ran ?? []), "staticUsage"] });
+}
+function listTeams(_req: express.Request, res: express.Response) {
+  res.json({ ran: [...(res.locals.ran ?? []), "listTeams"] });
+}
+function getRoles(_req: express.Request, res: express.Response) {
+  res.json({ ran: [...(res.locals.ran ?? []), "getRoles"] });
+}
+function orgInfo(_req: express.Request, res: express.Response) {
+  res.json({ ran: [...(res.locals.ran ?? []), "orgInfo"] });
+}
+function stickyA(_req: express.Request, res: express.Response) {
+  res.json({ ran: [...(res.locals.ran ?? []), "stickyA"] });
+}
+function stickyB(_req: express.Request, res: express.Response) {
+  res.json({ ran: [...(res.locals.ran ?? []), "stickyB"] });
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -170,53 +274,6 @@ describe("buildRouteRegistry", () => {
 
   it("describes routes in mount order including deeply nested routers, array prefixes, and regex middleware scopes", async () => {
     const { default: expressRuntime } = await import("express");
-    function authGuard(
-      _req: express.Request,
-      _res: express.Response,
-      next: express.NextFunction,
-    ) {
-      next();
-    }
-    function teamRegexGuard(
-      _req: express.Request,
-      _res: express.Response,
-      next: express.NextFunction,
-    ) {
-      next();
-    }
-    function outerGuard(
-      _req: express.Request,
-      _res: express.Response,
-      next: express.NextFunction,
-    ) {
-      next();
-    }
-    function ignoreError(
-      _err: unknown,
-      _req: express.Request,
-      _res: express.Response,
-      next: express.NextFunction,
-    ) {
-      next();
-    }
-    function listItems(_req: express.Request, res: express.Response) {
-      res.end();
-    }
-    function createItem(_req: express.Request, res: express.Response) {
-      res.end();
-    }
-    function deepLeaf(_req: express.Request, res: express.Response) {
-      res.end();
-    }
-    function teamUsage(_req: express.Request, res: express.Response) {
-      res.end();
-    }
-    function multiPing(_req: express.Request, res: express.Response) {
-      res.end();
-    }
-    function coreScrape(_req: express.Request, res: express.Response) {
-      res.end();
-    }
 
     const registrar = vi.fn<RouteRegistrar>(
       ({ root, v2, admin, adminInternal }) => {
@@ -226,7 +283,7 @@ describe("buildRouteRegistry", () => {
         v2.use(ignoreError);
         v2.use(/^\/team/, teamRegexGuard);
         v2.route("/items").get(listItems).post(createItem);
-        v2.get("/team/usage", teamUsage);
+        v2.get("/team/usage", describeOnlyHandlers.teamUsage);
         v2.all("/wildcard", listItems);
 
         const outer = expressRuntime.Router();
@@ -361,60 +418,6 @@ describe("buildRouteRegistry", () => {
 
   it("matches parameterized middleware scopes using Express compiled matcher semantics", async () => {
     const { default: expressRuntime } = await import("express");
-
-    function teamGuard(
-      _req: express.Request,
-      res: express.Response,
-      next: express.NextFunction,
-    ) {
-      res.locals.ran = [...(res.locals.ran ?? []), "teamGuard"];
-      next();
-    }
-    function memberGuard(
-      _req: express.Request,
-      res: express.Response,
-      next: express.NextFunction,
-    ) {
-      res.locals.ran = [...(res.locals.ran ?? []), "memberGuard"];
-      next();
-    }
-    function multiScopeGuard(
-      _req: express.Request,
-      res: express.Response,
-      next: express.NextFunction,
-    ) {
-      res.locals.ran = [...(res.locals.ran ?? []), "multiScopeGuard"];
-      next();
-    }
-    function stickyGuard(
-      _req: express.Request,
-      res: express.Response,
-      next: express.NextFunction,
-    ) {
-      res.locals.ran = [...(res.locals.ran ?? []), "stickyGuard"];
-      next();
-    }
-    function teamUsage(_req: express.Request, res: express.Response) {
-      res.json({ ran: [...(res.locals.ran ?? []), "teamUsage"] });
-    }
-    function staticUsage(_req: express.Request, res: express.Response) {
-      res.json({ ran: [...(res.locals.ran ?? []), "staticUsage"] });
-    }
-    function listTeams(_req: express.Request, res: express.Response) {
-      res.json({ ran: [...(res.locals.ran ?? []), "listTeams"] });
-    }
-    function getRoles(_req: express.Request, res: express.Response) {
-      res.json({ ran: [...(res.locals.ran ?? []), "getRoles"] });
-    }
-    function orgInfo(_req: express.Request, res: express.Response) {
-      res.json({ ran: [...(res.locals.ran ?? []), "orgInfo"] });
-    }
-    function stickyA(_req: express.Request, res: express.Response) {
-      res.json({ ran: [...(res.locals.ran ?? []), "stickyA"] });
-    }
-    function stickyB(_req: express.Request, res: express.Response) {
-      res.json({ ran: [...(res.locals.ran ?? []), "stickyB"] });
-    }
 
     const { mountRoutes, describeRoutes } = buildRouteRegistry([
       { owner: "core", isCore: true },
@@ -599,7 +602,8 @@ describe("buildRouteRegistry", () => {
     const { default: expressRuntime } = await import("express");
     expect(() =>
       buildRouteRegistry([
-        { owner: "bad", routes: "not-a-fn" as unknown as RouteRegistrar },
+        // @ts-expect-error: verifying runtime rejection of non-function routes registrar
+        { owner: "bad", routes: "not-a-fn" },
       ]),
     ).toThrow('Extension "bad" routes must be a function');
 
@@ -607,12 +611,14 @@ describe("buildRouteRegistry", () => {
       { owner: "core", isCore: true },
     ]);
 
-    expect(() => mountRoutes(null as unknown as Routers)).toThrow(
-      "Routers must be an object",
-    );
+    expect(() =>
+      // @ts-expect-error: verifying runtime rejection of null routers bag
+      mountRoutes(null),
+    ).toThrow("Routers must be an object");
     expect(() =>
       mountRoutes({
-        rootRaw: null as unknown as express.Router,
+        // @ts-expect-error: verifying runtime rejection of null rootRaw router
+        rootRaw: null,
         root: expressRuntime.Router(),
         v2: expressRuntime.Router(),
         admin: expressRuntime.Router(),
@@ -620,7 +626,8 @@ describe("buildRouteRegistry", () => {
     ).toThrow("Routers.rootRaw must be an Express router");
     expect(() =>
       mountRoutes({
-        root: null as unknown as express.Router,
+        // @ts-expect-error: verifying runtime rejection of null root router
+        root: null,
         v2: expressRuntime.Router(),
         admin: expressRuntime.Router(),
       }),
@@ -630,7 +637,8 @@ describe("buildRouteRegistry", () => {
         root: expressRuntime.Router(),
         v2: expressRuntime.Router(),
         admin: expressRuntime.Router(),
-        adminInternal: null as unknown as express.Router,
+        // @ts-expect-error: verifying runtime rejection of null adminInternal router
+        adminInternal: null,
       }),
     ).toThrow("Routers.adminInternal must be an Express router");
   });

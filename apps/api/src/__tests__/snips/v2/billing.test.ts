@@ -12,7 +12,10 @@ import {
   search,
 } from "./lib";
 
-const sleep = (ms: number) => new Promise(x => setTimeout(() => x(true), ms));
+const sleep = (ms: number) =>
+  new Promise<void>(resolve => {
+    setTimeout(resolve, ms);
+  });
 const sleepForBatchBilling = () => sleep(40_000);
 
 // TODO: can be combined with v1...?

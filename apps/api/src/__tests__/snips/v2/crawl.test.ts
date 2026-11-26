@@ -14,6 +14,7 @@ import {
   crawl,
   crawlOngoing,
   crawlStart,
+  getMapLinks,
   map,
   idmux,
   scrapeTimeout,
@@ -24,9 +25,18 @@ import {
   MAX_PATH_PATTERNS,
   MAX_TOTAL_PATH_PATTERNS,
 } from "../../../lib/crawl-regex";
+import { isJsonObject } from "../../../lib/json-types";
 import { describe, it, expect } from "vitest";
 
 let identity: Identity;
+
+const hostOf = (value?: string) => {
+  try {
+    return new URL(value!).hostname.replace(/^www\./, "");
+  } catch {
+    return undefined;
+  }
+};
 
 const normalizeUrlForCompare = (value: string) => {
   const url = new URL(value);
@@ -116,7 +126,7 @@ describe("Crawl tests", () => {
       expect(mapResponse.body.success).toBe(true);
 
       const sitemapUrls = new Set(
-        mapResponse.body.links.map(link => normalizeUrlForCompare(link.url)),
+        getMapLinks(mapResponse).map(link => normalizeUrlForCompare(link.url)),
       );
       const baseNormalized = normalizeUrlForCompare(base);
 
@@ -252,8 +262,13 @@ describe("Crawl tests", () => {
       expect(res.statusCode).toBe(400);
       expect(res.body.success).toBe(false);
       // Schema-level (non-custom) issues are reported in details, not error.
+      const resBody: unknown = res.body;
+      const details =
+        isJsonObject(resBody) && Array.isArray(resBody.details)
+          ? resBody.details
+          : [];
       expect(
-        res.body.details.map((issue: { message: string }) => issue.message),
+        details.map(issue => (isJsonObject(issue) ? issue.message : undefined)),
       ).toContainEqual(
         expect.stringMatching(
           new RegExp(`at most ${MAX_PATH_PATTERNS} patterns`),
@@ -446,7 +461,9 @@ describe("Crawl tests", () => {
       await asyncCrawlWaitForFinish(res.id, identity);
 
       // wait for crawl finish to happen on DB cron
-      await new Promise(resolve => setTimeout(resolve, 15_000));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 15_000);
+      });
 
       const ongoing2 = await crawlOngoing(identity);
 
@@ -606,14 +623,6 @@ describe("Crawl tests", () => {
 
       expect(res.success).toBe(true);
       if (res.success) {
-        const hostOf = (value?: string) => {
-          try {
-            return new URL(value!).hostname.replace(/^www\./, "");
-          } catch {
-            return undefined;
-          }
-        };
-
         // The page reached via the external iana.org link (identified by its
         // pre-redirect sourceURL). Absent before the fix, when it was rejected
         // as EXTERNAL_LINK.

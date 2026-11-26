@@ -1,18 +1,24 @@
 import express from "express";
+import type { Request, Response } from "express";
 import request from "supertest";
+import { isJsonObject } from "../../lib/json-types";
+import type { authMiddleware } from "../../routes/shared";
 
 // Real routers; auth is stubbed to answer with the options its route passed,
 // so each request shows whether the route opts in to the hosted MCP minimums.
 vi.mock("../../routes/shared", async importOriginal => {
-  const actual = await importOriginal<typeof import("../../routes/shared")>();
+  const actual = await importOriginal<{
+    authMiddleware: typeof authMiddleware;
+  }>();
   return {
     ...actual,
     authMiddleware:
       (_mode: unknown, options: { hostedMcpRateLimit?: boolean } = {}) =>
-      (_req: any, res: any) =>
+      (_req: Request, res: Response) => {
         res
           .status(200)
-          .json({ hostedMcpRateLimit: options.hostedMcpRateLimit === true }),
+          .json({ hostedMcpRateLimit: options.hostedMcpRateLimit === true });
+      },
   };
 });
 
@@ -25,7 +31,11 @@ app.use("/v2", v2Router);
 async function optsIn(path: string): Promise<boolean> {
   const res = await request(app).post(path).send({});
   expect(res.status).toBe(200);
-  return res.body.hostedMcpRateLimit;
+  const body: unknown = res.body;
+  if (!isJsonObject(body) || typeof body.hostedMcpRateLimit !== "boolean") {
+    throw new Error("Expected hostedMcpRateLimit boolean in response body");
+  }
+  return body.hostedMcpRateLimit;
 }
 
 describe("hosted MCP rate-limit opt-in", () => {

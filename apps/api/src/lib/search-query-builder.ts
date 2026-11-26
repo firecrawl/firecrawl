@@ -1,3 +1,5 @@
+import { isJsonObject } from "./json-types";
+
 /**
  * Search Query Builder
  * Builds search queries with category filters for the search API
@@ -44,7 +46,11 @@ export function hasCategory(
 ): boolean {
   return (
     Array.isArray(categories) &&
-    categories.some(c => (typeof c === "string" ? c : c?.type) === type)
+    categories.some(
+      (c: unknown) =>
+        (typeof c === "string" ? c : isJsonObject(c) ? c.type : undefined) ===
+        type,
+    )
   );
 }
 

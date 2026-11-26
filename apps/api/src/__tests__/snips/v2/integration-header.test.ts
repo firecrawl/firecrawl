@@ -5,6 +5,7 @@ import {
   describeIf,
   TEST_PRODUCTION,
 } from "../lib";
+import type { JsonObject } from "../../../lib/json-types";
 import type { Identity } from "./lib";
 import request, { idmux, scrapeTimeout, TEST_API_URL } from "./lib";
 import { HAS_JOB_LOG, waitForJobLogRow } from "../job-log";
@@ -13,7 +14,7 @@ const CAN_READ_LOG = TEST_PRODUCTION && HAS_JOB_LOG;
 
 async function scrapeWithHeader(
   path: "/v2/scrape",
-  body: Record<string, unknown>,
+  body: JsonObject,
   identity: Identity,
   integrationHeader: string,
 ) {

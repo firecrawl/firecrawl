@@ -32,7 +32,10 @@ export async function crawlStateStore(id: string): Promise<IORedis> {
       : redisCrawlStateConnection;
 
   if (pinned.size >= PINNED_MAX) {
-    pinned.delete(pinned.keys().next().value);
+    const oldest = pinned.keys().next();
+    if (!oldest.done) {
+      pinned.delete(oldest.value);
+    }
   }
   pinned.set(id, store);
   return store;

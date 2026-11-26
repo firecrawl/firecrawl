@@ -60,7 +60,9 @@ describeIf("NuQ FDB concurrency stress", () => {
         const job = await queue.getJobToProcess();
         if (!job) {
           idleStrikes++;
-          await new Promise(resolve => setTimeout(resolve, 50));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, 50);
+          });
           continue;
         }
         idleStrikes = 0;
@@ -68,9 +70,9 @@ describeIf("NuQ FDB concurrency stress", () => {
         seen.add(job.id);
         inFlight++;
         maxInFlight = Math.max(maxInFlight, inFlight);
-        await new Promise(resolve =>
-          setTimeout(resolve, 10 + Math.random() * 30),
-        );
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 10 + Math.random() * 30);
+        });
         inFlight--;
         const ok = await queue.jobFinish(job.id, job.lock!, null);
         expect(ok).toBe(true);
@@ -134,15 +136,17 @@ describeIf("NuQ FDB concurrency stress", () => {
         const job = await queue.getJobToProcess();
         if (!job) {
           idleStrikes++;
-          await new Promise(resolve => setTimeout(resolve, 50));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, 50);
+          });
           continue;
         }
         idleStrikes = 0;
         inFlight++;
         maxInFlight = Math.max(maxInFlight, inFlight);
-        await new Promise(resolve =>
-          setTimeout(resolve, 5 + Math.random() * 20),
-        );
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 5 + Math.random() * 20);
+        });
         inFlight--;
         await queue.jobFinish(job.id, job.lock!, null);
         processed++;

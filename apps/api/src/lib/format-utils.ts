@@ -28,14 +28,15 @@ export function hasFormatOfType<
     return undefined;
   }
 
-  const found = formats.find(f => f.type === type);
-  return found as
-    | (F extends { type: infer FT extends string }
-        ? T extends FT
-          ? F
-          : never
-        : never)
-    | undefined;
+  return formats.find(
+    (
+      f,
+    ): f is F extends { type: infer FT extends string }
+      ? T extends FT
+        ? F
+        : never
+      : never => f.type === type,
+  );
 }
 
 /**

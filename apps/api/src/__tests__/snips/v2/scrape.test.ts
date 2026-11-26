@@ -29,9 +29,19 @@ import request from "./lib";
 import crypto from "node:crypto";
 import { z } from "zod";
 
-const stringbool = z.stringbool().catch(false);
-
 let identity: Identity;
+
+const createSelfHostedLocalUrl = () => {
+  const target = new URL(TEST_SUITE_WEBSITE);
+  target.searchParams.set("testId", crypto.randomUUID());
+  return target.toString();
+};
+
+const createDnsResolvedLocalUrl = () => {
+  const target = new URL(createSelfHostedLocalUrl());
+  target.hostname = "localtest.me";
+  return target.toString();
+};
 
 beforeAll(async () => {
   identity = await idmux({
@@ -43,20 +53,12 @@ beforeAll(async () => {
 
 describe("Scrape tests", () => {
   const base = TEST_SUITE_WEBSITE;
-  const playwrightAllowsLocalTargets = stringbool.parse(
-    process.env.ALLOW_LOCAL_WEBHOOKS,
-  );
-  const createSelfHostedLocalUrl = () => {
-    const target = new URL(TEST_SUITE_WEBSITE);
-    target.searchParams.set("testId", crypto.randomUUID());
-    return target.toString();
-  };
-
-  const createDnsResolvedLocalUrl = () => {
-    const target = new URL(createSelfHostedLocalUrl());
-    target.hostname = "localtest.me";
-    return target.toString();
-  };
+  const parsedAllowLocal = z
+    .stringbool()
+    .safeParse(process.env.ALLOW_LOCAL_WEBHOOKS);
+  const playwrightAllowsLocalTargets = parsedAllowLocal.success
+    ? parsedAllowLocal.data
+    : false;
 
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "works",
@@ -536,7 +538,9 @@ describe("Scrape tests", () => {
         blockedIdentity,
       );
 
-      await new Promise(resolve => setTimeout(resolve, 40_000));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 40_000);
+      });
       const rc2 = (await creditUsage(blockedIdentity)).remainingCredits;
       expect(rc1 - rc2).toBe(5);
     },
@@ -612,7 +616,9 @@ describe("Scrape tests", () => {
         expect(response.markdown).toContain("Firecrawl");
 
         // Give time to propagate to read replica
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
 
         const status = await scrapeStatus(
           response.metadata.scrapeId!,
@@ -670,7 +676,9 @@ describe("Scrape tests", () => {
 
           expect(response1.metadata.cacheState).toBe("miss");
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -682,7 +690,9 @@ describe("Scrape tests", () => {
 
           expect(response2.metadata.cacheState).toBe("miss");
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response3 = await scrape(
             {
@@ -723,7 +733,9 @@ describe("Scrape tests", () => {
 
           expect(response1.metadata.cacheState).toBe("miss");
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -754,7 +766,9 @@ describe("Scrape tests", () => {
 
           expect(response1.screenshot).toBeDefined();
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -798,7 +812,9 @@ describe("Scrape tests", () => {
 
           expect(response1.screenshot).toBeDefined();
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -851,7 +867,9 @@ describe("Scrape tests", () => {
 
           expect(response1.metadata.cacheState).not.toBeDefined();
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -883,7 +901,9 @@ describe("Scrape tests", () => {
             identity,
           );
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response = await scrape(
             {
@@ -933,7 +953,9 @@ describe("Scrape tests", () => {
             identity,
           );
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response1 = await scrape(
             {
@@ -946,7 +968,9 @@ describe("Scrape tests", () => {
 
           expect(response1.metadata.cacheState).toBe("miss");
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -983,7 +1007,9 @@ describe("Scrape tests", () => {
 
           expect(response1.metadata.cacheState).not.toBeDefined();
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -1011,7 +1037,9 @@ describe("Scrape tests", () => {
             identity,
           );
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response1 = await scrape(
             {
@@ -1024,7 +1052,9 @@ describe("Scrape tests", () => {
 
           expect(response1.metadata.cacheState).toBe("miss");
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -1054,7 +1084,9 @@ describe("Scrape tests", () => {
             identity,
           );
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response0 = await scrape(
             {
@@ -1078,7 +1110,9 @@ describe("Scrape tests", () => {
 
           expect(response1.metadata.cacheState).toBe("miss");
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -1111,7 +1145,9 @@ describe("Scrape tests", () => {
           expect(response1.metadata.proxyUsed).toBe("stealth");
           expect(response1.metadata.cacheState).not.toBeDefined();
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -1150,7 +1186,9 @@ describe("Scrape tests", () => {
             identity,
           );
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response = await scrape(
             {
@@ -1483,13 +1521,13 @@ describe("Scrape tests", () => {
     concurrentIf(TEST_PRODUCTION || HAS_PROXY)(
       "scrapes Google Drive text files correctly",
       async () => {
-        const response = await scrape(
-          {
-            url: "https://drive.google.com/file/d/14m3ZVDnWJwwPSDHX6U6jkL7FXxOf6cHB/view?usp=sharing",
-            ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
-          },
-          identity,
-        );
+        const payload: Parameters<typeof scrape>[0] = {
+          url: "https://drive.google.com/file/d/14m3ZVDnWJwwPSDHX6U6jkL7FXxOf6cHB/view?usp=sharing",
+        };
+        if (TEST_PRODUCTION) {
+          payload.maxAge = 0;
+        }
+        const response = await scrape(payload, identity);
 
         expect(response.markdown).toContain("This is a simple TXT file.");
       },
@@ -1499,13 +1537,13 @@ describe("Scrape tests", () => {
     concurrentIf(TEST_PRODUCTION || HAS_PROXY)(
       "scrapes Google Sheets links correctly",
       async () => {
-        const response = await scrape(
-          {
-            url: "https://docs.google.com/spreadsheets/d/1DTpw_bbsf3OY17ZqEYEpW6lAmLdCRC2WfLrV0isG9ac/edit?usp=sharing",
-            ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
-          },
-          identity,
-        );
+        const payload: Parameters<typeof scrape>[0] = {
+          url: "https://docs.google.com/spreadsheets/d/1DTpw_bbsf3OY17ZqEYEpW6lAmLdCRC2WfLrV0isG9ac/edit?usp=sharing",
+        };
+        if (TEST_PRODUCTION) {
+          payload.maxAge = 0;
+        }
+        const response = await scrape(payload, identity);
 
         expect(response.markdown).toContain("This is a test sheet.");
       },

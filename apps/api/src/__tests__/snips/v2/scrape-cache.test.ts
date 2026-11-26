@@ -32,7 +32,9 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Default maxAge", () => {
       expect(data1.metadata.cacheState).toBe("miss");
 
       // Wait for index to be populated
-      await new Promise(resolve => setTimeout(resolve, 20_000));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 20_000);
+      });
 
       // Second scrape should hit cache with default maxAge
       const data2 = await scrape(
@@ -67,7 +69,9 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Default maxAge", () => {
       expect(data1.metadata.cacheState).toBe("miss");
 
       // Wait for index to be populated
-      await new Promise(resolve => setTimeout(resolve, 20_000));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 20_000);
+      });
 
       // Second scrape with maxAge=0 should miss cache
       const data2 = await scrape(
@@ -103,7 +107,9 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Default maxAge", () => {
       expect(data1.metadata.cacheState).toBe("miss");
 
       // Wait for index to be populated
-      await new Promise(resolve => setTimeout(resolve, 20_000));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 20_000);
+      });
 
       // Second scrape with same maxAge should hit cache
       const data2 = await scrape(
@@ -139,7 +145,9 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Default maxAge", () => {
       expect(data1.metadata.cacheState).toBe("miss");
 
       // Wait for index to be populated
-      await new Promise(resolve => setTimeout(resolve, 20_000));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 20_000);
+      });
 
       // Second scrape with minAge should fail
       const response = await scrapeRaw(
@@ -175,7 +183,9 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Default maxAge", () => {
       expect(data1.metadata.cacheState).toBe("miss");
 
       // Wait for index to be populated and for data to age
-      await new Promise(resolve => setTimeout(resolve, 35_000));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 35_000);
+      });
 
       // Second scrape with minAge should hit cache
       const data2 = await scrape(

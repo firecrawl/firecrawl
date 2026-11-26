@@ -7,6 +7,8 @@
 //   "Redis pipeline command failed"
 // — so all of these events are filterable by that message across services.
 
+import type { LogMeta } from "./json-types";
+
 type PipelineResults = Array<[Error | null, unknown]> | null;
 
 // Dragonfly rejects commands with more than 2^16 arguments ("invalid
@@ -25,8 +27,8 @@ export function firstPipelineError(results: PipelineResults): Error | null {
 // relevant IDs); the error itself is added automatically.
 export function reportPipelineError(
   results: PipelineResults,
-  logger: { error: (message: string, meta: Record<string, unknown>) => void },
-  context: Record<string, unknown>,
+  logger: { error: (message: string, meta: LogMeta) => void },
+  context: LogMeta,
 ): Error | null {
   const error = firstPipelineError(results);
   if (error) {

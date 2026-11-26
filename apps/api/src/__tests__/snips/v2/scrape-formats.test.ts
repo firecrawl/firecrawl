@@ -1,3 +1,4 @@
+import { isJsonObject } from "../../../lib/json-types";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   concurrentIf,
@@ -240,7 +241,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Scrape format variations", () => {
         );
 
         expect(response.markdown).toBeDefined();
-        expect((response as any).changeTracking).toBeDefined();
+        expect(
+          isJsonObject(response) ? response.changeTracking : undefined,
+        ).toBeDefined();
       },
       scrapeTimeout,
     );
@@ -269,7 +272,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Scrape format variations", () => {
         const raw = await scrapeRaw(
           {
             url: base,
-            formats: [{ type: "invalid-format" } as any],
+            formats: [{ type: "invalid-format" }],
           },
           identity,
         );

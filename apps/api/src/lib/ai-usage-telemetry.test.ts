@@ -10,6 +10,7 @@ import { convertArrayToReadableStream, MockLanguageModelV3 } from "ai/test";
 import { z } from "zod";
 import { aiTelemetry } from "./ai-telemetry";
 import { withUsageTelemetry } from "./ai-usage-telemetry";
+import type { JsonObject } from "./json-types";
 import { createTracerProvider } from "./otel-tracer";
 
 const telemetry = aiTelemetry({
@@ -82,7 +83,7 @@ const openAIResponsesBody = {
 
 // Responses API body as returned by xAI for a request that ran X Search.
 // Trimmed to the fields `@ai-sdk/xai` validates plus the usage block.
-function xaiResponsesBody(usage: Record<string, unknown>) {
+function xaiResponsesBody(usage: JsonObject) {
   return {
     id: "resp_xai_test",
     object: "response",
@@ -128,7 +129,7 @@ async function generateWithXaiResponses(body: unknown) {
   });
   await generateText({
     model: withUsageTelemetry(xai.responses("grok-4-1-fast-non-reasoning")),
-    tools: { x_search: xai.tools.xSearch() } as any,
+    tools: { x_search: xai.tools.xSearch() },
     prompt: "hello",
     telemetry,
   });

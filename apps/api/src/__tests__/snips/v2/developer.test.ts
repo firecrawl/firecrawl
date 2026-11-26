@@ -12,7 +12,10 @@ const CANONICAL_PATH = "/v2/search/developer";
 const LEGACY_PATH = "/v2/developer/search";
 const SERVING_PATHS = [CANONICAL_PATH, LEGACY_PATH];
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const sleep = (ms: number) =>
+  new Promise<void>(resolve => {
+    setTimeout(resolve, ms);
+  });
 const sleepForBilling = () => sleep(40_000);
 
 describeIf(HAS_RESEARCH)("Developer Search API", () => {
@@ -90,10 +93,11 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
       credits: 100,
     });
 
-    for (const params of [
-      { query: "retries", magic: "true" } as any,
+    const invalidParams: Array<Record<string, string | number>> = [
+      { query: "retries", magic: "true" },
       { query: "retries", k: 101 },
-    ]) {
+    ];
+    for (const params of invalidParams) {
       const res = await researchRaw(CANONICAL_PATH, params, identity);
       expect(res.statusCode).toBe(400);
       expect(res.body.success).toBe(false);

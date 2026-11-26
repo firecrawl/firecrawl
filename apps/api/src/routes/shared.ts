@@ -14,7 +14,8 @@ import {
   getRoutePattern,
 } from "../lib/http-metrics";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
-import * as geoip from "geoip-country";
+import { isJsonObject } from "../lib/json-types";
+import { lookup as lookupGeoIp } from "geoip-country";
 import { claimIdempotencyKey } from "../lib/idempotency";
 import { service } from "../service";
 import type { AuthRoute, BillingOperation, Caller } from "../service";
@@ -27,6 +28,17 @@ import type {} from "../lib/billing-state";
 import { validate as isUuid } from "uuid";
 
 import { config } from "../config";
+
+declare global {
+  namespace Express {
+    interface Request {
+      requestTiming?: {
+        startTime: number;
+        version: string;
+      };
+    }
+  }
+}
 
 function billingOperationForPath(path: string): BillingOperation {
   switch (path.replace(/^\/v\d+/, "")) {
@@ -56,9 +68,12 @@ export function checkCreditsMiddleware(
   return (req, res, next) => {
     (async () => {
       let requestedUnits = _minimum;
-      if (requestedUnits === undefined && req.body) {
+      const rawBody: unknown = req.body;
+      if (requestedUnits === undefined && rawBody) {
+        const body = isJsonObject(rawBody) ? rawBody : undefined;
+        const urls = body?.urls;
         const derived = Number(
-          (req.body as any)?.limit ?? (req.body as any)?.urls?.length ?? 1,
+          body?.limit ?? (Array.isArray(urls) ? urls.length : 1),
         );
         if (Number.isFinite(derived) && derived > 0) {
           requestedUnits = derived;
@@ -91,15 +106,11 @@ export function checkCreditsMiddleware(
       }
 
       req.account = { remainingCredits: authz.maxUnits ?? Infinity };
-      if (
-        authz.clampedLimit !== undefined &&
-        req.body &&
-        typeof req.body === "object"
-      ) {
-        (req.body as any).limit = authz.clampedLimit;
+      if (authz.clampedLimit !== undefined && isJsonObject(rawBody)) {
+        rawBody.limit = authz.clampedLimit;
       }
       next();
-    })().catch(error => next(error));
+    })().catch((error: unknown) => next(error));
   };
 }
 
@@ -133,14 +144,16 @@ export function authMiddleware(
 
       const route: LegacyAuthRoute = {
         kind: rateLimiterMode,
-        ...(allowKeyless !== undefined ? { allowKeyless } : {}),
-        ...(options.allowAgentManagedKey !== undefined
-          ? { allowAgentManagedKey: options.allowAgentManagedKey }
-          : {}),
-        ...(options.hostedMcpRateLimit !== undefined
-          ? { hostedMcpRateLimit: options.hostedMcpRateLimit }
-          : {}),
       };
+      if (allowKeyless !== undefined) {
+        route.allowKeyless = allowKeyless;
+      }
+      if (options.allowAgentManagedKey !== undefined) {
+        route.allowAgentManagedKey = options.allowAgentManagedKey;
+      }
+      if (options.hostedMcpRateLimit !== undefined) {
+        route.hostedMcpRateLimit = options.hostedMcpRateLimit;
+      }
 
       const result = await service.modules.auth.authenticate(req, route);
 
@@ -161,19 +174,29 @@ export function authMiddleware(
       }
 
       const caller = result.caller as Caller & LegacyCallerFields;
-      req.auth = {
+      const auth: NonNullable<RequestWithMaybeAuth["auth"]> = {
         team_id: caller.teamId,
         org_id: caller.orgId ?? null,
-        ...(caller.agentInterop !== undefined
-          ? { agentInterop: caller.agentInterop }
-          : {}),
-        ...(caller.hostedMcp === true ? { hostedMcp: true } : {}),
       };
+      if (caller.agentInterop !== undefined) {
+        auth.agentInterop = caller.agentInterop;
+      }
+      if (caller.hostedMcp === true) {
+        auth.hostedMcp = true;
+      }
+      req.auth = auth;
       req.acuc = caller.chunk ?? undefined;
       req.caller = result.caller;
       next();
-    })().catch(error => next(error));
+    })().catch((error: unknown) => next(error));
   };
+}
+
+function readAuthTeamId(req: Request): string | undefined {
+  if (!("auth" in req) || !isJsonObject(req.auth)) {
+    return undefined;
+  }
+  return typeof req.auth.team_id === "string" ? req.auth.team_id : undefined;
 }
 
 export function idempotencyMiddleware(
@@ -187,7 +210,7 @@ export function idempotencyMiddleware(
       const teamId =
         req.ctx?.teamId ??
         req.caller?.teamId ??
-        (req as RequestWithMaybeAuth).auth?.team_id ??
+        readAuthTeamId(req) ??
         "bypass";
       const claimed = await claimIdempotencyKey(rawHeader, teamId);
       if (!claimed) {
@@ -200,27 +223,27 @@ export function idempotencyMiddleware(
       }
     }
     next();
-  })().catch(error => next(error));
+  })().catch((error: unknown) => next(error));
 }
 
 export function blocklistMiddleware(
-  req: RequestWithMaybeACUC<any, any, any>,
+  req: RequestWithMaybeACUC<Record<string, string>, unknown, unknown>,
   res: Response,
   next: NextFunction,
 ) {
   (async () => {
-    if (typeof req.body?.url !== "string") {
+    if (!isJsonObject(req.body) || typeof req.body.url !== "string") {
       return next();
     }
-    const flags = (req.acuc?.flags ?? null) as Record<string, unknown> | null;
+    const rawFlags: unknown = req.acuc?.flags;
+    const flags = isJsonObject(rawFlags) ? rawFlags : null;
     const forcedZdr =
       flags?.scrapeZDR === "forced" ||
       flags?.forceZDR === true ||
       flags?.allowZDR === "forced";
-    const safeModeConfig =
-      flags?.safeModeConfig && typeof flags.safeModeConfig === "object"
-        ? (flags.safeModeConfig as Record<string, unknown>)
-        : undefined;
+    const safeModeConfig = isJsonObject(flags?.safeModeConfig)
+      ? flags.safeModeConfig
+      : undefined;
     const safeModeBypassed =
       req.body.safeMode === false &&
       safeModeConfig?.allowBypassSafeMode === true;
@@ -253,11 +276,11 @@ export function blocklistMiddleware(
       });
     }
     next();
-  })().catch(error => next(error));
+  })().catch((error: unknown) => next(error));
 }
 
 export function countryCheck(
-  req: RequestWithAuth<any, any, any>,
+  req: RequestWithAuth<Record<string, string>, unknown, unknown>,
   res: Response,
   next: NextFunction,
 ) {
@@ -270,7 +293,7 @@ export function countryCheck(
     return next();
   }
 
-  const country = geoip.lookup(req.ip);
+  const country = lookupGeoIp(req.ip);
   if (!country || !country.country) {
     logger.warn("IP address country data not found", { ip: req.ip });
     return next();
@@ -291,29 +314,45 @@ export function countryCheck(
   next();
 }
 
+function hasNonEmptyObject(value: unknown): boolean {
+  return isJsonObject(value) && Object.keys(value).length > 0;
+}
+
+function hasAgentOption(value: unknown): boolean {
+  return isJsonObject(value) && Boolean(value.agent);
+}
+
+function hasRestrictedBodyOptions(body: unknown): boolean {
+  if (!isJsonObject(body)) {
+    return false;
+  }
+  if (
+    body.actions ||
+    hasNonEmptyObject(body.headers) ||
+    body.agent ||
+    hasAgentOption(body.jsonOptions) ||
+    hasAgentOption(body.extract)
+  ) {
+    return true;
+  }
+  if (!isJsonObject(body.scrapeOptions)) {
+    return false;
+  }
+  return Boolean(
+    body.scrapeOptions.actions ||
+      hasNonEmptyObject(body.scrapeOptions.headers) ||
+      body.scrapeOptions.agent ||
+      hasAgentOption(body.scrapeOptions.jsonOptions) ||
+      hasAgentOption(body.scrapeOptions.extract),
+  );
+}
+
 export function restrictedOptionsCountryCheck(
-  req: RequestWithAuth<any, any, any>,
+  req: RequestWithAuth<Record<string, string>, unknown, unknown>,
   res: Response,
   next: NextFunction,
 ) {
-  const usesRestrictedOptions =
-    req.body &&
-    (req.body.actions ||
-      (req.body.headers &&
-        typeof req.body.headers === "object" &&
-        Object.keys(req.body.headers).length > 0) ||
-      req.body.agent ||
-      req.body.jsonOptions?.agent ||
-      req.body.extract?.agent ||
-      req.body.scrapeOptions?.actions ||
-      (req.body.scrapeOptions?.headers &&
-        typeof req.body.scrapeOptions.headers === "object" &&
-        Object.keys(req.body.scrapeOptions.headers).length > 0) ||
-      req.body.scrapeOptions?.agent ||
-      req.body.scrapeOptions?.jsonOptions?.agent ||
-      req.body.scrapeOptions?.extract?.agent);
-
-  if (!usesRestrictedOptions) {
+  if (!hasRestrictedBodyOptions(req.body)) {
     return next();
   }
 
@@ -344,14 +383,14 @@ export function requestTimingMiddleware(version: string) {
     const startTime = new Date().getTime();
 
     // Attach timing data to request
-    (req as any).requestTiming = {
+    req.requestTiming = {
       startTime,
       version,
     };
 
     // Override res.json to log timing when response is sent
     const originalJson = res.json.bind(res);
-    res.json = function (body: any) {
+    res.json = function (body: unknown) {
       const requestTime = new Date().getTime() - startTime;
 
       const durationSeconds = requestTime / 1000;
@@ -363,7 +402,7 @@ export function requestTimingMiddleware(version: string) {
         .observe(durationSeconds);
 
       // Only log for successful responses to avoid duplicate error logs
-      if (body?.success !== false) {
+      if (!isJsonObject(body) || body.success !== false) {
         logger.info(`${version} request completed`, {
           version,
           path: req.path,
@@ -381,10 +420,14 @@ export function requestTimingMiddleware(version: string) {
   };
 }
 
-export function wrap(
-  controller: (req: Request, res: Response) => Promise<any>,
-): (req: Request, res: Response, next: NextFunction) => any {
+export function wrap<
+  Req extends Request = Request,
+  Res extends Response = Response,
+  Ret = Response | void,
+>(
+  controller: (req: Req, res: Res) => Promise<Ret>,
+): (req: Req, res: Res, next: NextFunction) => void {
   return (req, res, next) => {
-    controller(req, res).catch(error => next(error));
+    controller(req, res).catch((error: unknown) => next(error));
   };
 }

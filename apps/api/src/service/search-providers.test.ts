@@ -16,14 +16,14 @@ const makeProvider = (
     enabled?: () => boolean;
     search?: SearchProvider["search"];
   } = {},
-): SearchProvider =>
-  ({
-    name,
-    priority: 10,
-    enabled: () => true,
-    search: vi.fn(async () => ({ web: [] })),
-    ...overrides,
-  }) as unknown as SearchProvider;
+): SearchProvider => ({
+  // @ts-expect-error: test provider names exercise open declaration-merged SearchProviderName
+  name,
+  priority: 10,
+  enabled: () => true,
+  search: vi.fn(async () => ({ web: [] })),
+  ...overrides,
+});
 
 describe("buildSearchProviderRegistry", () => {
   it("keeps registration order in all() and sorts enabled() by priority descending with registration-order tie-breaking", () => {
@@ -309,7 +309,8 @@ describe("buildSearchProviderRegistry", () => {
           owner: "core",
           searchProviders: [
             makeProvider("searxng", {
-              enabled: "yes" as unknown as () => boolean,
+              // @ts-expect-error: verifying runtime rejection of non-function enabled
+              enabled: "yes",
             }),
           ],
         },
@@ -322,7 +323,8 @@ describe("buildSearchProviderRegistry", () => {
           owner: "core",
           searchProviders: [
             makeProvider("searxng", {
-              search: null as unknown as SearchProvider["search"],
+              // @ts-expect-error: verifying runtime rejection of null search
+              search: null,
             }),
           ],
         },
@@ -335,7 +337,8 @@ describe("buildSearchProviderRegistry", () => {
           owner: "core",
           searchProviders: [
             makeProvider("searxng", {
-              supportsUsOnly: "yes" as unknown as boolean,
+              // @ts-expect-error: verifying runtime rejection of non-boolean supportsUsOnly
+              supportsUsOnly: "yes",
             }),
           ],
         },
@@ -347,9 +350,7 @@ describe("buildSearchProviderRegistry", () => {
         buildSearchProviderRegistry([
           {
             owner: "core",
-            searchProviders: [
-              makeProvider("searxng", { [flag]: 1 as unknown as boolean }),
-            ],
+            searchProviders: [makeProvider("searxng", { [flag]: 1 })],
           },
         ]),
       ).toThrow(`Search provider "searxng" ${flag} must be a boolean`);

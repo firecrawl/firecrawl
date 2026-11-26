@@ -3,6 +3,7 @@ import { config } from "../../config";
 configDotenv();
 
 import type { TeamFlags } from "../../controllers/v2/types";
+import { isJsonObject } from "../../lib/json-types";
 
 // =========================================
 // Configuration
@@ -14,7 +15,7 @@ const stripTrailingSlash = (url: string) => {
   if (url.length < 1) {
     throw new Error("Invalid URL supplied");
   }
-  return url.endsWith("/") ? url.substring(0, url.length - 1) : url;
+  return url.endsWith("/") ? url.slice(0, -1) : url;
 };
 
 export const TEST_SUITE_WEBSITE = stripTrailingSlash(config.TEST_SUITE_WEBSITE);
@@ -34,7 +35,7 @@ export const HAS_MENU_SERVICE = !!process.env.MENU_EXTRACTION_SERVICE_URL;
 export const HAS_SEARCH = TEST_PRODUCTION || !!config.SEARXNG_ENDPOINT;
 
 const isLocalUrl = (x: string) =>
-  /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
+  /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([/?#]|$)/i.test(
     x,
   );
 
@@ -104,7 +105,11 @@ export async function idmux(req: IdmuxRequest): Promise<Identity> {
   }
 
   let runNumber = Number.parseInt(process.env.GITHUB_RUN_NUMBER!);
-  if (isNaN(runNumber) || runNumber === null || runNumber === undefined) {
+  if (
+    Number.isNaN(runNumber) ||
+    runNumber === null ||
+    runNumber === undefined
+  ) {
     runNumber = 0;
   }
 
@@ -139,7 +144,19 @@ export async function idmux(req: IdmuxRequest): Promise<Identity> {
   }
 
   expect(res.ok).toBe(true);
-  return await res.json();
+  const body: unknown = await res.json();
+  if (!isIdentity(body)) {
+    throw new Error("Unexpected identity response from idmux");
+  }
+  return body;
+}
+
+function isIdentity(value: unknown): value is Identity {
+  return (
+    isJsonObject(value) &&
+    typeof value.apiKey === "string" &&
+    typeof value.teamId === "string"
+  );
 }
 
 export type Identity = {

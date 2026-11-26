@@ -8,30 +8,35 @@ import type {
   OngoingCrawlsResponse,
   ErrorResponse,
   CrawlErrorsResponse,
+  MapDocument,
   MapRequestInput as CoreMapRequestInput,
   BatchScrapeRequestInput as CoreBatchScrapeRequestInput,
   SearchRequestInput as CoreSearchRequestInput,
   ParseRequestInput as CoreParseRequestInput,
 } from "../../../controllers/v2/types";
+import { isJsonObject } from "../../../lib/json-types";
+import type { JsonObject, JsonValue } from "../../../lib/json-types";
 
 type ScrapeRequestInput = Omit<CoreScrapeRequestInput, "proxy"> & {
   proxy?: string;
-} & Record<string, unknown>;
+} & JsonObject;
 type CrawlRequestInput = Omit<CoreCrawlRequestInput, "scrapeOptions"> & {
-  scrapeOptions?: Record<string, unknown>;
-} & Record<string, unknown>;
-type MapRequestInput = CoreMapRequestInput & Record<string, unknown>;
+  scrapeOptions?: JsonObject;
+} & JsonObject;
+type MapRequestInput = CoreMapRequestInput & JsonObject;
 type BatchScrapeRequestInput = Omit<CoreBatchScrapeRequestInput, "proxy"> & {
   proxy?: string;
-} & Record<string, unknown>;
+} & JsonObject;
 type SearchRequestInput = Omit<
   CoreSearchRequestInput,
   "sources" | "categories"
 > & {
-  sources?: unknown;
-  categories?: unknown;
-} & Record<string, unknown>;
-type ParseRequestInput = CoreParseRequestInput & Record<string, unknown>;
+  sources?: JsonValue;
+  categories?: JsonValue;
+} & JsonObject;
+type ParseRequestOptions = Omit<CoreParseRequestInput, "file" | "proxy"> & {
+  proxy?: string;
+} & JsonObject;
 import request from "supertest";
 import {
   TEST_API_URL,
@@ -46,13 +51,145 @@ import type { SearchV2Response } from "../../../lib/entities";
 export { scrapeTimeout, indexCooldown, Identity, idmux, TEST_API_URL };
 export default request;
 
-const pollSleep = async () => new Promise(r => setTimeout(r, 50));
+const pollSleep = async () =>
+  new Promise<void>(r => {
+    setTimeout(r, 50);
+  });
+
+type FailureResponseBody = {
+  success: false;
+  error: string;
+  code?: string;
+  details?: JsonValue;
+};
+
+type OngoingCrawlsSuccess = Exclude<OngoingCrawlsResponse, ErrorResponse>;
+type CrawlStartSuccess = Exclude<CrawlResponse, ErrorResponse>;
+type CrawlStatusBody = Exclude<CrawlStatusResponse, ErrorResponse>;
+type CrawlErrorsBody = Exclude<CrawlErrorsResponse, ErrorResponse>;
+
+type FeedbackSuccessResponse = JsonObject & {
+  success: true;
+  feedbackId: string;
+  creditsRefunded: number;
+  creditsRefundedToday?: number;
+  dailyRefundCap?: number;
+  dailyCapReached?: boolean;
+  alreadySubmitted?: boolean;
+  warning?: string;
+};
+
+type CreditUsageHistoricalResponse = {
+  success: boolean;
+  periods: Array<{
+    startDate: string | null;
+    endDate: string | null;
+    apiKey?: string;
+    creditsUsed: number;
+  }>;
+};
+
+type TokenUsageHistoricalResponse = {
+  success: boolean;
+  periods: Array<{
+    startDate: string | null;
+    endDate: string | null;
+    tokensUsed: number;
+  }>;
+};
+
+function isDocument(value: unknown): value is Document {
+  return isJsonObject(value);
+}
+
+function isFailureResponseBody(value: unknown): value is FailureResponseBody {
+  return (
+    isJsonObject(value) &&
+    value.success === false &&
+    typeof value.error === "string" &&
+    (value.code === undefined || typeof value.code === "string")
+  );
+}
+
+function isOngoingCrawlsSuccess(value: unknown): value is OngoingCrawlsSuccess {
+  return (
+    isJsonObject(value) && value.success === true && Array.isArray(value.crawls)
+  );
+}
+
+function isCrawlStartSuccess(value: unknown): value is CrawlStartSuccess {
+  return (
+    isJsonObject(value) &&
+    value.success === true &&
+    typeof value.id === "string"
+  );
+}
+
+function isCrawlStatusBody(value: unknown): value is CrawlStatusBody {
+  return isJsonObject(value) && typeof value.status === "string";
+}
+
+function isCrawlErrorsBody(value: unknown): value is CrawlErrorsBody {
+  return (
+    isJsonObject(value) &&
+    Array.isArray(value.errors) &&
+    Array.isArray(value.robotsBlocked)
+  );
+}
+
+function isMapDocument(value: unknown): value is MapDocument {
+  return isJsonObject(value) && typeof value.url === "string";
+}
+
+function isSearchV2Response(value: unknown): value is SearchV2Response {
+  return isJsonObject(value);
+}
+
+function isFeedbackSuccessResponse(
+  value: unknown,
+): value is FeedbackSuccessResponse {
+  return (
+    isJsonObject(value) &&
+    value.success === true &&
+    typeof value.feedbackId === "string" &&
+    typeof value.creditsRefunded === "number"
+  );
+}
+
+function isCreditUsageData(
+  value: unknown,
+): value is { remainingCredits: number } {
+  return isJsonObject(value) && typeof value.remainingCredits === "number";
+}
+
+function isCreditUsageHistoricalResponse(
+  value: unknown,
+): value is CreditUsageHistoricalResponse {
+  return (
+    isJsonObject(value) &&
+    typeof value.success === "boolean" &&
+    Array.isArray(value.periods)
+  );
+}
+
+function isTokenUsageHistoricalResponse(
+  value: unknown,
+): value is TokenUsageHistoricalResponse {
+  return (
+    isJsonObject(value) &&
+    typeof value.success === "boolean" &&
+    Array.isArray(value.periods)
+  );
+}
 
 // =========================================
 // Scrape API
 // =========================================
 
-export async function scrapeRaw(body: ScrapeRequestInput, identity: Identity) {
+export async function scrapeRaw(
+  body: ScrapeRequestInput | JsonObject,
+  identity: Identity,
+) {
   return await request(TEST_API_URL)
     .post("/v2/scrape")
     .set("Authorization", `Bearer ${identity.apiKey}`)
@@ -87,7 +224,11 @@ export async function scrape(
 ): Promise<Document> {
   const raw = await scrapeRaw(body, identity);
   expectScrapeToSucceed(raw);
-  return raw.body.data;
+  const bodyValue: unknown = raw.body;
+  if (!isJsonObject(bodyValue) || !isDocument(bodyValue.data)) {
+    throw new Error("Unexpected scrape response shape");
+  }
+  return bodyValue.data;
 }
 
 export async function scrapeWithFailure(
@@ -99,7 +240,11 @@ export async function scrapeWithFailure(
 }> {
   const raw = await scrapeRaw(body, identity);
   expectScrapeToFail(raw);
-  return raw.body;
+  const bodyValue: unknown = raw.body;
+  if (!isFailureResponseBody(bodyValue)) {
+    throw new Error("Unexpected scrape failure response shape");
+  }
+  return bodyValue;
 }
 
 // =========================================
@@ -121,13 +266,13 @@ export type MonitorCreateInput = {
     | {
         type: "scrape";
         urls: Array<string>;
-        scrapeOptions?: Record<string, unknown>;
+        scrapeOptions?: JsonObject;
       }
     | {
         type: "crawl";
         url: string;
-        crawlOptions?: Record<string, unknown>;
-        scrapeOptions?: Record<string, unknown>;
+        crawlOptions?: JsonObject;
+        scrapeOptions?: JsonObject;
       }
     | {
         type: "search";
@@ -141,7 +286,7 @@ export type MonitorCreateInput = {
 };
 
 export async function monitorCreateRaw(
-  body: MonitorCreateInput,
+  body: MonitorCreateInput | JsonObject,
   identity: Identity,
 ) {
   return await request(TEST_API_URL)
@@ -221,7 +366,7 @@ export async function monitorEmailConfirmRawViaQuery(token: string) {
 
 export async function parseRaw(
   body: {
-    options?: Omit<ParseRequestInput, "file">;
+    options?: ParseRequestOptions;
     file: {
       content: Buffer | string;
       filename: string;
@@ -252,7 +397,7 @@ export async function parseRaw(
 
 export async function parse(
   body: {
-    options?: Omit<ParseRequestInput, "file">;
+    options?: ParseRequestOptions;
     file: {
       content: Buffer | string;
       filename: string;
@@ -263,12 +408,16 @@ export async function parse(
 ): Promise<Document> {
   const raw = await parseRaw(body, identity);
   expectScrapeToSucceed(raw);
-  return raw.body.data;
+  const bodyValue: unknown = raw.body;
+  if (!isJsonObject(bodyValue) || !isDocument(bodyValue.data)) {
+    throw new Error("Unexpected parse response shape");
+  }
+  return bodyValue.data;
 }
 
 export async function parseWithFailure(
   body: {
-    options?: Omit<ParseRequestInput, "file">;
+    options?: ParseRequestOptions | JsonObject;
     file?: {
       content: Buffer | string;
       filename: string;
@@ -308,7 +457,11 @@ export async function parseWithFailure(
   expect(raw.statusCode).not.toBe(200);
   expect(raw.body.success).toBe(false);
   expect(typeof raw.body.error).toBe("string");
-  return raw.body;
+  const bodyValue: unknown = raw.body;
+  if (!isFailureResponseBody(bodyValue)) {
+    throw new Error("Unexpected parse failure response shape");
+  }
+  return bodyValue;
 }
 
 export async function scrapeStatusRaw(jobId: string, identity: Identity) {
@@ -328,7 +481,11 @@ export async function scrapeStatus(
   expect(typeof raw.body.data).toBe("object");
   expect(raw.body.data).not.toBeNull();
   expect(raw.body.data).toBeDefined();
-  return raw.body.data;
+  const bodyValue: unknown = raw.body;
+  if (!isJsonObject(bodyValue) || !isDocument(bodyValue.data)) {
+    throw new Error("Unexpected scrape status response shape");
+  }
+  return bodyValue.data;
 }
 
 export async function scrapeInteractRaw(
@@ -369,7 +526,7 @@ export async function browserCreateRaw(
     recordSession?: boolean;
     streamWebView?: boolean;
     profile?: { name: string; saveChanges?: boolean };
-    location?: Record<string, unknown>;
+    location?: JsonObject;
   },
   identity: Identity,
 ) {
@@ -455,7 +612,11 @@ export async function crawlOngoing(
   const res = await crawlOngoingRaw(identity);
   expect(res.statusCode).toBe(200);
   expect(res.body.success).toBe(true);
-  return res.body;
+  const bodyValue: unknown = res.body;
+  if (!isOngoingCrawlsSuccess(bodyValue)) {
+    throw new Error("Unexpected ongoing crawls response shape");
+  }
+  return bodyValue;
 }
 
 function expectCrawlStartToSucceed(
@@ -502,7 +663,11 @@ export async function asyncCrawl(
 ): Promise<Exclude<CrawlResponse, ErrorResponse>> {
   const cs = await crawlStart(body, identity);
   expectCrawlStartToSucceed(cs);
-  return cs.body;
+  const bodyValue: unknown = cs.body;
+  if (!isCrawlStartSuccess(bodyValue)) {
+    throw new Error("Unexpected crawl start response shape");
+  }
+  return bodyValue;
 }
 
 export async function asyncCrawlWaitForFinish(
@@ -521,7 +686,11 @@ export async function asyncCrawlWaitForFinish(
   } while (x.body.status === "scraping");
 
   expectCrawlToSucceed(x);
-  return x.body;
+  const bodyValue: unknown = x.body;
+  if (!isCrawlStatusBody(bodyValue)) {
+    throw new Error("Unexpected crawl status response shape");
+  }
+  return bodyValue;
 }
 
 export async function crawlErrors(
@@ -536,7 +705,11 @@ export async function crawlErrors(
   expect(res.statusCode).toBe(200);
   expect(res.body.success).not.toBe(false);
 
-  return res.body;
+  const bodyValue: unknown = res.body;
+  if (!isCrawlErrorsBody(bodyValue)) {
+    throw new Error("Unexpected crawl errors response shape");
+  }
+  return bodyValue;
 }
 
 export async function crawl(
@@ -546,6 +719,10 @@ export async function crawl(
 ): Promise<Exclude<CrawlStatusResponse & { id: string }, ErrorResponse>> {
   const cs = await crawlStart(body, identity);
   expectCrawlStartToSucceed(cs);
+  const startBody: unknown = cs.body;
+  if (!isCrawlStartSuccess(startBody)) {
+    throw new Error("Unexpected crawl start response shape");
+  }
 
   let x: Awaited<ReturnType<typeof crawlStatus>> | undefined;
 
@@ -553,23 +730,28 @@ export async function crawl(
     if (x) {
       await pollSleep();
     }
-    x = await crawlStatus(cs.body.id, identity);
+    x = await crawlStatus(startBody.id, identity);
     expect(x.statusCode).toBe(200);
     expect(typeof x.body.status).toBe("string");
   } while (x.body.status === "scraping");
 
-  const errors = await crawlErrors(cs.body.id, identity);
+  const errors = await crawlErrors(startBody.id, identity);
   if (errors.errors.length > 0) {
-    console.warn("Crawl ", cs.body.id, " had errors:", errors.errors);
+    console.warn("Crawl ", startBody.id, " had errors:", errors.errors);
   }
 
   if (shouldSucceed) {
     expectCrawlToSucceed(x);
   }
 
+  const statusBody: unknown = x.body;
+  if (!isCrawlStatusBody(statusBody)) {
+    throw new Error("Unexpected crawl status response shape");
+  }
+
   return {
-    ...x.body,
-    id: cs.body.id,
+    ...statusBody,
+    id: startBody.id,
   };
 }
 
@@ -637,6 +819,10 @@ export async function batchScrape(
 ): Promise<Exclude<CrawlStatusResponse, ErrorResponse> & { id: string }> {
   const bss = await batchScrapeStart(body, identity);
   expectBatchScrapeStartToSucceed(bss);
+  const startBody: unknown = bss.body;
+  if (!isCrawlStartSuccess(startBody)) {
+    throw new Error("Unexpected batch scrape start response shape");
+  }
 
   let x: Awaited<ReturnType<typeof batchScrapeStatus>> | undefined;
 
@@ -644,15 +830,19 @@ export async function batchScrape(
     if (x) {
       await pollSleep();
     }
-    x = await batchScrapeStatus(bss.body.id, identity);
+    x = await batchScrapeStatus(startBody.id, identity);
     expect(x.statusCode).toBe(200);
     expect(typeof x.body.status).toBe("string");
   } while (x.body.status === "scraping");
 
   expectBatchScrapeToSucceed(x);
+  const statusBody: unknown = x.body;
+  if (!isCrawlStatusBody(statusBody)) {
+    throw new Error("Unexpected batch scrape status response shape");
+  }
   return {
-    ...x.body,
-    id: bss.body.id,
+    ...statusBody,
+    id: startBody.id,
   };
 }
 
@@ -666,6 +856,20 @@ export async function map(body: MapRequestInput, identity: Identity) {
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .set("Content-Type", "application/json")
     .send(body);
+}
+
+export function getMapLinks(
+  response: Awaited<ReturnType<typeof map>>,
+): Array<MapDocument> {
+  const bodyValue: unknown = response.body;
+  if (
+    !isJsonObject(bodyValue) ||
+    !Array.isArray(bodyValue.links) ||
+    !bodyValue.links.every(isMapDocument)
+  ) {
+    throw new Error("Unexpected map response links shape");
+  }
+  return [...bodyValue.links];
 }
 
 export function expectMapToSucceed(response: Awaited<ReturnType<typeof map>>) {
@@ -683,7 +887,10 @@ export function expectMapToSucceed(response: Awaited<ReturnType<typeof map>>) {
 // Search API
 // =========================================
 
-export async function searchRaw(body: SearchRequestInput, identity: Identity) {
+export async function searchRaw(
+  body: SearchRequestInput | JsonObject,
+  identity: Identity,
+) {
   return await request(TEST_API_URL)
     .post("/v2/search")
     .set("Authorization", `Bearer ${identity.apiKey}`)
@@ -711,11 +918,15 @@ export async function search(
 ): Promise<SearchV2Response> {
   const raw = await searchRaw(body, identity);
   expectSearchToSucceed(raw);
-  return raw.body.data;
+  const bodyValue: unknown = raw.body;
+  if (!isJsonObject(bodyValue) || !isSearchV2Response(bodyValue.data)) {
+    throw new Error("Unexpected search response shape");
+  }
+  return bodyValue.data;
 }
 
 export async function searchWithFailure(
-  body: SearchRequestInput,
+  body: SearchRequestInput | JsonObject,
   identity: Identity,
 ): Promise<{
   success: false;
@@ -724,7 +935,11 @@ export async function searchWithFailure(
 }> {
   const raw = await searchRaw(body, identity);
   expectSearchToFail(raw);
-  return raw.body;
+  const bodyValue: unknown = raw.body;
+  if (!isFailureResponseBody(bodyValue)) {
+    throw new Error("Unexpected search failure response shape");
+  }
+  return bodyValue;
 }
 
 export async function researchRaw(
@@ -749,7 +964,7 @@ export async function researchRaw(
 
 export async function researchPostRaw(
   path: string,
-  body: Record<string, unknown>,
+  body: JsonObject,
   identity?: Identity,
 ) {
   const req = request(TEST_API_URL)
@@ -774,7 +989,7 @@ export async function searchRawFull(
 
 export async function searchFeedbackRaw(
   searchId: string,
-  body: Record<string, unknown>,
+  body: JsonObject,
   identity: Identity,
 ) {
   return await request(TEST_API_URL)
@@ -786,7 +1001,7 @@ export async function searchFeedbackRaw(
 
 export async function searchFeedback(
   searchId: string,
-  body: Record<string, unknown>,
+  body: JsonObject,
   identity: Identity,
 ): Promise<{
   success: true;
@@ -809,12 +1024,16 @@ export async function searchFeedback(
   expect(raw.body.success).toBe(true);
   expect(typeof raw.body.feedbackId).toBe("string");
   expect(typeof raw.body.creditsRefunded).toBe("number");
-  return raw.body;
+  const bodyValue: unknown = raw.body;
+  if (!isFeedbackSuccessResponse(bodyValue)) {
+    throw new Error("Unexpected search feedback response shape");
+  }
+  return bodyValue;
 }
 
 export async function searchFeedbackWithFailure(
   searchId: string,
-  body: Record<string, unknown>,
+  body: JsonObject,
   identity: Identity,
 ): Promise<{
   success: false;
@@ -825,7 +1044,11 @@ export async function searchFeedbackWithFailure(
   expect(raw.statusCode).not.toBe(200);
   expect(raw.body.success).toBe(false);
   expect(typeof raw.body.error).toBe("string");
-  return raw.body;
+  const bodyValue: unknown = raw.body;
+  if (!isFailureResponseBody(bodyValue)) {
+    throw new Error("Unexpected search feedback failure response shape");
+  }
+  return bodyValue;
 }
 
 // =========================================
@@ -833,7 +1056,7 @@ export async function searchFeedbackWithFailure(
 // =========================================
 
 export async function endpointFeedbackRaw(
-  body: Record<string, unknown>,
+  body: JsonObject,
   identity: Identity,
 ) {
   return await request(TEST_API_URL)
@@ -844,9 +1067,9 @@ export async function endpointFeedbackRaw(
 }
 
 export async function endpointFeedback(
-  body: Record<string, unknown>,
+  body: JsonObject,
   identity: Identity,
-): Promise<Record<string, any>> {
+): Promise<FeedbackSuccessResponse> {
   const raw = await endpointFeedbackRaw(body, identity);
   if (raw.statusCode !== 200) {
     console.warn(
@@ -858,11 +1081,15 @@ export async function endpointFeedback(
   expect(raw.body.success).toBe(true);
   expect(typeof raw.body.feedbackId).toBe("string");
   expect(typeof raw.body.creditsRefunded).toBe("number");
-  return raw.body;
+  const bodyValue: unknown = raw.body;
+  if (!isFeedbackSuccessResponse(bodyValue)) {
+    throw new Error("Unexpected endpoint feedback response shape");
+  }
+  return bodyValue;
 }
 
 export async function endpointFeedbackWithFailure(
-  body: Record<string, unknown>,
+  body: JsonObject,
   identity: Identity,
 ): Promise<{
   success: false;
@@ -873,7 +1100,11 @@ export async function endpointFeedbackWithFailure(
   expect(raw.statusCode).not.toBe(200);
   expect(raw.body.success).toBe(false);
   expect(typeof raw.body.error).toBe("string");
-  return raw.body;
+  const bodyValue: unknown = raw.body;
+  if (!isFailureResponseBody(bodyValue)) {
+    throw new Error("Unexpected endpoint feedback failure response shape");
+  }
+  return bodyValue;
 }
 
 // =========================================
@@ -892,21 +1123,17 @@ export async function creditUsage(
     throw req.body;
   }
 
-  return req.body.data;
+  const bodyValue: unknown = req.body;
+  if (!isJsonObject(bodyValue) || !isCreditUsageData(bodyValue.data)) {
+    throw new Error("Unexpected credit-usage response shape");
+  }
+  return bodyValue.data;
 }
 
 export async function creditUsageHistorical(
   identity: Identity,
   options: { byApiKey?: boolean } = {},
-): Promise<{
-  success: boolean;
-  periods: Array<{
-    startDate: string | null;
-    endDate: string | null;
-    apiKey?: string;
-    creditsUsed: number;
-  }>;
-}> {
+): Promise<CreditUsageHistoricalResponse> {
   const req = await request(TEST_API_URL)
     .get("/v2/team/credit-usage/historical")
     .query(options.byApiKey ? { byApiKey: "true" } : {})
@@ -917,17 +1144,16 @@ export async function creditUsageHistorical(
     throw req.body;
   }
 
-  return req.body;
+  const bodyValue: unknown = req.body;
+  if (!isCreditUsageHistoricalResponse(bodyValue)) {
+    throw new Error("Unexpected historical credit-usage response shape");
+  }
+  return bodyValue;
 }
 
-export async function tokenUsageHistorical(identity: Identity): Promise<{
-  success: boolean;
-  periods: Array<{
-    startDate: string | null;
-    endDate: string | null;
-    tokensUsed: number;
-  }>;
-}> {
+export async function tokenUsageHistorical(
+  identity: Identity,
+): Promise<TokenUsageHistoricalResponse> {
   const req = await request(TEST_API_URL)
     .get("/v2/team/token-usage/historical")
     .set("Authorization", `Bearer ${identity.apiKey}`)
@@ -937,7 +1163,11 @@ export async function tokenUsageHistorical(identity: Identity): Promise<{
     throw req.body;
   }
 
-  return req.body;
+  const bodyValue: unknown = req.body;
+  if (!isTokenUsageHistoricalResponse(bodyValue)) {
+    throw new Error("Unexpected historical token-usage response shape");
+  }
+  return bodyValue;
 }
 
 // =========================================
@@ -954,9 +1184,17 @@ async function concurrencyCheck(
 
   expect(x.statusCode).toBe(200);
   expect(x.body.success).toBe(true);
+  const bodyValue: unknown = x.body;
+  if (
+    !isJsonObject(bodyValue) ||
+    typeof bodyValue.activeJobsInQueue !== "number" ||
+    typeof bodyValue.maxConcurrency !== "number"
+  ) {
+    throw new Error("Unexpected queue-status response shape");
+  }
   return {
-    concurrency: x.body.activeJobsInQueue,
-    maxConcurrency: x.body.maxConcurrency,
+    concurrency: bodyValue.activeJobsInQueue,
+    maxConcurrency: bodyValue.maxConcurrency,
   };
 }
 
@@ -969,23 +1207,31 @@ export async function crawlWithConcurrencyTracking(
 }> {
   const cs = await crawlStart(body, identity);
   expectCrawlStartToSucceed(cs);
+  const startBody: unknown = cs.body;
+  if (!isCrawlStartSuccess(startBody)) {
+    throw new Error("Unexpected crawl start response shape");
+  }
 
-  let x,
-    concurrencies: Array<number> = [];
+  let x: Awaited<ReturnType<typeof crawlStatus>> | undefined;
+  const concurrencies: Array<number> = [];
 
   do {
     if (x) {
       await pollSleep();
     }
-    x = await crawlStatus(cs.body.id, identity);
+    x = await crawlStatus(startBody.id, identity);
     expect(x.statusCode).toBe(200);
     expect(typeof x.body.status).toBe("string");
     concurrencies.push((await concurrencyCheck(identity)).concurrency);
   } while (x.body.status === "scraping");
 
   expectCrawlToSucceed(x);
+  const statusBody: unknown = x.body;
+  if (!isCrawlStatusBody(statusBody)) {
+    throw new Error("Unexpected crawl status response shape");
+  }
   return {
-    crawl: x.body,
+    crawl: statusBody,
     concurrencies,
   };
 }
@@ -999,23 +1245,31 @@ export async function batchScrapeWithConcurrencyTracking(
 }> {
   const cs = await batchScrapeStart(body, identity);
   expectBatchScrapeStartToSucceed(cs);
+  const startBody: unknown = cs.body;
+  if (!isCrawlStartSuccess(startBody)) {
+    throw new Error("Unexpected batch scrape start response shape");
+  }
 
-  let x,
-    concurrencies: Array<number> = [];
+  let x: Awaited<ReturnType<typeof batchScrapeStatus>> | undefined;
+  const concurrencies: Array<number> = [];
 
   do {
     if (x) {
       await pollSleep();
     }
-    x = await batchScrapeStatus(cs.body.id, identity);
+    x = await batchScrapeStatus(startBody.id, identity);
     expect(x.statusCode).toBe(200);
     expect(typeof x.body.status).toBe("string");
     concurrencies.push((await concurrencyCheck(identity)).concurrency);
   } while (x.body.status === "scraping");
 
   expectBatchScrapeToSucceed(x);
+  const statusBody: unknown = x.body;
+  if (!isCrawlStatusBody(statusBody)) {
+    throw new Error("Unexpected batch scrape status response shape");
+  }
   return {
-    batchScrape: x.body,
+    batchScrape: statusBody,
     concurrencies,
   };
 }

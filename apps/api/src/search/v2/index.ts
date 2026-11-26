@@ -87,14 +87,14 @@ export async function search({
   try {
     for (const provider of providers) {
       const result = await searchWithProvider(provider, searchQuery);
-      if (result != null) {
+      if (result !== null) {
         return result;
       }
     }
 
     // Fallback to empty response
     return {};
-  } catch (error) {
+  } catch (error: unknown) {
     logger.error(`Error in search function`, { error });
     return {};
   }

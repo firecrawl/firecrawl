@@ -1,3 +1,4 @@
+import { isJsonObject } from "./json-types";
 import { logger } from "./logger";
 
 // xAI bills X Search per item fetched, on top of tokens
@@ -27,8 +28,11 @@ function count(value: unknown): number | typeof INVALID {
 export function xSearchUsageFromResponseBody(
   body: unknown,
 ): XSearchUsage | undefined {
-  const details = (body as any)?.usage?.server_side_tool_usage_details;
-  if (typeof details !== "object" || details === null) {
+  if (!isJsonObject(body) || !isJsonObject(body.usage)) {
+    return undefined;
+  }
+  const details = body.usage.server_side_tool_usage_details;
+  if (!isJsonObject(details)) {
     return undefined;
   }
   if (!("x_posts_fetched" in details) && !("x_users_fetched" in details)) {

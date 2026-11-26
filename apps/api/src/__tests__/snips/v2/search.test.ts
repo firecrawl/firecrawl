@@ -317,7 +317,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
         {
           query: "firecrawl",
           safe: "active",
-        } as any,
+        },
         identity,
       );
 
@@ -385,7 +385,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
         {
           query: "firecrawl",
           location: 123,
-        } as any,
+        },
         identity,
       );
 

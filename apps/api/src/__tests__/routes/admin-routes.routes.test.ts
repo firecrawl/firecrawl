@@ -1,12 +1,14 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import express from "express";
+import type { Response } from "express";
 import { register } from "prom-client";
 import request from "supertest";
 
 const { stub } = vi.hoisted(() => ({
-  stub: (route: string) => async (_req: unknown, res: any) =>
-    res.status(200).json({ route }),
+  stub: (route: string) => async (_req: unknown, res: Response) => {
+    res.status(200).json({ route });
+  },
 }));
 
 vi.mock("../../controllers/admin/redis-health", () => ({
@@ -70,9 +72,11 @@ describe("admin routes with the key in a header", () => {
     const { app } = await adminApp(false);
     for (const [method, route] of KEYED_ROUTES) {
       for (const key of [CURRENT, PREVIOUS]) {
-        const response = await request(app)
-          [method](`/admin/ops/${route}`)
-          .set("Authorization", `Bearer ${key}`);
+        const req = request(app);
+        const response = await req[method](`/admin/ops/${route}`).set(
+          "Authorization",
+          `Bearer ${key}`,
+        );
         expect(response.status, route).toBe(200);
         expect(response.body).toEqual({ route });
       }
@@ -122,9 +126,14 @@ it("keeps a path key out of metric route labels and not-found bodies", async () 
   const { getRoutePattern } = await import("../../lib/http-metrics.js");
   const { notFoundHandler } = await import("../../lib/not-found.js");
 
-  expect(
-    getRoutePattern({ path: `/admin/${PREVIOUS}/queues/api/queues` } as any),
-  ).toBe("/admin/:bullAuthKey/queues/api/queues");
+  let observedRoutePattern: string | undefined;
+  const probeApp = express();
+  probeApp.use((req, res) => {
+    observedRoutePattern = getRoutePattern(req);
+    res.status(200).end();
+  });
+  await request(probeApp).get(`/admin/${PREVIOUS}/queues/api/queues`);
+  expect(observedRoutePattern).toBe("/admin/:bullAuthKey/queues/api/queues");
 
   const app = express();
   app.use(notFoundHandler);
@@ -139,9 +148,11 @@ describe("admin routes with the key in the path", () => {
     const info = vi.spyOn(logger, "info");
 
     for (const [method, route] of KEYED_ROUTES) {
-      const response = await request(app)
-        [method](`/admin/${PREVIOUS}/${route}`)
-        .set("User-Agent", "Prometheus/3.0");
+      const req = request(app);
+      const response = await req[method](`/admin/${PREVIOUS}/${route}`).set(
+        "User-Agent",
+        "Prometheus/3.0",
+      );
       expect(response.status, route).toBe(200);
       expect(response.body).toEqual({ route });
     }

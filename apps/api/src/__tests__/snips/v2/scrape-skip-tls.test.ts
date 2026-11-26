@@ -98,13 +98,13 @@ describe("V2 Scrape skipTlsVerification Default", () => {
   testIf(!HAS_PROXY)(
     "should verify TLS by default in v2 API",
     async () => {
-      const response = await scrapeRaw(
-        {
-          url: selfSignedUrl,
-          ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
-        },
-        identity,
-      );
+      const payload: Parameters<typeof scrapeRaw>[0] = {
+        url: selfSignedUrl,
+      };
+      if (TEST_PRODUCTION) {
+        payload.maxAge = 0;
+      }
+      const response = await scrapeRaw(payload, identity);
 
       if (response.status !== 500) {
         console.warn("Non-500 response:", JSON.stringify(response.body));
@@ -120,14 +120,14 @@ describe("V2 Scrape skipTlsVerification Default", () => {
   testIf(!HAS_PROXY)(
     "should allow explicit skipTlsVerification: true override",
     async () => {
-      const data = await scrape(
-        {
-          url: selfSignedUrl,
-          skipTlsVerification: true,
-          ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
-        },
-        identity,
-      );
+      const payload: Parameters<typeof scrape>[0] = {
+        url: selfSignedUrl,
+        skipTlsVerification: true,
+      };
+      if (TEST_PRODUCTION) {
+        payload.maxAge = 0;
+      }
+      const data = await scrape(payload, identity);
 
       expect(data).toBeDefined();
       expect(data.markdown).toContain("Self-signed TLS fixture");
@@ -138,13 +138,13 @@ describe("V2 Scrape skipTlsVerification Default", () => {
   testIf(ALLOW_TEST_SUITE_WEBSITE)(
     "should work with valid HTTPS sites regardless of skipTlsVerification setting",
     async () => {
-      const data = await scrape(
-        {
-          url: TEST_SUITE_WEBSITE, // NOTE: test website in self-host mode may not use TLS, need to check this out
-          ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
-        },
-        identity,
-      );
+      const payload: Parameters<typeof scrape>[0] = {
+        url: TEST_SUITE_WEBSITE, // NOTE: test website in self-host mode may not use TLS, need to check this out
+      };
+      if (TEST_PRODUCTION) {
+        payload.maxAge = 0;
+      }
+      const data = await scrape(payload, identity);
 
       expect(data).toBeDefined();
       expect(data.markdown).toContain("Firecrawl");
@@ -155,14 +155,14 @@ describe("V2 Scrape skipTlsVerification Default", () => {
   testIf(TEST_PRODUCTION)(
     "should support object screenshot format",
     async () => {
-      const data = await scrape(
-        {
-          url: TEST_SUITE_WEBSITE,
-          formats: [{ type: "screenshot", fullPage: false }],
-          ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
-        },
-        identity,
-      );
+      const payload: Parameters<typeof scrape>[0] = {
+        url: TEST_SUITE_WEBSITE,
+        formats: [{ type: "screenshot", fullPage: false }],
+      };
+      if (TEST_PRODUCTION) {
+        payload.maxAge = 0;
+      }
+      const data = await scrape(payload, identity);
 
       expect(data).toBeDefined();
       expect(data.screenshot).toBeDefined();
@@ -174,14 +174,14 @@ describe("V2 Scrape skipTlsVerification Default", () => {
   testIf(TEST_PRODUCTION)(
     "should support object screenshot format with fullPage",
     async () => {
-      const data = await scrape(
-        {
-          url: TEST_SUITE_WEBSITE,
-          formats: [{ type: "screenshot", fullPage: true }],
-          ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
-        },
-        identity,
-      );
+      const payload: Parameters<typeof scrape>[0] = {
+        url: TEST_SUITE_WEBSITE,
+        formats: [{ type: "screenshot", fullPage: true }],
+      };
+      if (TEST_PRODUCTION) {
+        payload.maxAge = 0;
+      }
+      const data = await scrape(payload, identity);
 
       expect(data).toBeDefined();
       expect(data.screenshot).toBeDefined();

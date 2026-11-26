@@ -1,3 +1,4 @@
+import { isJsonObject } from "../../../lib/json-types";
 import {
   createTestIdUrl,
   describeIf,
@@ -20,6 +21,22 @@ import {
   monitorRunRaw,
   scrapeTimeout,
 } from "./lib";
+
+type MonitorCheckData = {
+  status: string;
+  estimatedCredits?: number;
+  actualCredits?: number;
+  reservedCredits?: number;
+};
+
+function isMonitorCheckData(value: unknown): value is MonitorCheckData {
+  return isJsonObject(value) && typeof value.status === "string";
+}
+
+function externalRecipient(): string {
+  const id = Math.random().toString(36).slice(2, 10);
+  return `optin-${id}@external-test.example`;
+}
 
 describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
   let identity: Identity;
@@ -54,14 +71,18 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
       );
       expect(create.statusCode).toBe(200);
       const monitorId = create.body.data.id;
-      const runToCompletion = async () => {
+      const runToCompletion = async (): Promise<MonitorCheckData> => {
         const run = await monitorRunRaw(monitorId, identity);
         expect(run.statusCode).toBe(200);
-        let check: any;
+        let check: MonitorCheckData | undefined;
         for (let i = 0; i < 90; i++) {
           const raw = await monitorCheckRaw(monitorId, run.body.id, identity);
           expect(raw.statusCode).toBe(200);
-          check = raw.body.data;
+          const rawBody: unknown = raw.body;
+          if (!isJsonObject(rawBody) || !isMonitorCheckData(rawBody.data)) {
+            throw new Error("Unexpected monitor check response shape");
+          }
+          check = rawBody.data;
           if (
             ["completed", "partial", "failed", "skipped_no_credits"].includes(
               check.status,
@@ -69,7 +90,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
           ) {
             break;
           }
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, 1000);
+          });
+        }
+        if (!check) {
+          throw new Error("Expected monitor check result");
         }
         expect(check.status).toBe("completed");
         return check;
@@ -114,7 +140,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     const id = create.body.data.id;
     const list = await monitorListRaw(identity);
     expect(list.statusCode).toBe(200);
-    expect(list.body.data.some((x: any) => x.id === id)).toBe(true);
+    const listBody: unknown = list.body;
+    const listItems =
+      isJsonObject(listBody) && Array.isArray(listBody.data)
+        ? listBody.data
+        : [];
+    expect(listItems.some(x => isJsonObject(x) && x.id === id)).toBe(true);
 
     const get = await monitorGetRaw(id, identity);
     expect(get.statusCode).toBe(200);
@@ -299,9 +330,8 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
             urls: [createTestIdUrl()],
           },
         ],
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         nonsenseField: "value",
-      } as any,
+      },
       identity,
     );
 
@@ -361,7 +391,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         if (["completed", "partial", "failed"].includes(check.status)) {
           break;
         }
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
       }
 
       expect(["completed", "partial"]).toContain(check.status);
@@ -436,7 +468,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         if (["completed", "partial", "failed"].includes(check.status)) {
           break;
         }
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
       }
       expect(["completed", "partial"]).toContain(check.status);
       // First run: status is "new" (no previous scrape to diff against), no
@@ -504,7 +538,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         if (["completed", "partial", "failed"].includes(check.status)) {
           break;
         }
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
       }
       // Contract: deterministicJson is accepted, the reusable-json-mode extractor
       // populates document.json via the code-sandbox, and the check flows through
@@ -568,7 +604,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         if (["completed", "partial", "failed"].includes(check.status)) {
           break;
         }
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
       }
       expect(["completed", "partial"]).toContain(check.status);
       expect(check.pages[0].status).toBe("new");
@@ -579,11 +617,6 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
   );
 
   describe("email recipient opt-in", () => {
-    function externalRecipient(): string {
-      const id = Math.random().toString(36).slice(2, 10);
-      return `optin-${id}@external-test.example`;
-    }
-
     it("starts external recipients as pending without sending notifications", async () => {
       const recipient = externalRecipient();
       const create = await monitorCreateRaw(
@@ -747,7 +780,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         if (["completed", "partial", "failed"].includes(check.status)) {
           break;
         }
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
       }
       expect(["completed", "partial"]).toContain(check.status);
       // First run is always "new"; the assertion here is that mixed-mode

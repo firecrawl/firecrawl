@@ -44,6 +44,7 @@ import {
   ExchangeRefusedError,
 } from "../scraper/scrapeURL/error";
 import { service } from "../service";
+import { isJsonObject } from "./json-types";
 
 /**
  * The service's own error classes. Reading a code that no class carries gives
@@ -114,27 +115,32 @@ function shortened(text: string) {
   return `${kept}... [truncated]`;
 }
 
+// What the queue keeps whole and every reader takes, whether or not it has
+// a class for the code.
+function crosses(serialized: string): boolean {
+  if (Buffer.byteLength(serialized, "utf8") > MAX_SERIALIZED_ERROR_BYTES) {
+    return false;
+  }
+  const written = parseSerializedError(serialized);
+  return (
+    written !== null &&
+    CODE.test(written.code) &&
+    typeof written.payload.message === "string"
+  );
+}
+
+function isWireErrorCode(code: string): code is ErrorCode {
+  return CODE.test(code);
+}
+
 // What serializeThrownError returns for a value that can be read. Reading a
 // thrown value can itself throw, and then this throws.
 function serializeWithinLimit(error: unknown) {
   const thrown = isTransportableError(error) ? error : new UnknownError(error);
-  // What the queue keeps whole and every reader takes, whether or not it has
-  // a class for the code.
-  const crosses = (serialized: string) => {
-    if (Buffer.byteLength(serialized, "utf8") > MAX_SERIALIZED_ERROR_BYTES) {
-      return false;
-    }
-    const written = parseSerializedError(serialized);
-    return (
-      written !== null &&
-      CODE.test(written.code) &&
-      typeof written.payload.message === "string"
-    );
-  };
 
   try {
     let payload = thrown.serialize();
-    const write = (fields: object) =>
+    const write = (fields: unknown) =>
       `${thrown.code}|${JSON.stringify(fields)}`;
 
     let serialized: string;
@@ -229,10 +235,10 @@ function parseSerializedError(data: string) {
   } catch {
     return null;
   }
-  if (typeof payload !== "object" || payload === null) {
+  if (!isJsonObject(payload)) {
     return null;
   }
-  return { code, payload: payload as Record<string, unknown> };
+  return { code, payload };
 }
 
 /**
@@ -251,14 +257,17 @@ export function deserializeTransportableError(
 
   const errorClass = service.errors.classFor(code);
   if (errorClass) {
-    return errorClass.deserialize(code as ErrorCode, payload);
+    const registeredCode = errorClass.codes.find(c => c === code);
+    if (registeredCode !== undefined) {
+      return errorClass.deserialize(registeredCode, payload);
+    }
   }
 
   const { message, stack, cause } = payload;
-  if (!CODE.test(code) || typeof message !== "string") {
+  if (!isWireErrorCode(code) || typeof message !== "string") {
     return null;
   }
-  return TransportableError.deserialize(code as ErrorCode, {
+  return TransportableError.deserialize(code, {
     message,
     stack: typeof stack === "string" ? stack : undefined,
     cause,

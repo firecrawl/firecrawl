@@ -19,7 +19,7 @@ function activeDoGenerateSpan(): Span | undefined {
   if (!span?.isRecording()) {
     return undefined;
   }
-  const name = (span as { name?: unknown }).name;
+  const name = "name" in span ? span.name : undefined;
   return typeof name === "string" && DO_GENERATE_SPAN_NAME.test(name)
     ? span
     : undefined;

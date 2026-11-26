@@ -114,19 +114,54 @@ interface SearchExecuteResult {
   shouldScrape: boolean;
 }
 
-const CORE_SEARCH_SOURCES = new Set<string>(["web", "images", "news"]);
+type FallbackSearchSource =
+  | { type: "web" }
+  | { type: "images" }
+  | { type: "news" };
+
+type FallbackSearchCategory = { type: "pdf" };
+
+type SearchRequestFallback = SearchRequest & {
+  enterprise?: SearchOptions["enterprise"];
+  highlights?: SearchOptions["highlights"];
+  domainTools?: SearchOptions["domainTools"];
+  toolDetail?: SearchOptions["toolDetail"];
+};
+
+function isCoreSearchSource(type: string): type is SearchResultType {
+  return type === "web" || type === "images" || type === "news";
+}
+
+function nonEmpty(list: Array<string>): Array<string> | undefined {
+  return list.length > 0 ? list : undefined;
+}
 
 function buildSearchRequestFallback(
   options: SearchOptions,
   context: SearchContext,
 ): SearchRequest {
-  return {
+  const fallbackSources: Array<FallbackSearchSource> = [];
+  for (const source of options.sources) {
+    if (isCoreSearchSource(source.type)) {
+      fallbackSources.push({ type: source.type });
+    }
+  }
+  const fallbackCategories: Array<FallbackSearchCategory> = [];
+  for (const category of options.categories ?? []) {
+    if (
+      category === "pdf" ||
+      (typeof category !== "string" && category.type === "pdf")
+    ) {
+      fallbackCategories.push({ type: "pdf" });
+    }
+  }
+  const fallback: SearchRequestFallback = {
     query: options.query,
     limit: options.limit,
     tbs: options.tbs,
     filter: options.filter,
-    sources: options.sources as SearchRequest["sources"],
-    categories: (options.categories ?? []) as SearchRequest["categories"],
+    sources: fallbackSources,
+    categories: fallbackCategories,
     includeDomains: options.includeDomains,
     excludeDomains: options.excludeDomains,
     lang: options.lang ?? "en",
@@ -143,7 +178,8 @@ function buildSearchRequestFallback(
     domainTools: options.domainTools,
     toolDetail: options.toolDetail ?? "compact",
     scrapeOptions: options.scrapeOptions,
-  } as SearchRequest;
+  };
+  return fallback;
 }
 
 export async function executeSearch(
@@ -166,29 +202,37 @@ export async function executeSearch(
   } = context;
 
   const hooks = installedService()?.hooks;
-  const shouldRunPlan = !context.planApplied && hooks?.has("search.plan");
-  const needSearchHookContext = shouldRunPlan || hooks?.has("search.results");
-  const searchCtx = needSearchHookContext
-    ? (context.ctx ??
-      requestContext({
-        teamId,
-        zeroDataRetention,
-        flags: flags ?? undefined,
-        orgId: orgId ?? null,
-        apiKeyId,
-        billing,
-      }))
-    : undefined;
-  const searchBody = needSearchHookContext
-    ? (context.body ?? buildSearchRequestFallback(options, context))
-    : undefined;
+  const shouldRunPlan =
+    !context.planApplied && Boolean(hooks?.has("search.plan"));
+  const hasResultsHook = Boolean(hooks?.has("search.results"));
+  const hookContext =
+    shouldRunPlan || hasResultsHook
+      ? {
+          ctx:
+            context.ctx ??
+            requestContext({
+              teamId,
+              zeroDataRetention,
+              flags: flags ?? undefined,
+              orgId: orgId ?? null,
+              apiKeyId,
+              billing,
+            }),
+          body: context.body ?? buildSearchRequestFallback(options, context),
+        }
+      : undefined;
 
   const searchState: SearchState = context.state ?? {};
 
-  if (shouldRunPlan) {
+  if (shouldRunPlan && hookContext) {
     const planned = await applySearchPlanHook(
       { query, limit, sources },
-      { ctx: searchCtx!, body: searchBody!, state: searchState, logger },
+      {
+        ctx: hookContext.ctx,
+        body: hookContext.body,
+        state: searchState,
+        logger,
+      },
     );
     query = planned.query;
     limit = planned.limit;
@@ -200,17 +244,16 @@ export async function executeSearch(
 
   logger.info("Searching for results");
 
-  const searchTypes = [
-    ...new Set(
-      sources
-        .filter(source => CORE_SEARCH_SOURCES.has(source.type))
-        .map(source => source.type as SearchResultType),
-    ),
-  ];
+  const searchTypes: Array<SearchResultType> = [];
+  const seenSearchTypes = new Set<SearchResultType>();
+  for (const source of sources) {
+    if (isCoreSearchSource(source.type) && !seenSearchTypes.has(source.type)) {
+      seenSearchTypes.add(source.type);
+      searchTypes.push(source.type);
+    }
+  }
   const operatorPlan = planOperatorQuery(query);
   const { operators } = operatorPlan;
-  const nonEmpty = (list: Array<string>) =>
-    list.length > 0 ? list : undefined;
   const { query: searchQuery, categoryMap } = buildSearchQuery(
     operatorPlan.query,
     categories,
@@ -254,7 +297,7 @@ export async function executeSearch(
     webSearchPromise === null ? {} : await webSearchPromise;
 
   if (Array.isArray(searchState.routedResults)) {
-    const routedWeb = searchState.routedResults as Array<WebSearchResult>;
+    const routedWeb = searchState.routedResults;
     searchResponse.web = (
       searchResponse.web
         ? [...routedWeb, ...searchResponse.web]
@@ -278,26 +321,19 @@ export async function executeSearch(
   searchResponse.news = keepOperatorMatches(searchResponse.news);
   searchResponse.images = keepOperatorMatches(searchResponse.images);
 
-  if (hooks?.has("search.results")) {
+  if (hooks?.has("search.results") && hookContext) {
+    type NewsItem = NonNullable<SearchV2Response["news"]>[number];
+    type ImageItem = NonNullable<SearchV2Response["images"]>[number];
     type ResultEntry =
       | { group: "web"; item: WebSearchResult }
-      | { group: "news"; item: NonNullable<SearchV2Response["news"]>[number] }
-      | {
-          group: "images";
-          item: NonNullable<SearchV2Response["images"]>[number];
-        };
+      | { group: "news"; item: NewsItem }
+      | { group: "images"; item: ImageItem };
 
     const hits: Array<SearchHit> = [];
     const byRef = new Map<SearchHit, ResultEntry>();
     const byUrl = new Map<string, Array<ResultEntry>>();
-    const newsWithoutUrl: Array<{
-      index: number;
-      item: NonNullable<SearchV2Response["news"]>[number];
-    }> = [];
-    const imagesWithoutUrl: Array<{
-      index: number;
-      item: NonNullable<SearchV2Response["images"]>[number];
-    }> = [];
+    const newsWithoutUrl: Array<{ index: number; item: NewsItem }> = [];
+    const imagesWithoutUrl: Array<{ index: number; item: ImageItem }> = [];
 
     const record = (hit: SearchHit, entry: ResultEntry) => {
       hits.push(hit);
@@ -316,16 +352,16 @@ export async function executeSearch(
 
     if (searchResponse.web) {
       for (const item of searchResponse.web) {
-        record(
-          {
-            url: item.url,
-            title: item.title,
-            description: item.description,
-            group: "web",
-            ...(item.category !== undefined ? { category: item.category } : {}),
-          },
-          { group: "web", item },
-        );
+        const hit: SearchHit = {
+          url: item.url,
+          title: item.title,
+          description: item.description,
+          group: "web",
+        };
+        if (item.category !== undefined) {
+          hit.category = item.category;
+        }
+        record(hit, { group: "web", item });
       }
     }
 
@@ -336,17 +372,19 @@ export async function executeSearch(
           newsWithoutUrl.push({ index: i, item });
           continue;
         }
-        record(
-          {
-            url: item.url,
-            title: item.title,
-            description: item.snippet,
-            group: "news",
-            ...(item.category !== undefined ? { category: item.category } : {}),
-            ...(item.imageUrl !== undefined ? { imageUrl: item.imageUrl } : {}),
-          },
-          { group: "news", item },
-        );
+        const hit: SearchHit = {
+          url: item.url,
+          title: item.title,
+          description: item.snippet,
+          group: "news",
+        };
+        if (item.category !== undefined) {
+          hit.category = item.category;
+        }
+        if (item.imageUrl !== undefined) {
+          hit.imageUrl = item.imageUrl;
+        }
+        record(hit, { group: "news", item });
       }
     }
 
@@ -357,35 +395,35 @@ export async function executeSearch(
           imagesWithoutUrl.push({ index: i, item });
           continue;
         }
-        record(
-          {
-            url: item.url,
-            title: item.title,
-            group: "images",
-            ...(item.imageUrl !== undefined ? { imageUrl: item.imageUrl } : {}),
-            ...(item.imageWidth !== undefined
-              ? { imageWidth: item.imageWidth }
-              : {}),
-            ...(item.imageHeight !== undefined
-              ? { imageHeight: item.imageHeight }
-              : {}),
-          },
-          { group: "images", item },
-        );
+        const hit: SearchHit = {
+          url: item.url,
+          title: item.title,
+          group: "images",
+        };
+        if (item.imageUrl !== undefined) {
+          hit.imageUrl = item.imageUrl;
+        }
+        if (item.imageWidth !== undefined) {
+          hit.imageWidth = item.imageWidth;
+        }
+        if (item.imageHeight !== undefined) {
+          hit.imageHeight = item.imageHeight;
+        }
+        record(hit, { group: "images", item });
       }
     }
 
     const transformed = await hooks.transform("search.results", hits, {
-      ctx: searchCtx!,
-      body: searchBody!,
+      ctx: hookContext.ctx,
+      body: hookContext.body,
       state: searchState,
       response: searchResponse,
       logger,
     });
 
     const nextWeb: Array<WebSearchResult> = [];
-    const nextNews: NonNullable<SearchV2Response["news"]> = [];
-    const nextImages: NonNullable<SearchV2Response["images"]> = [];
+    const nextNews: Array<NewsItem> = [];
+    const nextImages: Array<ImageItem> = [];
     const consumed = new Set<ResultEntry>();
 
     for (const hit of transformed) {
@@ -407,63 +445,84 @@ export async function executeSearch(
       if (entry) {
         consumed.add(entry);
         if (entry.group === "web") {
-          nextWeb.push({
+          const merged: WebSearchResult = {
             ...entry.item,
             url: hit.url,
             title: hit.title ?? entry.item.title,
             description: hit.description ?? entry.item.description,
-            ...(hit.category !== undefined ? { category: hit.category } : {}),
-          });
+          };
+          if (hit.category !== undefined) {
+            merged.category = hit.category;
+          }
+          nextWeb.push(merged);
         } else if (entry.group === "news") {
-          nextNews.push({
+          const merged: NewsItem = {
             ...entry.item,
             url: hit.url,
             title: hit.title ?? entry.item.title,
             snippet: hit.description ?? entry.item.snippet,
-            ...(hit.category !== undefined ? { category: hit.category } : {}),
-            ...(hit.imageUrl !== undefined ? { imageUrl: hit.imageUrl } : {}),
-          });
+          };
+          if (hit.category !== undefined) {
+            merged.category = hit.category;
+          }
+          if (hit.imageUrl !== undefined) {
+            merged.imageUrl = hit.imageUrl;
+          }
+          nextNews.push(merged);
         } else {
-          nextImages.push({
+          const merged: ImageItem = {
             ...entry.item,
             url: hit.url,
             title: hit.title ?? entry.item.title,
-            ...(hit.imageUrl !== undefined ? { imageUrl: hit.imageUrl } : {}),
-            ...(hit.imageWidth !== undefined
-              ? { imageWidth: hit.imageWidth }
-              : {}),
-            ...(hit.imageHeight !== undefined
-              ? { imageHeight: hit.imageHeight }
-              : {}),
-          });
+          };
+          if (hit.imageUrl !== undefined) {
+            merged.imageUrl = hit.imageUrl;
+          }
+          if (hit.imageWidth !== undefined) {
+            merged.imageWidth = hit.imageWidth;
+          }
+          if (hit.imageHeight !== undefined) {
+            merged.imageHeight = hit.imageHeight;
+          }
+          nextImages.push(merged);
         }
       } else if (hit.group === "news") {
-        nextNews.push({
+        const added: NewsItem = {
           url: hit.url,
           title: hit.title ?? "",
           snippet: hit.description ?? "",
-          ...(hit.category !== undefined ? { category: hit.category } : {}),
-          ...(hit.imageUrl !== undefined ? { imageUrl: hit.imageUrl } : {}),
-        });
+        };
+        if (hit.category !== undefined) {
+          added.category = hit.category;
+        }
+        if (hit.imageUrl !== undefined) {
+          added.imageUrl = hit.imageUrl;
+        }
+        nextNews.push(added);
       } else if (hit.group === "images") {
-        nextImages.push({
+        const added: ImageItem = {
           url: hit.url,
           title: hit.title ?? "",
-          ...(hit.imageUrl !== undefined ? { imageUrl: hit.imageUrl } : {}),
-          ...(hit.imageWidth !== undefined
-            ? { imageWidth: hit.imageWidth }
-            : {}),
-          ...(hit.imageHeight !== undefined
-            ? { imageHeight: hit.imageHeight }
-            : {}),
-        });
+        };
+        if (hit.imageUrl !== undefined) {
+          added.imageUrl = hit.imageUrl;
+        }
+        if (hit.imageWidth !== undefined) {
+          added.imageWidth = hit.imageWidth;
+        }
+        if (hit.imageHeight !== undefined) {
+          added.imageHeight = hit.imageHeight;
+        }
+        nextImages.push(added);
       } else {
         const added: WebSearchResult = {
           url: hit.url,
           title: hit.title ?? "",
           description: hit.description ?? "",
-          ...(hit.category !== undefined ? { category: hit.category } : {}),
         };
+        if (hit.category !== undefined) {
+          added.category = hit.category;
+        }
         nextWeb.push(added);
       }
     }
@@ -565,7 +624,7 @@ export async function executeSearch(
     });
 
     if (itemsToScrape.length > 0) {
-      const scrapeOpts = {
+      const scrapeOpts: Parameters<typeof scrapeSearchResults>[1] = {
         teamId,
         orgId: orgId ?? null,
         origin,
@@ -579,14 +638,16 @@ export async function executeSearch(
         agentIndexOnly: context.agentIndexOnly,
         keylessReserved: context.keylessReserved,
         ctx: context.ctx,
-        ...(context.workContactOnly ? { workContactOnly: true } : {}),
-        ...(context.concurrencyLimit !== undefined
-          ? { concurrencyLimit: context.concurrencyLimit }
-          : {}),
-        ...(context.rateLimitMultiplier !== undefined
-          ? { rateLimitMultiplier: context.rateLimitMultiplier }
-          : {}),
       };
+      if (context.workContactOnly) {
+        scrapeOpts.workContactOnly = true;
+      }
+      if (context.concurrencyLimit !== undefined) {
+        scrapeOpts.concurrencyLimit = context.concurrencyLimit;
+      }
+      if (context.rateLimitMultiplier !== undefined) {
+        scrapeOpts.rateLimitMultiplier = context.rateLimitMultiplier;
+      }
 
       const allDocsWithCostTracking = await scrapeSearchResults(
         itemsToScrape.map(i => i.scrapeInput),
@@ -605,9 +666,7 @@ export async function executeSearch(
   }
 
   const scrapeFormats = scrapeOptions?.formats
-    ? scrapeOptions.formats.map((f: any) =>
-        typeof f === "string" ? f : f.type,
-      )
+    ? scrapeOptions.formats.map(f => (typeof f === "string" ? f : f.type))
     : [];
 
   return {
