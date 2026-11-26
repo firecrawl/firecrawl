@@ -602,10 +602,10 @@ export function deleteJobRecords(
 
 const CORRUPT_PENDING_ENTRY_REASON = "Corrupt pending queue entry";
 
-async function failCorruptPendingEntry(
+export async function failCorruptPendingEntry(
   tn: Transaction,
   ks: NuqFdbKeyspace,
-  queue: "tq" | "kq" | "gq",
+  queue: "tq" | "kq" | "gq" | "dl",
   key: Buffer,
   txc: TxContext,
   ownerId?: string,
@@ -626,7 +626,7 @@ async function failCorruptPendingEntry(
     status: st?.s,
   });
 
-  if (queue !== "tq") {
+  if (queue === "kq" || queue === "gq") {
     const resolvedOwner = meta?.o ?? ownerId;
     if (resolvedOwner) {
       tn.add(ks.teamPendingCount(resolvedOwner), MINUS_ONE);
@@ -637,7 +637,7 @@ async function failCorruptPendingEntry(
     return;
   }
 
-  if (meta?.to !== undefined) {
+  if (queue !== "dl" && meta?.to !== undefined) {
     clearBacklogTimeout(tn, ks, { i: id, to: meta.to });
   }
 
