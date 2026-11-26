@@ -222,6 +222,10 @@ fn resolves_configured_openai_models_and_rejects_non_openai() {
     Ok(Encoding::Cl100kBase)
   );
   assert_eq!(
+    Encoding::from_model("gpt-35-turbo"),
+    Ok(Encoding::Cl100kBase)
+  );
+  assert_eq!(
     Encoding::from_model("ft:gpt-4o:org::123"),
     Ok(Encoding::O200kBase)
   );
