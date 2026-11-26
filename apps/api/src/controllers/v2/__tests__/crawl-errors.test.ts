@@ -16,12 +16,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../../lib/crawl-redis", () => ({
   getCrawl: mocks.getCrawl,
+  getCrawlRobotsBlocked: mocks.smembers,
 }));
 vi.mock("../../../services/worker/nuq-router", () => ({
   scrapeQueue: { getGroupJobs: mocks.getGroupJobs },
-}));
-vi.mock("../../../services/redis", () => ({
-  redisEvictConnection: { smembers: mocks.smembers },
 }));
 
 import { RacedRedirectError } from "../../../lib/error";

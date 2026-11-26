@@ -29,6 +29,7 @@ import {
   StoredCrawl,
 } from "../../lib/crawl-redis";
 import { redisEvictConnection } from "../redis";
+import { crawlStateStore } from "../../lib/crawl-state-store";
 import {
   _addScrapeJobToBullMQ,
   addScrapeJob,
@@ -85,6 +86,7 @@ import {
   type ScrapeFinishedOutcome,
 } from "../../scraper/scrapeURL/hooks";
 import type { JobKind } from "../../service/hooks";
+import { summarizeWebhookForLog } from "../webhook/log";
 
 configDotenv();
 
@@ -478,7 +480,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
           // Prevent redirect target from being visited in the crawl again
           // See lockURL
-          const x = await redisEvictConnection.sadd(
+          const x = await (
+            await crawlStateStore(job.data.crawl_id)
+          ).sadd(
             "crawl:" + job.data.crawl_id + ":visited",
             ...p1.map(x => x.href),
           );
@@ -538,9 +542,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             let remainingLimit =
               typeof crawlLimit === "number" && discoveredLinks.length > 0
                 ? crawlLimit -
-                  (await redisEvictConnection.scard(
-                    "crawl:" + job.data.crawl_id + ":visited_unique",
-                  ))
+                  (await (
+                    await crawlStateStore(job.data.crawl_id)
+                  ).scard("crawl:" + job.data.crawl_id + ":visited_unique"))
                 : Infinity;
 
             if (discoveredLinks.length > 0) {
@@ -745,7 +749,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         });
         if (sender) {
           logger.debug("Calling webhook with success...", {
-            webhook: job.data.webhook,
+            webhook: summarizeWebhookForLog(job.data.webhook),
           });
           const documents = Array.isArray(data?.result?.links)
             ? data.result.links.map(x => x.content)
@@ -946,15 +950,16 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             logger,
           );
         }
-        await redisEvictConnection.srem(
+        await (
+          await crawlStateStore(job.data.crawl_id)
+        ).srem(
           "crawl:" + job.data.crawl_id + ":visited_unique",
           normalizeURL(job.data.url, sc),
         );
 
-        await redisEvictConnection.srem(
-          "crawl:" + job.data.crawl_id + ":jobs_qualified",
-          job.id,
-        );
+        await (
+          await crawlStateStore(job.data.crawl_id)
+        ).srem("crawl:" + job.data.crawl_id + ":jobs_qualified", job.id);
       }
 
       const isEarlyTimeout = error instanceof ScrapeJobTimeoutError;
@@ -1179,23 +1184,21 @@ async function addKickoffSitemapJob(
 ) {
   // TEMP: max 20 sitemaps per crawl
   if (
-    (await redisEvictConnection.scard(
-      "crawl:" + sourceJob.data.crawl_id + ":sitemaps",
-    )) >= 20
+    (await (
+      await crawlStateStore(sourceJob.data.crawl_id)
+    ).scard("crawl:" + sourceJob.data.crawl_id + ":sitemaps")) >= 20
   ) {
     logger.debug("Sitemap limit reached, skipping...", { sitemap: sitemapUrl });
     return;
   }
 
   const sitemapLocked =
-    (await redisEvictConnection.sadd(
-      "crawl:" + sourceJob.data.crawl_id + ":sitemaps",
-      sitemapUrl,
-    )) === 1;
-  await redisEvictConnection.expire(
-    "crawl:" + sourceJob.data.crawl_id + ":sitemaps",
-    24 * 60 * 60,
-  );
+    (await (
+      await crawlStateStore(sourceJob.data.crawl_id)
+    ).sadd("crawl:" + sourceJob.data.crawl_id + ":sitemaps", sitemapUrl)) === 1;
+  await (
+    await crawlStateStore(sourceJob.data.crawl_id)
+  ).expire("crawl:" + sourceJob.data.crawl_id + ":sitemaps", 24 * 60 * 60);
   if (!sitemapLocked) {
     logger.debug("Sitemap already hit, skipping...", { sitemap: sitemapUrl });
     return;
@@ -1225,14 +1228,12 @@ async function addKickoffSitemapJob(
     jobId,
     21,
   );
-  await redisEvictConnection.sadd(
-    "crawl:" + sourceJob.data.crawl_id + ":sitemap_jobs",
-    jobId,
-  );
-  await redisEvictConnection.expire(
-    "crawl:" + sourceJob.data.crawl_id + ":sitemap_jobs",
-    24 * 60 * 60,
-  );
+  await (
+    await crawlStateStore(sourceJob.data.crawl_id)
+  ).sadd("crawl:" + sourceJob.data.crawl_id + ":sitemap_jobs", jobId);
+  await (
+    await crawlStateStore(sourceJob.data.crawl_id)
+  ).expire("crawl:" + sourceJob.data.crawl_id + ":sitemap_jobs", 24 * 60 * 60);
 }
 
 async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
@@ -1309,7 +1310,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
 
     if (job.data.webhook) {
       logger.debug("Calling webhook with crawl.started...", {
-        webhook: job.data.webhook,
+        webhook: summarizeWebhookForLog(job.data.webhook),
       });
       const sender = await createWebhookSender({
         teamId: job.data.team_id,
@@ -1603,14 +1604,12 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
     }
     return { success: false, error };
   } finally {
-    await redisEvictConnection.sadd(
-      "crawl:" + job.data.crawl_id + ":sitemap_jobs_done",
-      job.id,
-    );
-    await redisEvictConnection.expire(
-      "crawl:" + job.data.crawl_id + ":sitemap_jobs_done",
-      24 * 60 * 60,
-    );
+    await (
+      await crawlStateStore(job.data.crawl_id)
+    ).sadd("crawl:" + job.data.crawl_id + ":sitemap_jobs_done", job.id);
+    await (
+      await crawlStateStore(job.data.crawl_id)
+    ).expire("crawl:" + job.data.crawl_id + ":sitemap_jobs_done", 24 * 60 * 60);
   }
 }
 

@@ -4,8 +4,7 @@ import {
   CrawlStatusParams,
   RequestWithAuth,
 } from "./types";
-import { getCrawl } from "../../lib/crawl-redis";
-import { redisEvictConnection } from "../../../src/services/redis";
+import { getCrawl, getCrawlRobotsBlocked } from "../../lib/crawl-redis";
 import { configDotenv } from "dotenv";
 import { storedZeroDataRetention } from "../../lib/request-context";
 import { logger as _logger } from "../../lib/logger";
@@ -125,8 +124,6 @@ export async function crawlErrorsController(
         };
       })
       .filter(x => x !== null),
-    robotsBlocked: await redisEvictConnection.smembers(
-      "crawl:" + req.params.jobId + ":robots_blocked",
-    ),
+    robotsBlocked: await getCrawlRobotsBlocked(req.params.jobId),
   });
 }

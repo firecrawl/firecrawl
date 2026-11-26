@@ -51,6 +51,8 @@ const configSchema = z.object({
   REDIS_URL: z.string().optional(),
   REDIS_EVICT_URL: z.string().optional(),
   REDIS_RATE_LIMIT_URL: z.string().optional(),
+  REDIS_CRAWL_STATE_URL: z.string().optional(),
+  REDIS_CRAWL_STATE_FALLBACK_URL: z.string().optional(),
   NUQ_DATABASE_URL: z.string().optional(),
   NUQ_DATABASE_URL_LISTEN: z.string().optional(),
   NUQ_RABBITMQ_URL: z.string().optional(),

@@ -24,7 +24,9 @@ const { scard, exec, srem, pipeline, withSpan } = vi.hoisted(() => {
 });
 
 vi.mock("../services/redis", () => ({
-  redisEvictConnection: { scard, pipeline },
+  redisEvictConnection: {},
+  redisCrawlStateConnection: { scard, pipeline },
+  redisCrawlStateFallbackConnection: undefined,
 }));
 vi.mock("../scraper/WebScraper/crawler", () => ({ WebCrawler: class {} }));
 vi.mock("./otel-tracer", () => ({

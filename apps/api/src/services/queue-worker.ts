@@ -4,12 +4,14 @@ import { shutdownTracing } from "../otel";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
 import Express from "express";
+import { register } from "prom-client";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
 import { service } from "../service";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
 import { getCrawl } from "../lib/crawl-redis";
+import { recordCrawlStateMissing } from "../lib/crawl-state-metrics";
 import { startRole } from "../main";
 import { runProcessStop } from "../service/service";
 
@@ -30,15 +32,15 @@ async function processFinishCrawlJobInternal(_job: NuQJob) {
     throw new Error("crawlFinish job with no ownerId");
   }
 
-  const sc = await getCrawl(job.groupId);
-
-  if (!sc) {
-    throw new Error("crawlFinish job with sc expired");
-  }
-
   const anyJob = await scrapeQueue.getGroupAnyJob(job.groupId, job.ownerId);
 
   if (!anyJob) {
+    if (!(await getCrawl(job.groupId))) {
+      recordCrawlStateMissing("finalizer", job.groupId, _logger, {
+        jobId: job.id,
+        recoverable: false,
+      });
+    }
     throw new Error("crawlFinish couldn't find anyJob");
   }
 
@@ -137,6 +139,10 @@ const crawlFinishWorker = async () => {
 const app = Express();
 
 let currentLiveness: boolean = true;
+
+app.get("/metrics", async (_, res) => {
+  res.contentType("text/plain").send(await register.metrics());
+});
 
 app.get("/liveness", (req, res) => {
   _logger.info("Liveness endpoint hit");

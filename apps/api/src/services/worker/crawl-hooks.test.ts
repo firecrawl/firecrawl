@@ -107,6 +107,7 @@ vi.mock("../../lib/crawl-redis", () => ({
   finishCrawl: mocks.finishCrawl,
   getCrawlJobs: mocks.getCrawlJobs,
   getDoneJobsOrderedLength: mocks.getDoneJobsOrderedLength,
+  isCrawlFinishMarked: vi.fn(async () => false),
   generateURLPermutations: (url: string) => [new URL(url)],
   getCrawl: mocks.getCrawl,
   lockURL: mocks.lockURL,
@@ -119,6 +120,8 @@ vi.mock("../../lib/crawl-redis", () => ({
 
 vi.mock("../redis", () => ({
   redisEvictConnection: mocks.redisEvictConnection,
+  redisCrawlStateConnection: mocks.redisEvictConnection,
+  redisCrawlStateFallbackConnection: null,
 }));
 
 vi.mock("../queue-jobs", () => ({

@@ -12,6 +12,7 @@ vi.mock("../../lib/crawl-redis", () => ({
   getCrawl: vi.fn(),
   getCrawlJobs: vi.fn(async () => []),
   getDoneJobsOrderedLength: vi.fn(async () => 2),
+  isCrawlFinishMarked: vi.fn(async () => false),
 }));
 
 vi.mock("../../controllers/v2/crawl-status", () => ({
@@ -191,4 +192,64 @@ test("emits crawl.finished metadata for crawls and batch scrapes", async () => {
       }),
     }),
   ]);
+});
+
+// A missing stored crawl must not skip the finish: it recovers what it needs
+// from the member job and still sends the completion webhook.
+test("finishes from the member job when the stored crawl is missing", async () => {
+  const sendMock = vi.fn();
+  (createWebhookSender as Mock).mockResolvedValue({ send: sendMock });
+  (getCrawl as Mock).mockResolvedValue(null);
+
+  const job = {
+    id: "job-3",
+    groupId: "crawl-3",
+    ownerId: "team-from-job",
+    data: {
+      team_id: "team-from-job",
+      crawlerOptions: null,
+      scrapeOptions: {},
+      internalOptions: {},
+      zeroDataRetention: false,
+      v1: true,
+      webhook: { url: "https://hook.example" },
+      requestId: "req-3",
+    },
+  } as unknown as NuQJob<any>;
+
+  await finishCrawlSuper(job);
+
+  expect(crawlFinishedEvents).toEqual([
+    expect.objectContaining({
+      id: "crawl-3",
+      kind: "batchScrape",
+      requestId: "req-3",
+      ctx: expect.objectContaining({ teamId: "team-from-job" }),
+    }),
+  ]);
+  expect(createWebhookSender).toHaveBeenCalledWith({
+    teamId: "team-from-job",
+    jobId: "crawl-3",
+    webhook: { url: "https://hook.example" },
+    v0: false,
+  });
+  expect(sendMock).toHaveBeenCalledWith("batch_scrape.completed", {
+    success: true,
+    data: [],
+  });
+});
+
+test("fails visibly when the stored crawl and the member job data are both gone", async () => {
+  (getCrawl as Mock).mockResolvedValue(null);
+
+  const job = {
+    id: "job-4",
+    groupId: "crawl-4",
+    ownerId: "team-from-job",
+    data: null,
+  } as unknown as NuQJob<any>;
+
+  await expect(finishCrawlSuper(job)).rejects.toThrow(/Stored crawl missing/);
+  expect(crawlFinishedEvents).toHaveLength(0);
+  expect(createWebhookSender).not.toHaveBeenCalled();
 });

@@ -81,3 +81,28 @@ export const redisEvictConnection = new IORedis(redisEvictURL!, {
   lazyConnect: true,
   enableAutoPipelining: true,
 });
+
+const redisCrawlStateURL = config.REDIS_CRAWL_STATE_URL || redisEvictURL;
+
+function crawlStateConnection(url: string): IORedis {
+  if (url === redisEvictURL) return redisEvictConnection;
+  return new IORedis(url, {
+    lazyConnect: true,
+    enableAutoPipelining: true,
+  });
+}
+
+/** Store for crawl and batch scrape state. It must not evict live keys. */
+export const redisCrawlStateConnection = crawlStateConnection(
+  redisCrawlStateURL!,
+);
+
+/**
+ * Previous crawl state store, read while REDIS_CRAWL_STATE_URL moves to a new
+ * store so crawls already running on the old one keep their state.
+ */
+export const redisCrawlStateFallbackConnection: IORedis | null =
+  config.REDIS_CRAWL_STATE_FALLBACK_URL &&
+  config.REDIS_CRAWL_STATE_FALLBACK_URL !== redisCrawlStateURL
+    ? crawlStateConnection(config.REDIS_CRAWL_STATE_FALLBACK_URL)
+    : null;

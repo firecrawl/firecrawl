@@ -17,6 +17,7 @@ vi.mock("../../../lib/crawl-redis", () => ({
   getDoneJobsOrderedUntil: vi.fn(),
   getLastDoneJobTimestamp: vi.fn().mockResolvedValue(null),
   isCrawlKickoffFinished: vi.fn(),
+  getCrawlRobotsBlockedCount: vi.fn().mockResolvedValue(0),
 }));
 
 vi.mock("../../../services/worker/nuq-router", () => ({
@@ -26,10 +27,6 @@ vi.mock("../../../services/worker/nuq-router", () => ({
     getGroupNumericStats: mocks.getGroupNumericStats,
     getGroupJobs: mocks.getGroupJobs,
   },
-}));
-
-vi.mock("../../../services/redis", () => ({
-  redisEvictConnection: { scard: vi.fn().mockResolvedValue(0) },
 }));
 
 vi.mock("../../../lib/logger", () => ({
