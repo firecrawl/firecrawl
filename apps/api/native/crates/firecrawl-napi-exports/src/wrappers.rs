@@ -703,5 +703,97 @@ macro_rules! export_oss_napi {
       let res = $crate::wrappers::detect_pdf(path, ctx).await?;
       Ok(_convert_pdf_result(res))
     }
+
+    #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+    #[napi_derive::napi(object)]
+    pub struct HighlightSentence {
+      pub text: String,
+      pub source: String,
+      pub block_id: u32,
+      pub lang: Option<String>,
+      pub is_header: Option<bool>,
+    }
+
+    /// Rank URLs by cosine similarity to `search_query`.
+    #[napi_derive::napi]
+    pub fn rank_cosine_similarity(links: Vec<String>, search_query: String) -> Vec<String> {
+      $crate::text::rank_cosine_similarity(links, search_query)
+    }
+
+    /// Return 0-based indices into `links` ranked by cosine similarity to `search_query`.
+    #[napi_derive::napi]
+    pub fn rank_cosine_similarity_indices(links: Vec<String>, search_query: String) -> Vec<u32> {
+      $crate::text::rank_cosine_similarity_indices(links, search_query)
+    }
+
+    /// Split markdown into line-like candidate spans for highlight selection.
+    #[napi_derive::napi]
+    pub fn parse_markdown_to_sentences(markdown: String) -> Vec<HighlightSentence> {
+      $crate::text::parse_markdown_to_sentences(markdown)
+        .into_iter()
+        .map(|s| HighlightSentence {
+          text: s.text,
+          source: s.source.as_str().to_owned(),
+          block_id: s.block_id,
+          lang: s.lang,
+          is_header: s.is_header,
+        })
+        .collect()
+    }
+
+    /// Reassemble selected highlight spans into structure-aware markdown.
+    #[napi_derive::napi]
+    pub fn assemble_answer(sentences: Vec<HighlightSentence>, indices: Vec<i32>) -> String {
+      let converted: Vec<$crate::__deps::firecrawl_text::Sentence> = sentences
+        .into_iter()
+        .map(|s| $crate::__deps::firecrawl_text::Sentence {
+          text: s.text,
+          source: $crate::text::parse_source(&s.source),
+          block_id: s.block_id,
+          lang: s.lang,
+          is_header: s.is_header,
+        })
+        .collect();
+      $crate::text::assemble_answer(converted, indices)
+    }
+
+    /// Normalize mechanical JSON Schema keyword issues for OpenAI strict mode.
+    #[napi_derive::napi]
+    pub fn normalize_schema_keywords(schema: serde_json::Value) -> serde_json::Value {
+      $crate::text::normalize_schema_keywords(schema)
+    }
+
+    /// Normalize schema keywords and wrap a bare property map as a root object schema.
+    #[napi_derive::napi]
+    pub fn to_root_schema(schema: serde_json::Value) -> serde_json::Value {
+      $crate::text::to_root_schema(schema)
+    }
+
+    /// Find the first OpenAI strict structured outputs violation in a JSON Schema.
+    #[napi_derive::napi]
+    pub fn find_strict_schema_violation(schema: serde_json::Value) -> Option<String> {
+      $crate::text::find_strict_schema_violation(schema)
+    }
+
+    /// JSON-string fast path for `normalize_schema_keywords` avoiding per-property N-API marshaling.
+    #[napi_derive::napi]
+    pub fn normalize_schema_keywords_json(schema_json: String) -> napi::Result<String> {
+      $crate::text::normalize_schema_keywords_json(&schema_json)
+        .map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
+
+    /// JSON-string fast path for `to_root_schema` avoiding per-property N-API marshaling.
+    #[napi_derive::napi]
+    pub fn to_root_schema_json(schema_json: String) -> napi::Result<String> {
+      $crate::text::to_root_schema_json(&schema_json)
+        .map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
+
+    /// JSON-string fast path for `find_strict_schema_violation` avoiding per-property N-API marshaling.
+    #[napi_derive::napi]
+    pub fn find_strict_schema_violation_json(schema_json: String) -> napi::Result<Option<String>> {
+      $crate::text::find_strict_schema_violation_json(&schema_json)
+        .map_err(|e| napi::Error::from_reason(e.to_string()))
+    }
   };
 }

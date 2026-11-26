@@ -11,10 +11,13 @@ version = "0.1.0"
 
 [workspace.dependencies]
 anydoc = "0.2.5"
+entities = "1.0.1"
 firecrawl-crawler = { path = "crates/firecrawl-crawler" }
 firecrawl-html = { path = "crates/firecrawl-html" }
 firecrawl-napi-exports = { path = "crates/firecrawl-napi-exports" }
 firecrawl-parsers = { path = "crates/firecrawl-parsers" }
+firecrawl-text = { path = "crates/firecrawl-text" }
+hegeltest = "0.54.2"
 kuchikiki = "0.8.9-speedreader"
 napi = { version = "3.0.0", features = ["serde-json", "tokio_rt"] }
 napi-build = "2"
@@ -22,6 +25,7 @@ napi-derive = "3.0.0"
 nodesig = "2.0.0"
 pdf-inspector = "1.21.0"
 psl = "2.1.140"
+pulldown-cmark = { version = "0.13.4", default-features = false }
 regex = "1.11.2"
 roxmltree = "0.20.0"
 serde = { version = "1.0.219", features = ["derive"] }
