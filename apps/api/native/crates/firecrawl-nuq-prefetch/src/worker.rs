@@ -6,9 +6,10 @@ use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use tokio::sync::{Semaphore, watch};
+use tokio::time::Instant;
 use tracing::Instrument;
 
 use crate::amqp::{AmqpPrefetchPublisher, PublishError};
@@ -455,12 +456,11 @@ where
       sent = sent.saturating_add(1);
     }
 
-    // Deliver terminal failure notifications on their own bounded budget and
-    // backoff schedule so notification errors never stall or back off job claims.
+    // Flush pending terminal failure notifications on their own bounded budget
+    // and backoff schedule so notification errors never trigger cycle-wide
+    // error backoff on job claims.
     let broker_healthy_hint = sent > 0 && publish_error.is_none();
-    if !pending_failures.is_empty()
-      && (broker_healthy_hint || pending_failures.is_due(Instant::now()))
-    {
+    if !pending_failures.is_empty() && pending_failures.is_due(Instant::now()) {
       flush_pending_failure_notifications(
         queue,
         publisher,
@@ -666,7 +666,7 @@ mod tests {
     }
   }
 
-  #[tokio::test]
+  #[tokio::test(start_paused = true)]
   async fn flush_budget_caps_single_in_flight_notify_and_retains_entry() {
     let publisher = HangingNotifyPublisher {
       delay: Duration::from_secs(5),
@@ -690,13 +690,9 @@ mod tests {
       Duration::from_millis(80),
     )
     .await;
-    let elapsed = start.elapsed();
 
-    // Must terminate near the 80ms budget rather than waiting for the 5s send.
-    assert!(
-      elapsed < Duration::from_millis(500),
-      "flush exceeded budget: {elapsed:?}"
-    );
+    // Under paused Tokio time, the flush cancels at exactly the 80ms budget.
+    assert_eq!(start.elapsed(), Duration::from_millis(80));
     // Timed-out notification stays queued with independent backoff scheduled.
     assert_eq!(pending.entries.len(), 1);
     assert!(pending.next_flush_at.is_some());

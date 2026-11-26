@@ -41,7 +41,7 @@ tikv-jemallocator.workspace = true
 
 [dev-dependencies]
 hegeltest.workspace = true
-tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "test-util", "time"] }
 tracing-subscriber = { workspace = true, features = ["registry"] }
 
 [lints]

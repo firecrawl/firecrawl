@@ -76,7 +76,9 @@ impl PrefetchStore for MockStore {
 struct RecordingPublisher {
   configured: bool,
   published: Mutex<Vec<(QueueKind, String)>>,
+  publish_event: Notify,
   failed_notifications: Mutex<Vec<(QueueKind, String, String)>>,
+  failed_notify_event: Notify,
   fail_next_send_job: AtomicUsize,
   fail_next_notify: AtomicUsize,
   always_fail_notify_channel: Option<String>,
@@ -92,7 +94,9 @@ impl RecordingPublisher {
     Self {
       configured: true,
       published: Mutex::new(Vec::new()),
+      publish_event: Notify::new(),
       failed_notifications: Mutex::new(Vec::new()),
+      failed_notify_event: Notify::new(),
       fail_next_send_job: AtomicUsize::new(0),
       fail_next_notify: AtomicUsize::new(0),
       always_fail_notify_channel: None,
@@ -108,7 +112,9 @@ impl RecordingPublisher {
     Self {
       configured: true,
       published: Mutex::new(Vec::new()),
+      publish_event: Notify::new(),
       failed_notifications: Mutex::new(Vec::new()),
+      failed_notify_event: Notify::new(),
       fail_next_send_job: AtomicUsize::new(0),
       fail_next_notify: AtomicUsize::new(0),
       always_fail_notify_channel: None,
@@ -174,6 +180,7 @@ impl PrefetchPublisher for RecordingPublisher {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .push((queue, job.id.clone()));
+      self.publish_event.notify_waiters();
       Ok(())
     })
   }
@@ -201,6 +208,7 @@ impl PrefetchPublisher for RecordingPublisher {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .push((queue, job_id.to_owned(), listen_channel_id.to_owned()));
+      self.failed_notify_event.notify_waiters();
       Ok(())
     })
   }
@@ -529,7 +537,7 @@ async fn failed_waiter_notifications_still_send_after_publish_error_and_retry_ac
   );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn stuck_failure_notification_does_not_block_job_claims_or_other_notifications() {
   let store = Arc::new(MockStore::new());
   {
@@ -551,9 +559,10 @@ async fn stuck_failure_notification_does_not_block_job_claims_or_other_notificat
       ],
       repair_error: None,
     }));
-    // Subsequent valid jobs prove the broker stays healthy across retries so the
-    // poison entry is evicted while job claims keep flowing without cycle backoff.
-    for i in 1..=5 {
+    // 16 valid jobs at 250ms cadence cover 4000ms of virtual time, spanning all
+    // 5 independent notification backoff retries (0, 250, 750, 1750, 3750ms)
+    // plus one extra tick confirming poison eviction.
+    for i in 1..=16 {
       scrape.push(Ok(PrefetchBatch::from_jobs(vec![sample_job(
         &format!("valid-after-poison-{i}"),
         false,
@@ -573,23 +582,48 @@ async fn stuck_failure_notification_does_not_block_job_claims_or_other_notificat
     Arc::clone(&store),
     Arc::clone(&publisher),
     Some(Arc::clone(&heartbeat)),
-    Duration::from_millis(10),
+    Duration::from_millis(250),
     shutdown_rx,
   ));
 
-  // Wait until all 5 valid jobs are claimed/published and the poison entry is evicted.
-  let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
-  while publisher
-    .published
-    .lock()
-    .unwrap_or_else(PoisonError::into_inner)
-    .len()
-    < 5
-    && tokio::time::Instant::now() < deadline
-  {
-    tokio::time::sleep(Duration::from_millis(10)).await;
-  }
-  let elapsed = started.elapsed();
+  let wait_for_published = |target: usize| {
+    let publisher = Arc::clone(&publisher);
+    async move {
+      loop {
+        let notified = publisher.publish_event.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        if publisher
+          .published
+          .lock()
+          .unwrap_or_else(PoisonError::into_inner)
+          .len()
+          >= target
+        {
+          break;
+        }
+        notified.await;
+      }
+    }
+  };
+
+  // First 5 valid jobs must land at exactly 5 * 250ms = 1250ms virtual time
+  // (cycle-wide exponential backoff would have taken 7750ms).
+  assert!(
+    tokio::time::timeout(Duration::from_secs(10), wait_for_published(5))
+      .await
+      .is_ok()
+  );
+  assert_eq!(started.elapsed(), Duration::from_millis(1_250));
+
+  // All 16 valid jobs land at exactly 16 * 250ms = 4000ms virtual time, during
+  // which the poison notification exhausts its 5 independent retries and evicts.
+  assert!(
+    tokio::time::timeout(Duration::from_secs(10), wait_for_published(16))
+      .await
+      .is_ok()
+  );
+  assert_eq!(started.elapsed(), Duration::from_millis(4_000));
 
   let _ = shutdown_tx.send(true);
   assert!(matches!(
@@ -597,26 +631,21 @@ async fn stuck_failure_notification_does_not_block_job_claims_or_other_notificat
     Ok(Ok(()))
   ));
 
-  // Notification failures must not trigger cycle-wide exponential backoff on job claims.
-  assert!(
-    elapsed < Duration::from_millis(500),
-    "job claims backed off unexpectedly: {elapsed:?}"
-  );
-  // Valid jobs still claimed and published while the poison notification was pending.
-  assert_eq!(
-    publisher
-      .published
-      .lock()
-      .unwrap_or_else(PoisonError::into_inner)
-      .as_slice(),
-    &[
-      (QueueKind::Scrape, "valid-after-poison-1".to_owned()),
-      (QueueKind::Scrape, "valid-after-poison-2".to_owned()),
-      (QueueKind::Scrape, "valid-after-poison-3".to_owned()),
-      (QueueKind::Scrape, "valid-after-poison-4".to_owned()),
-      (QueueKind::Scrape, "valid-after-poison-5".to_owned()),
-    ]
-  );
+  let published: Vec<String> = publisher
+    .published
+    .lock()
+    .unwrap_or_else(PoisonError::into_inner)
+    .iter()
+    .map(|(queue, id)| {
+      assert_eq!(*queue, QueueKind::Scrape);
+      id.clone()
+    })
+    .collect();
+  let expected: Vec<String> = (1..=16)
+    .map(|i| format!("valid-after-poison-{i}"))
+    .collect();
+  assert_eq!(published, expected);
+
   // Healthy notification behind the poison entry still delivered without head-of-line blocking.
   assert_eq!(
     publisher
@@ -630,12 +659,12 @@ async fn stuck_failure_notification_does_not_block_job_claims_or_other_notificat
       "chan-good".to_owned()
     )]
   );
-  // Poison notification was retried 5 times against a proven-healthy broker and then evicted.
+  // Poison notification was retried 5 times on its independent backoff and then evicted.
   assert_eq!(publisher.failed_notify_attempts.load(Ordering::Acquire), 5);
-  assert!(heartbeat.pings.load(Ordering::Acquire) >= 1);
+  assert!(heartbeat.pings.load(Ordering::Acquire) >= 16);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn broker_outage_retains_failure_notifications_and_bounds_per_tick_flush_work() {
   // Part 1: a multi-tick broker outage (> 5 failed cycles) must not drop healthy notifications.
   let loop_store = Arc::new(MockStore::new());
@@ -661,20 +690,28 @@ async fn broker_outage_retains_failure_notifications_and_bounds_per_tick_flush_w
     Arc::clone(&loop_store),
     Arc::clone(&loop_pub),
     Option::<Arc<CountingHeartbeat>>::None,
-    Duration::from_millis(5),
+    Duration::from_millis(250),
     shutdown_rx,
   ));
 
-  let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
-  while loop_pub
-    .failed_notifications
-    .lock()
-    .unwrap_or_else(PoisonError::into_inner)
-    .is_empty()
-    && tokio::time::Instant::now() < deadline
-  {
-    tokio::time::sleep(Duration::from_millis(10)).await;
-  }
+  let delivered = tokio::time::timeout(Duration::from_secs(60), async {
+    loop {
+      let notified = loop_pub.failed_notify_event.notified();
+      tokio::pin!(notified);
+      notified.as_mut().enable();
+      if !loop_pub
+        .failed_notifications
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .is_empty()
+      {
+        break;
+      }
+      notified.await;
+    }
+  })
+  .await;
+  assert!(delivered.is_ok(), "outage notification never delivered");
 
   let _ = shutdown_tx.send(true);
   assert!(matches!(
