@@ -260,4 +260,34 @@ describe("parseMarkdown Rust dispatch and shadow mode", () => {
       }),
     );
   });
+
+  it("preserves multiline CommonMark inline links when computing link recall", async () => {
+    const multilineMd = [
+      "[one](\nhttps://example.com/one\n)",
+      '[two](https://example.com/two\n"line 1\nline 2"\n)',
+      "[three](\r\n<https://example.com/three>\r\n)",
+      "[invalid](https://example.com/dropped\n\n)",
+    ].join("\n\n");
+    const convertHtmlToMarkdown = vi.fn(async () => multilineMd);
+    const parse = await loadWithMocks(
+      { RUST_HTML_TO_MD_SHADOW_RATE: "1" },
+      { convertHtmlToMarkdown },
+    );
+    const mockLogger = createMockLogger();
+
+    await parse(
+      '<p><a href="https://example.com/one">1</a> <a href="https://example.com/two">2</a> <a href="https://example.com/three">3</a></p>',
+      { logger: mockLogger },
+    );
+    await flushMicrotasks();
+
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      "Rust HTML-to-Markdown shadow comparison",
+      expect.objectContaining({
+        baseline_link_count: 3,
+        rust_link_count: 3,
+        link_recall: 1,
+      }),
+    );
+  });
 });

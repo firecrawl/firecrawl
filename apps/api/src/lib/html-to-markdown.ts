@@ -23,6 +23,9 @@ type ActiveLink = {
   dest: string;
   parenDepth: number;
   quote: string | null;
+  sawLineEnding: boolean;
+  seenTitle: boolean;
+  needSpaceBeforeTitle: boolean;
 };
 
 function recordLinkUrl(urls: Set<string>, isImage: boolean, dest: string) {
@@ -39,6 +42,9 @@ function makeActiveLink(isImage: boolean, nextIndex: number): ActiveLink {
     dest: "",
     parenDepth: 0,
     quote: null,
+    sawLineEnding: false,
+    seenTitle: false,
+    needSpaceBeforeTitle: false,
   };
 }
 
@@ -52,30 +58,51 @@ function extractMarkdownLinkUrls(markdown: string): Set<string> {
     const ch = markdown[i];
 
     if (ch === "\\") {
-      if (active && active.phase === "start") {
-        active.phase = "bare_dest";
-        active.destStart = i;
+      if (active) {
+        if (active.phase === "start") {
+          active.phase = "bare_dest";
+          active.destStart = i;
+          active.sawLineEnding = false;
+        } else if (active.phase === "after_dest") {
+          if (active.quote === null) {
+            active = null;
+          } else {
+            active.sawLineEnding = false;
+          }
+        }
       }
       pendingBang = false;
-      i++;
+      const next = markdown[i + 1];
+      if (next !== undefined && next !== "\n" && next !== "\r") {
+        i++;
+      }
       continue;
     }
 
     if (active) {
-      if (ch === "\n" || ch === "\r") {
-        active = null;
-        pendingBang = false;
-        continue;
-      }
+      const isLineEnding = ch === "\n" || ch === "\r";
 
       if (active.phase === "start") {
         if (ch === " " || ch === "\t") {
           pendingBang = false;
           continue;
         }
+        if (isLineEnding) {
+          if (ch === "\r" && markdown[i + 1] === "\n") {
+            i++;
+          }
+          if (active.sawLineEnding) {
+            active = null;
+          } else {
+            active.sawLineEnding = true;
+          }
+          pendingBang = false;
+          continue;
+        }
         if (ch === "<") {
           active.phase = "angle_dest";
           active.destStart = i + 1;
+          active.sawLineEnding = false;
           pendingBang = false;
           continue;
         }
@@ -86,12 +113,20 @@ function extractMarkdownLinkUrls(markdown: string): Set<string> {
         }
         active.phase = "bare_dest";
         active.destStart = i;
+        active.sawLineEnding = false;
       }
 
       if (active.phase === "angle_dest") {
-        if (ch === ">") {
+        if (isLineEnding) {
+          if (ch === "\r" && markdown[i + 1] === "\n") {
+            i++;
+          }
+          active = null;
+        } else if (ch === ">") {
           active.dest = markdown.slice(active.destStart, i).trim();
           active.phase = "after_dest";
+          active.sawLineEnding = false;
+          active.needSpaceBeforeTitle = true;
         } else if (ch === "<") {
           active = null;
         }
@@ -100,6 +135,22 @@ function extractMarkdownLinkUrls(markdown: string): Set<string> {
       }
 
       if (active.phase === "bare_dest") {
+        if (isLineEnding) {
+          const destEnd = i;
+          if (ch === "\r" && markdown[i + 1] === "\n") {
+            i++;
+          }
+          if (active.parenDepth === 0) {
+            active.dest = markdown.slice(active.destStart, destEnd);
+            active.phase = "after_dest";
+            active.sawLineEnding = true;
+            active.needSpaceBeforeTitle = false;
+          } else {
+            active = null;
+          }
+          pendingBang = false;
+          continue;
+        }
         if (ch === "(") {
           active.parenDepth++;
           pendingBang = false;
@@ -122,6 +173,8 @@ function extractMarkdownLinkUrls(markdown: string): Set<string> {
         if ((ch === " " || ch === "\t") && active.parenDepth === 0) {
           active.dest = markdown.slice(active.destStart, i);
           active.phase = "after_dest";
+          active.sawLineEnding = false;
+          active.needSpaceBeforeTitle = false;
           pendingBang = false;
           continue;
         }
@@ -144,8 +197,40 @@ function extractMarkdownLinkUrls(markdown: string): Set<string> {
       }
 
       if (active.quote !== null) {
-        if (ch === active.quote) {
+        if (isLineEnding) {
+          if (ch === "\r" && markdown[i + 1] === "\n") {
+            i++;
+          }
+          if (active.sawLineEnding) {
+            active = null;
+          } else {
+            active.sawLineEnding = true;
+          }
+        } else if (ch === active.quote) {
           active.quote = null;
+          active.seenTitle = true;
+          active.sawLineEnding = false;
+        } else if (ch !== " " && ch !== "\t") {
+          active.sawLineEnding = false;
+        }
+        pendingBang = false;
+        continue;
+      }
+
+      if (ch === " " || ch === "\t") {
+        active.needSpaceBeforeTitle = false;
+        pendingBang = false;
+        continue;
+      }
+      if (isLineEnding) {
+        if (ch === "\r" && markdown[i + 1] === "\n") {
+          i++;
+        }
+        if (active.sawLineEnding) {
+          active = null;
+        } else {
+          active.sawLineEnding = true;
+          active.needSpaceBeforeTitle = false;
         }
         pendingBang = false;
         continue;
@@ -156,32 +241,17 @@ function extractMarkdownLinkUrls(markdown: string): Set<string> {
         pendingBang = false;
         continue;
       }
-      if (ch === '"' || ch === "'") {
-        active.quote = ch;
+      if (
+        !active.seenTitle &&
+        !active.needSpaceBeforeTitle &&
+        (ch === '"' || ch === "'" || ch === "(")
+      ) {
+        active.quote = ch === "(" ? ")" : ch;
+        active.sawLineEnding = false;
         pendingBang = false;
         continue;
       }
-      if (ch === "(") {
-        active.quote = ")";
-        pendingBang = false;
-        continue;
-      }
-      if (ch === "[") {
-        bracketStack.push(pendingBang);
-        pendingBang = false;
-        continue;
-      }
-      if (ch === "]" && bracketStack.length > 0) {
-        const isImage = bracketStack.pop()!;
-        if (markdown[i + 1] === "(") {
-          active = makeActiveLink(isImage, i + 2);
-          i++;
-        }
-        pendingBang = false;
-        continue;
-      }
-      pendingBang = ch === "!";
-      continue;
+      active = null;
     }
 
     if (ch === "[") {
