@@ -1,6 +1,6 @@
 import type { Request } from "express";
-import { config } from "../config";
-import type { AuthCreditUsageChunk } from "../controllers/v1/types";
+import type { AuthCreditUsageChunk } from "../controllers/v2/types";
+import { redactAdminKey } from "./admin-auth";
 import { getRoutePattern } from "./http-metrics";
 import { logger } from "./logger";
 
@@ -16,6 +16,7 @@ export type AuthDenialReason =
   | "invalid_vercel_oidc_token"
   | "vercel_oidc_team_mismatch"
   | "team_banned"
+  | "key_expired"
   | "ip_restricted"
   | "endpoint_restricted"
   | "keyless_ip_ineligible"
@@ -24,17 +25,9 @@ export type AuthDenialReason =
   | "agent_key_blocked"
   | "agent_key_verification_expired";
 
-// Admin routes carry BULL_AUTH_KEY as a path segment.
 function routeOf(req: Request): string | undefined {
   if (typeof req.path !== "string") return undefined;
-  return `${req.baseUrl ?? ""}${getRoutePattern(req)}`
-    .split("/")
-    .map(segment =>
-      config.BULL_AUTH_KEY && segment === config.BULL_AUTH_KEY
-        ? ":bullAuthKey"
-        : segment,
-    )
-    .join("/");
+  return redactAdminKey(`${req.baseUrl ?? ""}${getRoutePattern(req)}`);
 }
 
 /**

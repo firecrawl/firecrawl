@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  authenticateUser: vi.fn(),
+  authenticate: vi.fn(),
   getCrawl: vi.fn(),
   getCrawlJobs: vi.fn(),
   getDoneJobsOrdered: vi.fn(),
@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../types", () => ({
   RateLimiterMode: { CrawlStatus: "crawl-status" },
 }));
-vi.mock("../auth", () => ({ authenticateUser: mocks.authenticateUser }));
 vi.mock("../../lib/crawl-redis", () => ({
   getCrawl: mocks.getCrawl,
   getCrawlJobs: mocks.getCrawlJobs,
@@ -30,15 +29,10 @@ vi.mock("../../services/worker/nuq-router", () => ({
     getJobsWithStatuses: mocks.getJobsWithStatuses,
   },
 }));
-vi.mock("../v1/crawl-status", () => ({ getJobs: mocks.getDocuments }));
 vi.mock("../v2/crawl-status", () => ({ getJobs: mocks.getDocuments }));
 vi.mock("../../lib/logger", () => ({ logger: { error: vi.fn() } }));
-vi.mock("../../lib/deployment", () => ({
-  getErrorContactMessage: () => "Unexpected error",
-}));
-
-import { crawlStatusWSController as v1 } from "../v1/crawl-status-ws";
-import { crawlStatusWSController as v2 } from "../v2/crawl-status-ws";
+import { crawlStatusWSController as controller } from "../v2/crawl-status-ws";
+import { createService, replaceService } from "../../service/service";
 
 function makeSocket() {
   return {
@@ -66,7 +60,16 @@ function setJobs(ids: string[], done: string[] = []) {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
-  mocks.authenticateUser.mockResolvedValue({ success: true, team_id: "team" });
+  mocks.authenticate.mockResolvedValue({
+    ok: true,
+    caller: { teamId: "team" },
+  });
+  replaceService(
+    createService(
+      { modules: { auth: { authenticate: mocks.authenticate } } },
+      { core: { name: "core" }, logger: { error: vi.fn() } },
+    ),
+  );
   mocks.getCrawl.mockResolvedValue({ team_id: "team", cancelled: false });
   mocks.getJobsWithStatuses.mockResolvedValue([]);
   mocks.getDocuments.mockImplementation(async (ids: string[]) =>
@@ -77,12 +80,10 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
+  replaceService(undefined);
 });
 
-describe.each([
-  ["v1", v1],
-  ["v2", v2],
-] as const)("%s crawl watcher completed jobs", (_version, controller) => {
+describe("v2 crawl watcher completed jobs", () => {
   it("preserves catchup order and polls only jobs not previously delivered", async () => {
     setJobs(
       ["first", "second", "new", "failed", "pending"],
@@ -187,6 +188,27 @@ describe.each([
       3003,
       JSON.stringify({ type: "error", error: "Forbidden" }),
     );
+    expect(mocks.getCrawlJobs).not.toHaveBeenCalled();
+  });
+
+  it("does not read crawl state when the service refuses authentication", async () => {
+    mocks.authenticate.mockResolvedValue({
+      ok: false,
+      refusal: {
+        status: 401,
+        body: { success: false, error: "Authentication denied" },
+      },
+    });
+    const ws = makeSocket();
+
+    await controller(ws as any, makeRequest() as any);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(ws.close).toHaveBeenCalledWith(
+      3000,
+      JSON.stringify({ type: "error", error: "Authentication denied" }),
+    );
+    expect(mocks.getCrawl).not.toHaveBeenCalled();
     expect(mocks.getCrawlJobs).not.toHaveBeenCalled();
   });
 });

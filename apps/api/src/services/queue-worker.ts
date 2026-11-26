@@ -1,190 +1,21 @@
 import "dotenv/config";
 import { config } from "../config";
 import { shutdownTracing } from "../otel";
-import {
-  getDeepResearchQueue,
-  getGenerateLlmsTxtQueue,
-  getRedisConnection,
-} from "./queue-service";
-import { Job, Queue, Worker } from "bullmq";
 import { logger as _logger } from "../lib/logger";
-import systemMonitor from "./system-monitor";
-import { v7 as uuidv7 } from "uuid";
 import { configDotenv } from "dotenv";
-import { updateDeepResearch } from "../lib/deep-research/deep-research-redis";
-import { performDeepResearch } from "../lib/deep-research/deep-research-service";
-import { performGenerateLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt-service";
-import { updateGeneratedLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt-redis";
 import Express from "express";
+import { register } from "prom-client";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
-import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
+import { service } from "../service";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
 import { getCrawl } from "../lib/crawl-redis";
-import {
-  processMonitorCheckJob,
-  reconcileRunningMonitorChecks,
-} from "./monitoring/runner";
-import { enqueueDueMonitorChecks } from "./monitoring/scheduler";
-import {
-  consumeMonitorCheckJobs,
-  consumeMonitorSearchCheckJobs,
-} from "./monitoring/queue";
-import { shutdownPubSubLogging } from "./logging/log_job";
+import { recordCrawlStateMissing } from "../lib/crawl-state-metrics";
 import { startRole } from "../main";
+import { runProcessStop } from "../service/service";
 
 configDotenv();
-
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-const jobLockExtendInterval = config.JOB_LOCK_EXTEND_INTERVAL;
-const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
-
-const cantAcceptConnectionInterval = config.CANT_ACCEPT_CONNECTION_INTERVAL;
-const connectionMonitorInterval = config.CONNECTION_MONITOR_INTERVAL;
-const gotJobInterval = config.CONNECTION_MONITOR_INTERVAL;
-
-const runningJobs: Set<string> = new Set();
-let monitorSchedulerInterval: NodeJS.Timeout | null = null;
-
-const processDeepResearchJobInternal = async (
-  token: string,
-  job: Job & { id: string },
-) => {
-  const logger = _logger.child({
-    module: "deep-research-worker",
-    method: "processJobInternal",
-    jobId: job.id,
-    researchId: job.data.researchId,
-    teamId: job.data?.teamId ?? undefined,
-  });
-
-  const extendLockInterval = setInterval(async () => {
-    logger.info(`🔄 Worker extending lock on job ${job.id}`);
-    await job.extendLock(token, jobLockExtensionTime);
-  }, jobLockExtendInterval);
-
-  try {
-    console.log(
-      "[Deep Research] Starting deep research: ",
-      job.data.researchId,
-    );
-    const result = await performDeepResearch({
-      researchId: job.data.researchId,
-      teamId: job.data.teamId,
-      query: job.data.request.query,
-      maxDepth: job.data.request.maxDepth,
-      timeLimit: job.data.request.timeLimit,
-      maxUrls: job.data.request.maxUrls,
-      analysisPrompt: job.data.request.analysisPrompt,
-      systemPrompt: job.data.request.systemPrompt,
-      formats: job.data.request.formats,
-      jsonOptions: job.data.request.jsonOptions,
-      apiKeyId: job.data.apiKeyId,
-      externalRequestId: job.data.externalRequestId ?? null,
-    });
-
-    if (result.success) {
-      await job.moveToCompleted(result, token, false);
-      return result;
-    } else {
-      const error = new Error("Deep research failed without specific error");
-      await updateDeepResearch(job.data.researchId, {
-        status: "failed",
-        error: error.message,
-      });
-      await job.moveToFailed(error, token, false);
-
-      return { success: false, error: error.message };
-    }
-  } catch (error) {
-    logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
-
-    try {
-      await job.moveToFailed(error, token, false);
-    } catch (e) {
-      logger.error("Failed to move job to failed state in Redis", { error });
-    }
-
-    await updateDeepResearch(job.data.researchId, {
-      status: "failed",
-      error: error.message || "Unknown error occurred",
-    });
-
-    return { success: false, error: error.message || "Unknown error occurred" };
-  } finally {
-    clearInterval(extendLockInterval);
-  }
-};
-
-const processGenerateLlmsTxtJobInternal = async (
-  token: string,
-  job: Job & { id: string },
-) => {
-  const logger = _logger.child({
-    module: "generate-llmstxt-worker",
-    method: "processJobInternal",
-    jobId: job.id,
-    generateId: job.data.generateId,
-    teamId: job.data?.teamId ?? undefined,
-  });
-
-  const extendLockInterval = setInterval(async () => {
-    logger.info(`🔄 Worker extending lock on job ${job.id}`);
-    await job.extendLock(token, jobLockExtensionTime);
-  }, jobLockExtendInterval);
-
-  try {
-    const result = await performGenerateLlmsTxt({
-      generationId: job.data.generationId,
-      teamId: job.data.teamId,
-      url: job.data.request.url,
-      maxUrls: job.data.request.maxUrls,
-      showFullText: job.data.request.showFullText,
-      cache: job.data.request.cache,
-      apiKeyId: job.data.apiKeyId,
-      externalRequestId: job.data.externalRequestId ?? null,
-    });
-
-    if (result.success) {
-      await job.moveToCompleted(result, token, false);
-      await updateGeneratedLlmsTxt(job.data.generateId, {
-        status: "completed",
-        generatedText: result.data.generatedText,
-        fullText: result.data.fullText,
-      });
-      return result;
-    } else {
-      const error = new Error(
-        "LLMs text generation failed without specific error",
-      );
-      await job.moveToFailed(error, token, false);
-      await updateGeneratedLlmsTxt(job.data.generateId, {
-        status: "failed",
-        error: error.message,
-      });
-      return { success: false, error: error.message };
-    }
-  } catch (error) {
-    logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
-
-    try {
-      await job.moveToFailed(error, token, false);
-    } catch (e) {
-      logger.error("Failed to move job to failed state in Redis", { error });
-    }
-
-    await updateGeneratedLlmsTxt(job.data.generateId, {
-      status: "failed",
-      error: error.message || "Unknown error occurred",
-    });
-
-    return { success: false, error: error.message || "Unknown error occurred" };
-  } finally {
-    clearInterval(extendLockInterval);
-  }
-};
 
 async function processFinishCrawlJobInternal(_job: NuQJob) {
   const job = await crawlFinishedQueue.getJob(_job.id);
@@ -201,15 +32,15 @@ async function processFinishCrawlJobInternal(_job: NuQJob) {
     throw new Error("crawlFinish job with no ownerId");
   }
 
-  const sc = await getCrawl(job.groupId);
-
-  if (!sc) {
-    throw new Error("crawlFinish job with sc expired");
-  }
-
   const anyJob = await scrapeQueue.getGroupAnyJob(job.groupId, job.ownerId);
 
   if (!anyJob) {
+    if (!(await getCrawl(job.groupId))) {
+      recordCrawlStateMissing("finalizer", job.groupId, _logger, {
+        jobId: job.id,
+        recoverable: false,
+      });
+    }
     throw new Error("crawlFinish couldn't find anyJob");
   }
 
@@ -217,87 +48,6 @@ async function processFinishCrawlJobInternal(_job: NuQJob) {
 }
 
 let isShuttingDown = false;
-let isWorkerStalled = false;
-
-process.on("SIGINT", () => {
-  _logger.debug("Received SIGINT. Shutting down gracefully...");
-  isShuttingDown = true;
-});
-
-process.on("SIGTERM", () => {
-  _logger.debug("Received SIGTERM. Shutting down gracefully...");
-  isShuttingDown = true;
-});
-
-let cantAcceptConnectionCount = 0;
-
-const workerFun = async (
-  queue: Queue,
-  processJobInternal: (token: string, job: Job) => Promise<any>,
-) => {
-  const logger = _logger.child({ module: "queue-worker", method: "workerFun" });
-
-  const worker = new Worker(queue.name, null, {
-    connection: getRedisConnection(),
-    lockDuration: 60 * 1000,
-    stalledInterval: 60 * 1000,
-    maxStalledCount: 10,
-  });
-
-  worker.startStalledCheckTimer();
-
-  const monitor = await systemMonitor;
-
-  while (true) {
-    if (isShuttingDown) {
-      _logger.info("No longer accepting new jobs. SIGINT");
-      break;
-    }
-    const token = uuidv7();
-    const canAcceptConnection = await monitor.acceptConnection();
-    if (!canAcceptConnection) {
-      console.log("Can't accept connection due to RAM/CPU load");
-      logger.info("Can't accept connection due to RAM/CPU load");
-      cantAcceptConnectionCount++;
-
-      isWorkerStalled = cantAcceptConnectionCount >= 25;
-
-      if (isWorkerStalled) {
-        logger.error("WORKER STALLED", {
-          cpuUsage: await monitor.checkCpuUsage(),
-          memoryUsage: await monitor.checkMemoryUsage(),
-        });
-      }
-
-      await sleep(cantAcceptConnectionInterval);
-      continue;
-    } else if (!currentLiveness) {
-      logger.info("Not accepting jobs because the liveness check failed");
-
-      await sleep(cantAcceptConnectionInterval);
-      continue;
-    } else {
-      cantAcceptConnectionCount = 0;
-    }
-
-    const job = await worker.getNextJob(token);
-    if (job) {
-      if (job.id) {
-        runningJobs.add(job.id);
-      }
-
-      processJobInternal(token, job).finally(() => {
-        if (job.id) {
-          runningJobs.delete(job.id);
-        }
-      });
-
-      await sleep(gotJobInterval);
-    } else {
-      await sleep(connectionMonitorInterval);
-    }
-  }
-};
 
 const crawlFinishWorker = async () => {
   const __logger = _logger.child({
@@ -390,9 +140,13 @@ const app = Express();
 
 let currentLiveness: boolean = true;
 
+app.get("/metrics", async (_, res) => {
+  res.contentType("text/plain").send(await register.metrics());
+});
+
 app.get("/liveness", (req, res) => {
   _logger.info("Liveness endpoint hit");
-  if (config.USE_DB_AUTHENTICATION && config.NUQ_RABBITMQ_URL) {
+  if (config.IS_KUBERNETES && config.NUQ_RABBITMQ_URL) {
     // networking check for Kubernetes environments
     const host = config.FIRECRAWL_APP_HOST;
     const port = config.FIRECRAWL_APP_PORT;
@@ -436,62 +190,27 @@ app.listen(workerPort, (error?: Error) => {
 });
 
 export async function start() {
-  await initializeBlocklist().catch(e => {
+  process.on("SIGINT", () => {
+    _logger.debug("Received SIGINT. Shutting down gracefully...");
+    isShuttingDown = true;
+  });
+
+  process.on("SIGTERM", () => {
+    _logger.debug("Received SIGTERM. Shutting down gracefully...");
+    isShuttingDown = true;
+  });
+
+  await service.modules.blocklist.init().catch(e => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);
   });
 
   initializeEngineForcing();
 
-  if (config.USE_DB_AUTHENTICATION && !config.DISABLE_MONITORING) {
-    monitorSchedulerInterval = setInterval(() => {
-      enqueueDueMonitorChecks().catch(error => {
-        _logger.error("Failed to enqueue due monitor checks", { error });
-      });
-      reconcileRunningMonitorChecks().catch(error => {
-        _logger.error("Failed to reconcile running monitor checks", { error });
-      });
-    }, 60_000);
-    enqueueDueMonitorChecks().catch(error => {
-      _logger.error("Failed to enqueue due monitor checks", { error });
-    });
-    reconcileRunningMonitorChecks().catch(error => {
-      _logger.error("Failed to reconcile running monitor checks", { error });
-    });
-
-    // Search checks drain on their own consumer so they can't starve the rest.
-    await Promise.all([
-      consumeMonitorCheckJobs(processMonitorCheckJob),
-      consumeMonitorSearchCheckJobs(processMonitorCheckJob),
-    ]);
-  } else if (!config.USE_DB_AUTHENTICATION) {
-    _logger.info(
-      "Skipping monitor worker startup because database authentication is disabled",
-    );
-  } else {
-    _logger.info(
-      "Skipping monitor worker startup because NUQ_RABBITMQ_URL is not configured",
-    );
-  }
-
-  await Promise.all([
-    workerFun(getDeepResearchQueue(), processDeepResearchJobInternal),
-    workerFun(getGenerateLlmsTxtQueue(), processGenerateLlmsTxtJobInternal),
-    crawlFinishWorker(),
-  ]);
-
-  if (monitorSchedulerInterval) {
-    clearInterval(monitorSchedulerInterval);
-  }
-
-  _logger.info("All workers exited. Waiting for all jobs to finish...");
-
-  while (runningJobs.size > 0) {
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
+  await crawlFinishWorker();
 
   _logger.info("All jobs finished. Shutting down...");
-  await shutdownPubSubLogging();
+  await runProcessStop("queue-worker");
   await shutdownTracing();
   process.exit(0);
 }
