@@ -34,6 +34,13 @@ import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { hasFilePrefetchEngine } from "../utils/specialtyHandler";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { reconcilePageCountWithPdfParse } from "./pageCount";
+import {
+  SPARSE_EXTRACTION_REASON,
+  assessPdfExtractionQuality,
+  findInRangeOcrFlag,
+  isExtractionQualityRejection,
+  ocrFlaggedReason,
+} from "./pdfQuality";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { completeTruncatedHandoff } from "./truncatedHandoff";
 import { withPdfExtractionPermit } from "./semaphore";
@@ -48,9 +55,19 @@ export {
   withPdfExtractionPermit,
 };
 
-/** Check if the PDF is eligible for Rust extraction, returning a rejection reason or null. */
+/**
+ * Check if the PDF is eligible for Rust extraction, returning a rejection
+ * reason or null. The classification checks run first and are unchanged;
+ * the extraction-quality checks after them catch degenerate TextBased
+ * results (suppressed body text, OCR-flagged pages) and route them to the
+ * pdf-parse fallback. `effectivePageCount` is the number of pages the
+ * extraction actually covers (page count capped by maxPages); when it is
+ * omitted, the result's own page count is used, and when neither is a
+ * positive number the quality checks fail open.
+ */
 export function getIneligibleReason(
   result: Awaited<ReturnType<typeof processPdf>>,
+  effectivePageCount?: number,
 ): string | null {
   if (result.pdfType !== "TextBased") {
     return `pdfType=${result.pdfType}`;
@@ -64,6 +81,14 @@ export function getIneligibleReason(
   if (!result.markdown?.length) {
     return "empty markdown (unexpected for TextBased)";
   }
+
+  const effectivePages = effectivePageCount ?? result.pageCount;
+  const ocrPage = findInRangeOcrFlag(result.pagesNeedingOcr, effectivePages);
+  if (ocrPage !== null) return ocrFlaggedReason(ocrPage);
+
+  if (assessPdfExtractionQuality(result.markdown, effectivePages).suspicious)
+    return SPARSE_EXTRACTION_REASON;
+
   return null;
 }
 
@@ -320,7 +345,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           : pdfResult.pageCount;
         metadataTitle = pdfResult.title ?? undefined;
 
-        const ineligibleReason = getIneligibleReason(pdfResult);
+        const ineligibleReason = getIneligibleReason(
+          pdfResult,
+          effectivePageCount,
+        );
         const eligible = !ineligibleReason;
 
         logger.info("Rust PDF eligibility", {
@@ -333,6 +361,30 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           confidence: pdfResult.confidence,
           mode,
         });
+
+        // One authoritative rejection event for the new extraction-quality
+        // checks, with the counts behind the decision and no body text. The
+        // rejection falls back to pdf-parse below, including in fast mode:
+        // suspect density never routes to paid OCR.
+        if (isExtractionQualityRejection(ineligibleReason)) {
+          const quality = assessPdfExtractionQuality(
+            pdfResult.markdown,
+            effectivePageCount,
+          );
+          logger.warn(
+            "Rust PDF extraction rejected, falling back to PdfParse",
+            {
+              reason: ineligibleReason,
+              url: meta.rewrittenUrl ?? meta.url,
+              mode,
+              effectivePages: effectivePageCount,
+              rawAlnum: quality.rawAlnum,
+              rawAlnumPerPage: Math.round(quality.rawAlnumPerPage * 10) / 10,
+              residualAlnum: quality.residualAlnum,
+              pagesNeedingOcr: pdfResult.pagesNeedingOcr,
+            },
+          );
+        }
 
         if (
           mode === "fast" &&
