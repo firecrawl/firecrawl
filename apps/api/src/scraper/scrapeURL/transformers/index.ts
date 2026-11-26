@@ -201,11 +201,16 @@ async function deriveLinksFromHTML(
   document: Document,
 ): Promise<Document> {
   const isMarkdown = isMarkdownContentType(document.metadata.contentType);
+  let source: string;
 
-  if (document.html === undefined && !isMarkdown) {
+  if (isMarkdown) {
+    source = document.markdown ?? document.rawHtml ?? "";
+  } else if (document.html === undefined) {
     throw new Error(
       "html is undefined -- this transformer is being called out of order",
     );
+  } else {
+    source = document.html;
   }
 
   const requiresLinks = !!hasFormatOfType(meta.options.formats, "links");
@@ -217,7 +222,7 @@ async function deriveLinksFromHTML(
   // Engines that carry markdown natively (exchange) put synthetic metadata in
   // rawHtml, so the markdown field is the only place their links live.
   document.links = await extractLinks(
-    isMarkdown ? (document.markdown ?? document.rawHtml ?? "") : document.html!,
+    source,
     document.metadata.url ??
       document.metadata.sourceURL ??
       meta.rewrittenUrl ??

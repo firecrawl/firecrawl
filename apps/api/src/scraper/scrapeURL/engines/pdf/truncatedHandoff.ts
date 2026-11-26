@@ -6,6 +6,11 @@ import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 
 type PdfPrefetch = NonNullable<Meta["pdfPrefetch"]>;
 
+interface TruncatedHandoffReportExtra {
+  error?: unknown;
+  refetched_bytes?: number;
+}
+
 // The PDF spec puts the end-of-file marker in the last 1024 bytes; read a
 // slightly wider tail so trailing whitespace or padding does not hide it.
 const EOF_SEARCH_BYTES = 4096;
@@ -156,7 +161,7 @@ export async function completeTruncatedHandoff(
   const logger = meta.logger.child({
     method: "scrapePDF/completeTruncatedHandoff",
   });
-  const report = (outcome: string, extra: Record<string, unknown> = {}) =>
+  const report = (outcome: string, extra: TruncatedHandoffReportExtra = {}) =>
     logger.warn("PDF handoff looks truncated", {
       event: "pdf_handoff_truncated",
       outcome,
@@ -180,7 +185,7 @@ export async function completeTruncatedHandoff(
       { headers: meta.options.headers, signal: meta.abort.asSignal() },
       maxSize,
     );
-  } catch (error) {
+  } catch (error: unknown) {
     if (error instanceof AbortManagerThrownError) {
       throw error;
     }

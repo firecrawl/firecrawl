@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createLogger } from "winston";
+import type { z } from "zod";
 import type {
   Engine as RegisteredEngine,
   EngineFeatureMap,
 } from "../../../service/engines";
 import { createService, replaceService } from "../../../service/service";
-import type { Meta } from "..";
+import type { InternalOptions, Meta } from "..";
 import {
   buildFallbackList,
   coreEngineFeatures,
@@ -17,47 +19,69 @@ import { coreEngineSpecs } from "./metadata";
 import { getScrapeMeta } from "../metaContext";
 import { FormatUnavailableError } from "../../../lib/error";
 import type { HookHandlers } from "../../../service/hooks";
+import { scrapeOptions } from "../../../controllers/v2/types";
+import { AbortManager } from "../lib/abortManager";
+import { CostTracking } from "../../../lib/cost-tracking";
+
+const makeFeatures = (
+  listed: Record<string, { priority: number }>,
+): EngineFeatureMap => listed;
 
 const makeMeta = (
   overrides: {
     url?: string;
     featureFlags?: Array<FeatureFlag>;
-    forceEngine?: Engine | string | Array<Engine | string>;
+    forceEngine?: Engine | Array<Engine>;
     maxAge?: number;
     lockdown?: boolean;
-    formats?: Array<Record<string, unknown>>;
+    formats?: z.input<typeof scrapeOptions>["formats"];
   } = {},
 ): Meta => {
-  const logger = {
-    info: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-    error: vi.fn(),
-    child: vi.fn(),
+  const logger = createLogger({ silent: true });
+  vi.spyOn(logger, "info").mockReturnValue(logger);
+  vi.spyOn(logger, "warn").mockReturnValue(logger);
+  vi.spyOn(logger, "debug").mockReturnValue(logger);
+  vi.spyOn(logger, "error").mockReturnValue(logger);
+  vi.spyOn(logger, "child").mockReturnValue(logger);
+
+  const options: Meta["options"] & { maxAge?: number; lockdown?: boolean } = {
+    ...scrapeOptions.parse({
+      formats: overrides.formats ?? [{ type: "markdown" }],
+    }),
+    skipTlsVerification: false,
+    maxAge: overrides.maxAge ?? 0,
   };
-  logger.child.mockReturnValue(logger);
+  if (overrides.lockdown !== undefined) {
+    options.lockdown = overrides.lockdown;
+  }
+
+  const internalOptions: InternalOptions = {
+    teamId: "team-1",
+    orgId: null,
+  };
+  if (overrides.forceEngine !== undefined) {
+    internalOptions.forceEngine = overrides.forceEngine;
+  }
 
   return {
     id: "test",
     url: overrides.url ?? "https://example.com",
-    options: {
-      formats: overrides.formats ?? [{ type: "markdown" }],
-      maxAge: overrides.maxAge ?? 0,
-      ...(overrides.lockdown !== undefined
-        ? { lockdown: overrides.lockdown }
-        : {}),
-    },
-    internalOptions: {
-      teamId: "team-1",
-      orgId: null,
-      ...(overrides.forceEngine !== undefined
-        ? { forceEngine: overrides.forceEngine }
-        : {}),
-    },
+    ctx: { teamId: "team-1", zeroDataRetention: false },
+    state: {},
+    options,
+    internalOptions,
+    logger,
+    abort: new AbortManager(),
     featureFlags: new Set(overrides.featureFlags ?? []),
     mock: null,
-    logger,
-  } as unknown as Meta;
+    imageOcrEnabled: async () => false,
+    pdfPrefetch: undefined,
+    documentPrefetch: undefined,
+    imagePrefetch: undefined,
+    fetchPrefetch: undefined,
+    costTracking: new CostTracking(),
+    threatDecisions: [],
+  };
 };
 
 const makeEngine = (
@@ -75,15 +99,15 @@ const makeEngine = (
     prefetchesFiles?: boolean;
     allowEmptyContent?: boolean;
   } = {},
-): RegisteredEngine =>
-  ({
-    name,
-    quality: 10,
-    features: {},
-    enabled: () => true,
-    scrape: vi.fn(),
-    ...overrides,
-  }) as unknown as RegisteredEngine;
+): RegisteredEngine => ({
+  // @ts-expect-error: test engine names exercise open declaration-merged EngineName
+  name,
+  quality: 10,
+  features: {},
+  enabled: () => true,
+  scrape: vi.fn<RegisteredEngine["scrape"]>(),
+  ...overrides,
+});
 
 const install = (
   engines: ReadonlyArray<RegisteredEngine>,
@@ -141,9 +165,9 @@ describe("engine registry integration", () => {
       {
         name: "extra",
         engines: [customEngine],
-        engineFeatures: {
+        engineFeatures: makeFeatures({
           customFeature: { priority: 100 },
-        } as unknown as EngineFeatureMap,
+        }),
       },
     ]);
 
@@ -152,23 +176,29 @@ describe("engine registry integration", () => {
 
     customEnabled = true;
     const after = await buildFallbackList(
-      makeMeta({ featureFlags: ["customFeature" as FeatureFlag] }),
+      makeMeta({
+        featureFlags: [
+          // @ts-expect-error: test feature name exercises open declaration-merged EngineFeatureName
+          "customFeature",
+        ],
+      }),
     );
     expect(after.map(e => e.engine)).toEqual(["custom;fast"]);
     expect([...after[0].unsupportedFeatures]).toEqual([]);
   });
 
   it("keeps explicitOnly engines out of the default waterfall but honors forceEngine", async () => {
-    install([
-      makeEngine("fetch", { quality: 5 }),
-      makeEngine("custom;explicit", { quality: 2000, explicitOnly: true }),
-    ]);
+    const explicitEngine = makeEngine("custom;explicit", {
+      quality: 2000,
+      explicitOnly: true,
+    });
+    install([makeEngine("fetch", { quality: 5 }), explicitEngine]);
 
     const normal = await buildFallbackList(makeMeta());
     expect(normal.map(e => e.engine)).toEqual(["fetch"]);
 
     const forced = await buildFallbackList(
-      makeMeta({ forceEngine: "custom;explicit" as Engine }),
+      makeMeta({ forceEngine: explicitEngine.name }),
     );
     expect(forced.map(e => e.engine)).toEqual(["custom;explicit"]);
   });
@@ -217,36 +247,35 @@ describe("engine registry integration", () => {
 
   it("adds stealthProxy to meta.featureFlags when the engine supports it and is not a cache engine", async () => {
     const receivedFlags: Array<Array<FeatureFlag>> = [];
-    install([
-      makeEngine("custom;stealth", {
-        features: { stealthProxy: true },
-        scrape: async meta => {
-          receivedFlags.push([...meta.featureFlags]);
-          return {
-            url: meta.url,
-            html: "",
-            statusCode: 200,
-            proxyUsed: "stealth",
-          };
-        },
-      }),
-      makeEngine("custom;cache", {
-        cache: true,
-        features: { stealthProxy: true },
-        scrape: async meta => {
-          receivedFlags.push([...meta.featureFlags]);
-          return {
-            url: meta.url,
-            html: "",
-            statusCode: 200,
-            proxyUsed: "basic",
-          };
-        },
-      }),
-    ]);
+    const stealthEngine = makeEngine("custom;stealth", {
+      features: { stealthProxy: true },
+      scrape: async meta => {
+        receivedFlags.push([...meta.featureFlags]);
+        return {
+          url: meta.url,
+          html: "",
+          statusCode: 200,
+          proxyUsed: "stealth",
+        };
+      },
+    });
+    const cacheEngine = makeEngine("custom;cache", {
+      cache: true,
+      features: { stealthProxy: true },
+      scrape: async meta => {
+        receivedFlags.push([...meta.featureFlags]);
+        return {
+          url: meta.url,
+          html: "",
+          statusCode: 200,
+          proxyUsed: "basic",
+        };
+      },
+    });
+    install([stealthEngine, cacheEngine]);
 
-    await scrapeURLWithEngine(makeMeta(), "custom;stealth" as Engine);
-    await scrapeURLWithEngine(makeMeta(), "custom;cache" as Engine);
+    await scrapeURLWithEngine(makeMeta(), stealthEngine.name);
+    await scrapeURLWithEngine(makeMeta(), cacheEngine.name);
 
     expect(receivedFlags).toEqual([["stealthProxy"], []]);
   });
@@ -254,7 +283,13 @@ describe("engine registry integration", () => {
   it("skips unregistered forced engines with a warning and fails on unregistered features or dispatch", async () => {
     install([makeEngine("fetch", { quality: 5 })]);
 
-    const meta = makeMeta({ forceEngine: ["missing", "fetch"] });
+    const meta = makeMeta({
+      forceEngine: [
+        // @ts-expect-error: deliberately passing an unregistered engine name to verify warning behavior
+        "missing",
+        "fetch",
+      ],
+    });
     const list = await buildFallbackList(meta);
     expect(list.map(e => e.engine)).toEqual(["fetch"]);
     expect(meta.logger.warn).toHaveBeenCalledWith(
@@ -264,14 +299,23 @@ describe("engine registry integration", () => {
 
     await expect(
       buildFallbackList(
-        makeMeta({ featureFlags: ["unregisteredFeature" as FeatureFlag] }),
+        makeMeta({
+          featureFlags: [
+            // @ts-expect-error: deliberately passing an unregistered feature name to verify rejection
+            "unregisteredFeature",
+          ],
+        }),
       ),
     ).rejects.toThrow(
       'Engine feature "unregisteredFeature" is not registered on the service',
     );
 
     await expect(
-      scrapeURLWithEngine(makeMeta(), "missing" as Engine),
+      scrapeURLWithEngine(
+        makeMeta(),
+        // @ts-expect-error: deliberately passing an unregistered engine name to verify rejection
+        "missing",
+      ),
     ).rejects.toThrow('Engine "missing" is not registered on the service');
   });
 

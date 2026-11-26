@@ -115,20 +115,24 @@ async function feResToFilePrefetch(
       );
       return null;
     }
+    const gcsUri = file.gcs_uri;
     const allowedBucket = downloadGcsFile.allowedBucket?.trim();
-    const parsedGcsUri = file.gcs_uri
-      ? /^gs:\/\/([^/]+)\/(.+)$/.exec(file.gcs_uri)
-      : null;
-    if (!allowedBucket || !parsedGcsUri || parsedGcsUri[1] !== allowedBucket) {
+    const parsedGcsUri = gcsUri ? /^gs:\/\/([^/]+)\/(.+)$/.exec(gcsUri) : null;
+    if (
+      !gcsUri ||
+      !allowedBucket ||
+      !parsedGcsUri ||
+      parsedGcsUri[1] !== allowedBucket
+    ) {
       logger.warn("GCS file handoff rejected by bucket allowlist", {
-        uri: file.gcs_uri,
+        uri: gcsUri,
         allowedBucketConfigured: Boolean(allowedBucket),
       });
       return null;
     }
     const downloaded = await downloadGcsFile.download(
       logger,
-      { uri: file.gcs_uri!, sha256: file.sha256, sizeBytes: file.size_bytes },
+      { uri: gcsUri, sha256: file.sha256, sizeBytes: file.size_bytes },
       filePath,
       signal,
       maxFileBytes,
@@ -137,24 +141,29 @@ async function feResToFilePrefetch(
       return null;
     }
     gcsReference = {
-      uri: file.gcs_uri!,
+      uri: gcsUri,
       sha256: file.sha256,
       sizeBytes: downloaded.sizeBytes,
       generation: downloaded.generation,
     };
   }
 
-  return {
+  const prefetch: NonNullable<Meta["pdfPrefetch"]> = {
     status: feRes.pageStatusCode,
     url: feRes.url,
     filePath,
     proxyUsed: feRes.usedMobileProxy ? "stealth" : "basic",
     contentType,
-    // References are only produced for PDFs; the document prefetch shape
-    // does not carry one.
-    ...(fileType === "pdf" && gcsReference ? { gcsReference } : {}),
-    ...(fileType === "pdf" && handoff ? { handoff } : {}),
   };
+  // References are only produced for PDFs; the document prefetch shape
+  // does not carry one.
+  if (fileType === "pdf" && gcsReference) {
+    prefetch.gcsReference = gcsReference;
+  }
+  if (fileType === "pdf" && handoff) {
+    prefetch.handoff = handoff;
+  }
+  return prefetch;
 }
 
 async function feResToPdfPrefetch(

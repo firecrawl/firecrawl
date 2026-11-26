@@ -41,7 +41,7 @@ export async function performAttributes(
           })),
         });
       }
-    } catch (error) {
+    } catch (error: unknown) {
       meta.logger.error("Failed to extract attributes", {
         error,
         url: meta.url,

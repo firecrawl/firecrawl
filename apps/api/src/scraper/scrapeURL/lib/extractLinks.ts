@@ -40,7 +40,7 @@ function resolveUrlWithBaseHref(
     } else {
       return new URL(href, resolutionBase).href;
     }
-  } catch (error) {
+  } catch (error: unknown) {
     logger.error(
       `Failed to construct URL for href: ${href} with base: ${resolutionBase}`,
       { error },
@@ -79,7 +79,7 @@ export async function extractLinks(
 
   try {
     return await extractLinksRust(html, baseUrl);
-  } catch (error) {
+  } catch (error: unknown) {
     logger.warn("Failed to call html-transformer! Falling back to cheerio...", {
       error,
       module: "scrapeURL",

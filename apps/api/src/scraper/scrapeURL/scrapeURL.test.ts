@@ -1,4 +1,3 @@
-import type { MockedFunction } from "vitest";
 import "dotenv/config";
 
 import { config } from "../../config";
@@ -12,11 +11,13 @@ import { coreLlmProviders } from "../../lib/generic-ai";
 import { CostTracking } from "../../lib/cost-tracking";
 import { AgentIndexOnlyError, NoCachedDataError } from "./error";
 import { createService, replaceService } from "../../service/service";
+import type { parseMarkdown as parseMarkdownFn } from "../../lib/html-to-markdown";
 
 // Mock parseMarkdown but delegate to real implementation for other tests
 vi.mock("../../lib/html-to-markdown", async importOriginal => {
-  const actual =
-    await importOriginal<typeof import("../../lib/html-to-markdown")>();
+  const actual = await importOriginal<{
+    parseMarkdown: typeof parseMarkdownFn;
+  }>();
   return {
     ...actual,
     parseMarkdown: vi.fn(actual.parseMarkdown),
@@ -24,6 +25,19 @@ vi.mock("../../lib/html-to-markdown", async importOriginal => {
 });
 
 import { parseMarkdown } from "../../lib/html-to-markdown";
+
+const serializeErrorReplacer = (_key: string, value: unknown) => {
+  if (value instanceof Error) {
+    return {
+      ...Object.fromEntries(Object.entries(value)),
+      message: value.message,
+      name: value.name,
+      cause: value.cause,
+      stack: value.stack,
+    };
+  }
+  return value;
+};
 
 const testEngines: Array<Engine | undefined> = [undefined, "fetch"];
 
@@ -560,22 +574,8 @@ describe("Standalone scrapeURL tests", () => {
         new CostTracking(),
       );
 
-      const replacer = (key: string, value: any) => {
-        if (value instanceof Error) {
-          return {
-            ...value,
-            message: value.message,
-            name: value.name,
-            cause: value.cause,
-            stack: value.stack,
-          };
-        } else {
-          return value;
-        }
-      };
-
       if (!out.success) {
-        console.error(JSON.stringify(out, replacer));
+        console.error(JSON.stringify(out, serializeErrorReplacer));
       }
       expect(out.success).toBe(true);
 
@@ -591,9 +591,7 @@ describe("Standalone scrapeURL tests", () => {
   );
 
   it("Sitemap scrape should not convert to markdown", async () => {
-    const mockParseMarkdown = parseMarkdown as MockedFunction<
-      typeof parseMarkdown
-    >;
+    const mockParseMarkdown = vi.mocked(parseMarkdown);
     mockParseMarkdown.mockClear();
 
     const out = await scrapeURL(

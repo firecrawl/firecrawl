@@ -1,3 +1,7 @@
+import { createLogger } from "winston";
+import { z } from "zod";
+import { isJsonObject } from "../../../../lib/json-types";
+import type { JsonObject } from "../../../../lib/json-types";
 import { redactHeaders, redactRequestBodyForLog, robustFetch } from "../fetch";
 import type { MockState } from "../mock";
 
@@ -21,14 +25,13 @@ const secretHeaders = {
 };
 
 function makeLogger() {
-  const logger: any = {
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  };
-  logger.child = vi.fn(() => logger);
-  return logger;
+  const logger = createLogger({ silent: true });
+  const debugSpy = vi.spyOn(logger, "debug");
+  vi.spyOn(logger, "info");
+  vi.spyOn(logger, "warn");
+  vi.spyOn(logger, "error");
+  vi.spyOn(logger, "child").mockReturnValue(logger);
+  return { logger, debugSpy };
 }
 
 function mockWith(status: number, body: string): MockState {
@@ -41,16 +44,29 @@ function mockWith(status: number, body: string): MockState {
       },
     ],
     tracker: {},
-  } as unknown as MockState;
+  };
 }
 
-async function captureCause(promise: Promise<unknown>): Promise<any> {
+async function captureCause(promise: Promise<unknown>): Promise<JsonObject> {
   try {
     await promise;
-  } catch (error) {
-    return (error as Error).cause;
+  } catch (error: unknown) {
+    if (error instanceof Error && isJsonObject(error.cause)) {
+      return error.cause;
+    }
+    throw new Error(
+      "expected robustFetch to throw an Error with object cause",
+      { cause: error },
+    );
   }
   throw new Error("expected robustFetch to throw");
+}
+
+function getCauseParams(cause: JsonObject): JsonObject {
+  if (!isJsonObject(cause.params)) {
+    throw new Error("expected cause.params object");
+  }
+  return cause.params;
 }
 
 describe("redactHeaders", () => {
@@ -153,13 +169,12 @@ describe("robustFetch error logging", () => {
     [
       "a schema mismatch",
       mockWith(200, JSON.stringify({ other: 1 })),
-      (z: typeof import("zod")) => z.object({ id: z.string() }),
+      z.object({ id: z.string() }),
     ],
   ])(
     "never logs or throws credential headers on %s",
-    async (_, mock, schemaOf) => {
-      const z = await import("zod");
-      const logger = makeLogger();
+    async (_, mock, schema) => {
+      const { logger, debugSpy } = makeLogger();
 
       const cause = await captureCause(
         robustFetch({
@@ -169,19 +184,23 @@ describe("robustFetch error logging", () => {
           body: { input: { file_content: "BASE64" } },
           logger,
           mock,
-          schema: schemaOf?.(z),
+          schema,
         }),
       );
 
-      const serialized = JSON.stringify([cause, logger.debug.mock.calls]);
+      const serialized = JSON.stringify([cause, debugSpy.mock.calls]);
       expect(serialized).not.toContain("secret-value");
-      expect(cause.params.headers.Authorization).toBe("[REDACTED]");
-      expect(cause.params.headers["User-Agent"]).toBe("firecrawl");
+      const params = getCauseParams(cause);
+      const loggedHeaders = isJsonObject(params.headers)
+        ? params.headers
+        : undefined;
+      expect(loggedHeaders?.Authorization).toBe("[REDACTED]");
+      expect(loggedHeaders?.["User-Agent"]).toBe("firecrawl");
     },
   );
 
   it("redacts headers forwarded inside the request body", async () => {
-    const logger = makeLogger();
+    const { logger, debugSpy } = makeLogger();
 
     const cause = await captureCause(
       robustFetch({
@@ -193,14 +212,19 @@ describe("robustFetch error logging", () => {
       }),
     );
 
-    const serialized = JSON.stringify([cause, logger.debug.mock.calls]);
+    const serialized = JSON.stringify([cause, debugSpy.mock.calls]);
     expect(serialized).not.toContain("secret-value");
-    expect(cause.params.body.url).toBe("https://example.com");
-    expect(cause.params.body.headers["User-Agent"]).toBe("firecrawl");
+    const params = getCauseParams(cause);
+    const loggedBody = isJsonObject(params.body) ? params.body : undefined;
+    const loggedHeaders = isJsonObject(loggedBody?.headers)
+      ? loggedBody.headers
+      : undefined;
+    expect(loggedBody?.url).toBe("https://example.com");
+    expect(loggedHeaders?.["User-Agent"]).toBe("firecrawl");
   });
 
   it("redacts action payloads forwarded inside the request body", async () => {
-    const logger = makeLogger();
+    const { logger, debugSpy } = makeLogger();
 
     const cause = await captureCause(
       robustFetch({
@@ -212,10 +236,15 @@ describe("robustFetch error logging", () => {
       }),
     );
 
-    const serialized = JSON.stringify([cause, logger.debug.mock.calls]);
+    const serialized = JSON.stringify([cause, debugSpy.mock.calls]);
     expect(serialized).not.toContain("secret-value");
-    expect(cause.params.body.actions.map((a: any) => a.type)).toEqual(
-      secretActions.map(a => a.type),
-    );
+    const params = getCauseParams(cause);
+    const loggedBody = isJsonObject(params.body) ? params.body : undefined;
+    const loggedActions = Array.isArray(loggedBody?.actions)
+      ? loggedBody.actions
+      : [];
+    expect(
+      loggedActions.map(a => (isJsonObject(a) ? a.type : undefined)),
+    ).toEqual(secretActions.map(a => a.type));
   });
 });

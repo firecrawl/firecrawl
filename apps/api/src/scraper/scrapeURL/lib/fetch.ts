@@ -3,17 +3,19 @@ import type { z } from "zod";
 import { ZodError } from "zod";
 import type { MockState } from "./mock";
 import { saveMock } from "./mock";
-import type { Response } from "undici";
-import { fetch, FormData, Agent } from "undici";
+import type { RequestInit, Response } from "undici";
+import { fetch, FormData, Agent, Headers as UndiciHeaders } from "undici";
 import { cacheableLookup } from "./cacheableLookup";
 import dns from "node:dns";
 import { AbortManagerThrownError } from "./abortManager";
+import { isJsonObject } from "../../../lib/json-types";
+import type { JsonObject, JsonValue } from "../../../lib/json-types";
 
-type RobustFetchParams<Schema extends z.Schema<any>> = {
+type RobustFetchParams<Schema extends z.ZodType> = {
   url: string;
   logger: Logger;
   method: "GET" | "POST" | "DELETE" | "PUT";
-  body?: any;
+  body?: unknown;
   headers?: Record<string, string>;
   schema?: Schema;
   dontParseResponse?: boolean;
@@ -27,6 +29,29 @@ type RobustFetchParams<Schema extends z.Schema<any>> = {
   abort?: AbortSignal;
   useCacheableLookup?: boolean;
 };
+
+type FetchResponsePayload = {
+  status: number;
+  headers: Headers;
+  body: string;
+};
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every(
+      (item: unknown) => item === undefined || isJsonValue(item),
+    );
+  }
+  return isJsonObject(value);
+}
 
 // Logs only, so err on the side of redacting: any header whose name looks like
 // it could carry a credential (Authorization, X-Auth-*, Cookie, X-Password,
@@ -53,45 +78,82 @@ export function redactHeaders(
 // script is large), so neither belongs in logs.
 const SENSITIVE_ACTION_FIELDS = ["text", "script"] as const;
 
+function redactHeaderObject(headers: JsonObject): JsonObject {
+  const result: JsonObject = {};
+  for (const [name, value] of Object.entries(headers)) {
+    result[name] = SENSITIVE_HEADER.test(name) ? "[REDACTED]" : value;
+  }
+  return result;
+}
+
+function redactAction(action: JsonValue | undefined): JsonValue | undefined {
+  if (!isJsonObject(action)) {
+    return action;
+  }
+  const redacted: JsonObject = { ...action };
+  for (const field of SENSITIVE_ACTION_FIELDS) {
+    if (Object.hasOwn(redacted, field)) {
+      redacted[field] = "[REDACTED]";
+    }
+  }
+  return redacted;
+}
+
 /**
  * A copy of a scrape request body that is safe to log: credential headers and
  * secret-carrying action payloads are replaced with "[REDACTED]".
  */
-export function redactRequestBodyForLog<T>(body: T): T {
-  if (
-    body === null ||
-    typeof body !== "object" ||
-    Array.isArray(body) ||
-    body instanceof FormData
-  ) {
+export function redactRequestBodyForLog(
+  body: unknown,
+): JsonValue | FormData | undefined {
+  if (body === undefined || body instanceof FormData) {
     return body;
   }
-  const { headers, actions } = body as {
-    headers?: unknown;
-    actions?: unknown;
-  };
-  return {
-    ...body,
-    ...(headers !== null && typeof headers === "object"
-      ? { headers: redactHeaders(headers as Record<string, string>) }
-      : {}),
-    ...(Array.isArray(actions)
-      ? {
-          actions: actions.map(action => {
-            if (action === null || typeof action !== "object") {
-              return action;
-            }
-            const redacted: Record<string, unknown> = { ...action };
-            for (const field of SENSITIVE_ACTION_FIELDS) {
-              if (field in redacted) {
-                redacted[field] = "[REDACTED]";
-              }
-            }
-            return redacted;
-          }),
-        }
-      : {}),
-  };
+  if (!isJsonObject(body)) {
+    return isJsonValue(body) ? body : undefined;
+  }
+  const copy: JsonObject = { ...body };
+  if (isJsonObject(body.headers)) {
+    copy.headers = redactHeaderObject(body.headers);
+  }
+  if (Array.isArray(body.actions)) {
+    copy.actions = body.actions.map(redactAction);
+  }
+  return copy;
+}
+
+function formatMockBodySegment(value: JsonValue | undefined): string {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    value === null ||
+    value === undefined
+  ) {
+    return String(value);
+  }
+  return JSON.stringify(value);
+}
+
+function sanitizeBodyForLog(body: unknown): JsonValue | FormData | undefined {
+  if (isJsonObject(body)) {
+    if (isJsonObject(body.input)) {
+      return redactRequestBodyForLog({
+        ...body,
+        input: {
+          ...body.input,
+          file_content: undefined,
+        },
+      });
+    }
+    if (body.pdf) {
+      return redactRequestBodyForLog({
+        ...body,
+        pdf: undefined,
+      });
+    }
+  }
+  return redactRequestBodyForLog(body);
 }
 
 const robustAgent = new Agent({
@@ -110,10 +172,27 @@ const robustAgentNoLookup = new Agent({
   },
 });
 
-export async function robustFetch<
-  Schema extends z.Schema<any>,
-  Output = z.infer<Schema>,
->({
+export async function robustFetch<Schema extends z.ZodType>(
+  params: RobustFetchParams<Schema> & {
+    schema: Schema;
+    ignoreResponse?: false;
+    ignoreFailure?: false;
+  },
+): Promise<z.infer<Schema>>;
+export async function robustFetch<Schema extends z.ZodType>(
+  params: RobustFetchParams<Schema> & {
+    schema: Schema;
+  },
+): Promise<z.infer<Schema> | null>;
+export async function robustFetch(
+  params: RobustFetchParams<never> & {
+    schema?: undefined;
+  },
+): Promise<JsonValue>;
+export async function robustFetch<Schema extends z.ZodType = z.ZodType>(
+  params: RobustFetchParams<Schema>,
+): Promise<z.infer<Schema> | JsonValue>;
+export async function robustFetch<Schema extends z.ZodType = z.ZodType>({
   url,
   logger,
   method = "GET",
@@ -129,7 +208,7 @@ export async function robustFetch<
   mock,
   abort,
   useCacheableLookup = true,
-}: RobustFetchParams<Schema>): Promise<Output> {
+}: RobustFetchParams<Schema>): Promise<z.infer<Schema> | JsonValue> {
   abort?.throwIfAborted();
 
   const params = {
@@ -148,61 +227,40 @@ export async function robustFetch<
   };
 
   // omit pdf file content and credentials from logs
-  const logBody = body?.input
-    ? {
-        ...body,
-        input: {
-          ...body.input,
-          file_content: undefined,
-        },
-      }
-    : body?.pdf
-      ? {
-          ...body,
-          pdf: undefined,
-        }
-      : body;
   const logParams = {
     ...params,
     headers: redactHeaders(headers),
-    body: redactRequestBodyForLog(logBody),
+    body: sanitizeBodyForLog(body),
     logger: undefined,
   };
 
-  let response: {
-    status: number;
-    headers: Headers;
-    body: string;
-  };
+  let response: FetchResponsePayload;
 
   if (mock === null) {
     let request: Response;
     try {
-      request = await fetch(url, {
+      const requestHeaders = new UndiciHeaders();
+      if (!(body instanceof FormData) && body !== undefined) {
+        requestHeaders.set("Content-Type", "application/json");
+      }
+      if (headers !== undefined) {
+        for (const [key, value] of Object.entries(headers)) {
+          requestHeaders.set(key, value);
+        }
+      }
+      const fetchInit: RequestInit = {
         method,
-        headers: {
-          ...(body instanceof FormData
-            ? {}
-            : body !== undefined
-              ? {
-                  "Content-Type": "application/json",
-                }
-              : {}),
-          ...(headers !== undefined ? headers : {}),
-        },
+        headers: requestHeaders,
         signal: abort,
         dispatcher: useCacheableLookup ? robustAgent : robustAgentNoLookup,
-        ...(body instanceof FormData
-          ? {
-              body,
-            }
-          : body !== undefined
-            ? {
-                body: JSON.stringify(body),
-              }
-            : {}),
-      });
-    } catch (error) {
+      };
+      if (body instanceof FormData) {
+        fetchInit.body = body;
+      } else if (body !== undefined) {
+        fetchInit.body = JSON.stringify(body);
+      }
+      request = await fetch(url, fetchInit);
+    } catch (error: unknown) {
       if (error instanceof AbortManagerThrownError) {
         throw error;
       } else if (!ignoreFailure) {
@@ -228,12 +286,12 @@ export async function robustFetch<
           });
         }
       } else {
-        return null as Output;
+        return null;
       }
     }
 
     if (ignoreResponse === true) {
-      return null as Output;
+      return null;
     }
 
     const resp = await request.text();
@@ -244,7 +302,7 @@ export async function robustFetch<
     };
   } else {
     if (ignoreResponse === true) {
-      return null as Output;
+      return null;
     }
 
     const fireEngineBaseUrl =
@@ -258,7 +316,12 @@ export async function robustFetch<
 
       let out = trueUrl + ";" + request.method;
       if (trueUrl.startsWith("<fire-engine>") && request.method === "POST") {
-        out += "f-e;" + request.body?.engine + ";" + request.body?.url;
+        const bodyObj = isJsonObject(request.body) ? request.body : undefined;
+        out +=
+          "f-e;" +
+          formatMockBodySegment(bodyObj?.engine) +
+          ";" +
+          formatMockBodySegment(bodyObj?.url);
       }
       return out;
     };
@@ -274,9 +337,11 @@ export async function robustFetch<
       throw new Error("Failed to mock request -- no mock targets found.");
     }
 
+    const mockResult = matchingMocks[nextI].result;
     response = {
-      ...matchingMocks[nextI].result,
-      headers: new Headers(matchingMocks[nextI].result.headers),
+      status: mockResult.status,
+      body: mockResult.body,
+      headers: new Headers(mockResult.headers),
     };
   }
 
@@ -336,9 +401,9 @@ export async function robustFetch<
     );
   }
 
-  let data: Output;
+  let parsed: unknown;
   try {
-    data = JSON.parse(response.body);
+    parsed = JSON.parse(response.body);
   } catch {
     logger.debug("Request sent malformed JSON", {
       params: logParams,
@@ -356,8 +421,8 @@ export async function robustFetch<
 
   if (schema) {
     try {
-      data = schema.parse(data);
-    } catch (error) {
+      return schema.parse(parsed);
+    } catch (error: unknown) {
       if (error instanceof ZodError) {
         logger.debug("Response does not match provided schema", {
           params: logParams,
@@ -384,5 +449,5 @@ export async function robustFetch<
     }
   }
 
-  return data;
+  return isJsonValue(parsed) ? parsed : null;
 }

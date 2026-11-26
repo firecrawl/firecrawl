@@ -111,24 +111,41 @@ const coreEngineRuntime: Record<
   },
 };
 
+type MutableRegisteredEngine = {
+  -readonly [K in keyof RegisteredEngine]: RegisteredEngine[K];
+};
+
 /** Built-in scrape engine registrations, in default fallback tie-break order. */
 export const coreEngines: ReadonlyArray<RegisteredEngine> = coreEngineSpecs.map(
   spec => {
     const runtime = coreEngineRuntime[spec.name];
-    return {
+    const engine: MutableRegisteredEngine = {
       name: spec.name,
       quality: spec.quality,
       features: spec.features,
-      ...(spec.explicitOnly ? { explicitOnly: true } : {}),
-      ...(spec.cache ? { cache: true } : {}),
-      ...(spec.fileOnly ? { fileOnly: true } : {}),
-      ...(spec.supportsProfile ? { supportsProfile: true } : {}),
-      ...(spec.prefetchesFiles ? { prefetchesFiles: true } : {}),
-      ...(spec.allowEmptyContent ? { allowEmptyContent: true } : {}),
       enabled: runtime.enabled,
       scrape: runtime.scrape,
       maxReasonableTime: runtime.maxReasonableTime,
     };
+    if (spec.explicitOnly) {
+      engine.explicitOnly = true;
+    }
+    if (spec.cache) {
+      engine.cache = true;
+    }
+    if (spec.fileOnly) {
+      engine.fileOnly = true;
+    }
+    if (spec.supportsProfile) {
+      engine.supportsProfile = true;
+    }
+    if (spec.prefetchesFiles) {
+      engine.prefetchesFiles = true;
+    }
+    if (spec.allowEmptyContent) {
+      engine.allowEmptyContent = true;
+    }
+    return engine;
   },
 );
 
@@ -439,9 +456,8 @@ export async function scrapeURLWithEngine(
   engine: Engine,
 ): Promise<EngineScrapeResult> {
   const registered = requireEngine(engine);
-  const fn = registered.scrape;
   const logger = meta.logger.child({
-    method: fn.name || "scrapeURLWithEngine",
+    method: registered.scrape.name || "scrapeURLWithEngine",
     engine,
   });
 
@@ -456,15 +472,15 @@ export async function scrapeURLWithEngine(
     featureFlags,
   };
 
-  return await fn(_meta);
+  return await registered.scrape(_meta);
 }
 
 export function getEngineMaxReasonableTime(meta: Meta, engine: Engine): number {
-  const mrt = service.engines.get(engine)?.maxReasonableTime;
+  const registered = service.engines.get(engine);
   // shan't happen - mogery
-  if (mrt === undefined) {
+  if (registered?.maxReasonableTime === undefined) {
     meta.logger.warn("No MRT for engine", { engine });
     return 30_000;
   }
-  return mrt(meta);
+  return registered.maxReasonableTime(meta);
 }

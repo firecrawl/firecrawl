@@ -1,4 +1,4 @@
-import * as marked from "marked";
+import { parse } from "marked";
 import type { Logger } from "winston";
 
 export async function safeMarkdownToHtml(
@@ -7,8 +7,8 @@ export async function safeMarkdownToHtml(
   scrapeId: string,
 ): Promise<string> {
   try {
-    return await marked.parse(markdown, { async: true });
-  } catch (error) {
+    return await parse(markdown, { async: true });
+  } catch (error: unknown) {
     logger.warn("marked.parse failed, falling back to <pre> wrapper", {
       error,
       scrapeId,

@@ -197,6 +197,18 @@ type ExchangeRefusalCode =
   | "THIRD_PARTY_DATA_NOT_ENABLED"
   | "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED";
 
+const exchangeRefusalCodes: ReadonlySet<ErrorCode> =
+  new Set<ExchangeRefusalCode>([
+    "THIRD_PARTY_DATA_NOT_FOUND",
+    "THIRD_PARTY_DATA_UNSUPPORTED_URL",
+    "THIRD_PARTY_DATA_NOT_ENABLED",
+    "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED",
+  ]);
+
+function isExchangeRefusalCode(code: ErrorCode): code is ExchangeRefusalCode {
+  return exchangeRefusalCodes.has(code);
+}
+
 // A definitive answer from the Exchange about this URL: the provider holds no
 // record for it, does not serve it, or the team is not entitled to the
 // provider. Another attempt cannot change it, so it surfaces as-is instead of
@@ -209,8 +221,11 @@ export class ExchangeRefusedError extends TransportableError {
     "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED",
   ];
 
+  public override readonly code: ExchangeRefusalCode;
+
   constructor(code: ExchangeRefusalCode, message: string) {
     super(code, message);
+    this.code = code;
   }
 
   get endsEngineLoop(): boolean {
@@ -218,7 +233,7 @@ export class ExchangeRefusedError extends TransportableError {
   }
 
   get httpStatus(): number {
-    switch (this.code as ExchangeRefusalCode) {
+    switch (this.code) {
       case "THIRD_PARTY_DATA_NOT_FOUND":
         return 404;
       case "THIRD_PARTY_DATA_UNSUPPORTED_URL":
@@ -233,10 +248,10 @@ export class ExchangeRefusedError extends TransportableError {
     code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
-    const x = new ExchangeRefusedError(
-      code as ExchangeRefusalCode,
-      data.message,
-    );
+    if (!isExchangeRefusalCode(code)) {
+      throw new Error(`Unexpected ExchangeRefusedError code: ${code}`);
+    }
+    const x = new ExchangeRefusedError(code, data.message);
     x.stack = data.stack;
     return x;
   }
@@ -250,33 +265,51 @@ export class SiteError extends TransportableError {
   }
 
   constructor(public errorCode: string) {
-    const errorExplanations: Record<string, string> = {
-      ERR_TUNNEL_CONNECTION_FAILED:
+    const errorExplanations = new Map<string, string>([
+      [
+        "ERR_TUNNEL_CONNECTION_FAILED",
         "Firecrawl encountered an internal proxy error while establishing the tunnel.",
-      ERR_TIMED_OUT:
+      ],
+      [
+        "ERR_TIMED_OUT",
         "The connection timed out. The server is not responding or is too slow.",
-      ERR_BLOCKED_BY_CLIENT:
+      ],
+      [
+        "ERR_BLOCKED_BY_CLIENT",
         "The request was blocked by the client, possibly due to an ad blocker or network policy.",
-      ERR_CONNECTION_CLOSED:
+      ],
+      [
+        "ERR_CONNECTION_CLOSED",
         "The connection was closed unexpectedly by the server.",
-      ERR_HTTP2_PROTOCOL_ERROR:
+      ],
+      [
+        "ERR_HTTP2_PROTOCOL_ERROR",
         "An HTTP/2 protocol error occurred. The server may have misconfigured HTTP/2.",
-      ERR_EMPTY_RESPONSE:
+      ],
+      [
+        "ERR_EMPTY_RESPONSE",
         "The server closed the connection without sending any response.",
-      ERR_PROXY_CONNECTION_FAILED:
+      ],
+      [
+        "ERR_PROXY_CONNECTION_FAILED",
         "Firecrawl encountered an internal proxy error while connecting to the proxy.",
-      ERR_CONNECTION_RESET:
+      ],
+      [
+        "ERR_CONNECTION_RESET",
         "The connection was reset by the peer. The server may have dropped the connection.",
-      ERR_TOO_MANY_REDIRECTS:
+      ],
+      [
+        "ERR_TOO_MANY_REDIRECTS",
         "The page has too many redirects. The website may be misconfigured.",
-    };
+      ],
+    ]);
 
     const isProxyError =
       errorCode === "ERR_TUNNEL_CONNECTION_FAILED" ||
       errorCode === "ERR_PROXY_CONNECTION_FAILED";
 
     const explanation =
-      errorExplanations[errorCode] ||
+      errorExplanations.get(errorCode) ||
       "The website returned an error or could not be loaded properly.";
 
     const followUp = isProxyError

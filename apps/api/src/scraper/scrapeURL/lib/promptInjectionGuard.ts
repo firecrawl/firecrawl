@@ -67,6 +67,12 @@ type GuardTelemetryMetadata = {
   extractId?: string;
 };
 
+type GuardSpanMetadata = {
+  teamId: string;
+  scrapeId?: string;
+  extractId?: string;
+};
+
 // "none" marks a chunk the guard failed open on. Billing reads it: the guard
 // fee is charged only when every chunk got a verdict (see scrape-billing.ts).
 type GuardVerdict = "clean" | "injection" | "none";
@@ -102,6 +108,16 @@ async function classifyChunk(
 ): Promise<boolean> {
   const tagName = `untrusted_page_content_${crypto.randomUUID()}`;
 
+  const telemetryMetadata: GuardSpanMetadata = {
+    teamId: metadata.teamId,
+  };
+  if (metadata.scrapeId) {
+    telemetryMetadata.scrapeId = metadata.scrapeId;
+  }
+  if (metadata.extractId) {
+    telemetryMetadata.extractId = metadata.extractId;
+  }
+
   try {
     const result = await generateObject({
       model,
@@ -122,11 +138,7 @@ async function classifyChunk(
         functionId: metadata.functionId
           ? metadata.functionId + "/promptInjectionGuard"
           : "promptInjectionGuard",
-        metadata: {
-          teamId: metadata.teamId,
-          ...(metadata.scrapeId ? { scrapeId: metadata.scrapeId } : {}),
-          ...(metadata.extractId ? { extractId: metadata.extractId } : {}),
-        },
+        metadata: telemetryMetadata,
       }),
     });
 
@@ -148,7 +160,7 @@ async function classifyChunk(
       );
     }
     return true;
-  } catch (error) {
+  } catch (error: unknown) {
     if (
       error instanceof PromptInjectionDetectedError ||
       error instanceof CostLimitExceededError

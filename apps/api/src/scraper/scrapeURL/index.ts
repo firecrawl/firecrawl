@@ -12,7 +12,8 @@ import {
 } from "../../controllers/v2/types";
 import type { Document, TeamFlags } from "../../controllers/v2/types";
 import type { ScrapeOptions } from "../../service/request";
-import type { JsonObject } from "../../lib/json-types";
+import { isJsonObject } from "../../lib/json-types";
+import type { JsonObject, JsonValue } from "../../lib/json-types";
 import { logger as _logger } from "../../lib/logger";
 import type { Engine, EngineScrapeResult, FeatureFlag } from "./engines";
 import {
@@ -114,7 +115,7 @@ export type ScrapeUrlResponse =
     }
   | {
       success: false;
-      error: any;
+      error: unknown;
       threatDecisions?: Array<unknown>;
       state?: ScrapeState;
     };
@@ -128,8 +129,33 @@ export type BrowserCookie = {
   httpOnly?: boolean;
   secure?: boolean;
   sameSite?: string;
-  [key: string]: unknown;
+  [key: string]: JsonValue | undefined;
 };
+
+type ScrapeAbortHandle = {
+  abortHandle?: NodeJS.Timeout;
+  abort: AbortManager;
+};
+
+type EngineAttemptOutcome = {
+  outcome: string;
+  reason: string;
+  expected: boolean;
+};
+
+type BuiltDocumentMetadata = Document["metadata"] & {
+  provider?: JsonValue;
+};
+
+function getOptionLockdown(options: ScrapeOptions): boolean {
+  return isJsonObject(options) && options.lockdown === true;
+}
+
+function getOptionMaxAge(options: ScrapeOptions): number | undefined {
+  return isJsonObject(options) && typeof options.maxAge === "number"
+    ? options.maxAge
+    : undefined;
+}
 
 export type Meta = {
   id: string;
@@ -262,7 +288,7 @@ function buildFeatureFlags(
 ): Set<FeatureFlag> {
   const flags: Set<FeatureFlag> = new Set();
 
-  if ((options as { lockdown?: boolean }).lockdown) {
+  if (getOptionLockdown(options)) {
     return flags;
   }
 
@@ -394,7 +420,7 @@ function isHtmlUpload(filename: string, contentType?: string): boolean {
 function createScrapeAbort(
   externalAbort: AbortInstance | undefined,
   timeout: number | undefined,
-): { abortHandle?: NodeJS.Timeout; abort: AbortManager } {
+): ScrapeAbortHandle {
   const abortController = new AbortController();
   let abortHandle: NodeJS.Timeout | undefined;
   if (timeout !== undefined) {
@@ -677,11 +703,7 @@ function isCacheEngine(engine: Engine): boolean {
   return service.engines.get(engine)?.cache === true;
 }
 
-function engineAttemptOutcome(error: unknown): {
-  outcome: string;
-  reason: string;
-  expected: boolean;
-} {
+function engineAttemptOutcome(error: unknown): EngineAttemptOutcome {
   const inner =
     error instanceof AbortManagerThrownError ? error.inner : undefined;
   const source = inner instanceof Error ? inner : error;
@@ -722,7 +744,7 @@ async function scrapeURLLoopIter(
   meta: Meta,
   engine: Engine,
   attempt: number,
-  snipeAbort,
+  snipeAbort: AbortInstance,
 ): Promise<EngineScrapeResult> {
   const settled = await withSpan(
     "scrape.engine_attempt",
@@ -737,7 +759,7 @@ async function scrapeURLLoopIter(
         );
         setSpanAttributes(span, { "engine.outcome": "success" });
         return { ok: true as const, result };
-      } catch (error) {
+      } catch (error: unknown) {
         const { outcome, reason, expected } = engineAttemptOutcome(error);
         setSpanAttributes(span, {
           "engine.outcome": outcome,
@@ -761,7 +783,7 @@ async function scrapeURLLoopIter(
 async function scrapeURLLoopIterInner(
   meta: Meta,
   engine: Engine,
-  snipeAbort,
+  snipeAbort: AbortInstance,
   onStatusCode: (statusCode: number) => void,
 ): Promise<EngineScrapeResult> {
   const abort = meta.abort.child(snipeAbort);
@@ -901,9 +923,9 @@ async function scrapeURLLoopIterInner(
 class WrappedEngineError extends Error {
   name = "WrappedEngineError";
   public engine: Engine;
-  public error: any;
+  public error: unknown;
 
-  constructor(engine: Engine, error: any) {
+  constructor(engine: Engine, error: unknown) {
     super("WrappedEngineError");
     this.engine = engine;
     this.error = error;
@@ -981,7 +1003,11 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     try {
       while (remainingEngines.length > 0) {
-        const { engine, unsupportedFeatures } = remainingEngines.shift()!;
+        const nextEngine = remainingEngines.shift();
+        if (!nextEngine) {
+          break;
+        }
+        const { engine, unsupportedFeatures } = nextEngine;
         enginesAttempted.push(engine);
         const attempt = enginesAttempted.length;
 
@@ -990,8 +1016,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
           config.SCRAPEURL_ENGINE_WATERFALL_DELAY_MS;
 
         if (
-          !isFinite(waitUntilWaterfall) ||
-          isNaN(waitUntilWaterfall) ||
+          !Number.isFinite(waitUntilWaterfall) ||
+          Number.isNaN(waitUntilWaterfall) ||
           waitUntilWaterfall <= 0
         ) {
           meta.logger.warn("Invalid waitUntilWaterfall value", {
@@ -1022,7 +1048,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
                   snipeAbort,
                 ),
               };
-            } catch (error) {
+            } catch (error: unknown) {
               throw new WrappedEngineError(engine, error);
             }
           })(),
@@ -1058,7 +1084,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
                           ? "Scrape timed out due to maximum length of 5 minutes"
                           : "Scrape timed out",
                       );
-                    } catch (error) {
+                    } catch (error: unknown) {
                       reject(error);
                     }
                   }, meta.abort.scrapeTimeout() ?? 300_000),
@@ -1066,7 +1092,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               }),
             ]);
             break;
-          } catch (error) {
+          } catch (error: unknown) {
             if (error instanceof WrappedEngineError) {
               if (abortsEngineRace(error.error)) {
                 // Another engine or exit doesn't get past it either (the engine
@@ -1260,7 +1286,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         "engine.no_engines_left": true,
         "engine.engines_attempted": enginesAttempted.join(","),
       });
-      if ((meta.options as { lockdown?: boolean }).lockdown) {
+      if (getOptionLockdown(meta.options)) {
         throw new LockdownMissError();
       }
       throw new NoEnginesLeftError(fallbackList.map(x => x.engine));
@@ -1288,6 +1314,35 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       );
     }
 
+    const metadata: BuiltDocumentMetadata = {
+      sourceURL: meta.internalOptions.unnormalizedSourceURL ?? meta.url,
+      url: engineResult.url,
+      statusCode: engineResult.statusCode,
+      error: engineResult.error,
+      numPages: engineResult.pdfMetadata?.numPages,
+      contentType: engineResult.contentType,
+      timezone: engineResult.timezone,
+      proxyUsed: engineResult.proxyUsed ?? "basic",
+      postprocessorsUsed: engineResult.postprocessorsUsed,
+    };
+    if (engineResult.pdfMetadata?.totalPages !== undefined) {
+      metadata.totalPages = engineResult.pdfMetadata.totalPages;
+    }
+    if (engineResult.pdfMetadata?.title) {
+      metadata.title = engineResult.pdfMetadata.title;
+    }
+    if (enginesAttempted.some(isCacheEngine)) {
+      if (engineResult.cacheInfo) {
+        metadata.cacheState = "hit";
+        metadata.cachedAt = engineResult.cacheInfo.created_at.toISOString();
+      } else {
+        metadata.cacheState = "miss";
+      }
+    }
+    if (engineResult.exchange?.provider) {
+      metadata.provider = engineResult.exchange.provider;
+    }
+
     let document: Document = {
       markdown: engineResult.markdown,
       warning: engineResult.warning,
@@ -1295,36 +1350,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       rawBase64: engineResult.rawBase64,
       screenshot: engineResult.screenshot,
       actions: engineResult.actions,
-      metadata: {
-        sourceURL: meta.internalOptions.unnormalizedSourceURL ?? meta.url,
-        url: engineResult.url,
-        statusCode: engineResult.statusCode,
-        error: engineResult.error,
-        numPages: engineResult.pdfMetadata?.numPages,
-        ...(engineResult.pdfMetadata?.totalPages !== undefined
-          ? { totalPages: engineResult.pdfMetadata.totalPages }
-          : {}),
-        ...(engineResult.pdfMetadata?.title
-          ? { title: engineResult.pdfMetadata.title }
-          : {}),
-        contentType: engineResult.contentType,
-        timezone: engineResult.timezone,
-        proxyUsed: engineResult.proxyUsed ?? "basic",
-        ...(enginesAttempted.some(isCacheEngine)
-          ? engineResult.cacheInfo
-            ? {
-                cacheState: "hit",
-                cachedAt: engineResult.cacheInfo.created_at.toISOString(),
-              }
-            : {
-                cacheState: "miss",
-              }
-          : {}),
-        postprocessorsUsed: engineResult.postprocessorsUsed,
-        ...(engineResult.exchange?.provider
-          ? { provider: engineResult.exchange.provider }
-          : {}),
-      },
+      metadata,
     };
 
     if (result.unsupportedFeatures.size > 0) {
@@ -1462,7 +1488,7 @@ export async function scrapeURL(
           setSpanAttributes(span, {
             "scrape.features": Array.from(meta.featureFlags).join(","),
           });
-        } catch (error) {
+        } catch (error: unknown) {
           if (meta.abortHandle !== undefined) {
             clearTimeout(meta.abortHandle);
             meta.abortHandle = undefined;
@@ -1477,14 +1503,15 @@ export async function scrapeURL(
               error instanceof Error ? error.message : String(error),
             "scrape.duration_ms": Date.now() - startTime,
           });
-          return {
+          const failedResponse: ScrapeUrlResponse = {
             success: false,
             error,
-            ...(meta.threatDecisions.length > 0
-              ? { threatDecisions: meta.threatDecisions }
-              : {}),
             state: meta.state,
           };
+          if (meta.threatDecisions.length > 0) {
+            failedResponse.threatDecisions = meta.threatDecisions;
+          }
+          return failedResponse;
         }
       }
 
@@ -1503,7 +1530,10 @@ export async function scrapeURL(
 
       if (
         checkRobotsOverride ??
-        shouldCheckRobots(meta.options as { lockdown?: boolean }, meta.ctx)
+        shouldCheckRobots(
+          { lockdown: getOptionLockdown(meta.options) },
+          meta.ctx,
+        )
       ) {
         const result = await withSpan(
           "scrape.robots_check",
@@ -1569,7 +1599,7 @@ export async function scrapeURL(
                     robotsBlockedUrl: urlToCheck,
                   });
                 }
-              } catch (error) {
+              } catch (error: unknown) {
                 if (error instanceof CrawlDenialError) {
                   throw error;
                 }
@@ -1586,7 +1616,7 @@ export async function scrapeURL(
               }
             }
           },
-        ).catch(error => {
+        ).catch((error: unknown) => {
           if (error instanceof CrawlDenialError) {
             return {
               success: false as const,
@@ -1623,7 +1653,7 @@ export async function scrapeURL(
           try {
             result = await scrapeURLLoop(meta);
             break;
-          } catch (error) {
+          } catch (error: unknown) {
             if (
               error instanceof AddFeatureError &&
               (meta.internalOptions.forceEngine === undefined ||
@@ -1690,7 +1720,7 @@ export async function scrapeURL(
               // null = browser ran but delivered no file (possibly transient) —
               // still worth one more browser round trip, so only a real
               // prefetch object fails here.
-              if (meta.pdfPrefetch != null) {
+              if (meta.pdfPrefetch !== null && meta.pdfPrefetch !== undefined) {
                 meta.logger.error(
                   "PDF was prefetched and still blocked by antibot, failing",
                 );
@@ -1734,7 +1764,10 @@ export async function scrapeURL(
               // null = browser ran but delivered no file (possibly transient) —
               // still worth one more browser round trip, so only a real
               // prefetch object fails here.
-              if (meta.documentPrefetch != null) {
+              if (
+                meta.documentPrefetch !== null &&
+                meta.documentPrefetch !== undefined
+              ) {
                 meta.logger.error(
                   "Document was prefetched and still blocked by antibot, failing",
                 );
@@ -1809,7 +1842,7 @@ export async function scrapeURL(
         meta.logger.debug("scrapeURL metrics", {
           module: "scrapeURL/metrics",
           timeTaken: Date.now() - startTime,
-          maxAgeValid: ((meta.options as { maxAge?: number }).maxAge ?? 0) > 0,
+          maxAgeValid: (getOptionMaxAge(meta.options) ?? 0) > 0,
           success: result.success,
           indexHit:
             result.success && result.document.metadata.cacheState === "hit",
@@ -1822,14 +1855,16 @@ export async function scrapeURL(
             result.success && result.document.metadata.cacheState === "hit",
         });
 
-        return {
+        const finalResponse: ScrapeUrlResponse = {
           ...result,
-          ...(meta.threatDecisions.length > 0
-            ? { threatDecisions: meta.threatDecisions }
-            : {}),
           state: meta.state,
         };
-      } catch (error) {
+        if (meta.threatDecisions.length > 0) {
+          finalResponse.threatDecisions = meta.threatDecisions;
+        }
+        return finalResponse;
+      } catch (error: unknown) {
+        let zdrReplacementError: SSLError | undefined;
         // if (Object.values(meta.results).length > 0 && Object.values(meta.results).every(x => x.state === "error" && x.error instanceof FEPageLoadFailed)) {
         //   throw new FEPageLoadFailed();
         // } else
@@ -1857,7 +1892,7 @@ export async function scrapeURL(
         meta.logger.debug("scrapeURL metrics", {
           module: "scrapeURL/metrics",
           timeTaken: Date.now() - startTime,
-          maxAgeValid: ((meta.options as { maxAge?: number }).maxAge ?? 0) > 0,
+          maxAgeValid: (getOptionMaxAge(meta.options) ?? 0) > 0,
           success: false,
           indexHit: false,
         });
@@ -1894,9 +1929,11 @@ export async function scrapeURL(
           if (meta.internalOptions.zeroDataRetention) {
             const zdrError = new SSLError(false, true);
             zdrError.stack = error.stack;
-            error = zdrError;
+            zdrReplacementError = zdrError;
           }
-          meta.logger.warn("scrapeURL: SSL error", { error });
+          meta.logger.warn("scrapeURL: SSL error", {
+            error: zdrReplacementError ?? error,
+          });
         } else if (error instanceof ActionError) {
           errorType = "ActionError";
           meta.logger.warn("scrapeURL: Action(s) failed to complete", {
@@ -1957,7 +1994,6 @@ export async function scrapeURL(
             retryStats: error.stats,
           });
         } else if (error instanceof AbortManagerThrownError) {
-          errorType = "AbortManagerThrownError";
           throw error.inner;
         } else {
           const scrapeLog = getErrorScrapeLog(error);
@@ -1986,22 +2022,27 @@ export async function scrapeURL(
           }
         }
 
+        const reportedError = zdrReplacementError ?? error;
+
         setSpanAttributes(span, {
           "scrape.success": false,
           "scrape.error":
-            error instanceof Error ? error.message : String(error),
+            reportedError instanceof Error
+              ? reportedError.message
+              : String(reportedError),
           "scrape.error_type": errorType,
           "scrape.duration_ms": Date.now() - startTime,
         });
 
-        return {
+        const failedResponse: ScrapeUrlResponse = {
           success: false,
-          error,
-          ...(meta.threatDecisions.length > 0
-            ? { threatDecisions: meta.threatDecisions }
-            : {}),
+          error: reportedError,
           state: meta.state,
         };
+        if (meta.threatDecisions.length > 0) {
+          failedResponse.threatDecisions = meta.threatDecisions;
+        }
+        return failedResponse;
       }
     },
     { zeroDataRetention: internalOptions.zeroDataRetention },

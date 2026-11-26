@@ -1,4 +1,3 @@
-import type { Mocked, MockedFunction } from "vitest";
 // crawler.test.ts
 import { WebCrawler } from "../crawler";
 import axios from "axios";
@@ -9,10 +8,8 @@ vi.mock("robots-parser");
 
 describe("WebCrawler", () => {
   let crawler: WebCrawler;
-  const mockAxios = axios as Mocked<typeof axios>;
-  const mockRobotsParser = robotsParser as MockedFunction<typeof robotsParser>;
-
-  let maxCrawledDepth: number;
+  const mockAxios = vi.mocked(axios, true);
+  const mockRobotsParser = vi.mocked(robotsParser);
 
   beforeEach(() => {
     // Setup default mocks

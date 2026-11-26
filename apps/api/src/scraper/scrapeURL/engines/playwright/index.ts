@@ -8,8 +8,13 @@ import { getInnerJson } from "@mendable/firecrawl-rs";
 export async function scrapeURLWithPlaywright(
   meta: Meta,
 ): Promise<EngineScrapeResult> {
+  const microserviceUrl = config.PLAYWRIGHT_MICROSERVICE_URL;
+  if (!microserviceUrl) {
+    throw new Error("PLAYWRIGHT_MICROSERVICE_URL is not configured");
+  }
+
   const response = await robustFetch({
-    url: config.PLAYWRIGHT_MICROSERVICE_URL!,
+    url: microserviceUrl,
     headers: {
       "Content-Type": "application/json",
     },

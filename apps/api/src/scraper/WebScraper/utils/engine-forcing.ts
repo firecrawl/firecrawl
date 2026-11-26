@@ -1,16 +1,36 @@
 import { configDotenv } from "dotenv";
 import { parse } from "tldts";
 import type { Engine } from "../../scrapeURL/engines";
+import { isJsonObject } from "../../../lib/json-types";
 import { logger } from "../../../lib/logger";
 
 import { config } from "../../../config";
 configDotenv();
 
-type EngineForcingMapping = {
-  [domain: string]: Engine | Array<Engine>;
-};
+type EngineForcingEntry = Engine | Array<Engine>;
 
-let engineMappings: EngineForcingMapping | null = null;
+let engineMappings: Map<string, EngineForcingEntry> | null = null;
+
+function isEngineName(value: unknown): value is Engine {
+  return typeof value === "string" && value.length > 0;
+}
+
+function parseEngineForcingMappings(
+  raw: unknown,
+): Map<string, EngineForcingEntry> {
+  const mappings = new Map<string, EngineForcingEntry>();
+  if (!isJsonObject(raw)) {
+    return mappings;
+  }
+  for (const [domain, value] of Object.entries(raw)) {
+    if (isEngineName(value)) {
+      mappings.set(domain, value);
+    } else if (Array.isArray(value) && value.every(isEngineName)) {
+      mappings.set(domain, value);
+    }
+  }
+  return mappings;
+}
 
 /**
  * Initialize the engine forcing mappings from environment variable
@@ -21,17 +41,18 @@ export function initializeEngineForcing() {
   const envVar = config.FORCED_ENGINE_DOMAINS;
 
   if (!envVar || envVar.trim() === "") {
-    engineMappings = {};
+    engineMappings = new Map();
     return;
   }
 
   try {
-    engineMappings = JSON.parse(envVar);
-  } catch (error) {
+    const parsed: unknown = JSON.parse(envVar);
+    engineMappings = parseEngineForcingMappings(parsed);
+  } catch (error: unknown) {
     logger.error("Error parsing FORCED_ENGINE_DOMAINS environment variable", {
       error,
     });
-    engineMappings = {};
+    engineMappings = new Map();
   }
 }
 
@@ -62,20 +83,16 @@ function domainMatchesPattern(domain: string, pattern: string): boolean {
 export function getEngineForUrl(
   url: string,
 ): Engine | Array<Engine> | undefined {
-  if (engineMappings === null) {
-    return undefined;
-  }
-
-  if (Object.keys(engineMappings).length === 0) {
+  if (engineMappings === null || engineMappings.size === 0) {
     return undefined;
   }
 
   const lowerCaseUrl = url.trim().toLowerCase();
 
-  let parsedUrl: any;
+  let parsedUrl: ReturnType<typeof parse>;
   try {
     parsedUrl = parse(lowerCaseUrl);
-  } catch (error) {
+  } catch (error: unknown) {
     logger.warn("Error parsing URL for engine forcing", { url, error });
     return undefined;
   }
@@ -85,7 +102,7 @@ export function getEngineForUrl(
     return undefined;
   }
 
-  for (const [pattern, engine] of Object.entries(engineMappings)) {
+  for (const [pattern, engine] of engineMappings) {
     if (domainMatchesPattern(domain, pattern.toLowerCase())) {
       return engine;
     }

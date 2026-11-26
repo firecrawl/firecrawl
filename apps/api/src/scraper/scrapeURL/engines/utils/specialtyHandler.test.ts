@@ -1,17 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createLogger } from "winston";
 import { readFile, unlink } from "node:fs/promises";
 import { AddFeatureError, UnsupportedFileError } from "../../error";
 import type { SpecialtyHandoffResponse } from "./specialtyHandler";
 
 import { specialtyScrapeCheck } from "./specialtyHandler";
 
-const logger: any = {
-  debug: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  child: () => logger,
-};
+const logger = createLogger({ silent: true });
 
 const PDF = Buffer.from(
   "%PDF-1.3\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n",
@@ -75,19 +70,21 @@ afterEach(async () => {
 async function expectHandoff(run: Promise<unknown>): Promise<AddFeatureError> {
   try {
     await run;
-  } catch (error) {
+  } catch (error: unknown) {
     expect(error).toBeInstanceOf(AddFeatureError);
-    const handoff = error as AddFeatureError;
+    if (!(error instanceof AddFeatureError)) {
+      throw new Error("expected AddFeatureError", { cause: error });
+    }
     for (const prefetch of [
-      handoff.pdfPrefetch,
-      handoff.documentPrefetch,
-      handoff.imagePrefetch,
+      error.pdfPrefetch,
+      error.documentPrefetch,
+      error.imagePrefetch,
     ]) {
       if (prefetch) {
         tempFiles.push(prefetch.filePath);
       }
     }
-    return handoff;
+    return error;
   }
   throw new Error("expected specialtyScrapeCheck to hand the file off");
 }
@@ -98,7 +95,10 @@ async function expectUnsupported(run: Promise<unknown>): Promise<string> {
     (error: unknown) => error,
   );
   expect(failure).toBeInstanceOf(UnsupportedFileError);
-  return (failure as UnsupportedFileError).message;
+  if (!(failure instanceof UnsupportedFileError)) {
+    throw new Error("expected UnsupportedFileError");
+  }
+  return failure.message;
 }
 
 describe("specialtyScrapeCheck: the bytes decide when the header does not", () => {

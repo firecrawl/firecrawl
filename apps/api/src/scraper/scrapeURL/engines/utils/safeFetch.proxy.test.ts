@@ -28,6 +28,12 @@ import {
   InsecureConnectionError,
   rejectPrivateIPLiteralTargets,
 } from "./safeFetch";
+import type { getSecureDispatcher } from "./safeFetch";
+
+interface SafeFetchModule {
+  getSecureDispatcher: typeof getSecureDispatcher;
+  InsecureConnectionError: typeof InsecureConnectionError;
+}
 
 const previousAllowLocalWebhooks = config.ALLOW_LOCAL_WEBHOOKS;
 
@@ -36,7 +42,7 @@ afterEach(() => {
 });
 
 function invoke(origin: string) {
-  const inner = vi.fn(() => true) as unknown as Dispatcher.Dispatch;
+  const inner = vi.fn<Dispatcher.Dispatch>(() => true);
   const onError = vi.fn();
   const dispatch = rejectPrivateIPLiteralTargets(inner);
 
@@ -227,7 +233,7 @@ describe("getSecureDispatcher with PROXY_SERVER configured", () => {
   const target = createTarget();
   const proxy = createConnectProxy();
   let targetUrl: string;
-  let safeFetch: typeof import("./safeFetch.js");
+  let safeFetch: SafeFetchModule;
 
   beforeAll(async () => {
     targetUrl = `http://127.0.0.1:${await listen(target.server, "127.0.0.1")}/secret`;
@@ -249,9 +255,12 @@ describe("getSecureDispatcher with PROXY_SERVER configured", () => {
 
     const error = await fetch(targetUrl, {
       dispatcher: safeFetch.getSecureDispatcher(),
-    }).catch(error_ => error_);
+    }).catch((error_: unknown) => error_);
 
     expect(error).toBeInstanceOf(TypeError);
+    if (!(error instanceof TypeError)) {
+      throw new Error("Expected TypeError");
+    }
     expect(error.cause).toBeInstanceOf(safeFetch.InsecureConnectionError);
     expect(proxy.connections).toBe(proxyConnections);
     expect(target.hits).toBe(targetHits);

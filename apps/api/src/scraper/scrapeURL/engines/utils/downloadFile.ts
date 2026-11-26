@@ -11,7 +11,11 @@ import {
 import { Writable } from "node:stream";
 import { TransformStream as NodeTransformStream } from "node:stream/web";
 import { v7 as uuid } from "uuid";
-import * as undici from "undici";
+import { fetch as undiciFetch } from "undici";
+import type {
+  RequestInit as UndiciRequestInit,
+  Response as UndiciResponse,
+} from "undici";
 import { getSecureDispatcher, TLS_CERT_ERROR_CODES } from "./safeFetch";
 import { logger } from "../../../../lib/logger";
 
@@ -87,9 +91,9 @@ export async function fetchFileGuardingProxyFailure<T>(
 ): Promise<T> {
   try {
     return await fetch();
-  } catch (error) {
+  } catch (error: unknown) {
     if (
-      opts.prefetch == null &&
+      (opts.prefetch === undefined || opts.prefetch === null) &&
       opts.flagMandated &&
       isProxyFetchFailure(error)
     ) {
@@ -99,13 +103,49 @@ export async function fetchFileGuardingProxyFailure<T>(
   }
 }
 
-const mapUndiciError = (url: string, skipTlsVerification: boolean, e: any) => {
-  const code = e?.code ?? e?.cause?.code ?? e?.errno ?? e?.name;
-  if (e?.name === "AbortError") {
-    return e;
+function extractErrorCode(e: unknown): string | undefined {
+  if (typeof e !== "object" || e === null) {
+    return undefined;
+  }
+  if ("code" in e && typeof e.code === "string") {
+    return e.code;
+  }
+  if (
+    "cause" in e &&
+    typeof e.cause === "object" &&
+    e.cause !== null &&
+    "code" in e.cause &&
+    typeof e.cause.code === "string"
+  ) {
+    return e.cause.code;
+  }
+  if ("errno" in e && typeof e.errno === "string") {
+    return e.errno;
+  }
+  if ("name" in e && typeof e.name === "string") {
+    return e.name;
+  }
+  return undefined;
+}
+
+function mapUndiciError(
+  url: string,
+  skipTlsVerification: boolean,
+  e: unknown,
+): Error | null {
+  const errorName =
+    typeof e === "object" &&
+    e !== null &&
+    "name" in e &&
+    typeof e.name === "string"
+      ? e.name
+      : undefined;
+  if (errorName === "AbortError") {
+    return null;
   }
 
-  if (TLS_CERT_ERROR_CODES.has(code)) {
+  const code = extractErrorCode(e);
+  if (code !== undefined && TLS_CERT_ERROR_CODES.has(code)) {
     return new SSLError(skipTlsVerification);
   }
 
@@ -126,7 +166,9 @@ const mapUndiciError = (url: string, skipTlsVerification: boolean, e: any) => {
       let hostname = url;
       try {
         hostname = new URL(url).hostname;
-      } catch {}
+      } catch {
+        // Keep raw URL when URL parsing fails.
+      }
       return new DNSResolutionError(hostname);
     }
 
@@ -136,9 +178,9 @@ const mapUndiciError = (url: string, skipTlsVerification: boolean, e: any) => {
       return new SiteError("ERR_CONNECTION_RESET");
 
     default:
-      return e;
+      return null;
   }
-};
+}
 
 function createSizeLimiter(maxSize: number) {
   let bytesRead = 0;
@@ -154,7 +196,7 @@ function createSizeLimiter(maxSize: number) {
   });
 }
 
-function checkContentLength(response: undici.Response, maxSize: number) {
+function checkContentLength(response: UndiciResponse, maxSize: number) {
   const header = response.headers.get("content-length");
   if (header === null) {
     return;
@@ -165,17 +207,22 @@ function checkContentLength(response: undici.Response, maxSize: number) {
   }
 }
 
+interface StreamReadStep {
+  done: boolean;
+  value?: unknown;
+}
+
 export async function fetchFileToBuffer(
   url: string,
   skipTlsVerification: boolean = false,
-  init?: undici.RequestInit,
+  init?: UndiciRequestInit,
   maxSize?: number,
 ): Promise<{
-  response: undici.Response;
+  response: UndiciResponse;
   buffer: Buffer;
 }> {
   try {
-    const response = await undici.fetch(url, {
+    const response = await undiciFetch(url, {
       ...init,
       redirect: "follow",
       dispatcher: getSecureDispatcher(skipTlsVerification),
@@ -193,26 +240,34 @@ export async function fetchFileToBuffer(
     let bytesRead = 0;
     const reader = response.body.getReader();
     while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
+      const next: StreamReadStep = await reader.read();
+      if (next.done) {
         break;
       }
-      bytesRead += value.byteLength;
+      const chunk = next.value;
+      if (!(chunk instanceof Uint8Array)) {
+        continue;
+      }
+      bytesRead += chunk.byteLength;
       if (bytesRead > maxSize) {
         await reader.cancel().catch(() => {});
         throw new UnsupportedFileError("File exceeds size limit");
       }
-      chunks.push(value);
+      chunks.push(chunk);
     }
     return {
       response,
       buffer: Buffer.concat(chunks),
     };
-  } catch (error) {
+  } catch (error: unknown) {
     if (error instanceof UnsupportedFileError) {
       throw error;
     }
-    throw mapUndiciError(url, skipTlsVerification, error);
+    const mapped = mapUndiciError(url, skipTlsVerification, error);
+    if (mapped !== null) {
+      throw mapped;
+    }
+    throw error;
   }
 }
 
@@ -220,10 +275,10 @@ export async function downloadFile(
   id: string,
   url: string,
   skipTlsVerification: boolean = false,
-  init?: undici.RequestInit,
+  init?: UndiciRequestInit,
   maxSize?: number,
 ): Promise<{
-  response: undici.Response;
+  response: UndiciResponse;
   tempFilePath: string;
 }> {
   const tempFilePath = path.join(os.tmpdir(), `tempFile-${id}--${uuid()}`);
@@ -232,7 +287,7 @@ export async function downloadFile(
 
   // TODO: maybe we could use tlsclient for this? for proxying
   try {
-    const response = await undici.fetch(url, {
+    const response = await undiciFetch(url, {
       ...init,
       redirect: "follow",
       dispatcher: getSecureDispatcher(skipTlsVerification),
@@ -256,7 +311,7 @@ export async function downloadFile(
       .pipeTo(Writable.toWeb(tempFileWrite), {
         signal: init?.signal || undefined,
       })
-      .catch(error => {
+      .catch((error: unknown) => {
         if (error instanceof UnsupportedFileError) {
           throw error;
         }
@@ -269,18 +324,22 @@ export async function downloadFile(
       response,
       tempFilePath,
     };
-  } catch (error) {
+  } catch (error: unknown) {
     shouldCleanup = true;
     if (error instanceof UnsupportedFileError) {
       throw error;
     }
-    throw mapUndiciError(url, skipTlsVerification, error);
+    const mapped = mapUndiciError(url, skipTlsVerification, error);
+    if (mapped !== null) {
+      throw mapped;
+    }
+    throw error;
   } finally {
     tempFileWrite.close();
     if (shouldCleanup) {
       try {
         await fs.unlink(tempFilePath);
-      } catch (cleanupError: any) {
+      } catch (cleanupError: unknown) {
         logger.warn("Failed to clean up temporary file", {
           error: cleanupError,
           tempFilePath,

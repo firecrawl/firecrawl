@@ -1,4 +1,5 @@
-import * as undici from "undici";
+import { fetch as undiciFetch } from "undici";
+import { z } from "zod";
 import type { EngineScrapeResult } from "..";
 import type { Meta } from "../..";
 import { SSLError } from "../../error";
@@ -12,15 +13,44 @@ import type { MockState } from "../../lib/mock";
 import { saveMock } from "../../lib/mock";
 import { TextDecoder } from "node:util";
 
-function decodeHtmlBuffer(
-  buf: Buffer,
-  contentType?: string,
-): {
+interface DecodedHtmlResult {
   text: string;
   charset?: string;
   charsetSource?: "header" | "meta";
   decodeError?: unknown;
-} {
+}
+
+const fetchResponseDataSchema = z.object({
+  url: z.string(),
+  body: z.string(),
+  status: z.number(),
+  headers: z.array(z.tuple([z.string(), z.string()])),
+});
+
+type FetchResponseData = z.infer<typeof fetchResponseDataSchema>;
+
+function makeRequestTypeId(
+  request: MockState["requests"][number]["options"],
+): string {
+  return request.url + ";" + request.method;
+}
+
+function getErrorCode(value: unknown): string | undefined {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "code" in value &&
+    typeof value.code === "string"
+  ) {
+    return value.code;
+  }
+  return undefined;
+}
+
+function decodeHtmlBuffer(
+  buf: Buffer,
+  contentType?: string,
+): DecodedHtmlResult {
   const text = buf.toString("utf8");
 
   const headerCharsetRaw = (contentType?.match(
@@ -29,7 +59,7 @@ function decodeHtmlBuffer(
   const headerCharset = headerCharsetRaw?.trim();
 
   const metaCharsetRaw = (text.match(
-    /<meta\b[^>]*charset\s*=\s*["']?([^"'\s\/>]+)/i,
+    /<meta\b[^>]*charset\s*=\s*["']?([^"'\s/>]+)/i,
   ) ?? [])[1];
   const metaCharset = metaCharsetRaw?.trim();
 
@@ -40,7 +70,7 @@ function decodeHtmlBuffer(
         charset: headerCharset,
         charsetSource: "header",
       };
-    } catch (headerDecodeError) {
+    } catch (headerDecodeError: unknown) {
       // If header charset is invalid/unsupported, fall back to meta charset.
       if (
         metaCharset &&
@@ -72,7 +102,7 @@ function decodeHtmlBuffer(
         charset: metaCharset,
         charsetSource: "meta",
       };
-    } catch (decodeError) {
+    } catch (decodeError: unknown) {
       return {
         text,
         charset: metaCharset,
@@ -98,12 +128,7 @@ export async function scrapeURLWithFetch(
     tryCount: 1,
   };
 
-  let response: {
-    url: string;
-    body: string;
-    status: number;
-    headers: Array<[string, string]>;
-  };
+  let response: FetchResponseData;
 
   if (meta.fetchPrefetch !== undefined && meta.fetchPrefetch !== null) {
     const { text, charset, charsetSource, decodeError } = decodeHtmlBuffer(
@@ -135,10 +160,6 @@ export async function scrapeURLWithFetch(
         : [],
     };
   } else if (meta.mock !== null) {
-    const makeRequestTypeId = (
-      request: MockState["requests"][number]["options"],
-    ) => request.url + ";" + request.method;
-
     const thisId = makeRequestTypeId(mockOptions);
     const matchingMocks = meta.mock.requests
       .filter(x => makeRequestTypeId(x.options) === thisId)
@@ -150,12 +171,10 @@ export async function scrapeURLWithFetch(
       throw new Error("Failed to mock request -- no mock targets found.");
     }
 
-    response = {
-      ...matchingMocks[nextI].result,
-    };
+    response = fetchResponseDataSchema.parse(matchingMocks[nextI].result);
   } else {
     try {
-      const x = await undici.fetch(meta.rewrittenUrl ?? meta.url, {
+      const x = await undiciFetch(meta.rewrittenUrl ?? meta.url, {
         dispatcher: getSecureDispatcher(meta.options.skipTlsVerification),
         redirect: "follow",
         headers: meta.options.headers,
@@ -194,7 +213,9 @@ export async function scrapeURLWithFetch(
       if (meta.mock === null) {
         await saveMock(mockOptions, response);
       }
-    } catch (error) {
+    } catch (error: unknown) {
+      const causeCode =
+        error instanceof Error ? getErrorCode(error.cause) : undefined;
       if (
         error instanceof TypeError &&
         error.cause instanceof InsecureConnectionError
@@ -203,8 +224,8 @@ export async function scrapeURLWithFetch(
       } else if (
         error instanceof Error &&
         error.message === "fetch failed" &&
-        error.cause &&
-        TLS_CERT_ERROR_CODES.has((error.cause as any).code)
+        causeCode !== undefined &&
+        TLS_CERT_ERROR_CODES.has(causeCode)
       ) {
         throw new SSLError(meta.options.skipTlsVerification);
       } else {
@@ -215,7 +236,7 @@ export async function scrapeURLWithFetch(
 
   await specialtyScrapeCheck(
     meta.logger.child({ method: "scrapeURLWithFetch/specialtyScrapeCheck" }),
-    Object.fromEntries(response.headers as any),
+    Object.fromEntries(response.headers),
   );
 
   return {

@@ -103,7 +103,7 @@ export const htmlTransform = async (
       onlyMainContent: scrapeOptions.onlyMainContent,
       omceSignatures,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     logger.warn("Failed to call html-transformer! Falling back to cheerio...", {
       error,
       module: "scrapeURL",
@@ -116,7 +116,7 @@ export const htmlTransform = async (
   // remove unwanted elements
   if (
     scrapeOptions.includeTags &&
-    scrapeOptions.includeTags.filter(x => x.trim().length !== 0).length > 0
+    scrapeOptions.includeTags.some(x => x.trim().length !== 0)
   ) {
     // Create a new root element to hold the tags to keep
     const newRoot = load("<div></div>")("div");
@@ -133,7 +133,7 @@ export const htmlTransform = async (
 
   if (
     scrapeOptions.excludeTags &&
-    scrapeOptions.excludeTags.filter(x => x.trim().length !== 0).length > 0
+    scrapeOptions.excludeTags.some(x => x.trim().length !== 0)
   ) {
     scrapeOptions.excludeTags.forEach(tag => {
       let elementsToRemove: Cheerio<AnyNode>;
@@ -204,12 +204,16 @@ export const htmlTransform = async (
   soup("img[src]").each((_, el) => {
     try {
       el.attribs.src = new URL(el.attribs.src, url).href;
-    } catch {}
+    } catch {
+      // Leave malformed src unchanged.
+    }
   });
   soup("a[href]").each((_, el) => {
     try {
       el.attribs.href = new URL(el.attribs.href, url).href;
-    } catch {}
+    } catch {
+      // Leave malformed href unchanged.
+    }
   });
 
   const cleanedHtml = soup.html();

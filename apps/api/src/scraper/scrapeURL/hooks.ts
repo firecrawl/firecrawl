@@ -5,6 +5,7 @@ import { requestContext } from "../../lib/request-context";
 import type {
   Hooks,
   JobKind,
+  ScrapeFinished,
   ScrapeFinishedMetadata,
   ScrapeMeta,
   ScrapeState,
@@ -83,7 +84,7 @@ export function createScrapeFinishedEmitter(job: ScrapeFinishedJobInfo) {
     if (!hooks?.has("scrape.finished")) {
       return;
     }
-    await hooks.run("scrape.finished", {
+    const payload: ScrapeFinished = {
       jobId: job.jobId,
       requestId: job.requestId,
       kind: job.kind,
@@ -95,20 +96,31 @@ export function createScrapeFinishedEmitter(job: ScrapeFinishedJobInfo) {
       error: outcome.error,
       charged: outcome.charged,
       timeTakenMs: outcome.timeTakenMs,
-      ...(outcome.startedAt !== undefined
-        ? { startedAt: outcome.startedAt }
-        : {}),
-      ...(outcome.completedAt !== undefined
-        ? { completedAt: outcome.completedAt }
-        : {}),
-      ...(job.origin !== undefined ? { origin: job.origin } : {}),
-      ...(job.crawlId !== undefined ? { crawlId: job.crawlId } : {}),
-      ...(job.skipNuq !== undefined ? { skipNuq: job.skipNuq } : {}),
-      ...(job.isParse !== undefined ? { isParse: job.isParse } : {}),
-      ...(outcome.costTracking !== undefined
-        ? { costTracking: outcome.costTracking }
-        : {}),
-      ...(outcome.metadata !== undefined ? { metadata: outcome.metadata } : {}),
-    });
+    };
+    if (outcome.startedAt !== undefined) {
+      payload.startedAt = outcome.startedAt;
+    }
+    if (outcome.completedAt !== undefined) {
+      payload.completedAt = outcome.completedAt;
+    }
+    if (job.origin !== undefined) {
+      payload.origin = job.origin;
+    }
+    if (job.crawlId !== undefined) {
+      payload.crawlId = job.crawlId;
+    }
+    if (job.skipNuq !== undefined) {
+      payload.skipNuq = job.skipNuq;
+    }
+    if (job.isParse !== undefined) {
+      payload.isParse = job.isParse;
+    }
+    if (outcome.costTracking !== undefined) {
+      payload.costTracking = outcome.costTracking;
+    }
+    if (outcome.metadata !== undefined) {
+      payload.metadata = outcome.metadata;
+    }
+    await hooks.run("scrape.finished", payload);
   };
 }

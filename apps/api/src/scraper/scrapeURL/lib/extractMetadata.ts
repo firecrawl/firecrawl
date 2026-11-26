@@ -11,10 +11,10 @@ async function extractMetadataRust(
 
   let favicon: string | undefined = undefined;
 
-  if (_favicon) {
+  if (typeof _favicon === "string" && _favicon.length > 0) {
     try {
       favicon = new URL(_favicon, meta.rewrittenUrl ?? meta.url).href;
-    } catch (error) {
+    } catch (error: unknown) {
       meta.logger.debug("Failed to resolve favicon URL", {
         favicon: _favicon,
         error,
@@ -35,7 +35,7 @@ export async function extractMetadata(
 ): Promise<Partial<Document["metadata"]>> {
   try {
     return await extractMetadataRust(meta, html);
-  } catch (error) {
+  } catch (error: unknown) {
     meta.logger.warn(
       "Failed to call html-transformer! Falling back to cheerio...",
       {
@@ -172,14 +172,14 @@ export async function extractMetadata(
               }
             }
           }
-        } catch (error) {
+        } catch (error: unknown) {
           meta.logger.error(`Error extracting custom metadata (in)`, { error });
         }
       });
-    } catch (error) {
+    } catch (error: unknown) {
       meta.logger.error(`Error extracting custom metadata`, { error });
     }
-  } catch (error) {
+  } catch (error: unknown) {
     meta.logger.error(`Error extracting metadata`, { error });
   }
 

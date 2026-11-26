@@ -42,7 +42,7 @@ export async function extractAttributes(
     });
 
     return results;
-  } catch (error) {
+  } catch (error: unknown) {
     logger.warn(
       "Failed to extract attributes with Rust, falling back to Cheerio",
       {
@@ -92,7 +92,7 @@ export async function extractAttributes(
         sample: values.slice(0, 3),
       });
     }
-  } catch (error) {
+  } catch (error: unknown) {
     logger.error("Failed to extract attributes with Cheerio fallback", {
       error,
       module: "scrapeURL",

@@ -22,6 +22,56 @@ import {
   gunzipBounded,
   MAX_GUNZIPPED_FILE_SIZE,
 } from "../scrapeURL/engines/utils/gunzip";
+import { isJsonObject } from "../../lib/json-types";
+import type { JsonValue } from "../../lib/json-types";
+
+interface SitemapScrapeOptionsInput {
+  formats: Array<string>;
+  useMock?: string;
+  maxAge?: number;
+  location?: ScrapeOptions["location"];
+  headers?: Record<string, string>;
+}
+
+function extractSitemapEntries(
+  value: JsonValue | undefined,
+): Array<{ loc: Array<string> }> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const entries: Array<{ loc: Array<string> }> = [];
+  for (const item of value) {
+    if (!isJsonObject(item) || !Array.isArray(item.loc)) {
+      continue;
+    }
+    const locs = item.loc.filter(
+      (loc): loc is string => typeof loc === "string",
+    );
+    if (locs.length > 0) {
+      entries.push({ loc: locs });
+    }
+  }
+  return entries;
+}
+
+function parseXml2jsSitemap(raw: JsonValue): ParsedSitemap {
+  if (!isJsonObject(raw)) {
+    return {};
+  }
+  const result: ParsedSitemap = {};
+  if (isJsonObject(raw.urlset) && Array.isArray(raw.urlset.url)) {
+    result.urlset = { url: extractSitemapEntries(raw.urlset.url) };
+  }
+  if (
+    isJsonObject(raw.sitemapindex) &&
+    Array.isArray(raw.sitemapindex.sitemap)
+  ) {
+    result.sitemapindex = {
+      sitemap: extractSitemapEntries(raw.sitemapindex.sitemap),
+    };
+  }
+  return result;
+}
 
 export async function getLinksFromSitemap(
   {
@@ -35,7 +85,7 @@ export async function getLinksFromSitemap(
     headers,
   }: {
     sitemapUrl: string;
-    urlsHandler(urls: Array<string>): unknown;
+    urlsHandler: (urls: Array<string>) => void | Promise<void>;
     mode?: "axios" | "fire-engine";
     maxAge?: number;
     zeroDataRetention: boolean;
@@ -74,7 +124,7 @@ export async function getLinksFromSitemap(
         );
         const decompressed = await gunzipBounded(buffer);
         content = decompressed.toString("utf8");
-      } catch (error) {
+      } catch (error: unknown) {
         logger.error("Failed to download/decompress gzip sitemap", {
           sitemapUrl,
           error,
@@ -87,27 +137,33 @@ export async function getLinksFromSitemap(
         const parentCtx: RequestContext = {
           teamId: "sitemap",
           zeroDataRetention,
-          ...(usOnly ? { usOnly: true } : {}),
         };
+        if (usOnly) {
+          parentCtx.usOnly = true;
+        }
         const systemCtx =
           installedService()?.modules.policy.system("sitemap", parentCtx) ??
           parentCtx;
 
+        const schema = getV2RequestSchemas().scrapeOptions;
+        const rawScrapeOptions: SitemapScrapeOptionsInput = {
+          formats: ["rawHtml"],
+          useMock: mock,
+        };
+        if (scrapeOptionsAcceptsMaxAge(schema) && maxAge !== undefined) {
+          rawScrapeOptions.maxAge = maxAge;
+        }
+        if (location) {
+          rawScrapeOptions.location = location;
+        }
+        if (headers) {
+          rawScrapeOptions.headers = headers;
+        }
+
         const response = await scrapeURL(
           "sitemap;" + crawlId,
           sitemapUrl,
-          (() => {
-            const schema = getV2RequestSchemas().scrapeOptions;
-            return schema.parse({
-              formats: ["rawHtml"],
-              useMock: mock,
-              ...(scrapeOptionsAcceptsMaxAge(schema) && maxAge !== undefined
-                ? { maxAge }
-                : {}),
-              ...(location ? { location } : {}),
-              ...(headers ? { headers } : {}),
-            });
-          })(),
+          schema.parse(rawScrapeOptions),
           {
             ctx: systemCtx,
             forceEngine,
@@ -134,7 +190,7 @@ export async function getLinksFromSitemap(
           response.document.metadata.statusCode >= 200 &&
           response.document.metadata.statusCode < 300
         ) {
-          content = response.document.rawHtml!;
+          content = response.document.rawHtml ?? "";
         } else {
           if (
             response.success &&
@@ -144,17 +200,18 @@ export async function getLinksFromSitemap(
             return 0;
           }
 
+          const scrapeError: unknown = response.success
+            ? response.document.metadata.statusCode
+            : response.error;
           logger.error(`Request failed for sitemap fetch`, {
             method: "getLinksFromSitemap",
             mode,
             sitemapUrl,
-            error: response.success
-              ? response.document.metadata.statusCode
-              : response.error,
+            error: scrapeError,
           });
           return 0;
         }
-      } catch (error) {
+      } catch (error: unknown) {
         if (error instanceof ScrapeJobTimeoutError) {
           throw error;
         } else {
@@ -172,29 +229,32 @@ export async function getLinksFromSitemap(
     let instructions: SitemapProcessingResult;
     try {
       instructions = await processSitemap(content);
-    } catch (error) {
+    } catch (error: unknown) {
       logger.warn(
         "Rust sitemap processing failed, falling back to JavaScript logic",
         {
           method: "getLinksFromSitemap",
           sitemapUrl,
-          error: error.message,
+          error: error instanceof Error ? error.message : String(error),
         },
       );
 
       let parsed: ParsedSitemap;
       try {
         parsed = await parseSitemapXml(content);
-      } catch (parseError) {
+      } catch (parseError: unknown) {
         logger.warn(
           "Rust XML parsing failed, falling back to JavaScript logic",
           {
             method: "getLinksFromSitemap",
             sitemapUrl,
-            error: parseError.message,
+            error:
+              parseError instanceof Error
+                ? parseError.message
+                : String(parseError),
           },
         );
-        parsed = await parseStringPromise(content);
+        parsed = parseXml2jsSitemap(await parseStringPromise(content));
       }
 
       const root = parsed.urlset || parsed.sitemapindex;
@@ -322,7 +382,7 @@ export async function getLinksFromSitemap(
     }
 
     return count;
-  } catch (error) {
+  } catch (error: unknown) {
     logger.debug(`Error processing sitemapUrl: ${sitemapUrl}`, {
       method: "getLinksFromSitemap",
       mode,

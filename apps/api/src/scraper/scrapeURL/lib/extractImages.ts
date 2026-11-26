@@ -41,7 +41,7 @@ function resolveImageUrl(
 
     // Handle relative URLs
     return new URL(src, resolutionBase).href;
-  } catch (error) {
+  } catch (error: unknown) {
     logger.debug("Failed to resolve image URL", {
       src,
       baseUrl,
@@ -199,7 +199,7 @@ export async function extractImages(
 ): Promise<Array<string>> {
   try {
     return await _extractImages(html, baseUrl);
-  } catch (error) {
+  } catch (error: unknown) {
     logger.warn("Failed to call html-transformer! Falling back to cheerio...", {
       error,
       module: "scrapeURL",

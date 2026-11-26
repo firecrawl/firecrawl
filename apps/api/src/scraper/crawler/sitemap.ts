@@ -32,6 +32,12 @@ type SitemapData = {
   sitemaps: Array<URL>;
 };
 
+interface SitemapScrapeOptionsInput {
+  formats: Array<string>;
+  maxAge?: number;
+  location?: ScrapeOptions["location"];
+}
+
 async function _getSitemapXMLGZ(
   options: SitemapScrapeOptions,
 ): Promise<string> {
@@ -64,25 +70,29 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
   const parentCtx: RequestContext = {
     teamId: "sitemap",
     zeroDataRetention: options.zeroDataRetention,
-    ...(options.usOnly ? { usOnly: true } : {}),
   };
+  if (options.usOnly) {
+    parentCtx.usOnly = true;
+  }
   const systemCtx =
     installedService()?.modules.policy.system("sitemap", parentCtx) ??
     parentCtx;
 
+  const schema = getV2RequestSchemas().scrapeOptions;
+  const rawScrapeOptions: SitemapScrapeOptionsInput = {
+    formats: ["rawHtml"],
+  };
+  if (schema !== scrapeOptions && options.maxAge !== undefined) {
+    rawScrapeOptions.maxAge = options.maxAge;
+  }
+  if (options.location) {
+    rawScrapeOptions.location = options.location;
+  }
+
   const response = await scrapeURL(
     "sitemap;" + options.crawlId,
     options.url,
-    (() => {
-      const schema = getV2RequestSchemas().scrapeOptions;
-      return schema.parse({
-        formats: ["rawHtml"],
-        ...(schema !== scrapeOptions && options.maxAge !== undefined
-          ? { maxAge: options.maxAge }
-          : {}),
-        ...(options.location ? { location: options.location } : {}),
-      });
-    })(),
+    schema.parse(rawScrapeOptions),
     {
       ctx: systemCtx,
       forceEngine,
@@ -103,7 +113,7 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
     response.document.metadata.statusCode >= 200 &&
     response.document.metadata.statusCode < 300
   ) {
-    return response.document.rawHtml!;
+    return response.document.rawHtml ?? "";
   } else if (!response.success) {
     throw new SitemapError(
       `Failed to fetch the sitemap from the website. The request failed with an error. This usually happens when: (1) The sitemap URL is incorrect, (2) The website is blocking access to the sitemap, (3) The website is down or unreachable, or (4) The sitemap requires authentication. Error details: ${response.error}`,

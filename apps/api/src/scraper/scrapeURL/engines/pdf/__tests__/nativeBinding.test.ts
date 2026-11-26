@@ -125,7 +125,9 @@ describe("native PDF binding", () => {
       // Let any overdue interval tick fire before clearing: the await
       // continuation is a microtask and would otherwise beat the timer,
       // hiding the lag a synchronous binding would have caused.
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 100);
+      });
       clearInterval(interval);
     }
 

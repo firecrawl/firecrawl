@@ -1,4 +1,5 @@
-import * as undici from "undici";
+import { fetch as undiciFetch } from "undici";
+import { z } from "zod";
 import type { EngineScrapeResult } from "..";
 import type { Meta } from "../..";
 import { config } from "../../../../config";
@@ -12,6 +13,75 @@ const WIKIMEDIA_API_BASE = "https://api.enterprise.wikimedia.com/v2";
 const REDIS_TOKEN_KEY = "wikipedia_enterprise:access_token";
 const REDIS_AUTH_LOCK_KEY = "lock:wikipedia_enterprise:auth";
 
+const wikimediaAuthResponseSchema = z.object({
+  access_token: z.string(),
+  expires_in: z.number(),
+});
+
+const wikimediaRedirectResponseSchema = z.object({
+  query: z
+    .object({
+      redirects: z
+        .array(z.object({ from: z.string(), to: z.string() }))
+        .optional(),
+      normalized: z
+        .array(z.object({ from: z.string(), to: z.string() }))
+        .optional(),
+      pages: z
+        .array(z.object({ title: z.string(), missing: z.boolean().optional() }))
+        .optional(),
+    })
+    .optional(),
+});
+
+const wikimediaArticleSchema = z.object({
+  name: z.string(),
+  abstract: z.string().optional(),
+  article_body: z
+    .object({
+      html: z.string().optional(),
+      wikitext: z.string().optional(),
+    })
+    .optional(),
+  url: z.string().optional(),
+  in_language: z
+    .object({
+      identifier: z.string().optional(),
+      name: z.string().optional(),
+    })
+    .optional(),
+  is_part_of: z
+    .object({
+      identifier: z.string().optional(),
+      name: z.string().optional(),
+    })
+    .optional(),
+  date_modified: z.string().optional(),
+  categories: z
+    .array(z.object({ name: z.string(), url: z.string() }))
+    .optional(),
+  has_parts: z.array(z.object({ name: z.string() })).optional(),
+  image: z
+    .object({
+      content_url: z.string(),
+      width: z.number().optional(),
+      height: z.number().optional(),
+    })
+    .optional(),
+});
+
+const wikimediaArticlesResponseSchema = z.array(wikimediaArticleSchema);
+
+const WIKI_PROJECTS = {
+  "wikipedia.org": "wiki",
+  "wiktionary.org": "wiktionary",
+  "wikisource.org": "wikisource",
+  "wikibooks.org": "wikibooks",
+  "wikiquote.org": "wikiquote",
+  "wikiversity.org": "wikiversity",
+  "wikivoyage.org": "wikivoyage",
+} satisfies Record<string, string>;
+
 async function getAccessToken(logger: Meta["logger"]): Promise<string> {
   const redis = getRedisConnection();
 
@@ -20,7 +90,7 @@ async function getAccessToken(logger: Meta["logger"]): Promise<string> {
     if (cached) {
       return cached;
     }
-  } catch (error) {
+  } catch (error: unknown) {
     logger.warn(
       "Failed to read Wikipedia token from Redis, will re-authenticate",
       { error },
@@ -36,7 +106,9 @@ async function getAccessToken(logger: Meta["logger"]): Promise<string> {
       if (cached) {
         return cached;
       }
-    } catch {}
+    } catch {
+      // Redis read failed; fall through to re-authenticate.
+    }
 
     const username = config.WIKIPEDIA_ENTERPRISE_USERNAME;
     const password = config.WIKIPEDIA_ENTERPRISE_PASSWORD;
@@ -49,14 +121,17 @@ async function getAccessToken(logger: Meta["logger"]): Promise<string> {
 
     logger.info("Authenticating with Wikipedia Enterprise API");
 
-    const response = await undici.fetch(WIKIMEDIA_AUTH_URL, {
+    const response = await undiciFetch(WIKIMEDIA_AUTH_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
     });
 
     if (signal.aborted) {
-      throw signal.error;
+      throw (
+        signal.error ??
+        new EngineError("Wikipedia Enterprise authentication lock aborted")
+      );
     }
 
     if (!response.ok) {
@@ -66,16 +141,13 @@ async function getAccessToken(logger: Meta["logger"]): Promise<string> {
       );
     }
 
-    const data = (await response.json()) as {
-      access_token: string;
-      expires_in: number;
-    };
+    const data = wikimediaAuthResponseSchema.parse(await response.json());
 
     const ttlSeconds = Math.max(data.expires_in - 300, 60);
 
     try {
       await redis.set(REDIS_TOKEN_KEY, data.access_token, "EX", ttlSeconds);
-    } catch (error) {
+    } catch (error: unknown) {
       logger.warn("Failed to cache Wikipedia token in Redis", { error });
     }
 
@@ -87,7 +159,7 @@ function clearCachedToken(logger: Meta["logger"]): void {
   try {
     getRedisConnection()
       .del(REDIS_TOKEN_KEY)
-      .catch(error => {
+      .catch((error: unknown) => {
         logger.warn("Failed to clear Wikipedia token from Redis", { error });
       });
   } catch {
@@ -96,7 +168,7 @@ function clearCachedToken(logger: Meta["logger"]): void {
 }
 
 // Maps Wikimedia project hostnames to project identifiers used by the Enterprise API.
-// e.g. "en.wikipedia.org" → { lang: "en", project: "wikipedia" }
+// e.g. "en.wikipedia.org" -> { lang: "en", project: "wikipedia" }
 export function parseWikimediaUrl(url: string): {
   articleName: string;
   lang: string;
@@ -111,17 +183,7 @@ export function parseWikimediaUrl(url: string): {
 
   const hostname = parsed.hostname;
 
-  const wikiProjects: Record<string, string> = {
-    "wikipedia.org": "wiki",
-    "wiktionary.org": "wiktionary",
-    "wikisource.org": "wikisource",
-    "wikibooks.org": "wikibooks",
-    "wikiquote.org": "wikiquote",
-    "wikiversity.org": "wikiversity",
-    "wikivoyage.org": "wikivoyage",
-  };
-
-  for (const [domain, projectSuffix] of Object.entries(wikiProjects)) {
+  for (const [domain, projectSuffix] of Object.entries(WIKI_PROJECTS)) {
     const regex = new RegExp(
       `^([a-z]{2,3})\\.${domain.replace(".", String.raw`\.`)}$`,
     );
@@ -146,7 +208,7 @@ export function parseWikimediaUrl(url: string): {
 
 /**
  * Resolves redirects using Wikipedia's free MediaWiki API.
- * e.g. "Brasil" → "Brazil", "UK" → "United Kingdom"
+ * e.g. "Brasil" -> "Brazil", "UK" -> "United Kingdom"
  */
 async function resolveRedirect(
   articleName: string,
@@ -165,7 +227,7 @@ async function resolveRedirect(
     }).toString();
 
   try {
-    const response = await undici.fetch(apiUrl, {
+    const response = await undiciFetch(apiUrl, {
       headers: { Accept: "application/json" },
     });
 
@@ -173,13 +235,7 @@ async function resolveRedirect(
       return articleName;
     }
 
-    const data = (await response.json()) as {
-      query?: {
-        redirects?: Array<{ from: string; to: string }>;
-        normalized?: Array<{ from: string; to: string }>;
-        pages?: Array<{ title: string; missing?: boolean }>;
-      };
-    };
+    const data = wikimediaRedirectResponseSchema.parse(await response.json());
 
     const redirects = data.query?.redirects;
     const lastRedirect = redirects?.at(-1);
@@ -199,39 +255,13 @@ async function resolveRedirect(
     }
 
     return articleName;
-  } catch (error) {
+  } catch (error: unknown) {
     logger.warn("Failed to resolve Wikipedia redirect, using original name", {
       articleName,
       error,
     });
     return articleName;
   }
-}
-
-interface WikimediaArticle {
-  name: string;
-  abstract: string;
-  article_body: {
-    html: string;
-    wikitext: string;
-  };
-  url: string;
-  in_language: {
-    identifier: string;
-    name: string;
-  };
-  is_part_of: {
-    identifier: string;
-    name: string;
-  };
-  date_modified: string;
-  categories?: Array<{ name: string; url: string }>;
-  has_parts?: Array<{ name: string }>;
-  image?: {
-    content_url: string;
-    width?: number;
-    height?: number;
-  };
 }
 
 export async function scrapeURLWithWikipedia(
@@ -267,7 +297,7 @@ export async function scrapeURLWithWikipedia(
 
   const apiUrl = `${WIKIMEDIA_API_BASE}/articles/${encodeURIComponent(articleName)}`;
 
-  const response = await undici.fetch(apiUrl, {
+  const response = await undiciFetch(apiUrl, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -305,7 +335,7 @@ export async function scrapeURLWithWikipedia(
     );
   }
 
-  const articles = (await response.json()) as Array<WikimediaArticle>;
+  const articles = wikimediaArticlesResponseSchema.parse(await response.json());
 
   if (!articles || articles.length === 0) {
     throw new EngineError(

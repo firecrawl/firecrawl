@@ -1,6 +1,11 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createLogger } from "winston";
+import type { Meta } from "../../..";
+import { scrapeOptions } from "../../../../../controllers/v2/types";
+import { CostTracking } from "../../../../../lib/cost-tracking";
+import { AbortManager } from "../../../lib/abortManager";
 import { scrapePDFWithParsePDF } from "../pdfParse";
 
 /**
@@ -71,18 +76,31 @@ function skewBufferPool(size: number) {
 }
 
 function makeMeta() {
-  const logger = {
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  };
-  const meta = {
+  const logger = createLogger({ silent: true });
+  const debug = vi.spyOn(logger, "debug").mockReturnValue(logger);
+  const info = vi.spyOn(logger, "info").mockReturnValue(logger);
+  const warn = vi.spyOn(logger, "warn").mockReturnValue(logger);
+  const error = vi.spyOn(logger, "error").mockReturnValue(logger);
+  const meta: Meta = {
     id: "pdf-parse-test",
     url: "https://example.com/file.pdf",
+    ctx: { teamId: "test-team", zeroDataRetention: false },
+    state: {},
+    options: { ...scrapeOptions.parse({}), skipTlsVerification: false },
+    internalOptions: { teamId: "test-team", orgId: null },
     logger,
-  } as any;
-  return { meta, logger };
+    abort: new AbortManager(),
+    featureFlags: new Set(),
+    mock: null,
+    imageOcrEnabled: async () => false,
+    pdfPrefetch: undefined,
+    documentPrefetch: undefined,
+    imagePrefetch: undefined,
+    fetchPrefetch: undefined,
+    costTracking: new CostTracking(),
+    threatDecisions: [],
+  };
+  return { meta, logger: { debug, info, warn, error } };
 }
 
 describe("scrapePDFWithParsePDF", () => {
