@@ -55,20 +55,38 @@ function countAlphanumeric(text: string): number {
 }
 
 /**
- * Collapse page numbers, editions and other digits so that repeated
- * headers differing only in their numbering compare equal.
+ * Collapse page/sequence numbering so that repeated headers differing only
+ * in their numbering compare equal. Only digit runs that form numbering
+ * collapse: a bare `N of M` / `N/M` expression, or digits following a
+ * numbering keyword (`Page`, `Number`, `Edition`, ...). Other digits —
+ * amounts, IDs, years in body text — stay in the key, so numbered body
+ * lines like `Invoice 1001` / `Invoice 1002` do not collapse into one
+ * repeat group.
  */
 function normalizeLine(line: string): string {
-  return line.replace(/\d+/g, "#").replace(/\s+/g, " ").trim();
+  return line
+    .replace(/\b\d+\s+of\s+\d+\b/gi, "#")
+    .replace(/\b\d+\s*\/\s*\d+\b/g, "#")
+    .replace(
+      /\b(?:page|pg|no|number|edition|ed|vol|volume|issue|part|chapter|section)\b[^A-Za-z0-9]*\d+/gi,
+      match => match.replace(/\d+/g, "#"),
+    )
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
  * Split the markdown into lines and drop every line whose digit-normalized
- * form repeats on at least half the pages: repeated headers, footers and
- * running titles carry no page-specific content. All copies are removed
- * rather than keeping one, because a line present on most pages contributes
- * nothing distinctive to the document. Returns the surviving alphanumeric
- * count alongside the raw count.
+ * form occurs at least half as many times as the document has pages:
+ * repeated headers, footers and running titles carry no page-specific
+ * content. All copies are removed rather than keeping one, because a line
+ * present on most pages contributes nothing distinctive to the document.
+ * The count is occurrences in the flat markdown — no page boundaries reach
+ * this function, so a line repeated several times on one page counts the
+ * same as one repeated across pages. Returns the surviving alphanumeric
+ * count alongside the raw count; the surviving count is taken from the
+ * original lines, since digits are document content even when the
+ * normalized key collapses them for repeat detection.
  */
 export function computeResidualAlnum(
   markdown: string,
@@ -77,19 +95,19 @@ export function computeResidualAlnum(
   const rawAlnum = countAlphanumeric(markdown);
   const lines = markdown
     .split(/\r?\n/)
-    .map(normalizeLine)
-    .filter(line => line.length > 0);
+    .map(line => ({ key: normalizeLine(line), text: line }))
+    .filter(({ key }) => key.length > 0);
 
   const occurrences = new Map<string, number>();
-  for (const line of lines) {
-    occurrences.set(line, (occurrences.get(line) ?? 0) + 1);
+  for (const { key } of lines) {
+    occurrences.set(key, (occurrences.get(key) ?? 0) + 1);
   }
 
   const repeatThreshold = Math.ceil(effectivePages / 2);
   let residualAlnum = 0;
-  for (const line of lines) {
-    if ((occurrences.get(line) ?? 0) < repeatThreshold) {
-      residualAlnum += countAlphanumeric(line);
+  for (const { key, text } of lines) {
+    if ((occurrences.get(key) ?? 0) < repeatThreshold) {
+      residualAlnum += countAlphanumeric(text);
     }
   }
 

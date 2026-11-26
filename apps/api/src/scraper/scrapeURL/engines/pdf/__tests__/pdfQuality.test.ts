@@ -61,6 +61,39 @@ describe("computeResidualAlnum", () => {
     const { rawAlnum, residualAlnum } = computeResidualAlnum(markdown, 3);
     expect(residualAlnum).toBe(rawAlnum);
   });
+
+  it("counts digits in the residual, on the original line", () => {
+    const markdown = ["Report total 12345", "Unique body line here"].join("\n");
+    const { residualAlnum } = computeResidualAlnum(markdown, 3);
+    // "Reporttotal12345" (16) + "Uniquebodylinehere" (18): digits are
+    // document content even though the repeat key normalizes them away.
+    expect(residualAlnum).toBe(34);
+  });
+
+  it("does not collapse numbered body lines that differ only in digits", () => {
+    const markdown = Array.from(
+      { length: 5 },
+      (_, i) => `Invoice ${1001 + i}`,
+    ).join("\n");
+    const { residualAlnum } = computeResidualAlnum(markdown, 5);
+    // Five distinct lines: "Invoice" (7) + 4 digits each.
+    expect(residualAlnum).toBe(55);
+  });
+
+  it("counts occurrences, not pages", () => {
+    // No page boundaries reach this function (flat markdown), so the
+    // repeat rule counts occurrences against half the page count: a line
+    // repeated three times in one block counts the same as one repeated
+    // across three pages.
+    const markdown = [
+      "Common label",
+      "Common label",
+      "Common label",
+      "Unique content here",
+    ].join("\n");
+    const { residualAlnum } = computeResidualAlnum(markdown, 6);
+    expect(residualAlnum).toBe("Uniquecontenthere".length);
+  });
 });
 
 describe("assessPdfExtractionQuality", () => {
