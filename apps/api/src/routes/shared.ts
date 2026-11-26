@@ -33,8 +33,8 @@ declare global {
   namespace Express {
     interface Request {
       requestTiming?: {
-        startTime: number;
-        version: string;
+        startTime?: number;
+        version?: string;
       };
     }
   }
@@ -285,7 +285,7 @@ export function idempotencyMiddleware(
 }
 
 export function blocklistMiddleware(
-  req: RequestWithMaybeACUC<Record<string, string>, unknown, unknown>,
+  req: RequestWithMaybeACUC<Request["params"], unknown, unknown>,
   res: Response,
   next: NextFunction,
 ) {
@@ -342,7 +342,7 @@ export function blocklistMiddleware(
 }
 
 export function countryCheck(
-  req: RequestWithAuth<Record<string, string>, unknown, unknown>,
+  req: RequestWithAuth<Request["params"], unknown, unknown>,
   res: Response,
   next: NextFunction,
 ) {
@@ -414,7 +414,7 @@ function hasRestrictedBodyOptions(body: unknown): boolean {
 }
 
 export function restrictedOptionsCountryCheck(
-  req: RequestWithAuth<Record<string, string>, unknown, unknown>,
+  req: RequestWithAuth<Request["params"], unknown, unknown>,
   res: Response,
   next: NextFunction,
 ) {

@@ -12,10 +12,7 @@ const engineSchema = z.custom<Engine>(
   value => typeof value === "string" && value.length > 0,
 );
 
-const engineForcingEntrySchema = z.union([
-  engineSchema,
-  z.array(engineSchema).min(1),
-]);
+const engineForcingEntrySchema = z.union([engineSchema, z.array(engineSchema)]);
 
 type EngineForcingEntry = z.infer<typeof engineForcingEntrySchema>;
 

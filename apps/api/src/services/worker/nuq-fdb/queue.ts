@@ -209,10 +209,19 @@ function encodedJsonBytes(v: unknown): number {
   return Buffer.byteLength(JSON.stringify(v), "utf8");
 }
 
+const recoverableReadyEntryIdSchema = z.object({
+  i: z.string().min(1),
+});
+
 function decodeNullableJsonChunks<T>(
   parts: Array<[Buffer, Buffer]>,
   decode: (raw: unknown) => T,
-  context: { queueName: string; jobId: string; field: string },
+  context: {
+    queueName: string;
+    jobId: string;
+    field: string;
+    zeroDataRetention: boolean;
+  },
 ): T | null {
   if (parts.length === 0) {
     return null;
@@ -227,15 +236,20 @@ function decodeNullableJsonChunks<T>(
       ...context,
       error,
     });
-    throw error;
+    return null;
   }
 }
 
 function decodeOptionalJsonChunks<T>(
   parts: Array<[Buffer, Buffer]>,
   decode: (raw: unknown) => T,
-  context: { queueName: string; jobId: string; field: string },
-): T {
+  context: {
+    queueName: string;
+    jobId: string;
+    field: string;
+    zeroDataRetention: boolean;
+  },
+): T | undefined {
   if (parts.length === 0) {
     return decode(null);
   }
@@ -249,7 +263,7 @@ function decodeOptionalJsonChunks<T>(
       ...context,
       error,
     });
-    throw error;
+    return undefined;
   }
 }
 
@@ -872,10 +886,112 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
       tn.add(ks.readyShardCount(shard), MINUS_ONE);
       const e = decodeJson(value, queueEntrySchema);
       if (!e) {
-        _logger.warn("Dropping corrupt NuQ FDB ready shard entry", {
-          queueName: this.queueName,
-          shard,
-        });
+        const recovered = decodeJson(value, recoverableReadyEntryIdSchema);
+        if (recovered) {
+          const [metaBuf, stBuf] = await Promise.all([
+            tn.get(ks.jobMeta(recovered.i)),
+            tn.get(ks.jobStatus(recovered.i)),
+          ]);
+          const meta = decodeJson(metaBuf, jobMetaSchema);
+          const st = decodeJson(stBuf, jobStatusRecordSchema);
+          _logger.warn(
+            "Dropping corrupt NuQ FDB ready shard entry",
+            meta
+              ? {
+                  queueName: this.queueName,
+                  shard,
+                  jobId: recovered.i,
+                  status: st?.s,
+                  zeroDataRetention: Boolean(meta.f & F_ZDR),
+                }
+              : {
+                  queueName: this.queueName,
+                  shard,
+                  status: st?.s,
+                },
+          );
+          if (st?.s === "queued") {
+            tn.set(
+              ks.jobStatus(recovered.i),
+              encodeJson({
+                s: "failed",
+                st: st.st,
+                fa: now,
+              } satisfies JobStatusRecord),
+            );
+            tn.set(
+              ks.jobFailedReason(recovered.i),
+              Buffer.from("Corrupt ready queue entry", "utf8"),
+            );
+            if (meta) {
+              if (
+                meta.f & F_ZDR ||
+                (this.storesResultsExternally() && !meta.g)
+              ) {
+                const r = ks.jobDataRange(recovered.i);
+                tn.clearRange(r.begin, r.end);
+              }
+              if (meta.g && meta.f & F_GACC && this.groupOps) {
+                await this.groupOps.terminalAccounting(
+                  tn,
+                  meta.g,
+                  recovered.i,
+                  "queued",
+                  "failed",
+                  !!(meta.f & F_COUNTABLE),
+                  now,
+                  txc,
+                );
+              }
+              const reconstructed: QueueEntry = {
+                i: recovered.i,
+                o: meta.o,
+                g: meta.g,
+                k: meta.k,
+                p: meta.p,
+                f: meta.f,
+                c: meta.c,
+                to: meta.to,
+              };
+              await releaseSlotsAndPromote(
+                tn,
+                ks,
+                reconstructed,
+                { team: true, key: true, crawl: true },
+                now,
+                txc,
+              );
+              if (!meta.g) {
+                tn.set(
+                  ks.jobExpiry(
+                    timeBucket(recovered.i),
+                    now + FAILED_STANDALONE_RETENTION_MS,
+                    recovered.i,
+                  ),
+                  EMPTY,
+                );
+              }
+            } else {
+              tn.set(
+                ks.jobExpiry(
+                  timeBucket(recovered.i),
+                  now + FAILED_STANDALONE_RETENTION_MS,
+                  recovered.i,
+                ),
+                EMPTY,
+              );
+            }
+          }
+        } else {
+          _logger.error(
+            "Dropping corrupt NuQ FDB ready shard entry without recoverable job ID",
+            {
+              queueName: this.queueName,
+              shard,
+              byteLength: value.length,
+            },
+          );
+        }
         return "dropped";
       }
 
@@ -949,8 +1065,10 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
           queueName: this.queueName,
           jobId: e.i,
           shard,
+          zeroDataRetention: Boolean(meta.f & F_ZDR),
           error,
         });
+        tn.clearRange(dataRange.begin, dataRange.end);
         tn.set(
           ks.jobStatus(e.i),
           encodeJson({
@@ -1219,10 +1337,12 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
 
     const dataRange = ks.jobDataRange(id);
     const dataParts = await snap.getRangeAll(dataRange.begin, dataRange.end);
+    const zeroDataRetention = Boolean(meta.f & F_ZDR);
     const data = decodeNullableJsonChunks(dataParts, this.options.decodeData, {
       queueName: this.queueName,
       jobId: id,
       field: "data",
+      zeroDataRetention,
     });
 
     let returnvalue: JobReturnValue | undefined = undefined;
@@ -1236,6 +1356,7 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
           queueName: this.queueName,
           jobId: id,
           field: "returnvalue",
+          zeroDataRetention,
         },
       );
     }

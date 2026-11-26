@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { logger as _logger } from "../../lib/logger";
 import type {
+  DefaultRequestParams,
   Document,
   FormatObject,
   RequestWithAuth,
@@ -49,7 +50,7 @@ const rawUrlBodySchema = z.object({ url: z.string() });
 const maxAgeBodySchema = z.object({ maxAge: z.number() });
 
 export async function scrapeController(
-  req: RequestWithAuth<Record<string, string>, ScrapeResponse, ScrapeRequest>,
+  req: RequestWithAuth<DefaultRequestParams, ScrapeResponse, ScrapeRequest>,
   res: Response<ScrapeResponse | ResponsePayload>,
 ) {
   const zeroDataRetentionTrace =

@@ -1,6 +1,11 @@
 import type { Response } from "express";
-import type { RequestWithAuth, MapRequest, MapResponse } from "./types";
+import type {
+  DefaultRequestParams,
+  MapResponse,
+  RequestWithAuth,
+} from "./types";
 import { getV2RequestSchemas } from "./types";
+import type { MapRequest } from "../../service/request";
 import { configDotenv } from "dotenv";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
@@ -18,7 +23,7 @@ import { readOptionalBooleanField } from "./agent-interop";
 configDotenv();
 
 export async function mapController(
-  req: RequestWithAuth<Record<string, string>, MapResponse, MapRequest>,
+  req: RequestWithAuth<DefaultRequestParams, MapResponse, MapRequest>,
   res: Response<MapResponse | ResponsePayload>,
 ) {
   const zeroDataRetention = req.ctx?.zeroDataRetention === true;

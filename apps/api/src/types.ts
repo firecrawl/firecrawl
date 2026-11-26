@@ -43,6 +43,7 @@ export type ScrapeJobData = ScrapeJobCommon &
   );
 
 export type JobCrawlerOptions = Partial<CrawlerOptions> & {
+  allowBackwardCrawling?: boolean;
   currentDiscoveryDepth?: number;
   urlInvisibleInCurrentCrawl?: boolean;
 };

@@ -1,4 +1,4 @@
-import type { RequestWithAuth } from "./types";
+import type { DefaultRequestParams, RequestWithAuth } from "./types";
 import type { Response } from "express";
 import { redisEvictConnection } from "../../services/redis";
 import { isFdbTeam } from "../../services/worker/nuq-router";
@@ -29,7 +29,7 @@ type QueueStatusResponse = {
 const FDB_OPTIONAL_COUNT_TIMEOUT_MS = 500;
 
 export async function queueStatusController(
-  req: RequestWithAuth<Record<string, string>, undefined, QueueStatusResponse>,
+  req: RequestWithAuth<DefaultRequestParams, undefined, QueueStatusResponse>,
   res: Response<QueueStatusResponse>,
 ) {
   const ctx = requestContext({

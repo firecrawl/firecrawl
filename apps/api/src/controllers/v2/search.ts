@@ -1,6 +1,11 @@
 import type { Response } from "express";
 
-import type { ErrorResponse, RequestWithAuth, SearchResponse } from "./types";
+import type {
+  DefaultRequestParams,
+  ErrorResponse,
+  RequestWithAuth,
+  SearchResponse,
+} from "./types";
 import { getV2RequestSchemas } from "./types";
 import type { SearchRequest } from "../../service/request";
 import { v7 as uuidv7 } from "uuid";
@@ -85,7 +90,7 @@ function parseSearchRequestBody(body: unknown): SearchRequest {
 }
 
 export async function searchController(
-  req: RequestWithAuth<Record<string, string>, SearchResponse, SearchRequest>,
+  req: RequestWithAuth<DefaultRequestParams, SearchResponse, SearchRequest>,
   res: Response<SearchResponse | ResponsePayload>,
 ) {
   const enterprise = readEnterpriseModes(req.body) ?? [];
@@ -109,7 +114,7 @@ export async function searchController(
 }
 
 async function searchControllerInner(
-  req: RequestWithAuth<Record<string, string>, SearchResponse, SearchRequest>,
+  req: RequestWithAuth<DefaultRequestParams, SearchResponse, SearchRequest>,
   res: Response<SearchResponse | ResponsePayload>,
   span: Span,
 ) {

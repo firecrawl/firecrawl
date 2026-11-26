@@ -10,7 +10,11 @@ import { addStrictSchemaIssue } from "../../lib/openai-strict-schema";
 export { addStrictSchemaIssue };
 import type { ScrapeActionContent, SearchV2Response } from "../../lib/entities";
 import { jsonRecordSchema, jsonValueSchema } from "../../lib/json-types";
-import type { JsonObject, JsonValue } from "../../lib/json-types";
+import type {
+  JsonObject,
+  JsonValue,
+  StrictJsonValue,
+} from "../../lib/json-types";
 import type { TeamPlanClass } from "../../service/search-providers";
 import type { JobCrawlerOptions, RateLimiterMode } from "../../types";
 import type { ErrorCode } from "../../lib/error";
@@ -93,14 +97,32 @@ function softOptional<T extends z.ZodType>(schema: T) {
   return schema.optional().catch(undefined);
 }
 
+function parseRootJsonInput(schema: unknown): ParsedJsonValue | undefined {
+  const direct = rootJsonSchema.safeParse(schema);
+  if (direct.success) {
+    return direct.data;
+  }
+  try {
+    const serialized = JSON.stringify(schema);
+    if (serialized === undefined) {
+      return undefined;
+    }
+    const roundTripped: unknown = JSON.parse(serialized);
+    const parsed = rootJsonSchema.safeParse(roundTripped);
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function normalizeSchemaForOpenAI(
   schema: unknown,
 ): JsonValue | undefined {
   if (schema === undefined) {
     return undefined;
   }
-  const parsedRoot = rootJsonSchema.safeParse(schema);
-  if (!parsedRoot.success) {
+  const rootData = parseRootJsonInput(schema);
+  if (rootData === undefined) {
     return undefined;
   }
 
@@ -196,7 +218,7 @@ export function normalizeSchemaForOpenAI(
     for (const [key, value] of Object.entries(obj)) {
       if (
         Object.hasOwn(normalized, key) &&
-        key !== "required" &&
+        !(key === "required" && Array.isArray(value)) &&
         typeof value === "object" &&
         value !== null &&
         !Object.hasOwn(value, "$ref")
@@ -208,7 +230,7 @@ export function normalizeSchemaForOpenAI(
     return normalized;
   }
 
-  return normalizeNode(parsedRoot.data);
+  return normalizeNode(rootData);
 }
 
 export function validateSchemaForOpenAI(schema: unknown): boolean {
@@ -1063,8 +1085,8 @@ export interface Document {
   links?: Array<string>;
   images?: Array<string>;
   screenshot?: string;
-  extract?: unknown;
-  json?: unknown;
+  extract?: StrictJsonValue;
+  json?: StrictJsonValue;
   summary?: string;
   answer?: string;
   warning?: string;
@@ -1396,8 +1418,10 @@ export type AuthCreditUsageChunkFromTeam = Omit<
   "api_key"
 >;
 
+export type DefaultRequestParams = Request["params"];
+
 export interface RequestWithMaybeACUC<
-  ReqParams = Record<string, string>,
+  ReqParams = DefaultRequestParams,
   ReqBody = undefined,
   ResBody = undefined,
 > extends Request<ReqParams, ReqBody, ResBody> {
@@ -1406,7 +1430,7 @@ export interface RequestWithMaybeACUC<
 }
 
 export interface RequestWithMaybeAuth<
-  ReqParams = Record<string, string>,
+  ReqParams = DefaultRequestParams,
   ReqBody = undefined,
   ResBody = undefined,
 > extends RequestWithMaybeACUC<ReqParams, ReqBody, ResBody> {
@@ -1415,7 +1439,7 @@ export interface RequestWithMaybeAuth<
 }
 
 export interface RequestWithAuth<
-  ReqParams = Record<string, string>,
+  ReqParams = DefaultRequestParams,
   ReqBody = undefined,
   ResBody = undefined,
 > extends RequestWithMaybeACUC<ReqParams, ReqBody, ResBody> {
@@ -1689,25 +1713,13 @@ const transformSearchRequest = <
   let categories: Array<SearchCategoryEntry> | undefined;
   const rawCategories: ReadonlyArray<string | SearchCategoryEntry> | undefined =
     x.categories;
-  if (rawCategories && Array.isArray(rawCategories)) {
-    if (rawCategories.length > 0 && typeof rawCategories[0] === "string") {
-      categories = rawCategories
-        .filter((c): c is string => typeof c === "string")
-        .map((c): SearchCategoryEntry => {
-          switch (c) {
-            case "pdf":
-              return {
-                type: "pdf" as const,
-              };
-            default:
-              return { type: c };
-          }
-        });
-    } else {
-      categories = rawCategories.filter(
-        (entry): entry is SearchCategoryEntry => typeof entry !== "string",
-      );
-    }
+  if (rawCategories) {
+    categories = rawCategories.map((entry): SearchCategoryEntry => {
+      if (typeof entry !== "string") {
+        return entry;
+      }
+      return entry === "pdf" ? { type: "pdf" as const } : { type: entry };
+    });
   }
 
   const {

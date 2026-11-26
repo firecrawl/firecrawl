@@ -608,7 +608,7 @@ export class NuqFdbSweeper {
         let free = Math.min(Math.max(0, limit - active), 32);
         let promoted = 0;
         while (free > 0) {
-          const e = await popTeamPending(tn, ks, tid);
+          const e = await popTeamPending(tn, ks, tid, txc);
           if (!e) {
             break;
           }
@@ -651,7 +651,7 @@ export class NuqFdbSweeper {
         let free = Math.min(Math.max(0, limit - active), 32);
         let promoted = 0;
         while (free > 0) {
-          const e = await popKeyPending(tn, ks, kid);
+          const e = await popKeyPending(tn, ks, kid, txc);
           if (!e) {
             break;
           }

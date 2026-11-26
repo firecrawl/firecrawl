@@ -313,7 +313,7 @@ export function parseMultipartPayloadMiddleware(
 }
 
 export async function parseController(
-  req: RequestWithAuth<Record<string, string>, ScrapeResponse, ParseRequest>,
+  req: RequestWithAuth<Request["params"], ScrapeResponse, ParseRequest>,
   res: Response<ScrapeResponse | ResponsePayload>,
 ) {
   const zeroDataRetentionTrace =

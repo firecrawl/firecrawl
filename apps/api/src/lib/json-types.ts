@@ -3,6 +3,19 @@ import { z } from "zod";
 /** Zod schema matching any JSON-serializable value (recursively validated). */
 export const jsonValueSchema = z.json();
 
+/** Exact JSON value type inferred from `z.json()` (mutable arrays/records, no undefined). */
+export type StrictJsonValue = z.infer<typeof jsonValueSchema>;
+
+const parsedJsonValueSchema = z.custom<StrictJsonValue>(() => true);
+
+/**
+ * Parses a JSON string directly into a `StrictJsonValue` without an extra
+ * recursive validation walk, relying on `JSON.parse`'s output grammar.
+ */
+export function parseJsonString(text: string): StrictJsonValue {
+  return parsedJsonValueSchema.parse(JSON.parse(text));
+}
+
 /** Zod schema matching a plain JSON object (string keys mapped to JSON values). */
 export const jsonObjectSchema = z.record(z.string(), jsonValueSchema);
 

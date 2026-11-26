@@ -18,7 +18,7 @@ function escapePromptTags(text: string): string {
   return text.replaceAll(PROMPT_TAGS, "$1\u200B$2$3");
 }
 
-const directQuoteIndicesSchema = z.array(z.number().int());
+const directQuoteIndicesSchema = z.array(z.unknown());
 
 // Prefer Vertex when registered and enabled; fall back to the google provider
 // when registered, or to OpenAI otherwise.
@@ -255,7 +255,9 @@ ${escapePromptTags(indexedLines)}
 
     const cleaned = result.text.replaceAll(/^```[\w]*\n?|```$/g, "").trim();
     const parsed: unknown = JSON.parse(cleaned);
-    const indices = directQuoteIndicesSchema.parse(parsed);
+    const indices = directQuoteIndicesSchema
+      .parse(parsed)
+      .filter((n): n is number => typeof n === "number" && Number.isInteger(n));
 
     if (fitted.trimmed) {
       addWarning(document, tooLongWarning(purpose));

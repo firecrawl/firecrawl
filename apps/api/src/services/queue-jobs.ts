@@ -49,12 +49,24 @@ interface ConcurrencyLimitedPayload {
 }
 
 const crawlerDelaySchema = z.object({
-  delay: z.number(),
+  delay: z.union([z.number(), z.string()]),
 });
 
 function getCrawlerDelay(crawlerOptions: unknown): number | undefined {
   const parsed = crawlerDelaySchema.safeParse(crawlerOptions);
-  return parsed.success ? parsed.data.delay : undefined;
+  if (!parsed.success) {
+    return undefined;
+  }
+  const raw = parsed.data.delay;
+  if (typeof raw === "number") {
+    return Number.isFinite(raw) ? raw : undefined;
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  const parsedNumber = Number(trimmed);
+  return Number.isFinite(parsedNumber) ? parsedNumber : undefined;
 }
 
 // Queue-wait deadline for a backlogged job (how long its owner still cares about the result)

@@ -4,6 +4,7 @@
  * This file imports only module types so constructing default modules or
  * describing a service never loads configuration, queues, or storage clients.
  */
+import { z } from "zod";
 import type { Document } from "../controllers/v2/types";
 import type { JobKind } from "./hooks";
 import type {
@@ -196,6 +197,22 @@ export function memoryUploads(): UploadsModule {
  * Registration, terminal recording, and removal are no-ops because finished
  * queue payloads stay inline; usage returns null.
  */
+const singleUrlJobDataSchema = z.object({
+  mode: z.literal("single_urls"),
+  team_id: z
+    .string()
+    .nullish()
+    .transform(value => value ?? undefined),
+});
+
+const singleUrlModeSchema = z.object({
+  mode: z.literal("single_urls"),
+});
+
+const storedDocumentSchema = z.custom<Document>(
+  value => typeof value === "object" && value !== null && !Array.isArray(value),
+);
+
 export function queueJobStore(): JobStoreModule {
   return {
     storesResultsExternally(): boolean {
@@ -206,24 +223,15 @@ export function queueJobStore(): JobStoreModule {
 
     async owner(id: string, kind: JobKind): Promise<JobOwner | null> {
       if (kind === "scrape") {
-        const [{ scrapeQueue }, { normalizeOwnerId }, { z }] =
-          await Promise.all([
-            import("../services/worker/nuq-router.js"),
-            import("../lib/owner-id.js"),
-            import("zod"),
-          ]);
+        const [{ scrapeQueue }, { normalizeOwnerId }] = await Promise.all([
+          import("../services/worker/nuq-router.js"),
+          import("../lib/owner-id.js"),
+        ]);
         const job = await scrapeQueue.getJob(id);
         if (!job) {
           return null;
         }
         const jobData: unknown = job.data;
-        const singleUrlJobDataSchema = z.object({
-          mode: z.literal("single_urls"),
-          team_id: z
-            .string()
-            .nullish()
-            .transform(value => value ?? undefined),
-        });
         let rawTeamId: string | undefined;
         if (jobData !== null && jobData !== undefined) {
           const parsedData = singleUrlJobDataSchema.safeParse(jobData);
@@ -259,10 +267,7 @@ export function queueJobStore(): JobStoreModule {
       if (kind !== "scrape") {
         return null;
       }
-      const [{ scrapeQueue }, { z }] = await Promise.all([
-        import("../services/worker/nuq-router.js"),
-        import("zod"),
-      ]);
+      const { scrapeQueue } = await import("../services/worker/nuq-router.js");
       const job = await scrapeQueue.getJob(id);
       if (!job) {
         return null;
@@ -271,7 +276,7 @@ export function queueJobStore(): JobStoreModule {
       if (
         jobData !== null &&
         jobData !== undefined &&
-        !z.object({ mode: z.literal("single_urls") }).safeParse(jobData).success
+        !singleUrlModeSchema.safeParse(jobData).success
       ) {
         return null;
       }
@@ -281,12 +286,6 @@ export function queueJobStore(): JobStoreModule {
         const raw: unknown = job.returnvalue;
         const doc: unknown = Array.isArray(raw) ? raw[0] : raw;
         const stored: StoredJob = { state: "completed" };
-        const storedDocumentSchema = z.custom<Document>(
-          value =>
-            typeof value === "object" &&
-            value !== null &&
-            !Array.isArray(value),
-        );
         const parsedDoc = storedDocumentSchema.safeParse(doc);
         if (parsedDoc.success) {
           stored.document = parsedDoc.data;

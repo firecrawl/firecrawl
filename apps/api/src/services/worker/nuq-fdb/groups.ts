@@ -14,6 +14,7 @@ import {
   decodeJson,
   decodeI64,
   groupMetaSchema,
+  normalizeFiniteNumber,
   normalizeOwnerId,
 } from "./keyspace";
 import type { TxContext } from "./ops";
@@ -191,8 +192,8 @@ export class NuQFdbJobGroup {
         c: now,
         t: ttl ?? DEFAULT_GROUP_TTL_MS,
         s: "active",
-        m: opts?.maxConcurrency,
-        d: opts?.delaySeconds,
+        m: normalizeFiniteNumber(opts?.maxConcurrency),
+        d: normalizeFiniteNumber(opts?.delaySeconds),
       };
       tn.set(this.ks.groupMeta(id), encodeJson(g));
       tn.set(this.ks.ongoingGroup(owner, id), encodeJson({ c: now }));

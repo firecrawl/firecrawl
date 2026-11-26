@@ -93,7 +93,6 @@ function startCrawlFinishedLoop() {
             }
           } catch (error: unknown) {
             logger.warn("Failed to renew crawl finished lock", { error });
-            clearInterval(lockRenewInterval);
           }
         })();
       }, 15_000);

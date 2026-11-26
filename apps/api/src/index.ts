@@ -392,7 +392,7 @@ app.use(
 app.use(
   (
     err: unknown,
-    req: RequestWithMaybeACUC<Record<string, string>, ErrorResponse, undefined>,
+    req: RequestWithMaybeACUC<Request["params"], ErrorResponse, undefined>,
     res: Response<ErrorResponse>,
     next: NextFunction,
   ) => {

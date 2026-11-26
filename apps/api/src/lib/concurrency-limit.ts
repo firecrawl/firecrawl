@@ -355,12 +355,38 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
       }
       const validated = concurrencyLimitedJobSchema.safeParse(parsedJob);
       if (!validated.success) {
-        logger.warn("Dropping invalid concurrency-limited job payload", {
-          module: "concurrency-limit",
-          teamId,
-          jobId: member,
-          issues: validated.error.issues,
-        });
+        const parsedDataHolder = z
+          .object({ data: z.unknown() })
+          .safeParse(parsedJob);
+        const topZdr = storedZeroDataRetention(parsedJob);
+        const nestedZdr = parsedDataHolder.success
+          ? storedZeroDataRetention(parsedDataHolder.data.data)
+          : undefined;
+        const isZdr = topZdr === true || nestedZdr === true;
+        const knownNonZdr = topZdr === false || nestedZdr === false;
+        logger.warn(
+          "Dropping invalid concurrency-limited job payload",
+          isZdr
+            ? {
+                module: "concurrency-limit",
+                teamId,
+                jobId: member,
+                zeroDataRetention: true,
+                issues: validated.error.issues,
+              }
+            : knownNonZdr
+              ? {
+                  module: "concurrency-limit",
+                  teamId,
+                  jobId: member,
+                  zeroDataRetention: false,
+                  issues: validated.error.issues,
+                }
+              : {
+                  module: "concurrency-limit",
+                  issues: validated.error.issues,
+                },
+        );
         await redis.del(constructJobKey(member));
         continue;
       }
@@ -380,11 +406,17 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
             });
           }
         }
-        const delay = sc?.crawlerOptions?.delay;
+        const rawDelay: unknown = sc?.crawlerOptions?.delay;
+        const delay =
+          typeof rawDelay === "number"
+            ? rawDelay
+            : typeof rawDelay === "string" && rawDelay.trim().length > 0
+              ? Number(rawDelay.trim())
+              : undefined;
         const maxCrawlConcurrency =
           sc === null
             ? 1
-            : typeof delay === "number" && delay > 0
+            : delay !== undefined && Number.isFinite(delay) && delay > 0
               ? 1
               : (sc.maxConcurrency ?? null);
 

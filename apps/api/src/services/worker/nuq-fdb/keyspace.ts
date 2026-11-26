@@ -88,13 +88,38 @@ export const queueEntrySchema = z.object({
 
 export type QueueEntry = z.infer<typeof queueEntrySchema>;
 
+export function normalizeFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+const wireFiniteNumberSchema = z.preprocess(value => {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "string" && value.trim().length === 0) {
+    return undefined;
+  }
+  return normalizeFiniteNumber(value) ?? value;
+}, z.number().finite().optional());
+
 export const groupMetaSchema = z.object({
   o: z.string(), // ownerId
   c: z.number(), // createdAt ms
   t: z.number(), // ttl ms
   s: z.enum(["active", "completed", "cancelled"]),
-  m: nullishToUndefined(z.number()), // maxConcurrency
-  d: nullishToUndefined(z.number()), // delay seconds between job starts
+  m: wireFiniteNumberSchema, // maxConcurrency
+  d: wireFiniteNumberSchema, // delay seconds between job starts
   x: nullishToUndefined(z.number()), // expiresAt ms
 });
 

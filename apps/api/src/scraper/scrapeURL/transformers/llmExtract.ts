@@ -1283,8 +1283,7 @@ export async function performLLMExtract(
     }
 
     // IMPORTANT: here it only get's the last page!!!
-    const extractedData: unknown =
-      extractResult.extractedDataArray.at(-1) ?? undefined;
+    const extractedData = extractResult.extractedDataArray.at(-1) ?? undefined;
 
     // A requested format must never vanish silently: when extraction
     // produced nothing, keep the key (null) and say why in `warning` —

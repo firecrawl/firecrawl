@@ -3,7 +3,11 @@
  * and custom billing module implementations. Imports only types.
  */
 import type { Request } from "express";
-import type { RequestWithAuth, ScrapeOptions } from "../controllers/v2/types";
+import type {
+  AuthCreditUsageChunk,
+  RequestWithAuth,
+  ScrapeOptions,
+} from "../controllers/v2/types";
 import type { WebSearchResult } from "./entities";
 import type { JsonObject } from "./json-types";
 import type { InternalOptions } from "../scraper/scrapeURL";
@@ -16,7 +20,10 @@ declare module "../service/modules" {
      * Express request carried for preflight and reservation checks.
      * A billing module may update request auth flags (such as `hostedMcp` or `agentIndexOnly`) during preflight.
      */
-    req?: Request & { auth?: RequestWithAuth["auth"] };
+    req?: Request & {
+      auth?: RequestWithAuth["auth"];
+      acuc?: AuthCreditUsageChunk | null;
+    };
     /** Explicit minimum units configured on the route middleware. */
     minimum?: number;
     /** Optional metering feature identifier configured on the route. */

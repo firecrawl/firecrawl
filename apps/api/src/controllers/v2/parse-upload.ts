@@ -248,7 +248,7 @@ async function reserveUnparsedUploadRefOrRespond(
 }
 
 export async function parseUploadUrlController(
-  req: RequestWithAuth<Record<string, string>, unknown, unknown>,
+  req: RequestWithAuth<Request["params"], unknown, unknown>,
   res: Response,
 ) {
   return withSpan(
@@ -523,7 +523,7 @@ const uploadRefRequestBodySchema = z
   .catchall(jsonValueSchema.optional());
 
 export async function parseUploadRefPayloadMiddleware(
-  req: RequestWithAuth<Record<string, string>, unknown, unknown>,
+  req: RequestWithAuth<Request["params"], unknown, unknown>,
   res: Response,
   next: NextFunction,
 ) {

@@ -179,7 +179,6 @@ export async function runNuqWorker(options: {
           logger.info("Renewed lock");
         } catch (error: unknown) {
           logger.warn("Failed to renew lock", { error });
-          clearInterval(lockRenewInterval);
         }
       })();
     }, 15_000);

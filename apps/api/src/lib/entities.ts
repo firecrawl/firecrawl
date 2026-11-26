@@ -1,5 +1,5 @@
 import type { Action, Document as V2Document } from "../controllers/v2/types";
-import type { JsonObject, JsonValue } from "./json-types";
+import type { JsonObject, JsonValue, StrictJsonValue } from "./json-types";
 
 export type SkillCard = {
   id: string;
@@ -66,7 +66,7 @@ export class Document {
   markdown?: string;
   html?: string;
   rawHtml?: string;
-  llm_extraction?: JsonObject;
+  llm_extraction?: StrictJsonValue;
   createdAt?: Date;
   updatedAt?: Date;
   type?: string;

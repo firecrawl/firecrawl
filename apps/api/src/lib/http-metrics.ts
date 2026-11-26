@@ -24,7 +24,11 @@ const UNMATCHED_ROUTE = "unmatched";
 const UNMATCHED_FLAG = Symbol.for("firecrawl.httpMetrics.unmatchedRoute");
 
 const routeWithPathSchema = z.object({
-  path: z.string().min(1),
+  path: z.union([
+    z.string().min(1),
+    z.instanceof(RegExp),
+    z.array(z.union([z.string(), z.instanceof(RegExp)])).min(1),
+  ]),
 });
 
 /** Called by the terminal not-found handler before it answers. */
@@ -35,7 +39,7 @@ export function markRouteUnmatched(req: Request): void {
 export function getRoutePattern(req: Request): string {
   const route = routeWithPathSchema.safeParse(req.route);
   if (route.success) {
-    return route.data.path;
+    return String(route.data.path);
   }
   if (UNMATCHED_FLAG in req && req[UNMATCHED_FLAG] === true) {
     return UNMATCHED_ROUTE;

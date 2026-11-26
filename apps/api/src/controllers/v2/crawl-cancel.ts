@@ -41,17 +41,18 @@ export async function crawlCancelController(
       },
     };
 
+    let saveError: unknown;
+    let failedToPersist = false;
     try {
       sc.cancelled = true;
       await saveCrawl(req.params.jobId, sc);
     } catch (error: unknown) {
+      saveError = error;
+      failedToPersist = true;
       logger.error("Failed to persist crawl cancellation", {
         error,
         jobId: req.params.jobId,
       });
-      return res
-        .status(500)
-        .json({ error: "Failed to persist crawl cancellation" });
     }
 
     if (sc.queueBackend === "fdb") {
@@ -59,6 +60,19 @@ export async function crawlCancelController(
     } else {
       const jobIds = await getCrawlJobs(req.params.jobId);
       await removeConcurrencyLimitedJobs(sc.team_id, jobIds);
+    }
+
+    if (failedToPersist) {
+      logger.warn(
+        "Crawl queue cancelled after failing to persist crawl state",
+        {
+          error: saveError,
+          jobId: req.params.jobId,
+        },
+      );
+      return res
+        .status(500)
+        .json({ error: "Failed to persist crawl cancellation" });
     }
 
     res.json({

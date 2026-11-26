@@ -106,24 +106,72 @@ type StoredCrawlerOptions = JobCrawlerOptions & {
   maxDepth?: number;
 };
 
-const storedCrawlerOptionsShapeSchema = z.looseObject({
-  limit: z.number().nullish(),
-  maxDepth: z.number().nullish(),
-  sitemapOnly: z.boolean().nullish(),
-  ignoreSitemap: z.boolean().nullish(),
+const storedCrawlerObjectSchema = z.custom<StoredCrawlerOptions>(
+  value => typeof value === "object" && value !== null && !Array.isArray(value),
+);
+
+const storedCrawlerLegacyFieldsSchema = z.looseObject({
+  limit: z.unknown().optional(),
+  maxDepth: z.unknown().optional(),
+  sitemapOnly: z.unknown().optional(),
+  ignoreSitemap: z.unknown().optional(),
 });
 
-const storedCrawlerOptionsSchema = z.custom<StoredCrawlerOptions>(
-  value => storedCrawlerOptionsShapeSchema.safeParse(value).success,
-);
+function parseLegacyNumber(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function parseLegacyBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (value === "true") {
+    return true;
+  }
+  if (value === "false") {
+    return false;
+  }
+  return undefined;
+}
 
 const errorWithMessageSchema = z.object({
   message: z.string(),
 });
 
 function getStoredCrawlerOptions(sc: StoredCrawl): StoredCrawlerOptions | null {
-  const parsed = storedCrawlerOptionsSchema.safeParse(sc.crawlerOptions);
-  return parsed.success ? parsed.data : null;
+  const parsedObj = storedCrawlerObjectSchema.safeParse(sc.crawlerOptions);
+  if (!parsedObj.success) {
+    return null;
+  }
+  const fields = storedCrawlerLegacyFieldsSchema.safeParse(sc.crawlerOptions);
+  if (!fields.success) {
+    return parsedObj.data;
+  }
+  const normalized: StoredCrawlerOptions = { ...parsedObj.data };
+  if (fields.data.limit !== undefined) {
+    normalized.limit = parseLegacyNumber(fields.data.limit);
+  }
+  if (fields.data.maxDepth !== undefined) {
+    normalized.maxDepth = parseLegacyNumber(fields.data.maxDepth);
+  }
+  if (fields.data.sitemapOnly !== undefined) {
+    normalized.sitemapOnly = parseLegacyBoolean(fields.data.sitemapOnly);
+  }
+  if (fields.data.ignoreSitemap !== undefined) {
+    normalized.ignoreSitemap = parseLegacyBoolean(fields.data.ignoreSitemap);
+  }
+  return normalized;
 }
 
 function enrichContextWithTeam(

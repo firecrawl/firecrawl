@@ -3,6 +3,7 @@ import { v7 as uuidv7 } from "uuid";
 import type {
   CrawlRequest,
   CrawlResponse,
+  DefaultRequestParams,
   ErrorResponse,
   RequestWithAuth,
 } from "./types";
@@ -56,7 +57,7 @@ function toJsonObject(value: unknown): JsonObject {
 }
 
 export async function crawlController(
-  req: RequestWithAuth<Record<string, string>, CrawlResponse, CrawlRequest>,
+  req: RequestWithAuth<DefaultRequestParams, CrawlResponse, CrawlRequest>,
   res: Response<CrawlResponse | ResponsePayload>,
 ) {
   const preNormalizedBody = toJsonObject(req.rawRequestBody ?? req.body);
@@ -211,6 +212,23 @@ export async function crawlController(
         error: pathPatternIssues[0].message,
         jobId: id,
       });
+    }
+    if (
+      shouldApplyPromptOption(
+        promptGeneratedOptions,
+        preNormalizedBody,
+        "delay",
+      )
+    ) {
+      const generatedDelay = promptGeneratedOptions.delay;
+      if (typeof generatedDelay === "number" && generatedDelay > 60) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "The delay parameter is measured in seconds and cannot exceed 60 seconds.",
+          jobId: id,
+        });
+      }
     }
   }
 

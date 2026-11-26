@@ -576,6 +576,31 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
     row: JobRow<JobData, JobReturnValue>,
     backlogged?: boolean,
   ): NuQJob<JobData, JobReturnValue> {
+    let returnvalue: JobReturnValue | undefined = undefined;
+    if (row.returnvalue !== undefined && row.returnvalue !== null) {
+      try {
+        returnvalue = this.options.decodeReturnvalue(row.returnvalue);
+      } catch (error: unknown) {
+        const zdr =
+          row.data === null || row.data === undefined
+            ? undefined
+            : storedZeroDataRetention(row.data);
+        logger.error(
+          "Failed to decode NuQ job returnvalue",
+          zdr === undefined
+            ? {
+                queueName: this.queueName,
+                error,
+              }
+            : {
+                queueName: this.queueName,
+                jobId: row.id,
+                zeroDataRetention: zdr,
+                error,
+              },
+        );
+      }
+    }
     return {
       id: row.id,
       status: backlogged ? "backlog" : (row.status ?? "queued"),
@@ -584,10 +609,7 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
       data: row.data,
       finishedAt: row.finished_at ? new Date(row.finished_at) : undefined,
       listenChannelId: row.listen_channel_id ?? undefined,
-      returnvalue:
-        row.returnvalue !== undefined && row.returnvalue !== null
-          ? this.options.decodeReturnvalue(row.returnvalue)
-          : undefined,
+      returnvalue,
       failedReason: row.failedreason ?? undefined,
       lock: row.lock ?? undefined,
       ownerId: row.owner_id ?? undefined,

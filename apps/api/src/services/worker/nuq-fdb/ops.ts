@@ -24,6 +24,7 @@ import {
   F_COUNTABLE,
   F_GACC,
   F_KEY_GATED,
+  F_ZDR,
 } from "./keyspace";
 
 export const ONE = encodeI64(1);
@@ -255,7 +256,7 @@ export async function popTeamPending(
   tn: Transaction,
   ks: NuqFdbKeyspace,
   tid: string,
-  txc: TxContext = newTxContext(),
+  txc: TxContext,
 ): Promise<QueueEntry | null> {
   const startedAt = Date.now();
   const range = ks.teamShardCountRange(tid);
@@ -324,7 +325,7 @@ export async function popKeyPending(
   tn: Transaction,
   ks: NuqFdbKeyspace,
   kid: string,
-  txc: TxContext = newTxContext(),
+  txc: TxContext,
 ): Promise<QueueEntry | null> {
   const r = ks.keyPendingRange(kid);
   for (let skipped = 0; skipped < MAX_CORRUPT_PENDING_SKIPS; skipped++) {
@@ -619,12 +620,22 @@ export async function failCorruptPendingEntry(
   const meta = decodeJson(metaBuf, jobMetaSchema);
   const st = decodeJson(stBuf, jobStatusRecordSchema);
 
-  _logger.warn("Dropping corrupt NuQ FDB pending queue entry", {
-    queueName: ks.queueName,
-    queue,
-    jobId: id,
-    status: st?.s,
-  });
+  _logger.warn(
+    "Dropping corrupt NuQ FDB pending queue entry",
+    meta
+      ? {
+          queueName: ks.queueName,
+          queue,
+          jobId: id,
+          status: st?.s,
+          zeroDataRetention: Boolean(meta.f & F_ZDR),
+        }
+      : {
+          queueName: ks.queueName,
+          queue,
+          status: st?.s,
+        },
+  );
 
   if (queue === "kq" || queue === "gq") {
     const resolvedOwner = meta?.o ?? ownerId;
@@ -655,6 +666,10 @@ export async function failCorruptPendingEntry(
   );
 
   if (meta) {
+    if (meta.f & F_ZDR) {
+      const dataRange = ks.jobDataRange(id);
+      tn.clearRange(dataRange.begin, dataRange.end);
+    }
     if (queue !== "gq" && meta.f & F_GATED) {
       const entry: QueueEntry = {
         i: id,

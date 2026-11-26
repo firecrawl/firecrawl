@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import type { IncomingHttpHeaders } from "node:http";
 
 // Compares SHA-256 digests so neither content nor length leaks through timing.
 export function timingSafeSecretEqual(
@@ -13,10 +14,12 @@ export function timingSafeSecretEqual(
   return timingSafeEqual(left, right);
 }
 
-interface ProxySecretHeaders {
-  "x-firecrawl-hosted-mcp-secret"?: unknown;
-  "x-firecrawl-keyless-secret"?: unknown;
-}
+type ProxySecretHeaders =
+  | IncomingHttpHeaders
+  | {
+      "x-firecrawl-hosted-mcp-secret"?: unknown;
+      "x-firecrawl-keyless-secret"?: unknown;
+    };
 
 export function hasHostedMcpProxySecret(
   headers: ProxySecretHeaders,

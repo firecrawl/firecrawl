@@ -84,7 +84,7 @@ const parseUploadMiddleware: express.RequestHandler = (req, res, next) => {
 };
 
 const parsePayloadMiddleware = (
-  req: RequestWithAuth<Record<string, string>, unknown, unknown>,
+  req: RequestWithAuth<express.Request["params"], unknown, unknown>,
   res: express.Response,
   next: express.NextFunction,
 ) => {

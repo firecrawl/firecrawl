@@ -7,8 +7,16 @@ import { fetch, FormData, Agent, Headers as UndiciHeaders } from "undici";
 import { cacheableLookup } from "./cacheableLookup";
 import dns from "node:dns";
 import { AbortManagerThrownError } from "./abortManager";
-import { jsonRecordSchema, jsonValueSchema } from "../../../lib/json-types";
+import { jsonValueSchema, parseJsonString } from "../../../lib/json-types";
 import type { JsonObject, JsonValue } from "../../../lib/json-types";
+
+const shallowPlainObjectSchema = z.custom<JsonObject>(
+  value =>
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    !(value instanceof FormData),
+);
 
 const fireEngineMockBodySchema = z.object({
   engine: jsonValueSchema.optional(),
@@ -74,7 +82,7 @@ function redactHeaderObject(headers: JsonObject): JsonObject {
 }
 
 function redactAction(action: JsonValue | undefined): JsonValue | undefined {
-  const parsed = jsonRecordSchema.safeParse(action);
+  const parsed = shallowPlainObjectSchema.safeParse(action);
   if (!parsed.success) {
     return action;
   }
@@ -94,16 +102,25 @@ function redactAction(action: JsonValue | undefined): JsonValue | undefined {
 export function redactRequestBodyForLog(
   body: unknown,
 ): JsonValue | FormData | undefined {
-  if (body === undefined || body instanceof FormData) {
+  if (
+    body === undefined ||
+    body === null ||
+    typeof body === "string" ||
+    typeof body === "number" ||
+    typeof body === "boolean" ||
+    body instanceof FormData
+  ) {
     return body;
   }
-  const parsedObject = jsonRecordSchema.safeParse(body);
+  const parsedObject = shallowPlainObjectSchema.safeParse(body);
   if (!parsedObject.success) {
     const parsedValue = jsonValueSchema.safeParse(body);
     return parsedValue.success ? parsedValue.data : undefined;
   }
   const copy: JsonObject = { ...parsedObject.data };
-  const parsedHeaders = jsonRecordSchema.safeParse(parsedObject.data.headers);
+  const parsedHeaders = shallowPlainObjectSchema.safeParse(
+    parsedObject.data.headers,
+  );
   if (parsedHeaders.success) {
     copy.headers = redactHeaderObject(parsedHeaders.data);
   }
@@ -127,9 +144,11 @@ function formatMockBodySegment(value: JsonValue | undefined): string {
 }
 
 function sanitizeBodyForLog(body: unknown): JsonValue | FormData | undefined {
-  const parsedBody = jsonRecordSchema.safeParse(body);
+  const parsedBody = shallowPlainObjectSchema.safeParse(body);
   if (parsedBody.success) {
-    const parsedInput = jsonRecordSchema.safeParse(parsedBody.data.input);
+    const parsedInput = shallowPlainObjectSchema.safeParse(
+      parsedBody.data.input,
+    );
     if (parsedInput.success) {
       const sanitizedInput: JsonObject = { ...parsedInput.data };
       delete sanitizedInput.file_content;
@@ -393,9 +412,9 @@ export async function robustFetch<Schema extends z.ZodType = z.ZodType>({
     );
   }
 
-  let parsed: unknown;
+  let parsed: JsonValue;
   try {
-    parsed = JSON.parse(response.body);
+    parsed = parseJsonString(response.body);
   } catch {
     logger.debug("Request sent malformed JSON", {
       params: logParams,
@@ -465,6 +484,5 @@ export async function robustFetch<Schema extends z.ZodType = z.ZodType>({
     }
   }
 
-  const parsedJson = jsonValueSchema.safeParse(parsed);
-  return parsedJson.success ? parsedJson.data : null;
+  return parsed;
 }
