@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ZodError, z } from "zod";
+import { isJsonObject } from "../../lib/json-types";
+import type { JsonObject } from "../../lib/json-types";
 import { coreParts, createService, defaultModules } from "../../service";
 import type {
   Extension,
@@ -20,15 +22,65 @@ import {
   searchRequestSchema,
 } from "./types";
 
-const asRequest = (value: Record<string, unknown>): RequestContributions =>
+type TestZodMap = Record<string, z.ZodType | undefined>;
+
+interface TestRequestContributions {
+  readonly scrapeOptions?: TestZodMap;
+  readonly scrape?: TestZodMap;
+  readonly parse?: TestZodMap;
+  readonly crawl?: TestZodMap;
+  readonly batchScrape?: TestZodMap;
+  readonly map?: TestZodMap;
+  readonly search?: TestZodMap;
+  readonly formats?: TestZodMap;
+  readonly rules?: ReadonlyArray<ScrapeOptionsRule>;
+}
+
+const asRequest = (value: TestRequestContributions): RequestContributions =>
   value;
 
-function captureZodError(fn: () => unknown): ZodError {
+const customExtractRule: ScrapeOptionsRule = (options, { kind }) => {
+  const hasCustom = options.formats.some(format => {
+    const formatType: string = format.type;
+    return formatType === "customExtract";
+  });
+  if (!hasCustom) {
+    return;
+  }
+  if (kind === "parse") {
+    return {
+      error: "Parse uploads do not support customExtract.",
+      path: ["formats"],
+    };
+  }
+  if (!options.formats.some(format => format.type === "markdown")) {
+    return {
+      error: "customExtract requires markdown.",
+      path: ["formats"],
+    };
+  }
+  return {
+    set: {
+      waitFor: Math.max(options.waitFor, 4000),
+    },
+  };
+};
+
+function expectJsonObject(value: unknown): JsonObject {
+  if (!isJsonObject(value)) {
+    throw new Error("Expected object");
+  }
+  return value;
+}
+
+function captureZodError(fn: () => void): ZodError {
   try {
     fn();
-  } catch (error) {
+  } catch (error: unknown) {
     expect(error).toBeInstanceOf(ZodError);
-    return error as ZodError;
+    if (error instanceof ZodError) {
+      return error;
+    }
   }
   throw new Error("Expected ZodError to be thrown");
 }
@@ -137,32 +189,6 @@ describe("v2 request schema wiring", () => {
       maxDepth: z.number().int().min(1).max(5).default(2),
     });
 
-    const rule: ScrapeOptionsRule = (options, { kind }) => {
-      const hasCustom = options.formats.some(
-        format => (format as { type: string }).type === "customExtract",
-      );
-      if (!hasCustom) {
-        return;
-      }
-      if (kind === "parse") {
-        return {
-          error: "Parse uploads do not support customExtract.",
-          path: ["formats"],
-        };
-      }
-      if (!options.formats.some(format => format.type === "markdown")) {
-        return {
-          error: "customExtract requires markdown.",
-          path: ["formats"],
-        };
-      }
-      return {
-        set: {
-          waitFor: Math.max(options.waitFor, 4000),
-        },
-      };
-    };
-
     const extension: Extension = {
       name: "custom-v2-request-extension",
       request: asRequest({
@@ -190,7 +216,7 @@ describe("v2 request schema wiring", () => {
         formats: {
           customExtract: customFormatSchema,
         },
-        rules: [rule],
+        rules: [customExtractRule],
       }),
     };
 
@@ -209,12 +235,14 @@ describe("v2 request schema wiring", () => {
       const schemas = getV2RequestSchemas();
 
       // Scrape: custom format (string shorthand), custom scrapeOptions + scrape fields, rule default
-      const parsedScrape = schemas.scrape.parse({
-        url: "https://example.com",
-        formats: ["markdown", "customExtract"],
-        customLabel: "alpha",
-        scrapeTag: "s-1",
-      }) as unknown as Record<string, unknown>;
+      const parsedScrape = expectJsonObject(
+        schemas.scrape.parse({
+          url: "https://example.com",
+          formats: ["markdown", "customExtract"],
+          customLabel: "alpha",
+          scrapeTag: "s-1",
+        }),
+      );
       expect(parsedScrape.formats).toEqual([
         { type: "markdown" },
         { type: "customExtract", maxDepth: 2 },
@@ -224,11 +252,13 @@ describe("v2 request schema wiring", () => {
       expect(parsedScrape.waitFor).toBe(4000);
 
       // Parse: accepts custom fields, rejects customExtract via rule
-      const parsedUpload = schemas.parse.parse({
-        file: uploadFile,
-        customLabel: "parse-ok",
-        parseTag: "p-1",
-      }) as unknown as Record<string, unknown>;
+      const parsedUpload = expectJsonObject(
+        schemas.parse.parse({
+          file: uploadFile,
+          customLabel: "parse-ok",
+          parseTag: "p-1",
+        }),
+      );
       expect(parsedUpload.customLabel).toBe("parse-ok");
       expect(parsedUpload.parseTag).toBe("p-1");
       expect(parsedUpload.file).toBe(uploadFile);
@@ -246,21 +276,21 @@ describe("v2 request schema wiring", () => {
       });
 
       // Crawl: validates custom crawl field, nested custom scrapeOptions field, format, and rule
-      const parsedCrawl = schemas.crawl.parse({
-        url: "https://example.com",
-        crawlTag: "c-1",
-        scrapeOptions: {
-          formats: ["markdown", { type: "customExtract", maxDepth: 4 }],
-          customLabel: "crawl-ok",
-        },
-      }) as unknown as {
-        crawlTag: string;
-        scrapeOptions: Record<string, unknown>;
-      };
+      const parsedCrawl = expectJsonObject(
+        schemas.crawl.parse({
+          url: "https://example.com",
+          crawlTag: "c-1",
+          scrapeOptions: {
+            formats: ["markdown", { type: "customExtract", maxDepth: 4 }],
+            customLabel: "crawl-ok",
+          },
+        }),
+      );
+      const crawlScrapeOptions = expectJsonObject(parsedCrawl.scrapeOptions);
       expect(parsedCrawl.crawlTag).toBe("c-1");
-      expect(parsedCrawl.scrapeOptions.customLabel).toBe("crawl-ok");
-      expect(parsedCrawl.scrapeOptions.waitFor).toBe(4000);
-      expect(parsedCrawl.scrapeOptions.formats).toEqual([
+      expect(crawlScrapeOptions.customLabel).toBe("crawl-ok");
+      expect(crawlScrapeOptions.waitFor).toBe(4000);
+      expect(crawlScrapeOptions.formats).toEqual([
         { type: "markdown" },
         { type: "customExtract", maxDepth: 4 },
       ]);
@@ -280,23 +310,27 @@ describe("v2 request schema wiring", () => {
       });
 
       // Batch scrape helper: strict URL mode and ignoreInvalidURLs: true mode
-      const parsedBatch = parseBatchScrapeRequest({
-        urls: ["https://example.com"],
-        formats: ["markdown", "customExtract"],
-        customLabel: "batch-ok",
-        batchTag: "b-1",
-      }) as unknown as Record<string, unknown>;
+      const parsedBatch = expectJsonObject(
+        parseBatchScrapeRequest({
+          urls: ["https://example.com"],
+          formats: ["markdown", "customExtract"],
+          customLabel: "batch-ok",
+          batchTag: "b-1",
+        }),
+      );
       expect(parsedBatch.customLabel).toBe("batch-ok");
       expect(parsedBatch.batchTag).toBe("b-1");
       expect(parsedBatch.waitFor).toBe(4000);
 
-      const parsedBatchLenient = parseBatchScrapeRequest({
-        urls: ["https://example.com", "not a url"],
-        ignoreInvalidURLs: true,
-        formats: ["markdown", { type: "customExtract", maxDepth: 3 }],
-        customLabel: "lenient",
-        batchTag: "b-2",
-      }) as unknown as Record<string, unknown>;
+      const parsedBatchLenient = expectJsonObject(
+        parseBatchScrapeRequest({
+          urls: ["https://example.com", "not a url"],
+          ignoreInvalidURLs: true,
+          formats: ["markdown", { type: "customExtract", maxDepth: 3 }],
+          customLabel: "lenient",
+          batchTag: "b-2",
+        }),
+      );
       expect(parsedBatchLenient.urls).toEqual([
         "https://example.com",
         "not a url",
@@ -312,33 +346,37 @@ describe("v2 request schema wiring", () => {
       ).toThrow(ZodError);
 
       // Map: accepts custom map field and rejects invalid values
-      const parsedMap = schemas.map.parse({
-        url: "https://example.com",
-        mapTag: "m-1",
-      }) as unknown as Record<string, unknown>;
+      const parsedMap = expectJsonObject(
+        schemas.map.parse({
+          url: "https://example.com",
+          mapTag: "m-1",
+        }),
+      );
       expect(parsedMap.mapTag).toBe("m-1");
 
       // Search: accepts custom search field and nested scrapeOptions with custom format + rule
-      const parsedSearch = schemas.search.parse({
-        query: "firecrawl",
-        searchTag: "q-1",
-        scrapeOptions: {
-          formats: ["markdown", "customExtract"],
-          customLabel: "search-ok",
-        },
-      }) as unknown as {
-        searchTag: string;
-        scrapeOptions: Record<string, unknown>;
-      };
+      const parsedSearch = expectJsonObject(
+        schemas.search.parse({
+          query: "firecrawl",
+          searchTag: "q-1",
+          scrapeOptions: {
+            formats: ["markdown", "customExtract"],
+            customLabel: "search-ok",
+          },
+        }),
+      );
+      const searchScrapeOptions = expectJsonObject(parsedSearch.scrapeOptions);
       expect(parsedSearch.searchTag).toBe("q-1");
-      expect(parsedSearch.scrapeOptions.customLabel).toBe("search-ok");
-      expect(parsedSearch.scrapeOptions.waitFor).toBe(4000);
+      expect(searchScrapeOptions.customLabel).toBe("search-ok");
+      expect(searchScrapeOptions.waitFor).toBe(4000);
 
       // Standalone scrapeOptions routes through service.schemas.scrapeOptions
-      const parsedOpts = schemas.scrapeOptions.parse({
-        formats: ["markdown", "customExtract"],
-        customLabel: "standalone",
-      }) as unknown as Record<string, unknown>;
+      const parsedOpts = expectJsonObject(
+        schemas.scrapeOptions.parse({
+          formats: ["markdown", "customExtract"],
+          customLabel: "standalone",
+        }),
+      );
       expect(parsedOpts.customLabel).toBe("standalone");
       expect(parsedOpts.waitFor).toBe(4000);
 

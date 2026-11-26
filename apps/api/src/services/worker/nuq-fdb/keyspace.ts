@@ -1,4 +1,6 @@
+import type { TupleItem } from "foundationdb";
 import { config } from "../../../config";
+import { isJsonObject } from "../../../lib/json-types";
 import { getFdb } from "./client";
 
 export { normalizeOwnerId } from "../../../lib/owner-id";
@@ -90,15 +92,150 @@ export function decodeI64(buf: Buffer | undefined | null): number {
   return Number(buf.readBigInt64LE());
 }
 
-export function encodeJson(v: any): Buffer {
+type ExternalSlotRecordShape = {
+  e: number;
+};
+
+type ExternalSlotExpiryRef = {
+  t: string;
+};
+
+function isNuqFdbJobStatus(value: unknown): value is NuqFdbJobStatus {
+  return (
+    value === "pending" ||
+    value === "queued" ||
+    value === "active" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "cancelled"
+  );
+}
+
+function isPendingLoc(value: unknown): value is PendingLoc {
+  if (!isJsonObject(value)) {
+    return false;
+  }
+  if (value.k === "tq") {
+    return (
+      typeof value.s === "number" &&
+      typeof value.p === "number" &&
+      typeof value.c === "number"
+    );
+  }
+  if (value.k === "kq" || value.k === "gq") {
+    return typeof value.p === "number" && typeof value.c === "number";
+  }
+  if (value.k === "dl") {
+    return typeof value.at === "number";
+  }
+  return false;
+}
+
+export function isJobMeta(value: unknown): value is JobMeta {
+  return (
+    isJsonObject(value) &&
+    typeof value.c === "number" &&
+    typeof value.p === "number" &&
+    typeof value.o === "string" &&
+    (value.g === undefined || typeof value.g === "string") &&
+    (value.k === undefined || typeof value.k === "string") &&
+    typeof value.f === "number" &&
+    (value.to === undefined || typeof value.to === "number") &&
+    typeof value.dc === "number"
+  );
+}
+
+export function isJobStatusRecord(value: unknown): value is JobStatusRecord {
+  return (
+    isJsonObject(value) &&
+    isNuqFdbJobStatus(value.s) &&
+    (value.l === undefined || typeof value.l === "string") &&
+    (value.e === undefined || typeof value.e === "number") &&
+    typeof value.st === "number" &&
+    (value.fa === undefined || typeof value.fa === "number") &&
+    (value.loc === undefined || isPendingLoc(value.loc))
+  );
+}
+
+export function isQueueEntry(value: unknown): value is QueueEntry {
+  return (
+    isJsonObject(value) &&
+    typeof value.i === "string" &&
+    typeof value.o === "string" &&
+    (value.g === undefined || typeof value.g === "string") &&
+    (value.k === undefined || typeof value.k === "string") &&
+    typeof value.p === "number" &&
+    typeof value.f === "number" &&
+    typeof value.c === "number" &&
+    (value.to === undefined || typeof value.to === "number")
+  );
+}
+
+export function isGroupMeta(value: unknown): value is GroupMeta {
+  return (
+    isJsonObject(value) &&
+    typeof value.o === "string" &&
+    typeof value.c === "number" &&
+    typeof value.t === "number" &&
+    (value.s === "active" ||
+      value.s === "completed" ||
+      value.s === "cancelled") &&
+    (value.m === undefined || typeof value.m === "number") &&
+    (value.d === undefined || typeof value.d === "number") &&
+    (value.x === undefined || typeof value.x === "number")
+  );
+}
+
+function isExternalSlotRecordShape(
+  value: unknown,
+): value is ExternalSlotRecordShape {
+  return isJsonObject(value) && typeof value.e === "number";
+}
+
+function isExternalSlotExpiryRef(
+  value: unknown,
+): value is ExternalSlotExpiryRef {
+  return isJsonObject(value) && typeof value.t === "string";
+}
+
+export function encodeJson(v: unknown): Buffer {
   return Buffer.from(JSON.stringify(v), "utf8");
 }
 
-export function decodeJson<T = any>(buf: Buffer | undefined | null): T | null {
+export function decodeJson<T>(
+  buf: Buffer | undefined | null,
+  guard: (value: unknown) => value is T,
+): T | null;
+export function decodeJson<_T extends GroupMeta>(
+  buf: Buffer | undefined | null,
+): GroupMeta | null;
+export function decodeJson<_T extends ExternalSlotRecordShape>(
+  buf: Buffer | undefined | null,
+): ExternalSlotRecordShape | null;
+export function decodeJson<_T extends ExternalSlotExpiryRef>(
+  buf: Buffer | undefined | null,
+): ExternalSlotExpiryRef | null;
+export function decodeJson<T>(
+  buf: Buffer | undefined | null,
+  guard?: (value: unknown) => value is T,
+): T | GroupMeta | ExternalSlotRecordShape | ExternalSlotExpiryRef | null {
   if (!buf) {
     return null;
   }
-  return JSON.parse(buf.toString("utf8")) as T;
+  const parsed: unknown = JSON.parse(buf.toString("utf8"));
+  if (guard) {
+    return guard(parsed) ? parsed : null;
+  }
+  if (isGroupMeta(parsed)) {
+    return parsed;
+  }
+  if (isExternalSlotRecordShape(parsed)) {
+    return parsed;
+  }
+  if (isExternalSlotExpiryRef(parsed)) {
+    return parsed;
+  }
+  return null;
 }
 
 export function fnv1a(str: string): number {
@@ -133,11 +270,11 @@ export function teamPendingShard(jobId: string): number {
 export class NuqFdbKeyspace {
   constructor(public readonly queueName: string) {}
 
-  pack(parts: Array<any>): Buffer {
+  pack(parts: Array<TupleItem>): Buffer {
     return getFdb().tuple.pack(["nuq", this.queueName, ...parts]);
   }
 
-  private packRange(parts: Array<any>): { begin: Buffer; end: Buffer } {
+  private packRange(parts: Array<TupleItem>) {
     const begin = this.pack(parts);
     return { begin, end: prefixEnd(begin) };
   }

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { Transaction } from "foundationdb";
+import type { KeySelector, Transaction } from "foundationdb";
 import type { Logger } from "winston";
+import type { JsonObject, JsonValue } from "../../../lib/json-types";
+import { isJsonObject } from "../../../lib/json-types";
 import { logger as _logger } from "../../../lib/logger";
 import { QueueFullError } from "../../../lib/queue-full-error";
 import { storedZeroDataRetention } from "../../../lib/request-context";
@@ -19,6 +21,10 @@ import {
   decodeI64,
   encodeJson,
   decodeJson,
+  isGroupMeta,
+  isJobMeta,
+  isJobStatusRecord,
+  isQueueEntry,
   timeBucket,
   READY_SHARDS,
   F_GATED,
@@ -32,7 +38,6 @@ import {
 } from "./keyspace";
 
 export { normalizeOwnerId, F_GACC };
-import type { GroupJobIndexValue } from "./ops";
 import {
   ONE,
   MINUS_ONE,
@@ -53,6 +58,7 @@ import {
   setGroupJobIndex,
   bumpGroupStatusCount,
   bumpTeamActive,
+  isGroupJobIndexValue,
 } from "./ops";
 import { NuqFdbGroupOps } from "./groups";
 
@@ -67,13 +73,6 @@ const ENQUEUE_MAX_JOBS_PER_TRANSACTION = 250;
 
 export { QueueFullError };
 
-type FdbKeySelector = {
-  key: Buffer;
-  orEqual: boolean;
-  offset: number;
-  _isKeySelector: true;
-};
-
 export type NuQJobStatusCompat =
   | "queued"
   | "active"
@@ -81,7 +80,28 @@ export type NuQJobStatusCompat =
   | "failed"
   | "backlog";
 
-export type NuQFdbJob<Data = any, ReturnValue = any> = {
+type NuQFdbDefaultWebhook = {
+  url?: string;
+  [key: string]: JsonValue | undefined;
+};
+
+type NuQFdbDefaultJobData = {
+  mode?: string;
+  url?: string;
+  v1?: boolean;
+  webhook?: NuQFdbDefaultWebhook;
+  [key: string]: JsonValue | undefined;
+};
+
+type NuQFdbDefaultReturnValue = {
+  blob?: string;
+  [key: string]: JsonValue | undefined;
+} | null;
+
+export type NuQFdbJob<
+  Data = NuQFdbDefaultJobData,
+  ReturnValue = NuQFdbDefaultReturnValue,
+> = {
   id: string;
   status: NuQJobStatusCompat;
   createdAt: Date;
@@ -119,6 +139,21 @@ export type NuQFdbGate = {
   key?: { id: string; limit: number } | null;
 };
 
+type NuQFdbBaseQueueOptions = {
+  // whether jobs in this queue participate in group (crawl) accounting
+  hasGroups: boolean;
+  // queue that group-finish jobs are emitted into (scrape -> crawl_finished)
+  finishedQueueName?: string;
+  // lease duration override, used by tests
+  leaseMs?: number;
+};
+
+type NuQFdbTypedQueueOptions<JobData, JobReturnValue> =
+  NuQFdbBaseQueueOptions & {
+    decodeData: (raw: unknown) => JobData;
+    decodeReturnvalue: (raw: unknown) => JobReturnValue;
+  };
+
 type AddJobInput<Data> = {
   id: string;
   data: Data;
@@ -149,11 +184,72 @@ function externalStatus(s: NuqFdbJobStatus): NuQJobStatusCompat | null {
   return s;
 }
 
-function encodedJsonBytes(v: any): number {
+function isNuQJobStatusCompat(status: string): status is NuQJobStatusCompat {
+  return (
+    status === "queued" ||
+    status === "active" ||
+    status === "completed" ||
+    status === "failed" ||
+    status === "backlog"
+  );
+}
+
+function encodedJsonBytes(v: unknown): number {
   return Buffer.byteLength(JSON.stringify(v), "utf8");
 }
 
-export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
+function isNuQFdbDefaultWebhook(value: unknown): value is NuQFdbDefaultWebhook {
+  return (
+    isJsonObject(value) &&
+    (value.url === undefined || typeof value.url === "string")
+  );
+}
+
+// Shed ZDR/external-store jobs have no data chunks and read back as null,
+// matching PG's NULL data column.
+function isNuQFdbDefaultJobData(value: unknown): value is NuQFdbDefaultJobData {
+  if (value === null) {
+    return true;
+  }
+  return (
+    isJsonObject(value) &&
+    (value.mode === undefined || typeof value.mode === "string") &&
+    (value.url === undefined || typeof value.url === "string") &&
+    (value.v1 === undefined || typeof value.v1 === "boolean") &&
+    (value.webhook === undefined || isNuQFdbDefaultWebhook(value.webhook))
+  );
+}
+
+function decodeDefaultJobData(raw: unknown): NuQFdbDefaultJobData {
+  if (!isNuQFdbDefaultJobData(raw)) {
+    throw new Error("Invalid FDB job data payload");
+  }
+  return raw;
+}
+
+function isNuQFdbDefaultReturnValue(
+  value: unknown,
+): value is NuQFdbDefaultReturnValue {
+  if (value === null) {
+    return true;
+  }
+  return (
+    isJsonObject(value) &&
+    (value.blob === undefined || typeof value.blob === "string")
+  );
+}
+
+function decodeDefaultReturnValue(raw: unknown): NuQFdbDefaultReturnValue {
+  if (raw === undefined || raw === null) {
+    return null;
+  }
+  if (!isNuQFdbDefaultReturnValue(raw)) {
+    throw new Error("Invalid FDB job returnvalue payload");
+  }
+  return raw;
+}
+
+export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
   public readonly ks: NuqFdbKeyspace;
   public readonly groupOps: NuqFdbGroupOps | null;
   // worker-local lease expiry tracking so renewLock can stay a blind write
@@ -161,14 +257,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
 
   constructor(
     public readonly queueName: string,
-    public readonly options: {
-      // whether jobs in this queue participate in group (crawl) accounting
-      hasGroups: boolean;
-      // queue that group-finish jobs are emitted into (scrape -> crawl_finished)
-      finishedQueueName?: string;
-      // lease duration override, used by tests
-      leaseMs?: number;
-    },
+    public readonly options: NuQFdbTypedQueueOptions<JobData, JobReturnValue>,
   ) {
     this.ks = new NuqFdbKeyspace(queueName);
     this.groupOps = options.hasGroups
@@ -199,7 +288,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
 
   public async addJob(
     id: string,
-    data: JobData,
+    data: JobDataInput,
     options: NuQFdbJobOptions,
     gate: NuQFdbGate,
   ): Promise<NuQFdbJob<JobData, JobReturnValue>> {
@@ -208,7 +297,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
   }
 
   public async addJobs(
-    jobs: Array<AddJobInput<JobData>>,
+    jobs: Array<AddJobInput<JobDataInput>>,
     gate: NuQFdbGate,
     logger: Logger = _logger,
   ): Promise<Array<NuQFdbJob<JobData, JobReturnValue>>> {
@@ -224,7 +313,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       this.prepareAddJob(j, ownerId, gate.key?.id ?? null),
     );
     const results: Array<NuQFdbJob<JobData, JobReturnValue>> = [];
-    let batch: Array<PreparedAddJob<JobData>> = [];
+    let batch: Array<PreparedAddJob<JobDataInput>> = [];
     let batchBytes = 0;
 
     for (const job of prepared) {
@@ -266,10 +355,10 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
   }
 
   private prepareAddJob(
-    job: AddJobInput<JobData>,
+    job: AddJobInput<JobDataInput>,
     ownerId: string | null,
     keyId: string | null,
-  ): PreparedAddJob<JobData> {
+  ): PreparedAddJob<JobDataInput> {
     const dataBuf = Buffer.from(JSON.stringify(job.data ?? null), "utf8");
     const dataChunks = chunkBuffer(dataBuf, DATA_CHUNK_BYTES);
     const estimatedAffectedBytes = this.estimateEnqueueAffectedBytes(
@@ -287,7 +376,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
   }
 
   private estimateEnqueueAffectedBytes(
-    job: AddJobInput<JobData>,
+    job: AddJobInput<JobDataInput>,
     ownerId: string | null,
     keyId: string | null,
     dataChunks: Array<Buffer>,
@@ -395,23 +484,25 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
   }
 
   private async addJobsBatch(
-    jobs: Array<PreparedAddJob<JobData>>,
+    jobs: Array<PreparedAddJob<JobDataInput>>,
     ownerId: string | null,
     gate: NuQFdbGate,
   ): Promise<Array<NuQFdbJob<JobData, JobReturnValue>>> {
     const ks = this.ks;
+    const teamLimit = gate.teamLimit;
+    const keyGate = teamLimit !== null ? (gate.key ?? null) : null;
     return await this.db.doTn(async tn => {
       const txc = newTxContext();
       const now = Date.now();
       const out: Array<NuQFdbJob<JobData, JobReturnValue>> = [];
 
       let free = Infinity;
-      if (gate.teamLimit !== null && ownerId !== null) {
+      if (teamLimit !== null && ownerId !== null) {
         const storedBuf = await tn.get(ks.teamLimit(ownerId));
         const stored = storedBuf ? decodeI64(storedBuf) : null;
-        if (stored !== gate.teamLimit) {
-          tn.set(ks.teamLimit(ownerId), encodeI64(gate.teamLimit));
-          if (stored !== null && gate.teamLimit > stored) {
+        if (stored !== teamLimit) {
+          tn.set(ks.teamLimit(ownerId), encodeI64(teamLimit));
+          if (stored !== null && teamLimit > stored) {
             tn.set(ks.taskTeamRaise(ownerId), EMPTY);
           }
         }
@@ -426,27 +517,27 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         // big-limit teams tolerate a small admission overshoot in exchange for
         // a conflict-free read; small-limit teams get the strict read
         const active =
-          gate.teamLimit >= 256
+          teamLimit >= 256
             ? decodeI64(await tn.snapshot().get(ks.teamActive(ownerId)))
             : decodeI64(await tn.get(ks.teamActive(ownerId)));
-        free = Math.max(0, gate.teamLimit - active);
+        free = Math.max(0, teamLimit - active);
       }
 
       // API-key gate state; only meaningful inside the team-gated world
       let keyFree = Infinity;
-      const keyId = gate.teamLimit !== null && gate.key ? gate.key.id : null;
-      if (keyId !== null && gate.key) {
+      const keyId = keyGate ? keyGate.id : null;
+      if (keyId !== null && keyGate) {
         const storedBuf = await tn.get(ks.keyLimit(keyId));
         const stored = storedBuf ? decodeI64(storedBuf) : null;
-        if (stored !== gate.key.limit) {
-          tn.set(ks.keyLimit(keyId), encodeI64(gate.key.limit));
-          if (stored !== null && gate.key.limit > stored) {
+        if (stored !== keyGate.limit) {
+          tn.set(ks.keyLimit(keyId), encodeI64(keyGate.limit));
+          if (stored !== null && keyGate.limit > stored) {
             tn.set(ks.taskKeyRaise(keyId), EMPTY);
           }
         }
         // key limits are small by definition: always the strict read
         const kActive = decodeI64(await tn.get(ks.keyActive(keyId)));
-        keyFree = Math.max(0, gate.key.limit - kActive);
+        keyFree = Math.max(0, keyGate.limit - kActive);
       }
 
       // crawl gate state per distinct live group
@@ -459,9 +550,12 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           if (!gid || groupMetas.has(gid)) {
             continue;
           }
-          const gMeta = decodeJson<GroupMeta>(await tn.get(ks.groupMeta(gid)));
+          const gMeta = decodeJson(
+            await tn.get(ks.groupMeta(gid)),
+            isGroupMeta,
+          );
           groupMetas.set(gid, gMeta);
-          if (gMeta && gMeta.s === "active" && gate.teamLimit !== null) {
+          if (gMeta && gMeta.s === "active" && teamLimit !== null) {
             const effM = (gMeta.d ?? 0) > 0 ? 1 : gMeta.m;
             if (effM !== undefined) {
               const cact = decodeI64(await tn.get(ks.groupCrawlActive(gid)));
@@ -480,13 +574,16 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         const gid = j.options.groupId;
         const gMeta = gid ? groupMetas.get(gid) : null;
         const groupLive = !!gMeta && gMeta.s === "active";
-        const gated = gate.teamLimit !== null && !j.options.bypassGate;
-        const crawlGated = gated && !!gid && groupLive && crawlFree.has(gid);
-        const keyGated = gated && keyId !== null;
+        const gated = teamLimit !== null && !j.options.bypassGate;
+        const groupCrawlFree =
+          gated && gid && groupLive ? crawlFree.get(gid) : undefined;
+        const crawlGated = groupCrawlFree !== undefined;
+        const keyGated = gated && keyId !== null && keyGate !== null;
         const countable =
           this.options.hasGroups &&
           groupLive &&
-          (j.data as any)?.mode === "single_urls";
+          isJsonObject(j.data) &&
+          j.data.mode === "single_urls";
 
         let flags = 0;
         if (gated) {
@@ -544,24 +641,24 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           pushReady(tn, ks, entry, txc);
           setStatusQueued(tn, ks, j.id);
           placedStatus = "queued";
-        } else if (crawlGated && crawlFree.get(gid)! <= 0) {
+        } else if (crawlGated && gid && groupCrawlFree <= 0) {
           const loc = appendCrawlPending(tn, ks, entry);
           setStatusPending(tn, ks, j.id, loc);
           placedStatus = "pending";
           backlogLimit = crawlLimits.get(gid);
         } else if (keyGated && keyFree <= 0) {
           // holds the crawl slot (if any) while waiting in the key gate
-          if (crawlGated) {
-            crawlFree.set(gid, crawlFree.get(gid)! - 1);
+          if (crawlGated && gid) {
+            crawlFree.set(gid, groupCrawlFree - 1);
             crawlAcquired.set(gid, (crawlAcquired.get(gid) ?? 0) + 1);
           }
           const loc = appendKeyPending(tn, ks, entry);
           setStatusPending(tn, ks, j.id, loc);
           placedStatus = "pending";
-          backlogLimit = gate.key!.limit;
+          backlogLimit = keyGate.limit;
         } else {
-          if (crawlGated) {
-            crawlFree.set(gid, crawlFree.get(gid)! - 1);
+          if (crawlGated && gid) {
+            crawlFree.set(gid, groupCrawlFree - 1);
             crawlAcquired.set(gid, (crawlAcquired.get(gid) ?? 0) + 1);
           }
           if (keyGated) {
@@ -578,7 +675,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
             const loc = appendTeamPending(tn, ks, entry);
             setStatusPending(tn, ks, j.id, loc);
             placedStatus = "pending";
-            backlogLimit = gate.teamLimit!;
+            backlogLimit = teamLimit;
           }
         }
 
@@ -590,16 +687,19 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           }
         }
 
-        out.push({
+        const jobRecord: NuQFdbJob<JobData, JobReturnValue> = {
           id: j.id,
           status: placedStatus === "pending" ? "backlog" : "queued",
           createdAt: new Date(now),
           priority: entry.p,
-          data: j.data,
+          data: this.options.decodeData(j.data),
           ownerId: entry.o || undefined,
           groupId: gid,
-          ...(backlogLimit !== undefined ? { backlogLimit } : {}),
-        });
+        };
+        if (backlogLimit !== undefined) {
+          jobRecord.backlogLimit = backlogLimit;
+        }
+        out.push(jobRecord);
       }
 
       if (granted > 0 && ownerId !== null) {
@@ -643,7 +743,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         randomDropped++;
         continue;
       }
-      this.leaseExps.set(result.id, result.leaseExpiresAt!.getTime());
+      this.leaseExps.set(result.id, result.leaseExpiresAt.getTime());
       logger.debug("NuQ FDB dequeue attempt", {
         canonicalLog: "nuq-fdb/dequeue",
         queueName: this.queueName,
@@ -692,7 +792,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           fallbackDropped++;
           continue;
         }
-        this.leaseExps.set(result.id, result.leaseExpiresAt!.getTime());
+        this.leaseExps.set(result.id, result.leaseExpiresAt.getTime());
         logger.debug("NuQ FDB dequeue attempt", {
           canonicalLog: "nuq-fdb/dequeue",
           queueName: this.queueName,
@@ -731,7 +831,11 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
 
   private async takeFromShard(
     shard: number,
-  ): Promise<NuQFdbJob<JobData, JobReturnValue> | "empty" | "dropped"> {
+  ): Promise<
+    | (NuQFdbJob<JobData, JobReturnValue> & { leaseExpiresAt: Date })
+    | "empty"
+    | "dropped"
+  > {
     const ks = this.ks;
     return await this.db.doTn(async tn => {
       const txc = newTxContext();
@@ -742,25 +846,30 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         return "empty";
       }
       const [key, value] = head[0];
-      const e = decodeJson<QueueEntry>(value)!;
       tn.clear(key);
       tn.add(ks.readyShardCount(shard), MINUS_ONE);
+      const e = decodeJson(value, isQueueEntry);
+      if (!e) {
+        return "dropped";
+      }
 
-      const st = decodeJson<JobStatusRecord>(await tn.get(ks.jobStatus(e.i)));
+      const st = decodeJson(await tn.get(ks.jobStatus(e.i)), isJobStatusRecord);
       if (!st || st.s !== "queued") {
         // tombstone (removed job) -- slots were released by the remover
         return "dropped";
       }
 
       if (e.g && this.options.hasGroups) {
-        const gMeta = decodeJson<GroupMeta>(
+        const gMeta = decodeJson(
           await tn.snapshot().get(ks.groupMeta(e.g)),
+          isGroupMeta,
         );
         if (gMeta && gMeta.s === "cancelled") {
           // lazy cancellation: this job dies at take time
           if (e.f & F_GACC) {
-            const gj = decodeJson<GroupJobIndexValue>(
+            const gj = decodeJson(
               await tn.get(ks.groupJob(e.g, e.i)),
+              isGroupJobIndexValue,
             );
             if (gj) {
               tn.clear(ks.groupJob(e.g, e.i));
@@ -784,8 +893,9 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         }
       }
 
-      const meta = decodeJson<JobMeta>(
+      const meta = decodeJson(
         await tn.snapshot().get(ks.jobMeta(e.i)),
+        isJobMeta,
       );
       if (!meta) {
         return "dropped";
@@ -794,9 +904,10 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       const dataParts = await tn
         .snapshot()
         .getRangeAll(dataRange.begin, dataRange.end);
-      const data = JSON.parse(
+      const rawData: unknown = JSON.parse(
         Buffer.concat(dataParts.map(([, v]) => v)).toString("utf8"),
       );
+      const data = this.options.decodeData(rawData);
 
       const lock = randomUUID();
       const exp = now + (this.options.leaseMs ?? LEASE_MS);
@@ -843,8 +954,9 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         tn.set(ks.lease(timeBucket(id), newExp, id), encodeJson({ l: lock }));
         // the lease index moved, keep the status record's expiry in sync for
         // observability; only the worker holding the lock writes this
-        const st = decodeJson<JobStatusRecord>(
+        const st = decodeJson(
           await tn.snapshot().get(ks.jobStatus(id)),
+          isJobStatusRecord,
         );
         if (!st || st.s !== "active" || st.l !== lock) {
           throw new LockLostError();
@@ -867,7 +979,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
   public async jobFinish(
     id: string,
     lock: string,
-    returnvalue: JobReturnValue | null,
+    returnvalue: unknown,
     logger: Logger = _logger,
   ): Promise<boolean> {
     return this.finishOrFail(id, lock, "completed", returnvalue ?? null, null);
@@ -886,14 +998,14 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     id: string,
     lock: string,
     outcome: "completed" | "failed",
-    returnvalue: any,
+    returnvalue: unknown,
     failedReason: string | null,
   ): Promise<boolean> {
     const ks = this.ks;
     const ok = await this.db.doTn(async tn => {
       const txc = newTxContext();
       const now = Date.now();
-      const st = decodeJson<JobStatusRecord>(await tn.get(ks.jobStatus(id)));
+      const st = decodeJson(await tn.get(ks.jobStatus(id)), isJobStatusRecord);
       if (!st) {
         return false;
       }
@@ -904,7 +1016,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       if (st.s !== "active" || st.l !== lock) {
         return false;
       }
-      const meta = decodeJson<JobMeta>(await tn.get(ks.jobMeta(id)));
+      const meta = decodeJson(await tn.get(ks.jobMeta(id)), isJobMeta);
       if (!meta) {
         return false;
       }
@@ -1005,8 +1117,8 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       snap.get(ks.jobMeta(id)),
       snap.get(ks.jobStatus(id)),
     ]);
-    const meta = decodeJson<JobMeta>(metaBuf);
-    const st = decodeJson<JobStatusRecord>(stBuf);
+    const meta = decodeJson(metaBuf, isJobMeta);
+    const st = decodeJson(stBuf, isJobStatusRecord);
     if (!meta || !st) {
       return null;
     }
@@ -1017,24 +1129,25 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
 
     const dataRange = ks.jobDataRange(id);
     const dataParts = await snap.getRangeAll(dataRange.begin, dataRange.end);
-    const data =
+    const rawData: unknown =
       dataParts.length > 0
         ? JSON.parse(
             Buffer.concat(dataParts.map(([, v]) => v)).toString("utf8"),
           )
         : null;
+    const data = this.options.decodeData(rawData);
 
-    let returnvalue: any = undefined;
+    let returnvalue: JobReturnValue | undefined = undefined;
     if (st.s === "completed") {
       const rvRange = ks.jobReturnvalueRange(id);
       const rvParts = await snap.getRangeAll(rvRange.begin, rvRange.end);
-      if (rvParts.length > 0) {
-        returnvalue = JSON.parse(
-          Buffer.concat(rvParts.map(([, v]) => v)).toString("utf8"),
-        );
-      } else {
-        returnvalue = null;
-      }
+      const rawReturnvalue: unknown =
+        rvParts.length > 0
+          ? JSON.parse(
+              Buffer.concat(rvParts.map(([, v]) => v)).toString("utf8"),
+            )
+          : null;
+      returnvalue = this.options.decodeReturnvalue(rawReturnvalue);
     }
     let failedReason: string | undefined = undefined;
     if (st.s === "failed") {
@@ -1122,11 +1235,11 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     return await this.db.doTn(async tn => {
       const txc = newTxContext();
       const now = Date.now();
-      const st = decodeJson<JobStatusRecord>(await tn.get(ks.jobStatus(id)));
+      const st = decodeJson(await tn.get(ks.jobStatus(id)), isJobStatusRecord);
       if (!st || st.s === "cancelled") {
         return false;
       }
-      const meta = decodeJson<JobMeta>(await tn.get(ks.jobMeta(id)));
+      const meta = decodeJson(await tn.get(ks.jobMeta(id)), isJobMeta);
       if (!meta) {
         return false;
       }
@@ -1141,38 +1254,42 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         to: meta.to,
       };
       const countable = !!(meta.f & F_COUNTABLE);
-      const accounted = !!(meta.f & F_GACC) && !!meta.g && !!this.groupOps;
+      const accountedGroupId =
+        meta.f & F_GACC && this.groupOps ? meta.g : undefined;
 
       if (st.s === "pending") {
-        clearPendingPlacement(
-          tn,
-          ks,
-          id,
-          meta.o,
-          meta.g,
-          meta.k,
-          st.loc!,
-          meta.to,
-        );
-        // key-pending and delayed jobs hold a crawl slot; team-pending jobs
-        // hold a key slot on top
-        if (st.loc!.k !== "gq") {
-          await releaseSlotsAndPromote(
+        const loc = st.loc;
+        if (loc) {
+          clearPendingPlacement(
             tn,
             ks,
-            entry,
-            { team: false, key: st.loc!.k === "tq", crawl: true },
-            now,
-            txc,
+            id,
+            meta.o,
+            meta.g,
+            meta.k,
+            loc,
+            meta.to,
           );
-        }
-        if (accounted) {
-          tn.clear(ks.groupJob(meta.g!, id));
-          tn.add(ks.groupRemaining(meta.g!), MINUS_ONE);
-          if (countable) {
-            bumpGroupStatusCount(tn, ks, meta.g!, "pending", -1);
+          // key-pending and delayed jobs hold a crawl slot; team-pending jobs
+          // hold a key slot on top
+          if (loc.k !== "gq") {
+            await releaseSlotsAndPromote(
+              tn,
+              ks,
+              entry,
+              { team: false, key: loc.k === "tq", crawl: true },
+              now,
+              txc,
+            );
           }
-          tn.set(ks.taskGroupFinish(meta.g!), EMPTY);
+        }
+        if (accountedGroupId) {
+          tn.clear(ks.groupJob(accountedGroupId, id));
+          tn.add(ks.groupRemaining(accountedGroupId), MINUS_ONE);
+          if (countable) {
+            bumpGroupStatusCount(tn, ks, accountedGroupId, "pending", -1);
+          }
+          tn.set(ks.taskGroupFinish(accountedGroupId), EMPTY);
         }
         deleteJobRecords(tn, ks, id);
       } else if (st.s === "queued" || st.s === "active") {
@@ -1191,13 +1308,13 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           now,
           txc,
         );
-        if (accounted) {
-          tn.clear(ks.groupJob(meta.g!, id));
-          tn.add(ks.groupRemaining(meta.g!), MINUS_ONE);
+        if (accountedGroupId) {
+          tn.clear(ks.groupJob(accountedGroupId, id));
+          tn.add(ks.groupRemaining(accountedGroupId), MINUS_ONE);
           if (countable) {
-            bumpGroupStatusCount(tn, ks, meta.g!, st.s, -1);
+            bumpGroupStatusCount(tn, ks, accountedGroupId, st.s, -1);
           }
-          tn.set(ks.taskGroupFinish(meta.g!), EMPTY);
+          tn.set(ks.taskGroupFinish(accountedGroupId), EMPTY);
         }
         // status tombstone stays for take-side dedupe; sweeper GCs the records
         tn.set(
@@ -1210,10 +1327,10 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         );
       } else {
         // terminal: drop the records, like the PG row delete
-        if (accounted) {
-          tn.clear(ks.groupJob(meta.g!, id));
+        if (accountedGroupId) {
+          tn.clear(ks.groupJob(accountedGroupId, id));
           if (countable) {
-            bumpGroupStatusCount(tn, ks, meta.g!, st.s, -1);
+            bumpGroupStatusCount(tn, ks, accountedGroupId, st.s, -1);
           }
         }
         deleteJobRecords(tn, ks, id);
@@ -1237,13 +1354,13 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     id: string,
     timeout: number | null,
     logger: Logger = _logger,
-  ): Promise<JobReturnValue> {
+  ): Promise<JobReturnValue | null> {
     const ks = this.ks;
     const deadline = timeout !== null ? Date.now() + timeout : null;
     while (true) {
       const { st, watch } = await this.db.doTn(async tn => {
         const stBuf = await tn.get(ks.jobStatus(id));
-        const st = decodeJson<JobStatusRecord>(stBuf);
+        const st = decodeJson(stBuf, isJobStatusRecord);
         if (
           st &&
           (st.s === "completed" || st.s === "failed" || st.s === "cancelled")
@@ -1268,7 +1385,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         if (!job) {
           throw new Error("Job raced out while waiting for it");
         }
-        return job.returnvalue!;
+        return job.returnvalue ?? null;
       }
       if (st.s === "failed") {
         if (watch) {
@@ -1284,23 +1401,27 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         throw new Error("Job raced out while waiting for it");
       }
 
+      if (!watch) {
+        continue;
+      }
+
       const remaining = deadline !== null ? deadline - Date.now() : null;
       if (remaining !== null && remaining <= 0) {
-        watch!.cancel();
+        watch.cancel();
         throw new Error("Timed out");
       }
 
       const fired = await Promise.race([
-        watch!.promise.then(() => true),
-        new Promise<false>(resolve =>
+        watch.promise.then(() => true),
+        new Promise<false>(resolve => {
           setTimeout(
             () => resolve(false),
             remaining !== null ? Math.min(remaining, 30_000) : 30_000,
-          ),
-        ),
+          );
+        }),
       ]);
       if (!fired) {
-        watch!.cancel();
+        watch.cancel();
         if (deadline !== null && Date.now() >= deadline) {
           throw new Error("Timed out");
         }
@@ -1330,8 +1451,8 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         const n = Math.max(0, decodeI64(value));
         if (status === "pending") {
           out.backlog += n;
-        } else if (status in out) {
-          out[status as NuQJobStatusCompat] += n;
+        } else if (isNuQJobStatusCompat(status)) {
+          out[status] += n;
         }
       }
       return out;
@@ -1347,7 +1468,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     const owner = normalizeOwnerId(ownerId);
     const candidateId = await this.db.doTn(async tn => {
       const r = ks.groupJobRange(groupId);
-      let begin: Buffer | FdbKeySelector = r.begin;
+      let begin: Buffer | KeySelector<Buffer> = r.begin;
       // scan for the first countable (single_urls) member
       for (let scanned = 0; scanned < 2000; ) {
         const batch = await tn
@@ -1357,7 +1478,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           return null;
         }
         for (const [key, value] of batch) {
-          const gj = decodeJson<GroupJobIndexValue>(value);
+          const gj = decodeJson(value, isGroupJobIndexValue);
           if (gj?.m === 1) {
             return ks.unpackId(key);
           }
@@ -1402,14 +1523,14 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       const r = ks.groupJobRange(groupId);
       const ids: Array<string> = [];
       const target = limit === undefined ? Infinity : offset + limit;
-      let begin: Buffer | FdbKeySelector = r.begin;
+      let begin: Buffer | KeySelector<Buffer> = r.begin;
 
       while (ids.length < target) {
         const rows = await this.db.doTn(async tn =>
-          tn.snapshot().getRangeAll(begin as any, r.end, { limit: 500 }),
+          tn.snapshot().getRangeAll(begin, r.end, { limit: 500 }),
         );
         for (const [key, value] of rows) {
-          const groupJob = decodeJson<GroupJobIndexValue>(value);
+          const groupJob = decodeJson(value, isGroupJobIndexValue);
           if (groupJob?.m === 1 && groupJob.s === "failed") {
             ids.push(ks.unpackId(key));
             if (ids.length === target) {
@@ -1582,6 +1703,20 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         status => `${metricName}{status="${status}"} ${statusCounts[status]}`,
       )
       .join("\n")}\n`;
+  }
+}
+
+export class NuQFdbQueue extends TypedNuQFdbQueue<
+  NuQFdbDefaultJobData,
+  NuQFdbDefaultReturnValue,
+  JsonObject
+> {
+  constructor(queueName: string, options: NuQFdbBaseQueueOptions) {
+    super(queueName, {
+      ...options,
+      decodeData: decodeDefaultJobData,
+      decodeReturnvalue: decodeDefaultReturnValue,
+    });
   }
 }
 

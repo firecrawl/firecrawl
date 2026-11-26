@@ -28,35 +28,86 @@ import {
 } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
 import { finalizeResponse, service } from "../../service";
-import type { RequestContext, SettleOutcome } from "../../service";
+import type {
+  RequestContext,
+  ResponsePayload,
+  SettleOutcome,
+} from "../../service";
 import type { BillingMetadata } from "../../lib/billing-types";
+import { isJsonObject } from "../../lib/json-types";
+import type { InternalOptions } from "../../scraper/scrapeURL";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
+interface AgentInteropPayload {
+  shouldBill?: boolean;
+  requestId?: string;
+  boostConcurrency?: boolean;
+}
+
+type ScrapeOptionsWithCache = ScrapeRequest & {
+  maxAge?: number;
+};
+
+function readAgentInterop(body: unknown): AgentInteropPayload | undefined {
+  if (!isJsonObject(body) || !isJsonObject(body.__agentInterop)) {
+    return undefined;
+  }
+  const raw = body.__agentInterop;
+  return {
+    shouldBill:
+      typeof raw.shouldBill === "boolean" ? raw.shouldBill : undefined,
+    requestId: typeof raw.requestId === "string" ? raw.requestId : undefined,
+    boostConcurrency:
+      typeof raw.boostConcurrency === "boolean"
+        ? raw.boostConcurrency
+        : undefined,
+  };
+}
+
+function readBooleanField(source: unknown, key: string): boolean {
+  return isJsonObject(source) && source[key] === true;
+}
+
+function readNumberField(source: unknown, key: string): number | undefined {
+  if (!isJsonObject(source)) {
+    return undefined;
+  }
+  const value = source[key];
+  return typeof value === "number" ? value : undefined;
+}
+
+function readStringField(source: unknown, key: string): string | undefined {
+  if (!isJsonObject(source)) {
+    return undefined;
+  }
+  const value = source[key];
+  return typeof value === "string" ? value : undefined;
+}
+
 export async function scrapeController(
-  req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
-  res: Response<ScrapeResponse>,
+  req: RequestWithAuth<Record<string, string>, ScrapeResponse, ScrapeRequest>,
+  res: Response<ScrapeResponse | ResponsePayload>,
 ) {
-  const rawBody = req.body as Record<string, any> | undefined;
   const zeroDataRetentionTrace =
     req.ctx?.zeroDataRetention === true ||
     req.body?.zeroDataRetention === true ||
-    rawBody?.lockdown === true;
+    readBooleanField(req.body, "lockdown");
 
   return withSpan(
     "api.scrape.request",
     async span => {
       // Get timing data from middleware (includes all middleware processing time)
       const middlewareStartTime =
-        (req as any).requestTiming?.startTime || new Date().getTime();
+        req.requestTiming?.startTime || new Date().getTime();
       const controllerStartTime = new Date().getTime();
 
       const jobId = req.requestId ?? uuidv7();
-      const preNormalizedBody = (req.rawRequestBody as
-        | Partial<ScrapeRequest>
-        | undefined) ?? {
-        ...req.body,
-      };
+      const preNormalizedBody = isJsonObject(req.rawRequestBody)
+        ? req.rawRequestBody
+        : { ...req.body };
+      const unnormalizedSourceURL =
+        readStringField(req.rawRequestBody, "url") ?? req.body.url;
 
       // Set initial span attributes
       setSpanAttributes(span, {
@@ -75,13 +126,14 @@ export async function scrapeController(
           });
         });
       }
-      const extBody = req.body as Record<string, any>;
+      const agentInterop = readAgentInterop(req.body);
 
       const zeroDataRetention =
         req.ctx?.zeroDataRetention ??
-        ((req.body.zeroDataRetention ?? false) || (extBody.lockdown ?? false));
+        ((req.body.zeroDataRetention ?? false) ||
+          readBooleanField(req.body, "lockdown"));
       const billing: BillingMetadata = req.ctx?.billing ?? {
-        ...(extBody.__agentInterop
+        ...(agentInterop
           ? { endpoint: "agent" as const, jobId }
           : { endpoint: "scrape" as const, jobId }),
         hostedMcp: req.auth.hostedMcp,
@@ -102,10 +154,9 @@ export async function scrapeController(
           });
       req.ctx = ctx;
 
-      const shouldBill = extBody.__agentInterop?.shouldBill ?? true;
-      const agentRequestId = extBody.__agentInterop?.requestId ?? null;
-      const boostConcurrency =
-        extBody.__agentInterop?.boostConcurrency ?? false;
+      const shouldBill = agentInterop?.shouldBill ?? true;
+      const agentRequestId = agentInterop?.requestId ?? null;
+      const boostConcurrency = agentInterop?.boostConcurrency ?? false;
       const reservation = await service.modules.billing.authorize({
         caller: req.caller ?? { teamId: req.auth.team_id },
         operation: "scrape",
@@ -128,7 +179,7 @@ export async function scrapeController(
         }
         return res
           .status(reservation.refusal.status)
-          .json(reservation.refusal.body as ScrapeResponse);
+          .json(reservation.refusal.body);
       }
       const billingHandle = reservation.handle;
       let settledBilling = false;
@@ -152,7 +203,7 @@ export async function scrapeController(
             await service.modules.billing.settle?.(billingHandle, outcome);
             settledBilling = true;
             return;
-          } catch (settleError) {
+          } catch (settleError: unknown) {
             if (attempt === 1) {
               logger.error("Failed to settle billing reservation", {
                 teamId: req.auth.team_id,
@@ -175,7 +226,7 @@ export async function scrapeController(
         account: req.account,
       });
 
-      let logRequestPromise: Promise<any> | undefined = undefined;
+      let logRequestPromise: Promise<void> | undefined;
 
       if (!agentRequestId) {
         logRequestPromise = service.modules.jobStore
@@ -185,12 +236,12 @@ export async function scrapeController(
             ctx,
             clientOrigin: req.body.origin ?? "api",
           })
-          .catch(error =>
+          .catch((error: unknown) => {
             logger.error("Background job registration failed", {
               error,
               jobId,
-            }),
-          );
+            });
+          });
       }
 
       setSpanAttributes(span, {
@@ -265,6 +316,32 @@ export async function scrapeController(
                 });
 
                 const threatProtection = contextThreatProtection(ctx);
+                const jobScrapeOptions: ScrapeOptionsWithCache = {
+                  ...req.body,
+                };
+                if (readBooleanField(req.body, "__experimental_cache")) {
+                  jobScrapeOptions.maxAge =
+                    readNumberField(req.body, "maxAge") ?? 4 * 60 * 60 * 1000; // 4 hours
+                }
+                const internalOptions: InternalOptions = {
+                  ctx,
+                  teamId: req.auth.team_id,
+                  unnormalizedSourceURL,
+                  bypassBilling:
+                    reservation.bypassBilling === true || !shouldBill,
+                  zeroDataRetention,
+                  teamFlags: req.acuc?.flags ?? null,
+                  orgId: req.acuc?.org_id ?? null,
+                  teamConcurrency: baseConcurrency,
+                  agentIndexOnly: readBooleanField(req, "agentIndexOnly"),
+                };
+                if (req.headers["x-firecrawl-work-contact-only"] === "true") {
+                  internalOptions.workContactOnly = true;
+                }
+                if (threatProtection !== undefined) {
+                  // Rolling-deploy compatibility dual-write alongside the ctx fallback.
+                  internalOptions.threatProtection = threatProtection;
+                }
                 const job: NuQJob<ScrapeJobData> = {
                   id: jobId,
 
@@ -276,34 +353,8 @@ export async function scrapeController(
                     mode: "single_urls",
                     ctx,
                     team_id: req.auth.team_id,
-                    scrapeOptions: {
-                      ...req.body,
-                      ...((req.body as any).__experimental_cache
-                        ? {
-                            maxAge: extBody.maxAge ?? 4 * 60 * 60 * 1000, // 4 hours
-                          }
-                        : {}),
-                    },
-                    internalOptions: {
-                      ctx,
-                      teamId: req.auth.team_id,
-                      unnormalizedSourceURL: preNormalizedBody.url,
-                      bypassBilling:
-                        reservation.bypassBilling === true || !shouldBill,
-                      zeroDataRetention,
-                      ...(req.headers["x-firecrawl-work-contact-only"] ===
-                      "true"
-                        ? { workContactOnly: true }
-                        : {}),
-                      teamFlags: req.acuc?.flags ?? null,
-                      orgId: req.acuc?.org_id ?? null,
-                      teamConcurrency: baseConcurrency,
-                      agentIndexOnly: (req as any).agentIndexOnly ?? false,
-                      // Rolling-deploy compatibility dual-write alongside the ctx fallback.
-                      ...(threatProtection !== undefined
-                        ? { threatProtection }
-                        : {}),
-                    },
+                    scrapeOptions: jobScrapeOptions,
+                    internalOptions,
                     skipNuq: true,
                     origin,
                     integration: req.body.integration,
@@ -332,7 +383,7 @@ export async function scrapeController(
           },
           ctx,
         );
-      } catch (error) {
+      } catch (error: unknown) {
         void settleBilling({ ok: false });
 
         const timeoutErr =
@@ -546,10 +597,25 @@ export async function scrapeController(
         concurrencyQueueDurationMs: lockTime || undefined,
       });
 
+      if (!doc) {
+        const id = uuidv7();
+        logger.error("Scrape completed without document", {
+          version: "v2",
+          scrapeId: jobId,
+          errorId: id,
+          teamId: req.auth.team_id,
+        });
+        return res.status(500).json({
+          success: false,
+          code: "UNKNOWN_ERROR",
+          error: service.modules.messages.errorContact(id),
+        });
+      }
+
       const responseDocument: Document = {
-        ...doc!,
+        ...doc,
         metadata: {
-          ...doc!.metadata,
+          ...doc.metadata,
           concurrencyLimited,
           concurrencyQueueDurationMs: concurrencyLimited
             ? lockTime || 0
@@ -566,7 +632,7 @@ export async function scrapeController(
         },
         [responseDocument],
       );
-      return res.status(200).json(payload as ScrapeResponse);
+      return res.status(200).json(payload);
     },
     {
       attributes: {

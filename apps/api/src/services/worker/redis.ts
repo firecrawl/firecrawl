@@ -57,16 +57,44 @@ type ScriptHashes = {
   };
 };
 
-const scripts: ScriptHashes = {} as ScriptHashes;
+const scripts: ScriptHashes = {
+  semaphore: {
+    acquire: "",
+    release: "",
+    heartbeat: "",
+  },
+};
 
-const redis = new IORedis(config.REDIS_URL!, {
+const SEMAPHORE_SCRIPT_NAMES = ["acquire", "release", "heartbeat"] as const;
+
+const redisOptions = {
   lazyConnect: true,
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
   enableAutoPipelining: true,
-});
+};
+
+const redis = config.REDIS_URL
+  ? new IORedis(config.REDIS_URL, redisOptions)
+  : new IORedis(redisOptions);
 
 let initPromise: Promise<void> | null = null;
+
+async function loadScript(source: string): Promise<string> {
+  const hash = await redis.script("LOAD", source);
+  if (typeof hash !== "string") {
+    throw new Error("Redis SCRIPT LOAD did not return a hash string");
+  }
+  return hash;
+}
+
+async function loadSemaphoreScripts(onlyMissing: boolean): Promise<void> {
+  for (const name of SEMAPHORE_SCRIPT_NAMES) {
+    if (!onlyMissing || !scripts.semaphore[name]) {
+      scripts.semaphore[name] = await loadScript(luaScripts.semaphore[name]);
+    }
+  }
+}
 
 export const ensureRedis = async () => {
   if (initPromise) {
@@ -75,19 +103,7 @@ export const ensureRedis = async () => {
 
   // If Redis is already connected/ready, just load scripts if needed
   if (redis.status === "ready") {
-    initPromise = (async () => {
-      for (const [k, v] of Object.entries(luaScripts)) {
-        if (!scripts[k]) {
-          scripts[k] = {};
-        }
-        for (const [k2, v2] of Object.entries(v)) {
-          if (!scripts[k][k2]) {
-            const h = await redis.script("LOAD", v2);
-            scripts[k][k2] = h as string;
-          }
-        }
-      }
-    })();
+    initPromise = loadSemaphoreScripts(true);
     return initPromise;
   }
 
@@ -113,15 +129,9 @@ export const ensureRedis = async () => {
       throw new Error(`Redis in unexpected state: ${redis.status}`);
     }
 
-    for (const [k, v] of Object.entries(luaScripts)) {
-      scripts[k] = {};
-      for (const [k2, v2] of Object.entries(v)) {
-        const h = await redis.script("LOAD", v2);
-        scripts[k][k2] = h as string;
-      }
-    }
+    await loadSemaphoreScripts(false);
     logger.info("Redis connected and scripts loaded");
-  })().catch(error => {
+  })().catch((error: unknown) => {
     initPromise = null;
     throw error;
   });
@@ -130,8 +140,8 @@ export const ensureRedis = async () => {
 
 export const shutdownRedis = async () => {
   initPromise = null;
-  for (const key of Object.keys(scripts) as Array<keyof ScriptHashes>) {
-    scripts[key] = {} as ScriptHashes[typeof key];
+  for (const name of SEMAPHORE_SCRIPT_NAMES) {
+    scripts.semaphore[name] = "";
   }
 
   if (redis.status === "wait" || redis.status === "end") {
@@ -140,7 +150,7 @@ export const shutdownRedis = async () => {
 
   try {
     await redis.quit();
-  } catch (error) {
+  } catch (error: unknown) {
     logger.warn("Error while closing NuQ Redis connection", { err: error });
     redis.disconnect();
   }
@@ -155,15 +165,17 @@ export const semaphoreKeys = (teamId: string) => {
 async function runScript<T>(
   hash: string,
   keys: Array<string>,
-  args?: Array<string | number>,
+  args: Array<string | number> | undefined,
+  parse: (result: unknown) => T,
 ): Promise<T> {
   await ensureRedis();
-  return (await redis.evalsha(
+  const result = await redis.evalsha(
     hash,
     keys.length,
     ...keys,
     ...(args || []),
-  )) as T;
+  );
+  return parse(result);
 }
 
 type NuQRedis = Redis & {

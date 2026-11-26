@@ -1,5 +1,6 @@
 import undici from "undici";
 import { createHmac, randomUUID } from "node:crypto";
+import type { Logger } from "winston";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import {
@@ -46,11 +47,22 @@ type WebhookSenderContext = {
   zeroDataRetention?: boolean;
 };
 
+type WebhookPayload = {
+  success: boolean;
+  type: WebhookEvent;
+  id?: string;
+  jobId?: string;
+  webhookId: string;
+  data: unknown;
+  error?: string;
+  metadata?: Record<string, string>;
+};
+
 export class WebhookSender {
   private config: WebhookConfig;
   private secret?: string;
   private context: WebhookSenderContext;
-  private logger: any;
+  private logger: Logger;
 
   constructor(
     config: WebhookConfig,
@@ -76,22 +88,31 @@ export class WebhookSender {
       return { attempted: false, skipped: true };
     }
 
-    const payload = {
-      success: data.success,
-      type: event,
-      [this.context.v0 ? "jobId" : "id"]: this.context.jobId,
-      webhookId: randomUUID(), // Unique ID for this webhook delivery (used for e.g. retries)
-      data: "data" in data ? data.data : [],
-      error: "error" in data ? data.error : undefined,
-      metadata: this.config.metadata || undefined,
-    };
+    const eventData: WebhookEventDataMap[WebhookEvent] = data;
+    const payload: WebhookPayload = this.context.v0
+      ? {
+          success: eventData.success,
+          type: event,
+          jobId: this.context.jobId,
+          webhookId: randomUUID(), // Unique ID for this webhook delivery (used for e.g. retries)
+          data: "data" in eventData ? eventData.data : [],
+          error: "error" in eventData ? eventData.error : undefined,
+          metadata: this.config.metadata || undefined,
+        }
+      : {
+          success: eventData.success,
+          type: event,
+          id: this.context.jobId,
+          webhookId: randomUUID(), // Unique ID for this webhook delivery (used for e.g. retries)
+          data: "data" in eventData ? eventData.data : [],
+          error: "error" in eventData ? eventData.error : undefined,
+          metadata: this.config.metadata || undefined,
+        };
 
-    const delivery = this.deliver(
-      payload,
-      (data as any)?.scrapeId ?? undefined,
-    );
+    const scrapeId = "scrapeId" in eventData ? eventData.scrapeId : undefined;
+    const delivery = this.deliver(payload, scrapeId);
 
-    if (data.awaitWebhook) {
+    if (eventData.awaitWebhook) {
       return { attempted: true, ...(await delivery) };
     }
 
@@ -111,7 +132,7 @@ export class WebhookSender {
   }
 
   private async deliver(
-    payload: any,
+    payload: WebhookPayload,
     scrapeId?: string,
   ): Promise<Omit<WebhookSendResult, "attempted">> {
     const webhookHost = new URL(this.config.url).hostname;
@@ -139,7 +160,7 @@ export class WebhookSender {
 
     const send = async (): Promise<WebhookResponse> => {
       const payloadString = JSON.stringify(payload);
-      const headers: Record<string, string> = {
+      const headers = {
         "Content-Type": "application/json",
         ...this.config.headers,
       };
@@ -173,7 +194,7 @@ export class WebhookSender {
         }
 
         return { ok: res.ok, status: res.status };
-      } catch (error) {
+      } catch (error: unknown) {
         this.logger.error("Failed to send webhook", {
           error,
           webhookHost,

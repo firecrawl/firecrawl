@@ -27,10 +27,17 @@ import {
 } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
 import { finalizeResponse, service } from "../../service";
-import type { RequestContext, SettleOutcome } from "../../service";
+import type {
+  RequestContext,
+  ResponsePayload,
+  SettleOutcome,
+} from "../../service";
 import type { EngineName } from "../../service/engines";
 import { installedService } from "../../service/service";
 import type { BillingMetadata } from "../../lib/billing-types";
+import { isJsonObject } from "../../lib/json-types";
+import type { JsonObject } from "../../lib/json-types";
+import type { InternalOptions } from "../../scraper/scrapeURL";
 import path from "node:path";
 import {
   DOCUMENT_EXTENSIONS,
@@ -153,26 +160,50 @@ function getParseForceEngine(
   return "fetch";
 }
 
-function sanitizeParseRequestForLogs(
-  body: ParseRequest | Record<string, unknown>,
-): Record<string, unknown> {
-  const file =
-    typeof body === "object" && body !== null && "file" in body
-      ? (body as any).file
-      : null;
+interface AgentInteropPayload {
+  shouldBill?: boolean;
+  requestId?: string;
+  boostConcurrency?: boolean;
+}
 
-  if (!file || typeof file !== "object") {
+function readAgentInterop(body: unknown): AgentInteropPayload | undefined {
+  if (!isJsonObject(body) || !isJsonObject(body.__agentInterop)) {
+    return undefined;
+  }
+  const raw = body.__agentInterop;
+  return {
+    shouldBill:
+      typeof raw.shouldBill === "boolean" ? raw.shouldBill : undefined,
+    requestId: typeof raw.requestId === "string" ? raw.requestId : undefined,
+    boostConcurrency:
+      typeof raw.boostConcurrency === "boolean"
+        ? raw.boostConcurrency
+        : undefined,
+  };
+}
+
+function readBooleanField(source: unknown, key: string): boolean {
+  return isJsonObject(source) && source[key] === true;
+}
+
+function sanitizeParseRequestForLogs(body: unknown): JsonObject {
+  if (!isJsonObject(body)) {
+    return {};
+  }
+  const { file, ...rest } = body;
+  if (!isJsonObject(file)) {
     return body;
   }
-
+  const sanitizedFile: JsonObject = {
+    filename: typeof file.filename === "string" ? file.filename : undefined,
+    contentType:
+      typeof file.contentType === "string" ? file.contentType : undefined,
+    kind: typeof file.kind === "string" ? file.kind : undefined,
+    size: Buffer.isBuffer(file.buffer) ? file.buffer.length : undefined,
+  };
   return {
-    ...body,
-    file: {
-      filename: file.filename,
-      contentType: file.contentType,
-      kind: file.kind,
-      size: Buffer.isBuffer(file.buffer) ? file.buffer.length : undefined,
-    },
+    ...rest,
+    file: sanitizedFile,
   };
 }
 
@@ -220,8 +251,9 @@ export function parseMultipartPayloadMiddleware(
     return;
   }
 
-  let optionsPayload: Record<string, unknown> = {};
-  const rawOptions = req.body?.options;
+  let optionsPayload: JsonObject = {};
+  const rawBody: unknown = req.body;
+  const rawOptions = isJsonObject(rawBody) ? rawBody.options : undefined;
 
   if (rawOptions !== undefined) {
     if (typeof rawOptions !== "string") {
@@ -234,8 +266,8 @@ export function parseMultipartPayloadMiddleware(
     }
 
     try {
-      const parsed = JSON.parse(rawOptions);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      const parsed: unknown = JSON.parse(rawOptions);
+      if (!isJsonObject(parsed)) {
         res.status(400).json({
           success: false,
           code: "BAD_REQUEST",
@@ -243,7 +275,7 @@ export function parseMultipartPayloadMiddleware(
         });
         return;
       }
-      optionsPayload = parsed as Record<string, unknown>;
+      optionsPayload = parsed;
     } catch {
       res.status(400).json({
         success: false,
@@ -284,8 +316,8 @@ export function parseMultipartPayloadMiddleware(
 }
 
 export async function parseController(
-  req: RequestWithAuth<{}, ScrapeResponse, ParseRequest>,
-  res: Response<ScrapeResponse>,
+  req: RequestWithAuth<Record<string, string>, ScrapeResponse, ParseRequest>,
+  res: Response<ScrapeResponse | ResponsePayload>,
 ) {
   const zeroDataRetentionTrace =
     req.ctx?.zeroDataRetention === true || req.body?.zeroDataRetention === true;
@@ -294,7 +326,7 @@ export async function parseController(
     "api.parse.request",
     async span => {
       const middlewareStartTime =
-        (req as any).requestTiming?.startTime || new Date().getTime();
+        req.requestTiming?.startTime || new Date().getTime();
       const controllerStartTime = new Date().getTime();
 
       const jobId = req.requestId ?? uuidv7();
@@ -333,7 +365,9 @@ export async function parseController(
         });
       }
 
-      const forceEngine = getParseForceEngine(req.body.file.kind!);
+      const forceEngine = req.body.file.kind
+        ? getParseForceEngine(req.body.file.kind)
+        : undefined;
       if (!forceEngine) {
         const unsupportedFileError = `Unsupported upload type. Supported file extensions: ${getSupportedParseFileTypes(false)}`;
         setSpanAttributes(span, {
@@ -347,11 +381,11 @@ export async function parseController(
         });
       }
 
-      const extBody = req.body as Record<string, any>;
+      const agentInterop = readAgentInterop(req.body);
       const zeroDataRetention =
         req.ctx?.zeroDataRetention ?? req.body.zeroDataRetention ?? false;
       const billing: BillingMetadata = req.ctx?.billing ?? {
-        ...(extBody.__agentInterop
+        ...(agentInterop
           ? { endpoint: "agent" as const, jobId }
           : { endpoint: "parse" as const, jobId }),
         hostedMcp: req.auth.hostedMcp,
@@ -372,10 +406,9 @@ export async function parseController(
           });
       req.ctx = ctx;
 
-      const shouldBill = extBody.__agentInterop?.shouldBill ?? true;
-      const agentRequestId = extBody.__agentInterop?.requestId ?? null;
-      const boostConcurrency =
-        extBody.__agentInterop?.boostConcurrency ?? false;
+      const shouldBill = agentInterop?.shouldBill ?? true;
+      const agentRequestId = agentInterop?.requestId ?? null;
+      const boostConcurrency = agentInterop?.boostConcurrency ?? false;
       const reservation = await service.modules.billing.authorize({
         caller: req.caller ?? { teamId: req.auth.team_id },
         operation: "parse",
@@ -398,7 +431,7 @@ export async function parseController(
         }
         return res
           .status(reservation.refusal.status)
-          .json(reservation.refusal.body as ScrapeResponse);
+          .json(reservation.refusal.body);
       }
       const billingHandle = reservation.handle;
       let settledBilling = false;
@@ -422,7 +455,7 @@ export async function parseController(
             await service.modules.billing.settle?.(billingHandle, outcome);
             settledBilling = true;
             return;
-          } catch (settleError) {
+          } catch (settleError: unknown) {
             if (attempt === 1) {
               logger.error("Failed to settle billing reservation", {
                 teamId: req.auth.team_id,
@@ -514,6 +547,25 @@ export async function parseController(
                 });
 
                 const threatProtection = contextThreatProtection(ctx);
+                const internalOptions: InternalOptions = {
+                  ctx,
+                  teamId: req.auth.team_id,
+                  unnormalizedSourceURL: file.filename,
+                  bypassBilling:
+                    reservation.bypassBilling === true || !shouldBill,
+                  zeroDataRetention,
+                  teamFlags: req.acuc?.flags ?? null,
+                  orgId: req.acuc?.org_id ?? null,
+                  teamConcurrency: baseConcurrency,
+                  uploadedFile: file,
+                  forceEngine,
+                  isParse: true,
+                  agentIndexOnly: readBooleanField(req, "agentIndexOnly"),
+                };
+                if (threatProtection !== undefined) {
+                  // Rolling-deploy compatibility dual-write alongside the ctx fallback.
+                  internalOptions.threatProtection = threatProtection;
+                }
                 const job: NuQJob<ScrapeJobData> = {
                   id: jobId,
                   status: "active",
@@ -529,25 +581,7 @@ export async function parseController(
                       maxAge: 0,
                       storeInCache: false,
                     } as ScrapeOptions,
-                    internalOptions: {
-                      ctx,
-                      teamId: req.auth.team_id,
-                      unnormalizedSourceURL: file.filename,
-                      bypassBilling:
-                        reservation.bypassBilling === true || !shouldBill,
-                      zeroDataRetention,
-                      teamFlags: req.acuc?.flags ?? null,
-                      orgId: req.acuc?.org_id ?? null,
-                      teamConcurrency: baseConcurrency,
-                      uploadedFile: file,
-                      forceEngine,
-                      isParse: true,
-                      agentIndexOnly: (req as any).agentIndexOnly ?? false,
-                      // Rolling-deploy compatibility dual-write alongside the ctx fallback.
-                      ...(threatProtection !== undefined
-                        ? { threatProtection }
-                        : {}),
-                    },
+                    internalOptions,
                     skipNuq: true,
                     origin,
                     integration: req.body.integration,
@@ -575,7 +609,7 @@ export async function parseController(
           },
           ctx,
         );
-      } catch (error) {
+      } catch (error: unknown) {
         await settleBilling({ ok: false });
 
         const timeoutErr =
@@ -727,10 +761,25 @@ export async function parseController(
         concurrencyQueueDurationMs: lockTime || undefined,
       });
 
+      if (!doc) {
+        const id = uuidv7();
+        logger.error("Parse completed without document", {
+          version: "v2",
+          parseId: jobId,
+          errorId: id,
+          teamId: req.auth.team_id,
+        });
+        return res.status(500).json({
+          success: false,
+          code: "UNKNOWN_ERROR",
+          error: service.modules.messages.errorContact(id),
+        });
+      }
+
       const responseDocument: Document = {
-        ...doc!,
+        ...doc,
         metadata: {
-          ...doc!.metadata,
+          ...doc.metadata,
           concurrencyLimited,
           concurrencyQueueDurationMs: concurrencyLimited
             ? lockTime || 0
@@ -746,7 +795,7 @@ export async function parseController(
         },
         [responseDocument],
       );
-      return res.status(200).json(payload as ScrapeResponse);
+      return res.status(200).json(payload);
     },
     {
       attributes: {

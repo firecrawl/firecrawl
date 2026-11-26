@@ -29,7 +29,7 @@ type QueueStatusResponse = {
 const FDB_OPTIONAL_COUNT_TIMEOUT_MS = 500;
 
 export async function queueStatusController(
-  req: RequestWithAuth<{}, undefined, QueueStatusResponse>,
+  req: RequestWithAuth<Record<string, string>, undefined, QueueStatusResponse>,
   res: Response<QueueStatusResponse>,
 ) {
   const ctx = requestContext({
@@ -66,7 +66,7 @@ export async function queueStatusController(
         activeJobsOfTeam += fdbActive;
         queuedJobsOfTeam += fdbPending;
       }
-    } catch (error) {
+    } catch (error: unknown) {
       logger.warn("Failed to read FDB queue counts, falling back to Redis", {
         module: "queue-status",
         version: "v2",

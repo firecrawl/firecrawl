@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { BaseScrapeOptions } from "../controllers/v2/types";
 import type { ScrapeJobData } from "../types";
 
 const mocks = vi.hoisted(() => {
@@ -151,6 +152,19 @@ function installHooks(hooks?: HookHandlers, report = vi.fn()) {
   return report;
 }
 
+const defaultScrapeOptions: BaseScrapeOptions = {
+  formats: [{ type: "markdown" }],
+  onlyMainContent: true,
+  onlyCleanContent: false,
+  waitFor: 0,
+  mobile: false,
+  removeBase64Images: true,
+  fastMode: false,
+  blockAds: true,
+  proxy: "auto",
+  checkPromptInjection: false,
+};
+
 function makeScrapeJob(
   overrides: Partial<Extract<ScrapeJobData, { mode: "single_urls" }>> = {},
 ): ScrapeJobData {
@@ -161,7 +175,7 @@ function makeScrapeJob(
     zeroDataRetention: false,
     origin: "api",
     apiKeyId: 12,
-    scrapeOptions: {} as any,
+    scrapeOptions: defaultScrapeOptions,
     ctx: requestContext({
       teamId: "team-1",
       zeroDataRetention: false,
@@ -286,8 +300,11 @@ describe("queue and concurrency hooks", () => {
 
     await concurrentJobDone({
       id: "active-2",
+      status: "active",
+      createdAt: new Date(),
+      priority: 0,
       data: queuedJob,
-    } as any);
+    });
 
     expect(events).toEqual([
       "limited:team-1:2",

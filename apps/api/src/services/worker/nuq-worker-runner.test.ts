@@ -17,7 +17,7 @@ vi.mock("../../otel", () => ({
 }));
 
 vi.mock("../../lib/otel-tracer", () => ({
-  withZeroDataRetention: (_zdr: boolean, fn: () => unknown) => fn(),
+  withZeroDataRetention: <T>(_zdr: boolean, fn: () => T): T => fn(),
 }));
 
 vi.mock("../../lib/logger", () => ({

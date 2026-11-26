@@ -1,10 +1,11 @@
 import type { z } from "zod";
 import type { webhookSchema } from "./schema";
-import type { Document } from "../../controllers/v2/types";
+import type { Document, DocumentMetadata } from "../../controllers/v2/types";
+import type { JsonObject } from "../../lib/json-types";
 
 interface ExtractWebhookResult {
   success: boolean;
-  data?: any;
+  data?: unknown;
   extractId: string;
   warning?: string;
   urlTrace?: Array<unknown>;
@@ -49,13 +50,17 @@ export type WebhookConfig = z.infer<typeof webhookSchema>;
 
 interface WebhookDocument {
   content?: string;
-  markdown: string;
-  metadata: Record<string, any>;
+  markdown?: string;
+  metadata: Partial<DocumentMetadata> | JsonObject;
 }
 
 interface WebhookDocumentLink {
   content: WebhookDocument;
   source: string;
+}
+
+interface FailedPageWebhookDocument {
+  metadata: Partial<DocumentMetadata>;
 }
 
 interface BaseWebhookData {
@@ -70,7 +75,10 @@ interface CrawlStartedData extends BaseWebhookData {
 
 interface CrawlPageData extends BaseWebhookData {
   success: boolean;
-  data: Array<Document> | Array<WebhookDocumentLink>; // links or documents (v0 compatible)
+  data:
+    | Array<Document>
+    | Array<WebhookDocumentLink>
+    | Array<FailedPageWebhookDocument>; // links or documents (v0 compatible)
   scrapeId: string;
   error?: string;
 }
@@ -87,7 +95,7 @@ interface BatchScrapeStartedData extends BaseWebhookData {
 
 interface BatchScrapePageData extends BaseWebhookData {
   success: boolean;
-  data: Array<Document>;
+  data: Array<Document> | Array<FailedPageWebhookDocument>;
   scrapeId: string;
   error?: string; // more v0 tomfoolery
 }

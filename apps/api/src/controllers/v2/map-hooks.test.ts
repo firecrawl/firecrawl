@@ -1,17 +1,22 @@
+import express from "express";
+import type { Response } from "express";
+import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { resolveRedirects as resolveRedirectsFn } from "../../lib/validateUrl";
+import type { BillingModule } from "../../service/modules";
 
 const mocks = vi.hoisted(() => {
   const crawler = {
     getRobotsTxt: vi.fn(async () => ""),
     importRobotsTxt: vi.fn(),
-    tryGetSitemap: vi.fn(async (..._args: Array<any>) => 0),
+    tryGetSitemap: vi.fn<
+      (cb: (urls: Array<string>) => void) => Promise<number>
+    >(async () => 0),
   };
 
   return {
     crawler,
-    billingCharge: vi.fn(
-      async (..._args: Array<any>): Promise<number | undefined> => undefined,
-    ),
+    billingCharge: vi.fn<BillingModule["charge"]>(async () => undefined),
   };
 });
 
@@ -30,22 +35,27 @@ vi.mock("../../lib/crawl-redis", () => ({
 }));
 
 vi.mock("../../lib/validateUrl", async importOriginal => {
-  const actual = await importOriginal<typeof import("../../lib/validateUrl")>();
+  const actual = await importOriginal<{
+    resolveRedirects: typeof resolveRedirectsFn;
+  }>();
   return {
     ...actual,
     resolveRedirects: vi.fn(async (url: string) => url),
   };
 });
 
+import { isJsonObject } from "../../lib/json-types";
+import type { JsonObject } from "../../lib/json-types";
 import {
   applyMapCollectHook,
   applyMapFilterHook,
   getMapResults,
 } from "../../lib/map-utils";
 import { requestContext } from "../../lib/request-context";
-import type { HookHandlers } from "../../service/hooks";
+import type { HookHandlers, ResponsePayload } from "../../service/hooks";
 import { createService, replaceService } from "../../service/service";
 import { mapController } from "./map";
+import type { MapResponse } from "./types";
 
 function installHooks(
   hooks?: HookHandlers | Array<HookHandlers>,
@@ -77,23 +87,43 @@ function installHooks(
   return report;
 }
 
-function makeReq(body: Record<string, any>) {
-  return {
-    body,
-    headers: {},
-    auth: { team_id: "team-map-1" },
-    acuc: { api_key_id: 9, org_id: "org-1", flags: null },
-  } as any;
-}
-
-function makeRes() {
-  const res: any = {
-    status: vi.fn(),
-    json: vi.fn(),
-  };
-  res.status.mockReturnValue(res);
-  res.json.mockReturnValue(res);
-  return res;
+async function postMap(body: JsonObject): Promise<{
+  status: number;
+  body: JsonObject;
+}> {
+  let captured: unknown;
+  const app = express();
+  app.use(express.json());
+  app.post(
+    "/v2/map",
+    async (req, res: Response<MapResponse | ResponsePayload>) => {
+      const originalJson = res.json.bind(res);
+      res.json = (payload: MapResponse | ResponsePayload) => {
+        captured = payload;
+        originalJson(payload);
+        return res;
+      };
+      const authedReq = Object.assign(req, {
+        auth: { team_id: "team-map-1" },
+        acuc: {
+          api_key: "test-key",
+          api_key_id: 9,
+          team_id: "team-map-1",
+          org_id: "org-1",
+          flags: null,
+          concurrency_limit: 10,
+          rate_limit_multiplier: 1,
+          is_paid_plan: false,
+        },
+      });
+      await mapController(authedReq, res);
+    },
+  );
+  const response = await request(app).post("/v2/map").send(body);
+  if (!isJsonObject(captured)) {
+    throw new Error("Expected JSON object response from mapController");
+  }
+  return { status: response.status, body: captured };
 }
 
 describe("map lifecycle hooks", () => {
@@ -148,14 +178,13 @@ describe("map lifecycle hooks", () => {
       },
     ]);
 
-    const res = makeRes();
-    await mapController(
-      makeReq({ url: "https://example.com", limit: 2, sitemap: "skip" }),
-      res,
-    );
+    const { status, body } = await postMap({
+      url: "https://example.com",
+      limit: 2,
+      sitemap: "skip",
+    });
 
-    expect(res.status).toHaveBeenCalledWith(200);
-    const body = res.json.mock.calls[0][0];
+    expect(status).toBe(200);
     expect(body.success).toBe(true);
     expect(finishedId).toBe(body.id);
     expect(body.links).toEqual([
@@ -200,11 +229,9 @@ describe("map lifecycle hooks", () => {
       },
     ]);
 
-    const res = makeRes();
-    await mapController(makeReq({ url: "https://example.com" }), res);
+    const { status, body } = await postMap({ url: "https://example.com" });
 
-    expect(res.status).toHaveBeenCalledWith(200);
-    const body = res.json.mock.calls[0][0];
+    expect(status).toBe(200);
     expect(body.links).toEqual([{ url: "https://example.com/safe-1" }]);
     expect(mocks.billingCharge).toHaveBeenCalledWith(
       expect.objectContaining({

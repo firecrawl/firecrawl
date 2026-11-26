@@ -13,6 +13,7 @@ import { isImageOcrEnabled } from "../../lib/image-ocr-gate";
 import { reportPipelineError } from "../../lib/redis-pipeline";
 import { service } from "../../service";
 import type { StoredUploadRef } from "../../service";
+import { isJsonObject } from "../../lib/json-types";
 
 const PARSE_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
 const PARSE_UPLOAD_TTL_MS = 10 * 60 * 1000;
@@ -29,6 +30,16 @@ const uploadInitSchema = z.strictObject({
     .max(PARSE_UPLOAD_MAX_BYTES)
     .optional(),
 });
+
+type ParseUploadUrlData = {
+  uploadUrl: string;
+  uploadRef: string;
+  method: string;
+  headers: Record<string, string>;
+  fields?: Record<string, string>;
+  expiresAt: string;
+  maxSizeBytes: number;
+};
 
 type ParseUploadRefPayload = {
   v: 1;
@@ -98,7 +109,9 @@ function verifyUploadRef(uploadRef: string): ParseUploadRefPayload {
     throw new Error("Invalid uploadRef signature.");
   }
 
-  const decoded = JSON.parse(base64UrlDecode(encodedPayload).toString("utf8"));
+  const decoded: unknown = JSON.parse(
+    base64UrlDecode(encodedPayload).toString("utf8"),
+  );
   const parsed = z
     .strictObject({
       v: z.literal(1),
@@ -235,7 +248,7 @@ async function reserveUnparsedUploadRefOrRespond(
 }
 
 export async function parseUploadUrlController(
-  req: RequestWithAuth<{}, any, any>,
+  req: RequestWithAuth<Record<string, string>, unknown, unknown>,
   res: Response,
 ) {
   return withSpan(
@@ -331,17 +344,21 @@ export async function parseUploadUrlController(
         }
       }
 
+      const responseData: ParseUploadUrlData = {
+        uploadUrl: prepared.target.uploadUrl,
+        uploadRef,
+        method: prepared.target.method,
+        headers: prepared.target.headers,
+        expiresAt: new Date(expiresAt).toISOString(),
+        maxSizeBytes: PARSE_UPLOAD_MAX_BYTES,
+      };
+      if (prepared.target.fields) {
+        responseData.fields = prepared.target.fields;
+      }
+
       return res.status(200).json({
         success: true,
-        data: {
-          uploadUrl: prepared.target.uploadUrl,
-          uploadRef,
-          method: prepared.target.method,
-          headers: prepared.target.headers,
-          ...(prepared.target.fields ? { fields: prepared.target.fields } : {}),
-          expiresAt: new Date(expiresAt).toISOString(),
-          maxSizeBytes: PARSE_UPLOAD_MAX_BYTES,
-        },
+        data: responseData,
       });
     },
     { zeroDataRetention: req.ctx?.zeroDataRetention === true },
@@ -382,9 +399,14 @@ export async function parseLocalUploadController(req: Request, res: Response) {
     });
   }
 
-  const body = Buffer.isBuffer(req.body)
-    ? req.body
-    : Buffer.from(req.body ?? "");
+  const rawBody: unknown = req.body;
+  const body = Buffer.isBuffer(rawBody)
+    ? rawBody
+    : typeof rawBody === "string"
+      ? Buffer.from(rawBody)
+      : rawBody instanceof Uint8Array
+        ? Buffer.from(rawBody)
+        : Buffer.alloc(0);
   const stored = await driver.receiveUpload({
     uploadId: payload.uploadId,
     teamId: payload.teamId,
@@ -420,7 +442,7 @@ export function parseLocalUploadStorageGuard(
 async function releaseRejectedUploadRef(payload: ParseUploadRefPayload) {
   try {
     await releaseUnparsedUploadRef(payload.teamId, payload.uploadId);
-  } catch (error) {
+  } catch (error: unknown) {
     _logger.warn("Failed to release rejected parse upload", {
       error,
       uploadId: payload.uploadId,
@@ -463,7 +485,7 @@ async function resolveUploadRef(
     // its quota reservation.
     try {
       await driver.delete(storedRef);
-    } catch (error) {
+    } catch (error: unknown) {
       _logger.warn("Failed to delete rejected parse upload object", {
         error,
         uploadId: payload.uploadId,
@@ -483,7 +505,7 @@ async function resolveUploadRef(
     cleanup: async () => {
       try {
         await driver.delete(storedRef);
-      } catch (error) {
+      } catch (error: unknown) {
         _logger.warn("Failed to clean up parse upload object", {
           error,
           uploadId: payload.uploadId,
@@ -494,12 +516,17 @@ async function resolveUploadRef(
 }
 
 export async function parseUploadRefPayloadMiddleware(
-  req: RequestWithAuth<{}, any, any>,
+  req: RequestWithAuth<Record<string, string>, unknown, unknown>,
   res: Response,
   next: NextFunction,
 ) {
-  const uploadRef = req.body?.uploadRef;
-  if (typeof uploadRef !== "string" || uploadRef.length === 0) {
+  const rawBody: unknown = req.body;
+  const uploadRef = isJsonObject(rawBody) ? rawBody.uploadRef : undefined;
+  if (
+    !isJsonObject(rawBody) ||
+    typeof uploadRef !== "string" ||
+    uploadRef.length === 0
+  ) {
     res.status(400).json({
       success: false,
       code: "BAD_REQUEST",
@@ -512,7 +539,7 @@ export async function parseUploadRefPayloadMiddleware(
   let payload: ParseUploadRefPayload;
   try {
     payload = verifyUploadRef(uploadRef);
-  } catch (error) {
+  } catch (error: unknown) {
     res.status(400).json({
       success: false,
       code: "BAD_REQUEST",
@@ -532,7 +559,7 @@ export async function parseUploadRefPayloadMiddleware(
 
   try {
     const resolved = await resolveUploadRef(payload, isImageOcrEnabled());
-    const { uploadRef: _uploadRef, ...options } = req.body;
+    const { uploadRef: _uploadRef, ...options } = rawBody;
     req.body = {
       ...options,
       file: resolved.file,
@@ -541,7 +568,7 @@ export async function parseUploadRefPayloadMiddleware(
       Promise.all([
         resolved.cleanup(),
         releaseUnparsedUploadRef(payload.teamId, payload.uploadId),
-      ]).catch(error => {
+      ]).catch((error: unknown) => {
         _logger.warn("Failed to clean up parse upload", {
           error,
           uploadId: payload.uploadId,
@@ -549,7 +576,7 @@ export async function parseUploadRefPayloadMiddleware(
       });
     });
     next();
-  } catch (error) {
+  } catch (error: unknown) {
     res.status(400).json({
       success: false,
       code: "BAD_REQUEST",

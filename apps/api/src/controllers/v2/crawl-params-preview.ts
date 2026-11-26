@@ -8,6 +8,7 @@ import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
 import { requestContext } from "../../lib/request-context";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { getErrorHttpResponse } from "../../lib/error";
+import { isJsonObject } from "../../lib/json-types";
 
 // Define the request schema for params preview
 // Only url and prompt are required/relevant for preview
@@ -24,30 +25,86 @@ type CrawlParamsPreviewRequest = z.infer<
   typeof crawlParamsPreviewRequestSchema
 >;
 
+type CrawlParamsPreviewData = {
+  url: string;
+  includePaths?: Array<string>;
+  excludePaths?: Array<string>;
+  maxDepth?: number;
+  maxDiscoveryDepth?: number;
+  crawlEntireDomain?: boolean;
+  allowExternalLinks?: boolean;
+  allowSubdomains?: boolean;
+  sitemap?: "skip" | "include" | "only";
+  ignoreQueryParameters?: boolean;
+  deduplicateSimilarURLs?: boolean;
+  delay?: number;
+  limit?: number;
+};
+
 type CrawlParamsPreviewResponse =
   | {
       success: true;
-      data?: {
-        url: string;
-        includePaths?: Array<string>;
-        excludePaths?: Array<string>;
-        maxDepth?: number;
-        maxDiscoveryDepth?: number;
-        crawlEntireDomain?: boolean;
-        allowExternalLinks?: boolean;
-        allowSubdomains?: boolean;
-        sitemap?: "skip" | "include" | "only";
-        ignoreQueryParameters?: boolean;
-        deduplicateSimilarURLs?: boolean;
-        delay?: number;
-        limit?: number;
-      };
+      data?: CrawlParamsPreviewData;
     }
   | ErrorResponse;
 
+function isStringArray(value: unknown): value is Array<string> {
+  return Array.isArray(value) && value.every(item => typeof item === "string");
+}
+
+function parseGeneratedCrawlerOptions(
+  raw: unknown,
+): Omit<CrawlParamsPreviewData, "url"> {
+  if (!isJsonObject(raw)) {
+    return {};
+  }
+  const result: Omit<CrawlParamsPreviewData, "url"> = {};
+  if (isStringArray(raw.includePaths)) {
+    result.includePaths = raw.includePaths;
+  }
+  if (isStringArray(raw.excludePaths)) {
+    result.excludePaths = raw.excludePaths;
+  }
+  if (typeof raw.maxDepth === "number") {
+    result.maxDepth = raw.maxDepth;
+  }
+  if (typeof raw.maxDiscoveryDepth === "number") {
+    result.maxDiscoveryDepth = raw.maxDiscoveryDepth;
+  }
+  if (typeof raw.crawlEntireDomain === "boolean") {
+    result.crawlEntireDomain = raw.crawlEntireDomain;
+  }
+  if (typeof raw.allowExternalLinks === "boolean") {
+    result.allowExternalLinks = raw.allowExternalLinks;
+  }
+  if (typeof raw.allowSubdomains === "boolean") {
+    result.allowSubdomains = raw.allowSubdomains;
+  }
+  if (
+    raw.sitemap === "skip" ||
+    raw.sitemap === "include" ||
+    raw.sitemap === "only"
+  ) {
+    result.sitemap = raw.sitemap;
+  }
+  if (typeof raw.ignoreQueryParameters === "boolean") {
+    result.ignoreQueryParameters = raw.ignoreQueryParameters;
+  }
+  if (typeof raw.deduplicateSimilarURLs === "boolean") {
+    result.deduplicateSimilarURLs = raw.deduplicateSimilarURLs;
+  }
+  if (typeof raw.delay === "number") {
+    result.delay = raw.delay;
+  }
+  if (typeof raw.limit === "number") {
+    result.limit = raw.limit;
+  }
+  return result;
+}
+
 export async function crawlParamsPreviewController(
   req: RequestWithAuth<
-    {},
+    Record<string, string>,
     CrawlParamsPreviewResponse,
     CrawlParamsPreviewRequest
   >,
@@ -108,7 +165,7 @@ export async function crawlParamsPreviewController(
           });
 
         // Generate crawler options from enhanced prompt
-        const { extract } = await generateCrawlerOptionsFromPrompt(
+        const generated = await generateCrawlerOptionsFromPrompt(
           enhancedPrompt,
           logger,
           new CostTracking(),
@@ -116,11 +173,12 @@ export async function crawlParamsPreviewController(
           zeroDataRetention,
           req.acuc?.flags,
         );
-        return { extract, websiteUrls };
+        const rawExtract: unknown = generated.extract;
+        return { extract: rawExtract, websiteUrls };
       },
     );
 
-    const generatedOptions = extract || {};
+    const generatedOptions = parseGeneratedCrawlerOptions(extract);
 
     logger.debug("Generated crawler options from enhanced prompt", {
       originalPrompt: parsedBody.prompt,
@@ -129,23 +187,16 @@ export async function crawlParamsPreviewController(
     });
 
     // Prepare response data
-    const responseData = {
+    const responseData: CrawlParamsPreviewData = {
       url: parsedBody.url,
       ...generatedOptions,
     };
-
-    // Remove any undefined values for cleaner response
-    Object.keys(responseData).forEach(key => {
-      if (responseData[key] === undefined) {
-        delete responseData[key];
-      }
-    });
 
     return res.status(200).json({
       success: true,
       data: responseData,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -157,18 +208,21 @@ export async function crawlParamsPreviewController(
     }
 
     logger.error("Failed to generate crawler params preview", {
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
       prompt: req.body.prompt,
     });
 
     const httpResponse = getErrorHttpResponse(error);
     if (httpResponse) {
-      return res.status(httpResponse.status).json({
+      const errorBody: ErrorResponse = {
         ...httpResponse.extraFields,
         success: false,
-        ...(httpResponse.code ? { code: httpResponse.code } : {}),
         error: httpResponse.message,
-      });
+      };
+      if (httpResponse.code) {
+        errorBody.code = httpResponse.code;
+      }
+      return res.status(httpResponse.status).json(errorBody);
     }
 
     return res.status(400).json({

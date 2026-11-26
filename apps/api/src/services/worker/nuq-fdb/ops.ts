@@ -1,10 +1,10 @@
 import type { Transaction } from "foundationdb";
+import { isJsonObject } from "../../../lib/json-types";
 import { logger as _logger } from "../../../lib/logger";
 import type {
   NuqFdbKeyspace,
   QueueEntry,
   JobStatusRecord,
-  GroupMeta,
   PendingLoc,
 } from "./keyspace";
 import {
@@ -12,6 +12,8 @@ import {
   decodeI64,
   encodeJson,
   decodeJson,
+  isGroupMeta,
+  isQueueEntry,
   timeBucket,
   teamPendingShard,
   READY_SHARDS,
@@ -121,8 +123,12 @@ export function appendKeyPending(
   ks: NuqFdbKeyspace,
   e: QueueEntry,
 ): PendingLoc {
-  tn.set(ks.keyPendingKey(e.k!, e.p, e.c, e.i), encodeJson(e));
-  tn.add(ks.keyPendingCount(e.k!), ONE);
+  const keyId = e.k;
+  if (!keyId) {
+    throw new Error("Key-gated queue entry is missing API key id");
+  }
+  tn.set(ks.keyPendingKey(keyId, e.p, e.c, e.i), encodeJson(e));
+  tn.add(ks.keyPendingCount(keyId), ONE);
   tn.add(ks.teamPendingCount(e.o), ONE);
   if (e.to !== undefined) {
     tn.set(ks.backlogTimeout(timeBucket(e.i), e.to, e.i), EMPTY);
@@ -135,8 +141,12 @@ export function appendCrawlPending(
   ks: NuqFdbKeyspace,
   e: QueueEntry,
 ): PendingLoc {
-  tn.set(ks.groupPendingKey(e.g!, e.p, e.c, e.i), encodeJson(e));
-  tn.add(ks.groupPendingCount(e.g!), ONE);
+  const groupId = e.g;
+  if (!groupId) {
+    throw new Error("Crawl-gated queue entry is missing group id");
+  }
+  tn.set(ks.groupPendingKey(groupId, e.p, e.c, e.i), encodeJson(e));
+  tn.add(ks.groupPendingCount(groupId), ONE);
   tn.add(ks.teamPendingCount(e.o), ONE);
   if (e.to !== undefined) {
     tn.set(ks.backlogTimeout(timeBucket(e.i), e.to, e.i), EMPTY);
@@ -183,10 +193,16 @@ export function pendingKeyFromLoc(
     return ks.teamPendingKey(ownerId, loc.s, loc.p, loc.c, id);
   }
   if (loc.k === "kq") {
-    return ks.keyPendingKey(keyId!, loc.p, loc.c, id);
+    if (!keyId) {
+      throw new Error("Key-pending placement is missing API key id");
+    }
+    return ks.keyPendingKey(keyId, loc.p, loc.c, id);
   }
   if (loc.k === "gq") {
-    return ks.groupPendingKey(groupId!, loc.p, loc.c, id);
+    if (!groupId) {
+      throw new Error("Group-pending placement is missing group id");
+    }
+    return ks.groupPendingKey(groupId, loc.p, loc.c, id);
   }
   return ks.delayed(timeBucket(id), loc.at, id);
 }
@@ -208,10 +224,16 @@ export function clearPendingPlacement(
     tn.add(ks.teamShardCount(ownerId, loc.s), MINUS_ONE);
     tn.add(ks.teamPendingCount(ownerId), MINUS_ONE);
   } else if (loc.k === "kq") {
-    tn.add(ks.keyPendingCount(keyId!), MINUS_ONE);
+    if (!keyId) {
+      throw new Error("Key-pending placement is missing API key id");
+    }
+    tn.add(ks.keyPendingCount(keyId), MINUS_ONE);
     tn.add(ks.teamPendingCount(ownerId), MINUS_ONE);
   } else if (loc.k === "gq") {
-    tn.add(ks.groupPendingCount(groupId!), MINUS_ONE);
+    if (!groupId) {
+      throw new Error("Group-pending placement is missing group id");
+    }
+    tn.add(ks.groupPendingCount(groupId), MINUS_ONE);
     tn.add(ks.teamPendingCount(ownerId), MINUS_ONE);
   }
   if (loc.k !== "dl") {
@@ -254,7 +276,13 @@ export async function popTeamPending(
       continue; // counter was stale
     }
     const [key, value] = head[0];
-    const e = decodeJson<QueueEntry>(value)!;
+    const e = decodeJson(value, isQueueEntry);
+    if (!e) {
+      tn.clear(key);
+      tn.add(ks.teamShardCount(tid, shard), MINUS_ONE);
+      tn.add(ks.teamPendingCount(tid), MINUS_ONE);
+      continue;
+    }
     tn.clear(key);
     tn.add(ks.teamShardCount(tid, shard), MINUS_ONE);
     tn.add(ks.teamPendingCount(tid), MINUS_ONE);
@@ -299,9 +327,12 @@ export async function popKeyPending(
     return null;
   }
   const [key, value] = head[0];
-  const e = decodeJson<QueueEntry>(value)!;
+  const e = decodeJson(value, isQueueEntry);
   tn.clear(key);
   tn.add(ks.keyPendingCount(kid), MINUS_ONE);
+  if (!e) {
+    return null;
+  }
   tn.add(ks.teamPendingCount(e.o), MINUS_ONE);
   clearBacklogTimeout(tn, ks, e);
   return e;
@@ -318,9 +349,12 @@ export async function popCrawlPending(
     return null;
   }
   const [key, value] = head[0];
-  const e = decodeJson<QueueEntry>(value)!;
+  const e = decodeJson(value, isQueueEntry);
   tn.clear(key);
   tn.add(ks.groupPendingCount(gid), MINUS_ONE);
+  if (!e) {
+    return null;
+  }
   tn.add(ks.teamPendingCount(e.o), MINUS_ONE);
   clearBacklogTimeout(tn, ks, e);
   return e;
@@ -354,19 +388,18 @@ export async function releaseSlotsAndPromote(
   }
   const tid = e.o;
 
-  const holdsKey = held.key && !!e.k && !!(e.f & F_KEY_GATED);
-  const holdsCrawl = held.crawl && !!e.g && !!(e.f & F_CRAWL_GATED);
-  if (!held.team && !holdsKey && !holdsCrawl) {
+  const heldKeyId = held.key && e.f & F_KEY_GATED ? e.k : undefined;
+  const heldGroupId = held.crawl && e.f & F_CRAWL_GATED ? e.g : undefined;
+  if (!held.team && !heldKeyId && !heldGroupId) {
     return;
   }
 
   // Limit-lowering convergence: if the team is over its limit, don't hand off.
   let overLimit = false;
-  let limit = Infinity;
   if (held.team) {
     const limitBuf = await tn.get(ks.teamLimit(tid)); // cold key, rarely written
     if (limitBuf) {
-      limit = decodeI64(limitBuf);
+      const limit = decodeI64(limitBuf);
       const snapActive = decodeI64(await tn.snapshot().get(ks.teamActive(tid)));
       overLimit = snapActive > limit;
     }
@@ -382,20 +415,22 @@ export async function releaseSlotsAndPromote(
   // Key slot handoff: promote the key-pending head into the team gate. Runs
   // before the crawl handoff so the longest-gated job gets the slot first.
   let keyHandedOff = false;
-  if (holdsKey) {
+  if (heldKeyId) {
     let keyOverLimit = false;
-    const kLimitBuf = await tn.get(ks.keyLimit(e.k!)); // cold key
+    const kLimitBuf = await tn.get(ks.keyLimit(heldKeyId)); // cold key
     if (kLimitBuf) {
       const kLimit = decodeI64(kLimitBuf);
-      const kActive = decodeI64(await tn.snapshot().get(ks.keyActive(e.k!)));
+      const kActive = decodeI64(
+        await tn.snapshot().get(ks.keyActive(heldKeyId)),
+      );
       keyOverLimit = kActive > kLimit;
     }
     if (keyOverLimit) {
       // limit-lowering convergence: swallow the slot instead of handing off
-      tn.add(ks.keyActive(e.k!), MINUS_ONE);
+      tn.add(ks.keyActive(heldKeyId), MINUS_ONE);
       keyHandedOff = true; // accounted for; don't decrement again below
     } else {
-      const keyHead = await popKeyPending(tn, ks, e.k!);
+      const keyHead = await popKeyPending(tn, ks, heldKeyId);
       if (keyHead) {
         keyHandedOff = true;
         // the key head now owns the freed key slot; it still needs a team slot
@@ -415,19 +450,20 @@ export async function releaseSlotsAndPromote(
   // Crawl slot handoff: promote the crawl-pending head out of the crawl gate.
   let crawlPromoted: QueueEntry | null = null;
   let crawlDelaySeconds = 0;
-  if (holdsCrawl) {
-    const gMeta = decodeJson<GroupMeta>(
-      await tn.snapshot().get(ks.groupMeta(e.g!)),
+  if (heldGroupId) {
+    const gMeta = decodeJson(
+      await tn.snapshot().get(ks.groupMeta(heldGroupId)),
+      isGroupMeta,
     );
     if (gMeta && gMeta.s === "active") {
-      crawlPromoted = await popCrawlPending(tn, ks, e.g!);
+      crawlPromoted = await popCrawlPending(tn, ks, heldGroupId);
       if (crawlPromoted) {
         crawlDelaySeconds = gMeta.d ?? 0;
       } else {
-        tn.add(ks.groupCrawlActive(e.g!), MINUS_ONE);
+        tn.add(ks.groupCrawlActive(heldGroupId), MINUS_ONE);
       }
     } else {
-      tn.add(ks.groupCrawlActive(e.g!), MINUS_ONE);
+      tn.add(ks.groupCrawlActive(heldGroupId), MINUS_ONE);
     }
   }
 
@@ -441,20 +477,20 @@ export async function releaseSlotsAndPromote(
       setStatusPending(tn, ks, j2.i, { k: "dl", at: notBefore });
     } else {
       // key gate for the crawl-promoted job
-      const j2KeyGated = !!j2.k && !!(j2.f & F_KEY_GATED);
-      let hasKeySlot = !j2KeyGated;
-      if (!hasKeySlot) {
-        if (holdsKey && !keyHandedOff && j2.k === e.k) {
+      const j2KeyId = j2.f & F_KEY_GATED ? j2.k : undefined;
+      let hasKeySlot = !j2KeyId;
+      if (j2KeyId) {
+        if (heldKeyId && !keyHandedOff && j2KeyId === heldKeyId) {
           // the freed key slot goes directly to the crawl-promoted job
           keyHandedOff = true;
           hasKeySlot = true;
         } else {
           // rare path: acquire on its own (conflicting read of keyActive)
-          const kLimitBuf = await tn.get(ks.keyLimit(j2.k!));
+          const kLimitBuf = await tn.get(ks.keyLimit(j2KeyId));
           const kLimit = kLimitBuf ? decodeI64(kLimitBuf) : Infinity;
-          const kActive = decodeI64(await tn.get(ks.keyActive(j2.k!)));
+          const kActive = decodeI64(await tn.get(ks.keyActive(j2KeyId)));
           if (kActive < kLimit) {
-            tn.add(ks.keyActive(j2.k!), ONE);
+            tn.add(ks.keyActive(j2KeyId), ONE);
             hasKeySlot = true;
           }
         }
@@ -479,8 +515,8 @@ export async function releaseSlotsAndPromote(
     }
   }
 
-  if (holdsKey && !keyHandedOff) {
-    tn.add(ks.keyActive(e.k!), MINUS_ONE);
+  if (heldKeyId && !keyHandedOff) {
+    tn.add(ks.keyActive(heldKeyId), MINUS_ONE);
   }
 
   if (held.team) {
@@ -555,6 +591,16 @@ export type GroupJobIndexValue = {
   m: number; // 1 if countable (single_urls)
   s: string; // job status
 };
+
+export function isGroupJobIndexValue(
+  value: unknown,
+): value is GroupJobIndexValue {
+  return (
+    isJsonObject(value) &&
+    typeof value.m === "number" &&
+    typeof value.s === "string"
+  );
+}
 
 export function setGroupJobIndex(
   tn: Transaction,

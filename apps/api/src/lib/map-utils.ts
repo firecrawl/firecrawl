@@ -5,7 +5,7 @@ import type {
   ScrapeOptions,
 } from "../controllers/v2/types";
 import { scrapeOptions, MAX_MAP_LIMIT } from "../controllers/v2/types";
-import type { StoredCrawl } from "./crawl-redis";
+import type { StoredCrawl, StoredCrawlerOptions } from "./crawl-redis";
 import { crawlToCrawler } from "./crawl-redis";
 import {
   checkAndUpdateURLForMap,
@@ -19,6 +19,7 @@ import { requestContext } from "./request-context";
 import type { MapState } from "../service/hooks";
 import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
+import { isJsonObject } from "./json-types";
 
 const MAX_SEARCH_RESULTS = 100;
 
@@ -55,6 +56,36 @@ interface MapScopeOptions {
   allowExternalLinks?: boolean;
 }
 
+interface MapFilterHookMeta {
+  ctx: RequestContext;
+  url: string;
+  limit: number;
+  state?: MapState;
+  logger?: Logger;
+}
+
+interface MapCollectHookMeta {
+  ctx: RequestContext;
+  url: string;
+  limit: number;
+  search?: string;
+  includeSubdomains?: boolean;
+  allowExternalLinks?: boolean;
+  ignoreCache?: boolean;
+  sitemap?: "skip" | "include" | "only";
+  useIndex?: boolean;
+  maxSearchResults?: number;
+  abort?: AbortSignal;
+  documents: Map<string, MapDocument>;
+  state?: MapState;
+  logger?: Logger;
+}
+
+interface MapScrapeOptionsInput {
+  location?: ScrapeOptions["location"];
+  headers?: Record<string, string>;
+}
+
 function applyMapScope(
   documents: Array<MapDocument>,
   baseUrl: string,
@@ -65,18 +96,17 @@ function applyMapScope(
     allowExternalLinks = false,
   }: MapScopeOptions = {},
 ): Array<MapDocument> {
-  let scoped = documents
-    .map(x => {
-      try {
-        return {
-          ...x,
-          url: checkAndUpdateURLForMap(x.url, ignoreQueryParameters).url.trim(),
-        };
-      } catch {
-        return null;
-      }
-    })
-    .filter((x): x is MapDocument => x !== null);
+  let scoped: Array<MapDocument> = [];
+  for (const x of documents) {
+    try {
+      scoped.push({
+        ...x,
+        url: checkAndUpdateURLForMap(x.url, ignoreQueryParameters).url.trim(),
+      });
+    } catch {
+      // Drop malformed URLs.
+    }
+  }
 
   scoped = scoped.filter(x => isSameDomain(x.url, baseUrl));
 
@@ -130,13 +160,14 @@ export async function applyMapFilterHook(
   if (!hooks?.has("map.filter")) {
     return mapResults;
   }
-  return await hooks.transform("map.filter", mapResults, {
-    ctx,
-    url,
-    limit,
-    ...(state !== undefined ? { state } : {}),
-    ...(logger !== undefined ? { logger } : {}),
-  });
+  const meta: MapFilterHookMeta = { ctx, url, limit };
+  if (state !== undefined) {
+    meta.state = state;
+  }
+  if (logger !== undefined) {
+    meta.logger = logger;
+  }
+  return await hooks.transform("map.filter", mapResults, meta);
 }
 
 /**
@@ -187,29 +218,49 @@ export async function applyMapCollectHook(
   }
 
   let candidateDocs = mapResults;
-  if (runCollect) {
+  if (runCollect && hooks) {
     const deduped = dedupeMapDocumentArray(mapResults);
     const currentUrls = deduped.map(doc => doc.url);
     const documents = new Map<string, MapDocument>();
     for (const doc of deduped) {
       documents.set(doc.url, doc);
     }
-    const collectedUrls = await hooks!.transform("map.collect", currentUrls, {
-      ctx,
-      url,
-      limit,
-      ...(search !== undefined ? { search } : {}),
-      ...(includeSubdomains !== undefined ? { includeSubdomains } : {}),
-      ...(allowExternalLinks !== undefined ? { allowExternalLinks } : {}),
-      ...(ignoreCache !== undefined ? { ignoreCache } : {}),
-      ...(sitemap !== undefined ? { sitemap } : {}),
-      ...(useIndex !== undefined ? { useIndex } : {}),
-      ...(maxSearchResults !== undefined ? { maxSearchResults } : {}),
-      ...(abort !== undefined ? { abort } : {}),
-      documents,
-      ...(state !== undefined ? { state } : {}),
-      ...(logger !== undefined ? { logger } : {}),
-    });
+    const collectMeta: MapCollectHookMeta = { ctx, url, limit, documents };
+    if (search !== undefined) {
+      collectMeta.search = search;
+    }
+    if (includeSubdomains !== undefined) {
+      collectMeta.includeSubdomains = includeSubdomains;
+    }
+    if (allowExternalLinks !== undefined) {
+      collectMeta.allowExternalLinks = allowExternalLinks;
+    }
+    if (ignoreCache !== undefined) {
+      collectMeta.ignoreCache = ignoreCache;
+    }
+    if (sitemap !== undefined) {
+      collectMeta.sitemap = sitemap;
+    }
+    if (useIndex !== undefined) {
+      collectMeta.useIndex = useIndex;
+    }
+    if (maxSearchResults !== undefined) {
+      collectMeta.maxSearchResults = maxSearchResults;
+    }
+    if (abort !== undefined) {
+      collectMeta.abort = abort;
+    }
+    if (state !== undefined) {
+      collectMeta.state = state;
+    }
+    if (logger !== undefined) {
+      collectMeta.logger = logger;
+    }
+    const collectedUrls = await hooks.transform(
+      "map.collect",
+      currentUrls,
+      collectMeta,
+    );
     candidateDocs = collectedUrls.map(collectedUrl => {
       const existing = documents.get(collectedUrl);
       if (existing) {
@@ -277,7 +328,7 @@ export async function getMapResults({
   search?: string;
   limit?: number;
   includeSubdomains?: boolean;
-  crawlerOptions?: any;
+  crawlerOptions?: StoredCrawlerOptions;
   teamId: string;
   orgId?: string | null;
   origin?: string;
@@ -317,7 +368,6 @@ export async function getMapResults({
   let mapResults: Array<MapDocument> = [];
   const zeroDataRetention =
     ctx?.zeroDataRetention === true || requestZeroDataRetention || indexOnly;
-  const searchZeroDataRetention = zeroDataRetention;
 
   const mapCtx: RequestContext = ctx
     ? { ...ctx, zeroDataRetention }
@@ -328,6 +378,14 @@ export async function getMapResults({
         orgId: orgId ?? null,
       });
 
+  const rawScrapeOptions: MapScrapeOptionsInput = {};
+  if (location) {
+    rawScrapeOptions.location = location;
+  }
+  if (headers) {
+    rawScrapeOptions.headers = headers;
+  }
+
   const sc: StoredCrawl = {
     ctx: mapCtx,
     originUrl: url,
@@ -336,10 +394,7 @@ export async function getMapResults({
       limit: crawlerOptions.sitemapOnly ? 10_000_000 : limit,
       scrapeOptions: undefined,
     },
-    scrapeOptions: scrapeOptions.parse({
-      ...(location ? { location } : {}),
-      ...(headers ? { headers } : {}),
-    }),
+    scrapeOptions: scrapeOptions.parse(rawScrapeOptions),
     internalOptions: { ctx: mapCtx, teamId, orgId: orgId ?? null },
     team_id: teamId,
     createdAt: Date.now(),
@@ -374,18 +429,18 @@ export async function getMapResults({
     );
 
     if (sitemap > 0) {
-      mapResults = mapResults
-        .map(x => {
-          try {
-            return {
-              ...x,
-              url: checkAndUpdateURLForMap(x.url).url.trim(),
-            };
-          } catch {
-            return null;
-          }
-        })
-        .filter(x => x !== null) as Array<MapDocument>;
+      const normalizedResults: Array<MapDocument> = [];
+      for (const x of mapResults) {
+        try {
+          normalizedResults.push({
+            ...x,
+            url: checkAndUpdateURLForMap(x.url).url.trim(),
+          });
+        } catch {
+          // Drop malformed URLs.
+        }
+      }
+      mapResults = normalizedResults;
     }
   } else if (crawlerOptions.sitemap === "include" && !indexOnly) {
     try {
@@ -520,9 +575,15 @@ export async function buildPromptWithWebsiteStructure({
     )} URLs):\n${websiteUrls.slice(0, 120).join("\n")}\n\nBased on this structure and the user's request, generate appropriate crawler options.`;
 
     return { prompt, websiteUrls };
-  } catch (error) {
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : isJsonObject(error) && error.message !== undefined
+          ? error.message
+          : error;
     logger.warn("Failed to get website structure for prompt enhancement", {
-      error: error?.message ?? error,
+      error: message,
     });
     return { prompt: basePrompt, websiteUrls: [] };
   }

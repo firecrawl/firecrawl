@@ -13,6 +13,7 @@ import { crawlFinishedQueue, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
 import { getCrawl } from "../lib/crawl-redis";
 import { recordCrawlStateMissing } from "../lib/crawl-state-metrics";
+import { storedZeroDataRetention } from "../lib/request-context";
 import { startRole } from "../main";
 import { runProcessStop } from "../service/service";
 
@@ -63,7 +64,9 @@ const crawlFinishWorker = async () => {
 
     if (job === null) {
       __logger.info("No jobs to process", { module: "nuq/metrics" });
-      await new Promise(resolve => setTimeout(resolve, noJobTimeout));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, noJobTimeout);
+      });
       if (!config.NUQ_RABBITMQ_URL) {
         noJobTimeout = Math.min(noJobTimeout * 2, 10_000);
       }
@@ -72,21 +75,30 @@ const crawlFinishWorker = async () => {
 
     noJobTimeout = 500;
 
+    const jobData: unknown = job.data;
     const logger = __logger.child({
-      zeroDataRetention: job.data?.zeroDataRetention ?? false,
+      zeroDataRetention: storedZeroDataRetention(jobData) ?? false,
       crawlId: job.groupId,
     });
 
     logger.info("Acquired job");
 
-    const lockRenewInterval = setInterval(async () => {
-      logger.info("Renewing lock");
-      if (!(await crawlFinishedQueue.renewLock(job.id, job.lock!, logger))) {
-        logger.warn("Failed to renew lock");
-        clearInterval(lockRenewInterval);
-        return;
-      }
-      logger.info("Renewed lock");
+    const jobLock = job.lock;
+    if (!jobLock) {
+      logger.warn("Acquired job without lock");
+      continue;
+    }
+
+    const lockRenewInterval = setInterval(() => {
+      void (async () => {
+        logger.info("Renewing lock");
+        if (!(await crawlFinishedQueue.renewLock(job.id, jobLock, logger))) {
+          logger.warn("Failed to renew lock");
+          clearInterval(lockRenewInterval);
+          return;
+        }
+        logger.info("Renewed lock");
+      })();
     }, 15_000);
 
     let processResult:
@@ -94,14 +106,14 @@ const crawlFinishWorker = async () => {
           ok: true;
           data: Awaited<ReturnType<typeof processFinishCrawlJobInternal>>;
         }
-      | { ok: false; error: any };
+      | { ok: false; error: unknown };
 
     try {
       processResult = {
         ok: true,
         data: await processFinishCrawlJobInternal(job),
       };
-    } catch (error) {
+    } catch (error: unknown) {
       processResult = { ok: false, error };
     }
 
@@ -111,7 +123,7 @@ const crawlFinishWorker = async () => {
       if (
         !(await crawlFinishedQueue.jobFinish(
           job.id,
-          job.lock!,
+          jobLock,
           processResult.data,
           logger,
         ))
@@ -122,7 +134,7 @@ const crawlFinishWorker = async () => {
       if (
         !(await crawlFinishedQueue.jobFail(
           job.id,
-          job.lock!,
+          jobLock,
           processResult.error instanceof Error
             ? processResult.error.message
             : typeof processResult.error === "string"
@@ -138,8 +150,6 @@ const crawlFinishWorker = async () => {
 };
 
 const app = Express();
-
-let currentLiveness: boolean = true;
 
 app.get("/metrics", async (_, res) => {
   res.contentType("text/plain").send(await register.metrics());
@@ -163,16 +173,13 @@ app.get("/liveness", (req, res) => {
       useCacheableLookup: false,
     })
       .then(() => {
-        currentLiveness = true;
         res.status(200).json({ ok: true });
       })
-      .catch(error => {
+      .catch((error: unknown) => {
         _logger.error("WORKER NETWORKING CHECK FAILED", { error });
-        currentLiveness = false;
         res.status(500).json({ ok: false });
       });
   } else {
-    currentLiveness = true;
     res.status(200).json({ ok: true });
   }
 });
@@ -201,7 +208,7 @@ export async function start() {
     isShuttingDown = true;
   });
 
-  await service.modules.blocklist.init().catch(error => {
+  await service.modules.blocklist.init().catch((error: unknown) => {
     _logger.error("Failed to initialize blocklist", { error });
     process.exit(1);
   });

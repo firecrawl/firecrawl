@@ -1,6 +1,5 @@
 import { register } from "prom-client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Queue } from "bullmq";
 import {
   bullmqQueueDepth,
   bullmqQueueOldestOverdueSeconds,
@@ -19,11 +18,18 @@ function fakeQueue(
     getJobCounts: vi.fn(async (..._states: Array<string>) => counts),
     toKey: (type: string) => `bull:${name}:${type}`,
     client: Promise.resolve({ zrange }),
-  } as unknown as Queue;
+  };
   return { queue, zrange };
 }
 
-async function values(gauge: { get: () => Promise<{ values: Array<any> }> }) {
+async function values<T extends string>(gauge: {
+  get: () => Promise<{
+    values: Array<{
+      labels: Partial<Record<T, string | number>>;
+      value: number;
+    }>;
+  }>;
+}) {
   return (await gauge.get()).values.map(v => ({ ...v.labels, value: v.value }));
 }
 
@@ -119,9 +125,12 @@ describe("BullMQ queue metrics", () => {
   it("reuses a read that outlived the timeout instead of issuing another", async () => {
     vi.useFakeTimers();
     const { queue } = fakeQueue("{firebillTrackRetryQueue}", {}, []);
-    let answer: (counts: Record<string, number>) => void = () => {};
+    let answer: ((counts: Record<string, number>) => void) | undefined;
     vi.mocked(queue.getJobCounts).mockImplementationOnce(
-      () => new Promise(resolve => (answer = resolve)),
+      () =>
+        new Promise(resolve => {
+          answer = resolve;
+        }),
     );
     startBullmqQueueMetrics([queue]);
 
@@ -132,6 +141,9 @@ describe("BullMQ queue metrics", () => {
     }
     expect(queue.getJobCounts).toHaveBeenCalledTimes(1);
 
+    if (!answer) {
+      throw new Error("Expected getJobCounts resolver to be captured");
+    }
     answer({ waiting: 1 });
     await vi.advanceTimersByTimeAsync(0);
     expect(await values(bullmqQueueDepth)).toHaveLength(4);

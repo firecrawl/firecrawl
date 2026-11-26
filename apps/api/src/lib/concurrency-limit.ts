@@ -21,17 +21,29 @@ import {
 import { reportPipelineError } from "./redis-pipeline";
 import { jobContext, storedZeroDataRetention } from "./request-context";
 import type { JobKind } from "../service/hooks";
+import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
 import type { ScrapeJobData } from "../types";
 import { currentLimits } from "./limits";
 import { recordCrawlStateMissing } from "./crawl-state-metrics";
+import { isJsonObject } from "./json-types";
+
+interface JobEnqueuedEvent {
+  jobId: string;
+  kind: JobKind;
+  ctx: RequestContext;
+  url?: string;
+  jobData: ScrapeJobData;
+}
 
 function scrapeJobKind(data: ScrapeJobData): JobKind {
   if (data.mode === "kickoff" || data.mode === "kickoff_sitemap") {
     return "crawl";
   }
   if (data.crawl_id) {
-    return data.crawlerOptions != null ? "crawl" : "batchScrape";
+    return data.crawlerOptions !== null && data.crawlerOptions !== undefined
+      ? "crawl"
+      : "batchScrape";
   }
   return "scrape";
 }
@@ -42,13 +54,16 @@ export function observeJobEnqueued(jobId: string, data: ScrapeJobData): void {
   if (!hooks?.has("job.enqueued")) {
     return;
   }
-  hooks.observe("job.enqueued", {
+  const event: JobEnqueuedEvent = {
     jobId,
     kind: scrapeJobKind(data),
     ctx: jobContext(data),
-    ...(data.mode === "single_urls" ? { url: data.url } : {}),
     jobData: data,
-  });
+  };
+  if (data.mode === "single_urls") {
+    event.url = data.url;
+  }
+  hooks.observe("job.enqueued", event);
 }
 
 const constructKey = constructConcurrencyLimitKey;
@@ -113,10 +128,25 @@ export async function removeConcurrencyLimitedJobs(
 
 type ConcurrencyLimitedJob = {
   id: string;
-  data: any;
+  data: ScrapeJobData;
   priority: number;
   listenable: boolean;
 };
+
+function isConcurrencyLimitedJob(
+  value: unknown,
+): value is ConcurrencyLimitedJob {
+  if (!isJsonObject(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === "string" &&
+    typeof value.priority === "number" &&
+    typeof value.listenable === "boolean" &&
+    isJsonObject(value.data) &&
+    typeof value.data.team_id === "string"
+  );
+}
 
 export async function cleanOldConcurrencyLimitedJobs(
   team_id: string,
@@ -267,11 +297,11 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
       // ZPOPMIN atomically removes and returns the lowest-scored member.
       // No two workers can ever get the same entry.
       const result = await redis.zpopmin(queueKey);
-      if (!result || result.length === 0) {
+      if (!result || result.length < 2) {
         return null;
       }
 
-      const [member, scoreStr] = result as [string, string];
+      const [member, scoreStr] = result;
       const score = Number.parseFloat(scoreStr);
 
       // Expired entry - discard
@@ -286,7 +316,12 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
         continue;
       }
 
-      const job: ConcurrencyLimitedJob = JSON.parse(jobData);
+      const parsedJob: unknown = JSON.parse(jobData);
+      if (!isConcurrencyLimitedJob(parsedJob)) {
+        await redis.del(constructJobKey(member));
+        continue;
+      }
+      const job = parsedJob;
 
       // Check crawl concurrency limit
       if (job.data.crawl_id) {
@@ -302,11 +337,11 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
             });
           }
         }
+        const delay = sc?.crawlerOptions?.delay;
         const maxCrawlConcurrency =
           sc === null
             ? 1
-            : typeof sc.crawlerOptions?.delay === "number" &&
-                sc.crawlerOptions.delay > 0
+            : typeof delay === "number" && delay > 0
               ? 1
               : (sc.maxConcurrency ?? null);
 
@@ -348,7 +383,7 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
  *
  * @param job The BullMQ job that is done.
  */
-export async function concurrentJobDone(job: NuQJob<any>) {
+export async function concurrentJobDone(job: NuQJob<ScrapeJobData>) {
   if (job.id && job.data && job.data.team_id) {
     await removeConcurrencyLimitActiveJob(job.data.team_id, job.id);
     await getRedisConnection().zrem(
@@ -371,7 +406,7 @@ export async function concurrentJobDone(job: NuQJob<any>) {
       maxTeamConcurrency = await currentLimits().teamConcurrency(
         job.data.team_id,
       );
-    } catch (error) {
+    } catch (error: unknown) {
       logger.warn(
         "Failed to resolve team concurrency limit during job completion, skipping backlog promotion",
         { teamId: job.data.team_id, error },
@@ -410,10 +445,11 @@ export async function concurrentJobDone(job: NuQJob<any>) {
         );
 
         const sc = await getCrawl(nextJob.job.data.crawl_id);
-        if (sc !== null && typeof sc.crawlerOptions?.delay === "number") {
-          await new Promise(resolve =>
-            setTimeout(resolve, sc.crawlerOptions.delay * 1000),
-          );
+        const delay = sc?.crawlerOptions?.delay;
+        if (typeof delay === "number") {
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, delay * 1000);
+          });
         }
       }
 

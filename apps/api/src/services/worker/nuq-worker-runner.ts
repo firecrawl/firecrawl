@@ -1,3 +1,4 @@
+import type { Logger } from "winston";
 import { config } from "../../config";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { shutdownTracing } from "../../otel";
@@ -6,6 +7,7 @@ import { jobDurationSeconds } from "../../lib/job-metrics";
 import { storedZeroDataRetention } from "../../lib/request-context";
 import { processJobInternal } from "./scrape-worker";
 import type { NuQJob } from "./nuq";
+import type { ScrapeJobData } from "../../types";
 import { register } from "prom-client";
 import Express from "express";
 import { startNodeRuntimeMetrics } from "../../lib/node-runtime-metrics";
@@ -14,19 +16,21 @@ import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-f
 import { runProcessStop } from "../../service/service";
 
 export type WorkerQueue = {
-  getJobToProcess(logger?: any): Promise<NuQJob<any, any> | null>;
-  renewLock(id: string, lock: string, logger?: any): Promise<boolean>;
+  getJobToProcess(
+    logger?: Logger,
+  ): Promise<NuQJob<ScrapeJobData, unknown> | null>;
+  renewLock(id: string, lock: string, logger?: Logger): Promise<boolean>;
   jobFinish(
     id: string,
     lock: string,
-    returnvalue: any | null,
-    logger?: any,
+    returnvalue: unknown,
+    logger?: Logger,
   ): Promise<boolean>;
   jobFail(
     id: string,
     lock: string,
     failedReason: string,
-    logger?: any,
+    logger?: Logger,
   ): Promise<boolean>;
 };
 
@@ -66,7 +70,7 @@ export async function runNuqWorker(options: {
     await service.modules.blocklist.init();
     initializeEngineForcing();
     await options.beforeStart?.();
-  } catch (error) {
+  } catch (error: unknown) {
     _logger.error("Failed to initialize NuQ worker", {
       module: options.serviceName,
       error,
@@ -93,7 +97,7 @@ export async function runNuqWorker(options: {
       } else {
         res.status(500).send("Not OK");
       }
-    } catch (error) {
+    } catch (error: unknown) {
       _logger.warn("NuQ worker health check failed", {
         module: options.serviceName,
         error,
@@ -138,7 +142,9 @@ export async function runNuqWorker(options: {
 
     if (job === null) {
       _logger.info("No jobs to process", { module: "nuq/metrics" });
-      await new Promise(resolve => setTimeout(resolve, noJobTimeout));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, noJobTimeout);
+      });
       if (!config.NUQ_RABBITMQ_URL) {
         noJobTimeout = Math.min(noJobTimeout * 2, 10_000);
       }
@@ -153,32 +159,40 @@ export async function runNuqWorker(options: {
       zeroDataRetention: storedZeroDataRetention(job.data) ?? false,
     });
 
+    const jobLock = job.lock;
+    if (!jobLock) {
+      logger.warn("Acquired job without lock");
+      continue;
+    }
+
     logger.info("Acquired job");
 
-    const lockRenewInterval = setInterval(async () => {
-      try {
-        logger.info("Renewing lock");
-        if (!(await options.queue.renewLock(job.id, job.lock!, logger))) {
-          logger.warn("Failed to renew lock");
+    const lockRenewInterval = setInterval(() => {
+      void (async () => {
+        try {
+          logger.info("Renewing lock");
+          if (!(await options.queue.renewLock(job.id, jobLock, logger))) {
+            logger.warn("Failed to renew lock");
+            clearInterval(lockRenewInterval);
+            return;
+          }
+          logger.info("Renewed lock");
+        } catch (error: unknown) {
+          logger.warn("Failed to renew lock", { error });
           clearInterval(lockRenewInterval);
-          return;
         }
-        logger.info("Renewed lock");
-      } catch (error) {
-        logger.warn("Failed to renew lock", { error });
-        clearInterval(lockRenewInterval);
-      }
+      })();
     }, 15_000);
 
     let processResult:
       | { ok: true; data: Awaited<ReturnType<typeof processJobInternal>> }
-      | { ok: false; error: any };
+      | { ok: false; error: unknown };
 
     const endJobTimer = jobDurationSeconds.startTimer({ type: job.data.mode });
 
     try {
       processResult = { ok: true, data: await processJobInternal(job) };
-    } catch (error) {
+    } catch (error: unknown) {
       processResult = { ok: false, error };
     }
 
@@ -194,7 +208,7 @@ export async function runNuqWorker(options: {
         if (
           !(await options.queue.jobFinish(
             job.id,
-            job.lock!,
+            jobLock,
             processResult.data,
             logger,
           ))
@@ -206,7 +220,7 @@ export async function runNuqWorker(options: {
         if (
           !(await options.queue.jobFail(
             job.id,
-            job.lock!,
+            jobLock,
             processResult.error instanceof Error
               ? processResult.error.message
               : typeof processResult.error === "string"
@@ -223,18 +237,21 @@ export async function runNuqWorker(options: {
 
   _logger.info("NuQ worker shutting down", {
     module: options.serviceName,
-    workDrainMs: Date.now() - shutdownStartedAt!,
+    workDrainMs:
+      shutdownStartedAt !== undefined ? Date.now() - shutdownStartedAt : 0,
   });
 
-  server.close(async () => {
-    try {
-      await options.beforeShutdown?.();
-      await options.shutdown?.();
-    } finally {
-      await runProcessStop(options.serviceName);
-    }
-    await shutdownTracing();
-    _logger.info("NuQ worker shut down", { module: options.serviceName });
-    process.exit(0);
+  server.close(() => {
+    void (async () => {
+      try {
+        await options.beforeShutdown?.();
+        await options.shutdown?.();
+      } finally {
+        await runProcessStop(options.serviceName);
+      }
+      await shutdownTracing();
+      _logger.info("NuQ worker shut down", { module: options.serviceName });
+      process.exit(0);
+    })();
   });
 }

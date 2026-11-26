@@ -2,6 +2,7 @@ import type { InternalOptions } from "../scraper/scrapeURL";
 import type { ScrapeOptions, TeamFlags } from "../controllers/v2/types";
 import type { RequestContext } from "../service/request-context";
 import type { WebhookConfig } from "../services/webhook/types";
+import type { JobCrawlerOptions } from "../types";
 import { WebCrawler } from "../scraper/WebScraper/crawler";
 import { redisCrawlStateConnection } from "../services/redis";
 import { crawlStateStore, crawlStateStores } from "./crawl-state-store";
@@ -17,6 +18,22 @@ import {
   REDIS_COMMAND_ARG_CHUNK_SIZE,
 } from "./redis-pipeline";
 import { withWebhookSummaryForLog } from "../services/webhook/log";
+import { isJsonObject } from "./json-types";
+
+export type StoredCrawlerOptions = JobCrawlerOptions & {
+  includes?: Array<string>;
+  excludes?: Array<string>;
+  maxCrawledLinks?: number;
+  maxDepth?: number;
+  generateImgAltText?: boolean;
+  allowBackwardCrawling?: boolean;
+  allowExternalContentLinks?: boolean;
+  sitemapOnly?: boolean;
+  ignoreSitemap?: boolean;
+  timeout?: number;
+  useMock?: string;
+  scrapeOptions?: undefined;
+};
 
 export type StoredCrawl = {
   /**
@@ -25,7 +42,7 @@ export type StoredCrawl = {
    */
   ctx?: RequestContext;
   originUrl?: string;
-  crawlerOptions: any;
+  crawlerOptions: StoredCrawlerOptions | null;
   scrapeOptions: Omit<ScrapeOptions, "timeout">;
   internalOptions: InternalOptions;
   team_id: string;
@@ -49,6 +66,34 @@ export type StoredCrawl = {
   // when they finish.
   origin?: string;
 };
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+function isStoredCrawl(value: unknown): value is StoredCrawl {
+  return (
+    isJsonObject(value) &&
+    typeof value.team_id === "string" &&
+    (value.crawlerOptions === null ||
+      value.crawlerOptions === undefined ||
+      isJsonObject(value.crawlerOptions))
+  );
+}
+
+function hasTrueFlag(value: unknown, key: string): boolean {
+  return isJsonObject(value) && value[key] === true;
+}
+
+function hasStringFlag(value: unknown, key: string, expected: string): boolean {
+  return isJsonObject(value) && value[key] === expected;
+}
 
 export async function saveCrawl(id: string, crawl: StoredCrawl) {
   const { zeroDataRetention } = crawlContext(crawl);
@@ -154,16 +199,20 @@ export async function getCrawl(id: string): Promise<StoredCrawl | null> {
     }
 
     await redis.expire("crawl:" + id, 24 * 60 * 60);
-    const crawl = JSON.parse(x);
+    const parsed: unknown = JSON.parse(x);
+    if (!isStoredCrawl(parsed)) {
+      setSpanAttributes(span, { "crawl.found": false });
+      return null;
+    }
 
     setSpanAttributes(span, {
       "crawl.found": true,
-      "crawl.team_id": crawl.team_id,
+      "crawl.team_id": parsed.team_id,
       "crawl.zero_data_retention":
-        crawlContext(crawl).zeroDataRetention === true,
+        crawlContext(parsed).zeroDataRetention === true,
     });
 
-    return crawl;
+    return parsed;
   });
 }
 
@@ -279,7 +328,7 @@ export async function addCrawlJobDone(
   // callers invoke this on both the success and failure paths of a scrape
   // job, and a throw from the success path would otherwise cascade into the
   // failure path and misreport (and potentially re-run) a finished scrape.
-  let lastError: unknown = null;
+  let lastError: Error | null = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const now = Date.now();
@@ -311,8 +360,8 @@ export async function addCrawlJobDone(
         return;
       }
       lastError = error;
-    } catch (error) {
-      lastError = error;
+    } catch (error: unknown) {
+      lastError = toError(error);
     }
 
     __logger.error("Redis pipeline command failed", {
@@ -325,7 +374,7 @@ export async function addCrawlJobDone(
     });
 
     if (attempt < 3) {
-      await new Promise(resolve => setTimeout(resolve, 50 * 2 ** attempt));
+      await sleep(50 * 2 ** attempt);
     }
   }
 
@@ -344,6 +393,18 @@ type CrawlJobDoneRepairEntry = {
   success: boolean;
   at: number;
 };
+
+function isCrawlJobDoneRepairEntry(
+  value: unknown,
+): value is CrawlJobDoneRepairEntry {
+  return (
+    isJsonObject(value) &&
+    typeof value.id === "string" &&
+    typeof value.job_id === "string" &&
+    typeof value.success === "boolean" &&
+    typeof value.at === "number"
+  );
+}
 
 /// Best-effort durable record of a crawl completion marker that could not
 /// be written even after retries. Without it, an exhausted addCrawlJobDone
@@ -373,7 +434,7 @@ export async function queueCrawlJobDoneRepair(
         JSON.stringify(entry),
       );
       return;
-    } catch (error) {
+    } catch (error: unknown) {
       __logger.error("Redis pipeline command failed", {
         module: "crawl-redis",
         method: "queueCrawlJobDoneRepair",
@@ -384,7 +445,7 @@ export async function queueCrawlJobDoneRepair(
       });
 
       if (attempt < 3) {
-        await new Promise(resolve => setTimeout(resolve, 50 * 2 ** attempt));
+        await sleep(50 * 2 ** attempt);
       }
     }
   }
@@ -406,7 +467,7 @@ export async function repairCrawlJobDoneMarkers(__logger: Logger = _logger) {
   for (const redis of crawlStateStores()) {
     try {
       await repairCrawlJobDoneMarkersOn(redis, __logger);
-    } catch (error) {
+    } catch (error: unknown) {
       __logger.error("Crawl completion marker repair failed on a store", {
         module: "crawl-redis",
         method: "repairCrawlJobDoneMarkers",
@@ -431,7 +492,12 @@ async function repairCrawlJobDoneMarkersOn(redis: IORedis, __logger: Logger) {
     const field = fields[i];
     let parsed: CrawlJobDoneRepairEntry;
     try {
-      parsed = JSON.parse(fields[i + 1]);
+      const raw: unknown = JSON.parse(fields[i + 1]);
+      if (!isCrawlJobDoneRepairEntry(raw)) {
+        await redis.hdel(CRAWL_JOB_DONE_REPAIR_KEY, field);
+        continue;
+      }
+      parsed = raw;
     } catch {
       await redis.hdel(CRAWL_JOB_DONE_REPAIR_KEY, field);
       continue;
@@ -523,16 +589,6 @@ export async function getDoneJobsOrderedUntil(
     "LIMIT",
     start,
     count,
-  );
-}
-
-async function isCrawlFinished(id: string) {
-  const redis = await crawlStateStore(id);
-  await redis.expire("crawl:" + id + ":kickoff:finish", 24 * 60 * 60);
-  return (
-    (await redis.scard("crawl:" + id + ":jobs_done")) ===
-      (await redis.scard("crawl:" + id + ":jobs")) &&
-    (await isCrawlKickoffFinished(id))
   );
 }
 
@@ -721,11 +777,9 @@ export async function lockURL(
         operation: "lock_url",
       });
 
-      if (typeof sc.crawlerOptions?.limit === "number") {
-        if (
-          (await redis.scard("crawl:" + id + ":visited_unique")) >=
-          sc.crawlerOptions.limit
-        ) {
+      const limit = sc.crawlerOptions?.limit;
+      if (typeof limit === "number") {
+        if ((await redis.scard("crawl:" + id + ":visited_unique")) >= limit) {
           setSpanAttributes(span, { "crawl.limit_reached": true });
           return false;
         }
@@ -743,9 +797,9 @@ export async function lockURL(
       // partial success reads 0.
       let sawNewLock = false;
       let locked = false;
-      let lastError: unknown = null;
+      let lastError: Error | null = null;
       for (let attempt = 1; attempt <= 3; attempt++) {
-        let attemptError: unknown = null;
+        let attemptError: Error | null;
         try {
           const pipeline = redis.pipeline();
           pipeline.sadd("crawl:" + id + ":visited", lockTarget);
@@ -755,8 +809,8 @@ export async function lockURL(
             sawNewLock = true;
           }
           attemptError = firstPipelineError(attemptResults);
-        } catch (error) {
-          attemptError = error;
+        } catch (error: unknown) {
+          attemptError = toError(error);
         }
 
         if (attemptError === null) {
@@ -776,7 +830,7 @@ export async function lockURL(
         });
 
         if (attempt < 3) {
-          await new Promise(resolve => setTimeout(resolve, 50 * 2 ** attempt));
+          await sleep(50 * 2 ** attempt);
         }
       }
 
@@ -793,9 +847,9 @@ export async function lockURL(
         // this URL as already-visited and it would be lost from the crawl.
         // The visited_unique bookkeeping is idempotent — retry it before
         // exposing the failure.
-        let lastError: unknown = null;
+        let uniqueLastError: Error | null = null;
         for (let attempt = 1; attempt <= 3; attempt++) {
-          let attemptError: unknown = null;
+          let attemptError: Error | null;
           try {
             const uniquePipeline = redis.pipeline();
             uniquePipeline.sadd(
@@ -807,15 +861,15 @@ export async function lockURL(
               24 * 60 * 60,
             );
             attemptError = firstPipelineError(await uniquePipeline.exec());
-          } catch (error) {
-            attemptError = error;
+          } catch (error: unknown) {
+            attemptError = toError(error);
           }
 
           if (attemptError === null) {
-            lastError = null;
+            uniqueLastError = null;
             break;
           }
-          lastError = attemptError;
+          uniqueLastError = attemptError;
 
           __logger.error("Redis pipeline command failed", {
             module: "crawl-redis",
@@ -827,13 +881,11 @@ export async function lockURL(
           });
 
           if (attempt < 3) {
-            await new Promise(resolve =>
-              setTimeout(resolve, 50 * 2 ** attempt),
-            );
+            await sleep(50 * 2 ** attempt);
           }
         }
 
-        if (lastError !== null) {
+        if (uniqueLastError !== null) {
           // Roll back the locks we just acquired, so a caller retry can
           // re-lock and queue this URL instead of skipping it as
           // already-visited. visited_unique may have landed during a retried
@@ -843,14 +895,14 @@ export async function lockURL(
           // Redis is having a sustained outage and the canonical logs are
           // the signal.
           for (let attempt = 1; attempt <= 3; attempt++) {
-            let rollbackError: unknown = null;
+            let rollbackError: Error | null;
             try {
               const rollback = redis.pipeline();
               rollback.srem("crawl:" + id + ":visited", lockTarget);
               rollback.srem("crawl:" + id + ":visited_unique", normalizedUrl);
               rollbackError = firstPipelineError(await rollback.exec());
-            } catch (error) {
-              rollbackError = error;
+            } catch (error: unknown) {
+              rollbackError = toError(error);
             }
 
             if (rollbackError === null) {
@@ -867,13 +919,11 @@ export async function lockURL(
             });
 
             if (attempt < 3) {
-              await new Promise(resolve =>
-                setTimeout(resolve, 50 * 2 ** attempt),
-              );
+              await sleep(50 * 2 ** attempt);
             }
           }
           throw new Error("Unique URL lock pipeline failed after retries", {
-            cause: lastError,
+            cause: uniqueLastError,
           });
         }
       }
@@ -921,9 +971,9 @@ export async function lockURLs(
   // would read them as already locked and skip them.
   let results: Array<[Error | null, unknown]> | null = null;
   let visitedChunkStartIndexes: Array<number> = [];
-  let lastError: unknown = null;
+  let lastError: Error | null = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
-    let attemptError: unknown = null;
+    let attemptError: Error | null;
     try {
       const pipeline = redis.pipeline();
       for (let i = 0; i < urls.length; i += REDIS_COMMAND_ARG_CHUNK_SIZE) {
@@ -954,8 +1004,8 @@ export async function lockURLs(
       if (attemptError === null) {
         results = attemptResults;
       }
-    } catch (error) {
-      attemptError = error;
+    } catch (error: unknown) {
+      attemptError = toError(error);
     }
 
     if (attemptError === null) {
@@ -971,7 +1021,7 @@ export async function lockURLs(
     });
 
     if (attempt < 3) {
-      await new Promise(resolve => setTimeout(resolve, 50 * 2 ** attempt));
+      await sleep(50 * 2 ** attempt);
     }
   }
 
@@ -984,10 +1034,10 @@ export async function lockURLs(
   // If an earlier attempt partially landed, the clean attempt's SADD counts
   // under-report (members already present), so res can be false even though
   // every URL is locked. Callers only use this for logging.
-  const saddResult = visitedChunkStartIndexes.reduce(
-    (total, index) => total + ((results?.[index]?.[1] as number) ?? 0),
-    0,
-  );
+  const saddResult = visitedChunkStartIndexes.reduce((total, index) => {
+    const count = results[index]?.[1];
+    return total + (typeof count === "number" ? count : 0);
+  }, 0);
   const res = saddResult === urls.length;
 
   logger.debug("lockURLs final result", { res });
@@ -1015,30 +1065,22 @@ export function crawlToCrawler(
   sc: StoredCrawl,
   teamFlags?: TeamFlags,
   newBase?: string,
-  crawlerOptions?: any,
+  crawlerOptions?: StoredCrawlerOptions | null,
 ): WebCrawler {
   const ctx = crawlContext(sc);
-  const effectiveFlags = (teamFlags ?? ctx.flags) as
-    | Record<string, unknown>
-    | null
-    | undefined;
-  const safeModeConfig =
-    effectiveFlags?.safeModeConfig &&
-    typeof effectiveFlags.safeModeConfig === "object"
-      ? (effectiveFlags.safeModeConfig as Record<string, unknown>)
-      : undefined;
+  const effectiveFlags = teamFlags ?? ctx.flags;
+  const safeModeConfig = effectiveFlags?.safeModeConfig;
   const safeModeActive =
     Boolean(effectiveFlags?.safeMode) && !sc.internalOptions?.safeModeBypassed;
   const forcedScrapeZdr =
     effectiveFlags?.scrapeZDR === "forced" ||
     effectiveFlags?.forceZDR === true ||
-    effectiveFlags?.allowZDR === "forced";
+    hasStringFlag(effectiveFlags, "allowZDR", "forced");
 
   const lockdown =
     ctx.lockdown !== undefined
       ? ctx.lockdown
-      : (sc.scrapeOptions as Record<string, unknown> | undefined)?.lockdown ===
-          true ||
+      : hasTrueFlag(sc.scrapeOptions, "lockdown") ||
         (safeModeActive && safeModeConfig?.lockdown === true);
 
   const ignoreRobotsTxt =
@@ -1052,10 +1094,11 @@ export function crawlToCrawler(
         : (sc.crawlerOptions?.ignoreRobotsTxt ?? false);
 
   const zeroDataRetention = ctx.zeroDataRetention || forcedScrapeZdr;
+  const initialUrl = sc.originUrl ?? "";
 
   const crawler = new WebCrawler({
     jobId: id,
-    initialUrl: sc.originUrl!,
+    initialUrl,
     baseUrl: newBase ? new URL(newBase).origin : undefined,
     includes: (sc.crawlerOptions?.includes ?? []).filter(
       x => x.trim().length > 0,
@@ -1065,7 +1108,7 @@ export function crawlToCrawler(
     ),
     maxCrawledLinks: sc.crawlerOptions?.maxCrawledLinks ?? 1000,
     maxCrawledDepth: getAdjustedMaxDepth(
-      sc.originUrl!,
+      initialUrl,
       sc.crawlerOptions?.maxDepth ?? 10,
     ),
     limit: sc.crawlerOptions?.limit ?? 10_000,
@@ -1092,7 +1135,9 @@ export function crawlToCrawler(
   if (sc.robots !== undefined) {
     try {
       crawler.importRobotsTxt(sc.robots);
-    } catch {}
+    } catch {
+      // Ignore malformed robots.txt so crawling continues with default rules.
+    }
   }
 
   return crawler;

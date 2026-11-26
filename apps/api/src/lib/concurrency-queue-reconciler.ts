@@ -117,7 +117,7 @@ async function reconcileTeam(
   let teamConcurrency: number | null;
   try {
     teamConcurrency = await currentLimits().teamConcurrency(ownerId);
-  } catch (error) {
+  } catch (error: unknown) {
     teamLogger.warn(
       "Failed to resolve team concurrency limit, skipping drift recovery for team",
       { error },
@@ -240,7 +240,7 @@ async function drainQueue(
   let teamConcurrency: number | null;
   try {
     teamConcurrency = await currentLimits().teamConcurrency(ownerId);
-  } catch (error) {
+  } catch (error: unknown) {
     teamLogger.warn(
       "Failed to resolve team concurrency limit, skipping queue drain for team",
       { error },
@@ -398,7 +398,7 @@ export async function reconcileConcurrencyQueue(
           staleSkipped: drainResult.staleSkipped,
         });
       }
-    } catch (error) {
+    } catch (error: unknown) {
       teamLogger.error("Failed to reconcile team, skipping", { error });
     }
   }

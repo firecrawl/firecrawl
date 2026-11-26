@@ -42,7 +42,7 @@ export async function start() {
   app.get("/metrics", async (_, res) => {
     try {
       res.contentType("text/plain").send(await register.metrics());
-    } catch (error) {
+    } catch (error: unknown) {
       _logger.error("Failed to collect metrics", { error });
       res.status(500).send("Failed to collect metrics");
     }
@@ -77,19 +77,27 @@ export async function start() {
 
     while (reconcilerInFlight) {
       _logger.info("Waiting for in-flight reconciliation to complete...");
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 1000);
+      });
     }
 
-    server.close(async () => {
-      await runProcessStop("nuq-reconciler-worker");
-      await shutdownTracing();
-      _logger.info("NuQ reconciler worker shut down");
-      process.exit(0);
+    server.close(() => {
+      void (async () => {
+        await runProcessStop("nuq-reconciler-worker");
+        await shutdownTracing();
+        _logger.info("NuQ reconciler worker shut down");
+        process.exit(0);
+      })();
     });
   }
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", () => {
+    void shutdown();
+  });
+  process.on("SIGTERM", () => {
+    void shutdown();
+  });
 
   while (!isShuttingDown) {
     if (!reconcilerInFlight) {
@@ -97,7 +105,7 @@ export async function start() {
 
       try {
         await repairCrawlJobDoneMarkers(_logger);
-      } catch (error) {
+      } catch (error: unknown) {
         _logger.error("Crawl completion marker repair run failed", { error });
       }
 
@@ -112,7 +120,7 @@ export async function start() {
         );
 
         _logger.info("Concurrency queue reconciler run complete", summary);
-      } catch (error) {
+      } catch (error: unknown) {
         reconcilerFailuresTotal.inc();
         _logger.error("Concurrency queue reconciler run failed", { error });
       } finally {
@@ -120,7 +128,9 @@ export async function start() {
       }
     }
 
-    await new Promise(resolve => setTimeout(resolve, RECONCILER_INTERVAL_MS));
+    await new Promise<void>(resolve => {
+      setTimeout(resolve, RECONCILER_INTERVAL_MS);
+    });
   }
 }
 

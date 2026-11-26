@@ -1,14 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { BaseScrapeOptions } from "../../controllers/v2/types";
+import type { ScrapeJobData, ScrapeJobSingleUrls } from "../../types";
 import type { NuQJob } from "./nuq";
+
+type MockSpan = { readonly id?: string };
 
 const mocks = vi.hoisted(() => {
   const crawler = {
-    robots: { getSitemaps: vi.fn(() => [] as Array<string>) },
+    robots: { getSitemaps: vi.fn((): Array<string> => []) },
     usOnly: false,
     setBaseUrl: vi.fn(),
     isRobotsAllowed: vi.fn(() => true),
     filterURL: vi.fn(async () => ({ allowed: true })),
-    extractLinksFromContent: vi.fn(async () => [] as Array<string>),
+    extractLinksFromContent: vi.fn(async (): Promise<Array<string>> => []),
     filterLinks: vi.fn(async (links: Array<string>) => ({
       links,
       robotsBlocked: [] as Array<string>,
@@ -24,7 +28,7 @@ const mocks = vi.hoisted(() => {
     lockURLsIndividually: vi.fn(
       async (
         _crawlId: string,
-        _sc: any,
+        _sc: unknown,
         entries: Array<{ id: string; url: string }>,
       ) => entries,
     ),
@@ -36,24 +40,39 @@ const mocks = vi.hoisted(() => {
     recordThreatBlocked: vi.fn(async () => false),
     finishCrawlKickoff: vi.fn(async () => undefined),
     finishCrawl: vi.fn(async () => undefined),
-    getCrawlJobs: vi.fn(async () => [] as Array<string>),
+    getCrawlJobs: vi.fn(async (): Promise<Array<string>> => []),
     getDoneJobsOrderedLength: vi.fn(async () => 0),
     saveCrawl: vi.fn(async () => undefined),
     setCrawlError: vi.fn(async () => undefined),
-    queryIndexAtSplitLevel: vi.fn(async () => [] as Array<string>),
+    queryIndexAtSplitLevel: vi.fn(async (): Promise<Array<string>> => []),
     generateURLSplits: vi.fn((url: string) => [url]),
     scrapeSitemap: vi.fn(async () => ({
       urls: [] as Array<{ href: string }>,
       sitemaps: [] as Array<{ href: string }>,
     })),
     startWebScraperPipeline: vi.fn(),
-    addScrapeJob: vi.fn(async (..._args: Array<any>) => null),
-    addScrapeJobs: vi.fn(async (..._args: Array<any>) => true),
-    addScrapeJobToBullMQ: vi.fn(async (..._args: Array<any>) => ({
+    addScrapeJob: vi.fn(
+      async (_data: ScrapeJobSingleUrls, _jobId?: string, _priority?: number) =>
+        null,
+    ),
+    addScrapeJobs: vi.fn(
+      async (
+        _jobs: Array<{
+          jobId: string;
+          data: ScrapeJobSingleUrls;
+          priority: number;
+        }>,
+      ) => true,
+    ),
+    addScrapeJobToBullMQ: vi.fn(async (..._args: Array<unknown>) => ({
       id: "sitemap-job",
     })),
     getACUCTeam: vi.fn(async () => ({ flags: null })),
-    getJobs: vi.fn(async () => [] as Array<any>),
+    getJobs: vi.fn(
+      async (): Promise<
+        Array<{ timestamp: number; returnvalue: unknown }>
+      > => [],
+    ),
     readRequestCredits: vi.fn(async () => 5),
     readRequestCreditsFromAnalytics: vi.fn(async () => 5),
     logCrawl: vi.fn(async () => undefined),
@@ -61,11 +80,19 @@ const mocks = vi.hoisted(() => {
     logScrape: vi.fn(async () => undefined),
     createWebhookSender: vi.fn(async () => null),
     createInAppNotification: vi.fn(async () => true),
-    checkUrlsAgainstThreatPolicy: vi.fn(async (urls: Array<string>) => ({
-      allowedUrls: urls,
-      blocked: [] as Array<any>,
-      decisionsByUrl: new Map(),
-    })),
+    checkUrlsAgainstThreatPolicy: vi.fn(
+      async (
+        urls: Array<string>,
+      ): Promise<{
+        allowedUrls: Array<string>;
+        blocked: Array<unknown>;
+        decisionsByUrl: Map<string, unknown>;
+      }> => ({
+        allowedUrls: urls,
+        blocked: [],
+        decisionsByUrl: new Map(),
+      }),
+    ),
     redisEvictConnection: {
       sadd: vi.fn(async () => 1),
       expire: vi.fn(async () => 1),
@@ -155,9 +182,9 @@ vi.mock("../../scraper/crawler/sitemap", () => ({
 }));
 
 vi.mock("../../lib/otel-tracer", () => ({
-  withTraceContextAsync: (_ctx: unknown, fn: () => unknown) => fn(),
-  withZeroDataRetention: (_zdr: boolean, fn: () => unknown) => fn(),
-  withSpan: (_name: string, fn: (span: any) => unknown) => fn({}),
+  withTraceContextAsync: <T>(_ctx: unknown, fn: () => T): T => fn(),
+  withZeroDataRetention: <T>(_zdr: boolean, fn: () => T): T => fn(),
+  withSpan: <T>(_name: string, fn: (span: MockSpan) => T): T => fn({}),
   setSpanAttributes: vi.fn(),
 }));
 
@@ -166,10 +193,48 @@ vi.mock("../../controllers/v2/crawl-status", () => ({
 }));
 
 import { requestContext } from "../../lib/request-context";
-import type { HookHandlers } from "../../service/hooks";
+import type { CrawlFinished, HookHandlers } from "../../service/hooks";
 import { createService, replaceService } from "../../service/service";
 import { finishCrawlSuper } from "./crawl-logic";
 import { processJobInternal } from "./scrape-worker";
+
+const defaultScrapeOptions: BaseScrapeOptions = {
+  formats: [{ type: "markdown" }],
+  onlyMainContent: true,
+  onlyCleanContent: false,
+  waitFor: 0,
+  mobile: false,
+  removeBase64Images: true,
+  fastMode: false,
+  blockAds: true,
+  proxy: "auto",
+  checkPromptInjection: false,
+};
+
+function makeNuqJob<T extends ScrapeJobData>(id: string, data: T): NuQJob<T> {
+  return {
+    id,
+    status: "active",
+    createdAt: new Date(),
+    priority: 0,
+    data,
+  };
+}
+
+function makeFinishData(overrides: {
+  team_id: string;
+  v1: boolean;
+  zeroDataRetention: boolean;
+}): ScrapeJobSingleUrls {
+  return {
+    mode: "single_urls",
+    url: "https://example.com",
+    origin: "api",
+    apiKeyId: null,
+    scrapeOptions: defaultScrapeOptions,
+    ...overrides,
+  };
+}
 
 function installHooks(hooks?: HookHandlers) {
   replaceService(
@@ -249,22 +314,19 @@ describe("crawl lifecycle hooks", () => {
 
     mocks.getCrawl.mockResolvedValue(baseStoredCrawl());
 
-    const kickoffJob = {
-      id: "kickoff-1",
-      data: {
-        mode: "kickoff",
-        url: "https://example.com",
-        crawl_id: "crawl-1",
-        team_id: "team-1",
-        zeroDataRetention: false,
-        origin: "api",
-        v1: true,
-        apiKeyId: 1,
-        crawlerOptions: { limit: 100 },
-        scrapeOptions: {},
-        ctx: requestContext({ teamId: "team-1", zeroDataRetention: false }),
-      },
-    } as unknown as NuQJob<any>;
+    const kickoffJob = makeNuqJob("kickoff-1", {
+      mode: "kickoff",
+      url: "https://example.com",
+      crawl_id: "crawl-1",
+      team_id: "team-1",
+      zeroDataRetention: false,
+      origin: "api",
+      v1: true,
+      apiKeyId: 1,
+      crawlerOptions: { limit: 100 },
+      scrapeOptions: defaultScrapeOptions,
+      ctx: requestContext({ teamId: "team-1", zeroDataRetention: false }),
+    });
 
     await processJobInternal(kickoffJob);
 
@@ -274,7 +336,7 @@ describe("crawl lifecycle hooks", () => {
     ]);
     expect(mocks.addScrapeJobs).toHaveBeenCalledTimes(1);
     const queuedUrls = mocks.addScrapeJobs.mock.calls[0][0].map(
-      (job: any) => job.data.url,
+      job => job.data.url,
     );
     expect(queuedUrls).toEqual(["https://example.com/seeded-keep"]);
   });
@@ -297,27 +359,24 @@ describe("crawl lifecycle hooks", () => {
       sitemaps: [],
     });
 
-    const sitemapJob = {
-      id: "sitemap-1",
-      data: {
-        mode: "kickoff_sitemap",
-        crawl_id: "crawl-2",
-        sitemapUrl: "https://example.com/sitemap.xml",
-        team_id: "team-1",
-        zeroDataRetention: false,
-        origin: "api",
-        v1: true,
-        apiKeyId: 1,
-        ctx: requestContext({ teamId: "team-1", zeroDataRetention: false }),
-      },
-    } as unknown as NuQJob<any>;
+    const sitemapJob = makeNuqJob("sitemap-1", {
+      mode: "kickoff_sitemap",
+      crawl_id: "crawl-2",
+      sitemapUrl: "https://example.com/sitemap.xml",
+      team_id: "team-1",
+      zeroDataRetention: false,
+      origin: "api",
+      v1: true,
+      apiKeyId: 1,
+      ctx: requestContext({ teamId: "team-1", zeroDataRetention: false }),
+    });
 
     await processJobInternal(sitemapJob);
 
     expect(seenFrom).toEqual(["crawl-2:https://example.com/sitemap.xml"]);
     expect(mocks.addScrapeJobs).toHaveBeenCalledTimes(1);
     const queuedUrls = mocks.addScrapeJobs.mock.calls[0][0].map(
-      (job: any) => job.data.url,
+      job => job.data.url,
     );
     expect(queuedUrls).toEqual(["https://example.com/keep"]);
   });
@@ -349,22 +408,19 @@ describe("crawl lifecycle hooks", () => {
       "https://example.com/skip",
     ]);
 
-    const scrapeJob = {
-      id: "scrape-1",
-      data: {
-        mode: "single_urls",
-        url: "https://example.com/page",
-        crawl_id: "crawl-3",
-        team_id: "team-1",
-        zeroDataRetention: false,
-        origin: "api",
-        v1: true,
-        apiKeyId: 1,
-        crawlerOptions: { limit: 100 },
-        scrapeOptions: { formats: [{ type: "markdown" }] },
-        ctx: requestContext({ teamId: "team-1", zeroDataRetention: false }),
-      },
-    } as unknown as NuQJob<any>;
+    const scrapeJob = makeNuqJob("scrape-1", {
+      mode: "single_urls",
+      url: "https://example.com/page",
+      crawl_id: "crawl-3",
+      team_id: "team-1",
+      zeroDataRetention: false,
+      origin: "api",
+      v1: true,
+      apiKeyId: 1,
+      crawlerOptions: { limit: 100 },
+      scrapeOptions: defaultScrapeOptions,
+      ctx: requestContext({ teamId: "team-1", zeroDataRetention: false }),
+    });
 
     await processJobInternal(scrapeJob);
 
@@ -404,34 +460,29 @@ describe("crawl lifecycle hooks", () => {
       }),
     );
 
-    const sitemapJob = {
-      id: "sitemap-revalidate",
-      data: {
-        mode: "kickoff_sitemap",
-        crawl_id: "crawl-revalidate",
-        sitemapUrl: "https://example.com/sitemap.xml",
-        team_id: "team-1",
-        zeroDataRetention: false,
-        origin: "api",
-        v1: true,
-        apiKeyId: 1,
-        ctx: requestContext({ teamId: "team-1", zeroDataRetention: false }),
-      },
-    } as unknown as NuQJob<any>;
+    const sitemapJob = makeNuqJob("sitemap-revalidate", {
+      mode: "kickoff_sitemap",
+      crawl_id: "crawl-revalidate",
+      sitemapUrl: "https://example.com/sitemap.xml",
+      team_id: "team-1",
+      zeroDataRetention: false,
+      origin: "api",
+      v1: true,
+      apiKeyId: 1,
+      ctx: requestContext({ teamId: "team-1", zeroDataRetention: false }),
+    });
 
     await processJobInternal(sitemapJob);
 
     expect(mocks.addScrapeJobs).toHaveBeenCalledTimes(1);
-    expect(
-      mocks.addScrapeJobs.mock.calls[0][0].map((j: any) => j.data.url),
-    ).toEqual([
+    expect(mocks.addScrapeJobs.mock.calls[0][0].map(j => j.data.url)).toEqual([
       "https://example.com/from-sitemap",
       "https://example.com/safe-added",
     ]);
   });
 
   it("awaits crawl.finished for both crawl and batchScrape (v1 and v0) and propagates rejections", async () => {
-    const events: Array<any> = [];
+    const events: Array<CrawlFinished> = [];
     installHooks({
       "crawl.finished": async event => {
         events.push(event);
@@ -451,9 +502,8 @@ describe("crawl lifecycle hooks", () => {
     await finishCrawlSuper({
       id: "fin-1",
       groupId: "crawl-v1",
-      ownerId: "team-1",
       data: null,
-    } as unknown as NuQJob<any>);
+    });
 
     // v0 batch scrape
     mocks.getCrawl.mockResolvedValueOnce({
@@ -470,9 +520,12 @@ describe("crawl lifecycle hooks", () => {
     await finishCrawlSuper({
       id: "fin-2",
       groupId: "batch-v0",
-      ownerId: "team-1",
-      data: { team_id: "team-1", v1: false, zeroDataRetention: false },
-    } as unknown as NuQJob<any>);
+      data: makeFinishData({
+        team_id: "team-1",
+        v1: false,
+        zeroDataRetention: false,
+      }),
+    });
 
     expect(events).toEqual([
       expect.objectContaining({
@@ -508,30 +561,30 @@ describe("crawl lifecycle hooks", () => {
       finishCrawlSuper({
         id: "fin-3",
         groupId: "crawl-err",
-        ownerId: "team-1",
-        data: { team_id: "team-1", v1: true, zeroDataRetention: false },
-      } as unknown as NuQJob<any>),
+        data: makeFinishData({
+          team_id: "team-1",
+          v1: true,
+          zeroDataRetention: false,
+        }),
+      }),
     ).rejects.toThrow("finalize hook failed");
   });
 
   it("leaves crawl kickoff, sitemap, page discovery, and finalization unchanged with no service or no handlers", async () => {
     mocks.getCrawl.mockResolvedValue(baseStoredCrawl());
 
-    const kickoffJob = {
-      id: "kickoff-plain",
-      data: {
-        mode: "kickoff",
-        url: "https://example.com",
-        crawl_id: "crawl-plain",
-        team_id: "team-1",
-        zeroDataRetention: false,
-        origin: "api",
-        v1: true,
-        apiKeyId: 1,
-        crawlerOptions: { limit: 100 },
-        scrapeOptions: {},
-      },
-    } as unknown as NuQJob<any>;
+    const kickoffJob = makeNuqJob("kickoff-plain", {
+      mode: "kickoff",
+      url: "https://example.com",
+      crawl_id: "crawl-plain",
+      team_id: "team-1",
+      zeroDataRetention: false,
+      origin: "api",
+      v1: true,
+      apiKeyId: 1,
+      crawlerOptions: { limit: 100 },
+      scrapeOptions: defaultScrapeOptions,
+    });
 
     await processJobInternal(kickoffJob);
     expect(mocks.addScrapeJobs).not.toHaveBeenCalled();
@@ -540,23 +593,20 @@ describe("crawl lifecycle hooks", () => {
       urls: [{ href: "https://example.com/sitemap-plain" }],
       sitemaps: [],
     });
-    const sitemapJob = {
-      id: "sitemap-plain",
-      data: {
-        mode: "kickoff_sitemap",
-        crawl_id: "crawl-plain",
-        sitemapUrl: "https://example.com/sitemap.xml",
-        team_id: "team-1",
-        zeroDataRetention: false,
-        origin: "api",
-        v1: true,
-        apiKeyId: 1,
-      },
-    } as unknown as NuQJob<any>;
+    const sitemapJob = makeNuqJob("sitemap-plain", {
+      mode: "kickoff_sitemap",
+      crawl_id: "crawl-plain",
+      sitemapUrl: "https://example.com/sitemap.xml",
+      team_id: "team-1",
+      zeroDataRetention: false,
+      origin: "api",
+      v1: true,
+      apiKeyId: 1,
+    });
     await processJobInternal(sitemapJob);
-    expect(
-      mocks.addScrapeJobs.mock.calls[0][0].map((j: any) => j.data.url),
-    ).toEqual(["https://example.com/sitemap-plain"]);
+    expect(mocks.addScrapeJobs.mock.calls[0][0].map(j => j.data.url)).toEqual([
+      "https://example.com/sitemap-plain",
+    ]);
 
     installHooks();
     mocks.startWebScraperPipeline.mockResolvedValue({
@@ -574,9 +624,8 @@ describe("crawl lifecycle hooks", () => {
     mocks.crawler.extractLinksFromContent.mockResolvedValue([
       "https://example.com/discovered",
     ]);
-    await processJobInternal({
-      id: "scrape-plain",
-      data: {
+    await processJobInternal(
+      makeNuqJob("scrape-plain", {
         mode: "single_urls",
         url: "https://example.com/page",
         crawl_id: "crawl-plain",
@@ -586,9 +635,9 @@ describe("crawl lifecycle hooks", () => {
         v1: true,
         apiKeyId: 1,
         crawlerOptions: { limit: 100 },
-        scrapeOptions: { formats: [{ type: "markdown" }] },
-      },
-    } as unknown as NuQJob<any>);
+        scrapeOptions: defaultScrapeOptions,
+      }),
+    );
     expect(mocks.addScrapeJob).toHaveBeenLastCalledWith(
       expect.objectContaining({ url: "https://example.com/discovered" }),
       expect.any(String),
@@ -599,9 +648,12 @@ describe("crawl lifecycle hooks", () => {
       finishCrawlSuper({
         id: "fin-plain",
         groupId: "crawl-plain",
-        ownerId: "team-1",
-        data: { team_id: "team-1", v1: true, zeroDataRetention: false },
-      } as unknown as NuQJob<any>),
+        data: makeFinishData({
+          team_id: "team-1",
+          v1: true,
+          zeroDataRetention: false,
+        }),
+      }),
     ).resolves.toBeUndefined();
   });
 });

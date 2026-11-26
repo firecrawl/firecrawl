@@ -10,7 +10,11 @@ type ParseFormatsResponse = {
 };
 
 export async function parseFormatsController(
-  _req: RequestWithAuth<{}, ParseFormatsResponse, undefined>,
+  _req: RequestWithAuth<
+    Record<string, string>,
+    ParseFormatsResponse,
+    undefined
+  >,
   res: Response<ParseFormatsResponse>,
 ) {
   res.setHeader("Cache-Control", "private, max-age=3600");

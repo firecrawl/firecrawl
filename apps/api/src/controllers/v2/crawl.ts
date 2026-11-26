@@ -1,6 +1,11 @@
 import type { Response } from "express";
 import { v7 as uuidv7 } from "uuid";
-import type { CrawlRequest, CrawlResponse, RequestWithAuth } from "./types";
+import type {
+  CrawlRequest,
+  CrawlResponse,
+  ErrorResponse,
+  RequestWithAuth,
+} from "./types";
 import { getV2RequestSchemas, toV0CrawlerOptions } from "./types";
 import type { StoredCrawl } from "../../lib/crawl-redis";
 import { crawlToCrawler, saveCrawl } from "../../lib/crawl-redis";
@@ -20,19 +25,149 @@ import {
 } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
 import { finalizeResponse, service } from "../../service";
-import type { RequestContext } from "../../service";
+import type { RequestContext, ResponsePayload } from "../../service";
 import type { BillingMetadata } from "../../lib/billing-types";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { getErrorHttpResponse } from "../../lib/error";
 import { currentLimits } from "../../lib/limits";
 import { withWebhookSummaryForLog } from "../../services/webhook/log";
+import { isJsonObject } from "../../lib/json-types";
+import type { JsonObject } from "../../lib/json-types";
+import type { InternalOptions } from "../../scraper/scrapeURL";
+
+type FinalCrawlerOptions = Omit<
+  CrawlRequest,
+  "url" | "scrapeOptions" | "prompt"
+> & {
+  url: undefined;
+  scrapeOptions: undefined;
+  prompt: undefined;
+  maxDepth?: number;
+};
+
+function toJsonObject(value: unknown): JsonObject {
+  return isJsonObject(value) ? value : {};
+}
+
+function isStringArray(value: unknown): value is Array<string> {
+  return Array.isArray(value) && value.every(item => typeof item === "string");
+}
+
+function readBooleanField(source: unknown, key: string): boolean {
+  return isJsonObject(source) && source[key] === true;
+}
+
+function applyPromptOptions(
+  target: FinalCrawlerOptions,
+  promptGeneratedOptions: JsonObject,
+  preNormalizedBody: JsonObject,
+): void {
+  const shouldApply = (key: string): boolean =>
+    Object.hasOwn(promptGeneratedOptions, key) &&
+    (!Object.hasOwn(preNormalizedBody, key) ||
+      preNormalizedBody[key] === undefined ||
+      preNormalizedBody[key] === null);
+
+  if (
+    shouldApply("includePaths") &&
+    isStringArray(promptGeneratedOptions.includePaths)
+  ) {
+    target.includePaths = promptGeneratedOptions.includePaths;
+  }
+  if (
+    shouldApply("excludePaths") &&
+    isStringArray(promptGeneratedOptions.excludePaths)
+  ) {
+    target.excludePaths = promptGeneratedOptions.excludePaths;
+  }
+  if (
+    shouldApply("maxDiscoveryDepth") &&
+    typeof promptGeneratedOptions.maxDiscoveryDepth === "number"
+  ) {
+    target.maxDiscoveryDepth = promptGeneratedOptions.maxDiscoveryDepth;
+  }
+  if (
+    shouldApply("maxDepth") &&
+    typeof promptGeneratedOptions.maxDepth === "number"
+  ) {
+    target.maxDepth = promptGeneratedOptions.maxDepth;
+  }
+  if (
+    shouldApply("limit") &&
+    typeof promptGeneratedOptions.limit === "number"
+  ) {
+    target.limit = promptGeneratedOptions.limit;
+  }
+  if (
+    shouldApply("crawlEntireDomain") &&
+    typeof promptGeneratedOptions.crawlEntireDomain === "boolean"
+  ) {
+    target.crawlEntireDomain = promptGeneratedOptions.crawlEntireDomain;
+  }
+  if (
+    shouldApply("allowExternalLinks") &&
+    typeof promptGeneratedOptions.allowExternalLinks === "boolean"
+  ) {
+    target.allowExternalLinks = promptGeneratedOptions.allowExternalLinks;
+  }
+  if (
+    shouldApply("allowSubdomains") &&
+    typeof promptGeneratedOptions.allowSubdomains === "boolean"
+  ) {
+    target.allowSubdomains = promptGeneratedOptions.allowSubdomains;
+  }
+  if (
+    shouldApply("ignoreRobotsTxt") &&
+    typeof promptGeneratedOptions.ignoreRobotsTxt === "boolean"
+  ) {
+    target.ignoreRobotsTxt = promptGeneratedOptions.ignoreRobotsTxt;
+  }
+  if (
+    shouldApply("robotsUserAgent") &&
+    typeof promptGeneratedOptions.robotsUserAgent === "string"
+  ) {
+    target.robotsUserAgent = promptGeneratedOptions.robotsUserAgent;
+  }
+  if (
+    shouldApply("sitemap") &&
+    (promptGeneratedOptions.sitemap === "skip" ||
+      promptGeneratedOptions.sitemap === "include" ||
+      promptGeneratedOptions.sitemap === "only")
+  ) {
+    target.sitemap = promptGeneratedOptions.sitemap;
+  }
+  if (
+    shouldApply("deduplicateSimilarURLs") &&
+    typeof promptGeneratedOptions.deduplicateSimilarURLs === "boolean"
+  ) {
+    target.deduplicateSimilarURLs =
+      promptGeneratedOptions.deduplicateSimilarURLs;
+  }
+  if (
+    shouldApply("ignoreQueryParameters") &&
+    typeof promptGeneratedOptions.ignoreQueryParameters === "boolean"
+  ) {
+    target.ignoreQueryParameters = promptGeneratedOptions.ignoreQueryParameters;
+  }
+  if (
+    shouldApply("regexOnFullURL") &&
+    typeof promptGeneratedOptions.regexOnFullURL === "boolean"
+  ) {
+    target.regexOnFullURL = promptGeneratedOptions.regexOnFullURL;
+  }
+  if (
+    shouldApply("delay") &&
+    typeof promptGeneratedOptions.delay === "number"
+  ) {
+    target.delay = promptGeneratedOptions.delay;
+  }
+}
 
 export async function crawlController(
-  req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
-  res: Response<CrawlResponse>,
+  req: RequestWithAuth<Record<string, string>, CrawlResponse, CrawlRequest>,
+  res: Response<CrawlResponse | ResponsePayload>,
 ) {
-  const preNormalizedBody =
-    (req.rawRequestBody as Partial<CrawlRequest> | undefined) ?? req.body;
+  const preNormalizedBody = toJsonObject(req.rawRequestBody ?? req.body);
   if (!req.ctx) {
     req.body = getV2RequestSchemas().crawl.parse(req.body);
   }
@@ -79,7 +214,7 @@ export async function crawlController(
   // Default to no cap when unset.
   const remainingCredits = req.account?.remainingCredits ?? Infinity;
 
-  const crawlerOptions = {
+  const crawlerOptions: FinalCrawlerOptions = {
     ...req.body,
     url: undefined,
     scrapeOptions: undefined,
@@ -87,13 +222,13 @@ export async function crawlController(
   };
   const scrapeOptions = req.body.scrapeOptions;
 
-  let promptGeneratedOptions = {};
+  let promptGeneratedOptions: JsonObject = {};
   if (req.body.prompt) {
     const basePrompt = req.body.prompt;
     try {
       // The prompt and the discovered URLs end up in LLM telemetry, so keep
       // this whole step out of traces for zero data retention crawls.
-      const { extract } = await withZeroDataRetention(
+      const extracted = await withZeroDataRetention(
         zeroDataRetention,
         async () => {
           // Enhance prompt with discovered site URLs (up to 120) to improve option generation
@@ -113,7 +248,7 @@ export async function crawlController(
               zeroDataRetention,
               ctx,
             });
-          return generateCrawlerOptionsFromPrompt(
+          const generated = await generateCrawlerOptionsFromPrompt(
             enhancedPrompt,
             logger,
             new CostTracking(),
@@ -121,28 +256,33 @@ export async function crawlController(
             zeroDataRetention,
             req.acuc?.flags,
           );
+          const rawExtract: unknown = generated.extract;
+          return rawExtract;
         },
       );
-      promptGeneratedOptions = extract || {};
+      promptGeneratedOptions = isJsonObject(extracted) ? extracted : {};
       logger.debug("Generated crawler options from prompt", {
         prompt: req.body.prompt,
         generatedOptions: promptGeneratedOptions,
       });
       logger.debug(JSON.stringify(promptGeneratedOptions, null, 2));
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error("Failed to generate crawler options from prompt", {
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         prompt: req.body.prompt,
       });
       const httpResponse = getErrorHttpResponse(error);
       if (httpResponse) {
-        return res.status(httpResponse.status).json({
+        const errorBody: ErrorResponse = {
           ...httpResponse.extraFields,
           success: false,
-          ...(httpResponse.code ? { code: httpResponse.code } : {}),
           error: httpResponse.message,
           jobId: id,
-        });
+        };
+        if (httpResponse.code) {
+          errorBody.code = httpResponse.code;
+        }
+        return res.status(httpResponse.status).json(errorBody);
       }
       return res.status(400).json({
         success: false,
@@ -153,28 +293,23 @@ export async function crawlController(
     }
   }
 
-  // Merge behavior:
-  // - Start with parsed crawlerOptions (which contains schema defaults)
-  // - Overlay promptGeneratedOptions ONLY for fields the user did not explicitly provide
-  //   in the original request (preNormalizedBody) or provided as null/undefined.
-  // This prevents empty defaults like [] from overwriting meaningful prompt-generated values.
-  const finalCrawlerOptions: any = { ...crawlerOptions };
-  for (const [key, value] of Object.entries(promptGeneratedOptions)) {
-    const userProvided = Object.hasOwn(preNormalizedBody, key);
-    if (
-      !userProvided ||
-      preNormalizedBody[key] === undefined ||
-      preNormalizedBody[key] === null
-    ) {
-      finalCrawlerOptions[key] = value;
-    }
-  }
-
   // The request schema already validated user-supplied includePaths /
   // excludePaths. Options generated from a prompt bypass the schema, so hold
   // the merged result to the same caps, budget, and engine syntax.
   if (req.body.prompt) {
-    const pathPatternIssues = collectPathPatternIssues(finalCrawlerOptions);
+    const shouldOverlayPath = (key: string): boolean =>
+      Object.hasOwn(promptGeneratedOptions, key) &&
+      (!Object.hasOwn(preNormalizedBody, key) ||
+        preNormalizedBody[key] === undefined ||
+        preNormalizedBody[key] === null);
+    const pathPatternIssues = collectPathPatternIssues({
+      includePaths: shouldOverlayPath("includePaths")
+        ? promptGeneratedOptions.includePaths
+        : crawlerOptions.includePaths,
+      excludePaths: shouldOverlayPath("excludePaths")
+        ? promptGeneratedOptions.excludePaths
+        : crawlerOptions.excludePaths,
+    });
     if (pathPatternIssues.length > 0) {
       return res.status(400).json({
         success: false,
@@ -183,6 +318,18 @@ export async function crawlController(
       });
     }
   }
+
+  // Merge behavior:
+  // - Start with parsed crawlerOptions (which contains schema defaults)
+  // - Overlay promptGeneratedOptions ONLY for fields the user did not explicitly provide
+  //   in the original request (preNormalizedBody) or provided as null/undefined.
+  // This prevents empty defaults like [] from overwriting meaningful prompt-generated values.
+  const finalCrawlerOptions: FinalCrawlerOptions = { ...crawlerOptions };
+  applyPromptOptions(
+    finalCrawlerOptions,
+    promptGeneratedOptions,
+    preNormalizedBody,
+  );
 
   const originalLimit = finalCrawlerOptions.limit;
   finalCrawlerOptions.limit = Math.min(
@@ -205,7 +352,7 @@ export async function crawlController(
       clientOrigin: req.body.origin ?? "api",
       estimatedJobs: finalCrawlerOptions.limit,
     })
-    .catch(error => {
+    .catch((error: unknown) => {
       logger.error("Failed to register crawl job", {
         error,
         estimatedJobs: finalCrawlerOptions.limit,
@@ -214,22 +361,26 @@ export async function crawlController(
 
   const effectiveConcurrency = await currentLimits().concurrency(ctx);
   const threatProtection = contextThreatProtection(ctx);
+  const v0CrawlerOptions = toV0CrawlerOptions(finalCrawlerOptions);
+  const internalOptions: InternalOptions = {
+    ctx,
+    disableSmartWaitCache: true,
+    teamId: req.auth.team_id,
+    orgId: req.acuc?.org_id ?? null,
+    zeroDataRetention,
+    agentIndexOnly: readBooleanField(req, "agentIndexOnly"),
+    teamFlags: req.acuc?.flags ?? null,
+  };
+  if (threatProtection !== undefined) {
+    // Rolling-deploy compatibility dual-write alongside the ctx fallback.
+    internalOptions.threatProtection = threatProtection;
+  }
   const sc: StoredCrawl = {
     ctx,
     originUrl: req.body.url,
-    crawlerOptions: toV0CrawlerOptions(finalCrawlerOptions),
+    crawlerOptions: v0CrawlerOptions,
     scrapeOptions,
-    internalOptions: {
-      ctx,
-      disableSmartWaitCache: true,
-      teamId: req.auth.team_id,
-      orgId: req.acuc?.org_id ?? null,
-      zeroDataRetention,
-      agentIndexOnly: (req as any).agentIndexOnly ?? false,
-      teamFlags: req.acuc?.flags ?? null,
-      // Rolling-deploy compatibility dual-write alongside the ctx fallback.
-      ...(threatProtection !== undefined ? { threatProtection } : {}),
-    },
+    internalOptions,
     team_id: req.auth.team_id,
     createdAt: Date.now(),
     maxConcurrency:
@@ -248,11 +399,7 @@ export async function crawlController(
 
   try {
     sc.robots = await crawler.getRobotsTxt(scrapeOptions.skipTlsVerification);
-    // const robotsCrawlDelay = crawler.getRobotsCrawlDelay();
-    // if (robotsCrawlDelay !== null && !sc.crawlerOptions.delay) {
-    //   sc.crawlerOptions.delay = robotsCrawlDelay;
-    // }
-  } catch (error) {
+  } catch (error: unknown) {
     logger.debug("Failed to get robots.txt (this is probably fine!)", {
       error,
     });
@@ -262,7 +409,7 @@ export async function crawlController(
   await crawlGroup.addGroup(id, sc.team_id, crawlTtlHours * 60 * 60 * 1000, {
     backend: sc.queueBackend,
     maxConcurrency: sc.maxConcurrency,
-    delaySeconds: sc.crawlerOptions?.delay,
+    delaySeconds: v0CrawlerOptions.delay,
   });
 
   await saveCrawl(id, sc);
@@ -290,14 +437,15 @@ export async function crawlController(
 
   const protocol = req.protocol;
 
-  const payload = await finalizeResponse(req, "crawl", {
+  const responsePayload: ResponsePayload = {
     success: true,
     id,
     url: `${protocol}://${req.host}/v2/crawl/${id}`,
-    ...(req.body.prompt && {
-      promptGeneratedOptions,
-      finalCrawlerOptions,
-    }),
-  });
-  return res.status(200).json(payload as CrawlResponse);
+  };
+  if (req.body.prompt) {
+    responsePayload.promptGeneratedOptions = promptGeneratedOptions;
+    responsePayload.finalCrawlerOptions = toJsonObject(finalCrawlerOptions);
+  }
+  const payload = await finalizeResponse(req, "crawl", responsePayload);
+  return res.status(200).json(payload);
 }

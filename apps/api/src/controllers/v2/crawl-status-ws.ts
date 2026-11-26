@@ -99,14 +99,14 @@ async function crawlStatusWS(
       ])
     ).map(x => x.id);
 
-    const newlyDoneJobs: Array<PseudoJob<any>> = await getJobs(
+    const newlyDoneJobs: Array<PseudoJob<Document>> = await getJobs(
       newlyDoneJobIDs,
       logger,
     );
 
     for (const job of newlyDoneJobs) {
       if (job.returnvalue) {
-        send(ws, {
+        void send(ws, {
           type: "document",
           data: job.returnvalue,
         });
@@ -116,16 +116,21 @@ async function crawlStatusWS(
     }
 
     doneJobIDs.push(...newlyDoneJobIDs);
-    setTimeout(loop, 1000);
+    setTimeout(() => {
+      void loop();
+    }, 1000);
   };
 
-  setTimeout(loop, 1000);
+  setTimeout(() => {
+    void loop();
+  }, 1000);
 
-  let [_doneJobIDs, jobIDs, throttledJobsSet] = await Promise.all([
+  const [_doneJobIDs, initialJobIDs, throttledJobsSet] = await Promise.all([
     getDoneJobsOrdered(req.params.jobId),
     getCrawlJobs(req.params.jobId),
     getConcurrencyLimitedJobs(req.auth.team_id),
   ]);
+  let jobIDs = initialJobIDs;
 
   doneJobIDs = _doneJobIDs;
   const jobs = new Map((await scrapeQueue.getJobs(jobIDs)).map(x => [x.id, x]));
@@ -163,7 +168,9 @@ async function crawlStatusWS(
   jobIDs = validJobIDs; // Use validJobIDs instead of jobIDs for further processing
 
   const doneJobs = await getJobs(doneJobIDs, logger);
-  const data = doneJobs.map(x => x.returnvalue);
+  const data = doneJobs
+    .map(x => x.returnvalue)
+    .filter((doc): doc is Document => doc !== null);
 
   if (status === "failed" && crawlError) {
     await send(ws, {

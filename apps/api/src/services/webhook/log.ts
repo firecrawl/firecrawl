@@ -1,3 +1,5 @@
+import { isJsonObject } from "../../lib/json-types";
+
 type WebhookLogFields = {
   host: string | null;
   events?: Array<string>;
@@ -25,11 +27,11 @@ export function summarizeWebhookForLog(
   if (typeof webhook === "string") {
     return { host: hostOf(webhook), headerCount: 0 };
   }
-  if (typeof webhook !== "object") {
+  if (!isJsonObject(webhook)) {
     return undefined;
   }
 
-  const { url, events, headers } = webhook as Record<string, unknown>;
+  const { url, events, headers } = webhook;
   return {
     host: typeof url === "string" ? hostOf(url) : null,
     events: Array.isArray(events)

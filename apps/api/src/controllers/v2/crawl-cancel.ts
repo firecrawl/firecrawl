@@ -44,7 +44,7 @@ export async function crawlCancelController(
     try {
       sc.cancelled = true;
       await saveCrawl(req.params.jobId, sc);
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error(error);
     }
 
@@ -58,8 +58,10 @@ export async function crawlCancelController(
     res.json({
       status: "cancelled",
     });
-  } catch (error) {
+  } catch (error: unknown) {
     logger.error(error);
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
