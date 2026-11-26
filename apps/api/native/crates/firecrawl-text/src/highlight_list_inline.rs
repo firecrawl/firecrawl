@@ -3,6 +3,11 @@ use crate::highlight_assemble::{Sentence, SentenceSource};
 use crate::highlight_inline::{SentenceEmitter, split_sentences};
 use crate::html_escape::{marked_escape_encode, marked_escape_no_encode};
 
+/// Tracks inline tokens directly inside a list item, matching the legacy
+/// `marked` walker where list-item inline tokens fall into the `default` branch
+/// (allocating a fresh `block_id` per token and walking link children as plain
+/// text without emitting `[text](href)`). Highlight models are trained on this
+/// exact span layout.
 pub(crate) struct ListInlineState {
   pending: String,
   link_depth: u32,

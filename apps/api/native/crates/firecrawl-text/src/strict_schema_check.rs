@@ -27,17 +27,7 @@ fn is_json_schema_type(name: &str) -> bool {
 }
 
 fn unsupported_keyword_rank(key: &str) -> Option<usize> {
-  match key {
-    "allOf" => Some(0),
-    "oneOf" => Some(1),
-    "not" => Some(2),
-    "if" => Some(3),
-    "then" => Some(4),
-    "else" => Some(5),
-    "dependentRequired" => Some(6),
-    "dependentSchemas" => Some(7),
-    _ => None,
-  }
+  UNSUPPORTED_KEYWORDS.iter().position(|&kw| kw == key)
 }
 
 fn truncate_utf16_60(s: &str) -> String {

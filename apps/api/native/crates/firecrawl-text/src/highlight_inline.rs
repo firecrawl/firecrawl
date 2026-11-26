@@ -5,7 +5,7 @@ use crate::html_entities::decode_html_entities;
 use crate::html_escape::{marked_escape_encode, marked_escape_no_encode};
 
 pub(crate) fn is_js_ws(c: char) -> bool {
-  c.is_whitespace() || c == '\u{FEFF}'
+  (c.is_whitespace() && c != '\u{0085}') || c == '\u{FEFF}'
 }
 
 pub(crate) fn trim_js_ws(s: &str) -> &str {
@@ -130,11 +130,8 @@ pub(crate) fn is_cite_note_link(text: &str, href: &str) -> bool {
   if !href.contains("cite_note") {
     return false;
   }
-  let inner = text
-    .strip_prefix('[')
-    .unwrap_or(text)
-    .strip_suffix(']')
-    .unwrap_or(text);
+  let after_open = text.strip_prefix('[').unwrap_or(text);
+  let inner = after_open.strip_suffix(']').unwrap_or(after_open);
   let bytes = inner.as_bytes();
   !bytes.is_empty()
     && bytes.len() <= 3
@@ -268,7 +265,7 @@ impl InlineCollector {
         out.push('[');
         out.push_str(&link_text);
         out.push_str("](");
-        out.push_str(&href);
+        out.push_str(&marked_escape_encode(&href));
         out.push(')');
       }
     }

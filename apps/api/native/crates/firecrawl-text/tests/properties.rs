@@ -200,3 +200,28 @@ fn deeply_nested_schema_does_not_stack_overflow() {
   let normalized = normalize_schema_keywords(&schema);
   assert_eq!(find_strict_schema_violation(&normalized), None);
 }
+
+#[test]
+fn highlight_edge_cases_match_js_semantics() {
+  // Multi-byte UTF-8 at byte 8 must not break `www.` GFM autolinking.
+  let utf8_url = parse_markdown_to_sentences("Visit www.caf\u{00e9}.com today.");
+  assert_eq!(
+    utf8_url.first().map(|s| s.text.as_str()),
+    Some("Visit [www.caf\u{00e9}.com](http://www.caf\u{00e9}.com) today.")
+  );
+
+  // Opening-only bracket citation label `[1` matches `/^\[?\w{1,3}\]?$/`.
+  let cite = parse_markdown_to_sentences("Fact [\\[1](#cite_note-1) end.");
+  assert_eq!(cite.first().map(|s| s.text.as_str()), Some("Fact end."));
+
+  // U+0085 (NEL) is not whitespace in JavaScript `\s` / `trim()`.
+  let nel = parse_markdown_to_sentences("a\u{0085}b");
+  assert_eq!(nel.first().map(|s| s.text.as_str()), Some("a\u{0085}b"));
+
+  // Link href already decoded once by pulldown-cmark must not be double-decoded.
+  let href_amp = parse_markdown_to_sentences("[link](https://example.com?a=1&amp;amp;b=2)");
+  assert_eq!(
+    href_amp.first().map(|s| s.text.as_str()),
+    Some("[link](https://example.com?a=1&amp;b=2)")
+  );
+}

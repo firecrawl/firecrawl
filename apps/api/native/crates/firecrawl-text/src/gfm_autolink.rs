@@ -98,23 +98,32 @@ fn backpedal_url(mut url: &str) -> &str {
 
 fn try_match_url_at(input: &str, pos: usize) -> Option<(usize, Cow<'_, str>)> {
   let rest = input.get(pos..)?;
-  let lower_prefix_len = rest.len().min(8);
-  let prefix = rest.get(..lower_prefix_len)?;
-
-  let (is_www, after_scheme) =
-    if prefix.len() >= 8 && prefix.get(..8)?.eq_ignore_ascii_case("https://") {
-      (false, 8usize)
-    } else if prefix.len() >= 7 && prefix.get(..7)?.eq_ignore_ascii_case("http://") {
-      (false, 7usize)
-    } else if prefix.len() >= 6 && prefix.get(..6)?.eq_ignore_ascii_case("ftp://") {
-      (false, 6usize)
-    } else if prefix.len() >= 4 && prefix.get(..4)?.eq_ignore_ascii_case("www.") {
-      (true, 4usize)
-    } else {
-      return None;
-    };
-
   let bytes = rest.as_bytes();
+
+  let (is_www, after_scheme) = if bytes
+    .get(..8)
+    .is_some_and(|p| p.eq_ignore_ascii_case(b"https://"))
+  {
+    (false, 8usize)
+  } else if bytes
+    .get(..7)
+    .is_some_and(|p| p.eq_ignore_ascii_case(b"http://"))
+  {
+    (false, 7usize)
+  } else if bytes
+    .get(..6)
+    .is_some_and(|p| p.eq_ignore_ascii_case(b"ftp://"))
+  {
+    (false, 6usize)
+  } else if bytes
+    .get(..4)
+    .is_some_and(|p| p.eq_ignore_ascii_case(b"www."))
+  {
+    (true, 4usize)
+  } else {
+    return None;
+  };
+
   // Must have at least one domain char `[a-zA-Z0-9-]` right after scheme/www.
   let first_dom = *bytes.get(after_scheme)?;
   if !(first_dom.is_ascii_alphanumeric() || first_dom == b'-') {

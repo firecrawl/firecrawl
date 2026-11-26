@@ -39,8 +39,8 @@ export function assembleAnswer(
   sentences: Sentence[],
   indices: number[],
 ): string {
-  const validIndices = indices.filter(
-    i => Number.isInteger(i) && i >= 0 && i < sentences.length,
-  );
+  const validIndices = indices
+    .map(i => (typeof i === "string" && /^\d+$/.test(i) ? Number(i) : i))
+    .filter(i => Number.isInteger(i) && i >= 0 && i < sentences.length);
   return nativeAssembleAnswer(sentences, validIndices);
 }
