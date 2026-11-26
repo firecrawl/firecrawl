@@ -1,25 +1,18 @@
 import undici from "undici";
+import { createHmac, randomUUID } from "crypto";
 import { config } from "../../config";
-import { createHmac } from "crypto";
-import { logger as _logger, logger } from "../../lib/logger";
+import { logger as _logger } from "../../lib/logger";
 import {
   getSecureDispatcherNoCookies,
   isIPPrivate,
 } from "../../scraper/scrapeURL/engines/utils/safeFetch";
-import type {
-  WebhookConfig,
-  WebhookEvent,
-  WebhookEventDataMap,
-  WebhookQueueMessage,
-} from "./types";
-import { redisEvictConnection } from "../redis";
-import { db } from "../../db/connection";
-import * as schema from "../../db/schema";
-import { webhookQueue } from "./queue";
-import { randomUUID } from "crypto";
-
-const WEBHOOK_INSERT_QUEUE_KEY = "webhook-insert-queue";
-const WEBHOOK_INSERT_BATCH_SIZE = 1000;
+import {
+  service,
+  type WebhookContext,
+  type WebhookDelivery,
+  type WebhookResponse,
+} from "../../service";
+import type { WebhookConfig, WebhookEvent, WebhookEventDataMap } from "./types";
 
 type WebhookSendResult = {
   attempted: boolean;
@@ -106,7 +99,6 @@ export class WebhookSender {
     return {
       attempted: true,
       delivered: false,
-      queued: this.usesWebhookQueue(),
     };
   }
 
@@ -118,10 +110,6 @@ export class WebhookSender {
     return webhookEventMatchesFilter(this.config.events, event);
   }
 
-  private usesWebhookQueue(): boolean {
-    return Boolean(config.WEBHOOK_USE_RABBITMQ && config.NUQ_RABBITMQ_URL);
-  }
-
   private async deliver(
     payload: any,
     scrapeId?: string,
@@ -129,181 +117,77 @@ export class WebhookSender {
     const webhookHost = new URL(this.config.url).hostname;
     if (isIPPrivate(webhookHost) && config.ALLOW_LOCAL_WEBHOOKS !== true) {
       this.logger.warn("Aborting webhook call to private IP address", {
-        webhookUrl: this.config.url,
+        webhookHost,
       });
       return { delivered: false, skipped: true };
     }
 
-    if (this.usesWebhookQueue()) {
-      const queueMessage: WebhookQueueMessage = {
-        webhook_url: this.config.url,
-        payload,
-        headers: this.config.headers,
-        team_id: this.context.teamId,
-        job_id: this.context.jobId,
-        scrape_id: scrapeId ?? null,
-        event: payload.type,
-        timeout_ms: this.context.v0 ? 30000 : 10000,
-      };
-
-      try {
-        await webhookQueue.publish(queueMessage, {
-          zeroDataRetention: this.context.zeroDataRetention,
-        });
-        this.logger.info("Webhook queued for delivery", {
-          webhookUrl: this.config.url,
-          event: payload.type,
-        });
-      } catch (error) {
-        this.logger.error("Failed to queue webhook", {
-          error,
-          webhookUrl: this.config.url,
-        });
-        throw error;
-      }
-
-      return { delivered: false, queued: true };
-    }
-
-    const payloadString = JSON.stringify(payload);
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...this.config.headers,
+    const timeoutMs = this.context.v0 ? 30000 : 10000;
+    const ctx: WebhookContext = {
+      teamId: this.context.teamId,
+      zeroDataRetention: Boolean(this.context.zeroDataRetention),
+    };
+    const delivery: WebhookDelivery = {
+      url: this.config.url,
+      event: payload.type,
+      payload,
+      headers: this.config.headers,
+      jobId: this.context.jobId,
+      scrapeId,
+      timeoutMs,
     };
 
-    if (this.secret) {
-      const hmac = createHmac("sha256", this.secret);
-      hmac.update(payloadString);
-      headers["X-Firecrawl-Signature"] = `sha256=${hmac.digest("hex")}`;
-    }
+    const send = async (): Promise<WebhookResponse> => {
+      const payloadString = JSON.stringify(payload);
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...this.config.headers,
+      };
 
-    const abortController = new AbortController();
-    const timeoutHandle = setTimeout(
-      () => {
-        if (abortController) {
-          abortController.abort();
-        }
-      },
-      this.context.v0 ? 30000 : 10000,
-    );
-
-    try {
-      const res = await undici.fetch(this.config.url, {
-        method: "POST",
-        headers,
-        body: payloadString,
-        dispatcher: getSecureDispatcherNoCookies(),
-        signal: abortController.signal,
-      });
-
-      if (!res.ok) {
-        throw new Error(`Unexpected response status: ${res.status}`);
+      if (this.secret) {
+        const hmac = createHmac("sha256", this.secret);
+        hmac.update(payloadString);
+        headers["X-Firecrawl-Signature"] = `sha256=${hmac.digest("hex")}`;
       }
 
-      await logWebhook({
-        success: res.status >= 200 && res.status < 300,
-        teamId: this.context.teamId,
-        crawlId: this.context.jobId, // this is legacy naming, we should rename it to jobId at some point
-        scrapeId,
-        url: this.config.url,
-        event: payload.type,
-        statusCode: res.status,
-      });
-      return { delivered: true, queued: false, statusCode: res.status };
-    } catch (error) {
-      this.logger.error("Failed to send webhook", {
-        error,
-        webhookUrl: this.config.url,
-      });
+      const abortController = new AbortController();
+      const timeoutHandle = setTimeout(() => {
+        abortController.abort();
+      }, timeoutMs);
 
-      await logWebhook({
-        success: false,
-        teamId: this.context.teamId,
-        crawlId: this.context.jobId, // same as above
-        scrapeId,
-        url: this.config.url,
-        event: payload.type,
-        error:
-          error instanceof Error
-            ? error.message
-            : typeof error === "string"
-              ? error
-              : undefined,
-        statusCode:
-          typeof (error as any)?.status === "number"
-            ? (error as any).status
-            : undefined,
-      });
+      try {
+        const res = await undici.fetch(this.config.url, {
+          method: "POST",
+          headers,
+          body: payloadString,
+          dispatcher: getSecureDispatcherNoCookies(),
+          signal: abortController.signal,
+        });
 
-      throw error;
-    } finally {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
-    }
+        if (!res.ok) {
+          const error = new Error(
+            `Unexpected response status: ${res.status}`,
+          ) as Error & { status?: number };
+          error.status = res.status;
+          throw error;
+        }
+
+        return { ok: res.ok, status: res.status };
+      } catch (error) {
+        this.logger.error("Failed to send webhook", {
+          error,
+          webhookHost,
+        });
+        throw error;
+      } finally {
+        clearTimeout(timeoutHandle);
+      }
+    };
+
+    return service.modules.webhooks.deliver(ctx, delivery, send);
   }
 
   get metadata(): Record<string, string> {
     return this.config.metadata || {};
-  }
-}
-
-export async function getWebhookInsertQueueLength(): Promise<number> {
-  return (await redisEvictConnection.llen(WEBHOOK_INSERT_QUEUE_KEY)) ?? 0;
-}
-
-export async function processWebhookInsertJobs() {
-  const jobs =
-    (await redisEvictConnection.lpop(
-      WEBHOOK_INSERT_QUEUE_KEY,
-      WEBHOOK_INSERT_BATCH_SIZE,
-    )) ?? [];
-  if (jobs.length === 0) return;
-
-  const parsedJobs = jobs.map(x => JSON.parse(x));
-  _logger.info("Webhook inserter found jobs to insert", {
-    jobCount: parsedJobs.length,
-  });
-
-  try {
-    await db.insert(schema.webhook_logs).values(parsedJobs);
-    _logger.info("Webhook inserter inserted jobs", {
-      jobCount: parsedJobs.length,
-    });
-  } catch (error) {
-    _logger.error("Webhook inserter failed to insert jobs", {
-      error,
-      jobCount: parsedJobs.length,
-    });
-  }
-}
-
-async function logWebhook(data: {
-  success: boolean;
-  error?: string;
-  teamId: string;
-  crawlId: string;
-  scrapeId?: string;
-  url: string;
-  statusCode?: number;
-  event: WebhookEvent;
-}): Promise<void> {
-  try {
-    await redisEvictConnection.rpush(
-      WEBHOOK_INSERT_QUEUE_KEY,
-      JSON.stringify({
-        success: data.success,
-        error: data.error ?? null,
-        team_id: data.teamId,
-        crawl_id: data.crawlId,
-        scrape_id: data.scrapeId ?? null,
-        url: data.url,
-        status_code: data.statusCode ?? null,
-        event: data.event,
-      }),
-    );
-  } catch (error) {
-    logger.error("Error logging webhook", {
-      error,
-      teamId: data.teamId,
-    });
   }
 }
