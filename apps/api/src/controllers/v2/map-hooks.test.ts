@@ -14,11 +14,16 @@ const mocks = vi.hoisted(() => {
     crawler,
     warn: vi.fn(),
     scrapeURL: vi.fn(),
+    dnsLookup: vi.fn(async () => ({ address: "93.184.216.34", family: 4 })),
     billingCharge: vi.fn(
       async (..._args: any[]): Promise<number | undefined> => undefined,
     ),
   };
 });
+
+vi.mock("node:dns/promises", () => ({
+  lookup: mocks.dnsLookup,
+}));
 
 vi.mock("../../lib/logger", () => ({
   logger: {
@@ -763,13 +768,16 @@ describe("map lifecycle hooks", () => {
     (config as any).PLAYWRIGHT_MICROSERVICE_URL =
       "http://playwright.local/scrape";
 
-    // 1. Sitemap /_next/ link does not suppress browser retry, and late sitemap callback after settle is ignored
+    // 1. Sitemap /_next/ and /cdn-cgi/ links reaching limit do not fill mapResults or skip browser discovery, and late sitemap callbacks after settle are ignored
     let lateCallback: ((urls: string[]) => void) | undefined;
     mocks.crawler.tryGetSitemap.mockImplementationOnce(
       async (urlsHandler: (urls: string[]) => void) => {
         lateCallback = urlsHandler;
-        urlsHandler(["https://spa.example.com/_next/static/chunk.js"]);
-        return 1;
+        urlsHandler([
+          "https://spa.example.com/_next/static/chunk-a.js",
+          "https://spa.example.com/cdn-cgi/l/email-protection",
+        ]);
+        return 2;
       },
     );
     mocks.scrapeURL
@@ -793,8 +801,12 @@ describe("map lifecycle hooks", () => {
             contentType: "text/html",
             url: "https://spa.example.com/",
           },
-          rawHtml: "<html><body><a href='/docs'>Docs</a></body></html>",
-          links: ["https://spa.example.com/docs"],
+          rawHtml:
+            "<html><body><a href='/docs'>Docs</a><a href='/pricing'>Pricing</a></body></html>",
+          links: [
+            "https://spa.example.com/docs",
+            "https://spa.example.com/pricing",
+          ],
         },
       });
 
@@ -813,8 +825,8 @@ describe("map lifecycle hooks", () => {
     ]);
     expect(mocks.scrapeURL).toHaveBeenCalledTimes(2);
     expect(recovered.mapResults).toEqual([
-      { url: "https://spa.example.com/_next/static/chunk.js" },
       { url: "https://spa.example.com/docs" },
+      { url: "https://spa.example.com/pricing" },
     ]);
     expect(recovered.discovery?.outcome).toBe("links_found");
 
@@ -918,5 +930,30 @@ describe("map lifecycle hooks", () => {
       startPageDiscovery: true,
     });
     expect(abortedRobots.discovery?.outcome).toBe("timeout");
+
+    // 5. Hung dnsLookup is bounded by the remaining discovery deadline instead of hanging
+    vi.clearAllMocks();
+    mocks.crawler.tryGetSitemap.mockResolvedValue(0);
+    mocks.dnsLookup.mockImplementationOnce(() => new Promise(() => {}));
+    mocks.scrapeURL
+      .mockResolvedValueOnce({
+        success: false,
+        error: { code: "SCRAPE_ALL_ENGINES_FAILED", message: "fetch failed" },
+      })
+      .mockResolvedValueOnce({
+        success: false,
+        error: { code: "SCRAPE_TIMEOUT", message: "timed out" },
+      });
+    const t0 = Date.now();
+    const boundedDns = await getMapResults({
+      url: "https://hung-dns.example.com",
+      limit: 5,
+      teamId: "team-map-1",
+      flags: null,
+      crawlerOptions: { sitemap: "include", timeout: 1_600 },
+      startPageDiscovery: true,
+    });
+    expect(Date.now() - t0).toBeLessThan(2_000);
+    expect(boundedDns.discovery?.outcome).not.toBe("dns_error");
   });
 });

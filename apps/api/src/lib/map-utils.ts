@@ -244,6 +244,42 @@ type StartPageAttempt =
       url?: string;
     };
 
+async function isConfirmedNotFoundHost(
+  targetUrl: string,
+  deadline: number,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const remainingMs = Math.min(1_500, Math.floor(deadline - Date.now()));
+  if (remainingMs < 200 || signal?.aborted) {
+    return false;
+  }
+  const timeoutSignal = signal
+    ? AbortSignal.any([signal, AbortSignal.timeout(remainingMs)])
+    : AbortSignal.timeout(remainingMs);
+  let onAbort: (() => void) | undefined;
+  try {
+    await Promise.race([
+      dnsLookup(new URL(targetUrl).hostname),
+      new Promise<never>((_resolve, reject) => {
+        onAbort = () =>
+          reject(timeoutSignal.reason ?? new Error("DNS check timed out"));
+        if (timeoutSignal.aborted) {
+          onAbort();
+          return;
+        }
+        timeoutSignal.addEventListener("abort", onAbort, { once: true });
+      }),
+    ]);
+    return false;
+  } catch (dnsError: any) {
+    return !timeoutSignal.aborted && dnsError?.code === "ENOTFOUND";
+  } finally {
+    if (onAbort) {
+      timeoutSignal.removeEventListener("abort", onAbort);
+    }
+  }
+}
+
 async function scrapeMapStartPage(
   url: string,
   options: ScrapeOptions,
@@ -313,12 +349,14 @@ async function scrapeMapStartPage(
         code === "SCRAPE_DNS_RESOLUTION_ERROR" ||
         (waitFor === 0 && code === "SCRAPE_ALL_ENGINES_FAILED")
       ) {
-        try {
-          await dnsLookup(new URL(url).hostname);
-        } catch (dnsError: any) {
-          if (dnsError?.code === "ENOTFOUND") {
-            return { kind: "failed", reason: "dns_error" };
-          }
+        if (
+          await isConfirmedNotFoundHost(
+            url,
+            deadline,
+            internalOptions.externalAbort?.signal,
+          )
+        ) {
+          return { kind: "failed", reason: "dns_error" };
         }
       }
       if (code === "SCRAPE_SSL_ERROR") {
@@ -785,7 +823,10 @@ export async function getMapResults({
           mapResults.push(...batch);
           if (discoverStartPage && !search && !sitemapCutoff.signal.aborted) {
             for (const doc of applyMapScope(batch, url, scope)) {
-              scopedSitemapUrls.add(doc.url);
+              const parsed = URL.parse(doc.url);
+              if (parsed && !isMapUtilityPath(parsed.pathname)) {
+                scopedSitemapUrls.add(doc.url);
+              }
             }
             if (scopedSitemapUrls.size >= limit) {
               sitemapCutoff.abort();
@@ -810,6 +851,16 @@ export async function getMapResults({
   let effectiveScopeUrl = url;
 
   const hooks = installedService()?.hooks;
+  if (
+    discoverStartPage &&
+    !hooks?.has("map.collect") &&
+    crawlerOptions.sitemap === "include"
+  ) {
+    mapResults = mapResults.filter(link => {
+      const parsed = URL.parse(link.url);
+      return Boolean(parsed && !isMapUtilityPath(parsed.pathname));
+    });
+  }
   const discoveryBudget = Math.min(
     START_PAGE_BUDGET_MS,
     (crawlerOptions.timeout ?? 30_000) - (Date.now() - functionStartTime) - 250,
