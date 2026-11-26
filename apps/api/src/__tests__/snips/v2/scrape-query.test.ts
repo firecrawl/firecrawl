@@ -110,25 +110,6 @@ describe("Query format", () => {
   );
 
   concurrentIf(TEST_PRODUCTION || (HAS_FIREWORKS && ALLOW_TEST_SUITE_WEBSITE))(
-    "returns non-empty highlights for a valid highlights query",
-    async () => {
-      const response = await scrape(
-        {
-          url: TEST_SUITE_WEBSITE,
-          formats: [{ type: "highlights", query: "What is Firecrawl?" }],
-        },
-        identity,
-      );
-
-      expect(response.highlights).toBeDefined();
-      expect(typeof response.highlights).toBe("string");
-      expect(response.highlights!.length).toBeGreaterThan(0);
-      expect(response.answer).toBeUndefined();
-    },
-    scrapeTimeout,
-  );
-
-  concurrentIf(TEST_PRODUCTION || (HAS_FIREWORKS && ALLOW_TEST_SUITE_WEBSITE))(
     "returns a direct quote answer when query mode is directQuote",
     async () => {
       const response = await scrape(

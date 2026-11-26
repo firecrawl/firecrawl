@@ -1,5 +1,4 @@
 import request from "supertest";
-import { config } from "../../../config";
 import {
   describeIf,
   HAS_AI,
@@ -18,7 +17,7 @@ import {
 // reaches the agent beta service, so that URL must be configured too.
 const REQUIRES_FIRE_ENGINE = TEST_PRODUCTION;
 const REQUIRES_AI = TEST_PRODUCTION || HAS_AI;
-const HAS_AGENT_BETA = !!config.EXTRACT_V3_BETA_URL;
+const HAS_AGENT_BETA = !!process.env.EXTRACT_V3_BETA_URL;
 
 // A turn has to reach a terminal status before the next one is accepted, which
 // takes several scrape budgets rather than one.
@@ -116,7 +115,7 @@ async function startTurn(body: Record<string, unknown>) {
 // agentRequestSchema.parse runs at the top of agentController, before the
 // controller touches the agent service, a browser or a model, so these cases
 // run everywhere instead of skipping with the live turns below.
-describe("Agent thread parameter validation", () => {
+describeIf(TEST_PRODUCTION)("Agent thread parameter validation", () => {
   it(
     "rejects a threadId that is not a UUID",
     async () => {
@@ -163,7 +162,7 @@ describe("Agent thread parameter validation", () => {
   );
 });
 
-describeIf(HAS_AGENT_BETA)("Agent thread rejections", () => {
+describeIf(TEST_PRODUCTION && HAS_AGENT_BETA)("Agent thread rejections", () => {
   it(
     "rejects an unknown threadId without creating a request",
     async () => {

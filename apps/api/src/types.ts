@@ -5,15 +5,22 @@ import {
   Document as V2Document,
   TeamFlags,
 } from "./controllers/v2/types";
-import { AuthCreditUsageChunk } from "./controllers/v1/types";
+import { AuthCreditUsageChunk } from "./controllers/v2/types";
 import { ExtractorOptions } from "./lib/entities";
 import { InternalOptions } from "./scraper/scrapeURL";
 import type { CostTracking } from "./lib/cost-tracking";
-import type { BillingMetadata } from "./services/billing/types";
+import type { BillingMetadata } from "./lib/billing-types";
+import type { RequestContext } from "./service/request-context";
 import { webhookSchema } from "./services/webhook/schema";
 import type { SerializedTraceContext } from "./lib/otel-tracer";
 
 type ScrapeJobCommon = {
+  /**
+   * The context of the request this job belongs to. A job created from
+   * another job has its parent's, copied whole. Absent on a payload written
+   * before the context existed; read it with `jobContext`.
+   */
+  ctx?: RequestContext;
   concurrencyLimited?: boolean;
   team_id: string;
   zeroDataRetention: boolean;
@@ -22,6 +29,7 @@ type ScrapeJobCommon = {
   traceContext?: SerializedTraceContext;
   skipNuq?: boolean;
   requestId?: string;
+  backlogTimeoutMs?: number;
   monitoring?: {
     monitorId: string;
     checkId: string;
@@ -122,7 +130,6 @@ export enum RateLimiterMode {
   Map = "map",
   Extract = "extract",
   ExtractStatus = "extractStatus",
-  ExtractAgentPreview = "extractAgentPreview",
   Browser = "browser",
   BrowserExecute = "browserExecute",
   BrowserReplay = "browserReplay",
@@ -136,30 +143,6 @@ export enum RateLimiterMode {
   ExchangeDiscover = "exchangeDiscover",
   FreshFeed = "freshFeed",
 }
-
-export type AuthResponse =
-  | {
-      success: true;
-      team_id: string;
-      org_id?: string | null;
-      api_key?: string;
-      chunk: AuthCreditUsageChunk | null;
-      // The hosted MCP made the call, as verified in supaAuthenticateUser.
-      hostedMcp?: boolean;
-    }
-  | {
-      success: false;
-      error: string;
-      status: number;
-      // When true, send the agent OAuth-discovery WWW-Authenticate header even on
-      // non-401 responses (e.g. keyless cap 429s) so agents can find the key flow.
-      agentAuthDiscovery?: boolean;
-      // Machine-readable keyless quota details for trusted MCP recovery.
-      keylessReason?: "requests" | "credits";
-      retryAfterSeconds?: number;
-      // Keyless prompts: the signup link in `error`, for clients that relay it.
-      signupUrl?: string;
-    };
 
 export enum NotificationType {
   RATE_LIMIT_REACHED = "rateLimitReached",

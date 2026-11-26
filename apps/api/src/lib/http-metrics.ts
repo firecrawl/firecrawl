@@ -1,5 +1,6 @@
 import { Histogram } from "prom-client";
 import type { Request } from "express";
+import { redactAdminKey } from "./admin-auth";
 
 const UUID_REGEX =
   /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
@@ -33,5 +34,5 @@ export function getRoutePattern(req: Request): string {
   if ((req as unknown as Record<symbol, boolean>)[UNMATCHED_FLAG] === true) {
     return UNMATCHED_ROUTE;
   }
-  return req.path.replace(UUID_REGEX, ":id");
+  return redactAdminKey(req.path).replace(UUID_REGEX, ":id");
 }

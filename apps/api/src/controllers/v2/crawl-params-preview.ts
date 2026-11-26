@@ -5,10 +5,9 @@ import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../../lib/cost-tracking";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
-import { isLockdownZeroDataRetention } from "../../lib/safe-mode";
+import { requestContext } from "../../lib/request-context";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
-import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+import { getErrorHttpResponse } from "../../lib/error";
 
 // Define the request schema for params preview
 // Only url and prompt are required/relevant for preview
@@ -54,12 +53,8 @@ export async function crawlParamsPreviewController(
   >,
   res: Response<CrawlParamsPreviewResponse>,
 ) {
-  // Same rule as a crawl: forced ZDR, the request's own flag, or Safe Mode
-  // lockdown. Read before parsing so a rejected body is still covered.
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
-    req.body?.zeroDataRetention === true ||
-    isLockdownZeroDataRetention(req.acuc?.flags, undefined);
+    req.ctx?.zeroDataRetention === true || req.body?.zeroDataRetention === true;
   const logger = _logger.child({
     module: "api/v2",
     method: "crawlParamsPreviewController",
@@ -75,6 +70,19 @@ export async function crawlParamsPreviewController(
       url: parsedBody.url,
       prompt: parsedBody.prompt,
     });
+
+    const ctx = req.ctx
+      ? zeroDataRetention && !req.ctx.zeroDataRetention
+        ? { ...req.ctx, zeroDataRetention: true }
+        : req.ctx
+      : requestContext({
+          teamId: req.auth.team_id,
+          zeroDataRetention,
+          flags: req.acuc?.flags ?? null,
+          orgId: req.acuc?.org_id ?? null,
+          apiKeyId: req.acuc?.api_key_id ?? null,
+        });
+    req.ctx = ctx;
 
     // The prompt and the discovered URLs end up in LLM telemetry, so keep
     // this whole step out of traces for zero data retention teams.
@@ -96,6 +104,7 @@ export async function crawlParamsPreviewController(
             useIndex: true,
             maxFireEngineResults: 500,
             zeroDataRetention,
+            ctx,
           });
 
         // Generate crawler options from enhanced prompt
@@ -152,11 +161,13 @@ export async function crawlParamsPreviewController(
       prompt: req.body.prompt,
     });
 
-    if (error instanceof UsOnlyUnavailableError) {
-      return res.status(403).json({
+    const httpResponse = getErrorHttpResponse(error);
+    if (httpResponse) {
+      return res.status(httpResponse.status).json({
+        ...httpResponse.extraFields,
         success: false,
-        code: error.code,
-        error: error.message,
+        ...(httpResponse.code ? { code: httpResponse.code } : {}),
+        error: httpResponse.message,
       });
     }
 

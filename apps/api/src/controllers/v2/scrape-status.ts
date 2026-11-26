@@ -1,8 +1,4 @@
-import { getJob } from "./crawl-status";
-import { logger as _logger } from "../../lib/logger";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
-import { getScrapeJobAccess } from "../../lib/operational-job-access";
-import { normalizeJobAccessTeamId } from "../../lib/job-access-store";
+import { service } from "../../service";
 
 export async function scrapeStatusController(req: any, res: any) {
   const uuidReg =
@@ -14,16 +10,7 @@ export async function scrapeStatusController(req: any, res: any) {
     });
   }
 
-  const logger = _logger.child({
-    module: "scrape-status",
-    method: "scrapeStatusController",
-    teamId: req.auth.team_id,
-    jobId: req.params.jobId,
-    scrapeId: req.params.jobId,
-    zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
-  });
-
-  if (getScrapeZDR(req.acuc?.flags) === "forced") {
+  if (req.ctx?.zeroDataRetention === true) {
     return res.status(400).json({
       success: false,
       error:
@@ -31,28 +18,36 @@ export async function scrapeStatusController(req: any, res: any) {
     });
   }
 
-  const access = await getScrapeJobAccess(req.params.jobId);
+  const owner = await service.modules.jobStore.owner(
+    req.params.jobId,
+    "scrape",
+  );
 
-  if (!access || access.expiresAtMs <= Date.now()) {
+  if (
+    !owner ||
+    (owner.expiresAtMs !== undefined && owner.expiresAtMs <= Date.now())
+  ) {
     return res.status(404).json({
       success: false,
       error: "Job not found.",
     });
   }
 
-  // Access rows store the normalized team (preview and keyless callers map to
-  // a placeholder UUID), so compare against the same normalization.
-  if (access.teamId !== normalizeJobAccessTeamId(req.auth.team_id)) {
+  const owned = owner.matchesTeam
+    ? owner.matchesTeam(req.auth.team_id)
+    : owner.teamId === req.auth.team_id;
+  if (!owned) {
     return res.status(403).json({
       success: false,
       error: "You are not allowed to access this resource.",
     });
   }
 
-  const jobData = await getJob(req.params.jobId, logger);
-  const data = Array.isArray(jobData?.returnvalue)
-    ? jobData?.returnvalue[0]
-    : jobData?.returnvalue;
+  const stored = await service.modules.jobStore.read(
+    req.params.jobId,
+    "scrape",
+  );
+  const data = stored?.document;
 
   if (!data) {
     return res.status(404).json({

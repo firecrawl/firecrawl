@@ -5,6 +5,7 @@ import * as net from "net";
 import { basename, join } from "path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
 import { startRole } from "./main";
+import { installedService, runProcessStop } from "./service/service";
 
 const childProcesses = new Set<ChildProcess>();
 const stopping = new WeakSet<ChildProcess>(); // processes we're intentionally stopping
@@ -14,6 +15,7 @@ let IS_DEV = false;
 let roleEntry = "";
 let restartSignal: AbortController | null = null;
 let shuttingDown = false;
+let shutdownPromise: Promise<void> | undefined;
 let nuqPostgresContainer: {
   containerName: string;
   containerRuntime: string;
@@ -116,7 +118,6 @@ function formatDuration(nanoseconds: bigint): string {
 
 const PORT = config.PORT;
 const WORKER_PORT = config.WORKER_PORT;
-const EXTRACT_WORKER_PORT = config.EXTRACT_WORKER_PORT;
 const NUQ_WORKER_START_PORT = config.NUQ_WORKER_START_PORT;
 const NUQ_WORKER_COUNT = config.NUQ_WORKER_COUNT;
 const NUQ_PREFETCH_WORKER_PORT = NUQ_WORKER_START_PORT + NUQ_WORKER_COUNT;
@@ -856,15 +857,24 @@ async function startServices(command?: string[]): Promise<Services> {
     },
   );
 
-  const extractWorker = execForward(
-    "extract-worker",
-    roleCommand("extract-worker", "extract-worker:production"),
-    {
-      NUQ_REDUCE_NOISE: "true",
-      NUQ_POD_NAME: "extract-worker",
-      EXTRACT_WORKER_PORT: String(EXTRACT_WORKER_PORT),
-    },
-  );
+  const roleRunner = /\.(?:[cm]?ts)$/i.test(roleEntry)
+    ? "pnpm exec tsx"
+    : "node";
+
+  const extractWorker =
+    roleEntry && installedService()?.roles.has("extract-worker")
+      ? execForward(
+          "extract-worker",
+          `${roleRunner} ${shellEscape(roleEntry)} extract-worker`,
+          {
+            NUQ_REDUCE_NOISE: "true",
+            NUQ_POD_NAME: "extract-worker",
+            ...(process.env.EXTRACT_WORKER_PORT
+              ? { EXTRACT_WORKER_PORT: process.env.EXTRACT_WORKER_PORT }
+              : {}),
+          },
+        )
+      : undefined;
 
   const nuqWorkers = Array.from({ length: NUQ_WORKER_COUNT }, (_, i) =>
     execForward(
@@ -908,16 +918,17 @@ async function startServices(command?: string[]): Promise<Services> {
           },
         );
 
-  const indexWorker = config.USE_DB_AUTHENTICATION
-    ? execForward(
-        "index-worker",
-        roleCommand("index-worker", "index-worker:production"),
-        {
-          NUQ_REDUCE_NOISE: "true",
-          NUQ_POD_NAME: "index-worker",
-        },
-      )
-    : undefined;
+  const indexWorker =
+    roleEntry && installedService()?.roles.has("index-worker")
+      ? execForward(
+          "index-worker",
+          `${roleRunner} ${shellEscape(roleEntry)} index-worker`,
+          {
+            NUQ_REDUCE_NOISE: "true",
+            NUQ_POD_NAME: "index-worker",
+          },
+        )
+      : undefined;
 
   if (
     command &&
@@ -1138,52 +1149,56 @@ async function waitForTermination(services: Services): Promise<void> {
   });
 }
 
-async function gracefulShutdown() {
-  if (shuttingDown) return;
+function gracefulShutdown(): Promise<void> {
+  if (shutdownPromise) return shutdownPromise;
   shuttingDown = true;
-  restartSignal?.abort();
+  shutdownPromise = (async () => {
+    restartSignal?.abort();
 
-  logger.section("Shutting down");
-  const forceTerminate = IS_DEV;
-  const terminationPromises = Array.from(childProcesses).map(proc =>
-    terminateProcess(proc, forceTerminate),
-  );
-  await Promise.allSettled(terminationPromises);
-
-  // Stop and remove NUQ PostgreSQL container if it was started by harness
-  if (nuqPostgresContainer) {
-    logger.info("Stopping NUQ PostgreSQL container");
-    await stopAndRemoveContainer(
-      nuqPostgresContainer.containerRuntime,
-      nuqPostgresContainer.containerName,
+    logger.section("Shutting down");
+    const forceTerminate = IS_DEV;
+    const terminationPromises = Array.from(childProcesses).map(proc =>
+      terminateProcess(proc, forceTerminate),
     );
-    logger.success("NUQ PostgreSQL container stopped");
-    nuqPostgresContainer = null;
-  }
+    await Promise.allSettled(terminationPromises);
 
-  // Stop and remove NUQ RabbitMQ container if it was started by harness
-  if (nuqRabbitMQContainer) {
-    logger.info("Stopping NUQ RabbitMQ container");
-    await stopAndRemoveContainer(
-      nuqRabbitMQContainer.containerRuntime,
-      nuqRabbitMQContainer.containerName,
-    );
-    logger.success("NUQ RabbitMQ container stopped");
-    nuqRabbitMQContainer = null;
-  }
+    // Stop and remove NUQ PostgreSQL container if it was started by harness
+    if (nuqPostgresContainer) {
+      logger.info("Stopping NUQ PostgreSQL container");
+      await stopAndRemoveContainer(
+        nuqPostgresContainer.containerRuntime,
+        nuqPostgresContainer.containerName,
+      );
+      logger.success("NUQ PostgreSQL container stopped");
+      nuqPostgresContainer = null;
+    }
 
-  // Stop and remove FoundationDB container if it was started by harness
-  if (fdbContainer) {
-    logger.info("Stopping FoundationDB container");
-    await stopAndRemoveContainer(
-      fdbContainer.containerRuntime,
-      fdbContainer.containerName,
-    );
-    logger.success("FoundationDB container stopped");
-    fdbContainer = null;
-  }
+    // Stop and remove NUQ RabbitMQ container if it was started by harness
+    if (nuqRabbitMQContainer) {
+      logger.info("Stopping NUQ RabbitMQ container");
+      await stopAndRemoveContainer(
+        nuqRabbitMQContainer.containerRuntime,
+        nuqRabbitMQContainer.containerName,
+      );
+      logger.success("NUQ RabbitMQ container stopped");
+      nuqRabbitMQContainer = null;
+    }
 
-  logger.success("All processes terminated");
+    // Stop and remove FoundationDB container if it was started by harness
+    if (fdbContainer) {
+      logger.info("Stopping FoundationDB container");
+      await stopAndRemoveContainer(
+        fdbContainer.containerRuntime,
+        fdbContainer.containerName,
+      );
+      logger.success("FoundationDB container stopped");
+      fdbContainer = null;
+    }
+
+    await runProcessStop("harness");
+    logger.success("All processes terminated");
+  })();
+  return shutdownPromise;
 }
 
 function printUsage() {

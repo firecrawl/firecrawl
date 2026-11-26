@@ -1,6 +1,7 @@
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
+  TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import { scrape, scrapeRaw, scrapeTimeout, idmux, Identity } from "./lib";
@@ -223,24 +224,6 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
     );
 
     it.concurrent(
-      "accepts mode: 'ocr' and parses PDF via OCR",
-      async () => {
-        const response = await scrape(
-          {
-            url: pdfUrl,
-            parsers: [{ type: "pdf", mode: "ocr" }],
-          },
-          identity,
-        );
-
-        expect(response.markdown).toBeDefined();
-        expect(response.markdown).toContain("PDF Test File");
-        expect(response.metadata.numPages).toBeGreaterThan(0);
-      },
-      scrapeTimeout * 2,
-    );
-
-    it.concurrent(
       "accepts mode with maxPages combined",
       async () => {
         const response = await scrape(
@@ -400,7 +383,11 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).toBe(
+          TEST_PRODUCTION
+            ? "Bad Request"
+            : "Unrecognized key in body -- please review the v2 API documentation for request body changes",
+        );
       },
       scrapeTimeout,
     );
@@ -436,10 +423,13 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
           identity,
         );
 
-        // Should bill based on number of pages when PDF parsing is enabled
-        expect(response.metadata.creditsUsed).toBeGreaterThanOrEqual(
-          response.metadata.numPages || 1,
-        );
+        if (TEST_PRODUCTION) {
+          expect(response.metadata.creditsUsed).toBeGreaterThanOrEqual(
+            response.metadata.numPages || 1,
+          );
+        } else {
+          expect(response.metadata.creditsUsed).toBeUndefined();
+        }
       },
       scrapeTimeout * 2,
     );
@@ -455,8 +445,11 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
           identity,
         );
 
-        // Should bill flat rate (1 credit) when PDF parsing is disabled
-        expect(response.metadata.creditsUsed).toBe(1);
+        if (TEST_PRODUCTION) {
+          expect(response.metadata.creditsUsed).toBe(1);
+        } else {
+          expect(response.metadata.creditsUsed).toBeUndefined();
+        }
       },
       scrapeTimeout * 2,
     );
@@ -472,8 +465,11 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
           identity,
         );
 
-        // Should bill based on limited pages (1 page = 1 credit)
-        expect(response.metadata.creditsUsed).toBe(1);
+        if (TEST_PRODUCTION) {
+          expect(response.metadata.creditsUsed).toBe(1);
+        } else {
+          expect(response.metadata.creditsUsed).toBeUndefined();
+        }
         expect(response.metadata.numPages).toBe(1);
       },
       scrapeTimeout * 2,

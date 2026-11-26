@@ -5,23 +5,40 @@
 
 describe("Wikipedia engine routing under zero data retention (buildFallbackList)", () => {
   let buildFallbackList: typeof import("../../../scraper/scrapeURL/engines/index.js").buildFallbackList;
+  let replaceService:
+    | typeof import("../../../service/service.js").replaceService
+    | undefined;
 
   const env = {
-    FIRE_ENGINE_BETA_URL: process.env.FIRE_ENGINE_BETA_URL,
     WIKIPEDIA_ENTERPRISE_USERNAME: process.env.WIKIPEDIA_ENTERPRISE_USERNAME,
     WIKIPEDIA_ENTERPRISE_PASSWORD: process.env.WIKIPEDIA_ENTERPRISE_PASSWORD,
   };
 
   beforeAll(async () => {
-    process.env.FIRE_ENGINE_BETA_URL = "http://test-fire-engine";
     process.env.WIKIPEDIA_ENTERPRISE_USERNAME = "test-user";
     process.env.WIKIPEDIA_ENTERPRISE_PASSWORD = "test-password";
 
     // Re-import engines fresh so it reads the env vars set above at eval time.
     vi.resetModules();
-    ({ buildFallbackList } = await import(
+    const enginesModule = await import(
       "../../../scraper/scrapeURL/engines/index.js"
-    ));
+    );
+    const serviceModule = await import("../../../service/service.js");
+    buildFallbackList = enginesModule.buildFallbackList;
+    replaceService = serviceModule.replaceService;
+    replaceService(
+      serviceModule.createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            engines: enginesModule.coreEngines,
+            engineFeatures: enginesModule.coreEngineFeatures,
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
   });
 
   beforeEach(() => {
@@ -34,6 +51,7 @@ describe("Wikipedia engine routing under zero data retention (buildFallbackList)
   });
 
   afterAll(() => {
+    replaceService?.(undefined);
     for (const [name, value] of Object.entries(env)) {
       if (value === undefined) {
         delete process.env[name];
@@ -88,7 +106,7 @@ describe("Wikipedia engine routing under zero data retention (buildFallbackList)
     );
 
     expect(engines).not.toContain("wikipedia");
-    expect(engines).toContain("fire-engine;chrome-cdp");
+    expect(engines).toContain("fetch");
   });
 
   it("skips a forced Wikipedia engine under zero data retention", async () => {
@@ -96,7 +114,7 @@ describe("Wikipedia engine routing under zero data retention (buildFallbackList)
       buildStubMeta(
         "https://en.wikipedia.org/wiki/Web_scraping",
         zeroDataRetention,
-        ["wikipedia", "fire-engine;chrome-cdp"],
+        ["wikipedia", "fetch"],
       );
 
     const forced = (await buildFallbackList(meta(false))).map(f => f.engine);
@@ -104,7 +122,7 @@ describe("Wikipedia engine routing under zero data retention (buildFallbackList)
 
     const zdr = (await buildFallbackList(meta(true))).map(f => f.engine);
     expect(zdr).not.toContain("wikipedia");
-    expect(zdr).toContain("fire-engine;chrome-cdp");
+    expect(zdr).toContain("fetch");
   });
 
   it("leaves non-Wikimedia URLs off the Wikipedia engine either way", async () => {
