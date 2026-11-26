@@ -82,10 +82,15 @@ where
       "-h" | "--help" => return Ok(CliCommand::Help),
       "-V" | "--version" => return Ok(CliCommand::Version),
       other => {
-        let safe_name = match other.split_once('=') {
-          Some((flag, _)) => flag,
-          None if other.starts_with('-') => other,
-          None => "<positional>",
+        let safe_name = if other.starts_with('-') {
+          let flag_name = other.split_once('=').map_or(other, |(flag, _)| flag);
+          if flag_name.contains("://") || flag_name.contains('@') {
+            "<redacted>"
+          } else {
+            flag_name
+          }
+        } else {
+          "<positional>"
         };
         return Err(ConfigError::UnknownArg(safe_name.to_owned()));
       }
@@ -296,6 +301,14 @@ mod tests {
     assert_eq!(
       parse_cli_args(["postgres://u:secret@host/db"]),
       Err(ConfigError::UnknownArg("<positional>".to_owned()))
+    );
+    assert_eq!(
+      parse_cli_args(["postgres://u:secret@host/db?sslmode=require"]),
+      Err(ConfigError::UnknownArg("<positional>".to_owned()))
+    );
+    assert_eq!(
+      parse_cli_args(["--postgres://u:secret@host/db?sslmode=require"]),
+      Err(ConfigError::UnknownArg("<redacted>".to_owned()))
     );
     #[cfg(unix)]
     {

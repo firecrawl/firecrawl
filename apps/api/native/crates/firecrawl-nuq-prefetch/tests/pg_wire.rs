@@ -191,7 +191,7 @@ async fn serve_mock_pg_connection(mut stream: TcpStream, state: Arc<Mutex<Captur
               None,
               None,
               None,
-              None,
+              Some("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
               None,
               None,
             ],
@@ -214,6 +214,10 @@ async fn serve_mock_pg_connection(mut stream: TcpStream, state: Arc<Mutex<Captur
             ],
           );
           push_command_complete_and_ready(&mut resp, "UPDATE 2");
+        } else if sql.starts_with("UPDATE ")
+          && sql.contains("SET status = 'failed'::nuq.job_status")
+        {
+          push_command_complete_and_ready(&mut resp, "UPDATE 1");
         } else {
           push_row_description(
             &mut resp,
@@ -320,7 +324,7 @@ async fn pg_store_uses_application_name_nuq_and_simple_query_only_for_pgbouncer_
     !wire.saw_parse_message,
     "PgBouncer transaction mode violated: saw extended query Parse message"
   );
-  assert_eq!(wire.queries.len(), 3);
+  assert_eq!(wire.queries.len(), 4);
   assert_eq!(wire.queries.first().map(String::as_str), Some("SELECT 1;"));
   assert_eq!(
     wire.queries.get(1).map(String::as_str),
@@ -328,6 +332,12 @@ async fn pg_store_uses_application_name_nuq_and_simple_query_only_for_pgbouncer_
   );
   assert_eq!(
     wire.queries.get(2).map(String::as_str),
+    Some(
+      "UPDATE nuq.queue_scrape SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = 'Failed to decode prefetched NuQ job row' WHERE id = '00000000-0000-0000-0000-000000000000'::uuid AND lock = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid;"
+    )
+  );
+  assert_eq!(
+    wire.queries.get(3).map(String::as_str),
     Some(QueueKind::CrawlFinished.prefetch_sql())
   );
 }

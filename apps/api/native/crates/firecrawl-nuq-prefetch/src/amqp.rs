@@ -62,6 +62,10 @@ pub enum PublishError {
   Serialize(String),
   #[error("AMQP operation timed out: {0}")]
   Timeout(&'static str),
+  #[error("AMQP publish confirmation timed out; delivery outcome is ambiguous")]
+  ConfirmTimeout,
+  #[error("broker negatively acknowledged prefetch publish")]
+  Nacked,
   #[error("AMQP operation failed: {0}")]
   Amqp(String),
 }
@@ -101,6 +105,7 @@ impl AmqpSession {
 /// automatic reconnect after channel or connection drops.
 pub struct AmqpPrefetchPublisher {
   rabbitmq_url: Option<RedactedString>,
+  op_timeout: Duration,
   scrape_session: Mutex<Option<AmqpSession>>,
   crawl_finished_session: Mutex<Option<AmqpSession>>,
   shutting_down: AtomicBool,
@@ -122,14 +127,20 @@ impl fmt::Debug for AmqpPrefetchPublisher {
 }
 
 impl AmqpPrefetchPublisher {
-  /// Creates a publisher for an optional `NUQ_RABBITMQ_URL`.
-  ///
-  /// When `None`, `send_job` logs a warning without crashing, matching `nuq.ts`.
+  /// Creates a publisher for an optional `NUQ_RABBITMQ_URL` with the default operation timeout.
   #[must_use]
   pub fn new(rabbitmq_url: Option<RedactedString>) -> Self {
     firecrawl_core::telemetry::ensure_crypto_provider();
+    Self::with_op_timeout(rabbitmq_url, AMQP_OP_TIMEOUT)
+  }
+
+  /// Creates a publisher with an explicit per-operation AMQP timeout.
+  #[must_use]
+  pub fn with_op_timeout(rabbitmq_url: Option<RedactedString>, op_timeout: Duration) -> Self {
+    firecrawl_telemetry::ensure_crypto_provider();
     Self {
       rabbitmq_url,
+      op_timeout,
       scrape_session: Mutex::new(None),
       crawl_finished_session: Mutex::new(None),
       shutting_down: AtomicBool::new(false),
@@ -196,7 +207,7 @@ impl AmqpPrefetchPublisher {
       };
 
       if guard.is_none() {
-        let session = connect_and_declare(url.expose(), routing_key).await?;
+        let session = connect_and_declare(url.expose(), routing_key, self.op_timeout).await?;
         *guard = Some(session);
       }
 
@@ -204,7 +215,15 @@ impl AmqpPrefetchPublisher {
         return Err(PublishError::Amqp("missing AMQP session".to_owned()));
       };
 
-      match publish_once(&session.channel, routing_key, &payload, properties.clone()).await {
+      match publish_once(
+        &session.channel,
+        routing_key,
+        &payload,
+        properties.clone(),
+        self.op_timeout,
+      )
+      .await
+      {
         Ok(()) => {
           if !job.is_zero_data_retention() {
             tracing::info!(
@@ -219,6 +238,15 @@ impl AmqpPrefetchPublisher {
         Err(err) => {
           if let Some(dead) = guard.take() {
             dead.close_gracefully("error").await;
+          }
+          if matches!(err, PublishError::ConfirmTimeout) {
+            tracing::warn!(
+              module = "nuq/rabbitmq",
+              queue = queue.table_name(),
+              error = %err,
+              "NuQ sender publish confirm timed out; outcome is ambiguous so not retrying"
+            );
+            return Err(err);
           }
           if had_live_session && attempt == 0 {
             tracing::warn!(
@@ -259,9 +287,13 @@ impl AmqpPrefetchPublisher {
   }
 }
 
-async fn connect_and_declare(url: &str, prefetch_queue: &str) -> Result<AmqpSession, PublishError> {
+async fn connect_and_declare(
+  url: &str,
+  prefetch_queue: &str,
+  op_timeout: Duration,
+) -> Result<AmqpSession, PublishError> {
   let connection = tokio::time::timeout(
-    AMQP_OP_TIMEOUT,
+    op_timeout,
     Connection::connect(
       url,
       ConnectionProperties::default().with_connection_name(CONNECTION_NAME.into()),
@@ -271,7 +303,7 @@ async fn connect_and_declare(url: &str, prefetch_queue: &str) -> Result<AmqpSess
   .map_err(|_| PublishError::Timeout("connect"))?
   .map_err(|err| PublishError::Amqp(err.to_string()))?;
 
-  let channel = match tokio::time::timeout(AMQP_OP_TIMEOUT, connection.create_channel()).await {
+  let channel = match tokio::time::timeout(op_timeout, connection.create_channel()).await {
     Ok(Ok(ch)) => ch,
     Ok(Err(err)) => {
       let _ =
@@ -286,7 +318,7 @@ async fn connect_and_declare(url: &str, prefetch_queue: &str) -> Result<AmqpSess
   };
 
   let declare_res = tokio::time::timeout(
-    AMQP_OP_TIMEOUT,
+    op_timeout,
     channel.queue_declare(
       prefetch_queue.into(),
       QueueDeclareOptions {
@@ -321,7 +353,7 @@ async fn connect_and_declare(url: &str, prefetch_queue: &str) -> Result<AmqpSess
   // Enable publisher confirms so `basic_publish` awaits broker replication acks
   // on quorum queues instead of succeeding as soon as bytes hit the socket.
   let confirm_res = tokio::time::timeout(
-    AMQP_OP_TIMEOUT,
+    op_timeout,
     channel.confirm_select(ConfirmSelectOptions::default()),
   )
   .await;
@@ -355,9 +387,10 @@ async fn publish_once(
   routing_key: &str,
   payload: &[u8],
   properties: BasicProperties,
+  op_timeout: Duration,
 ) -> Result<(), PublishError> {
   let confirm = tokio::time::timeout(
-    AMQP_OP_TIMEOUT,
+    op_timeout,
     channel.basic_publish(
       "".into(),
       routing_key.into(),
@@ -370,16 +403,14 @@ async fn publish_once(
   .map_err(|_| PublishError::Timeout("basic_publish"))?
   .map_err(|err| PublishError::Amqp(err.to_string()))?;
 
-  let confirmation = tokio::time::timeout(AMQP_OP_TIMEOUT, confirm)
+  let confirmation = tokio::time::timeout(op_timeout, confirm)
     .await
-    .map_err(|_| PublishError::Timeout("publish_confirm"))?
+    .map_err(|_| PublishError::ConfirmTimeout)?
     .map_err(|err| PublishError::Amqp(err.to_string()))?;
 
   match confirmation {
     Confirmation::Ack(_) => Ok(()),
-    Confirmation::Nack(_) => Err(PublishError::Amqp(
-      "broker negatively acknowledged prefetch publish".to_owned(),
-    )),
+    Confirmation::Nack(_) => Err(PublishError::Nacked),
     Confirmation::NotRequested => Err(PublishError::Amqp(
       "publisher confirms not enabled on AMQP channel".to_owned(),
     )),

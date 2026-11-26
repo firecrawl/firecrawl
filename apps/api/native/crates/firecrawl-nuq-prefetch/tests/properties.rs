@@ -180,14 +180,12 @@ fn nuq_job_wire_json_matches_rabbit_row_to_job_contract(tc: TestCase) {
   };
   assert_eq!(map.get("data").cloned(), expected_data);
 
-  assert_eq!(
-    map.get("finishedAt").and_then(Value::as_str),
-    finished_col.as_deref()
-  );
-  assert_eq!(
-    map.get("listenChannelId").and_then(Value::as_str),
-    listen_col.as_deref()
-  );
+  let opt_str = |v: &Option<String>| v.as_deref().map(|s| Value::String(s.to_owned()));
+
+  // Compare Option<Value> directly so an explicit JSON `null` fails instead of
+  // looking identical to an omitted key.
+  assert_eq!(map.get("finishedAt").cloned(), opt_str(&finished_col));
+  assert_eq!(map.get("listenChannelId").cloned(), opt_str(&listen_col));
   let expected_returnvalue = match returnvalue_kind {
     2 => returnvalue_col
       .as_deref()
@@ -195,19 +193,10 @@ fn nuq_job_wire_json_matches_rabbit_row_to_job_contract(tc: TestCase) {
     _ => None,
   };
   assert_eq!(map.get("returnvalue").cloned(), expected_returnvalue);
-  assert_eq!(
-    map.get("failedReason").and_then(Value::as_str),
-    failed_col.as_deref()
-  );
-  assert_eq!(map.get("lock").and_then(Value::as_str), lock_col.as_deref());
-  assert_eq!(
-    map.get("ownerId").and_then(Value::as_str),
-    owner_col.as_deref()
-  );
-  assert_eq!(
-    map.get("groupId").and_then(Value::as_str),
-    group_col.as_deref()
-  );
+  assert_eq!(map.get("failedReason").cloned(), opt_str(&failed_col));
+  assert_eq!(map.get("lock").cloned(), opt_str(&lock_col));
+  assert_eq!(map.get("ownerId").cloned(), opt_str(&owner_col));
+  assert_eq!(map.get("groupId").cloned(), opt_str(&group_col));
 
   let roundtrip: Result<NuqJob, _> = serde_json::from_str(&wire_str);
   assert_eq!(roundtrip.ok(), Some(job));

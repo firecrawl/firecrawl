@@ -141,6 +141,7 @@ impl PgStore {
       run_simple_query_with_timeout(client, queue.prefetch_sql(), PREFETCH_QUERY_TIMEOUT).await?;
 
     let mut jobs = Vec::new();
+    let mut decode_failures: Vec<(String, String)> = Vec::new();
     for msg in messages {
       if let SimpleQueryMessage::Row(row) = msg {
         match NuqJob::from_pg_row(&row) {
@@ -150,13 +151,54 @@ impl PgStore {
               module = "nuq",
               queue = queue.table_name(),
               error = %err,
-              "Failed to decode prefetched NuQ job row; skipping"
+              "Failed to decode prefetched NuQ job row; failing row"
             );
+            if let (Ok(Some(id)), Ok(Some(lock))) = (row.try_get("id"), row.try_get("lock"))
+              && is_canonical_uuid(id)
+              && is_canonical_uuid(lock)
+            {
+              decode_failures.push((id.to_owned(), lock.to_owned()));
+            }
           }
         }
       }
     }
+
+    for (id, lock) in decode_failures {
+      self.mark_decode_failed(queue, &id, &lock).await;
+    }
+
     Ok(jobs)
+  }
+
+  /// Transitions an undecodable claimed row straight to `failed` so the lock
+  /// reaper does not repeatedly requeue a permanently corrupt row.
+  async fn mark_decode_failed(&self, queue: QueueKind, id: &str, lock: &str) {
+    let client = match self.pool.get().await {
+      Ok(client) => client,
+      Err(err) => {
+        tracing::warn!(
+          module = "nuq",
+          queue = queue.table_name(),
+          error = %err,
+          "Failed to acquire connection to mark undecodable NuQ job row failed"
+        );
+        return;
+      }
+    };
+
+    let sql = format!(
+      "UPDATE {} SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = 'Failed to decode prefetched NuQ job row' WHERE id = '{id}'::uuid AND lock = '{lock}'::uuid;",
+      queue.table_name()
+    );
+    if let Err(err) = run_simple_query_with_timeout(client, &sql, HEALTH_QUERY_TIMEOUT).await {
+      tracing::warn!(
+        module = "nuq",
+        queue = queue.table_name(),
+        error = %err,
+        "Failed to mark undecodable NuQ job row failed"
+      );
+    }
   }
 
   /// Executes `SELECT 1;` via the Simple Query Protocol, matching `nuqHealthCheck()`.
@@ -207,6 +249,19 @@ impl PgStore {
   }
 }
 
+/// Strict canonical 8-4-4-4-12 UUID check so simple-query literals carry no
+/// untrusted characters.
+fn is_canonical_uuid(raw: &str) -> bool {
+  let bytes = raw.as_bytes();
+  if bytes.len() != 36 {
+    return false;
+  }
+  bytes.iter().enumerate().all(|(idx, &b)| match idx {
+    8 | 13 | 18 | 23 => b == b'-',
+    _ => b.is_ascii_hexdigit(),
+  })
+}
+
 async fn run_simple_query_with_timeout(
   client: Object,
   sql: &str,
@@ -248,5 +303,15 @@ nuq_pool_idle_count 7\n\n\
 # TYPE nuq_pool_total_count gauge\n\
 nuq_pool_total_count 9\n";
     assert_eq!(text, expected);
+  }
+
+  #[test]
+  fn validates_canonical_uuids_strictly() {
+    assert!(is_canonical_uuid("00000000-0000-0000-0000-000000000000"));
+    assert!(is_canonical_uuid("550E8400-e29b-41d4-A716-446655440000"));
+    assert!(!is_canonical_uuid("550e8400-e29b-41d4-a716-44665544000"));
+    assert!(!is_canonical_uuid("550e8400-e29b-41d4-a716-446655440000'"));
+    assert!(!is_canonical_uuid("550e8400e29b41d4a716446655440000"));
+    assert!(!is_canonical_uuid("gggggggg-gggg-gggg-gggg-gggggggggggg"));
   }
 }

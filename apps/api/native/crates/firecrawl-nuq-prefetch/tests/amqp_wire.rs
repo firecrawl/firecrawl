@@ -41,6 +41,7 @@ struct CapturedAmqpWire {
   connections: usize,
   declares: Vec<CapturedQueueDeclare>,
   confirm_selects: usize,
+  received_publishes: usize,
   publishes: Vec<CapturedPublish>,
   channel_closes: usize,
   connection_closes: usize,
@@ -213,6 +214,7 @@ fn parse_basic_properties(header_payload: &[u8]) -> (Option<u8>, Option<String>,
 struct MockBrokerControls {
   drop_after_publish: AtomicUsize,
   nack_budget: AtomicUsize,
+  withhold_confirm_budget: AtomicUsize,
   dropped_notify: Notify,
 }
 
@@ -405,6 +407,18 @@ async fn serve_mock_amqp_connection(
         if let Some(mut pub_msg) = pending_publish.take() {
           delivery_tag = delivery_tag.saturating_add(1);
           pub_msg.body = payload;
+          {
+            let mut guard = state.lock().unwrap_or_else(PoisonError::into_inner);
+            guard.received_publishes = guard.received_publishes.saturating_add(1);
+          }
+
+          let should_withhold = controls
+            .withhold_confirm_budget
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
+            .is_ok();
+          if should_withhold {
+            continue;
+          }
 
           let should_nack = controls
             .nack_budget
@@ -484,6 +498,7 @@ async fn amqp_publisher_declares_quorum_queue_publishes_exact_wire_props_and_rec
   let controls = Arc::new(MockBrokerControls {
     drop_after_publish: AtomicUsize::new(1),
     nack_budget: AtomicUsize::new(0),
+    withhold_confirm_budget: AtomicUsize::new(0),
     dropped_notify: Notify::new(),
   });
   let server_state = Arc::clone(&captured);
@@ -570,6 +585,7 @@ async fn amqp_publisher_returns_error_on_broker_nack() {
   let controls = Arc::new(MockBrokerControls {
     drop_after_publish: AtomicUsize::new(0),
     nack_budget: AtomicUsize::new(1),
+    withhold_confirm_budget: AtomicUsize::new(0),
     dropped_notify: Notify::new(),
   });
   let server_state = Arc::clone(&captured);
@@ -587,10 +603,70 @@ async fn amqp_publisher_returns_error_on_broker_nack() {
   ))));
   let job = make_job("job-nacked");
   let res = publisher.send_job(QueueKind::Scrape, &job).await;
-  assert!(matches!(res, Err(PublishError::Amqp(_))));
+  assert!(matches!(res, Err(PublishError::Nacked)));
+  assert_eq!(controls.nack_budget.load(Ordering::Acquire), 0);
 
   publisher.shutdown().await;
   server.abort();
+
+  let wire = captured.lock().unwrap_or_else(PoisonError::into_inner);
+  assert_eq!(wire.confirm_selects, 1);
+  assert_eq!(wire.received_publishes, 1);
+  assert!(wire.publishes.is_empty());
+}
+
+#[tokio::test]
+async fn amqp_publisher_does_not_retry_on_publish_confirm_timeout() {
+  let listener = TcpListener::bind("127.0.0.1:0").await;
+  assert!(listener.is_ok());
+  let Ok(listener) = listener else { return };
+  let addr = listener.local_addr();
+  assert!(addr.is_ok());
+  let Ok(addr) = addr else { return };
+
+  let captured = Arc::new(Mutex::new(CapturedAmqpWire::default()));
+  let controls = Arc::new(MockBrokerControls {
+    drop_after_publish: AtomicUsize::new(0),
+    nack_budget: AtomicUsize::new(0),
+    withhold_confirm_budget: AtomicUsize::new(0),
+    dropped_notify: Notify::new(),
+  });
+  let server_state = Arc::clone(&captured);
+  let server_controls = Arc::clone(&controls);
+  let server = tokio::spawn(async move {
+    while let Ok((stream, _)) = listener.accept().await {
+      let s = Arc::clone(&server_state);
+      let c = Arc::clone(&server_controls);
+      tokio::spawn(serve_mock_amqp_connection(stream, s, c));
+    }
+  });
+
+  let publisher = AmqpPrefetchPublisher::with_op_timeout(
+    Some(RedactedString::new(format!(
+      "amqp://guest:guest@{addr}/%2f"
+    ))),
+    Duration::from_millis(120),
+  );
+
+  // Warm the cached session so the next publish exercises the cached-session path.
+  let job1 = make_job("job-warm");
+  assert!(publisher.send_job(QueueKind::Scrape, &job1).await.is_ok());
+
+  // Withhold broker confirm on job-2 so delivery outcome is ambiguous.
+  controls.withhold_confirm_budget.store(1, Ordering::Release);
+  let job2 = make_job("job-confirm-timeout");
+  let res = publisher.send_job(QueueKind::Scrape, &job2).await;
+  assert!(matches!(res, Err(PublishError::ConfirmTimeout)));
+  assert_eq!(controls.withhold_confirm_budget.load(Ordering::Acquire), 0);
+
+  publisher.shutdown().await;
+  server.abort();
+
+  let wire = captured.lock().unwrap_or_else(PoisonError::into_inner);
+  assert_eq!(wire.connections, 1);
+  assert_eq!(wire.confirm_selects, 1);
+  // Exactly 2 publishes (job1 + single job2 attempt): no duplicate retry after confirm timeout.
+  assert_eq!(wire.received_publishes, 2);
 }
 
 #[tokio::test]
