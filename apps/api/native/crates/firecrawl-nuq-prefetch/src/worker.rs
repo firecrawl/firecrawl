@@ -41,6 +41,48 @@ struct PendingFailureNotification {
   poison_attempts: u8,
 }
 
+struct FailureNotificationQueue {
+  entries: VecDeque<PendingFailureNotification>,
+  next_flush_at: Option<Instant>,
+  backoff: Duration,
+  base_backoff: Duration,
+}
+
+impl FailureNotificationQueue {
+  fn new(base_backoff: Duration) -> Self {
+    let effective_base = if base_backoff.is_zero() {
+      DEFAULT_POLL_INTERVAL
+    } else {
+      base_backoff
+    };
+    Self {
+      entries: VecDeque::new(),
+      next_flush_at: None,
+      backoff: effective_base,
+      base_backoff: effective_base,
+    }
+  }
+
+  fn is_empty(&self) -> bool {
+    self.entries.is_empty()
+  }
+
+  fn is_due(&self, now: Instant) -> bool {
+    self.next_flush_at.is_none_or(|due| now >= due)
+  }
+
+  fn record_flush_success(&mut self) {
+    self.backoff = self.base_backoff;
+    self.next_flush_at = None;
+  }
+
+  fn record_flush_error(&mut self, now: Instant) {
+    let delay = self.backoff;
+    self.backoff = next_error_backoff(self.backoff, self.base_backoff);
+    self.next_flush_at = now.checked_add(delay);
+  }
+}
+
 /// Boxed `Send` future alias used by worker dependency traits.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -181,21 +223,21 @@ where
   S: PrefetchStore,
   P: PrefetchPublisher,
 {
-  let mut pending_failures = VecDeque::new();
+  let mut pending_failures = FailureNotificationQueue::new(DEFAULT_POLL_INTERVAL);
   run_prefetch_cycle(queue, store, publisher, &mut pending_failures).await
 }
 
 fn enqueue_failure_notifications(
   queue: QueueKind,
-  pending_failures: &mut VecDeque<PendingFailureNotification>,
+  pending_failures: &mut FailureNotificationQueue,
   notifications: Vec<FailedJobNotification>,
 ) {
   for notification in notifications {
     if notification.listen_channel_id.is_none() {
       continue;
     }
-    if pending_failures.len() >= MAX_PENDING_FAILURE_NOTIFICATIONS {
-      let _ = pending_failures.pop_front();
+    if pending_failures.entries.len() >= MAX_PENDING_FAILURE_NOTIFICATIONS {
+      let _ = pending_failures.entries.pop_front();
       tracing::warn!(
         module = "nuq/rabbitmq",
         queue = queue.table_name(),
@@ -203,24 +245,27 @@ fn enqueue_failure_notifications(
         "Pending failure notification queue full; dropping oldest entry"
       );
     }
-    pending_failures.push_back(PendingFailureNotification {
-      notification,
-      enqueued_at: Instant::now(),
-      poison_attempts: 0,
-    });
+    pending_failures
+      .entries
+      .push_back(PendingFailureNotification {
+        notification,
+        enqueued_at: Instant::now(),
+        poison_attempts: 0,
+      });
   }
 }
 
 async fn flush_pending_failure_notifications<P: PrefetchPublisher>(
   queue: QueueKind,
   publisher: &P,
-  pending_failures: &mut VecDeque<PendingFailureNotification>,
+  pending_failures: &mut FailureNotificationQueue,
   broker_healthy_hint: bool,
-) -> Result<(), String> {
+  flush_budget: Duration,
+) {
   // Prune expired entries at the front first so they never consume I/O budget.
-  while let Some(front) = pending_failures.front() {
+  while let Some(front) = pending_failures.entries.front() {
     if front.enqueued_at.elapsed() >= MAX_PENDING_FAILURE_AGE {
-      if let Some(expired) = pending_failures.pop_front() {
+      if let Some(expired) = pending_failures.entries.pop_front() {
         tracing::warn!(
           module = "nuq/rabbitmq",
           queue = queue.table_name(),
@@ -233,24 +278,24 @@ async fn flush_pending_failure_notifications<P: PrefetchPublisher>(
     }
   }
 
-  let flush_start = Instant::now();
-  let mut first_error: Option<String> = None;
+  let deadline = Instant::now().checked_add(flush_budget);
+  let mut had_error = false;
   let mut failed_this_flush: Vec<PendingFailureNotification> = Vec::new();
   let mut any_succeeded = broker_healthy_hint;
-  let mut attempted = 0_usize;
   let mut consecutive_errors = 0_usize;
   let max_items = pending_failures
+    .entries
     .len()
     .min(MAX_FAILURE_NOTIFY_ITEMS_PER_FLUSH);
 
   for _ in 0..max_items {
-    if attempted > 0 && flush_start.elapsed() >= FAILURE_NOTIFY_FLUSH_BUDGET {
+    let remaining = deadline
+      .map(|end| end.saturating_duration_since(Instant::now()))
+      .unwrap_or(flush_budget);
+    if remaining.is_zero() || consecutive_errors >= MAX_CONSECUTIVE_NOTIFY_ERRORS_PER_FLUSH {
       break;
     }
-    if consecutive_errors >= MAX_CONSECUTIVE_NOTIFY_ERRORS_PER_FLUSH {
-      break;
-    }
-    let Some(entry) = pending_failures.pop_front() else {
+    let Some(entry) = pending_failures.entries.pop_front() else {
       break;
     };
     if entry.enqueued_at.elapsed() >= MAX_PENDING_FAILURE_AGE {
@@ -265,24 +310,37 @@ async fn flush_pending_failure_notifications<P: PrefetchPublisher>(
     let Some(listen_channel_id) = entry.notification.listen_channel_id.as_deref() else {
       continue;
     };
-    attempted = attempted.saturating_add(1);
-    match publisher
-      .send_job_failed(queue, &entry.notification.id, listen_channel_id)
-      .await
+    match tokio::time::timeout(
+      remaining,
+      publisher.send_job_failed(queue, &entry.notification.id, listen_channel_id),
+    )
+    .await
     {
-      Ok(()) => {
+      Ok(Ok(())) => {
         any_succeeded = true;
         consecutive_errors = 0;
       }
-      Err(err) => {
+      Ok(Err(err)) => {
+        had_error = true;
         consecutive_errors = consecutive_errors.saturating_add(1);
-        if first_error.is_none() {
-          first_error = Some(format!(
-            "failure notification failed for {}: {err}",
-            queue.table_name()
-          ));
-        }
+        tracing::warn!(
+          module = "nuq/rabbitmq",
+          queue = queue.table_name(),
+          error = %err,
+          "Failed to publish NuQ job failure notification"
+        );
         failed_this_flush.push(entry);
+      }
+      Err(_elapsed) => {
+        had_error = true;
+        tracing::warn!(
+          module = "nuq/rabbitmq",
+          queue = queue.table_name(),
+          budget_ms = u64::try_from(flush_budget.as_millis()).unwrap_or(u64::MAX),
+          "NuQ job failure notification flush hit time budget; deferring remaining entries"
+        );
+        failed_this_flush.push(entry);
+        break;
       }
     }
   }
@@ -299,10 +357,10 @@ async fn flush_pending_failure_notifications<P: PrefetchPublisher>(
         queue = queue.table_name(),
         poison_attempts = entry.poison_attempts,
         max_poison_attempts = MAX_POISON_NOTIFY_ATTEMPTS,
-        "Failed to publish NuQ job failure notification; retaining for retry"
+        "Retaining NuQ job failure notification for retry"
       );
       // Rotate to the back so one poison entry cannot head-of-line block others.
-      pending_failures.push_back(entry);
+      pending_failures.entries.push_back(entry);
     } else {
       tracing::error!(
         module = "nuq/rabbitmq",
@@ -314,9 +372,10 @@ async fn flush_pending_failure_notifications<P: PrefetchPublisher>(
     }
   }
 
-  match first_error {
-    Some(err) => Err(err),
-    None => Ok(()),
+  if had_error {
+    pending_failures.record_flush_error(Instant::now());
+  } else {
+    pending_failures.record_flush_success();
   }
 }
 
@@ -324,7 +383,7 @@ async fn run_prefetch_cycle<S, P>(
   queue: QueueKind,
   store: &S,
   publisher: &P,
-  pending_failures: &mut VecDeque<PendingFailureNotification>,
+  pending_failures: &mut FailureNotificationQueue,
 ) -> Result<usize, String>
 where
   S: PrefetchStore,
@@ -346,9 +405,15 @@ where
       Err(err) => {
         // Best-effort flush so carried-over waiter notifications still drain
         // during a Postgres outage without blocking future claims.
-        if !pending_failures.is_empty() {
-          let _ =
-            flush_pending_failure_notifications(queue, publisher, pending_failures, false).await;
+        if !pending_failures.is_empty() && pending_failures.is_due(Instant::now()) {
+          flush_pending_failure_notifications(
+            queue,
+            publisher,
+            pending_failures,
+            false,
+            FAILURE_NOTIFY_FLUSH_BUDGET,
+          )
+          .await;
         }
         return Err(format!(
           "prefetch query failed for {}: {err}",
@@ -390,14 +455,21 @@ where
       sent = sent.saturating_add(1);
     }
 
-    // Always attempt to deliver terminal failure notifications even when a
-    // valid-job publish failed earlier in the batch; failures remain queued for
-    // retry on subsequent loop iterations.
+    // Deliver terminal failure notifications on their own bounded budget and
+    // backoff schedule so notification errors never stall or back off job claims.
     let broker_healthy_hint = sent > 0 && publish_error.is_none();
-    let notify_error =
-      flush_pending_failure_notifications(queue, publisher, pending_failures, broker_healthy_hint)
-        .await
-        .err();
+    if !pending_failures.is_empty()
+      && (broker_healthy_hint || pending_failures.is_due(Instant::now()))
+    {
+      flush_pending_failure_notifications(
+        queue,
+        publisher,
+        pending_failures,
+        broker_healthy_hint,
+        FAILURE_NOTIFY_FLUSH_BUDGET,
+      )
+      .await;
+    }
 
     if let Some(err) = publish_error {
       return Err(err);
@@ -407,9 +479,6 @@ where
         "decode repair failed for {}: {repair_err}",
         queue.table_name()
       ));
-    }
-    if let Some(err) = notify_error {
-      return Err(err);
     }
 
     tracing::info!(
@@ -484,7 +553,7 @@ async fn run_single_queue_loop<S, P, H>(
   // Bound to at most one in-flight heartbeat so a stalled endpoint never queues
   // background tasks or blocks the scrape prefetch loop.
   let heartbeat_gate = Arc::new(Semaphore::new(1));
-  let mut pending_failures: VecDeque<PendingFailureNotification> = VecDeque::new();
+  let mut pending_failures = FailureNotificationQueue::new(poll_interval);
   let mut backoff = poll_interval;
 
   while !*shutdown.borrow() {
@@ -535,9 +604,14 @@ async fn run_single_queue_loop<S, P, H>(
 
   // Final best-effort flush for any unsent failure notifications before exit.
   if !pending_failures.is_empty() && publisher.is_configured() {
-    let _ =
-      flush_pending_failure_notifications(queue, publisher.as_ref(), &mut pending_failures, false)
-        .await;
+    flush_pending_failure_notifications(
+      queue,
+      publisher.as_ref(),
+      &mut pending_failures,
+      false,
+      FAILURE_NOTIFY_FLUSH_BUDGET,
+    )
+    .await;
   }
 }
 
@@ -554,5 +628,77 @@ pub fn next_error_backoff(current: Duration, base: Duration) -> Duration {
     effective_base
   } else {
     current.saturating_mul(2).min(cap)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  struct HangingNotifyPublisher {
+    delay: Duration,
+  }
+
+  impl PrefetchPublisher for HangingNotifyPublisher {
+    fn send_job<'a>(
+      &'a self,
+      _queue: QueueKind,
+      _job: &'a NuqJob,
+    ) -> BoxFuture<'a, Result<(), PublishError>> {
+      Box::pin(async { Ok(()) })
+    }
+
+    fn send_job_failed<'a>(
+      &'a self,
+      _queue: QueueKind,
+      _job_id: &'a str,
+      _listen_channel_id: &'a str,
+    ) -> BoxFuture<'a, Result<(), PublishError>> {
+      let delay = self.delay;
+      Box::pin(async move {
+        tokio::time::sleep(delay).await;
+        Ok(())
+      })
+    }
+
+    fn shutdown(&self) -> BoxFuture<'_, ()> {
+      Box::pin(async {})
+    }
+  }
+
+  #[tokio::test]
+  async fn flush_budget_caps_single_in_flight_notify_and_retains_entry() {
+    let publisher = HangingNotifyPublisher {
+      delay: Duration::from_secs(5),
+    };
+    let mut pending = FailureNotificationQueue::new(Duration::from_millis(50));
+    enqueue_failure_notifications(
+      QueueKind::Scrape,
+      &mut pending,
+      vec![FailedJobNotification {
+        id: "hanging-1".to_owned(),
+        listen_channel_id: Some("chan-hang".to_owned()),
+      }],
+    );
+
+    let start = Instant::now();
+    flush_pending_failure_notifications(
+      QueueKind::Scrape,
+      &publisher,
+      &mut pending,
+      false,
+      Duration::from_millis(80),
+    )
+    .await;
+    let elapsed = start.elapsed();
+
+    // Must terminate near the 80ms budget rather than waiting for the 5s send.
+    assert!(
+      elapsed < Duration::from_millis(500),
+      "flush exceeded budget: {elapsed:?}"
+    );
+    // Timed-out notification stays queued with independent backoff scheduled.
+    assert_eq!(pending.entries.len(), 1);
+    assert!(pending.next_flush_at.is_some());
   }
 }

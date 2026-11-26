@@ -243,29 +243,24 @@ impl AmqpPrefetchPublisher {
         return Err(PublishError::ShuttingDown);
       }
 
-      let had_live_session = match guard.as_ref() {
-        Some(session) if session.is_connected() => true,
-        Some(_) => {
-          if let Some(stale) = guard.take() {
-            tracing::info!(
-              module = "nuq/rabbitmq",
-              queue = queue.table_name(),
-              "NuQ sender connection closed; reconnecting"
-            );
-            stale.close_gracefully("reconnect").await;
-          }
-          false
+      // Take ownership of the cached session before any `.await` so cancelling
+      // this future under an outer timeout never leaves a half-used session cached.
+      let (had_live_session, session) = match guard.take() {
+        Some(session) if session.is_connected() => (true, session),
+        Some(stale) => {
+          tracing::info!(
+            module = "nuq/rabbitmq",
+            queue = queue.table_name(),
+            "NuQ sender connection closed; reconnecting"
+          );
+          stale.close_gracefully("reconnect").await;
+          let fresh = connect_and_declare(url.expose(), prefetch_queue, self.op_timeout).await?;
+          (false, fresh)
         }
-        None => false,
-      };
-
-      if guard.is_none() {
-        let session = connect_and_declare(url.expose(), prefetch_queue, self.op_timeout).await?;
-        *guard = Some(session);
-      }
-
-      let Some(session) = guard.as_ref() else {
-        return Err(PublishError::Amqp("missing AMQP session".to_owned()));
+        None => {
+          let fresh = connect_and_declare(url.expose(), prefetch_queue, self.op_timeout).await?;
+          (false, fresh)
+        }
       };
 
       match publish_once(
@@ -277,11 +272,12 @@ impl AmqpPrefetchPublisher {
       )
       .await
       {
-        Ok(()) => return Ok(()),
+        Ok(()) => {
+          *guard = Some(session);
+          return Ok(());
+        }
         Err(err) => {
-          if let Some(dead) = guard.take() {
-            dead.close_gracefully("error").await;
-          }
+          session.close_gracefully("error").await;
           if err.is_ambiguous_outcome() {
             tracing::warn!(
               module = "nuq/rabbitmq",

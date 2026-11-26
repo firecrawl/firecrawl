@@ -552,8 +552,8 @@ async fn stuck_failure_notification_does_not_block_job_claims_or_other_notificat
       repair_error: None,
     }));
     // Subsequent valid jobs prove the broker stays healthy across retries so the
-    // poison entry is evicted while job claims keep flowing uninterrupted.
-    for i in 1..=4 {
+    // poison entry is evicted while job claims keep flowing without cycle backoff.
+    for i in 1..=5 {
       scrape.push(Ok(PrefetchBatch::from_jobs(vec![sample_job(
         &format!("valid-after-poison-{i}"),
         false,
@@ -568,6 +568,7 @@ async fn stuck_failure_notification_does_not_block_job_claims_or_other_notificat
   });
 
   let (shutdown_tx, shutdown_rx) = watch::channel(false);
+  let started = tokio::time::Instant::now();
   let handle = tokio::spawn(run_prefetch_loops(
     Arc::clone(&store),
     Arc::clone(&publisher),
@@ -576,11 +577,19 @@ async fn stuck_failure_notification_does_not_block_job_claims_or_other_notificat
     shutdown_rx,
   ));
 
-  // Wait until the poison notification has been evicted and a clean cycle fires heartbeat.
-  let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
-  while heartbeat.pings.load(Ordering::Acquire) == 0 && tokio::time::Instant::now() < deadline {
+  // Wait until all 5 valid jobs are claimed/published and the poison entry is evicted.
+  let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+  while publisher
+    .published
+    .lock()
+    .unwrap_or_else(PoisonError::into_inner)
+    .len()
+    < 5
+    && tokio::time::Instant::now() < deadline
+  {
     tokio::time::sleep(Duration::from_millis(10)).await;
   }
+  let elapsed = started.elapsed();
 
   let _ = shutdown_tx.send(true);
   assert!(matches!(
@@ -588,6 +597,11 @@ async fn stuck_failure_notification_does_not_block_job_claims_or_other_notificat
     Ok(Ok(()))
   ));
 
+  // Notification failures must not trigger cycle-wide exponential backoff on job claims.
+  assert!(
+    elapsed < Duration::from_millis(500),
+    "job claims backed off unexpectedly: {elapsed:?}"
+  );
   // Valid jobs still claimed and published while the poison notification was pending.
   assert_eq!(
     publisher
@@ -600,6 +614,7 @@ async fn stuck_failure_notification_does_not_block_job_claims_or_other_notificat
       (QueueKind::Scrape, "valid-after-poison-2".to_owned()),
       (QueueKind::Scrape, "valid-after-poison-3".to_owned()),
       (QueueKind::Scrape, "valid-after-poison-4".to_owned()),
+      (QueueKind::Scrape, "valid-after-poison-5".to_owned()),
     ]
   );
   // Healthy notification behind the poison entry still delivered without head-of-line blocking.
@@ -702,10 +717,9 @@ async fn broker_outage_retains_failure_notifications_and_bounds_per_tick_flush_w
   }
   let burst_pub = RecordingPublisher::new(Duration::ZERO);
   burst_pub.fail_next_notify.store(100, Ordering::Release);
-  assert!(
-    run_prefetch_once(QueueKind::Scrape, &burst_store, &burst_pub)
-      .await
-      .is_err()
+  assert_eq!(
+    run_prefetch_once(QueueKind::Scrape, &burst_store, &burst_pub).await,
+    Ok(0)
   );
   // Capped at 4 consecutive errors per flush instead of scanning all 20 entries.
   assert_eq!(burst_pub.fail_next_notify.load(Ordering::Acquire), 96);
