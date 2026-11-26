@@ -21,9 +21,16 @@ vi.mock("./llmExtract", () => ({ calculateCost: vi.fn(() => 0) }));
 import { generateText } from "ai";
 import { encoding_for_model } from "@dqbd/tiktoken";
 import type { Mock } from "vitest";
-import { keepWholeLines, performQuery } from "./query";
+import { keepWholeLines, performDirectQuoteQuery, performQuery } from "./query";
 import { CostTracking } from "../../../lib/cost-tracking";
-import { modelPrices } from "../../../lib/extract/usage/model-prices";
+import { getModel } from "../../../lib/generic-ai";
+import { modelPrices } from "../../../lib/model-prices";
+import {
+  createService,
+  replaceService,
+  service,
+} from "../../../service/service";
+import type { LlmModel, LlmProvider } from "../../../service/llm-providers";
 
 const noopLogger = {
   info: () => {},
@@ -83,11 +90,53 @@ beforeAll(async () => {
     await vi.importActual<typeof import("@dqbd/tiktoken")>("@dqbd/tiktoken"));
 });
 
+const stubProvider = (name: string, enabled: () => boolean): LlmProvider =>
+  ({
+    name,
+    enabled,
+    model: (id: string) => ({ modelId: id }) as unknown as LlmModel,
+  }) as unknown as LlmProvider;
+
+let vertexEnabled = false;
+
 beforeEach(() => {
+  vertexEnabled = false;
+  replaceService(
+    createService(
+      {
+        modules: {},
+        extensions: [
+          {
+            name: "extra-llm",
+            llmProviders: [
+              stubProvider("vertex", () => vertexEnabled),
+              stubProvider("google", () => true),
+              stubProvider("fireworks", () => true),
+            ],
+          },
+        ],
+      },
+      {
+        core: {
+          name: "core",
+          llmProviders: [
+            stubProvider("openai", () => true),
+            stubProvider("ollama", () => false),
+          ],
+        },
+        logger: { error: vi.fn() },
+      },
+    ),
+  );
   (generateText as Mock).mockReset();
+  (getModel as Mock).mockClear();
   (encoding_for_model as Mock)
     .mockReset()
     .mockImplementation(realEncodingForModel);
+});
+
+afterEach(() => {
+  replaceService(undefined);
 });
 
 describe("keepWholeLines", () => {
@@ -111,27 +160,36 @@ describe("keepWholeLines", () => {
   });
 });
 
-describe("performQuery highlights", () => {
+describe("performDirectQuoteQuery highlights", () => {
   it.each(["highlights", "directQuote"])(
     "preserves selected code indentation in %s without changing model lines",
     async mode => {
       respond("[0,1]");
       const markdown = "```python\nif active:\n    run()\n```";
       const document: any = { markdown, metadata: {} };
-      const format =
-        mode === "highlights"
-          ? { type: "highlights", query: "How is the task run?" }
-          : { type: "query", prompt: "How is the task run?", mode };
-
-      await performQuery(makeMeta([format]), document);
+      const prompt = "How is the task run?";
+      let answer: string | null;
+      if (mode === "highlights") {
+        answer = await performDirectQuoteQuery(
+          makeMeta([]),
+          document,
+          prompt,
+          markdown,
+          "highlights",
+        );
+      } else {
+        await performQuery(
+          makeMeta([{ type: "query", prompt, mode }]),
+          document,
+        );
+        answer = document.answer;
+      }
 
       expect(sentLines(calls()[0].prompt)).toEqual([
         "0: if active:",
         "1: run()",
       ]);
-      expect(document[mode === "highlights" ? "highlights" : "answer"]).toBe(
-        markdown,
-      );
+      expect(answer).toBe(markdown);
       expect(document.warning).toBeUndefined();
     },
   );
@@ -140,9 +198,12 @@ describe("performQuery highlights", () => {
     respond("[0]");
     const document: any = { markdown: page(40_000), metadata: {} };
 
-    await performQuery(
-      makeMeta([{ type: "highlights", query: "what does line 0 say?" }]),
+    const highlights = await performDirectQuoteQuery(
+      makeMeta([]),
       document,
+      "what does line 0 say?",
+      document.markdown,
+      "highlights",
     );
 
     const [args] = calls();
@@ -155,7 +216,7 @@ describe("performQuery highlights", () => {
     const tokens = countTokens(lines.join("\n"));
     expect(tokens).toBeLessThanOrEqual(131_072 - 16_384);
     expect(tokens).toBeGreaterThan(131_072 - 16_384 - 100);
-    expect(document.highlights).toContain("Line number 0");
+    expect(highlights).toContain("Line number 0");
     expect(document.warning).toContain(
       "highlights were generated from the first part of it",
     );
@@ -166,9 +227,12 @@ describe("performQuery highlights", () => {
     // One sentence (no punctuation), ~300k tokens.
     const document: any = { markdown: "word ".repeat(300_000), metadata: {} };
 
-    await performQuery(
-      makeMeta([{ type: "highlights", query: "anything about words?" }]),
+    await performDirectQuoteQuery(
+      makeMeta([]),
       document,
+      "anything about words?",
+      document.markdown,
+      "highlights",
     );
 
     const lines = sentLines(calls()[0].prompt);
@@ -184,9 +248,12 @@ describe("performQuery highlights", () => {
     respond("[0]");
     const document: any = { markdown: page(40_000), metadata: {} };
 
-    await performQuery(
-      makeMeta([{ type: "highlights", query: "what does line 0 say?" }]),
+    const highlights = await performDirectQuoteQuery(
+      makeMeta([]),
       document,
+      "what does line 0 say?",
+      document.markdown,
+      "highlights",
     );
 
     const lines = sentLines(calls()[0].prompt);
@@ -197,7 +264,7 @@ describe("performQuery highlights", () => {
     const bytes = Buffer.byteLength(lines.join("\n"));
     expect(bytes).toBeLessThanOrEqual(131_072 - 16_384);
     expect(bytes).toBeGreaterThan(131_072 - 16_384 - 100);
-    expect(document.highlights).toContain("Line number 0");
+    expect(highlights).toContain("Line number 0");
   });
 
   it("sends small pages untouched", async () => {
@@ -215,6 +282,26 @@ describe("performQuery highlights", () => {
     expect(args.telemetry.functionId).toBe("performQuery/directQuote");
     expect(args.prompt).toContain("2: Line number 2");
     expect(document.warning).toBeUndefined();
+  });
+
+  it("trims long pages through performQuery and populates answer and warning", async () => {
+    respond("[0]");
+    const document: any = { markdown: page(40_000), metadata: {} };
+
+    await performQuery(
+      makeMeta([
+        { type: "query", prompt: "what does line 0 say?", mode: "directQuote" },
+      ]),
+      document,
+    );
+
+    const [args] = calls();
+    expect(args.telemetry.functionId).toBe("performQuery/directQuote");
+    expect(sentLines(args.prompt).length).toBeLessThan(40_000);
+    expect(document.answer).toContain("Line number 0");
+    expect(document.warning).toContain(
+      "answer was generated from the first part of it",
+    );
   });
 });
 
@@ -251,5 +338,178 @@ describe("performQuery freeform", () => {
     expect(document.warning).toContain(
       "the answer was generated from the first part of it",
     );
+  });
+
+  it("picks vertex when the registered vertex provider is enabled, otherwise google", async () => {
+    respond("from google");
+    const docGoogle: any = { markdown: "hello", metadata: {} };
+    await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), docGoogle);
+    expect((getModel as Mock).mock.calls[0]).toEqual([
+      "gemini-3.5-flash-lite",
+      "google",
+    ]);
+
+    (getModel as Mock).mockClear();
+    vertexEnabled = true;
+    respond("from vertex");
+    const docVertex: any = { markdown: "hello", metadata: {} };
+    await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), docVertex);
+    expect((getModel as Mock).mock.calls[0]).toEqual([
+      "gemini-3.5-flash-lite",
+      "vertex",
+    ]);
+  });
+
+  it("uses openai directly when only core LLM providers are registered", async () => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            llmProviders: [
+              stubProvider("openai", () => true),
+              stubProvider("ollama", () => false),
+            ],
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+
+    respond("from openai");
+    const doc: any = { markdown: "hello", metadata: {} };
+    await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), doc);
+
+    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", "openai"]]);
+    expect(doc.answer).toBe("from openai");
+  });
+
+  it("skips disabled google and vertex providers in freeform mode", async () => {
+    replaceService(
+      createService(
+        {
+          modules: {},
+          extensions: [
+            {
+              name: "extra-llm",
+              llmProviders: [
+                stubProvider("vertex", () => false),
+                stubProvider("google", () => false),
+              ],
+            },
+          ],
+        },
+        {
+          core: {
+            name: "core",
+            llmProviders: [
+              stubProvider("openai", () => true),
+              stubProvider("ollama", () => false),
+            ],
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+
+    respond("from openai");
+    const doc: any = { markdown: "hello", metadata: {} };
+    await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), doc);
+
+    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", "openai"]]);
+    expect(doc.answer).toBe("from openai");
+  });
+
+  it("uses ollama in freeform mode when ollama is enabled and optional providers are absent", async () => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            llmProviders: [
+              stubProvider("openai", () => false),
+              stubProvider("ollama", () => true),
+            ],
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+
+    respond("from ollama");
+    const doc: any = { markdown: "hello", metadata: {} };
+    await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), doc);
+
+    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", "ollama"]]);
+    expect(doc.answer).toBe("from ollama");
+  });
+
+  it("falls back to the default core provider in directQuote/highlights when fireworks is unregistered", async () => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            llmProviders: [
+              stubProvider("openai", () => true),
+              stubProvider("ollama", () => false),
+            ],
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+
+    respond("[0]");
+    const doc: any = { markdown: "hello world.", metadata: {} };
+    const highlights = await performDirectQuoteQuery(
+      makeMeta([]),
+      doc,
+      "what does it say?",
+      doc.markdown,
+      "highlights",
+    );
+
+    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", "openai"]]);
+    expect(highlights).toBe("hello world.");
+  });
+
+  it("sets a warning instead of throwing when no matching provider is registered", async () => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            llmProviders: [],
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+    (getModel as Mock).mockImplementationOnce(
+      (name: string, provider?: string) => {
+        const providerName = provider ?? "openai";
+        const registered = service.llmProviders.get(providerName);
+        if (!registered) {
+          throw new Error(`LLM provider "${providerName}" is not registered`);
+        }
+        return registered.model(name);
+      },
+    );
+
+    const doc: any = { markdown: "hello world.", metadata: {} };
+    await performQuery(
+      makeMeta([
+        { type: "query", prompt: "what does it say?", mode: "directQuote" },
+      ]),
+      doc,
+    );
+
+    expect(doc.answer).toBeUndefined();
+    expect(doc.warning).toContain("Query generation failed after all models.");
   });
 });

@@ -3,14 +3,15 @@ import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { shutdownTracing } from "../../otel";
 import { logger as _logger } from "../../lib/logger";
 import { jobDurationSeconds } from "../../lib/job-metrics";
+import { storedZeroDataRetention } from "../../lib/request-context";
 import { processJobInternal } from "./scrape-worker";
 import { NuQJob } from "./nuq";
 import { register } from "prom-client";
 import Express from "express";
 import { startNodeRuntimeMetrics } from "../../lib/node-runtime-metrics";
-import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
+import { service } from "../../service";
 import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-forcing";
-import { shutdownPubSubLogging } from "../logging/log_job";
+import { runProcessStop } from "../../service/service";
 
 export type WorkerQueue = {
   getJobToProcess(logger?: any): Promise<NuQJob<any, any> | null>;
@@ -60,7 +61,7 @@ export async function runNuqWorker(options: {
   shutdown?: () => void | Promise<void>;
 }) {
   try {
-    await initializeBlocklist();
+    await service.modules.blocklist.init();
     initializeEngineForcing();
     await options.beforeStart?.();
   } catch (error) {
@@ -145,7 +146,7 @@ export async function runNuqWorker(options: {
     const logger = _logger.child({
       module: options.serviceName,
       scrapeId: job.id,
-      zeroDataRetention: job.data?.zeroDataRetention ?? false,
+      zeroDataRetention: storedZeroDataRetention(job.data) ?? false,
     });
 
     logger.info("Acquired job");
@@ -181,9 +182,7 @@ export async function runNuqWorker(options: {
 
     // The job span has ended by now; keep the queue bookkeeping (which records
     // the failure reason) unrecorded for zero-data-retention jobs too.
-    const zeroDataRetention =
-      (job.data as { zeroDataRetention?: boolean } | undefined)
-        ?.zeroDataRetention === true;
+    const zeroDataRetention = storedZeroDataRetention(job.data) === true;
 
     await withZeroDataRetention(zeroDataRetention, async () => {
       if (processResult.ok) {
@@ -224,9 +223,12 @@ export async function runNuqWorker(options: {
   });
 
   server.close(async () => {
-    await options.beforeShutdown?.();
-    await options.shutdown?.();
-    await shutdownPubSubLogging();
+    try {
+      await options.beforeShutdown?.();
+      await options.shutdown?.();
+    } finally {
+      await runProcessStop(options.serviceName);
+    }
     await shutdownTracing();
     _logger.info("NuQ worker shut down", { module: options.serviceName });
     process.exit(0);

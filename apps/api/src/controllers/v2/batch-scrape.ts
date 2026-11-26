@@ -1,10 +1,8 @@
 import { Response } from "express";
-import { config } from "../../config";
 import { v7 as uuidv7 } from "uuid";
 import {
   BatchScrapeRequest,
-  batchScrapeRequestSchema,
-  batchScrapeRequestSchemaNoURLValidation,
+  parseBatchScrapeRequest,
   URL as urlSchema,
   RequestWithAuth,
   ScrapeOptions,
@@ -15,134 +13,39 @@ import {
   finishCrawlKickoff,
   getCrawl,
   lockURLs,
-  markCrawlActive,
   saveCrawl,
   StoredCrawl,
 } from "../../lib/crawl-redis";
-import { getJobPriority } from "../../lib/job-priority";
+import { resolveJobPriority } from "../../lib/limits";
 import { addScrapeJobs } from "../../services/queue-jobs";
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 import { logger as _logger } from "../../lib/logger";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
-import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
-import { checkPermissions } from "../../lib/permissions";
-import { resolveSafeMode } from "../../lib/safe-mode";
-import {
-  actionTypesOf,
-  checkKeyFormatRestriction,
-  formatTypesOf,
-} from "../../lib/key-restriction";
+import { finalizeResponse, service, type RequestContext } from "../../service";
 import {
   crawlGroup,
   resolveNewGroupBackend,
 } from "../../services/worker/nuq-router";
-import { logRequest } from "../../services/logging/log_job";
-import { externalRequestId } from "../../lib/external-request-id";
-import type { BillingMetadata } from "../../services/billing/types";
-import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
-  checkUrlsAgainstThreatPolicy,
-  resolveThreatProtection,
-} from "../../lib/threat-protection/request";
-import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
-import { isAgentInteropSecretValid } from "../../lib/agent-interop";
-import { calculateThreatScanCredits } from "../../lib/scrape-billing";
-import { billTeam } from "../../services/billing/credit_billing";
-import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
-import { UnsupportedSiteError } from "../../lib/error";
-import {
-  ThirdPartyDataTermsRequiredError,
-  ThirdPartyDataUnsupportedOptionError,
-} from "../../lib/exchange";
-import { getExchangeAccessForRequestBody } from "../../lib/exchange-request";
-import {
-  AGENT_REQUEST_CREDITS_SHARDS,
-  initializeRequestCredits,
-  requestCreditsShards,
-} from "../../lib/request-credits-store";
+  contextThreatProtection,
+  requestContext,
+} from "../../lib/request-context";
+import type {} from "../../lib/billing-state";
+import type { BillingMetadata } from "../../lib/billing-types";
+import { summarizeWebhookForLog } from "../../services/webhook/log";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
   res: Response<BatchScrapeResponse>,
 ) {
-  const preNormalizedBody = { ...req.body };
-  if (req.body?.ignoreInvalidURLs === true) {
-    req.body = batchScrapeRequestSchemaNoURLValidation.parse(req.body);
-  } else {
-    req.body = batchScrapeRequestSchema.parse(req.body);
+  if (!req.ctx) {
+    req.body = parseBatchScrapeRequest(req.body);
   }
+  const extBody = req.body as Record<string, any>;
 
-  // Batch has many URLs; per-URL allowlist is applied at the scrapeURL backstop.
-  // Resolve org-level here only for the bypass/enablement decision.
-  const safeMode = resolveSafeMode(req.acuc?.flags, req.body.safeMode);
-  if (safeMode.error) {
-    return res.status(403).json({
-      success: false,
-      code: safeMode.code,
-      error: safeMode.error,
-    });
-  }
-
-  const threatProtection = await resolveThreatProtection({
-    teamId: req.auth.team_id,
-    orgId: req.acuc?.org_id ?? null,
-    flags: req.acuc?.flags ?? null,
-    override: req.body.threatProtection,
-    force: safeMode.safeMode?.domainControls === true,
-  });
-  if (threatProtection.error) {
-    return res.status(403).json({
-      success: false,
-      error: threatProtection.error,
-    });
-  }
-
-  const permissions = checkPermissions(req.body, req.acuc?.flags, {
-    threatProtectionOrgConfig: threatProtection.orgConfig,
-    safeMode: safeMode.safeMode ?? null,
-  });
-  if (permissions.error) {
-    return res.status(403).json({
-      success: false,
-      code: permissions.code,
-      error: permissions.error,
-    });
-  }
-
-  const keyRestriction = await checkKeyFormatRestriction(
-    formatTypesOf(req.body.formats),
-    actionTypesOf(req.body.actions),
-    req.acuc?.api_key_id,
-    req.acuc?.flags ?? null,
-  );
-  if (!keyRestriction.allowed) {
-    return res.status(keyRestriction.status).json({
-      success: false,
-      error: keyRestriction.error,
-    });
-  }
-
-  // Safe Mode lockdown is cache-only, which implies zero data retention.
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" ||
-    (req.body.zeroDataRetention ?? false) ||
-    (safeMode.safeMode?.lockdown ?? false);
-
-  if (
-    req.body.__agentInterop &&
-    config.AGENT_INTEROP_SECRET &&
-    !isAgentInteropSecretValid(req.body.__agentInterop.auth)
-  ) {
-    return res.status(403).json({
-      success: false,
-      error: "Invalid agent interop.",
-    });
-  } else if (req.body.__agentInterop && !config.AGENT_INTEROP_SECRET) {
-    return res.status(403).json({
-      success: false,
-      error: "Agent interop is not enabled.",
-    });
-  }
+    req.ctx?.zeroDataRetention ??
+    ((req.body.zeroDataRetention ?? false) || (extBody.lockdown ?? false));
 
   // Only batch scrapes can be appended to: crawls (including monitor crawls)
   // carry their own billing and scope.
@@ -161,14 +64,29 @@ export async function batchScrapeController(
     });
   }
 
-  const id = req.body.appendToId ?? uuidv7();
-  const billing: BillingMetadata = {
-    ...(req.body.__agentInterop
+  const id = req.body.appendToId ?? req.requestId ?? uuidv7();
+  const billing: BillingMetadata = req.ctx?.billing ?? {
+    ...(extBody.__agentInterop
       ? { endpoint: "agent" as const, jobId: id }
       : { endpoint: "batch_scrape" as const, jobId: id }),
-    externalRequestId: externalRequestId(req),
     hostedMcp: req.auth.hostedMcp,
   };
+  const ctx: RequestContext = req.ctx
+    ? req.ctx.billing
+      ? req.ctx
+      : { ...req.ctx, billing }
+    : requestContext({
+        teamId: req.auth.team_id,
+        zeroDataRetention,
+        flags: req.acuc?.flags ?? null,
+        orgId: req.acuc?.org_id ?? null,
+        apiKeyId: req.acuc?.api_key_id ?? null,
+        billing,
+        concurrencyLimit: req.acuc?.concurrency_limit,
+        rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
+      });
+  req.ctx = ctx;
+
   const logger = _logger.child({
     crawlId: id,
     batchScrapeId: id,
@@ -178,207 +96,56 @@ export async function batchScrapeController(
     zeroDataRetention,
   });
 
-  // A blocklisted URL is admitted when the Exchange can serve it, as on
-  // single scrape; null means the URL may be scraped.
-  const blocklistRefusal = async (url: string) => {
-    if (
-      !isUrlBlocked(url, req.acuc?.flags ?? null, {
-        team_id: req.auth.team_id,
-        org_id: req.acuc?.org_id ?? null,
-        origin: req.body.origin ?? null,
-      })
-    ) {
-      return null;
-    }
-    const exchangeAccess = await getExchangeAccessForRequestBody({
-      body: req.body,
-      flags: req.acuc?.flags ?? null,
-      url,
-      blocked: true,
-      zeroDataRetention,
-      teamId: req.auth.team_id,
-      orgId: req.acuc?.org_id ?? null,
+  const blockCtx: RequestContext =
+    appendTarget?.zeroDataRetention === true && !ctx.zeroDataRetention
+      ? { ...ctx, zeroDataRetention: true }
+      : ctx;
+  const shouldCheckBlocklist = !req.requestBlocklistChecked;
+  const isBlockedUrl = (url: string): boolean =>
+    shouldCheckBlocklist &&
+    service.modules.blocklist.isBlocked(url, blockCtx, {
+      origin: req.body.origin ?? null,
     });
-    if (exchangeAccess.allowed) {
-      return null;
-    }
-    if (exchangeAccess.termsRequired) {
-      return new ThirdPartyDataTermsRequiredError(exchangeAccess.terms);
-    }
-    return exchangeAccess.unsupportedOption === undefined
-      ? new UnsupportedSiteError()
-      : new ThirdPartyDataUnsupportedOptionError(
-          exchangeAccess.unsupportedOption,
-        );
-  };
 
   let urls: string[] = req.body.urls;
-  let unnormalizedURLs = preNormalizedBody.urls;
-  let invalidURLs: string[] | undefined = undefined;
-  const refusedURLs: {
-    url: string;
-    error:
-      | UnsupportedSiteError
-      | ThirdPartyDataTermsRequiredError
-      | ThirdPartyDataUnsupportedOptionError;
-  }[] = [];
+  let invalidURLs: string[] | undefined =
+    req.requestDroppedUrls && req.requestDroppedUrls.length > 0
+      ? [...req.requestDroppedUrls]
+      : undefined;
+  let blockedFound = false;
 
   if (req.body.ignoreInvalidURLs) {
-    invalidURLs = [];
+    invalidURLs = invalidURLs ?? [];
 
-    let pendingURLs = urls;
+    const pendingURLs = urls;
     urls = [];
-    unnormalizedURLs = [];
     for (const u of pendingURLs) {
       try {
         const nu = urlSchema.parse(u);
-        const refusal = await blocklistRefusal(nu);
-        if (refusal === null) {
+        if (!isBlockedUrl(nu)) {
           urls.push(nu);
-          unnormalizedURLs.push(u);
         } else {
           invalidURLs.push(u);
-          refusedURLs.push({ url: nu, error: refusal });
+          blockedFound = true;
         }
       } catch (_) {
         invalidURLs.push(u);
       }
     }
-  } else {
+  } else if (shouldCheckBlocklist) {
     for (const url of urls) {
-      const refusal = await blocklistRefusal(url);
-      if (refusal !== null) {
-        refusedURLs.push({ url, error: refusal });
+      if (isBlockedUrl(url)) {
+        blockedFound = true;
+        break;
       }
     }
   }
 
-  emitRejectedScrapeActivityEvents(
-    refusedURLs.map(({ url, error }) => ({
-      scrapeId: uuidv7(),
-      requestId: req.body.__agentInterop?.requestId ?? id,
-      endpoint: req.body.__agentInterop ? "agent" : "batch_scrape",
-      teamId: req.auth.team_id,
-      apiKeyId: req.acuc?.api_key_id ?? null,
-      auditMetadata: req.body.auditMetadata,
-      url,
-      error,
-      origin: req.body.origin ?? "api",
-      integration: req.body.integration,
-      zeroDataRetention,
-    })),
-  );
-
-  if (!req.body.ignoreInvalidURLs && refusedURLs.length > 0) {
-    // Unaccepted terms and an unsupported option are the refusals the caller
-    // can fix, so they win over an unsupported site.
-    const errors = refusedURLs.map(x => x.error);
-    const termsRequired = errors.find(
-      error => error instanceof ThirdPartyDataTermsRequiredError,
-    );
-    if (termsRequired) {
-      return res.status(403).json(termsRequired.response());
-    }
-    const unsupportedOption = errors.find(
-      error => error instanceof ThirdPartyDataUnsupportedOptionError,
-    );
-    if (unsupportedOption) {
-      return res.status(400).json(unsupportedOption.response());
-    }
+  if (!req.body.ignoreInvalidURLs && blockedFound) {
     return res.status(403).json({
       success: false,
       error: UNSUPPORTED_SITE_MESSAGE,
     });
-  }
-
-  // Threat protection: reject/report blocked URLs at enqueue time so they
-  // never consume scrape slots. Mirrors the isUrlBlocked handling above:
-  // with ignoreInvalidURLs they are reported in invalidURLs; without it the
-  // whole request is rejected. Any URL that slips through (e.g. via a
-  // redirect) is still blocked in the scrape pipeline and its job document
-  // gets the unsafe_domain_blocked error.
-  if (threatProtection.policy) {
-    const { blocked, decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
-      urls,
-      threatProtection.policy,
-      { teamId: req.auth.team_id },
-    );
-    if (blocked.length > 0) {
-      // Consulted decisions bill the scan fee (+2 per unique scanned URL) —
-      // the scans already happened. With ignoreInvalidURLs the allowed URLs
-      // proceed to scrape jobs that bill their own scans, so only blocked
-      // ones bill here; when the whole request is rejected below, no scrape
-      // jobs will ever run, so every scanned URL bills here.
-      const threatScanCredits = calculateThreatScanCredits(
-        req.body.ignoreInvalidURLs
-          ? blocked.map(x => x.decision)
-          : decisionsByUrl.values(),
-      );
-      if (
-        threatScanCredits > 0 &&
-        (req.body.__agentInterop?.shouldBill ?? true)
-      ) {
-        billTeam(
-          req.auth.team_id,
-          req.acuc?.org_id ?? null,
-          threatScanCredits,
-          req.acuc?.api_key_id ?? null,
-          {
-            ...billing,
-            // Appends reuse the batch id but each append's threat scans are a
-            // fresh charge — a shared key would underbill them. Appends stay
-            // keyless (per-request UUID in firebill).
-            ...(req.body.appendToId ? {} : { chargeId: `${id}:threat` }),
-          },
-        ).catch(error => {
-          logger.error(
-            `Failed to bill team ${req.auth.team_id} for ${threatScanCredits} threat scan credit(s): ${error}`,
-          );
-        });
-      }
-      emitRejectedScrapeActivityEvents(
-        blocked.map(blockedUrl => ({
-          scrapeId: uuidv7(),
-          requestId: req.body.__agentInterop?.requestId ?? id,
-          endpoint: req.body.__agentInterop ? "agent" : "batch_scrape",
-          teamId: req.auth.team_id,
-          apiKeyId: req.acuc?.api_key_id ?? null,
-          auditMetadata: req.body.auditMetadata,
-          url: blockedUrl.url,
-          error: new UnsafeDomainBlockedError(
-            blockedUrl.url,
-            blockedUrl.decision,
-          ),
-          threatDecisions: [blockedUrl.decision],
-          origin: req.body.origin ?? "api",
-          integration: req.body.integration,
-          zeroDataRetention,
-        })),
-      );
-      if (req.body.ignoreInvalidURLs) {
-        const blockedSet = new Set(blocked.map(x => x.url));
-        const keptUnnormalized: string[] = [];
-        const keptUrls: string[] = [];
-        urls.forEach((u, i) => {
-          if (blockedSet.has(u)) {
-            invalidURLs!.push(unnormalizedURLs[i] ?? u);
-          } else {
-            keptUrls.push(u);
-            keptUnnormalized.push(unnormalizedURLs[i]);
-          }
-        });
-        urls = keptUrls;
-        unnormalizedURLs = keptUnnormalized;
-      } else {
-        const first = blocked[0];
-        const error = new UnsafeDomainBlockedError(first.url, first.decision);
-        return res.status(403).json({
-          success: false,
-          code: error.code,
-          error: error.message,
-        });
-      }
-    }
   }
 
   if (urls.length === 0) {
@@ -394,74 +161,27 @@ export async function batchScrapeController(
     account: req.account,
   });
 
-  if (!req.body.appendToId && !req.body.__agentInterop) {
-    await logRequest({
-      id,
-      kind: "batch_scrape",
-      api_version: "v2",
-      external_request_id: externalRequestId(req),
-      team_id: req.auth.team_id,
-      origin: req.body.origin ?? "api",
-      integration: req.body.integration,
-      target_hint: urls[0] ?? "",
-      zeroDataRetention: zeroDataRetention || false,
-      api_key_id: req.acuc?.api_key_id ?? null,
-      jobAccessExpiresAt: new Date(
-        Date.now() + (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
-      ),
-      creditsShards: requestCreditsShards(urls.length),
-    });
-  } else if (!req.body.appendToId) {
-    // An agent-started batch is recorded under the agent's request rather
-    // than as a request of its own, so logRequest never created a credit
-    // row for it. Its status is still polled: v2 reads credits under the
-    // saved agent request id, v1 under the batch id, and its children record
-    // credits under the agent request id. Make sure both rows exist. The
-    // agent row is created once with the agent controller's shard count;
-    // for an agent that came through that controller this is a no-op, for
-    // one that reaches the API first through interop it is the only writer.
-    const agentRequestId = req.body.__agentInterop?.requestId;
-    if (agentRequestId) {
-      await initializeRequestCredits(
-        agentRequestId,
-        AGENT_REQUEST_CREDITS_SHARDS,
-      ).catch(error => {
-        logger.warn("Failed to initialize Bigtable request credits", {
-          error,
-          requestId: agentRequestId,
-          shards: AGENT_REQUEST_CREDITS_SHARDS,
-        });
-      });
-    }
-    const creditsShards = requestCreditsShards(urls.length);
-    await initializeRequestCredits(id, creditsShards).catch(error => {
-      logger.warn("Failed to initialize Bigtable request credits", {
-        error,
-        shards: creditsShards,
-      });
-    });
-  }
-
+  const workContactOnly =
+    req.headers["x-firecrawl-work-contact-only"] === "true";
+  const threatProtection = contextThreatProtection(ctx);
   const sc: StoredCrawl = appendTarget
     ? appendTarget
     : {
+        ctx,
         crawlerOptions: null,
         scrapeOptions: req.body,
         internalOptions: {
+          ctx,
           disableSmartWaitCache: true,
           teamId: req.auth.team_id,
           orgId: req.acuc?.org_id ?? null,
-          saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
-            ? true
-            : false,
           zeroDataRetention,
-          bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
+          ...(workContactOnly ? { workContactOnly } : {}),
+          bypassBilling: !(extBody.__agentInterop?.shouldBill ?? true),
           agentIndexOnly: (req as any).agentIndexOnly ?? false,
-          threatProtection: threatProtection.policy ?? undefined,
-          // Safe Mode rides the batch payload so each URL resolves it per-URL
-          // at the scrapeURL backstop.
           teamFlags: req.acuc?.flags ?? null,
-          safeModeBypassed: safeMode.bypassed === true,
+          // Rolling-deploy compatibility dual-write alongside the ctx fallback.
+          ...(threatProtection !== undefined ? { threatProtection } : {}),
         }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
         team_id: req.auth.team_id,
         createdAt: Date.now(),
@@ -469,36 +189,86 @@ export async function batchScrapeController(
         zeroDataRetention,
         v1: true,
         webhook: req.body.webhook,
-        requestId: req.body.__agentInterop?.requestId ?? undefined,
+        requestId: extBody.__agentInterop?.requestId ?? undefined,
         origin: req.body.origin,
       };
 
   if (req.body.appendToId) {
+    sc.ctx = blockCtx;
+    sc.internalOptions.ctx = blockCtx;
+    // Rolling-deploy compatibility dual-write alongside the ctx fallback.
+    sc.internalOptions.threatProtection = contextThreatProtection(blockCtx);
     sc.internalOptions.bypassBilling = !(
-      req.body.__agentInterop?.shouldBill ?? true
+      extBody.__agentInterop?.shouldBill ?? true
     );
-    // Refresh Safe Mode + threat-protection context so appended jobs enforce
-    // the team's current policy, not whatever was stored when the batch was
-    // first created.
     sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
-    sc.internalOptions.safeModeBypassed = safeMode.bypassed === true;
-    sc.internalOptions.threatProtection = threatProtection.policy ?? undefined;
+    if (workContactOnly) sc.internalOptions.workContactOnly = true;
+  }
+
+  const crawlTtlHours = ctx.crawlTtlHours ?? 24;
+
+  if (!req.body.appendToId && !extBody.__agentInterop) {
+    await service.modules.jobStore
+      .register({
+        id,
+        kind: "batchScrape",
+        ctx,
+        expiresAtMs: Date.now() + crawlTtlHours * 60 * 60 * 1000,
+        clientOrigin: req.body.origin ?? "api",
+        estimatedJobs: urls.length,
+      })
+      .catch(error => {
+        logger.error("Failed to register batch scrape job", {
+          error,
+          estimatedJobs: urls.length,
+        });
+      });
+  } else if (!req.body.appendToId) {
+    // An agent-started batch is recorded under the parent request rather than
+    // as a request of its own, so initialize usage tracking for both ids
+    // without creating fetchable job-access rows.
+    const agentRequestId = extBody.__agentInterop?.requestId;
+    if (agentRequestId) {
+      await service.modules.jobStore
+        .register({
+          id: agentRequestId,
+          kind: "batchScrape",
+          ctx,
+          jobAccess: false,
+          estimatedJobs: 0,
+        })
+        .catch(error => {
+          logger.error("Failed to initialize request usage tracking", {
+            error,
+            requestId: agentRequestId,
+          });
+        });
+    }
+    await service.modules.jobStore
+      .register({
+        id,
+        kind: "batchScrape",
+        ctx,
+        jobAccess: false,
+        estimatedJobs: urls.length,
+      })
+      .catch(error => {
+        logger.error("Failed to initialize request usage tracking", {
+          error,
+          estimatedJobs: urls.length,
+        });
+      });
   }
 
   if (!req.body.appendToId) {
-    sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
-    await crawlGroup.addGroup(
-      id,
-      sc.team_id,
-      (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
-      {
-        backend: sc.queueBackend,
-        maxConcurrency: sc.maxConcurrency,
-        delaySeconds: sc.crawlerOptions?.delay,
-      },
-    );
+    sc.ctx = ctx;
+    sc.queueBackend = await resolveNewGroupBackend(sc.team_id, ctx);
+    await crawlGroup.addGroup(id, sc.team_id, crawlTtlHours * 60 * 60 * 1000, {
+      backend: sc.queueBackend,
+      maxConcurrency: sc.maxConcurrency,
+      delaySeconds: sc.crawlerOptions?.delay,
+    });
     await saveCrawl(id, sc);
-    await markCrawlActive(id);
   }
 
   let jobPriority = 20;
@@ -507,10 +277,8 @@ export async function batchScrapeController(
   // otherwise we can use the default priority of 20
   if (urls.length > 1000) {
     // set base to 21
-    jobPriority = await getJobPriority({
-      team_id: req.auth.team_id,
-      acuc: req.acuc,
-      basePriority: 21,
+    jobPriority = await resolveJobPriority(ctx, 21, error => {
+      logger.error("Failed to determine job priority", { error });
     });
   }
   logger.debug("Using job priority " + jobPriority, { jobPriority });
@@ -524,6 +292,7 @@ export async function batchScrapeController(
     data: {
       url: x,
       mode: "single_urls" as const,
+      ctx,
       team_id: req.auth.team_id,
       crawlerOptions: null,
       scrapeOptions,
@@ -531,8 +300,8 @@ export async function batchScrapeController(
       integration: req.body.integration,
       billing,
       crawl_id: id,
-      requestId: req.body.__agentInterop?.requestId ?? undefined,
-      bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
+      requestId: extBody.__agentInterop?.requestId ?? undefined,
+      bypassBilling: !(extBody.__agentInterop?.shouldBill ?? true),
       sitemapped: true,
       v1: true,
       webhook: req.body.webhook,
@@ -563,7 +332,7 @@ export async function batchScrapeController(
 
   if (req.body.webhook) {
     logger.debug("Calling webhook with batch_scrape.started...", {
-      webhook: req.body.webhook,
+      webhook: summarizeWebhookForLog(req.body.webhook),
     });
     const sender = await createWebhookSender({
       teamId: req.auth.team_id,
@@ -576,10 +345,11 @@ export async function batchScrapeController(
 
   const protocol = req.protocol;
 
-  return res.status(200).json({
+  const payload = await finalizeResponse(req, "batchScrape", {
     success: true,
     id,
     url: `${protocol}://${req.host}/v2/batch/scrape/${id}`,
     invalidURLs,
   });
+  return res.status(200).json(payload as BatchScrapeResponse);
 }

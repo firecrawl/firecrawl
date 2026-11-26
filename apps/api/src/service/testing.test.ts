@@ -1,23 +1,72 @@
 import { describe, expect, it, vi } from "vitest";
-import { service, type CoreParts, type Modules } from "./service";
+import { logsMessages, memoryUploads, noBlocklist, openAuth } from "./defaults";
+import { service, type CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
 const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
 
-// No slot exists yet, so a module can only be listed through a cast.
-const modules = (listed: Record<string, unknown>) => listed as Modules;
-
 describe("testService", () => {
-  it("replaces a module and adds extensions", () => {
-    const built = testService(
-      modules({ kept: "base", replaced: "base" }),
-      parts,
-      modules({ replaced: "override" }),
-      [{ name: "extra" }],
-    );
+  it("replaces a module and adds extensions", async () => {
+    const baseUploads = {
+      driver: () => ({
+        ...memoryUploads().driver(),
+        name: "base-uploads",
+      }),
+    };
+    const baseBlocklist = {
+      ...noBlocklist(),
+      isBlocked: (url: string) => url.includes("base-blocked.example"),
+    };
+    const base = {
+      auth: openAuth("base-team"),
+      blocklist: baseBlocklist,
+      messages: logsMessages(),
+      uploads: baseUploads,
+    };
+    const customMessages = {
+      ...logsMessages(),
+      errorContact: () => "Custom contact.",
+    };
+    const built = testService(base, parts, { messages: customMessages }, [
+      { name: "extra" },
+    ]);
 
-    expect(built.modules).toEqual({ kept: "base", replaced: "override" });
+    await expect(
+      built.modules.auth.authenticate({} as never, { kind: "scrape" }),
+    ).resolves.toEqual({ ok: true, caller: { teamId: "base-team" } });
+    expect(
+      built.modules.blocklist.isBlocked("https://base-blocked.example/x", {
+        teamId: "t1",
+        zeroDataRetention: false,
+      }),
+    ).toBe(true);
+    expect(built.modules.messages.errorContact()).toBe("Custom contact.");
+    expect(built.modules.uploads.driver().name).toBe("base-uploads");
+    expect(built.describe().modules).toEqual([
+      "auth",
+      "billing",
+      "blocklist",
+      "idempotency",
+      "jobStore",
+      "limits",
+      "messages",
+      "policy",
+      "uploads",
+      "webhooks",
+    ]);
     expect(built.describe().extensions).toEqual(["core", "extra"]);
+  });
+
+  it("keeps base modules when an override slot is explicitly undefined", () => {
+    const baseMessages = {
+      ...logsMessages(),
+      errorContact: () => "Base contact.",
+    };
+    const built = testService({ messages: baseMessages }, parts, {
+      messages: undefined,
+    });
+
+    expect(built.modules.messages.errorContact()).toBe("Base contact.");
   });
 });
 

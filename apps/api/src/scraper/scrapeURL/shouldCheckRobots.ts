@@ -1,5 +1,4 @@
-import type { TeamFlags } from "../../controllers/v1/types";
-import type { ResolvedSafeMode } from "../../lib/safe-mode";
+import type { RequestContext } from "../../service/request-context";
 
 // The invariant "lockdown never fetches robots.txt" is load-bearing for the
 // lockdown guarantee (robots.txt is a request to the target domain). Keep this
@@ -7,13 +6,13 @@ import type { ResolvedSafeMode } from "../../lib/safe-mode";
 // ESM-heavy module graph.
 export function shouldCheckRobots(
   options: { lockdown?: boolean },
-  internalOptions: { teamFlags?: TeamFlags; safeMode?: ResolvedSafeMode },
+  ctx?: Pick<RequestContext, "checkRobotsOnScrape" | "lockdown" | "flags">,
 ): boolean {
-  if (options.lockdown) {
+  if (options.lockdown || ctx?.lockdown) {
     return false;
   }
-  if (internalOptions.safeMode?.enforceRobots) {
-    return true;
-  }
-  return !!internalOptions.teamFlags?.checkRobotsOnScrape;
+  return (
+    ctx?.checkRobotsOnScrape === true ||
+    ctx?.flags?.checkRobotsOnScrape === true
+  );
 }

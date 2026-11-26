@@ -1,11 +1,15 @@
 import robotsParser, { Robot } from "robots-parser";
 import { Logger } from "winston";
-import { ScrapeOptions, scrapeOptions } from "../controllers/v2/types";
+import {
+  getV2RequestSchemas,
+  ScrapeOptions,
+  scrapeOptionsAcceptsMaxAge,
+} from "../controllers/v2/types";
 import { scrapeURL } from "../scraper/scrapeURL";
 import { Engine } from "../scraper/scrapeURL/engines";
-import { useFireEngine } from "../scraper/scrapeURL/engines/fire-engine/available";
+import type { RequestContext } from "../service/request-context";
+import { installedService } from "../service/service";
 import { CostTracking } from "./cost-tracking";
-import { useIndex } from "../services";
 
 const ROBOTS_MAX_AGE = 1 * 24 * 60 * 60 * 1000;
 
@@ -40,44 +44,35 @@ export async function fetchRobotsTxt(
   const urlObj = new URL(url);
   const robotsTxtUrl = `${urlObj.protocol}//${urlObj.host}/robots.txt`;
 
-  const shouldPrioritizeFireEngine = location && useFireEngine;
-
-  const forceEngine: Engine[] = [
-    ...(useIndex && !skipCache ? ["index" as const] : []),
-    ...(shouldPrioritizeFireEngine
-      ? [
-          "fire-engine;tlsclient" as const,
-          "fire-engine;tlsclient;stealth" as const,
-          // final fallback to chrome-cdp to fill the index
-          "fire-engine;chrome-cdp" as const,
-          "fire-engine;chrome-cdp;stealth" as const,
-        ]
-      : []),
-    "fetch",
-    ...(!shouldPrioritizeFireEngine && useFireEngine
-      ? [
-          "fire-engine;tlsclient" as const,
-          "fire-engine;tlsclient;stealth" as const,
-          // final fallback to chrome-cdp to fill the index
-          "fire-engine;chrome-cdp" as const,
-          "fire-engine;chrome-cdp;stealth" as const,
-        ]
-      : []),
-  ];
+  const forceEngine: Engine[] = ["fetch"];
+  const parentCtx: RequestContext = {
+    teamId: "robots-txt",
+    zeroDataRetention,
+    ...(usOnly ? { usOnly: true } : {}),
+  };
+  const systemCtx =
+    installedService()?.modules.policy.system("robots-txt", parentCtx) ??
+    parentCtx;
 
   let content: string = "";
   const response = await scrapeURL(
     "robots-txt;" + scrapeId,
     robotsTxtUrl,
-    scrapeOptions.parse({
-      formats: ["rawHtml"],
-      timeout: 8000,
-      ...(skipCache ? { maxAge: 0 } : { maxAge: ROBOTS_MAX_AGE }),
-      ...(location ? { location } : {}),
-      ...(headers ? { headers } : {}),
-      ...(skipTlsVerification ? { skipTlsVerification } : {}),
-    }),
+    (() => {
+      const schema = getV2RequestSchemas().scrapeOptions;
+      return schema.parse({
+        formats: ["rawHtml"],
+        timeout: 8000,
+        ...(scrapeOptionsAcceptsMaxAge(schema)
+          ? { maxAge: skipCache ? 0 : ROBOTS_MAX_AGE }
+          : {}),
+        ...(location ? { location } : {}),
+        ...(headers ? { headers } : {}),
+        ...(skipTlsVerification ? { skipTlsVerification } : {}),
+      });
+    })(),
     {
+      ctx: systemCtx,
       forceEngine,
       v0DisableJsDom: true,
       orgId: null,
@@ -90,9 +85,8 @@ export async function fetchRobotsTxt(
             },
           }
         : undefined,
-      teamId: "robots-txt",
-      zeroDataRetention,
-      ...(usOnly ? { teamFlags: { usOnly: true } } : {}),
+      teamId: systemCtx.teamId,
+      zeroDataRetention: systemCtx.zeroDataRetention,
     },
     new CostTracking(),
   );
