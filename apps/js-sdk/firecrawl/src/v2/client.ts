@@ -30,7 +30,6 @@ import {
   cancelBatchScrape,
   batchScrape as batchWaiter,
 } from "./methods/batch";
-import { startExtract, getExtractStatus, extract as extractWaiter } from "./methods/extract";
 import { startAgent, getAgentStatus, getAgentThread, getAgentTrace, getAgentSnapshot, cancelAgent, listAgents, agent as agentWaiter } from "./methods/agent";
 import {
   browser as browserMethod,
@@ -79,7 +78,6 @@ import type {
   ActiveCrawlsResponse,
   BatchScrapeResponse,
   BatchScrapeJob,
-  ExtractResponse,
   AgentResponse,
   AgentStatusResponse,
   AgentTraceResponse,
@@ -560,37 +558,6 @@ export class FirecrawlClient {
    */
   async batchScrape(urls: string[], opts?: BatchScrapeOptions & { pollInterval?: number; timeout?: number }): Promise<BatchScrapeJob> {
     return batchWaiter(this.http, urls, opts);
-  }
-
-  // Extract
-  /**
-   * Start an extract job (async).
-   * @param args Extraction request (urls, schema or prompt, flags).
-   * @returns Job id or processing state.
-   * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
-   * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
-   */
-  async startExtract(args: Parameters<typeof startExtract>[1]): Promise<ExtractResponse> {
-    return startExtract(this.http, args);
-  }
-  /**
-   * Get extract job status/data.
-   * @param jobId Extract job id.
-   * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
-   * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
-   */
-  async getExtractStatus(jobId: string): Promise<ExtractResponse> {
-    return getExtractStatus(this.http, jobId);
-  }
-  /**
-   * Convenience waiter: start an extract and poll until it finishes.
-   * @param args Extraction request plus waiter controls (pollInterval, timeout seconds).
-   * @returns Final extract response.
-   * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
-   * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
-   */
-  async extract(args: Parameters<typeof startExtract>[1] & { pollInterval?: number; timeout?: number }): Promise<ExtractResponse> {
-    return extractWaiter(this.http, args);
   }
 
   // Agent

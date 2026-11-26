@@ -115,22 +115,3 @@ print("\n=== Map Website ===")
 # print(res.links[1].url)
 # print(res.links[2].url)
 # print(res.links[3].url)
-
-# =============================================================================
-# EXTRACT EXAMPLES
-# =============================================================================
-
-# Data extraction with schema
-print("\n=== Extract with Schema ===")
-# schema = {
-#     "type": "object",
-#     "properties": {"title": {"type": "string"}},
-#     "required": ["title"],
-# }
-# 
-# res = firecrawl.extract(
-#     urls=["https://docs.firecrawl.dev"],
-#     prompt="Extract the page title",
-#     schema=schema,
-# )
-# print(res.data["title"])
