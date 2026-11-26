@@ -87,7 +87,7 @@ function strictWithMessage<S extends z.ZodRawShape>(
 }
 
 const rootJsonSchema = z.union([jsonValueSchema, jsonRecordSchema]);
-type ParsedJsonValue = z.infer<typeof rootJsonSchema>;
+type ParsedJsonValue = z.infer<typeof jsonRecordSchema>[string];
 
 function softOptional<T extends z.ZodType>(schema: T) {
   return schema.optional().catch(undefined);

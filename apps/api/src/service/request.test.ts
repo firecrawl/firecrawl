@@ -719,7 +719,13 @@ describe("request-schemas", () => {
       });
       expect(parseOk.success).toBe(true);
       if (parseOk.success) {
-        const data = expectObject(parseOk.data);
+        const data = z
+          .object({
+            parseOnlyTag: z.string(),
+            customTraceId: z.string(),
+            file: z.unknown(),
+          })
+          .parse(parseOk.data);
         expect(data.parseOnlyTag).toBe("p1");
         expect(data.customTraceId).toBe("trace-parse");
         expect(data.file).toBe(uploadFile);

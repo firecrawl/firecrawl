@@ -6,14 +6,34 @@ export const jsonValueSchema = z.json();
 /** Zod schema matching a plain JSON object (string keys mapped to JSON values). */
 export const jsonObjectSchema = z.record(z.string(), jsonValueSchema);
 
-/** Zod schema matching a JSON object that may carry explicit undefined values in memory. */
-export const jsonRecordSchema = z.record(
-  z.string(),
-  jsonValueSchema.optional(),
-);
-
 /** Primitive values representable in JSON. */
 type JsonPrimitive = string | number | boolean | null;
+
+type MutableJsonValue =
+  | JsonPrimitive
+  | Array<MutableJsonValue | undefined>
+  | { [key: string]: MutableJsonValue | undefined };
+
+type MutableJsonObject = { [key: string]: MutableJsonValue | undefined };
+
+const inMemoryJsonValueSchema: z.ZodType<MutableJsonValue | undefined> = z.lazy(
+  () =>
+    z.union([
+      z.string(),
+      z.number(),
+      z.boolean(),
+      z.null(),
+      z.undefined(),
+      z.array(inMemoryJsonValueSchema),
+      z.record(z.string(), inMemoryJsonValueSchema),
+    ]),
+);
+
+/** Zod schema matching a plain JSON object that may carry explicit undefined values in memory. */
+export const jsonRecordSchema: z.ZodType<MutableJsonObject> = z.record(
+  z.string(),
+  inMemoryJsonValueSchema,
+);
 
 /** Any JSON-serializable value. */
 export type JsonValue =
