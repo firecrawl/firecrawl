@@ -49,16 +49,12 @@ skip = [
   { crate = "crypto-common@0.1", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
   { crate = "digest@0.10", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
   { crate = "getrandom@0.3", reason = "nodesig 2.0 pins rand 0.9 while lopdf 0.45 and zip 9 pull getrandom 0.4" },
-  { crate = "nom@7", reason = "texting_robots 0.2 pins nom 7 while lopdf 0.45 pulls nom 8" },
   { crate = "rand@0.8", reason = "kuchikiki build-dep phf_generator 0.11 pins rand 0.8" },
-  { crate = "rand@0.9", reason = "nodesig 2.0 pins rand 0.9 while lopdf 0.45 pulls rand 0.10" },
+  { crate = "rand@0.9", reason = "nodesig 2.0 pins rand 0.9 while lopdf 0.45 and zip 9 pull rand 0.10" },
   { crate = "rand_core@0.6", reason = "kuchikiki build-dep phf_generator 0.11 pins rand 0.8" },
-  { crate = "rand_core@0.9", reason = "nodesig 2.0 pins rand 0.9 while lopdf 0.45 pulls rand 0.10" },
-  { crate = "regex-automata@0.1", reason = "texting_robots 0.2 pulls bstr 0.2 which pins regex-automata 0.1" },
+  { crate = "rand_core@0.9", reason = "nodesig 2.0 pins rand 0.9 while lopdf 0.45 and zip 9 pull rand 0.10" },
   { crate = "sha2@0.10", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
   { crate = "syn@2", reason = "transitive proc macros mix syn 2 and syn 3" },
-  { crate = "thiserror@1", reason = "texting_robots 0.2 pins thiserror 1 while pdf-inspector pulls thiserror 2" },
-  { crate = "thiserror-impl@1", reason = "texting_robots 0.2 pins thiserror 1 while pdf-inspector pulls thiserror 2" },
 ]
 skip-tree = []
 

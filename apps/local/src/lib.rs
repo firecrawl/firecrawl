@@ -27,6 +27,14 @@ macro_rules! declare_vendored_native {
     pub mod document;
     #[path = "native/html.rs"]
     pub mod html;
+    #[path = "native/robots.rs"]
+    mod robots;
+    #[path = "native/robots_pattern.rs"]
+    mod robots_pattern;
+    #[path = "native/sitemap.rs"]
+    mod sitemap;
+    #[path = "native/sitemap_lenient.rs"]
+    mod sitemap_lenient;
     #[path = "native/xml.rs"]
     mod xml;
   };

@@ -19,6 +19,10 @@ mkdir -p src/native
 cp "$crates/firecrawl-crawler/src/xml.rs" "src/native/xml.rs"
 cp "$crates/firecrawl-html/src/html.rs" "src/native/html.rs"
 cp "$crates/firecrawl-crawler/src/crawler.rs" "src/native/crawler.rs"
+cp "$crates/firecrawl-crawler/src/robots.rs" "src/native/robots.rs"
+cp "$crates/firecrawl-crawler/src/robots_pattern.rs" "src/native/robots_pattern.rs"
+cp "$crates/firecrawl-crawler/src/sitemap.rs" "src/native/sitemap.rs"
+cp "$crates/firecrawl-crawler/src/sitemap_lenient.rs" "src/native/sitemap_lenient.rs"
 cp "$crates/firecrawl-parsers/src/document.rs" "src/native/document.rs"
 
 expected=$(sed -nE 's/.*#\[path = "native\/([^"]+)"\].*/\1/p' src/lib.rs | sort)

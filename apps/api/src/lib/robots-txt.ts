@@ -1,4 +1,4 @@
-import robotsParser, { Robot } from "robots-parser";
+import { RobotsParser } from "@mendable/firecrawl-rs";
 import { Logger } from "winston";
 import {
   getV2RequestSchemas,
@@ -12,6 +12,51 @@ import { installedService } from "../service/service";
 import { CostTracking } from "./cost-tracking";
 
 const ROBOTS_MAX_AGE = 1 * 24 * 60 * 60 * 1000;
+
+export interface Robot {
+  isAllowed(url: string, ua?: string): boolean | undefined;
+  isDisallowed(url: string, ua?: string): boolean;
+  getMatchingLineNumber(url: string, ua?: string): number;
+  getCrawlDelay(ua?: string): number | undefined;
+  getSitemaps(): string[];
+  getPreferredHost(): string | undefined;
+}
+
+class RustRobot implements Robot {
+  readonly parser: RobotsParser;
+
+  constructor(robotsTxtUrl: string, contents: string) {
+    this.parser = new RobotsParser(robotsTxtUrl, contents);
+  }
+
+  isAllowed(url: string, ua?: string): boolean | undefined {
+    return this.parser.isAllowed(url, ua) ?? undefined;
+  }
+
+  isDisallowed(url: string, ua?: string): boolean {
+    return this.parser.isDisallowed(url, ua);
+  }
+
+  getMatchingLineNumber(url: string, ua?: string): number {
+    return this.parser.getMatchingLineNumber(url, ua);
+  }
+
+  getCrawlDelay(ua?: string): number | undefined {
+    return this.parser.getCrawlDelay(ua) ?? undefined;
+  }
+
+  getSitemaps(): string[] {
+    return this.parser.getSitemaps();
+  }
+
+  getPreferredHost(): string | undefined {
+    return this.parser.getPreferredHost() ?? undefined;
+  }
+}
+
+export function parseRobotsTxt(robotsTxtUrl: string, contents: string): Robot {
+  return new RustRobot(robotsTxtUrl, contents);
+}
 
 interface RobotsTxtChecker {
   robotsTxtUrl: string;
@@ -126,7 +171,7 @@ export function createRobotsChecker(
 ): RobotsTxtChecker {
   const urlObj = new URL(url);
   const robotsTxtUrl = `${urlObj.protocol}//${urlObj.host}/robots.txt`;
-  const robots = robotsParser(robotsTxtUrl, robotsTxt);
+  const robots = parseRobotsTxt(robotsTxtUrl, robotsTxt);
   return {
     robotsTxtUrl,
     robotsTxt,
@@ -140,37 +185,21 @@ export function isUrlAllowedByRobots(
   userAgents: string[] = ["FireCrawlAgent", "FirecrawlAgent"],
 ): boolean {
   if (!robots) return true;
+  if (robots instanceof RustRobot) {
+    return robots.parser.isUrlAllowedByRobots(url, userAgents);
+  }
 
   for (const userAgent of userAgents) {
-    let isAllowed = robots.isAllowed(url, userAgent);
+    let isAllowed = robots.isAllowed(url, userAgent) ?? true;
 
-    // Handle null/undefined responses - default to true (allowed)
-    if (isAllowed === null || isAllowed === undefined) {
-      isAllowed = true;
-    }
-
-    if (isAllowed == null) {
-      isAllowed = true;
-    }
-
-    // Also check with trailing slash if URL doesn't have one
-    // This catches cases like "Disallow: /path/" when user requests "/path"
     if (isAllowed && !url.endsWith("/")) {
-      const urlWithSlash = url + "/";
-      let isAllowedWithSlash = robots.isAllowed(urlWithSlash, userAgent);
-
-      if (isAllowedWithSlash == null) {
-        isAllowedWithSlash = true;
-      }
-
-      // If the trailing slash version is explicitly disallowed, block it
+      const isAllowedWithSlash = robots.isAllowed(url + "/", userAgent) ?? true;
       if (isAllowedWithSlash === false) {
         isAllowed = false;
       }
     }
 
     if (isAllowed) {
-      //   console.log("isAllowed: true, " + userAgent);
       return true;
     }
   }

@@ -6,14 +6,17 @@
   clippy::unwrap_used
 )]
 
-use crate::xml::exceeds_element_depth;
+use crate::robots::Robots;
+pub use crate::sitemap::{
+  ParsedSitemap, SitemapEntry, SitemapIndex, SitemapInstruction, SitemapProcessingResult,
+  SitemapUrl, SitemapUrlset, parse_sitemap_xml, process_sitemap,
+};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
   collections::{HashMap, HashSet},
   sync::LazyLock,
 };
-use texting_robots::Robot;
 use url::Url;
 
 static FILE_EXTENSIONS: &[&str] = &[
@@ -75,43 +78,23 @@ pub struct FilterUrlResult {
   pub denial_reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct SitemapUrl {
-  pub loc: Vec<String>,
+#[derive(Debug, Clone, Deserialize)]
+pub struct FilterUrlsCall {
+  pub hrefs: Vec<String>,
+  pub url: String,
+  pub base_url: String,
+  pub excludes: Vec<String>,
+  pub ignore_robots_txt: bool,
+  pub robots_txt: String,
+  pub robots_user_agent: Option<String>,
+  pub allow_external_content_links: bool,
+  pub allow_subdomains: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SitemapEntry {
-  pub loc: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct SitemapUrlset {
-  pub url: Vec<SitemapUrl>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct SitemapIndex {
-  pub sitemap: Vec<SitemapEntry>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ParsedSitemap {
-  pub urlset: Option<SitemapUrlset>,
-  pub sitemapindex: Option<SitemapIndex>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct SitemapInstruction {
-  pub action: String,
-  pub urls: Vec<String>,
-  pub count: u32,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct SitemapProcessingResult {
-  pub instructions: Vec<SitemapInstruction>,
-  pub total_count: u32,
+pub struct CrawlScope {
+  pub prefix: String,
+  pub exact: Option<String>,
 }
 
 const URL_PARSE_ERROR: &str = "URL_PARSE_ERROR";
@@ -127,7 +110,7 @@ const SECTION_LINK: &str = "SECTION_LINK";
 const NON_WEB_PROTOCOL: &str = "NON_WEB_PROTOCOL";
 
 #[inline]
-fn is_file(path: &str) -> bool {
+pub(crate) fn is_file(path: &str) -> bool {
   if let Some(dot_pos) = path.rfind('.') {
     let extension = &path[dot_pos..];
     FILE_EXT_SET.contains(extension)
@@ -139,34 +122,43 @@ fn is_file(path: &str) -> bool {
 static DOCUMENT_SEGMENT: LazyLock<Regex> =
   LazyLock::new(|| Regex::new(r"\.[A-Za-z0-9]{2,}$").unwrap());
 
-struct CrawlScope {
-  prefix: String,
-  exact: Option<String>,
+/// Resolves the path a crawl is scoped to when backward crawling is disabled.
+pub fn get_crawl_scope(initial_url: &str) -> CrawlScope {
+  let Ok(parsed) = Url::parse(initial_url) else {
+    return CrawlScope {
+      prefix: "/".to_string(),
+      exact: None,
+    };
+  };
+  crawl_scope(&parsed)
 }
 
-/// Resolves the path a crawl is scoped to when backward crawling is disabled.
-/// Keep in sync with getCrawlScope() in apps/api/src/lib/crawl-scope.ts.
 fn crawl_scope(initial_url: &Url) -> CrawlScope {
   let path = initial_url.path();
+  let normalized = if path.starts_with('/') {
+    path.to_string()
+  } else {
+    format!("/{path}")
+  };
 
-  if path.ends_with('/') {
+  if normalized.ends_with('/') {
     return CrawlScope {
-      prefix: path.to_string(),
+      prefix: normalized,
       exact: None,
     };
   }
 
-  let last_slash = path.rfind('/').map_or(0, |i| i + 1);
-  if DOCUMENT_SEGMENT.is_match(&path[last_slash..]) {
+  let last_slash = normalized.rfind('/').map_or(0, |i| i + 1);
+  if DOCUMENT_SEGMENT.is_match(&normalized[last_slash..]) {
     return CrawlScope {
-      prefix: path[..last_slash].to_string(),
+      prefix: normalized[..last_slash].to_string(),
       exact: None,
     };
   }
 
   CrawlScope {
-    prefix: format!("{path}/"),
-    exact: Some(path.to_string()),
+    prefix: format!("{normalized}/"),
+    exact: Some(normalized),
   }
 }
 
@@ -269,20 +261,11 @@ fn is_external_main_page(url_str: &str) -> bool {
   }
 }
 
-fn build_robot(
-  ignore_robots_txt: bool,
-  robots_txt: &str,
-  robots_user_agent: Option<&str>,
-) -> Option<Robot> {
+fn build_robot(ignore_robots_txt: bool, robots_txt: &str) -> Option<Robots> {
   if ignore_robots_txt || robots_txt.is_empty() {
     return None;
   }
-  if let Some(ua) = robots_user_agent {
-    return Robot::new(ua, robots_txt.as_bytes()).ok();
-  }
-  Robot::new("FireCrawlAgent", robots_txt.as_bytes())
-    .ok()
-    .or_else(|| Robot::new("FirecrawlAgent", robots_txt.as_bytes()).ok())
+  Some(Robots::parse_rules_only(robots_txt))
 }
 
 fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult, String> {
@@ -310,11 +293,7 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
     .filter_map(|i| compile_path_regex(i).ok())
     .collect();
 
-  let robot = build_robot(
-    data.ignore_robots_txt,
-    &data.robots_txt,
-    data.robots_user_agent.as_deref(),
-  );
+  let robot = build_robot(data.ignore_robots_txt, &data.robots_txt);
 
   let mut result_links = Vec::new();
   let mut denial_reasons = HashMap::new();
@@ -387,7 +366,7 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
       }
 
       if let Some(ref robot) = robot {
-        if !robot.allowed(url_str) {
+        if !robot.is_url_path_allowed(&url, data.robots_user_agent.as_deref()) {
           denial_reasons.insert(link, ROBOTS_TXT.to_string());
           continue;
         }
@@ -513,28 +492,33 @@ pub fn validate_regexes(patterns: Vec<String>) -> Vec<RegexValidationError> {
     .collect()
 }
 
-fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, String> {
-  let mut full_url = data.href.clone();
+struct PreparedUrlFilter<'a> {
+  context_url: Option<Url>,
+  base_url: Url,
+  excludes_regex: Vec<PathRegex>,
+  robot: Option<Robots>,
+  robots_user_agent: Option<&'a str>,
+  allow_external_content_links: bool,
+  allow_subdomains: bool,
+}
+
+fn filter_single_url_with_prepared(href: &str, filter: &PreparedUrlFilter<'_>) -> FilterUrlResult {
+  let mut full_url = href.to_string();
 
   // Handle relative URLs
-  if !data.href.starts_with("http") {
-    match Url::parse(&data.url) {
-      Ok(base) => match base.join(&data.href) {
-        Ok(resolved) => full_url = resolved.to_string(),
-        Err(_) => {
-          return Ok(FilterUrlResult {
-            allowed: false,
-            url: None,
-            denial_reason: Some(URL_PARSE_ERROR.to_string()),
-          });
-        }
-      },
-      Err(_) => {
-        return Ok(FilterUrlResult {
+  if !href.starts_with("http") {
+    match filter
+      .context_url
+      .as_ref()
+      .and_then(|base| base.join(href).ok())
+    {
+      Some(resolved) => full_url = resolved.to_string(),
+      None => {
+        return FilterUrlResult {
           allowed: false,
           url: None,
           denial_reason: Some(URL_PARSE_ERROR.to_string()),
-        });
+        };
       }
     }
   }
@@ -542,14 +526,132 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
   let url = match Url::parse(&full_url) {
     Ok(url) => url,
     Err(_) => {
-      return Ok(FilterUrlResult {
+      return FilterUrlResult {
         allowed: false,
         url: None,
         denial_reason: Some(URL_PARSE_ERROR.to_string()),
-      });
+      };
     }
   };
 
+  let path = url.path();
+  let url_str = url.as_str();
+
+  if is_non_web_protocol(url_str) {
+    return FilterUrlResult {
+      allowed: false,
+      url: None,
+      denial_reason: Some(NON_WEB_PROTOCOL.to_string()),
+    };
+  }
+
+  if is_internal_link(&url, &filter.base_url) {
+    // INTERNAL LINKS
+    if !no_sections(url_str) {
+      return FilterUrlResult {
+        allowed: false,
+        url: None,
+        denial_reason: Some(SECTION_LINK.to_string()),
+      };
+    }
+
+    if !filter.excludes_regex.is_empty()
+      && filter
+        .excludes_regex
+        .iter()
+        .any(|r| r.is_match(path.as_bytes()))
+    {
+      return FilterUrlResult {
+        allowed: false,
+        url: None,
+        denial_reason: Some(EXCLUDE_PATTERN.to_string()),
+      };
+    }
+
+    if let Some(ref robot) = filter.robot {
+      if !robot.is_url_path_allowed(&url, filter.robots_user_agent) {
+        return FilterUrlResult {
+          allowed: false,
+          url: None,
+          denial_reason: Some(ROBOTS_TXT.to_string()),
+        };
+      }
+    }
+
+    FilterUrlResult {
+      allowed: true,
+      url: Some(full_url),
+      denial_reason: None,
+    }
+  } else {
+    // EXTERNAL LINKS
+    if is_social_media_or_email(url_str) {
+      return FilterUrlResult {
+        allowed: false,
+        url: None,
+        denial_reason: Some(SOCIAL_MEDIA.to_string()),
+      };
+    }
+
+    if !filter.excludes_regex.is_empty()
+      && filter
+        .excludes_regex
+        .iter()
+        .any(|r| r.is_match(url_str.as_bytes()))
+    {
+      return FilterUrlResult {
+        allowed: false,
+        url: None,
+        denial_reason: Some(EXCLUDE_PATTERN.to_string()),
+      };
+    }
+
+    let Some(ref context_url) = filter.context_url else {
+      return FilterUrlResult {
+        allowed: false,
+        url: None,
+        denial_reason: Some(URL_PARSE_ERROR.to_string()),
+      };
+    };
+
+    // Allow an external destination when external content links are enabled and
+    // it is not an external site's homepage. Two cases qualify: the link was
+    // found on an in-scope page, or an already-admitted external link redirected
+    // within its own registrable domain (its canonical URL or a subdomain of
+    // it), matched via the same PSL check used for allowSubdomains.
+    if filter.allow_external_content_links
+      && !is_external_main_page(url_str)
+      && (is_internal_link(context_url, &filter.base_url)
+        || is_subdomain(&url, context_url)
+        || is_internal_link(&url, context_url))
+    {
+      return FilterUrlResult {
+        allowed: true,
+        url: Some(full_url),
+        denial_reason: None,
+      };
+    }
+
+    if filter.allow_subdomains
+      && !is_social_media_or_email(url_str)
+      && is_subdomain(&url, &filter.base_url)
+    {
+      return FilterUrlResult {
+        allowed: true,
+        url: Some(full_url),
+        denial_reason: None,
+      };
+    }
+
+    FilterUrlResult {
+      allowed: false,
+      url: None,
+      denial_reason: Some(EXTERNAL_LINK.to_string()),
+    }
+  }
+}
+
+fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, String> {
   let base_url = match Url::parse(&data.base_url) {
     Ok(url) => url,
     Err(_) => {
@@ -561,128 +663,21 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
     }
   };
 
-  let path = url.path();
-  let url_str = url.as_str();
+  let prepared = PreparedUrlFilter {
+    context_url: Url::parse(&data.url).ok(),
+    base_url,
+    excludes_regex: data
+      .excludes
+      .iter()
+      .filter_map(|e| compile_path_regex(e).ok())
+      .collect(),
+    robot: build_robot(data.ignore_robots_txt, &data.robots_txt),
+    robots_user_agent: data.robots_user_agent.as_deref(),
+    allow_external_content_links: data.allow_external_content_links,
+    allow_subdomains: data.allow_subdomains,
+  };
 
-  if is_non_web_protocol(url_str) {
-    return Ok(FilterUrlResult {
-      allowed: false,
-      url: None,
-      denial_reason: Some(NON_WEB_PROTOCOL.to_string()),
-    });
-  }
-
-  let excludes_regex: Vec<PathRegex> = data
-    .excludes
-    .iter()
-    .filter_map(|e| compile_path_regex(e).ok())
-    .collect();
-
-  let robot = build_robot(
-    data.ignore_robots_txt,
-    &data.robots_txt,
-    data.robots_user_agent.as_deref(),
-  );
-
-  if is_internal_link(&url, &base_url) {
-    // INTERNAL LINKS
-    if !no_sections(url_str) {
-      return Ok(FilterUrlResult {
-        allowed: false,
-        url: None,
-        denial_reason: Some(SECTION_LINK.to_string()),
-      });
-    }
-
-    if !excludes_regex.is_empty() && excludes_regex.iter().any(|r| r.is_match(path.as_bytes())) {
-      return Ok(FilterUrlResult {
-        allowed: false,
-        url: None,
-        denial_reason: Some(EXCLUDE_PATTERN.to_string()),
-      });
-    }
-
-    if let Some(ref robot) = robot {
-      if !robot.allowed(url_str) {
-        return Ok(FilterUrlResult {
-          allowed: false,
-          url: None,
-          denial_reason: Some(ROBOTS_TXT.to_string()),
-        });
-      }
-    }
-
-    Ok(FilterUrlResult {
-      allowed: true,
-      url: Some(full_url),
-      denial_reason: None,
-    })
-  } else {
-    // EXTERNAL LINKS
-    if is_social_media_or_email(url_str) {
-      return Ok(FilterUrlResult {
-        allowed: false,
-        url: None,
-        denial_reason: Some(SOCIAL_MEDIA.to_string()),
-      });
-    }
-
-    if !excludes_regex.is_empty()
-      && excludes_regex
-        .iter()
-        .any(|r| r.is_match(url_str.as_bytes()))
-    {
-      return Ok(FilterUrlResult {
-        allowed: false,
-        url: None,
-        denial_reason: Some(EXCLUDE_PATTERN.to_string()),
-      });
-    }
-
-    let context_url = match Url::parse(&data.url) {
-      Ok(url) => url,
-      Err(_) => {
-        return Ok(FilterUrlResult {
-          allowed: false,
-          url: None,
-          denial_reason: Some(URL_PARSE_ERROR.to_string()),
-        });
-      }
-    };
-
-    // Allow an external destination when external content links are enabled and
-    // it is not an external site's homepage. Two cases qualify: the link was
-    // found on an in-scope page, or an already-admitted external link redirected
-    // within its own registrable domain (its canonical URL or a subdomain of
-    // it), matched via the same PSL check used for allowSubdomains.
-    if data.allow_external_content_links
-      && !is_external_main_page(url_str)
-      && (is_internal_link(&context_url, &base_url)
-        || is_subdomain(&url, &context_url)
-        || is_internal_link(&url, &context_url))
-    {
-      return Ok(FilterUrlResult {
-        allowed: true,
-        url: Some(full_url),
-        denial_reason: None,
-      });
-    }
-
-    if data.allow_subdomains && !is_social_media_or_email(url_str) && is_subdomain(&url, &base_url)
-    {
-      return Ok(FilterUrlResult {
-        allowed: true,
-        url: Some(full_url),
-        denial_reason: None,
-      });
-    }
-
-    Ok(FilterUrlResult {
-      allowed: false,
-      url: None,
-      denial_reason: Some(EXTERNAL_LINK.to_string()),
-    })
-  }
+  Ok(filter_single_url_with_prepared(&data.href, &prepared))
 }
 
 /// Filter a single URL based on crawling rules and constraints.
@@ -690,156 +685,38 @@ pub fn filter_url(data: FilterUrlCall) -> Result<FilterUrlResult, String> {
   _filter_url(data)
 }
 
-/// Sitemaps nest a handful of levels; anything deeper is malformed.
-const MAX_SITEMAP_DEPTH: usize = 32;
+/// Batch-filter candidate hrefs extracted from a single page, compiling exclude
+/// patterns and parsing `robots.txt` once for the entire batch.
+pub fn filter_urls(data: FilterUrlsCall) -> Result<Vec<String>, String> {
+  let Ok(base_url) = Url::parse(&data.base_url) else {
+    return Ok(Vec::new());
+  };
 
-fn _parse_sitemap_xml(xml_content: &str) -> std::result::Result<ParsedSitemap, String> {
-  if exceeds_element_depth(xml_content, MAX_SITEMAP_DEPTH) {
-    return Err(format!(
-      "XML parsing error: elements nested deeper than {MAX_SITEMAP_DEPTH} levels"
-    ));
-  }
-  // Entity replacement text can carry nested markup the depth scan never sees.
-  if xml_content.contains("<!ENTITY") {
-    return Err("XML parsing error: entity declarations are not supported".to_string());
-  }
-
-  let doc = roxmltree::Document::parse_with_options(
-    xml_content,
-    roxmltree::ParsingOptions {
-      allow_dtd: true,
-      ..Default::default()
-    },
-  )
-  .map_err(|e| format!("XML parsing error: {e}"))?;
-  let root = doc.root_element();
-
-  match root.tag_name().name() {
-    "sitemapindex" => {
-      let sitemaps = root
-        .children()
-        .filter(|n| n.is_element() && n.tag_name().name() == "sitemap")
-        .filter_map(|sitemap_node| {
-          sitemap_node
-            .children()
-            .find(|n| n.is_element() && n.tag_name().name() == "loc")
-            .and_then(|loc_node| loc_node.text())
-            .map(|loc_text| SitemapEntry {
-              loc: vec![loc_text.to_string()],
-            })
-        })
-        .collect();
-
-      Ok(ParsedSitemap {
-        urlset: None,
-        sitemapindex: Some(SitemapIndex { sitemap: sitemaps }),
-      })
-    }
-    "urlset" => {
-      let urls = root
-        .children()
-        .filter(|n| n.is_element() && n.tag_name().name() == "url")
-        .filter_map(|url_node| {
-          url_node
-            .children()
-            .find(|n| n.is_element() && n.tag_name().name() == "loc")
-            .and_then(|loc_node| loc_node.text())
-            .map(|loc_text| SitemapUrl {
-              loc: vec![loc_text.to_string()],
-            })
-        })
-        .collect();
-
-      Ok(ParsedSitemap {
-        urlset: Some(SitemapUrlset { url: urls }),
-        sitemapindex: None,
-      })
-    }
-    _ => Err("Invalid sitemap format: root element must be 'sitemapindex' or 'urlset'".to_string()),
-  }
-}
-
-/// Parse XML sitemap content into structured data.
-pub fn parse_sitemap_xml(xml_content: &str) -> Result<ParsedSitemap, String> {
-  _parse_sitemap_xml(xml_content)
-}
-
-fn _process_sitemap(xml_content: &str) -> std::result::Result<SitemapProcessingResult, String> {
-  let parsed = _parse_sitemap_xml(xml_content)?;
-  let mut instructions = Vec::new();
-  let mut total_count: u32 = 0;
-
-  if let Some(sitemapindex) = parsed.sitemapindex {
-    let sitemap_urls: Vec<String> = sitemapindex
-      .sitemap
+  let prepared = PreparedUrlFilter {
+    context_url: Url::parse(&data.url).ok(),
+    base_url,
+    excludes_regex: data
+      .excludes
       .iter()
-      .filter_map(|sitemap| {
-        if !sitemap.loc.is_empty() {
-          Some(sitemap.loc[0].trim().to_string())
-        } else {
-          None
-        }
-      })
-      .collect();
+      .filter_map(|e| compile_path_regex(e).ok())
+      .collect(),
+    robot: build_robot(data.ignore_robots_txt, &data.robots_txt),
+    robots_user_agent: data.robots_user_agent.as_deref(),
+    allow_external_content_links: data.allow_external_content_links,
+    allow_subdomains: data.allow_subdomains,
+  };
 
-    if !sitemap_urls.is_empty() {
-      let count = sitemap_urls.len() as u32;
-      instructions.push(SitemapInstruction {
-        action: "recurse".to_string(),
-        urls: sitemap_urls,
-        count,
-      });
-      total_count += count;
-    }
-  } else if let Some(urlset) = parsed.urlset {
-    let mut xml_sitemaps = Vec::new();
-    let mut valid_urls = Vec::new();
-
-    for url_entry in urlset.url {
-      if !url_entry.loc.is_empty() {
-        let url = url_entry.loc[0].trim();
-        let url_lower = url.to_lowercase();
-        if url_lower.ends_with(".xml") || url_lower.ends_with(".xml.gz") {
-          xml_sitemaps.push(url.to_string());
-        } else if let Ok(parsed_url) = Url::parse(url) {
-          let path_lower = parsed_url.path().to_lowercase();
-          if !is_file(&path_lower) {
-            valid_urls.push(url.to_string());
-          }
-        }
+  let mut allowed_urls = Vec::with_capacity(data.hrefs.len());
+  for href in &data.hrefs {
+    let result = filter_single_url_with_prepared(href, &prepared);
+    if result.allowed {
+      if let Some(url) = result.url {
+        allowed_urls.push(url);
       }
     }
-
-    if !xml_sitemaps.is_empty() {
-      let count = xml_sitemaps.len() as u32;
-      instructions.push(SitemapInstruction {
-        action: "recurse".to_string(),
-        urls: xml_sitemaps,
-        count,
-      });
-      total_count += count;
-    }
-
-    if !valid_urls.is_empty() {
-      let count = valid_urls.len() as u32;
-      instructions.push(SitemapInstruction {
-        action: "process".to_string(),
-        urls: valid_urls,
-        count,
-      });
-      total_count += count;
-    }
   }
 
-  Ok(SitemapProcessingResult {
-    instructions,
-    total_count,
-  })
-}
-
-/// Process sitemap XML and extract crawling instructions.
-pub fn process_sitemap(xml_content: &str) -> Result<SitemapProcessingResult, String> {
-  _process_sitemap(xml_content)
+  Ok(allowed_urls)
 }
 
 #[cfg(test)]
@@ -906,7 +783,7 @@ mod tests {
   </url>
 </urlset>"#;
 
-    let result = _parse_sitemap_xml(xml_content).unwrap();
+    let result = parse_sitemap_xml(xml_content).unwrap();
     assert!(result.urlset.is_some());
     let urlset = result.urlset.unwrap();
     assert_eq!(urlset.url.len(), 2);
@@ -926,7 +803,7 @@ mod tests {
   </sitemap>
 </sitemapindex>"#;
 
-    let result = _parse_sitemap_xml(xml_content).unwrap();
+    let result = parse_sitemap_xml(xml_content).unwrap();
     assert!(result.sitemapindex.is_some());
     let sitemapindex = result.sitemapindex.unwrap();
     assert_eq!(sitemapindex.sitemap.len(), 2);
@@ -949,7 +826,7 @@ mod tests {
   </url>
 </invalid>"#;
 
-    let result = _parse_sitemap_xml(xml_content);
+    let result = parse_sitemap_xml(xml_content);
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Invalid sitemap format"));
   }
@@ -963,7 +840,7 @@ mod tests {
   </url>
 </urlset"#; // Missing closing >
 
-    let result = _parse_sitemap_xml(xml_content);
+    let result = parse_sitemap_xml(xml_content);
     assert!(result.is_err());
   }
 
@@ -974,7 +851,7 @@ mod tests {
       "<url><loc>https://example.com/page%3C%2Floc%3E".repeat(50_000)
     );
 
-    let result = _parse_sitemap_xml(&xml_content);
+    let result = parse_sitemap_xml(&xml_content);
     assert!(result.unwrap_err().contains("nested deeper than"));
   }
 
@@ -985,7 +862,7 @@ mod tests {
       r#"<url data="x/>" other='y>'>"#.repeat(100_000)
     );
 
-    let result = _parse_sitemap_xml(&xml_content);
+    let result = parse_sitemap_xml(&xml_content);
     assert!(result.unwrap_err().contains("nested deeper than"));
   }
 
@@ -996,7 +873,7 @@ mod tests {
       "<url>".repeat(100_000)
     );
 
-    let result = _parse_sitemap_xml(&xml_content);
+    let result = parse_sitemap_xml(&xml_content);
     assert!(result.unwrap_err().contains("entity declarations"));
   }
 
@@ -1006,7 +883,7 @@ mod tests {
 <!DOCTYPE urlset>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://example.com/page1</loc></url></urlset>"#;
 
-    let urlset = _parse_sitemap_xml(xml_content).unwrap().urlset.unwrap();
+    let urlset = parse_sitemap_xml(xml_content).unwrap().urlset.unwrap();
     assert_eq!(urlset.url[0].loc[0], "https://example.com/page1");
   }
 
@@ -1023,7 +900,7 @@ mod tests {
   <url><loc>https://example.com/page2</loc></url>
 </urlset>"#;
 
-    let urlset = _parse_sitemap_xml(xml_content).unwrap().urlset.unwrap();
+    let urlset = parse_sitemap_xml(xml_content).unwrap().urlset.unwrap();
     assert_eq!(urlset.url.len(), 2);
     assert_eq!(urlset.url[0].loc[0], "https://example.com/page1");
     assert_eq!(urlset.url[1].loc[0], "https://example.com/page2");
@@ -1044,7 +921,7 @@ mod tests {
   </url>
 </urlset>"#;
 
-    let result = _process_sitemap(xml_content).unwrap();
+    let result = process_sitemap(xml_content).unwrap();
     assert_eq!(result.instructions.len(), 2);
 
     let recurse_instruction = result
@@ -1079,7 +956,7 @@ mod tests {
   </sitemap>
 </sitemapindex>"#;
 
-    let result = _process_sitemap(xml_content).unwrap();
+    let result = process_sitemap(xml_content).unwrap();
     assert_eq!(result.instructions.len(), 1);
     assert_eq!(result.instructions[0].action, "recurse");
     assert_eq!(result.instructions[0].urls.len(), 2);

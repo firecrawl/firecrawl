@@ -1,20 +1,13 @@
-import type { Mocked, MockedFunction } from "vitest";
+import type { Mocked } from "vitest";
 // crawler.test.ts
 import { WebCrawler } from "../crawler";
 import axios from "axios";
-import robotsParser from "robots-parser";
 
 vi.mock("axios");
-vi.mock("robots-parser");
 
 describe("WebCrawler", () => {
   let crawler: WebCrawler;
   const mockAxios = axios as Mocked<typeof axios>;
-  const mockRobotsParser = robotsParser as MockedFunction<
-    typeof robotsParser
-  >;
-
-  let maxCrawledDepth: number;
 
   beforeEach(() => {
     // Setup default mocks
@@ -25,15 +18,6 @@ describe("WebCrawler", () => {
         return Promise.resolve({ data: "sitemap content" }); // You would normally parse this to URLs
       }
       return Promise.resolve({ data: "<html></html>" });
-    });
-
-    mockRobotsParser.mockReturnValue({
-      isAllowed: vi.fn().mockReturnValue(true),
-      isDisallowed: vi.fn().mockReturnValue(false),
-      getMatchingLineNumber: vi.fn().mockReturnValue(0),
-      getCrawlDelay: vi.fn().mockReturnValue(0),
-      getSitemaps: vi.fn().mockReturnValue([]),
-      getPreferredHost: vi.fn().mockReturnValue("example.com"),
     });
   });
 

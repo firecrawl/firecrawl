@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use firecrawl_crawler::{
-  FilterLinksCall, FilterLinksResult, FilterUrlCall, FilterUrlResult, ParsedSitemap,
-  RegexValidationError, SitemapProcessingResult,
+  CrawlScope, FilterLinksCall, FilterLinksResult, FilterUrlCall, FilterUrlResult, FilterUrlsCall,
+  ParsedSitemap, RegexValidationError, SitemapProcessingResult,
 };
 use firecrawl_html::{ExtractAttributesOptions, ExtractedAttributeResult, TransformHtmlOptions};
 use firecrawl_parsers::{PdfProcessOutput, convert_document_bytes_to_markdown};
@@ -158,6 +158,27 @@ pub async fn filter_url(data: FilterUrlCall) -> Result<FilterUrlResult> {
     })?;
 
   res.map_err(|e| Error::new(Status::GenericFailure, format!("Filter URL error: {e}")))
+}
+
+pub async fn filter_urls(data: FilterUrlsCall) -> Result<Vec<String>> {
+  let res = task::spawn_blocking(move || firecrawl_crawler::filter_urls(data))
+    .await
+    .map_err(|e| {
+      Error::new(
+        Status::GenericFailure,
+        format!("filter_urls join error: {e}"),
+      )
+    })?;
+
+  res.map_err(|e| Error::new(Status::GenericFailure, format!("Filter URLs error: {e}")))
+}
+
+pub fn get_crawl_scope(initial_url: String) -> CrawlScope {
+  firecrawl_crawler::get_crawl_scope(&initial_url)
+}
+
+pub fn extract_links_from_markdown(text: String, base_url: String) -> Vec<String> {
+  firecrawl_crawler::extract_links_from_markdown(&text, &base_url)
 }
 
 pub async fn parse_sitemap_xml(xml_content: String) -> Result<ParsedSitemap> {
@@ -702,6 +723,131 @@ macro_rules! export_oss_napi {
       });
       let res = $crate::wrappers::detect_pdf(path, ctx).await?;
       Ok(_convert_pdf_result(res))
+    }
+
+    #[derive(Debug, Clone, serde::Deserialize)]
+    #[napi_derive::napi(object)]
+    pub struct FilterUrlsCall {
+      pub hrefs: Vec<String>,
+      pub url: String,
+      pub base_url: String,
+      pub excludes: Vec<String>,
+      pub ignore_robots_txt: bool,
+      pub robots_txt: String,
+      pub robots_user_agent: Option<String>,
+      pub allow_external_content_links: bool,
+      pub allow_subdomains: bool,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[napi_derive::napi(object)]
+    pub struct CrawlScope {
+      pub prefix: String,
+      pub exact: Option<String>,
+    }
+
+    /// Parsed `robots.txt` evaluator backed by pure-Rust RFC 9309 matching.
+    #[derive(Debug)]
+    #[napi_derive::napi]
+    pub struct RobotsParser {
+      inner: $crate::__deps::firecrawl_crawler::Robots,
+    }
+
+    #[napi_derive::napi]
+    impl RobotsParser {
+      #[napi_derive::napi(constructor)]
+      pub fn new(robots_txt_url: String, contents: String) -> Self {
+        Self {
+          inner: $crate::__deps::firecrawl_crawler::Robots::parse(&robots_txt_url, &contents),
+        }
+      }
+
+      #[napi_derive::napi]
+      pub fn is_allowed(&self, url: String, user_agent: Option<String>) -> Option<bool> {
+        self.inner.is_allowed(&url, user_agent.as_deref())
+      }
+
+      #[napi_derive::napi]
+      pub fn is_disallowed(&self, url: String, user_agent: Option<String>) -> bool {
+        self.inner.is_disallowed(&url, user_agent.as_deref())
+      }
+
+      #[napi_derive::napi]
+      pub fn get_matching_line_number(&self, url: String, user_agent: Option<String>) -> i32 {
+        self
+          .inner
+          .get_matching_line_number(&url, user_agent.as_deref())
+      }
+
+      #[napi_derive::napi]
+      pub fn get_crawl_delay(&self, user_agent: Option<String>) -> Option<f64> {
+        self.inner.get_crawl_delay(user_agent.as_deref())
+      }
+
+      #[napi_derive::napi]
+      pub fn get_sitemaps(&self) -> Vec<String> {
+        self.inner.get_sitemaps().to_vec()
+      }
+
+      #[napi_derive::napi]
+      pub fn get_preferred_host(&self) -> Option<String> {
+        self.inner.get_preferred_host().map(str::to_string)
+      }
+
+      #[napi_derive::napi]
+      pub fn is_url_allowed_by_robots(
+        &self,
+        url: String,
+        user_agents: Option<Vec<String>>,
+      ) -> bool {
+        self
+          .inner
+          .is_url_allowed_by_robots(&url, user_agents.as_deref())
+      }
+
+      #[napi_derive::napi]
+      pub fn filter_urls_allowed(
+        &self,
+        urls: Vec<String>,
+        user_agents: Option<Vec<String>>,
+      ) -> Vec<bool> {
+        self
+          .inner
+          .filter_urls_allowed(&urls, user_agents.as_deref())
+      }
+    }
+
+    /// Batch-filter candidate hrefs extracted from a single page.
+    #[napi_derive::napi]
+    pub async fn filter_urls(data: FilterUrlsCall) -> napi::Result<Vec<String>> {
+      $crate::wrappers::filter_urls($crate::__deps::firecrawl_crawler::FilterUrlsCall {
+        hrefs: data.hrefs,
+        url: data.url,
+        base_url: data.base_url,
+        excludes: data.excludes,
+        ignore_robots_txt: data.ignore_robots_txt,
+        robots_txt: data.robots_txt,
+        robots_user_agent: data.robots_user_agent,
+        allow_external_content_links: data.allow_external_content_links,
+        allow_subdomains: data.allow_subdomains,
+      })
+      .await
+    }
+
+    /// Resolve the path scope for a crawl when backward crawling is disabled.
+    #[napi_derive::napi]
+    pub fn get_crawl_scope(initial_url: String) -> CrawlScope {
+      let scope = $crate::wrappers::get_crawl_scope(initial_url);
+      CrawlScope {
+        prefix: scope.prefix,
+        exact: scope.exact,
+      }
+    }
+
+    /// Extract deduplicated resolved links from markdown or plaintext content.
+    #[napi_derive::napi]
+    pub fn extract_links_from_markdown(text: String, base_url: String) -> Vec<String> {
+      $crate::wrappers::extract_links_from_markdown(text, base_url)
     }
   };
 }

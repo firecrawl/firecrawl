@@ -1,4 +1,4 @@
-// Keep in sync with crawl_scope() in apps/api/native/src/crawler.rs.
+import { getCrawlScope as nativeGetCrawlScope } from "@mendable/firecrawl-rs";
 
 interface CrawlScope {
   /** Directory every crawled path must sit under. Always ends with "/". */
@@ -7,35 +7,13 @@ interface CrawlScope {
   exact: string | null;
 }
 
-const DOCUMENT_SEGMENT = /\.[A-Za-z0-9]{2,}$/;
-
 /** Resolves the path a crawl is scoped to when backward crawling is disabled. */
 export function getCrawlScope(initialUrl: string): CrawlScope {
-  let pathname: string;
-  try {
-    pathname = new URL(initialUrl).pathname;
-  } catch {
-    return { prefix: "/", exact: null };
-  }
-
-  if (!pathname.startsWith("/")) {
-    pathname = "/" + pathname;
-  }
-
-  if (pathname.endsWith("/")) {
-    return { prefix: pathname, exact: null };
-  }
-
-  const lastSlash = pathname.lastIndexOf("/");
-  if (DOCUMENT_SEGMENT.test(pathname.slice(lastSlash + 1))) {
-    return { prefix: pathname.slice(0, lastSlash + 1), exact: null };
-  }
-
-  return { prefix: pathname + "/", exact: pathname };
-}
-
-export function isWithinCrawlScope(path: string, scope: CrawlScope): boolean {
-  return path === scope.exact || path.startsWith(scope.prefix);
+  const scope = nativeGetCrawlScope(initialUrl);
+  return {
+    prefix: scope.prefix,
+    exact: scope.exact ?? null,
+  };
 }
 
 /** Human-readable scope for denial messages. */

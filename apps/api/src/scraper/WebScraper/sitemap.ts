@@ -1,5 +1,4 @@
-import { parseStringPromise } from "xml2js";
-import { WebCrawler, SITEMAP_LIMIT } from "./crawler";
+import { SITEMAP_LIMIT } from "./crawler";
 import { scrapeURL } from "../scrapeURL";
 import {
   getV2RequestSchemas,
@@ -12,12 +11,7 @@ import type { ScrapeOptions } from "../../controllers/v2/types";
 import { Engine } from "../scrapeURL/engines";
 import type { RequestContext } from "../../service/request-context";
 import { installedService } from "../../service/service";
-import {
-  ParsedSitemap,
-  parseSitemapXml,
-  processSitemap,
-  SitemapProcessingResult,
-} from "@mendable/firecrawl-rs";
+import { processSitemap } from "@mendable/firecrawl-rs";
 import { fetchFileToBuffer } from "../scrapeURL/engines/utils/downloadFile";
 import {
   gunzipBounded,
@@ -170,121 +164,7 @@ export async function getLinksFromSitemap(
       }
     }
 
-    let instructions: SitemapProcessingResult;
-    try {
-      instructions = await processSitemap(content);
-    } catch (error) {
-      logger.warn(
-        "Rust sitemap processing failed, falling back to JavaScript logic",
-        {
-          method: "getLinksFromSitemap",
-          sitemapUrl,
-          error: error.message,
-        },
-      );
-
-      let parsed: ParsedSitemap;
-      try {
-        parsed = await parseSitemapXml(content);
-      } catch (parseError) {
-        logger.warn(
-          "Rust XML parsing failed, falling back to JavaScript logic",
-          {
-            method: "getLinksFromSitemap",
-            sitemapUrl,
-            error: parseError.message,
-          },
-        );
-        parsed = await parseStringPromise(content);
-      }
-
-      const root = parsed.urlset || parsed.sitemapindex;
-      let count = 0;
-
-      if (root && "sitemap" in root && root.sitemap) {
-        const sitemapUrls = root.sitemap
-          .filter(sitemap => sitemap.loc && sitemap.loc.length > 0)
-          .map(sitemap => sitemap.loc[0].trim());
-
-        const sitemapPromises: Promise<number>[] = sitemapUrls.map(sitemapUrl =>
-          getLinksFromSitemap(
-            {
-              sitemapUrl,
-              urlsHandler,
-              mode,
-              zeroDataRetention,
-              usOnly,
-              location,
-              headers,
-              maxAge,
-            },
-            logger,
-            crawlId,
-            sitemapsHit,
-            abort,
-            mock,
-          ),
-        );
-
-        const results = await Promise.all(sitemapPromises);
-        count = results.reduce((a, x) => a + x);
-      } else if (root && "url" in root && root.url) {
-        const xmlSitemaps: string[] = root.url
-          .filter(
-            url =>
-              url.loc &&
-              url.loc.length > 0 &&
-              (url.loc[0].trim().toLowerCase().endsWith(".xml") ||
-                url.loc[0].trim().toLowerCase().endsWith(".xml.gz")),
-          )
-          .map(url => url.loc[0].trim());
-
-        if (xmlSitemaps.length > 0) {
-          const sitemapPromises = xmlSitemaps.map(sitemapUrl =>
-            getLinksFromSitemap(
-              {
-                sitemapUrl: sitemapUrl,
-                urlsHandler,
-                mode,
-                zeroDataRetention,
-                usOnly,
-                location,
-                headers,
-                maxAge,
-              },
-              logger,
-              crawlId,
-              sitemapsHit,
-              abort,
-              mock,
-            ),
-          );
-          count += (await Promise.all(sitemapPromises)).reduce(
-            (a, x) => a + x,
-            0,
-          );
-        }
-
-        const validUrls = root.url
-          .filter(
-            url =>
-              url.loc &&
-              url.loc.length > 0 &&
-              !url.loc[0].trim().toLowerCase().endsWith(".xml") &&
-              !url.loc[0].trim().toLowerCase().endsWith(".xml.gz") &&
-              !WebCrawler.prototype.isFile(url.loc[0].trim()),
-          )
-          .map(url => url.loc[0].trim());
-        count += validUrls.length;
-
-        const h = urlsHandler(validUrls);
-        if (h instanceof Promise) {
-          await h;
-        }
-      }
-
-      return count;
-    }
+    const instructions = await processSitemap(content);
 
     let count = 0;
     for (const instruction of instructions.instructions) {

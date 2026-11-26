@@ -1,27 +1,27 @@
 import { AxiosError } from "axios";
 import { config } from "../../config";
-import { load } from "cheerio"; // rustified
 import { URL } from "url";
 import { getLinksFromSitemap } from "./sitemap";
-import robotsParser, { Robot } from "robots-parser";
 import { getURLDepth } from "./utils/maxDepthUtils";
 import { logger as _logger } from "../../lib/logger";
 import { redisEvictConnection } from "../../services/redis";
-import { extractLinks } from "@mendable/firecrawl-rs";
 import {
+  extractLinks,
+  filterLinks,
+  filterUrl,
+  filterUrls,
+} from "@mendable/firecrawl-rs";
+import {
+  Robot,
+  parseRobotsTxt,
   fetchRobotsTxt,
   createRobotsChecker,
   isUrlAllowedByRobots,
 } from "../../lib/robots-txt";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { ScrapeOptions } from "../../controllers/v2/types";
-import { filterLinks, filterUrl } from "@mendable/firecrawl-rs";
 import { extractBaseDomain } from "../../lib/url-utils";
-import {
-  describeCrawlScope,
-  getCrawlScope,
-  isWithinCrawlScope,
-} from "../../lib/crawl-scope";
+import { describeCrawlScope, getCrawlScope } from "../../lib/crawl-scope";
 import {
   extractLinksFromMarkdown,
   isMarkdownContentType,
@@ -147,7 +147,7 @@ export class WebCrawler {
     this.limit = limit;
     this.robotsTxt = "";
     this.robotsTxtUrl = `${this.baseUrl}${this.baseUrl.endsWith("/") ? "" : "/"}robots.txt`;
-    this.robots = robotsParser(this.robotsTxtUrl, this.robotsTxt);
+    this.robots = parseRobotsTxt(this.robotsTxtUrl, this.robotsTxt);
     // Deprecated, use limit instead
     this.maxCrawledLinks = maxCrawledLinks ?? limit;
     this.maxCrawledDepth = maxCrawledDepth ?? 10;
@@ -213,272 +213,101 @@ export class WebCrawler {
       };
     }
 
-    try {
-      const res = await filterLinks({
-        links: sitemapLinks,
-        limit: isFinite(limit) ? limit : undefined,
-        maxDepth: maxDepth,
-        baseUrl: this.baseUrl,
-        initialUrl: this.initialUrl,
-        regexOnFullUrl: this.regexOnFullURL,
-        excludes: this.excludes,
-        includes: this.includes,
-        allowBackwardCrawling: this.allowBackwardCrawling,
-        ignoreRobotsTxt: this.ignoreRobotsTxt || skipRobots,
-        robotsTxt: this.robotsTxt,
-        robotsUserAgent: this.robotsUserAgent,
-        allowExternalContentLinks: this.allowExternalContentLinks,
-        allowSubdomains: this.allowSubdomains,
-      });
+    const res = await filterLinks({
+      links: sitemapLinks,
+      limit: isFinite(limit) ? limit : undefined,
+      maxDepth: maxDepth,
+      baseUrl: this.baseUrl,
+      initialUrl: this.initialUrl,
+      regexOnFullUrl: this.regexOnFullURL,
+      excludes: this.excludes,
+      includes: this.includes,
+      allowBackwardCrawling: this.allowBackwardCrawling,
+      ignoreRobotsTxt: this.ignoreRobotsTxt || skipRobots,
+      robotsTxt: this.robotsTxt,
+      robotsUserAgent: this.robotsUserAgent,
+      allowExternalContentLinks: this.allowExternalContentLinks,
+      allowSubdomains: this.allowSubdomains,
+    });
 
-      const fancyDenialReasons = new Map<string, string>();
-      Object.entries(res.denialReasons).forEach(([key, value]) => {
-        // Generate dynamic context for specific denial reasons
-        let urlPath: string;
-        try {
-          urlPath = new URL(key).pathname;
-        } catch {
-          urlPath = key;
-        }
-        const excincPath = this.regexOnFullURL ? key : urlPath;
-
-        switch (value) {
-          case "DEPTH_LIMIT":
-            const depth = getURLDepth(key);
-            fancyDenialReasons.set(
-              key,
-              `This URL exceeds the maximum crawl depth you configured. The URL's depth is ${depth}, but maxDepth is set to ${maxDepth}. To crawl this URL, increase the maxDepth value in your crawl request.`,
-            );
-            break;
-          case "EXCLUDE_PATTERN":
-            const matchingExclude = this.excludes.find(p => {
-              try {
-                return new RegExp(p).test(excincPath);
-              } catch {
-                return false;
-              }
-            });
-            fancyDenialReasons.set(
-              key,
-              `This URL's path ("${excincPath}") matches the exclude pattern "${matchingExclude ?? "(unknown)"}" you provided in the excludePaths parameter. URLs matching excludePaths are intentionally skipped during crawling. If this URL should be crawled, adjust your excludePaths patterns.`,
-            );
-            break;
-          case "INCLUDE_PATTERN":
-            fancyDenialReasons.set(
-              key,
-              `This URL's path ("${excincPath}") does not match any of the regex patterns you provided in the includePaths parameter: [${this.includes.map(p => `"${p}"`).join(", ")}]. When includePaths is specified, only URLs matching at least one pattern are crawled. If this URL should be crawled, add a matching pattern to includePaths or remove the includePaths restriction.`,
-            );
-            break;
-          case "BACKWARD_CRAWLING":
-            const initialPath = describeCrawlScope(
-              getCrawlScope(this.initialUrl),
-            );
-            fancyDenialReasons.set(
-              key,
-              `This URL's path ("${urlPath}") is outside the initial URL's path hierarchy ("${initialPath}"), and backward crawling is disabled. By default, Firecrawl only crawls URLs that are 'below' or 'within' the starting URL path. To crawl this URL, either set allowBackwardCrawling: true or set crawlEntireDomain: true to crawl the entire domain.`,
-            );
-            break;
-          case "FILE_TYPE":
-            const extension = key.split("?")[0].split(".").pop()?.toLowerCase();
-            fancyDenialReasons.set(
-              key,
-              `This URL points to a file with extension ".${extension}" that Firecrawl does not crawl. Firecrawl automatically skips non-document file extensions like .png, .jpg, .mp4, .zip, .css, .js, etc. to focus on web pages with textual content.`,
-            );
-            break;
-          default:
-            // Use the static enum message for other cases
-            fancyDenialReasons.set(
-              key,
-              DenialReason[value as keyof typeof DenialReason] ?? value,
-            );
-        }
-      });
-
-      if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-        for (const link of res.links) {
-          this.logger.debug(`${link} OK`);
-        }
-
-        for (const [link, reason] of fancyDenialReasons) {
-          this.logger.debug(`${link} ${reason}`);
-        }
+    const fancyDenialReasons = new Map<string, string>();
+    Object.entries(res.denialReasons).forEach(([key, value]) => {
+      // Generate dynamic context for specific denial reasons
+      let urlPath: string;
+      try {
+        urlPath = new URL(key).pathname;
+      } catch {
+        urlPath = key;
       }
+      const excincPath = this.regexOnFullURL ? key : urlPath;
 
-      return {
-        links: res.links,
-        denialReasons: fancyDenialReasons,
-        robotsBlocked: Object.keys(res.denialReasons).filter(
-          link => res.denialReasons[link] === "ROBOTS_TXT",
-        ),
-      };
-    } catch (error) {
-      this.logger.error("Error filtering links in Rust, falling back to JS", {
-        error,
-        method: "filterLinks",
-      });
-    }
-
-    const scope = getCrawlScope(this.initialUrl);
-
-    const filteredLinks = sitemapLinks
-      .filter(link => {
-        let url: URL;
-        try {
-          url = new URL(link.trim(), this.baseUrl);
-        } catch (error) {
-          this.logger.debug(`Error processing link: ${link}`, {
-            link,
-            error,
-            method: "filterLinks",
-          });
-          return false;
-        }
-        const path = url.pathname;
-
-        const urlStr = url.toString();
-        const nonWebProtocols = [
-          "mailto:",
-          "tel:",
-          "telnet:",
-          "ftp:",
-          "ftps:",
-          "ssh:",
-          "file:",
-        ];
-        if (nonWebProtocols.some(protocol => urlStr.startsWith(protocol))) {
-          if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-            this.logger.debug(`${link} NON-WEB PROTOCOL FAIL`);
-          }
-          denialReasons.set(link, DenialReason.NON_WEB_PROTOCOL);
-          return false;
-        }
-
-        const depth = getURLDepth(url.toString());
-
-        // Check if the link exceeds the maximum depth allowed
-        if (depth > maxDepth) {
-          if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-            this.logger.debug(`${link} DEPTH FAIL`);
-          }
-          denialReasons.set(
-            link,
+      switch (value) {
+        case "DEPTH_LIMIT":
+          const depth = getURLDepth(key);
+          fancyDenialReasons.set(
+            key,
             `This URL exceeds the maximum crawl depth you configured. The URL's depth is ${depth}, but maxDepth is set to ${maxDepth}. To crawl this URL, increase the maxDepth value in your crawl request.`,
           );
-          return false;
-        }
-
-        const excincPath = this.regexOnFullURL ? link : path;
-
-        // Check if the link should be excluded
-        if (this.excludes.length > 0 && this.excludes[0] !== "") {
-          const matchingPattern = this.excludes.find(excludePattern =>
-            new RegExp(excludePattern).test(excincPath),
-          );
-          if (matchingPattern) {
-            if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-              this.logger.debug(`${link} EXCLUDE FAIL`);
+          break;
+        case "EXCLUDE_PATTERN":
+          const matchingExclude = this.excludes.find(p => {
+            try {
+              return new RegExp(p).test(excincPath);
+            } catch {
+              return false;
             }
-            denialReasons.set(
-              link,
-              `This URL's path ("${excincPath}") matches the exclude pattern "${matchingPattern}" you provided in the excludePaths parameter. URLs matching excludePaths are intentionally skipped during crawling. If this URL should be crawled, adjust your excludePaths patterns.`,
-            );
-            return false;
-          }
-        }
-
-        // Check if the link matches the include patterns, if any are specified
-        if (this.includes.length > 0 && this.includes[0] !== "") {
-          if (
-            !this.includes.some(includePattern =>
-              new RegExp(includePattern).test(excincPath),
-            )
-          ) {
-            if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-              this.logger.debug(`${link} INCLUDE FAIL`);
-            }
-            denialReasons.set(
-              link,
-              `This URL's path ("${excincPath}") does not match any of the regex patterns you provided in the includePaths parameter: [${this.includes.map(p => `"${p}"`).join(", ")}]. When includePaths is specified, only URLs matching at least one pattern are crawled. If this URL should be crawled, add a matching pattern to includePaths or remove the includePaths restriction.`,
-            );
-            return false;
-          }
-        }
-
-        // Normalize the initial URL and the link to account for www and non-www versions
-        const normalizedInitialUrl = new URL(this.initialUrl);
-        let normalizedLink;
-        try {
-          normalizedLink = new URL(link);
-        } catch (_) {
-          if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-            this.logger.debug(`${link} URL PARSE FAIL`);
-          }
-          return false;
-        }
-        const initialHostname = normalizedInitialUrl.hostname.replace(
-          /^www\./,
-          "",
-        );
-        const linkHostname = normalizedLink.hostname.replace(/^www\./, "");
-
-        // Ensure the protocol and hostname match, and the path starts with the initial URL's path
-        // commented to able to handling external link on allowExternalContentLinks
-        // if (linkHostname !== initialHostname) {
-        //   return false;
-        // }
-
-        if (!this.allowBackwardCrawling) {
-          if (!isWithinCrawlScope(normalizedLink.pathname, scope)) {
-            if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-              this.logger.debug(
-                `${link} BACKWARDS FAIL ${normalizedLink.pathname} ${describeCrawlScope(scope)}`,
-              );
-            }
-            denialReasons.set(
-              link,
-              `This URL's path ("${normalizedLink.pathname}") is outside the initial URL's path hierarchy ("${describeCrawlScope(scope)}"), and backward crawling is disabled. By default, Firecrawl only crawls URLs that are 'below' or 'within' the starting URL path. To crawl this URL, either set allowBackwardCrawling: true or set crawlEntireDomain: true to crawl the entire domain.`,
-            );
-            return false;
-          }
-        }
-
-        // Check if the link is disallowed by robots.txt
-        if (!skipRobots && !this.isRobotsAllowed(link)) {
-          this.logger.debug(`Link disallowed by robots.txt: ${link}`, {
-            method: "filterLinks",
-            link,
           });
-          if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-            this.logger.debug(`${link} ROBOTS FAIL`);
-          }
-          denialReasons.set(link, DenialReason.ROBOTS_TXT);
-          return false;
-        }
-
-        if (this.isFile(link)) {
-          if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-            this.logger.debug(`${link} FILE FAIL`);
-          }
-          const extension = link.split("?")[0].split(".").pop()?.toLowerCase();
-          denialReasons.set(
-            link,
+          fancyDenialReasons.set(
+            key,
+            `This URL's path ("${excincPath}") matches the exclude pattern "${matchingExclude ?? "(unknown)"}" you provided in the excludePaths parameter. URLs matching excludePaths are intentionally skipped during crawling. If this URL should be crawled, adjust your excludePaths patterns.`,
+          );
+          break;
+        case "INCLUDE_PATTERN":
+          fancyDenialReasons.set(
+            key,
+            `This URL's path ("${excincPath}") does not match any of the regex patterns you provided in the includePaths parameter: [${this.includes.map(p => `"${p}"`).join(", ")}]. When includePaths is specified, only URLs matching at least one pattern are crawled. If this URL should be crawled, add a matching pattern to includePaths or remove the includePaths restriction.`,
+          );
+          break;
+        case "BACKWARD_CRAWLING":
+          const initialPath = describeCrawlScope(
+            getCrawlScope(this.initialUrl),
+          );
+          fancyDenialReasons.set(
+            key,
+            `This URL's path ("${urlPath}") is outside the initial URL's path hierarchy ("${initialPath}"), and backward crawling is disabled. By default, Firecrawl only crawls URLs that are 'below' or 'within' the starting URL path. To crawl this URL, either set allowBackwardCrawling: true or set crawlEntireDomain: true to crawl the entire domain.`,
+          );
+          break;
+        case "FILE_TYPE":
+          const extension = key.split("?")[0].split(".").pop()?.toLowerCase();
+          fancyDenialReasons.set(
+            key,
             `This URL points to a file with extension ".${extension}" that Firecrawl does not crawl. Firecrawl automatically skips non-document file extensions like .png, .jpg, .mp4, .zip, .css, .js, etc. to focus on web pages with textual content.`,
           );
-          return false;
-        }
+          break;
+        default:
+          // Use the static enum message for other cases
+          fancyDenialReasons.set(
+            key,
+            DenialReason[value as keyof typeof DenialReason] ?? value,
+          );
+      }
+    });
 
-        if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-          this.logger.debug(`${link} OK`);
-        }
-        return true;
-      })
-      .slice(0, limit);
+    if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
+      for (const link of res.links) {
+        this.logger.debug(`${link} OK`);
+      }
+
+      for (const [link, reason] of fancyDenialReasons) {
+        this.logger.debug(`${link} ${reason}`);
+      }
+    }
 
     return {
-      links: filteredLinks,
-      denialReasons,
-      robotsBlocked: [...denialReasons.keys()].filter(
-        link => denialReasons.get(link) === DenialReason.ROBOTS_TXT,
+      links: res.links,
+      denialReasons: fancyDenialReasons,
+      robotsBlocked: Object.keys(res.denialReasons).filter(
+        link => res.denialReasons[link] === "ROBOTS_TXT",
       ),
     };
   }
@@ -762,62 +591,24 @@ export class WebCrawler {
     });
   }
 
-  private async extractLinksFromHTMLRust(html: string, url: string) {
-    const links = await extractLinks(html);
-    const filteredLinks: string[] = [];
-    for (const link of links) {
-      const filterResult = await this.filterURL(link, url, true);
-      if (filterResult.allowed && filterResult.url) {
-        filteredLinks.push(filterResult.url);
-      }
+  private async filterExtractedHrefs(
+    hrefs: string[],
+    url: string,
+  ): Promise<string[]> {
+    if (hrefs.length === 0) {
+      return [];
     }
-    return filteredLinks;
-  }
-
-  private async extractLinksFromHTMLCheerio(html: string, url: string) {
-    let links: string[] = [];
-
-    const $ = load(html);
-    for (let i = 0; i < $("a").length; i++) {
-      const element = $("a")[i];
-      let href = $(element).attr("href");
-      if (href) {
-        if (href.match(/^https?:\/[^\/]/)) {
-          href = href.replace(/^https?:\//, "$&/");
-        }
-        const filterResult = await this.filterURL(href, url, true);
-        if (filterResult.allowed && filterResult.url) {
-          links.push(filterResult.url);
-        }
-      }
-    }
-
-    // Extract links from iframes with inline src
-    for (let i = 0; i < $("iframe").length; i++) {
-      const element = $("iframe")[i];
-      const src = $(element).attr("src");
-      if (src && src.startsWith("data:text/html")) {
-        const iframeHtml = decodeURIComponent(src.split(",")[1]);
-        const iframeLinks = await this.extractLinksFromHTMLCheerio(
-          iframeHtml,
-          url,
-        );
-        links = links.concat(iframeLinks);
-      }
-    }
-
-    return links;
-  }
-
-  private async extractLinksFromMarkdownContent(text: string, url: string) {
-    const filteredLinks: string[] = [];
-    for (const link of extractLinksFromMarkdown(text, url)) {
-      const filterResult = await this.filterURL(link, url, true);
-      if (filterResult.allowed && filterResult.url) {
-        filteredLinks.push(filterResult.url);
-      }
-    }
-    return filteredLinks;
+    return await filterUrls({
+      hrefs,
+      url,
+      baseUrl: this.baseUrl,
+      excludes: this.excludes,
+      ignoreRobotsTxt: true,
+      robotsTxt: this.robotsTxt,
+      robotsUserAgent: this.robotsUserAgent,
+      allowExternalContentLinks: this.allowExternalContentLinks,
+      allowSubdomains: this.allowSubdomains,
+    });
   }
 
   public async extractLinksFromContent(
@@ -826,35 +617,25 @@ export class WebCrawler {
     contentType?: string,
   ) {
     if (isMarkdownContentType(contentType)) {
-      return await this.extractLinksFromMarkdownContent(html, url);
+      const mdLinks = extractLinksFromMarkdown(html, url);
+      return await this.filterExtractedHrefs(mdLinks, url);
     }
 
-    try {
-      return [
-        ...new Set(
-          (await this.extractLinksFromHTMLRust(html, url))
-            .map(x => {
-              try {
-                return new URL(x, url).href;
-              } catch (e) {
-                return null;
-              }
-            })
-            .filter(x => x !== null) as string[],
-        ),
-      ];
-    } catch (error) {
-      this.logger.warn(
-        "Failed to call html-transformer! Falling back to cheerio...",
-        {
-          error,
-          module: "scrapeURL",
-          method: "extractMetadata",
-        },
-      );
-    }
-
-    return await this.extractLinksFromHTMLCheerio(html, url);
+    const hrefs = await extractLinks(html);
+    const filtered = await this.filterExtractedHrefs(hrefs, url);
+    return [
+      ...new Set(
+        filtered
+          .map(x => {
+            try {
+              return new URL(x, url).href;
+            } catch {
+              return null;
+            }
+          })
+          .filter((x): x is string => x !== null),
+      ),
+    ];
   }
 
   /** Checks the crawl's robots.txt, honoring ignoreRobotsTxt. */
@@ -867,49 +648,6 @@ export class WebCrawler {
         this.robotsUserAgent ? [this.robotsUserAgent] : undefined,
       )
     );
-  }
-
-  public isFile(url: string): boolean {
-    const fileExtensions = [
-      ".png",
-      ".jpg",
-      ".jpeg",
-      ".gif",
-      ".css",
-      ".js",
-      ".ico",
-      ".svg",
-      ".tiff",
-      // ".pdf",
-      ".zip",
-      ".exe",
-      ".dmg",
-      ".mp4",
-      ".mp3",
-      ".wav",
-      ".pptx",
-      // ".docx",
-      ".xlsx",
-      // ".xml",
-      ".avi",
-      ".flv",
-      ".woff",
-      ".ttf",
-      ".woff2",
-      ".webp",
-      ".inc",
-    ];
-
-    try {
-      const urlWithoutQuery = url.split("?")[0].toLowerCase();
-      return fileExtensions.some(ext => urlWithoutQuery.endsWith(ext));
-    } catch (error) {
-      this.logger.error(`Error processing URL in isFile`, {
-        method: "isFile",
-        error,
-      });
-      return false;
-    }
   }
 
   private async tryFetchSitemapLinks(

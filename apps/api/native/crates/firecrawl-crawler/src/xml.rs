@@ -64,7 +64,7 @@ pub fn exceeds_element_depth(xml: &str, limit: usize) -> bool {
 /// and quoted literals, which are skipped as units so their contents cannot
 /// end the declaration early or hide its end. Works on bytes: every delimiter
 /// is ASCII, and non-ASCII bytes are never split.
-fn doctype_end(decl: &str) -> Option<usize> {
+pub(crate) fn doctype_end(decl: &str) -> Option<usize> {
   let bytes = decl.as_bytes();
   let mut quote: Option<u8> = None;
   let mut in_subset = false;

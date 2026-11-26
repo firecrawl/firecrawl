@@ -15,6 +15,7 @@ firecrawl-crawler = { path = "crates/firecrawl-crawler" }
 firecrawl-html = { path = "crates/firecrawl-html" }
 firecrawl-napi-exports = { path = "crates/firecrawl-napi-exports" }
 firecrawl-parsers = { path = "crates/firecrawl-parsers" }
+hegeltest = "0.54.2"
 kuchikiki = "0.8.9-speedreader"
 napi = { version = "3.0.0", features = ["serde-json", "tokio_rt"] }
 napi-build = "2"
@@ -26,7 +27,6 @@ regex = "1.11.2"
 roxmltree = "0.20.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
-texting_robots = "0.2.2"
 # Transitive dep (pdf-inspector -> unicode-normalization -> tinyvec). Pinned because
 # tinyvec 1.13.0 fails to compile (https://github.com/Lokathor/tinyvec/issues/225).
 tinyvec = ">=1.12, <1.13"
