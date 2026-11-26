@@ -1,0 +1,323 @@
+---
+title: "Python Agent Quickstart"
+description: "Canonical Firecrawl Python quickstart for external agents using search, scrape, and interact."
+---
+
+Canonical Firecrawl Python quickstart for external agents. Aligned with `firecrawl-py` and the v2 OpenAPI spec. Method names, parameters, and types match the SDK public API.
+
+## Install
+
+```bash
+pip install firecrawl-py
+```
+
+## Authenticate
+
+```python
+from firecrawl import Firecrawl
+
+client = Firecrawl(api_key="fc-YOUR-API-KEY")
+# Or use the FIRECRAWL_API_KEY environment variable:
+client = Firecrawl()
+```
+
+An async client is also available:
+
+```python
+from firecrawl import AsyncFirecrawl
+
+client = AsyncFirecrawl()
+```
+
+## When To Use What
+
+- `search`: use when you start with a query and need discovery.
+- `scrape`: use when you already have a URL and want page content.
+- `interact`: use when the page needs clicks, forms, or other browser actions after a scrape has created a session.
+
+## Search
+
+### Why use it
+
+Use search to discover relevant pages from a query, then pick URLs to scrape or interact with. Constrain results to a site with `site:`, for example `site:docs.firecrawl.dev crawl webhooks`.
+
+### Preferred SDK method
+
+`client.search(query, **options)` &rarr; `SearchData`
+
+### Example
+
+```python
+results = client.search(
+    "site:docs.firecrawl.dev webhook retries",
+    limit=5,
+    scrape_options={"formats": ["markdown"], "only_main_content": True},
+)
+
+for hit in results.web or []:
+    print(hit.title, hit.url)
+```
+
+### Parameters
+
+- `query`
+  - Type: str (required)
+  - The search query. Use `site:example.com` to scope results to a domain.
+
+- `sources`
+  - Type: list of source names or source objects
+  - Use when: you want to control which source types are searched.
+  - Values: `"web"`, `"news"`, `"images"`, or `{"type": "web"}` etc.
+
+- `categories`
+  - Type: list of category names or category objects
+  - Use when: you want category-filtered results.
+  - Values: `"github"`, `"research"`, `"pdf"`, or `{"type": "github"}` etc.
+
+- `limit`
+  - Type: int
+  - Use when: you want to cap the number of results. Default: 5.
+
+- `tbs`
+  - Type: str
+  - Use when: you need a time-based filter (`qdr:d` for past day, `qdr:w` for past week, `qdr:m` for past month, `sbd:1` to sort by date).
+
+- `location`
+  - Type: str
+  - Use when: you want localized results (e.g. `"San Francisco,California,United States"`).
+
+- `include_domains`
+  - Type: list of str
+  - Use when: you want to restrict results to specific domains.
+
+- `exclude_domains`
+  - Type: list of str
+  - Use when: you want to exclude specific domains from results.
+
+- `ignore_invalid_urls`
+  - Type: bool
+  - Use when: you want to drop URLs that cannot be scraped by other Firecrawl endpoints.
+
+- `timeout`
+  - Type: int
+  - Use when: you need a request timeout in milliseconds. Default: 300000.
+
+- `scrape_options`
+  - Type: ScrapeOptions or dict
+  - Use when: you want to scrape each search result inline. Accepts the same fields as the Scrape parameters below (using snake_case).
+
+## Scrape
+
+### Why use it
+
+Use scrape when you already have a URL and want structured content in one or more formats.
+
+### Preferred SDK method
+
+`client.scrape(url, **options)` &rarr; `Document`
+
+### Example
+
+```python
+doc = client.scrape(
+    "https://example.com/pricing",
+    formats=[
+        "markdown",
+        "links",
+        {"type": "json", "prompt": "Extract plan names and prices."},
+    ],
+    only_main_content=True,
+    timeout=30000,
+)
+
+print(doc.markdown)
+print(doc.json)
+```
+
+### Parameters
+
+- `url`
+  - Type: str (required)
+  - The URL to scrape.
+
+- `formats`
+  - Type: list of format strings or format dicts
+  - Use when: you want specific output formats.
+  - Plain string formats: `"markdown"`, `"html"`, `"raw_html"`, `"links"`, `"images"`, `"screenshot"`, `"summary"`, `"change_tracking"`, `"json"`, `"attributes"`, `"branding"`, `"audio"`
+  - Object-only formats:
+    - `{"type": "json", "prompt": str, "schema": dict}`: at least one of `prompt` or `schema` required.
+    - `{"type": "question", "question": str}`: question-answer extraction.
+    - `{"type": "highlights", "query": str}`: relevant source-text extraction.
+    - `{"type": "screenshot", "full_page": bool, "quality": int, "viewport": {"width": int, "height": int}}`: screenshot with options.
+    - `{"type": "changeTracking", "modes": list, "schema": dict, "prompt": str, "tag": str}`: `modes` required.
+    - `{"type": "attributes", "selectors": [{"selector": str, "attribute": str}]}`: attribute extraction.
+
+- `headers`
+  - Type: dict of str to str
+  - Use when: you need custom HTTP headers (cookies, user-agent, etc.).
+
+- `include_tags`
+  - Type: list of str
+  - Use when: you want to include only specific HTML tags.
+
+- `exclude_tags`
+  - Type: list of str
+  - Use when: you want to exclude specific HTML tags.
+
+- `only_main_content`
+  - Type: bool
+  - Use when: you want to strip nav, footer, and other boilerplate. Default: true (per OpenAPI).
+
+- `timeout`
+  - Type: int
+  - Use when: you need a request timeout in milliseconds. Default: 60000. Range: 1000-300000.
+
+- `wait_for`
+  - Type: int
+  - Use when: you need to wait for the page to render (milliseconds).
+
+- `mobile`
+  - Type: bool
+  - Use when: you want a mobile viewport.
+
+- `parsers`
+  - Type: list of parser names or dicts
+  - Use when: you need file parsing controls.
+  - Values: `"pdf"` or `{"type": "pdf", "mode": "fast" | "auto" | "ocr", "max_pages": int}`.
+
+- `actions`
+  - Type: list of action dicts
+  - Use when: you need pre-scrape browser actions.
+  - Action types:
+    - `{"type": "wait", "milliseconds": int}` or `{"type": "wait", "selector": str}`
+    - `{"type": "click", "selector": str}`
+    - `{"type": "write", "text": str}`
+    - `{"type": "press", "key": str}`
+    - `{"type": "scroll", "direction": "up" | "down", "selector": str}`
+    - `{"type": "screenshot", "full_page": bool, "quality": int, "viewport": dict}`
+    - `{"type": "scrape"}`
+    - `{"type": "executeJavascript", "script": str}`
+    - `{"type": "pdf", "format": str, "landscape": bool, "scale": float}`
+
+- `location`
+  - Type: Location or dict with `country` and `languages`
+  - Use when: you need geo or language-aware scraping. Default country: `"US"`.
+
+- `skip_tls_verification`
+  - Type: bool
+  - Use when: you need to skip TLS certificate verification.
+
+- `remove_base64_images`
+  - Type: bool
+  - Use when: you want to remove base64 images from markdown output.
+
+- `fast_mode`
+  - Type: bool
+  - Use when: you want faster scrapes with reduced fidelity.
+
+- `block_ads`
+  - Type: bool
+  - Use when: you want ad and cookie popup blocking.
+
+- `proxy`
+  - Type: str
+  - Use when: you need proxy control.
+  - Values: `"basic"`, `"stealth"`, `"enhanced"`, `"auto"`, or a custom proxy URL.
+
+- `max_age`
+  - Type: int
+  - Use when: you want cached data up to a maximum age (milliseconds). Default: 172800000 (2 days).
+
+- `min_age`
+  - Type: int
+  - Use when: you only want cached data at least this old (milliseconds). Returns 404 on cache miss.
+
+- `store_in_cache`
+  - Type: bool
+  - Use when: you want Firecrawl to cache the result.
+
+- `lockdown`
+  - Type: bool
+  - Use when: you only want cached results and never want outbound requests. Returns 404 on cache miss.
+
+- `profile`
+  - Type: dict with `name` (str) and optional `save_changes` (bool)
+  - Use when: you want a persistent browser profile shared across scrapes and interactions.
+
+## Interact
+
+### Why use it
+
+Use `interact` for code or natural-language control of the browser session tied to a scrape job (via `metadata.scrape_id`). The SDK requires at least one of `code` or `prompt`.
+
+### Preferred SDK method
+
+`client.interact(job_id, code=None, *, prompt=None, language="node", timeout=None)` &rarr; `BrowserExecuteResponse`
+
+### Example
+
+```python
+doc = client.scrape("https://example.com", formats=["markdown"])
+job_id = doc.metadata.scrape_id
+
+result = client.interact(
+    job_id,
+    prompt="Click the pricing tab and summarize the plans.",
+)
+print(result.output)
+
+# Or with code:
+code_result = client.interact(
+    job_id,
+    code="console.log(await page.title());",
+    language="node",
+    timeout=60,
+)
+print(code_result.stdout)
+
+# Stop the session when done:
+client.stop_interaction(job_id)
+```
+
+### Parameters
+
+- `job_id`
+  - Type: str (required)
+  - The scrape job ID from `document.metadata.scrape_id`.
+
+- `code`
+  - Type: str
+  - Use when: you want to run code in the browser sandbox.
+
+- `prompt`
+  - Type: str
+  - Use when: you want the browser agent to follow a natural-language instruction.
+
+- At least one of `code` or `prompt` must be provided.
+
+- `language`
+  - Type: `"python"` | `"node"` | `"bash"`
+  - Use when: you need a specific runtime. Default: `"node"`.
+
+- `timeout`
+  - Type: int
+  - Use when: you need an execution timeout in seconds (1-300).
+
+### Stop session
+
+`client.stop_interaction(job_id)` &rarr; `BrowserDeleteResponse`
+
+Response fields: `success`, `session_duration_ms`, `credits_billed`, `error`.
+
+## Notes
+
+- Deprecated aliases: `scrape_execute` &rarr; `interact`; `delete_scrape_browser` and `stop_interactive_browser` &rarr; `stop_interaction`.
+- `Firecrawl` is also exported as `FirecrawlApp`; `AsyncFirecrawl` is also exported as `AsyncFirecrawlApp`.
+- Client constructor accepts `api_url` (default: `"https://api.firecrawl.dev"`), `timeout` (seconds), `max_retries` (default: 3), and `backoff_factor` (default: 0.5).
+
+## Source Of Truth
+
+- `firecrawl/apps/python-sdk/firecrawl/client.py`
+- `firecrawl/apps/python-sdk/firecrawl/v2/client.py`
+- `firecrawl/apps/python-sdk/firecrawl/v2/types.py`
+- `firecrawl-docs/api-reference/v2-openapi.json`
