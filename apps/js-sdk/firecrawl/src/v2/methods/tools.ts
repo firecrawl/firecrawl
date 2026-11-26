@@ -141,5 +141,8 @@ export async function findTools(
       new SdkError(item.error.message, item.error.status, item.error.code),
       { requestId: result.requestId },
     );
-  return item.data as FindToolsData;
+  const data = item.data as FindToolsData;
+  return item.feedbackToken
+    ? { ...data, feedbackToken: item.feedbackToken }
+    : data;
 }

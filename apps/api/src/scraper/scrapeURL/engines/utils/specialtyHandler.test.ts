@@ -1,13 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFile, unlink } from "node:fs/promises";
 import { AddFeatureError, UnsupportedFileError } from "../../error";
-import type { FireEngineCheckStatusSuccess } from "../fire-engine/checkStatus";
-
-// The GCS handoff (large PDFs by reference) has its own tests under the pdf
-// engine; keep the storage client out of this unit's import graph.
-vi.mock("./downloadGcsFile", () => ({
-  downloadFireEngineGcsFile: vi.fn(async () => null),
-}));
+import type { SpecialtyHandoffResponse } from "./specialtyHandler";
 
 import { specialtyScrapeCheck } from "./specialtyHandler";
 
@@ -49,26 +43,20 @@ const DOWNLOAD_URL = "https://example.com/collection/items/42/download";
 /** A chrome-cdp (or tlsclient binary) response: the file was captured. */
 function download(
   bytes: Buffer,
-  overrides: Partial<FireEngineCheckStatusSuccess> = {},
-): FireEngineCheckStatusSuccess {
+  overrides: Partial<SpecialtyHandoffResponse> = {},
+): SpecialtyHandoffResponse {
   return {
-    jobId: "job-1",
-    state: "completed",
-    processing: false,
     content: "",
     pageStatusCode: 200,
     url: DOWNLOAD_URL,
-    file: { name: "download", content: bytes.toString("base64") },
+    file: { content: bytes.toString("base64") },
     ...overrides,
   };
 }
 
 /** A response whose body came back inline as text (no captured file). */
-function inline(content: string): FireEngineCheckStatusSuccess {
+function inline(content: string): SpecialtyHandoffResponse {
   return {
-    jobId: "job-1",
-    state: "completed",
-    processing: false,
     content,
     pageStatusCode: 200,
     url: DOWNLOAD_URL,
@@ -317,6 +305,36 @@ describe("specialtyScrapeCheck: the bytes decide when the header does not", () =
     );
     expect(docx.featureFlags).toEqual(["document"]);
     expect(docx.documentPrefetch?.contentType).toBeUndefined();
+  });
+
+  it("marks an inline PDF handoff with the body length the response declared", async () => {
+    const declared = await expectHandoff(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/pdf" },
+        download(PDF, {
+          responseHeaders: {
+            "Content-Type": "application/pdf",
+            "Content-Length": "123456",
+          },
+        }),
+      ),
+    );
+    expect(declared.pdfPrefetch?.handoff).toEqual({ contentLength: 123456 });
+
+    const encoded = await expectHandoff(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/pdf" },
+        download(PDF, {
+          responseHeaders: {
+            "content-length": "999",
+            "content-encoding": "gzip",
+          },
+        }),
+      ),
+    );
+    expect(encoded.pdfPrefetch?.handoff).toEqual({ contentLength: undefined });
   });
 
   it("does nothing without a fire-engine response to sniff", async () => {

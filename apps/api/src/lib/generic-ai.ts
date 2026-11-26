@@ -1,96 +1,106 @@
-import { createOpenAI } from "@ai-sdk/openai";
+// Keep the config import first: it removes an empty OPENAI_BASE_URL from the
+// environment, and @ai-sdk/openai throws on one as soon as it is loaded.
 import { config } from "../config";
+import { createOpenAI } from "@ai-sdk/openai";
 import { createOllama } from "ollama-ai-provider-v2";
-import { anthropic } from "@ai-sdk/anthropic";
-import { groq } from "@ai-sdk/groq";
-import { google } from "@ai-sdk/google";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { fireworks } from "@ai-sdk/fireworks";
-import { deepinfra } from "@ai-sdk/deepinfra";
-import { createVertex } from "@ai-sdk/google-vertex";
 import { withUsageTelemetry } from "./ai-usage-telemetry";
+import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
+import {
+  service,
+  type LlmModel,
+  type LlmModelOptions,
+  type LlmProvider,
+  type LlmProviderName,
+} from "../service";
 
-type Provider =
-  | "openai"
-  | "ollama"
-  | "anthropic"
-  | "groq"
-  | "google"
-  | "openrouter"
-  | "fireworks"
-  | "deepinfra"
-  | "vertex"
-  | "extraction";
-const defaultProvider: Exclude<Provider, "extraction"> = config.OLLAMA_BASE_URL
-  ? "ollama"
-  : "openai";
+function once<T>(create: () => T): () => T {
+  let initialized = false;
+  let value: T;
+  return () => {
+    if (!initialized) {
+      value = create();
+      initialized = true;
+    }
+    return value;
+  };
+}
 
-const providerList: Record<Provider, any> = {
-  openai: createOpenAI({
+const getOpenAIClient = once(() =>
+  createOpenAI({
     apiKey: config.OPENAI_API_KEY,
     baseURL: config.OPENAI_BASE_URL,
-  }), //OPENAI_API_KEY
-  ollama: createOllama({
+  }),
+);
+
+const getOllamaClient = once(() =>
+  createOllama({
     baseURL: config.OLLAMA_BASE_URL,
   }),
-  anthropic, //ANTHROPIC_API_KEY
-  groq, //GROQ_API_KEY
-  google, //GOOGLE_GENERATIVE_AI_API_KEY
-  openrouter: createOpenRouter({
-    apiKey: config.OPENROUTER_API_KEY,
-  }),
-  fireworks, //FIREWORKS_API_KEY
-  deepinfra, //DEEPINFRA_API_KEY
-  // OpenAI-compatible JSON extraction provider (EXTRACTION_PROVIDER_*); Chat
-  // Completions only, see getModel.
-  extraction: createOpenAI({
-    apiKey: config.EXTRACTION_PROVIDER_API_KEY ?? "unused",
-    baseURL: config.EXTRACTION_PROVIDER_BASE_URL,
-  }),
-  vertex: createVertex({
-    project: "firecrawl",
-    //https://github.com/vercel/ai/issues/6644 bug
-    baseURL:
-      "https://aiplatform.googleapis.com/v1/projects/firecrawl/locations/global/publishers/google",
-    location: "global",
-    googleAuthOptions: config.VERTEX_CREDENTIALS
-      ? {
-          credentials: JSON.parse(atob(config.VERTEX_CREDENTIALS)),
-        }
-      : {
-          keyFile: "./gke-key.json",
-        },
-  }),
+);
+
+function usOnlyUnavailable(feature = "The model this request needs") {
+  return new UsOnlyUnavailableError(
+    `${feature} is not available for teams restricted to US-only processing.`,
+  );
+}
+
+/** Built-in LLM providers registered by `coreParts()`. */
+export const coreLlmProviders: readonly LlmProvider[] = Object.freeze([
+  {
+    name: "openai",
+    enabled: () =>
+      Boolean(config.OPENAI_API_KEY?.trim() || config.OPENAI_BASE_URL?.trim()),
+    model(modelName, options) {
+      if (
+        options?.ctx?.usOnly === true ||
+        options?.teamFlags?.usOnly === true
+      ) {
+        throw usOnlyUnavailable(options?.feature);
+      }
+      const client = getOpenAIClient();
+      return modelName.startsWith("o3-mini")
+        ? client.chat(modelName)
+        : client(modelName);
+    },
+  },
+  {
+    name: "ollama",
+    enabled: () => Boolean(config.OLLAMA_BASE_URL?.trim()),
+    model(modelName, options) {
+      if (
+        options?.ctx?.usOnly === true ||
+        options?.teamFlags?.usOnly === true
+      ) {
+        throw usOnlyUnavailable(options?.feature);
+      }
+      return getOllamaClient()(modelName);
+    },
+  },
+]);
+
+type ModelOptions = LlmModelOptions & {
+  ignoreModelOverride?: boolean;
 };
 
 export function getModel(
   name: string,
-  provider: Provider = defaultProvider,
-  options?: { ignoreModelOverride?: boolean },
-) {
-  if (name === "gemini-2.5-pro") {
-    name = "gemini-2.5-pro";
-  }
+  provider?: LlmProviderName | (string & {}),
+  options?: ModelOptions,
+): LlmModel {
   const modelName = options?.ignoreModelOverride
     ? name
-    : config.MODEL_NAME || name;
-  // o3-mini returns empty text via the Responses API — force Chat Completions
-  if (provider === "openai" && modelName.startsWith("o3-mini")) {
-    return withUsageTelemetry(providerList.openai.chat(modelName));
+    : config.MODEL_NAME?.trim() || name;
+  const providerName: string =
+    provider ?? (config.OLLAMA_BASE_URL?.trim() ? "ollama" : "openai");
+  const registered = service.llmProviders.get(providerName);
+  if (!registered) {
+    throw new Error(`LLM provider "${providerName}" is not registered`);
   }
-  // The extraction provider speaks Chat Completions, not the Responses API,
-  // and is not subject to the MODEL_NAME override.
-  if (provider === "extraction") {
-    return withUsageTelemetry(providerList.extraction.chat(name));
-  }
-  return withUsageTelemetry(providerList[provider](modelName));
-}
-
-export function getEmbeddingModel(
-  name: string,
-  provider: Exclude<Provider, "extraction"> = defaultProvider,
-) {
-  return config.MODEL_EMBEDDING_NAME
-    ? providerList[provider].embedding(config.MODEL_EMBEDDING_NAME)
-    : providerList[provider].embedding(name);
+  return withUsageTelemetry(
+    registered.model(modelName, {
+      ctx: options?.ctx,
+      teamFlags: options?.teamFlags,
+      feature: options?.feature,
+    }),
+  );
 }

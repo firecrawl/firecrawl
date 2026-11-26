@@ -1,5 +1,23 @@
 ## CHANGELOG
 
+## [2.21.10] - 2026-11-04
+
+### Added
+
+- `SearchPapersOptions::sort` accepts `relevance` or `date_desc`.
+- `PaperResult` includes optional `created_date` and `update_date` strings
+  in `YYYY-MM-DD` format for search and related-paper results.
+
+## [2.21.9] - 2026-11-04
+
+### Changed
+
+- `Client::search_github`: the research index GitHub search endpoint it calls
+  was removed after 2026-11-03. Use `Client::developer_search` instead. The
+  method remains in the SDK until the next major release.
+- `SearchCategory::Github` is documented as removed. Use
+  `Client::developer_search` for GitHub issues, pull requests and READMEs.
+
 ## [2.21.8] - 2026-10-20
 
 ### Added

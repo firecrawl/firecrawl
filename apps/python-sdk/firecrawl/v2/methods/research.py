@@ -27,7 +27,7 @@ covering physics, mathematics and computer science.
    ``articleRank``, ``seedOverlap``, ``poolSize`` and so on.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import quote
 import warnings
 
@@ -36,6 +36,7 @@ from ..utils.get_version import get_version
 from .research_docs import (
     GITHUB_SEARCH_DEPRECATION_MSG,
     INSPECT_PAPER_DOC,
+    LOOKUP_PROTEIN_DOC,
     READ_PAPER_DOC,
     RELATED_PAPERS_DOC,
     SEARCH_GITHUB_DOC,
@@ -81,6 +82,7 @@ def search_papers(
     categories: Optional[List[str]] = None,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
+    sort: Optional[Literal["relevance", "date_desc"]] = None,
 ) -> Dict[str, Any]:
     return _get(
         client,
@@ -94,6 +96,7 @@ def search_papers(
                 "categories": categories,
                 "from": from_date,
                 "to": to_date,
+                "sort": sort,
                 "origin": _origin(client),
             }
         ),
@@ -147,6 +150,21 @@ def related_papers(
                 "origin": _origin(client),
             }
         ),
+    )
+
+
+@doc(LOOKUP_PROTEIN_DOC)
+def lookup_protein(
+    client: HttpClient,
+    protein: str,
+    *,
+    organism: Optional[str] = None,
+) -> Dict[str, Any]:
+    return _get(
+        client,
+        BASE
+        + "/proteins"
+        + _query({"protein": protein, "organism": organism, "origin": _origin(client)}),
     )
 
 

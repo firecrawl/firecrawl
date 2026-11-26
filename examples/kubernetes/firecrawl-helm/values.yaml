@@ -59,18 +59,6 @@ nuqPrefetchWorker:
       memory: "2G"
       cpu: "1000m"
 
-cclogWorker:
-  enabled: false
-  replicaCount: 1
-  port: 3013
-  resources:
-    requests:
-      memory: "512Mi"
-      cpu: "250m"
-    limits:
-      memory: "1Gi"
-      cpu: "500m"
-
 nuqPostgres:
   replicaCount: 1
   image:
@@ -144,7 +132,6 @@ config:
   EXTRACT_WORKER_PORT: "3004"
   NUQ_WORKER_PORT: "3006"
   NUQ_PREFETCH_WORKER_PORT: "3011"
-  CCLOG_WORKER_PORT: "3013"
   NUQ_WORKER_COUNT: "5"
   USE_DB_AUTHENTICATION: "false"
   IS_KUBERNETES: "true"
@@ -161,7 +148,6 @@ config:
   NUQ_RABBITMQ_URL: ""
   OPENAI_BASE_URL: ""
   MODEL_NAME: ""
-  MODEL_EMBEDDING_NAME: ""
   OLLAMA_BASE_URL: ""
   PROXY_SERVER: ""
   PROXY_USERNAME: ""
@@ -180,7 +166,6 @@ playwrightConfig:
 secret:
   OPENAI_API_KEY: ""
   SLACK_WEBHOOK_URL: ""
-  LLAMAPARSE_API_KEY: ""
   BULL_AUTH_KEY: ""
   TEST_API_KEY: ""
   FIRE_ENGINE_BETA_URL: ""

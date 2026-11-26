@@ -5,6 +5,7 @@ import { CrawlDenialError } from "../../../lib/error";
 import * as robots from "../../../lib/robots-txt";
 import { scrapeURL } from "../../../scraper/scrapeURL";
 import * as engines from "../../../scraper/scrapeURL/engines";
+import { createService, replaceService } from "../../../service/service";
 import { ALLOW_TEST_SUITE_WEBSITE, itIf, TEST_SUITE_WEBSITE } from "../lib";
 import { scrapeTimeout } from "./lib";
 
@@ -12,6 +13,26 @@ import { scrapeTimeout } from "./lib";
 // configurations too. Only robots.txt retrieval is stubbed; parsing, tracing,
 // and the fetch engine use their real implementations.
 describe("Scrape robots policy", () => {
+  beforeAll(() => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: {
+            name: "core",
+            engines: engines.coreEngines,
+            engineFeatures: engines.coreEngineFeatures,
+          },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+  });
+
+  afterAll(() => {
+    replaceService(undefined);
+  });
+
   beforeEach(() => {
     vi.spyOn(robots, "fetchRobotsTxt").mockResolvedValue({
       content: "User-agent: *\nDisallow: /\n",
@@ -28,7 +49,7 @@ describe("Scrape robots policy", () => {
     scrapeURL(
       randomUUID(),
       TEST_SUITE_WEBSITE,
-      scrapeOptions.parse({ formats: ["rawHtml"], maxAge: 0 }),
+      scrapeOptions.parse({ formats: ["rawHtml"] }),
       {
         teamId: "scrape-robots-test",
         orgId: null,

@@ -28,7 +28,7 @@ Review these fields first:
 - `config.extra` and `secret.extra` for custom environment variables;
 - `image.dockerSecretEnabled` and `imagePullSecrets` for private registries;
 - `resources.enabled` and each component's resource values;
-- `rabbitmq.enabled`, `extractWorker.enabled`, `nuqPrefetchWorker.enabled`, and `cclogWorker.enabled`; and
+- `rabbitmq.enabled`, `extractWorker.enabled`, and `nuqPrefetchWorker.enabled`; and
 - storage, authentication, ingress, and provider settings required by your environment.
 
 Keep populated secret values outside Git.
@@ -94,7 +94,7 @@ In another terminal, check reachability and one scrape:
 
 ```bash
 curl --fail --silent --show-error \
-  http://localhost:3002/v0/health/readiness
+  http://localhost:3002/health/readiness
 ```
 
 ```bash

@@ -1,7 +1,6 @@
 import { Logger } from "winston";
 import { z, ZodError } from "zod";
 import { MockState, saveMock } from "./mock";
-import { fireEngineURL } from "../engines/fire-engine/scrape";
 import { fetch, Response, FormData, Agent } from "undici";
 import { cacheableLookup } from "./cacheableLookup";
 import dns from "dns";
@@ -243,11 +242,13 @@ export async function robustFetch<
       return null as Output;
     }
 
+    const fireEngineBaseUrl =
+      process.env.FIRE_ENGINE_BETA_URL || "<mock-fire-engine-url>";
     const makeRequestTypeId = (
       request: (typeof mock)["requests"][number]["options"],
     ) => {
-      let trueUrl = request.url.startsWith(fireEngineURL)
-        ? request.url.replace(fireEngineURL, "<fire-engine>")
+      let trueUrl = request.url.startsWith(fireEngineBaseUrl)
+        ? request.url.replace(fireEngineBaseUrl, "<fire-engine>")
         : request.url;
 
       let out = trueUrl + ";" + request.method;

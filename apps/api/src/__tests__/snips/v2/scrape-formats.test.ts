@@ -239,7 +239,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Scrape format variations", () => {
         );
 
         expect(response.markdown).toBeDefined();
-        expect(response.changeTracking).toBeDefined();
+        expect((response as any).changeTracking).toBeDefined();
       },
       scrapeTimeout,
     );

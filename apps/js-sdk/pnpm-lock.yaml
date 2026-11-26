@@ -8,7 +8,7 @@ overrides:
   zod@<4.6.6: 4.6.7
   axios@>=1.0.0 <1.20.0: 1.20.0
   diff@>=4.0.0 <4.0.4: '>=4.0.4 <5.0.0'
-  follow-redirects@<1.16.1: '>=1.16.1 <2.0.0'
+  follow-redirects@<1.16.2: '>=1.16.2 <2.0.0'
   form-data@>=4.0.0 <4.0.6: 4.0.6
   esbuild@>=0.17.0 <0.28.1: 0.28.1
 
@@ -308,8 +308,8 @@ packages:
     resolution: {integrity: sha512-Pix/drp4bvHgAtNljAgUlIUovWb14XCRNemnCeBcAYh1BQPQ3UymVKMq8/hKVJI3QLPW90As0AEM6UXrcLhNnQ==}
     engines: {node: '>=22.0.0'}
 
-  follow-redirects@1.16.1:
-    resolution: {integrity: sha512-FNvFGzoMLWmE6Yj9spb/zjd7yiNCHiAW9/Tg9CXrQ8wuu32HtlJOwWO11OJafl5FfY3DxTdQ0vj42zU1kvv5jg==}
+  follow-redirects@1.16.2:
+    resolution: {integrity: sha512-/kVP2U8z596Ia0gwFrwyIeo74ta5aVmSeU1FfAUMAmcEP5EP7zydmag3SLiN64NaRKef3lxsq7i/g7ltJQDGow==}
     engines: {node: '>=4.0'}
     peerDependencies:
       debug: '*'
@@ -557,7 +557,7 @@ snapshots:
 
   axios@1.20.0:
     dependencies:
-      follow-redirects: 1.16.1
+      follow-redirects: 1.16.2
       form-data: 4.0.6
       https-proxy-agent: 5.0.1
       proxy-from-env: 2.1.0
@@ -644,7 +644,7 @@ snapshots:
       - debug
       - supports-color
 
-  follow-redirects@1.16.1: {}
+  follow-redirects@1.16.2: {}
 
   form-data@4.0.6:
     dependencies:

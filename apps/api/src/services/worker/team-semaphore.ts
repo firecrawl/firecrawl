@@ -5,7 +5,7 @@ import {
 import { config } from "../../config";
 import { isFdbTeam } from "./nuq-router";
 import { externalSlotsFdb, nuqFdbHealthCheck, withFdbTimeout } from "./nuq-fdb";
-import { isSelfHosted } from "../../lib/deployment";
+import type { RequestContext } from "../../service/request-context";
 import {
   ConcurrencyQueueTimeoutError,
   TransportableError,
@@ -163,6 +163,7 @@ function startHeartbeat(
   holderId: string,
   intervalMs: number,
   mirrorState: MirrorState,
+  ctx: RequestContext,
 ) {
   let stopped = false;
   let wake: (() => void) | null = null;
@@ -183,12 +184,14 @@ function startHeartbeat(
   const promise = (async () => {
     try {
       while (!stopped) {
-        await mirrorSlotAcquire(teamId, holderId, mirrorState).catch(() => {
-          _logger.warn("Failed to update concurrency limit active job", {
-            teamId,
-            jobId: holderId,
-          });
-        });
+        await mirrorSlotAcquire(teamId, holderId, mirrorState, ctx).catch(
+          () => {
+            _logger.warn("Failed to update concurrency limit active job", {
+              teamId,
+              jobId: holderId,
+            });
+          },
+        );
         if (stopped) break;
 
         const ok = await heartbeat(teamId, holderId);
@@ -222,8 +225,11 @@ function startHeartbeat(
 // Sync scrapes occupy queue capacity so async jobs see the team's real load.
 // PG-backed teams mirror into the Redis ZSET; FDB-backed teams consume an
 // external slot on the FDB ledger.
-async function resolveMirrorBackend(teamId: string): Promise<MirrorBackend> {
-  if (!(await isFdbTeam(teamId))) return "pg";
+async function resolveMirrorBackend(
+  teamId: string,
+  ctx: RequestContext,
+): Promise<MirrorBackend> {
+  if (!(await isFdbTeam(teamId, ctx))) return "pg";
   if (fdbForced()) return "fdb";
   return (await nuqFdbHealthCheck(FDB_OPTIONAL_SLOT_TIMEOUT_MS)) ? "fdb" : "pg";
 }
@@ -244,8 +250,9 @@ async function mirrorSlotAcquire(
   teamId: string,
   holderId: string,
   state: MirrorState,
+  ctx: RequestContext,
 ): Promise<void> {
-  const backend = await resolveMirrorBackend(teamId);
+  const backend = await resolveMirrorBackend(teamId, ctx);
   if (backend === "fdb") {
     await optionalFdbSlot(() =>
       externalSlotsFdb.acquire(teamId, holderId, 60 * 1000),
@@ -284,13 +291,13 @@ async function mirrorSlotRelease(
 async function withSemaphore<T>(
   teamId: string,
   holderId: string,
-  limit: number,
+  limit: number | null,
   signal: AbortSignal,
   timeoutMs: number,
   func: (limited: boolean) => Promise<T>,
+  ctx: RequestContext,
 ): Promise<T> {
-  // Bypass concurrency limits for self-hosted deployments
-  if (isSelfHosted()) {
+  if (limit === null) {
     _logger.debug(`Bypassing concurrency limit for ${teamId}`, {
       teamId,
       jobId: holderId,
@@ -311,8 +318,8 @@ async function withSemaphore<T>(
 
   activeSemaphores.inc();
   try {
-    await mirrorSlotAcquire(teamId, holderId, mirrorState);
-    hb = startHeartbeat(teamId, holderId, SEMAPHORE_TTL / 2, mirrorState);
+    await mirrorSlotAcquire(teamId, holderId, mirrorState, ctx);
+    hb = startHeartbeat(teamId, holderId, SEMAPHORE_TTL / 2, mirrorState, ctx);
 
     const result = await Promise.race([func(limited), hb.promise]);
     return result;

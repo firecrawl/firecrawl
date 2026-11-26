@@ -1,6 +1,7 @@
 import * as winston from "winston";
 
 import { config } from "../config";
+import { processRole } from "../service/service";
 import { configDotenv } from "dotenv";
 configDotenv();
 
@@ -36,6 +37,9 @@ const zeroDataRetentionFilter = winston.format(info => {
   return info;
 })();
 
+/** The role this process was started as, or the file it was started from. */
+const startedAs = processRole() ?? process.argv[1];
+
 export const logger = winston.createLogger({
   level: config.LOGGING_LEVEL?.toLowerCase() ?? "debug",
   format: winston.format.json({
@@ -59,7 +63,7 @@ export const logger = winston.createLogger({
           new winston.transports.File({
             filename:
               "firecrawl-" +
-              (process.argv[1].includes("worker") ? "worker" : "app") +
+              (startedAs.includes("worker") ? "worker" : "app") +
               ".log",
             format: winston.format.combine(
               zeroDataRetentionFilter,
