@@ -1,4 +1,5 @@
 import type { ErrorCode, ErrorScrapeLog } from "../../lib/error";
+import type { JsonObject } from "../../lib/json-types";
 import { TransportableError } from "../../lib/error";
 import { logsMessages } from "../../service/defaults";
 import { installedService } from "../../service/service";
@@ -856,7 +857,7 @@ export class AgentIndexOnlyError extends TransportableError {
     return 403;
   }
 
-  get httpResponseFields(): Record<string, unknown> {
+  get httpResponseFields(): JsonObject {
     return {
       sponsor_status: "pending",
       login_url: "https://firecrawl.dev/signin",

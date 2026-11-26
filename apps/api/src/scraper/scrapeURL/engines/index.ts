@@ -1,5 +1,6 @@
 import type { ScrapeActionContent } from "../../../lib/entities";
 import { config } from "../../../config";
+import type { JsonObject } from "../../../lib/json-types";
 import type { Meta } from "..";
 import { documentMaxReasonableTime, scrapeDocument } from "./document";
 import { pdfMaxReasonableTime, scrapePDF } from "./pdf";
@@ -66,7 +67,7 @@ export interface EngineScrapeResult {
 
   proxyUsed: "basic" | "stealth";
   timezone?: string;
-  exchange?: Record<string, unknown>;
+  exchange?: JsonObject;
 }
 
 const coreEngineRuntime: Record<

@@ -22,14 +22,9 @@ export interface LlmProviders {
 
 export type LlmProviderName = keyof LlmProviders;
 
-const builtInLlmProviders = {
-  openai: true,
-  ollama: true,
-} as const satisfies Partial<Record<LlmProviderName, true>>;
-
 /** Built-in LLM provider names, in registration order. */
 export const coreLlmProviderNames: ReadonlyArray<LlmProviderName> =
-  Object.freeze(Object.keys(builtInLlmProviders) as Array<LlmProviderName>);
+  Object.freeze(["openai", "ollama"]);
 
 /** Language model instance returned by an LLM provider. */
 export type LlmModel = Parameters<typeof wrapLanguageModel>[0]["model"];
@@ -94,6 +89,11 @@ function snapshotLlmProvider(provider: LlmProvider): LlmProvider {
   });
 }
 
+interface BuiltLlmProviderRegistry {
+  registry: LlmProviderRegistry;
+  describedLlmProviders: Record<string, string>;
+}
+
 /**
  * Builds the frozen LLM provider registry and its description records from
  * extensions in registration order. A later registration of the same provider
@@ -103,10 +103,7 @@ function snapshotLlmProvider(provider: LlmProvider): LlmProvider {
  */
 export function buildLlmProviderRegistry(
   sources: ReadonlyArray<LlmProviderRegistrySource>,
-): {
-  registry: LlmProviderRegistry;
-  describedLlmProviders: Record<string, string>;
-} {
+): BuiltLlmProviderRegistry {
   const providersByName = new Map<
     string,
     { owner: string; provider: LlmProvider }
@@ -135,7 +132,7 @@ export function buildLlmProviderRegistry(
     all: () => allProviders,
     enabled: () =>
       Object.freeze(allProviders.filter(provider => provider.enabled())),
-    get: name => providersByName.get(name)?.provider,
+    get: (name: string) => providersByName.get(name)?.provider,
   });
 
   return { registry, describedLlmProviders };

@@ -62,6 +62,8 @@ export async function shutdownTracing(timeoutMs = 5000): Promise<void> {
   provider = undefined;
   await Promise.race([
     active.shutdown().catch(() => {}),
-    new Promise<void>(resolve => setTimeout(resolve, timeoutMs).unref()),
+    new Promise<void>(resolve => {
+      setTimeout(resolve, timeoutMs).unref();
+    }),
   ]);
 }

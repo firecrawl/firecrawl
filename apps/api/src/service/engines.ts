@@ -124,6 +124,8 @@ const sortedByKey = <T>(record: Record<string, T>): Record<string, T> =>
     Object.entries(record).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
   );
 
+type MutableEngine = { -readonly [K in keyof Engine]: Engine[K] };
+
 function snapshotEngine(engine: Engine): Engine {
   if (typeof engine.name !== "string" || engine.name.length === 0) {
     throw new Error("Engine name must be a non-empty string");
@@ -154,23 +156,41 @@ function snapshotEngine(engine: Engine): Engine {
     ),
   ) as { readonly [F in EngineFeatureName]?: boolean };
 
-  const frozen: Engine = {
+  const frozen: MutableEngine = {
     name: engine.name,
     quality: engine.quality,
     features,
-    enabled: engine.enabled,
-    scrape: engine.scrape,
-    ...(engine.maxReasonableTime !== undefined
-      ? { maxReasonableTime: engine.maxReasonableTime }
-      : {}),
-    ...(engine.explicitOnly ? { explicitOnly: true } : {}),
-    ...(engine.cache ? { cache: true } : {}),
-    ...(engine.fileOnly ? { fileOnly: true } : {}),
-    ...(engine.supportsProfile ? { supportsProfile: true } : {}),
-    ...(engine.prefetchesFiles ? { prefetchesFiles: true } : {}),
-    ...(engine.allowEmptyContent ? { allowEmptyContent: true } : {}),
+    enabled: engine.enabled.bind(engine),
+    scrape: engine.scrape.bind(engine),
   };
+  if (engine.maxReasonableTime !== undefined) {
+    frozen.maxReasonableTime = engine.maxReasonableTime.bind(engine);
+  }
+  if (engine.explicitOnly) {
+    frozen.explicitOnly = true;
+  }
+  if (engine.cache) {
+    frozen.cache = true;
+  }
+  if (engine.fileOnly) {
+    frozen.fileOnly = true;
+  }
+  if (engine.supportsProfile) {
+    frozen.supportsProfile = true;
+  }
+  if (engine.prefetchesFiles) {
+    frozen.prefetchesFiles = true;
+  }
+  if (engine.allowEmptyContent) {
+    frozen.allowEmptyContent = true;
+  }
   return Object.freeze(frozen);
+}
+
+interface BuiltEngineRegistry {
+  registry: EngineRegistry;
+  describedEngines: Record<string, string>;
+  describedFeatures: Record<string, DescribedEngineFeature>;
 }
 
 /**
@@ -182,11 +202,7 @@ function snapshotEngine(engine: Engine): Engine {
  */
 export function buildEngineRegistry(
   sources: ReadonlyArray<EngineRegistrySource>,
-): {
-  registry: EngineRegistry;
-  describedEngines: Record<string, string>;
-  describedFeatures: Record<string, DescribedEngineFeature>;
-} {
+): BuiltEngineRegistry {
   const enginesByName = new Map<string, { owner: string; engine: Engine }>();
   const featuresByName = new Map<
     string,
@@ -249,8 +265,8 @@ export function buildEngineRegistry(
   const registry: EngineRegistry = Object.freeze({
     all: () => allEngines,
     enabled: () => Object.freeze(allEngines.filter(engine => engine.enabled())),
-    get: name => enginesByName.get(name)?.engine,
-    feature: name => featuresByName.get(name)?.feature,
+    get: (name: string) => enginesByName.get(name)?.engine,
+    feature: (name: string) => featuresByName.get(name)?.feature,
     features: () => allFeatures,
   });
 

@@ -34,7 +34,7 @@ import {
 import type { BillingMetadata } from "../lib/billing-types";
 import type { TeamPlanClass } from "../service/search-providers";
 import { requestContext } from "../lib/request-context";
-import type { SearchHit } from "../service/hooks";
+import type { SearchHit, SearchState } from "../service/hooks";
 import type { SearchRequest } from "../service/request";
 import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
@@ -91,7 +91,7 @@ interface SearchContext {
   ctx?: RequestContext;
   body?: SearchRequest;
   planApplied?: boolean;
-  state?: Record<string, unknown>;
+  state?: SearchState;
 }
 
 interface SearchExecuteResult {
@@ -183,7 +183,7 @@ export async function executeSearch(
     ? (context.body ?? buildSearchRequestFallback(options, context))
     : undefined;
 
-  const searchState: Record<string, unknown> = context.state ?? {};
+  const searchState: SearchState = context.state ?? {};
 
   if (shouldRunPlan) {
     const planned = await applySearchPlanHook(

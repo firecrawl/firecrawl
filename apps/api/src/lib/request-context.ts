@@ -11,6 +11,8 @@ import type { RequestContext } from "../service/request-context";
 import type { BillingMetadata } from "./billing-types";
 import type { ScrapeJobData } from "../types";
 import type { StoredCrawl } from "./crawl-redis";
+import { isJsonObject } from "./json-types";
+import type { JsonValue } from "./json-types";
 
 declare module "../service/request-context" {
   interface RequestContext {
@@ -45,20 +47,21 @@ export function requestContext(facts: {
   concurrencyLimit?: number;
   rateLimitMultiplier?: number;
 }): RequestContext {
-  return {
+  const ctx: RequestContext = {
     teamId: facts.teamId,
     zeroDataRetention: facts.zeroDataRetention ?? false,
     flags: facts.flags,
     orgId: facts.orgId,
     apiKeyId: facts.apiKeyId,
     billing: facts.billing,
-    ...(facts.concurrencyLimit !== undefined
-      ? { concurrencyLimit: facts.concurrencyLimit }
-      : {}),
-    ...(facts.rateLimitMultiplier !== undefined
-      ? { rateLimitMultiplier: facts.rateLimitMultiplier }
-      : {}),
   };
+  if (facts.concurrencyLimit !== undefined) {
+    ctx.concurrencyLimit = facts.concurrencyLimit;
+  }
+  if (facts.rateLimitMultiplier !== undefined) {
+    ctx.rateLimitMultiplier = facts.rateLimitMultiplier;
+  }
+  return ctx;
 }
 
 /**
@@ -88,11 +91,19 @@ export function jobContext(data: ScrapeJobData): RequestContext {
  * every queue, or that may be handed a job whose data is gone.
  */
 export function storedZeroDataRetention(stored: unknown): boolean | undefined {
-  const shape = stored as
-    | { ctx?: RequestContext; zeroDataRetention?: boolean }
-    | null
-    | undefined;
-  return shape?.ctx?.zeroDataRetention ?? shape?.zeroDataRetention;
+  if (!isJsonObject(stored)) {
+    return undefined;
+  }
+  const nestedCtx = stored.ctx;
+  if (
+    isJsonObject(nestedCtx) &&
+    typeof nestedCtx.zeroDataRetention === "boolean"
+  ) {
+    return nestedCtx.zeroDataRetention;
+  }
+  return typeof stored.zeroDataRetention === "boolean"
+    ? stored.zeroDataRetention
+    : undefined;
 }
 
 /**
@@ -100,9 +111,13 @@ export function storedZeroDataRetention(stored: unknown): boolean | undefined {
  * a policy module, without coupling core's base context type to a specific
  * policy shape.
  */
-export function contextThreatProtection(ctx: RequestContext): unknown {
-  return (ctx as { policy?: { threatProtection?: unknown } | null }).policy
-    ?.threatProtection;
+export function contextThreatProtection(
+  ctx: RequestContext,
+): JsonValue | undefined {
+  if (!("policy" in ctx) || !isJsonObject(ctx.policy)) {
+    return undefined;
+  }
+  return ctx.policy.threatProtection;
 }
 
 /** The context a crawl runs under, with the same fallback as `jobContext`. */

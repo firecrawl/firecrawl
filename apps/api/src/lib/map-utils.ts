@@ -16,6 +16,7 @@ import {
 import { performCosineSimilarityV2 } from "./map-cosine";
 import type { Logger } from "winston";
 import { requestContext } from "./request-context";
+import type { MapState } from "../service/hooks";
 import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
 
@@ -26,7 +27,7 @@ export interface MapResult {
   job_id: string;
   time_taken: number;
   mapResults: Array<MapDocument>;
-  state?: Record<string, unknown>;
+  state?: MapState;
 }
 
 function dedupeMapDocumentArray(
@@ -121,7 +122,7 @@ export async function applyMapFilterHook(
     ctx: RequestContext;
     url: string;
     limit: number;
-    state?: Record<string, unknown>;
+    state?: MapState;
     logger?: Logger;
   },
 ): Promise<Array<MapDocument>> {
@@ -174,7 +175,7 @@ export async function applyMapCollectHook(
     useIndex?: boolean;
     maxSearchResults?: number;
     abort?: AbortSignal;
-    state?: Record<string, unknown>;
+    state?: MapState;
     logger?: Logger;
   },
 ): Promise<Array<MapDocument>> {
@@ -416,7 +417,7 @@ export async function getMapResults({
   };
   mapResults = applyMapScope(mapResults, url, scope);
 
-  const mapState: Record<string, unknown> = {};
+  const mapState: MapState = {};
   const hooks = installedService()?.hooks;
   if (hooks?.has("map.collect")) {
     mapResults = await applyMapCollectHook(mapResults, {

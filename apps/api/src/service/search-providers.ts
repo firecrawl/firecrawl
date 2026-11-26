@@ -42,9 +42,7 @@ const builtInSearchProviders: Record<
 
 /** Built-in search provider names, in default priority order. */
 export const coreSearchProviderNames: ReadonlyArray<SearchProviderName> =
-  Object.freeze(
-    Object.keys(builtInSearchProviders) as Array<SearchProviderName>,
-  );
+  Object.freeze(["searxng", "duckduckgo"]);
 
 /**
  * Static metadata for built-in search providers, in default priority order.
@@ -55,11 +53,10 @@ export const coreSearchProviderSpecs: ReadonlyArray<CoreSearchProviderSpec> =
   Object.freeze(
     coreSearchProviderNames.map(name => {
       const spec = builtInSearchProviders[name];
-      return Object.freeze({
-        name,
-        priority: spec.priority,
-        ...(spec.supportsUsOnly ? { supportsUsOnly: true } : {}),
-      });
+      const entry: CoreSearchProviderSpec = spec.supportsUsOnly
+        ? { name, priority: spec.priority, supportsUsOnly: true }
+        : { name, priority: spec.priority };
+      return Object.freeze(entry);
     }),
   );
 
@@ -147,6 +144,10 @@ const sortedByKey = <T>(record: Record<string, T>): Record<string, T> =>
     Object.entries(record).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
   );
 
+type MutableSearchProvider = {
+  -readonly [K in keyof SearchProvider]: SearchProvider[K];
+};
+
 function snapshotSearchProvider(provider: SearchProvider): SearchProvider {
   if (typeof provider.name !== "string" || provider.name.length === 0) {
     throw new Error("Search provider name must be a non-empty string");
@@ -181,15 +182,27 @@ function snapshotSearchProvider(provider: SearchProvider): SearchProvider {
     }
   }
 
-  return Object.freeze({
+  const frozen: MutableSearchProvider = {
     name: provider.name,
     priority: provider.priority,
-    ...(provider.supportsUsOnly ? { supportsUsOnly: true } : {}),
-    ...(provider.supportsZdr ? { supportsZdr: true } : {}),
-    ...(provider.supportsAnon ? { supportsAnon: true } : {}),
     enabled: provider.enabled.bind(provider),
     search: provider.search.bind(provider),
-  });
+  };
+  if (provider.supportsUsOnly) {
+    frozen.supportsUsOnly = true;
+  }
+  if (provider.supportsZdr) {
+    frozen.supportsZdr = true;
+  }
+  if (provider.supportsAnon) {
+    frozen.supportsAnon = true;
+  }
+  return Object.freeze(frozen);
+}
+
+interface BuiltSearchProviderRegistry {
+  registry: SearchProviderRegistry;
+  describedSearchProviders: Record<string, DescribedSearchProvider>;
 }
 
 /**
@@ -201,10 +214,7 @@ function snapshotSearchProvider(provider: SearchProvider): SearchProvider {
  */
 export function buildSearchProviderRegistry(
   sources: ReadonlyArray<SearchProviderRegistrySource>,
-): {
-  registry: SearchProviderRegistry;
-  describedSearchProviders: Record<string, DescribedSearchProvider>;
-} {
+): BuiltSearchProviderRegistry {
   const providersByName = new Map<
     string,
     { owner: string; provider: SearchProvider }
@@ -247,7 +257,7 @@ export function buildSearchProviderRegistry(
     all: () => allProviders,
     enabled: () =>
       Object.freeze(byPriority.filter(provider => provider.enabled())),
-    get: name => providersByName.get(name)?.provider,
+    get: (name: string) => providersByName.get(name)?.provider,
   });
 
   return { registry, describedSearchProviders };

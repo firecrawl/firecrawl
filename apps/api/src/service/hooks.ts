@@ -13,9 +13,15 @@
  */
 import type { Logger } from "winston";
 import type { Document, MapDocument } from "../controllers/v2/types";
-import type { SearchV2Response } from "../lib/entities";
+import type {
+  SearchResultCategoriesBySource,
+  SearchV2Response,
+} from "../lib/entities";
 import type { ErrorCode } from "../lib/error";
+import { isPlainObject } from "../lib/json-types";
+import type { JsonObject, JsonValue } from "../lib/json-types";
 import type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
+import type { JobCrawlerOptions } from "../types";
 import type { EngineFeatureName, EngineName } from "./engines";
 import type { RequestContext } from "./request-context";
 import type { RequestBodies, RequestKind, ScrapeOptions } from "./request";
@@ -43,6 +49,38 @@ export interface Transform<Value, Info> {
  * Extensions may add optional fields through declaration merging.
  */
 export interface ScrapeState {}
+
+/**
+ * Per-map scratch space shared across map hooks for one map execution.
+ * Extensions may add optional fields through declaration merging.
+ */
+export interface MapState {}
+
+/**
+ * Per-search scratch space shared across search hooks for one search execution.
+ * Extensions may add optional fields through declaration merging.
+ */
+export interface SearchState {}
+
+/**
+ * Optional metadata attached to `scrape.finished` events.
+ * Extensions may add optional fields through declaration merging.
+ */
+export interface ScrapeFinishedMetadata {}
+
+/** Map request options reported on `map.finished`. */
+export interface MapFinishedOptions {
+  search?: string;
+  sitemap?: "skip" | "include" | "only";
+  includeSubdomains?: boolean;
+  ignoreQueryParameters?: boolean;
+  limit?: number;
+  timeout?: number;
+  location?: {
+    country?: string;
+    languages?: Array<string>;
+  };
+}
 
 /** Context shared across scrape-stage hooks for one scrape execution. */
 export interface ScrapeMeta {
@@ -104,7 +142,8 @@ export interface Refusal {
     success: false;
     error: string;
     code?: ErrorCode | (string & {});
-  } & Record<string, unknown>;
+    [key: string]: JsonValue | undefined;
+  };
   headers?: Record<string, string>;
 }
 
@@ -144,9 +183,9 @@ export interface ScrapeFinished {
   crawlId?: string;
   skipNuq?: boolean;
   isParse?: boolean;
-  costTracking?: Record<string, unknown>;
+  costTracking?: JsonObject;
   /** Opaque per-job metadata passed through to completion hooks. */
-  metadata?: Record<string, unknown>;
+  metadata?: ScrapeFinishedMetadata;
 }
 
 /** Completion payload delivered when a crawl or batch scrape finishes. */
@@ -159,10 +198,10 @@ export interface CrawlFinished {
   requestId?: string;
   origin?: string;
   originUrl?: string;
-  crawlerOptions?: Record<string, unknown> | null;
+  crawlerOptions?: JobCrawlerOptions | null;
   charged?: number | null;
   isV1?: boolean;
-  metadata?: Record<string, unknown>;
+  metadata?: JsonObject;
 }
 
 /** Plan transformed before executing a search request. */
@@ -184,6 +223,20 @@ export interface SearchHit {
   imageHeight?: number;
 }
 
+/** Response payload value transformed by `request.responding` hooks. */
+type ResponsePayloadValue =
+  | JsonValue
+  | Document
+  | SearchV2Response
+  | MapDocument
+  | RequestContext
+  | undefined;
+
+/** Response payload transformed by `request.responding` hooks. */
+export type ResponsePayload = {
+  [key: string]: ResponsePayloadValue | ReadonlyArray<ResponsePayloadValue>;
+};
+
 /**
  * The service's 26 typed hook points, grouped by lifecycle area.
  */
@@ -198,7 +251,7 @@ export interface HookPoints {
     teamId: string | undefined;
     refusal: Refusal;
   }>;
-  "request.responding": Transform<Record<string, unknown>, ResponseInfo>;
+  "request.responding": Transform<ResponsePayload, ResponseInfo>;
   // queue
   "job.enqueued": Observe<{
     jobId: string;
@@ -241,7 +294,7 @@ export interface HookPoints {
       id: string;
       ctx: RequestContext;
       url: string;
-      crawlerOptions?: Record<string, unknown>;
+      crawlerOptions?: JobCrawlerOptions;
     }
   >;
   "crawl.links": Transform<
@@ -250,7 +303,7 @@ export interface HookPoints {
       id: string;
       ctx: RequestContext;
       from: string;
-      crawlerOptions?: Record<string, unknown> | null;
+      crawlerOptions?: JobCrawlerOptions | null;
       bypassBilling?: boolean;
     }
   >;
@@ -271,7 +324,7 @@ export interface HookPoints {
       maxSearchResults?: number;
       abort?: AbortSignal;
       documents?: Map<string, MapDocument>;
-      state?: Record<string, unknown>;
+      state?: MapState;
       logger?: Logger;
     }
   >;
@@ -281,7 +334,7 @@ export interface HookPoints {
       ctx: RequestContext;
       url: string;
       limit: number;
-      state?: Record<string, unknown>;
+      state?: MapState;
       logger?: Logger;
     }
   >;
@@ -291,18 +344,18 @@ export interface HookPoints {
     ctx: RequestContext;
     urls: number;
     url?: string;
-    options?: Record<string, unknown>;
+    options?: MapFinishedOptions;
     links?: Array<MapDocument>;
     charged?: number;
     timeTakenMs?: number;
-    state?: Record<string, unknown>;
+    state?: MapState;
   }>;
   "search.plan": Transform<
     SearchPlan,
     {
       ctx: RequestContext;
       body: RequestBodies["search"];
-      state?: Record<string, unknown>;
+      state?: SearchState;
       logger?: Logger;
     }
   >;
@@ -311,7 +364,7 @@ export interface HookPoints {
     {
       ctx: RequestContext;
       body: RequestBodies["search"];
-      state?: Record<string, unknown>;
+      state?: SearchState;
       response?: SearchV2Response;
       logger?: Logger;
     }
@@ -328,17 +381,17 @@ export interface HookPoints {
     response?: SearchV2Response;
     timeTakenMs?: number;
     resultCountsBySource?: Record<string, number>;
-    resultCategories?: Record<string, unknown>;
+    resultCategories?: SearchResultCategoriesBySource;
     searchTypes?: Array<string>;
     scrapeFormats?: Array<string>;
     shouldScrape?: boolean;
     isSuccessful?: boolean;
     error?: string;
-    state?: Record<string, unknown>;
+    state?: SearchState;
   }>;
 }
 
-type Point = Observe<any> | Await<any> | Transform<any, any>;
+type Point = Observe<unknown> | Await<unknown> | Transform<unknown, unknown>;
 
 type PointNamesOfKind<Points, Kind extends Point["kind"]> = {
   [Name in keyof Points]: Points[Name] extends { kind: Kind } ? Name : never;
@@ -348,9 +401,11 @@ type PointPayloadOf<P> = P extends Observe<infer Payload> | Await<infer Payload>
   ? Payload
   : never;
 
-type PointValueOf<P> = P extends Transform<infer Value, any> ? Value : never;
+type PointValueOf<P> =
+  P extends Transform<infer Value, infer _Info> ? Value : never;
 
-type PointInfoOf<P> = P extends Transform<any, infer Info> ? Info : never;
+type PointInfoOf<P> =
+  P extends Transform<infer _Value, infer Info> ? Info : never;
 
 type PointHandlerOf<P> =
   P extends Transform<infer Value, infer Info>
@@ -365,12 +420,57 @@ export type ValueOf<N extends HookName> = PointValueOf<HookPoints[N]>;
 export type InfoOf<N extends HookName> = PointInfoOf<HookPoints[N]>;
 export type HookHandler<N extends HookName> = PointHandlerOf<HookPoints[N]>;
 
-/** One handler or several per hook point. */
-export type HandlersOf<Points> = {
-  [Name in keyof Points]?:
-    | PointHandlerOf<Points[Name]>
-    | ReadonlyArray<PointHandlerOf<Points[Name]>>;
+type PayloadsOf<Points, Kind extends "observe" | "await"> = {
+  [Name in PointNamesOfKind<Points, Kind>]: PointPayloadOf<Points[Name]>;
 };
+
+type ValuesOf<Points> = {
+  [Name in PointNamesOfKind<Points, "transform">]: PointValueOf<Points[Name]>;
+};
+
+type InfosOf<Points> = {
+  [Name in PointNamesOfKind<Points, "transform">]: PointInfoOf<Points[Name]>;
+};
+
+type ObserveHandlerFn<
+  Points,
+  Name extends PointNamesOfKind<Points, "observe">,
+> = (payload: PayloadsOf<Points, "observe">[Name]) => void | Promise<void>;
+
+type AwaitHandlerFn<Points, Name extends PointNamesOfKind<Points, "await">> = (
+  payload: PayloadsOf<Points, "await">[Name],
+) => void | Promise<void>;
+
+type TransformHandlerFn<
+  Points,
+  Name extends PointNamesOfKind<Points, "transform">,
+> = (
+  value: ValuesOf<Points>[Name],
+  info: InfosOf<Points>[Name],
+) => ValuesOf<Points>[Name] | void | Promise<ValuesOf<Points>[Name] | void>;
+
+type ObserveHandlers<Points> = {
+  [Name in PointNamesOfKind<Points, "observe">]?:
+    | ObserveHandlerFn<Points, Name>
+    | ReadonlyArray<ObserveHandlerFn<Points, Name>>;
+};
+
+type AwaitHandlers<Points> = {
+  [Name in PointNamesOfKind<Points, "await">]?:
+    | AwaitHandlerFn<Points, Name>
+    | ReadonlyArray<AwaitHandlerFn<Points, Name>>;
+};
+
+type TransformHandlers<Points> = {
+  [Name in PointNamesOfKind<Points, "transform">]?:
+    | TransformHandlerFn<Points, Name>
+    | ReadonlyArray<TransformHandlerFn<Points, Name>>;
+};
+
+/** One handler or several per hook point. */
+export type HandlersOf<Points> = ObserveHandlers<Points> &
+  AwaitHandlers<Points> &
+  TransformHandlers<Points>;
 
 /** How hook points are invoked. The method must match the point's kind. */
 export interface HooksOf<Points> {
@@ -378,18 +478,18 @@ export interface HooksOf<Points> {
   has(name: keyof Points): boolean;
   observe<Name extends PointNamesOfKind<Points, "observe">>(
     name: Name,
-    payload: PointPayloadOf<Points[Name]>,
+    payload: PayloadsOf<Points, "observe">[Name],
   ): void;
   run<Name extends PointNamesOfKind<Points, "await">>(
     name: Name,
-    payload: PointPayloadOf<Points[Name]>,
+    payload: PayloadsOf<Points, "await">[Name],
   ): Promise<void>;
   /** With no handler registered, returns `value` synchronously without allocating a promise. */
   transform<Name extends PointNamesOfKind<Points, "transform">>(
     name: Name,
-    value: PointValueOf<Points[Name]>,
-    info: PointInfoOf<Points[Name]>,
-  ): PointValueOf<Points[Name]> | Promise<PointValueOf<Points[Name]>>;
+    value: ValuesOf<Points>[Name],
+    info: InfosOf<Points>[Name],
+  ): ValuesOf<Points>[Name] | Promise<ValuesOf<Points>[Name]>;
 }
 
 export type HookHandlers = HandlersOf<HookPoints>;
@@ -403,40 +503,40 @@ export interface HookPointSpec<Kind extends HookKind = HookKind> {
   readonly reverse?: boolean;
 }
 
-const rawHookPoints: {
-  readonly [N in HookName]: HookPointSpec<HookPoints[N]["kind"]>;
-} = {
-  "process.start": Object.freeze({ kind: "await" }),
+const rawHookPoints = {
+  "process.start": Object.freeze({ kind: "await" as const }),
   "process.stop": Object.freeze({
-    kind: "await",
+    kind: "await" as const,
     timeoutMs: 45_000,
     isolate: true,
     reverse: true,
   }),
-  "request.accepted": Object.freeze({ kind: "await" }),
-  "request.rejected": Object.freeze({ kind: "observe" }),
-  "request.responding": Object.freeze({ kind: "transform" }),
-  "job.enqueued": Object.freeze({ kind: "observe" }),
-  "concurrency.limited": Object.freeze({ kind: "observe" }),
-  "scrape.start": Object.freeze({ kind: "transform" }),
-  "scrape.engines.select": Object.freeze({ kind: "transform" }),
-  "scrape.engine.fallback": Object.freeze({ kind: "transform" }),
-  "scrape.fetched": Object.freeze({ kind: "transform" }),
-  "scrape.html.clean": Object.freeze({ kind: "transform" }),
-  "scrape.document.markdown": Object.freeze({ kind: "transform" }),
-  "scrape.document.derived": Object.freeze({ kind: "transform" }),
-  "scrape.document.extracted": Object.freeze({ kind: "transform" }),
-  "scrape.document.final": Object.freeze({ kind: "transform" }),
-  "scrape.finished": Object.freeze({ kind: "await" }),
-  "crawl.kickoff": Object.freeze({ kind: "transform" }),
-  "crawl.links": Object.freeze({ kind: "transform" }),
-  "crawl.finished": Object.freeze({ kind: "await" }),
-  "map.collect": Object.freeze({ kind: "transform" }),
-  "map.filter": Object.freeze({ kind: "transform" }),
-  "map.finished": Object.freeze({ kind: "observe" }),
-  "search.plan": Object.freeze({ kind: "transform" }),
-  "search.results": Object.freeze({ kind: "transform" }),
-  "search.finished": Object.freeze({ kind: "observe" }),
+  "request.accepted": Object.freeze({ kind: "await" as const }),
+  "request.rejected": Object.freeze({ kind: "observe" as const }),
+  "request.responding": Object.freeze({ kind: "transform" as const }),
+  "job.enqueued": Object.freeze({ kind: "observe" as const }),
+  "concurrency.limited": Object.freeze({ kind: "observe" as const }),
+  "scrape.start": Object.freeze({ kind: "transform" as const }),
+  "scrape.engines.select": Object.freeze({ kind: "transform" as const }),
+  "scrape.engine.fallback": Object.freeze({ kind: "transform" as const }),
+  "scrape.fetched": Object.freeze({ kind: "transform" as const }),
+  "scrape.html.clean": Object.freeze({ kind: "transform" as const }),
+  "scrape.document.markdown": Object.freeze({ kind: "transform" as const }),
+  "scrape.document.derived": Object.freeze({ kind: "transform" as const }),
+  "scrape.document.extracted": Object.freeze({ kind: "transform" as const }),
+  "scrape.document.final": Object.freeze({ kind: "transform" as const }),
+  "scrape.finished": Object.freeze({ kind: "await" as const }),
+  "crawl.kickoff": Object.freeze({ kind: "transform" as const }),
+  "crawl.links": Object.freeze({ kind: "transform" as const }),
+  "crawl.finished": Object.freeze({ kind: "await" as const }),
+  "map.collect": Object.freeze({ kind: "transform" as const }),
+  "map.filter": Object.freeze({ kind: "transform" as const }),
+  "map.finished": Object.freeze({ kind: "observe" as const }),
+  "search.plan": Object.freeze({ kind: "transform" as const }),
+  "search.results": Object.freeze({ kind: "transform" as const }),
+  "search.finished": Object.freeze({ kind: "observe" as const }),
+} satisfies {
+  readonly [N in HookName]: HookPointSpec<HookPoints[N]["kind"]>;
 };
 
 /**
@@ -445,11 +545,15 @@ const rawHookPoints: {
  */
 export const hookPoints: Readonly<{
   [N in HookName]: HookPointSpec<HookPoints[N]["kind"]>;
-}> = Object.freeze(Object.assign(Object.create(null), rawHookPoints));
+}> = Object.freeze({ ...rawHookPoints });
+
+function isHookName(name: string): name is HookName {
+  return Object.hasOwn(hookPoints, name);
+}
 
 /** All known hook point names. */
 export const hookPointNames: ReadonlyArray<HookName> = Object.freeze(
-  Object.keys(hookPoints) as Array<HookName>,
+  Object.keys(hookPoints).filter(isHookName),
 );
 
 /** @internal */
@@ -458,7 +562,77 @@ export interface HookRegistrySource {
   hooks?: HookHandlers;
 }
 
-type AnyHandler = (first: unknown, second?: unknown) => unknown;
+type ObserveHookName = NamesOfKind<"observe">;
+type AwaitHookName = NamesOfKind<"await">;
+type TransformHookName = NamesOfKind<"transform">;
+
+const observeHookNames: ReadonlyArray<ObserveHookName> = [
+  "request.rejected",
+  "job.enqueued",
+  "concurrency.limited",
+  "map.finished",
+  "search.finished",
+];
+
+const awaitHookNames: ReadonlyArray<AwaitHookName> = [
+  "process.start",
+  "process.stop",
+  "request.accepted",
+  "scrape.finished",
+  "crawl.finished",
+];
+
+const transformHookNames: ReadonlyArray<TransformHookName> = [
+  "request.responding",
+  "scrape.start",
+  "scrape.engines.select",
+  "scrape.engine.fallback",
+  "scrape.fetched",
+  "scrape.html.clean",
+  "scrape.document.markdown",
+  "scrape.document.derived",
+  "scrape.document.extracted",
+  "scrape.document.final",
+  "crawl.kickoff",
+  "crawl.links",
+  "map.collect",
+  "map.filter",
+  "search.plan",
+  "search.results",
+];
+
+type MutableObserveBuckets = {
+  [N in ObserveHookName]?: Array<{
+    owner: string;
+    handler: ObserveHandlerFn<HookPoints, N>;
+  }>;
+};
+
+type MutableAwaitBuckets = {
+  [N in AwaitHookName]?: Array<{
+    owner: string;
+    handler: AwaitHandlerFn<HookPoints, N>;
+  }>;
+};
+
+type MutableTransformBuckets = {
+  [N in TransformHookName]?: Array<{
+    owner: string;
+    handler: TransformHandlerFn<HookPoints, N>;
+  }>;
+};
+
+type FrozenObserveTable = {
+  [N in ObserveHookName]?: ReadonlyArray<ObserveHandlerFn<HookPoints, N>>;
+};
+
+type FrozenAwaitTable = {
+  [N in AwaitHookName]?: ReadonlyArray<AwaitHandlerFn<HookPoints, N>>;
+};
+
+type FrozenTransformTable = {
+  [N in TransformHookName]?: ReadonlyArray<TransformHandlerFn<HookPoints, N>>;
+};
 
 const sortedByKey = <T>(record: Record<string, T>): Record<string, T> =>
   Object.fromEntries(
@@ -469,16 +643,118 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   return (
     value !== null &&
     (typeof value === "object" || typeof value === "function") &&
-    typeof (value as { then?: unknown }).then === "function"
+    "then" in value &&
+    typeof value.then === "function"
   );
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
+interface BuiltHookRegistry {
+  hooks: Hooks;
+  describedHooks: Record<string, Array<string>>;
+}
+
+function normalizeHandlers<Fn>(
+  name: string,
+  listed: Fn | ReadonlyArray<Fn> | undefined,
+): Array<Fn> {
+  if (listed === undefined) {
+    return [];
   }
-  const proto = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null;
+  const normalized: Array<Fn> = [];
+  if (Array.isArray(listed)) {
+    const items: ReadonlyArray<Fn> = listed;
+    for (let i = 0; i < items.length; i++) {
+      const handler = items[i];
+      if (typeof handler !== "function") {
+        throw new Error(
+          `Hook "${name}" handler at index ${i} must be a function`,
+        );
+      }
+      normalized.push(handler);
+    }
+  } else if (typeof listed === "function") {
+    normalized.push(listed);
+  } else {
+    throw new Error(`Hook "${name}" handler must be a function`);
+  }
+  return normalized;
+}
+
+function appendObserveBucket<N extends ObserveHookName>(
+  buckets: MutableObserveBuckets,
+  name: N,
+  set: ObserveHandlers<HookPoints>,
+  owner: string,
+): void {
+  const normalized = normalizeHandlers(name, set[name]);
+  if (normalized.length === 0) {
+    return;
+  }
+  let bucket = buckets[name];
+  if (!bucket) {
+    bucket = [];
+    buckets[name] = bucket;
+  }
+  for (const handler of normalized) {
+    bucket.push({ owner, handler });
+  }
+}
+
+function appendAwaitBucket<N extends AwaitHookName>(
+  buckets: MutableAwaitBuckets,
+  name: N,
+  set: AwaitHandlers<HookPoints>,
+  owner: string,
+): void {
+  const normalized = normalizeHandlers(name, set[name]);
+  if (normalized.length === 0) {
+    return;
+  }
+  let bucket = buckets[name];
+  if (!bucket) {
+    bucket = [];
+    buckets[name] = bucket;
+  }
+  for (const handler of normalized) {
+    bucket.push({ owner, handler });
+  }
+}
+
+function appendTransformBucket<N extends TransformHookName>(
+  buckets: MutableTransformBuckets,
+  name: N,
+  set: TransformHandlers<HookPoints>,
+  owner: string,
+): void {
+  const normalized = normalizeHandlers(name, set[name]);
+  if (normalized.length === 0) {
+    return;
+  }
+  let bucket = buckets[name];
+  if (!bucket) {
+    bucket = [];
+    buckets[name] = bucket;
+  }
+  for (const handler of normalized) {
+    bucket.push({ owner, handler });
+  }
+}
+
+function freezeEntries<Fn>(
+  entries: ReadonlyArray<{ owner: string; handler: Fn }> | undefined,
+  name: HookName,
+  registered: Set<HookName>,
+  ownerEntries: Array<[string, Array<string>]>,
+): ReadonlyArray<Fn> | undefined {
+  if (!entries) {
+    return undefined;
+  }
+  const ordered = hookPoints[name].reverse
+    ? entries.slice().reverse()
+    : entries;
+  registered.add(name);
+  ownerEntries.push([name, ordered.map(entry => entry.owner)]);
+  return Object.freeze(ordered.map(entry => entry.handler));
 }
 
 /**
@@ -491,18 +767,14 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 export function buildHookRegistry(
   sources: ReadonlyArray<HookRegistrySource>,
   report: (hook: string, error: unknown) => void,
-): {
-  hooks: Hooks;
-  describedHooks: Record<string, Array<string>>;
-} {
+): BuiltHookRegistry {
   if (typeof report !== "function") {
     throw new Error("Hook error reporter must be a function");
   }
 
-  const entriesByName = new Map<
-    HookName,
-    Array<{ owner: string; handler: AnyHandler }>
-  >();
+  const observeBuckets: MutableObserveBuckets = {};
+  const awaitBuckets: MutableAwaitBuckets = {};
+  const transformBuckets: MutableTransformBuckets = {};
 
   for (const source of sources) {
     const set = source.hooks;
@@ -516,55 +788,189 @@ export function buildHookRegistry(
     }
 
     for (const name of Object.keys(set)) {
-      if (!Object.hasOwn(hookPoints, name)) {
+      if (!isHookName(name)) {
         throw new Error(`Unknown hook point "${name}"`);
       }
-      const hookName = name as HookName;
-      const listed = set[name];
-      if (listed === undefined) {
-        continue;
-      }
+    }
 
-      const normalized: Array<AnyHandler> = [];
-      if (Array.isArray(listed)) {
-        for (let i = 0; i < listed.length; i++) {
-          const handler = listed[i];
-          if (typeof handler !== "function") {
-            throw new Error(
-              `Hook "${name}" handler at index ${i} must be a function`,
-            );
-          }
-          normalized.push(handler as AnyHandler);
-        }
-      } else if (typeof listed === "function") {
-        normalized.push(listed as AnyHandler);
-      } else {
-        throw new Error(`Hook "${name}" handler must be a function`);
-      }
-
-      if (normalized.length === 0) {
-        continue;
-      }
-
-      let bucket = entriesByName.get(hookName);
-      if (!bucket) {
-        bucket = [];
-        entriesByName.set(hookName, bucket);
-      }
-      for (const handler of normalized) {
-        bucket.push({ owner: source.owner, handler });
-      }
+    for (const name of observeHookNames) {
+      appendObserveBucket(observeBuckets, name, set, source.owner);
+    }
+    for (const name of awaitHookNames) {
+      appendAwaitBucket(awaitBuckets, name, set, source.owner);
+    }
+    for (const name of transformHookNames) {
+      appendTransformBucket(transformBuckets, name, set, source.owner);
     }
   }
 
-  const table = new Map<HookName, ReadonlyArray<AnyHandler>>();
-  const ownerTable: Record<string, Array<string>> = Object.create(null);
+  const registered = new Set<HookName>();
+  const ownerEntries: Array<[string, Array<string>]> = [];
 
-  for (const [name, entries] of entriesByName) {
-    const ordered = hookPoints[name].reverse ? [...entries].reverse() : entries;
-    table.set(name, Object.freeze(ordered.map(entry => entry.handler)));
-    ownerTable[name] = ordered.map(entry => entry.owner);
-  }
+  const observeTable: FrozenObserveTable = {
+    "request.rejected": freezeEntries(
+      observeBuckets["request.rejected"],
+      "request.rejected",
+      registered,
+      ownerEntries,
+    ),
+    "job.enqueued": freezeEntries(
+      observeBuckets["job.enqueued"],
+      "job.enqueued",
+      registered,
+      ownerEntries,
+    ),
+    "concurrency.limited": freezeEntries(
+      observeBuckets["concurrency.limited"],
+      "concurrency.limited",
+      registered,
+      ownerEntries,
+    ),
+    "map.finished": freezeEntries(
+      observeBuckets["map.finished"],
+      "map.finished",
+      registered,
+      ownerEntries,
+    ),
+    "search.finished": freezeEntries(
+      observeBuckets["search.finished"],
+      "search.finished",
+      registered,
+      ownerEntries,
+    ),
+  };
+
+  const awaitTable: FrozenAwaitTable = {
+    "process.start": freezeEntries(
+      awaitBuckets["process.start"],
+      "process.start",
+      registered,
+      ownerEntries,
+    ),
+    "process.stop": freezeEntries(
+      awaitBuckets["process.stop"],
+      "process.stop",
+      registered,
+      ownerEntries,
+    ),
+    "request.accepted": freezeEntries(
+      awaitBuckets["request.accepted"],
+      "request.accepted",
+      registered,
+      ownerEntries,
+    ),
+    "scrape.finished": freezeEntries(
+      awaitBuckets["scrape.finished"],
+      "scrape.finished",
+      registered,
+      ownerEntries,
+    ),
+    "crawl.finished": freezeEntries(
+      awaitBuckets["crawl.finished"],
+      "crawl.finished",
+      registered,
+      ownerEntries,
+    ),
+  };
+
+  const transformTable: FrozenTransformTable = {
+    "request.responding": freezeEntries(
+      transformBuckets["request.responding"],
+      "request.responding",
+      registered,
+      ownerEntries,
+    ),
+    "scrape.start": freezeEntries(
+      transformBuckets["scrape.start"],
+      "scrape.start",
+      registered,
+      ownerEntries,
+    ),
+    "scrape.engines.select": freezeEntries(
+      transformBuckets["scrape.engines.select"],
+      "scrape.engines.select",
+      registered,
+      ownerEntries,
+    ),
+    "scrape.engine.fallback": freezeEntries(
+      transformBuckets["scrape.engine.fallback"],
+      "scrape.engine.fallback",
+      registered,
+      ownerEntries,
+    ),
+    "scrape.fetched": freezeEntries(
+      transformBuckets["scrape.fetched"],
+      "scrape.fetched",
+      registered,
+      ownerEntries,
+    ),
+    "scrape.html.clean": freezeEntries(
+      transformBuckets["scrape.html.clean"],
+      "scrape.html.clean",
+      registered,
+      ownerEntries,
+    ),
+    "scrape.document.markdown": freezeEntries(
+      transformBuckets["scrape.document.markdown"],
+      "scrape.document.markdown",
+      registered,
+      ownerEntries,
+    ),
+    "scrape.document.derived": freezeEntries(
+      transformBuckets["scrape.document.derived"],
+      "scrape.document.derived",
+      registered,
+      ownerEntries,
+    ),
+    "scrape.document.extracted": freezeEntries(
+      transformBuckets["scrape.document.extracted"],
+      "scrape.document.extracted",
+      registered,
+      ownerEntries,
+    ),
+    "scrape.document.final": freezeEntries(
+      transformBuckets["scrape.document.final"],
+      "scrape.document.final",
+      registered,
+      ownerEntries,
+    ),
+    "crawl.kickoff": freezeEntries(
+      transformBuckets["crawl.kickoff"],
+      "crawl.kickoff",
+      registered,
+      ownerEntries,
+    ),
+    "crawl.links": freezeEntries(
+      transformBuckets["crawl.links"],
+      "crawl.links",
+      registered,
+      ownerEntries,
+    ),
+    "map.collect": freezeEntries(
+      transformBuckets["map.collect"],
+      "map.collect",
+      registered,
+      ownerEntries,
+    ),
+    "map.filter": freezeEntries(
+      transformBuckets["map.filter"],
+      "map.filter",
+      registered,
+      ownerEntries,
+    ),
+    "search.plan": freezeEntries(
+      transformBuckets["search.plan"],
+      "search.plan",
+      registered,
+      ownerEntries,
+    ),
+    "search.results": freezeEntries(
+      transformBuckets["search.results"],
+      "search.results",
+      registered,
+      ownerEntries,
+    ),
+  };
 
   const reportFailure = (hook: string, error: unknown) => {
     try {
@@ -574,10 +980,10 @@ export function buildHookRegistry(
     }
   };
 
-  const invoke = async (
+  const invoke = async <T>(
     name: HookName,
-    call: () => unknown,
-  ): Promise<unknown> => {
+    call: () => T | PromiseLike<T>,
+  ): Promise<T | undefined> => {
     const spec = Object.hasOwn(hookPoints, name) ? hookPoints[name] : undefined;
     const timeoutMs = spec?.timeoutMs;
     const isolate = spec?.isolate === true;
@@ -615,12 +1021,12 @@ export function buildHookRegistry(
     }
   };
 
-  const hooks: Hooks = Object.freeze({
+  const hooksImpl: Hooks = {
     has(name) {
-      return table.has(name);
+      return registered.has(name);
     },
     observe(name, payload) {
-      const handlers = table.get(name);
+      const handlers = observeTable[name];
       if (!handlers) {
         return;
       }
@@ -628,7 +1034,7 @@ export function buildHookRegistry(
         try {
           const result = handler(payload);
           if (isPromiseLike(result)) {
-            Promise.resolve(result).catch(error =>
+            Promise.resolve(result).catch((error: unknown) =>
               reportFailure(String(name), error),
             );
           }
@@ -638,7 +1044,7 @@ export function buildHookRegistry(
       }
     },
     async run(name, payload) {
-      const handlers = table.get(name);
+      const handlers = awaitTable[name];
       if (!handlers) {
         return;
       }
@@ -647,26 +1053,30 @@ export function buildHookRegistry(
       }
     },
     transform(name, value, info) {
-      const handlers = table.get(name);
+      const handlers = transformTable[name];
       // Hot path: with no handler installed, return synchronously with no
       // promise allocation.
       if (!handlers) {
         return value;
       }
       return (async () => {
-        let current: unknown = value;
+        let current = value;
         for (const handler of handlers) {
           const next = await invoke(name, () => handler(current, info));
           if (next !== undefined) {
             current = next;
           }
         }
-        return current as typeof value;
+        return current;
       })();
     },
-  });
+  };
+  const hooks: Hooks = Object.freeze(hooksImpl);
 
-  return { hooks, describedHooks: sortedByKey(ownerTable) };
+  return {
+    hooks,
+    describedHooks: sortedByKey(Object.fromEntries(ownerEntries)),
+  };
 }
 
 /**

@@ -7,7 +7,7 @@ import { v7 as uuidv7 } from "uuid";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
 import { finalizeResponse, service } from "../../service";
-import type { RequestContext, SettleOutcome } from "../../service";
+import type { RequestContext, SearchState, SettleOutcome } from "../../service";
 import { logger as _logger } from "../../lib/logger";
 import { getErrorHttpResponse, ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
@@ -159,7 +159,7 @@ async function searchControllerInner(
       jobIdField = { jobId };
     }
 
-    const searchState: Record<string, unknown> = {};
+    const searchState: SearchState = {};
     const reservation = await service.modules.billing.authorize({
       caller: req.caller ?? { teamId: req.auth.team_id },
       operation: "search",

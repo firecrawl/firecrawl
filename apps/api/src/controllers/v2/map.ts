@@ -5,7 +5,7 @@ import { configDotenv } from "dotenv";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
 import { finalizeResponse, service } from "../../service";
-import type { RequestContext } from "../../service";
+import type { RequestContext, ResponsePayload } from "../../service";
 import { logger as _logger } from "../../lib/logger";
 import { MapTimeoutError } from "../../lib/error";
 import type { MapResult } from "../../lib/map-utils";
@@ -18,7 +18,7 @@ configDotenv();
 
 export async function mapController(
   req: RequestWithAuth<{}, MapResponse, MapRequest>,
-  res: Response<MapResponse>,
+  res: Response<MapResponse | ResponsePayload>,
 ) {
   const zeroDataRetention = req.ctx?.zeroDataRetention === true;
   const mapId = req.requestId ?? uuidv7();

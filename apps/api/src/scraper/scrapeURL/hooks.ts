@@ -1,9 +1,11 @@
 import type { Logger } from "winston";
 import type { Document, ScrapeOptions } from "../../controllers/v2/types";
+import type { JsonObject } from "../../lib/json-types";
 import { requestContext } from "../../lib/request-context";
 import type {
   Hooks,
   JobKind,
+  ScrapeFinishedMetadata,
   ScrapeMeta,
   ScrapeState,
 } from "../../service/hooks";
@@ -62,8 +64,8 @@ export interface ScrapeFinishedOutcome {
   timeTakenMs: number;
   startedAt?: number;
   completedAt?: number;
-  costTracking?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
+  costTracking?: JsonObject;
+  metadata?: ScrapeFinishedMetadata;
 }
 
 /**

@@ -51,6 +51,7 @@ declare global {
     interface Request {
       caller?: Caller;
       ctx?: RequestContext;
+      account?: { remainingCredits: number };
       requestId?: string;
       requestWarnings?: Array<string>;
       requestDroppedUrls?: Array<string>;

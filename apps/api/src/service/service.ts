@@ -18,12 +18,7 @@ import { buildLlmProviderRegistry } from "./llm-providers";
 import type { LlmProvider, LlmProviderRegistry } from "./llm-providers";
 import { freezeModules } from "./modules";
 import type { Modules } from "./modules";
-import type {
-  BaseCaller,
-  BaseRequestContext,
-  Caller,
-  RequestContext,
-} from "./request-context";
+import type { BaseCaller, Caller } from "./request-context";
 import { buildRequestSchemaRegistry } from "./request";
 import type {
   DescribedRequestSchemas,
@@ -104,9 +99,6 @@ export interface Extension {
 }
 
 type RequiredAuthSlot = BaseCaller extends Caller ? never : "auth";
-type RequiredPolicySlot = BaseRequestContext extends RequestContext
-  ? never
-  : "policy";
 type RequiredModuleSlots = RequiredAuthSlot;
 
 /**
@@ -134,11 +126,17 @@ export type ServiceConfig = ([RequiredModuleSlots] extends [never]
   extensions?: Array<Extension>;
 };
 
+/** Structured metadata passed to `CoreParts.logger.error`. */
+export interface ServiceLogMeta {
+  hook?: string;
+  error?: unknown;
+}
+
 export interface CoreParts {
   /** The service's own extension, applied first. */
   core: Extension;
   /** Where the service reports a failure it does not pass on to a caller. */
-  logger: { error(message: string, meta: Record<string, unknown>): void };
+  logger: { error(message: string, meta: ServiceLogMeta): void };
   /** Builds compiled request schemas lazily on first `service.schemas` access. */
   buildRequestSchemas?: RequestSchemaBuilder;
 }
@@ -282,13 +280,15 @@ export function createService(
     })),
   );
 
-  const { mountRoutes, describeRoutes } = buildRouteRegistry(
+  const routeRegistry = buildRouteRegistry(
     extensions.map((extension, index) => ({
       owner: extension.name,
       isCore: index === 0,
       routes: extension.routes,
     })),
   );
+  const mountRoutes = (routers: Routers) => routeRegistry.mountRoutes(routers);
+  const describeRoutes = () => routeRegistry.describeRoutes();
 
   const { hooks, describedHooks } = buildHookRegistry(
     extensions.map(extension => ({

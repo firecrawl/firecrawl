@@ -15,6 +15,9 @@ const delimitedList = (separator = ",") => {
 const emptyStringAsDefault = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess(value => (value === "" ? undefined : value), schema);
 
+const coercedNumberWithFallback = (fallback: number) =>
+  z.coerce.number().default(fallback).catch(fallback);
+
 /* Schema */
 const configSchema = z.object({
   // Application
@@ -95,11 +98,11 @@ const configSchema = z.object({
 
   // Worker Configuration
   WORKER_PORT: z.coerce.number().default(3005),
-  NUQ_WORKER_PORT: z.coerce.number().default(3000).catch(3000),
+  NUQ_WORKER_PORT: coercedNumberWithFallback(3000),
   NUQ_WORKER_START_PORT: z.coerce.number().default(3006),
   NUQ_WORKER_COUNT: z.coerce.number().default(5),
-  NUQ_PREFETCH_WORKER_PORT: z.coerce.number().default(3011).catch(3011),
-  NUQ_RECONCILER_WORKER_PORT: z.coerce.number().default(3012).catch(3012),
+  NUQ_PREFETCH_WORKER_PORT: coercedNumberWithFallback(3011),
+  NUQ_RECONCILER_WORKER_PORT: coercedNumberWithFallback(3012),
   NUQ_WAIT_MODE: z.string().optional(),
 
   // Harness Configuration

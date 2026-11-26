@@ -10,6 +10,9 @@ export default defineConfig({
     "native/**",
     "sharedLibs/**",
   ],
+  rules: {
+    "@nkzw/no-instanceof": "off",
+  },
   overrides: [
     {
       // Extension points extended via TypeScript declaration merging.

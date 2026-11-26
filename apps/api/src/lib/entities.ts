@@ -1,4 +1,5 @@
-import type { Action } from "../controllers/v2/types";
+import type { Action, Document as V2Document } from "../controllers/v2/types";
+import type { JsonObject, JsonValue } from "./json-types";
 
 export type SkillCard = {
   id: string;
@@ -45,7 +46,7 @@ export type ExtractorOptions = {
     | "llm-extraction-from-markdown"
     | "llm-extraction-from-raw-html";
   extractionPrompt?: string;
-  extractionSchema?: Record<string, any>;
+  extractionSchema?: JsonObject;
   userPrompt?: string;
 };
 
@@ -65,13 +66,13 @@ export class Document {
   markdown?: string;
   html?: string;
   rawHtml?: string;
-  llm_extraction?: Record<string, any>;
+  llm_extraction?: JsonObject;
   createdAt?: Date;
   updatedAt?: Date;
   type?: string;
   metadata: {
     sourceURL?: string;
-    [key: string]: any;
+    [key: string]: JsonValue | undefined;
   };
   childrenLinks?: Array<string>;
   provider?: string;
@@ -146,7 +147,7 @@ interface NewsSearchResult {
   rawHtml?: string;
   links?: Array<string>;
   screenshot?: string;
-  metadata?: Record<string, any>;
+  metadata?: V2Document["metadata"];
   answer?: string;
   highlights?: string;
 }
@@ -163,7 +164,7 @@ export interface WebSearchResult {
   rawHtml?: string;
   links?: Array<string>;
   screenshot?: string;
-  metadata?: Record<string, any>;
+  metadata?: V2Document["metadata"];
   answer?: string;
   highlights?: string;
 }
@@ -194,13 +195,18 @@ export type SearchResultCountsBySource = Record<SearchResultType, number> & {
 export function countSearchResultsBySource(
   response: SearchV2Response,
 ): SearchResultCountsBySource {
-  return {
+  const counts: SearchResultCountsBySource = {
     web: response.web?.length ?? 0,
     images: response.images?.length ?? 0,
     news: response.news?.length ?? 0,
-    ...(response.tools ? { tools: response.tools.length } : {}),
-    ...(response.skills ? { skills: response.skills.length } : {}),
   };
+  if (response.tools) {
+    counts.tools = response.tools.length;
+  }
+  if (response.skills) {
+    counts.skills = response.skills.length;
+  }
+  return counts;
 }
 
 /**
@@ -239,12 +245,13 @@ export function collectSearchResultCategories(
     }
 
     const categories: Record<string, string> = {};
-    results.forEach((result, index) => {
-      const category = (result as { category?: unknown }).category;
+    for (let index = 0; index < results.length; index++) {
+      const result = results[index];
+      const category = "category" in result ? result.category : undefined;
       if (typeof category === "string" && category.length > 0) {
         categories[String(index + 1)] = category;
       }
-    });
+    }
 
     if (Object.keys(categories).length > 0) {
       collected[source] = categories;

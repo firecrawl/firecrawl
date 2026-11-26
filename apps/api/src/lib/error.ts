@@ -1,3 +1,5 @@
+import { isJsonObject, isLogMeta } from "./json-types";
+import type { JsonObject, LogMeta } from "./json-types";
 import { UNSUPPORTED_SITE_MESSAGE } from "./strings";
 
 /**
@@ -120,7 +122,7 @@ export class TransportableError extends Error {
   }
 
   /** Optional extra top-level fields merged into HTTP JSON error responses. */
-  get httpResponseFields(): Record<string, unknown> | undefined {
+  get httpResponseFields(): JsonObject | undefined {
     return undefined;
   }
 
@@ -156,11 +158,16 @@ export class TransportableError extends Error {
 export function isTransportableError(
   error: unknown,
 ): error is TransportableError {
+  if (!(error instanceof Error)) {
+    return false;
+  }
   return (
-    error instanceof Error &&
-    (error as Partial<TransportableError>)[transportableErrorBrand] === true &&
-    typeof (error as Partial<TransportableError>).code === "string" &&
-    typeof (error as Partial<TransportableError>).serialize === "function"
+    transportableErrorBrand in error &&
+    error[transportableErrorBrand] === true &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    "serialize" in error &&
+    typeof error.serialize === "function"
   );
 }
 
@@ -194,11 +201,16 @@ export abstract class FormatUnavailableError extends TransportableError {
 export function isFormatUnavailable(
   error: unknown,
 ): error is FormatUnavailableError {
+  if (!isTransportableError(error)) {
+    return false;
+  }
+  if (!("format" in error) || !("warning" in error)) {
+    return false;
+  }
   return (
-    isTransportableError(error) &&
-    typeof (error as Partial<FormatUnavailableError>).format === "string" &&
-    (error as Partial<FormatUnavailableError>).format!.length > 0 &&
-    typeof (error as Partial<FormatUnavailableError>).warning === "string"
+    typeof error.format === "string" &&
+    error.format.length > 0 &&
+    typeof error.warning === "string"
   );
 }
 
@@ -206,7 +218,8 @@ export function isFormatUnavailable(
 export function endsEngineLoop(error: unknown): boolean {
   return (
     error instanceof Error &&
-    (error as { endsEngineLoop?: unknown }).endsEngineLoop === true
+    "endsEngineLoop" in error &&
+    error.endsEngineLoop === true
   );
 }
 
@@ -214,7 +227,8 @@ export function endsEngineLoop(error: unknown): boolean {
 export function abortsEngineRace(error: unknown): boolean {
   return (
     error instanceof Error &&
-    (error as { abortsEngineRace?: unknown }).abortsEngineRace === true
+    "abortsEngineRace" in error &&
+    error.abortsEngineRace === true
   );
 }
 
@@ -222,7 +236,8 @@ export function abortsEngineRace(error: unknown): boolean {
 export function stopsCrawlRetry(error: unknown): boolean {
   return (
     error instanceof Error &&
-    (error as { stopsCrawlRetry?: unknown }).stopsCrawlRetry === true
+    "stopsCrawlRetry" in error &&
+    error.stopsCrawlRetry === true
   );
 }
 
@@ -230,8 +245,8 @@ export function stopsCrawlRetry(error: unknown): boolean {
 export function shouldPropagateFromExtraction(error: unknown): boolean {
   return (
     error instanceof Error &&
-    (error as { propagateFromExtraction?: unknown }).propagateFromExtraction ===
-      true
+    "propagateFromExtraction" in error &&
+    error.propagateFromExtraction === true
   );
 }
 
@@ -239,7 +254,11 @@ interface ErrorHttpResponse {
   status: number;
   code?: ErrorCode;
   message: string;
-  extraFields?: Record<string, unknown>;
+  extraFields?: JsonObject;
+}
+
+function isErrorCode(value: unknown): value is ErrorCode {
+  return typeof value === "string" && value.length > 0;
 }
 
 /**
@@ -248,60 +267,48 @@ interface ErrorHttpResponse {
 export function getErrorHttpResponse(
   error: unknown,
 ): ErrorHttpResponse | undefined {
-  if (!(error instanceof Error)) {
+  if (!(error instanceof Error) || !("httpStatus" in error)) {
     return undefined;
   }
-  const candidate = error as Error & {
-    httpStatus?: unknown;
-    code?: unknown;
-    httpResponseFields?: unknown;
-  };
+  const status = error.httpStatus;
   if (
-    typeof candidate.httpStatus !== "number" ||
-    !Number.isInteger(candidate.httpStatus) ||
-    candidate.httpStatus < 100 ||
-    candidate.httpStatus > 599
+    typeof status !== "number" ||
+    !Number.isInteger(status) ||
+    status < 100 ||
+    status > 599
   ) {
     return undefined;
   }
-  const extraFields =
-    candidate.httpResponseFields &&
-    typeof candidate.httpResponseFields === "object" &&
-    !Array.isArray(candidate.httpResponseFields)
-      ? (candidate.httpResponseFields as Record<string, unknown>)
-      : undefined;
-  return {
-    status: candidate.httpStatus,
-    ...(typeof candidate.code === "string"
-      ? { code: candidate.code as ErrorCode }
-      : {}),
+  const response: ErrorHttpResponse = {
+    status,
     message: error.message,
-    ...(extraFields ? { extraFields } : {}),
   };
+  if ("code" in error && isErrorCode(error.code)) {
+    response.code = error.code;
+  }
+  if ("httpResponseFields" in error && isJsonObject(error.httpResponseFields)) {
+    response.extraFields = error.httpResponseFields;
+  }
+  return response;
 }
 
 export interface ErrorScrapeLog {
   errorType: string;
   message: string;
-  context?: Record<string, unknown>;
+  context?: LogMeta;
 }
 
 /**
  * Reads custom scrapeURL warning log metadata from an error, when declared.
  */
 export function getErrorScrapeLog(error: unknown): ErrorScrapeLog | undefined {
-  if (!(error instanceof Error)) {
+  if (!(error instanceof Error) || !("scrapeLog" in error)) {
     return undefined;
   }
-  const raw = (error as { scrapeLog?: unknown }).scrapeLog;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+  const candidate = error.scrapeLog;
+  if (!isJsonObject(candidate)) {
     return undefined;
   }
-  const candidate = raw as {
-    errorType?: unknown;
-    message?: unknown;
-    context?: unknown;
-  };
   if (
     typeof candidate.errorType !== "string" ||
     candidate.errorType.length === 0 ||
@@ -310,24 +317,21 @@ export function getErrorScrapeLog(error: unknown): ErrorScrapeLog | undefined {
   ) {
     return undefined;
   }
-  const context =
-    candidate.context &&
-    typeof candidate.context === "object" &&
-    !Array.isArray(candidate.context)
-      ? (candidate.context as Record<string, unknown>)
-      : undefined;
-  return {
+  const log: ErrorScrapeLog = {
     errorType: candidate.errorType,
     message: candidate.message,
-    ...(context ? { context } : {}),
   };
+  if (isLogMeta(candidate.context)) {
+    log.context = candidate.context;
+  }
+  return log;
 }
 
 /** A class of transportable error, registered under the codes it carries. */
 export interface TransportableErrorClass {
   readonly codes: ReadonlyArray<ErrorCode>;
   /** Rebuilds an error from the parsed payload its `serialize()` wrote. */
-  deserialize(code: ErrorCode, data: any): TransportableError;
+  deserialize(code: ErrorCode, data: unknown): TransportableError;
 }
 
 /**
@@ -367,6 +371,11 @@ const PROCESSING_ESTIMATE_BASE_MS = 60_000;
  * an estimate that is early twice reads as magic, one that is late once
  * reads as broken.
  */
+interface TimeoutProcessingOutcome {
+  message: string;
+  details: ScrapeTimeoutProcessingDetails;
+}
+
 export function composeTimeoutProcessing(args: {
   pagesEstimate?: number;
   submittedAtMs: number;
@@ -379,7 +388,7 @@ export function composeTimeoutProcessing(args: {
    * server sees measured lane throughput and real queue depth, which
    * the static formula cannot. */
   serverEstimate?: { remainingMs: number; observedAtMs: number };
-}): { message: string; details: ScrapeTimeoutProcessingDetails } {
+}): TimeoutProcessingOutcome {
   const perPageMs = args.perPageMs ?? PROCESSING_ESTIMATE_PER_PAGE_MS;
   const pages = args.pagesEstimate;
   const totalMs =
@@ -431,15 +440,30 @@ export function composeTimeoutProcessing(args: {
   };
 }
 
+function isScrapeTimeoutProcessingDetails(
+  value: unknown,
+): value is ScrapeTimeoutProcessingDetails {
+  return (
+    isJsonObject(value) &&
+    value.state === "processing_continues" &&
+    (value.jobStatus === "queued" || value.jobStatus === "running") &&
+    typeof value.estimatedRemainingSeconds === "number" &&
+    typeof value.retryAfterSeconds === "number"
+  );
+}
+
 /** Safe accessor for the processing details on a (possibly deserialized)
  * SCRAPE_TIMEOUT error. */
 export function getTimeoutProcessingDetails(
   e: unknown,
 ): ScrapeTimeoutProcessingDetails | undefined {
-  if (isTransportableError(e) && e.code === "SCRAPE_TIMEOUT") {
-    const p = (e as ScrapeJobTimeoutError).processing;
-    if (p && p.state === "processing_continues") {
-      return p;
+  if (
+    isTransportableError(e) &&
+    e.code === "SCRAPE_TIMEOUT" &&
+    "processing" in e
+  ) {
+    if (isScrapeTimeoutProcessingDetails(e.processing)) {
+      return e.processing;
     }
   }
   return undefined;

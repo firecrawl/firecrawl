@@ -17,11 +17,36 @@ export function testService(
   overrides: Partial<Modules> = {},
   extensions: Array<Extension> = [],
 ): Service {
-  const modules: Record<string, unknown> = { ...base };
-  for (const [key, value] of Object.entries(overrides)) {
-    if (value !== undefined) {
-      modules[key] = value;
-    }
+  const modules: Partial<Modules> = { ...base };
+  if (overrides.auth !== undefined) {
+    modules.auth = overrides.auth;
+  }
+  if (overrides.billing !== undefined) {
+    modules.billing = overrides.billing;
+  }
+  if (overrides.blocklist !== undefined) {
+    modules.blocklist = overrides.blocklist;
+  }
+  if (overrides.limits !== undefined) {
+    modules.limits = overrides.limits;
+  }
+  if (overrides.messages !== undefined) {
+    modules.messages = overrides.messages;
+  }
+  if (overrides.policy !== undefined) {
+    modules.policy = overrides.policy;
+  }
+  if (overrides.uploads !== undefined) {
+    modules.uploads = overrides.uploads;
+  }
+  if (overrides.jobStore !== undefined) {
+    modules.jobStore = overrides.jobStore;
+  }
+  if (overrides.idempotency !== undefined) {
+    modules.idempotency = overrides.idempotency;
+  }
+  if (overrides.webhooks !== undefined) {
+    modules.webhooks = overrides.webhooks;
   }
   return createService({ modules, extensions }, parts);
 }

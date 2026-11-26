@@ -19,6 +19,17 @@ let asserted = false;
 const report = (problems: Array<string>) =>
   `Invalid environment:\n${problems.map(problem => `  ${problem}`).join("\n")}`;
 
+function hasThrowingEnvGetters<Schema extends z.ZodObject>(
+  candidate: Partial<z.output<Schema>>,
+  keys: ReadonlyArray<string>,
+): candidate is z.output<Schema> {
+  return keys.every(
+    key =>
+      typeof Object.getOwnPropertyDescriptor(candidate, key)?.get ===
+      "function",
+  );
+}
+
 /**
  * Declares the environment variables one owner reads and returns their parsed
  * values. The schema is an object with one key per variable, and a check
@@ -71,16 +82,19 @@ export function defineEnv<Schema extends z.ZodObject>(
     throw new Error(report(problems));
   }
 
-  const unreadable = {};
+  const unreadable: Partial<z.output<Schema>> = {};
   for (const key of keys) {
     Object.defineProperty(unreadable, key, {
       enumerable: true,
-      get() {
+      get(): never {
         throw new Error(report(problems));
       },
     });
   }
-  return unreadable as z.output<Schema>;
+  if (!hasThrowingEnvGetters<Schema>(unreadable, keys)) {
+    throw new Error(report(problems));
+  }
+  return unreadable;
 }
 
 /**

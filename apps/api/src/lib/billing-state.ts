@@ -2,10 +2,13 @@
  * Type augmentations for billing state carried between controllers, workers,
  * and custom billing module implementations. Imports only types.
  */
-import type { RequestWithAuth } from "../controllers/v2/types";
-import type { ScrapeOptions } from "../controllers/v2/types";
+import type { Request } from "express";
+import type { RequestWithAuth, ScrapeOptions } from "../controllers/v2/types";
+import type { WebSearchResult } from "./entities";
+import type { JsonObject } from "./json-types";
 import type { InternalOptions } from "../scraper/scrapeURL";
 import type { FeatureFlag } from "../scraper/scrapeURL/engines";
+import type { ScrapeJobSingleUrls } from "../types";
 
 declare module "../service/modules" {
   interface AuthorizeState {
@@ -13,7 +16,7 @@ declare module "../service/modules" {
      * Express request carried for preflight and reservation checks.
      * A billing module may update request auth flags (such as `hostedMcp` or `agentIndexOnly`) during preflight.
      */
-    req?: RequestWithAuth<any, any, any>;
+    req?: Request & { auth?: RequestWithAuth["auth"] };
     /** Explicit minimum units configured on the route middleware. */
     minimum?: number;
     /** Optional metering feature identifier configured on the route. */
@@ -49,7 +52,11 @@ declare module "../service/modules" {
   interface SearchChargeState {
     enterprise?: Array<"default" | "anon" | "zdr">;
     threatDecisions?: Array<unknown>;
-    [key: string]: unknown;
+    routedResults?: Array<unknown>;
+    toolsOnly?: boolean;
+    toolsUnavailable?: boolean;
+    nonBillableResultsCount?: number;
+    indexResultsCount?: number;
   }
 
   interface MapChargeState {
@@ -74,7 +81,36 @@ declare module "../service/hooks" {
     keylessReserved?: boolean;
     error?: Error | null;
     unsupportedFeatures?: Set<FeatureFlag>;
-    exchange?: Record<string, unknown>;
+    exchange?: JsonObject;
     threatDecisions?: Array<unknown>;
+  }
+
+  interface ScrapeFinishedMetadata {
+    jobData?: ScrapeJobSingleUrls;
+    exchange?: JsonObject;
+    threatDecisions?: Array<unknown>;
+  }
+
+  interface MapState {
+    skipDiscovery?: boolean;
+    skipScope?: boolean;
+    skipCosine?: boolean;
+    threatDecisions?: Array<unknown>;
+    filtered?: boolean;
+  }
+
+  interface SearchState {
+    routedResults?: Array<WebSearchResult>;
+    toolsOnly?: boolean;
+    toolsUnavailable?: boolean;
+    threatDecisions?: Array<unknown>;
+    nonBillableResultsCount?: number;
+    indexResultsCount?: number;
+    indexCategory?:
+      | string
+      | {
+          table: string;
+          indexResultsCount?: number;
+        };
   }
 }

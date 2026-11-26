@@ -12,6 +12,7 @@ import {
 } from "../../controllers/v2/types";
 import type { Document, TeamFlags } from "../../controllers/v2/types";
 import type { ScrapeOptions } from "../../service/request";
+import type { JsonObject } from "../../lib/json-types";
 import { logger as _logger } from "../../lib/logger";
 import type { Engine, EngineScrapeResult, FeatureFlag } from "./engines";
 import {
@@ -107,7 +108,7 @@ export type ScrapeUrlResponse =
       success: true;
       document: Document;
       unsupportedFeatures?: Set<FeatureFlag>;
-      exchange?: Record<string, unknown>;
+      exchange?: JsonObject;
       threatDecisions?: Array<unknown>;
       state?: ScrapeState;
     }

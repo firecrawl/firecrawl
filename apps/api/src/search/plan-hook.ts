@@ -1,4 +1,5 @@
 import type { Logger } from "winston";
+import type { SearchState } from "../service/hooks";
 import type { SearchRequest } from "../service/request";
 import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
@@ -8,7 +9,7 @@ export async function applySearchPlanHook<T extends { type: string }>(
   info: {
     ctx: RequestContext;
     body: SearchRequest;
-    state?: Record<string, unknown>;
+    state?: SearchState;
     logger?: Logger;
   },
 ): Promise<{ query: string; limit: number; sources: Array<T> }> {

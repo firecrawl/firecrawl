@@ -58,12 +58,15 @@ export interface RouteRegistrySource {
   routes?: RouteRegistrar;
 }
 
+type ExpressMatcherResult = boolean | object | null | undefined;
+type ExpressHandlerFn = (...args: Array<never>) => void;
+
 interface InternalExpressLayer {
   name?: string;
   slash?: boolean;
-  matchers?: ReadonlyArray<(path: string) => unknown>;
+  matchers?: ReadonlyArray<(path: string) => ExpressMatcherResult>;
   regexp?: RegExp;
-  handle?: ((...args: Array<unknown>) => unknown) & {
+  handle?: ExpressHandlerFn & {
     stack?: Array<InternalExpressLayer>;
   };
   route?: {
@@ -72,9 +75,54 @@ interface InternalExpressLayer {
     stack: Array<{
       name?: string;
       method?: string;
-      handle?: (...args: Array<unknown>) => unknown;
+      handle?: ExpressHandlerFn;
     }>;
   } | null;
+}
+
+interface ExpressModuleLike {
+  Router: {
+    (): Router;
+    prototype: {
+      use: (...args: Array<unknown>) => Router;
+    };
+  };
+}
+
+function isExpressModuleLike(value: unknown): value is ExpressModuleLike {
+  if (
+    (typeof value !== "object" && typeof value !== "function") ||
+    value === null ||
+    !("Router" in value) ||
+    typeof value.Router !== "function"
+  ) {
+    return false;
+  }
+  const proto: unknown = value.Router.prototype;
+  return (
+    typeof proto === "object" &&
+    proto !== null &&
+    "use" in proto &&
+    typeof proto.use === "function"
+  );
+}
+
+function requireExpressModule(): ExpressModuleLike {
+  const loaded: unknown = require("express");
+  if (!isExpressModuleLike(loaded)) {
+    throw new Error("express module failed to export Router");
+  }
+  return loaded;
+}
+
+function isInternalExpressLayer(value: unknown): value is InternalExpressLayer {
+  return typeof value === "object" && value !== null;
+}
+
+function isInternalExpressLayerArray(
+  value: unknown,
+): value is Array<InternalExpressLayer> {
+  return Array.isArray(value) && value.every(isInternalExpressLayer);
 }
 
 type MountMatcher =
@@ -108,15 +156,22 @@ function getRouterStack(
   if (!isRouterLike(router)) {
     return undefined;
   }
-  const candidate = router as {
-    stack?: unknown;
-    router?: { stack?: unknown };
-  };
-  if (Array.isArray(candidate.stack)) {
-    return candidate.stack as Array<InternalExpressLayer>;
-  }
-  if (candidate.router && Array.isArray(candidate.router.stack)) {
-    return candidate.router.stack as Array<InternalExpressLayer>;
+  if (
+    (typeof router === "object" || typeof router === "function") &&
+    router !== null
+  ) {
+    if ("stack" in router && isInternalExpressLayerArray(router.stack)) {
+      return router.stack;
+    }
+    if (
+      "router" in router &&
+      typeof router.router === "object" &&
+      router.router !== null &&
+      "stack" in router.router &&
+      isInternalExpressLayerArray(router.router.stack)
+    ) {
+      return router.router.stack;
+    }
   }
   return undefined;
 }
@@ -211,7 +266,7 @@ function middlewareApplies(
   }
   candidatePath = joinRoutePaths(candidatePath, rawPath);
 
-  if (Array.isArray(layer.matchers)) {
+  if (layer.matchers && layer.matchers.length > 0) {
     const alignedMountMatchers =
       mountMatchers && mountMatchers.length === layer.matchers.length
         ? mountMatchers
@@ -246,7 +301,7 @@ function middlewareApplies(
 }
 
 function handlerName(
-  fn: ((...args: Array<unknown>) => unknown) | undefined,
+  fn: ExpressHandlerFn | undefined,
   fallback?: string,
 ): string {
   if (fn && fn.name) {
@@ -287,13 +342,11 @@ function parseMountMatchers(first: unknown): Array<MountMatcher> {
  * mount path matchers onto the newly added stack layers.
  */
 function withMountTracking<T>(
-  expressModule: typeof import("express"),
+  expressModule: ExpressModuleLike,
   mountPaths: WeakMap<object, Array<MountMatcher>>,
   fn: () => T,
 ): T {
-  const routerProto = expressModule.Router.prototype as {
-    use: (...args: Array<unknown>) => unknown;
-  };
+  const routerProto = expressModule.Router.prototype;
   const originalUse = routerProto.use;
   routerProto.use = function trackedUse(
     this: { stack?: Array<InternalExpressLayer> },
@@ -345,19 +398,24 @@ function collectRoutesFromStack(
 
       for (const rawPath of paths) {
         const fullPath = joinRoutePaths(basePath, rawPath);
-        const matchingScoped = scopedMiddleware
-          .filter(entry => middlewareApplies(entry, ancestors, rawPath))
-          .map(entry => entry.name);
+        const matchingScoped: Array<string> = [];
+        for (const entry of scopedMiddleware) {
+          if (middlewareApplies(entry, ancestors, rawPath)) {
+            matchingScoped.push(entry.name);
+          }
+        }
 
         for (const method of methodsToEmit) {
-          const routeHandlers = route.stack
-            .filter(
-              step =>
-                step.method === undefined ||
-                method === "_all" ||
-                step.method === method,
-            )
-            .map(step => handlerName(step.handle, step.name));
+          const routeHandlers: Array<string> = [];
+          for (const step of route.stack) {
+            if (
+              step.method === undefined ||
+              method === "_all" ||
+              step.method === method
+            ) {
+              routeHandlers.push(handlerName(step.handle, step.name));
+            }
+          }
 
           out.push({
             owner,
@@ -407,6 +465,11 @@ function collectRoutesFromStack(
   }
 }
 
+interface BuiltRouteRegistry {
+  mountRoutes(routers: Routers): void;
+  describeRoutes(): Array<DescribedRoute>;
+}
+
 /**
  * Validates extension route registrars and returns `mountRoutes` and lazy
  * `describeRoutes`. Non-core extensions mount first in list order; core mounts
@@ -416,10 +479,7 @@ function collectRoutesFromStack(
  */
 export function buildRouteRegistry(
   sources: ReadonlyArray<RouteRegistrySource>,
-): {
-  mountRoutes(routers: Routers): void;
-  describeRoutes(): Array<DescribedRoute>;
-} {
+): BuiltRouteRegistry {
   const nonCore: Array<{ owner: string; register: RouteRegistrar }> = [];
   let coreEntry: { owner: string; register: RouteRegistrar } | undefined;
 
@@ -449,7 +509,7 @@ export function buildRouteRegistry(
       return structuredClone(cachedDescription);
     }
 
-    const expressModule = require("express") as typeof import("express");
+    const expressModule = requireExpressModule();
     const collected: Array<DescribedRoute> = [];
     const mountPaths = new WeakMap<object, Array<MountMatcher>>();
 
@@ -504,7 +564,7 @@ export function buildRouteRegistry(
 
       // Collect route metadata during the live mount so a later `describe()`
       // does not execute registrars a second time or diverge from mounted routes.
-      const expressModule = require("express") as typeof import("express");
+      const expressModule = requireExpressModule();
       const mountPaths = new WeakMap<object, Array<MountMatcher>>();
       const collected: Array<DescribedRoute> = [];
 
