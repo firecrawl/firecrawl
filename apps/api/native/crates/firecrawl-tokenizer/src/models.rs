@@ -17,17 +17,34 @@ const FIM_PREFIX: &str = "<|fim_prefix|>";
 const FIM_MIDDLE: &str = "<|fim_middle|>";
 const FIM_SUFFIX: &str = "<|fim_suffix|>";
 
-/// Longest byte length among all disallowed special token literals.
-pub(crate) const MAX_SPECIAL_TOKEN_BYTES: usize = ENDOFPROMPT.len();
-
 const O200K_DISALLOWED: &[&str] = &[ENDOFTEXT, ENDOFPROMPT];
 const CL100K_DISALLOWED: &[&str] = &[ENDOFTEXT, FIM_PREFIX, FIM_MIDDLE, FIM_SUFFIX, ENDOFPROMPT];
 const P50K_EDIT_DISALLOWED: &[&str] = &[ENDOFTEXT, FIM_PREFIX, FIM_MIDDLE, FIM_SUFFIX];
 const R50K_DISALLOWED: &[&str] = &[ENDOFTEXT];
 
 impl Encoding {
-  /// Resolve an OpenAI model identifier to its exact BPE encoding.
+  /// Resolve an OpenAI model identifier to its BPE encoding.
+  ///
+  /// Checks exact model IDs first, then OpenAI model family prefixes and
+  /// `ft:` fine-tuned model IDs. Non-OpenAI and unknown IDs return an error.
   pub fn from_model(model: &str) -> Result<Self, TokenizerError> {
+    if let Some(enc) = Self::resolve_bare(model) {
+      return Ok(enc);
+    }
+    if let Some(rest) = model.strip_prefix("ft:")
+      && let Some(base) = rest.split(':').next()
+      && let Some(enc) = Self::resolve_bare(base)
+    {
+      return Ok(enc);
+    }
+    Err(TokenizerError::UnknownModel(model.to_string()))
+  }
+
+  fn resolve_bare(model: &str) -> Option<Self> {
+    Self::from_exact_model(model).or_else(|| Self::from_model_prefix(model))
+  }
+
+  fn from_exact_model(model: &str) -> Option<Self> {
     match model {
       "gpt-4o"
       | "gpt-4o-2024-05-13"
@@ -60,10 +77,12 @@ impl Encoding {
       | "o4-mini-2025-04-16"
       | "chatgpt-4o-latest"
       | "gpt-4o-realtime"
+      | "gpt-4o-realtime-preview"
       | "gpt-4o-realtime-preview-2024-10-01"
       | "gpt-4o-realtime-preview-2024-12-17"
       | "gpt-4o-mini-realtime-preview"
       | "gpt-4o-mini-realtime-preview-2024-12-17"
+      | "gpt-realtime"
       | "gpt-4.1"
       | "gpt-4.1-2025-04-14"
       | "gpt-4.1-mini"
@@ -74,28 +93,14 @@ impl Encoding {
       | "gpt-4.5-preview-2025-02-27"
       | "gpt-5"
       | "gpt-5-2025-08-07"
-      | "gpt-5-nano"
-      | "gpt-5-nano-2025-08-07"
       | "gpt-5-mini"
       | "gpt-5-mini-2025-08-07"
-      | "gpt-5-chat-latest" => Ok(Self::O200kBase),
+      | "gpt-5-nano"
+      | "gpt-5-nano-2025-08-07"
+      | "gpt-5-chat"
+      | "gpt-5-chat-latest" => Some(Self::O200kBase),
 
-      "davinci-002"
-      | "babbage-002"
-      | "text-embedding-ada-002"
-      | "text-embedding-3-small"
-      | "text-embedding-3-large"
-      | "gpt-3.5-turbo"
-      | "gpt-35-turbo"
-      | "gpt-3.5-turbo-0301"
-      | "gpt-3.5-turbo-0613"
-      | "gpt-3.5-turbo-1106"
-      | "gpt-3.5-turbo-0125"
-      | "gpt-3.5-turbo-16k"
-      | "gpt-3.5-turbo-16k-0613"
-      | "gpt-3.5-turbo-instruct"
-      | "gpt-3.5-turbo-instruct-0914"
-      | "gpt-4"
+      "gpt-4"
       | "gpt-4-0314"
       | "gpt-4-0613"
       | "gpt-4-32k"
@@ -106,14 +111,29 @@ impl Encoding {
       | "gpt-4-turbo-preview"
       | "gpt-4-1106-preview"
       | "gpt-4-0125-preview"
-      | "gpt-4-vision-preview" => Ok(Self::Cl100kBase),
+      | "gpt-4-vision-preview"
+      | "gpt-3.5-turbo"
+      | "gpt-3.5"
+      | "gpt-3.5-turbo-16k"
+      | "gpt-3.5-turbo-0301"
+      | "gpt-3.5-turbo-0613"
+      | "gpt-3.5-turbo-1106"
+      | "gpt-3.5-turbo-0125"
+      | "gpt-3.5-turbo-16k-0613"
+      | "gpt-3.5-turbo-instruct"
+      | "gpt-3.5-turbo-instruct-0914"
+      | "text-embedding-ada-002"
+      | "text-embedding-3-small"
+      | "text-embedding-3-large"
+      | "davinci-002"
+      | "babbage-002" => Some(Self::Cl100kBase),
 
       "text-davinci-003" | "text-davinci-002" | "code-davinci-002" | "code-davinci-001"
       | "code-cushman-002" | "code-cushman-001" | "davinci-codex" | "cushman-codex" => {
-        Ok(Self::P50kBase)
+        Some(Self::P50kBase)
       }
 
-      "text-davinci-edit-001" | "code-davinci-edit-001" => Ok(Self::P50kEdit),
+      "text-davinci-edit-001" | "code-davinci-edit-001" => Some(Self::P50kEdit),
 
       "text-davinci-001"
       | "text-curie-001"
@@ -132,12 +152,37 @@ impl Encoding {
       | "text-search-babbage-doc-001"
       | "text-search-ada-doc-001"
       | "code-search-babbage-code-001"
-      | "code-search-ada-code-001" => Ok(Self::R50kBase),
+      | "code-search-ada-code-001" => Some(Self::R50kBase),
 
-      "gpt2" => Ok(Self::Gpt2),
+      "gpt2" | "gpt-2" => Some(Self::Gpt2),
 
-      _ => Err(TokenizerError::UnknownModel(model.to_string())),
+      _ => None,
     }
+  }
+
+  fn from_model_prefix(model: &str) -> Option<Self> {
+    if model.starts_with("o1-")
+      || model.starts_with("o3-")
+      || model.starts_with("o4-mini-")
+      || model.starts_with("gpt-5-")
+      || model.starts_with("gpt-4.5-")
+      || model.starts_with("gpt-4.1-")
+      || model.starts_with("chatgpt-4o-")
+      || model.starts_with("gpt-4o-")
+      || model.starts_with("gpt-realtime-")
+    {
+      return Some(Self::O200kBase);
+    }
+
+    if model.starts_with("gpt-4-")
+      || model.starts_with("gpt-3.5-turbo-")
+      || model.starts_with("gpt-35-turbo-")
+      || model.starts_with("text-embedding-ada-002-")
+    {
+      return Some(Self::Cl100kBase);
+    }
+
+    None
   }
 
   /// Canonical encoding name understood by the underlying BPE registry.

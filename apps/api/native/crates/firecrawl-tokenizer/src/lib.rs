@@ -4,7 +4,7 @@ mod models;
 
 use std::fmt;
 
-use crate::chunk::{CHUNK_BYTES, find_disallowed_special_in_chunk, next_chunk_end};
+use crate::chunk::{CHUNK_BYTES, next_chunk_end};
 pub use crate::models::Encoding;
 use crate::models::find_disallowed_special;
 
@@ -121,44 +121,42 @@ pub fn trim_to_token_limit(
 
 /// Fits `text` to a prefix of at most `max_tokens` tokens for `model_id`.
 ///
-/// Uses a byte-length fast path (every BPE token encodes at least one UTF-8
-/// byte) and scans in piece-safe 64 KiB chunks so oversized documents stop as
-/// soon as the token budget is exceeded.
+/// Validates the full input for disallowed special tokens, applies a
+/// byte-length fast path, and scans in proven piece-safe 64 KiB chunks so
+/// oversized documents stop as soon as the token budget is exceeded. Falls back
+/// to encoding the unsplit remainder if a chunk contains no proven piece
+/// boundary, preserving exact parity with full-text BPE trimming.
 pub fn fit_to_tokens(
   text: &str,
   max_tokens: usize,
   model_id: &str,
 ) -> Result<FitOutput, TokenizerError> {
+  fit_to_tokens_with_chunk_size(text, max_tokens, model_id, CHUNK_BYTES)
+}
+
+fn fit_to_tokens_with_chunk_size(
+  text: &str,
+  max_tokens: usize,
+  model_id: &str,
+  chunk_bytes: usize,
+) -> Result<FitOutput, TokenizerError> {
   let encoding = Encoding::from_model(model_id)?;
+  if let Some((_, token)) = find_disallowed_special(encoding, text) {
+    return Err(TokenizerError::DisallowedSpecialToken(token));
+  }
   if text.len() <= max_tokens {
-    if let Some((_, token)) = find_disallowed_special(encoding, text) {
-      return Err(TokenizerError::DisallowedSpecialToken(token));
-    }
     return Ok(FitOutput {
       text: text.to_string(),
       trimmed: false,
     });
   }
 
-  fit_to_tokens_chunked(text, max_tokens, encoding, CHUNK_BYTES)
-}
-
-fn fit_to_tokens_chunked(
-  text: &str,
-  max_tokens: usize,
-  encoding: Encoding,
-  chunk_bytes: usize,
-) -> Result<FitOutput, TokenizerError> {
   let bpe = cache::encoder(encoding)?;
   let mut used: usize = 0;
   let mut start: usize = 0;
 
   while start < text.len() {
-    let end = next_chunk_end(text, start, chunk_bytes);
-    if let Some(token) = find_disallowed_special_in_chunk(encoding, text, start, end) {
-      return Err(TokenizerError::DisallowedSpecialToken(token));
-    }
-
+    let end = next_chunk_end(text, start, chunk_bytes).unwrap_or(text.len());
     let Some(chunk) = text.get(start..end) else {
       break;
     };

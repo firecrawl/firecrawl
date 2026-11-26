@@ -2,7 +2,7 @@ use hegel::TestCase;
 use hegel::generators as gs;
 
 use crate::{
-  Encoding, TokenizerError, cache, count_tokens, fit_to_tokens, fit_to_tokens_chunked,
+  Encoding, TokenizerError, cache, count_tokens, fit_to_tokens, fit_to_tokens_with_chunk_size,
   trim_to_token_limit,
 };
 
@@ -29,8 +29,14 @@ fn arbitrary_utf8_never_panics_and_satisfies_invariants(tc: TestCase) {
 
       let trimmed = trim_to_token_limit(&input, max_tokens, model);
       assert!(trimmed.is_ok());
-      if let Ok(trimmed) = trimmed {
+      let fitted = fit_to_tokens(&input, max_tokens, model);
+      assert!(fitted.is_ok());
+
+      if let (Ok(trimmed), Ok(fitted)) = (trimmed, fitted) {
         assert_eq!(trimmed.original_tokens, count);
+        assert_eq!(fitted.trimmed, trimmed.trimmed);
+        assert_eq!(fitted.text, trimmed.text);
+
         if count <= max_tokens {
           assert!(!trimmed.trimmed);
           assert_eq!(trimmed.text, input);
@@ -38,21 +44,24 @@ fn arbitrary_utf8_never_panics_and_satisfies_invariants(tc: TestCase) {
         } else {
           assert!(trimmed.trimmed);
           assert_eq!(trimmed.num_tokens, max_tokens);
+          // Re-counting holds whenever lossy UTF-8 replacement did not expand
+          // a split multi-byte sequence into a 3-byte U+FFFD trailer.
+          if !fitted.text.ends_with('\u{FFFD}') {
+            assert!(matches!(
+              count_tokens(&fitted.text, model),
+              Ok(tokens) if tokens <= max_tokens
+            ));
+          }
         }
-      }
-
-      let fitted = fit_to_tokens(&input, max_tokens, model);
-      assert!(fitted.is_ok());
-      if let Ok(fitted) = fitted
-        && input.len() <= max_tokens
-      {
-        assert!(!fitted.trimmed);
-        assert_eq!(fitted.text, input);
       }
     }
     Err(TokenizerError::DisallowedSpecialToken(_)) => {
       assert!(matches!(
         trim_to_token_limit(&input, max_tokens, model),
+        Err(TokenizerError::DisallowedSpecialToken(_))
+      ));
+      assert!(matches!(
+        fit_to_tokens(&input, max_tokens, model),
         Err(TokenizerError::DisallowedSpecialToken(_))
       ));
     }
@@ -114,35 +123,24 @@ fn roundtrip_and_trim_idempotence(tc: TestCase) {
 }
 
 #[hegel::test]
-fn chunked_fit_matches_full_trim_on_piece_safe_prose(tc: TestCase) {
-  let words = tc.draw(
-    gs::vecs(gs::from_regex("[A-Za-z0-9]{1,12}"))
-      .min_size(1)
-      .max_size(80),
-  );
-  let sep_newline = tc.draw(gs::booleans());
-  let text = words.join(if sep_newline { "\n" } else { " " });
+fn chunked_fit_matches_full_trim_for_arbitrary_utf8(tc: TestCase) {
+  let input = tc.draw(gs::text());
   let max_tokens = tc.draw(gs::integers::<usize>().min_value(0).max_value(120));
+  let chunk_bytes = tc.draw(gs::integers::<usize>().min_value(1).max_value(64));
   let model_idx = tc.draw(gs::integers::<usize>().min_value(0).max_value(5));
   let model = *ALL_ENCODING_MODELS.get(model_idx).unwrap_or(&"gpt-4o");
 
-  let encoding = Encoding::from_model(model);
-  let full = trim_to_token_limit(&text, max_tokens, model);
-  assert!(encoding.is_ok());
-  assert!(full.is_ok());
-  if let (Ok(encoding), Ok(full)) = (encoding, full) {
-    // Force multiple chunks on short generated inputs to exercise piece-safe cuts.
-    let chunked = fit_to_tokens_chunked(&text, max_tokens, encoding, 24);
-    assert!(chunked.is_ok());
-    if let Ok(chunked) = chunked {
-      assert_eq!(chunked.trimmed, full.trimmed);
-      assert_eq!(chunked.text, full.text);
-    }
-  }
+  let full = trim_to_token_limit(&input, max_tokens, model);
+  let chunked = fit_to_tokens_with_chunk_size(&input, max_tokens, model, chunk_bytes);
+
+  assert_eq!(
+    chunked.map(|c| (c.trimmed, c.text)),
+    full.map(|f| (f.trimmed, f.text))
+  );
 }
 
 #[hegel::test]
-fn disallowed_special_tokens_are_rejected_including_across_chunk_boundaries(tc: TestCase) {
+fn disallowed_special_tokens_are_rejected_including_after_budget(tc: TestCase) {
   let prefix = tc.draw(gs::from_regex("[a-z ]{0,48}"));
   let suffix = tc.draw(gs::from_regex("[a-z ]{0,48}"));
   let model_idx = tc.draw(gs::integers::<usize>().min_value(0).max_value(5));
@@ -173,10 +171,10 @@ fn disallowed_special_tokens_are_rejected_including_across_chunk_boundaries(tc: 
       Err(TokenizerError::DisallowedSpecialToken(special))
     );
 
-    // Small chunk size forces chunk boundaries across the injected special token.
+    // Reject even when max_tokens would otherwise early-exit before the special token.
     let chunk_size = prefix.len().saturating_add(4).max(8);
     assert_eq!(
-      fit_to_tokens_chunked(&text, 1_000, encoding, chunk_size),
+      fit_to_tokens_with_chunk_size(&text, 1, model, chunk_size),
       Err(TokenizerError::DisallowedSpecialToken(special))
     );
   }
@@ -198,5 +196,55 @@ fn split_multibyte_utf8_replaces_trailing_fragment_with_fffd() {
       assert_eq!(trimmed.original_tokens, count);
       assert_eq!(trimmed.text, "\u{FFFD}");
     }
+  }
+}
+
+#[test]
+fn resolves_configured_openai_models_and_rejects_non_openai() {
+  assert_eq!(Encoding::from_model("gpt2"), Ok(Encoding::Gpt2));
+  assert_eq!(Encoding::from_model("gpt-2"), Ok(Encoding::Gpt2));
+  assert_eq!(
+    Encoding::from_model("gpt-4o-realtime-preview"),
+    Ok(Encoding::O200kBase)
+  );
+  assert_eq!(
+    Encoding::from_model("gpt-4o-realtime-preview-2025-06-03"),
+    Ok(Encoding::O200kBase)
+  );
+  assert_eq!(Encoding::from_model("gpt-5-chat"), Ok(Encoding::O200kBase));
+  assert_eq!(
+    Encoding::from_model("gpt-5-chat-latest"),
+    Ok(Encoding::O200kBase)
+  );
+  assert_eq!(Encoding::from_model("o3-pro"), Ok(Encoding::O200kBase));
+  assert_eq!(
+    Encoding::from_model("gpt-4-1106-vision-preview"),
+    Ok(Encoding::Cl100kBase)
+  );
+  assert_eq!(
+    Encoding::from_model("ft:gpt-4o:org::123"),
+    Ok(Encoding::O200kBase)
+  );
+  assert_eq!(
+    Encoding::from_model("ft:gpt-4-0613:org::123"),
+    Ok(Encoding::Cl100kBase)
+  );
+
+  assert!(Encoding::from_model("claude-3-5-sonnet").is_err());
+  assert!(Encoding::from_model("gemini-2.5-flash").is_err());
+  assert!(Encoding::from_model("").is_err());
+  assert!(Encoding::from_model("ft:").is_err());
+}
+
+#[test]
+fn delimiter_free_long_input_matches_full_trim() {
+  let blob = ".".repeat(200_000);
+  let full = trim_to_token_limit(&blob, 500, "gpt-4o");
+  let fitted = fit_to_tokens(&blob, 500, "gpt-4o");
+  assert!(full.is_ok());
+  assert!(fitted.is_ok());
+  if let (Ok(full), Ok(fitted)) = (full, fitted) {
+    assert_eq!(fitted.trimmed, full.trimmed);
+    assert_eq!(fitted.text, full.text);
   }
 }

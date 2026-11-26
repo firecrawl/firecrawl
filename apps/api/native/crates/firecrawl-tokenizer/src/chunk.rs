@@ -1,10 +1,5 @@
-use crate::models::{Encoding, MAX_SPECIAL_TOKEN_BYTES};
-
 /// Nominal chunk size in bytes for streaming token fitting.
 pub(crate) const CHUNK_BYTES: usize = 65_536;
-
-/// How far back from `target` to search for a pretokenizer piece boundary.
-const MAX_SCAN_BACK: usize = 8_192;
 
 /// Returns whether cutting `text` at byte offset `b` is guaranteed not to split
 /// a pretokenizer piece across any OpenAI encoding (o200k, cl100k, p50k, r50k).
@@ -21,19 +16,21 @@ fn is_piece_safe_cut(text: &str, b: usize) -> bool {
     return false;
   };
 
-  // Rule 1: ASCII letter or digit followed by space or newline always ends a piece
+  // Rule 1: ASCII letter followed by space or newline always ends a piece
   // across all OpenAI encodings (o200k, cl100k, p50k, r50k).
-  if prev.is_ascii_alphanumeric() && matches!(cur, b' ' | b'\n') {
+  if prev.is_ascii_alphabetic() && matches!(cur, b' ' | b'\n') {
     return true;
   }
 
-  // Rule 2: non-whitespace ASCII + newline + ASCII alphanumeric begins a fresh piece.
+  // Rule 2: non-whitespace ASCII (excluding VT 0x0B) + newline + ASCII
+  // alphanumeric begins a fresh piece.
   if b >= 2
     && prev == b'\n'
     && cur.is_ascii_alphanumeric()
     && let Some(&prev2) = bytes.get(b.saturating_sub(2))
     && prev2.is_ascii()
     && !prev2.is_ascii_whitespace()
+    && prev2 != 0x0B
   {
     return true;
   }
@@ -53,29 +50,32 @@ fn is_piece_safe_cut(text: &str, b: usize) -> bool {
   false
 }
 
-/// Computes the next chunk end byte offset strictly greater than `start`.
-pub(crate) fn next_chunk_end(text: &str, start: usize, chunk_bytes: usize) -> usize {
+/// Computes the next proven piece-safe chunk end byte offset strictly greater
+/// than `start`. Returns `Some(text.len())` when the remaining text fits within
+/// `chunk_bytes`, `Some(pos)` at the latest proven piece boundary inside the
+/// chunk, or `None` when no proven boundary exists (caller falls back to
+/// encoding the unsplit remainder).
+pub(crate) fn next_chunk_end(text: &str, start: usize, chunk_bytes: usize) -> Option<usize> {
   let remaining = text.len().saturating_sub(start);
   if remaining <= chunk_bytes {
-    return text.len();
+    return Some(text.len());
   }
 
   let raw_target = start.saturating_add(chunk_bytes).min(text.len());
-  let mut target = text.floor_char_boundary(raw_target);
-  if target <= start {
-    target = text.ceil_char_boundary(start.saturating_add(1).min(text.len()));
-  }
+  let target = text.floor_char_boundary(raw_target);
   if target >= text.len() {
-    return text.len();
+    return Some(text.len());
   }
 
-  let min_safe = start
-    .saturating_add(1)
-    .max(target.saturating_sub(MAX_SCAN_BACK));
+  let min_safe = start.saturating_add(1);
+  if target < min_safe {
+    return None;
+  }
+
   let mut pos = target;
   while pos >= min_safe {
     if is_piece_safe_cut(text, pos) {
-      return pos;
+      return Some(pos);
     }
     if pos == min_safe {
       break;
@@ -83,51 +83,5 @@ pub(crate) fn next_chunk_end(text: &str, start: usize, chunk_bytes: usize) -> us
     pos = pos.saturating_sub(1);
   }
 
-  // Fall back to the last newline within the chunk, else the UTF-8 char boundary.
-  if let Some(chunk) = text.get(start..target)
-    && let Some(rel_nl) = chunk.rfind('\n')
-  {
-    let after_nl = start.saturating_add(rel_nl).saturating_add(1);
-    if after_nl > start && after_nl <= target {
-      return after_nl;
-    }
-  }
-
-  target
-}
-
-/// Checks whether any disallowed special token overlaps byte range `start..end`,
-/// including tokens that straddle either boundary of the chunk.
-pub(crate) fn find_disallowed_special_in_chunk(
-  encoding: Encoding,
-  text: &str,
-  start: usize,
-  end: usize,
-) -> Option<&'static str> {
-  let overlap = MAX_SPECIAL_TOKEN_BYTES.saturating_sub(1);
-  let win_start = text.floor_char_boundary(start.saturating_sub(overlap));
-  let win_end = text.ceil_char_boundary(end.saturating_add(overlap).min(text.len()));
-  let window = text.get(win_start..win_end)?;
-  if !window.contains("<|") {
-    return None;
-  }
-
-  let mut earliest: Option<(usize, &'static str)> = None;
-  for &token in encoding.disallowed_special_tokens() {
-    for (rel_pos, _) in window.match_indices(token) {
-      let abs_start = win_start.saturating_add(rel_pos);
-      let abs_end = abs_start.saturating_add(token.len());
-      if abs_end > start && abs_start < end {
-        let is_earlier = match earliest {
-          None => true,
-          Some((best_pos, _)) => abs_start < best_pos,
-        };
-        if is_earlier {
-          earliest = Some((abs_start, token));
-        }
-        break;
-      }
-    }
-  }
-  earliest.map(|(_, token)| token)
+  None
 }
