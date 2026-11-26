@@ -204,6 +204,9 @@ function stripNulCharacters(_meta: Meta, document: Document): Document {
   if (document.html?.includes("\u0000")) {
     document.html = document.html.replaceAll("\u0000", "");
   }
+  if (document.rawHtml?.includes("\u0000")) {
+    document.rawHtml = document.rawHtml.replaceAll("\u0000", "");
+  }
   return document;
 }
 
