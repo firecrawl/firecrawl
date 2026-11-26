@@ -25,6 +25,12 @@ pub const MAX_ERROR_BACKOFF: Duration = Duration::from_secs(5);
 const HEARTBEAT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const HEARTBEAT_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_PENDING_FAILURE_NOTIFICATIONS: usize = 1_024;
+const MAX_FAILURE_NOTIFY_ATTEMPTS: u8 = 5;
+
+struct PendingFailureNotification {
+  notification: FailedJobNotification,
+  attempts: u8,
+}
 
 /// Boxed `Send` future alias used by worker dependency traits.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -172,7 +178,7 @@ where
 
 fn enqueue_failure_notifications(
   queue: QueueKind,
-  pending_failures: &mut VecDeque<FailedJobNotification>,
+  pending_failures: &mut VecDeque<PendingFailureNotification>,
   notifications: Vec<FailedJobNotification>,
 ) {
   for notification in notifications {
@@ -188,44 +194,71 @@ fn enqueue_failure_notifications(
         "Pending failure notification queue full; dropping oldest entry"
       );
     }
-    pending_failures.push_back(notification);
+    pending_failures.push_back(PendingFailureNotification {
+      notification,
+      attempts: 0,
+    });
   }
 }
 
 async fn flush_pending_failure_notifications<P: PrefetchPublisher>(
   queue: QueueKind,
   publisher: &P,
-  pending_failures: &mut VecDeque<FailedJobNotification>,
+  pending_failures: &mut VecDeque<PendingFailureNotification>,
 ) -> Result<(), String> {
-  while let Some(failed) = pending_failures.pop_front() {
-    let Some(listen_channel_id) = failed.listen_channel_id.as_deref() else {
+  let mut first_error: Option<String> = None;
+  let count = pending_failures.len();
+  for _ in 0..count {
+    let Some(mut entry) = pending_failures.pop_front() else {
+      break;
+    };
+    let Some(listen_channel_id) = entry.notification.listen_channel_id.as_deref() else {
       continue;
     };
     if let Err(err) = publisher
-      .send_job_failed(queue, &failed.id, listen_channel_id)
+      .send_job_failed(queue, &entry.notification.id, listen_channel_id)
       .await
     {
-      tracing::warn!(
-        module = "nuq/rabbitmq",
-        queue = queue.table_name(),
-        error = %err,
-        "Failed to publish NuQ job failure notification; retaining for retry"
-      );
-      pending_failures.push_front(failed);
-      return Err(format!(
-        "failure notification failed for {}: {err}",
-        queue.table_name()
-      ));
+      entry.attempts = entry.attempts.saturating_add(1);
+      if entry.attempts < MAX_FAILURE_NOTIFY_ATTEMPTS {
+        tracing::warn!(
+          module = "nuq/rabbitmq",
+          queue = queue.table_name(),
+          attempt = entry.attempts,
+          max_attempts = MAX_FAILURE_NOTIFY_ATTEMPTS,
+          error = %err,
+          "Failed to publish NuQ job failure notification; retaining for retry"
+        );
+        // Rotate to the back so one poison entry cannot head-of-line block others.
+        pending_failures.push_back(entry);
+      } else {
+        tracing::error!(
+          module = "nuq/rabbitmq",
+          queue = queue.table_name(),
+          attempts = entry.attempts,
+          error = %err,
+          "Dropping NuQ job failure notification after max retry attempts"
+        );
+      }
+      if first_error.is_none() {
+        first_error = Some(format!(
+          "failure notification failed for {}: {err}",
+          queue.table_name()
+        ));
+      }
     }
   }
-  Ok(())
+  match first_error {
+    Some(err) => Err(err),
+    None => Ok(()),
+  }
 }
 
 async fn run_prefetch_cycle<S, P>(
   queue: QueueKind,
   store: &S,
   publisher: &P,
-  pending_failures: &mut VecDeque<FailedJobNotification>,
+  pending_failures: &mut VecDeque<PendingFailureNotification>,
 ) -> Result<usize, String>
 where
   S: PrefetchStore,
@@ -242,14 +275,20 @@ where
       return Ok(0);
     }
 
-    // Drain carried-over terminal failure notifications first so waiters recover
-    // promptly after a transient broker outage.
-    flush_pending_failure_notifications(queue, publisher, pending_failures).await?;
-
-    let batch = store
-      .prefetch_jobs(queue)
-      .await
-      .map_err(|err| format!("prefetch query failed for {}: {err}", queue.table_name()))?;
+    let batch = match store.prefetch_jobs(queue).await {
+      Ok(batch) => batch,
+      Err(err) => {
+        // Best-effort flush so carried-over waiter notifications still drain
+        // during a Postgres outage without blocking future claims.
+        if !pending_failures.is_empty() {
+          let _ = flush_pending_failure_notifications(queue, publisher, pending_failures).await;
+        }
+        return Err(format!(
+          "prefetch query failed for {}: {err}",
+          queue.table_name()
+        ));
+      }
+    };
 
     // Retain failure notifications before publishing valid jobs so a mid-batch
     // publish error never skips or drops waiter notifications for failed rows.
@@ -376,7 +415,7 @@ async fn run_single_queue_loop<S, P, H>(
   // Bound to at most one in-flight heartbeat so a stalled endpoint never queues
   // background tasks or blocks the scrape prefetch loop.
   let heartbeat_gate = Arc::new(Semaphore::new(1));
-  let mut pending_failures: VecDeque<FailedJobNotification> = VecDeque::new();
+  let mut pending_failures: VecDeque<PendingFailureNotification> = VecDeque::new();
   let mut backoff = poll_interval;
 
   while !*shutdown.borrow() {

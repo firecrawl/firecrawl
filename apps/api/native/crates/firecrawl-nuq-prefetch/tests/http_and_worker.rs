@@ -79,6 +79,8 @@ struct RecordingPublisher {
   failed_notifications: Mutex<Vec<(QueueKind, String, String)>>,
   fail_next_send_job: AtomicUsize,
   fail_next_notify: AtomicUsize,
+  always_fail_notify_channel: Option<String>,
+  failed_notify_attempts: AtomicUsize,
   publish_delay: Duration,
   gate_job_id: Option<String>,
   gated_publish_started: Notify,
@@ -93,6 +95,8 @@ impl RecordingPublisher {
       failed_notifications: Mutex::new(Vec::new()),
       fail_next_send_job: AtomicUsize::new(0),
       fail_next_notify: AtomicUsize::new(0),
+      always_fail_notify_channel: None,
+      failed_notify_attempts: AtomicUsize::new(0),
       publish_delay,
       gate_job_id: None,
       gated_publish_started: Notify::new(),
@@ -107,6 +111,8 @@ impl RecordingPublisher {
       failed_notifications: Mutex::new(Vec::new()),
       fail_next_send_job: AtomicUsize::new(0),
       fail_next_notify: AtomicUsize::new(0),
+      always_fail_notify_channel: None,
+      failed_notify_attempts: AtomicUsize::new(0),
       publish_delay: Duration::ZERO,
       gate_job_id: Some(job_id.to_owned()),
       gated_publish_started: Notify::new(),
@@ -117,6 +123,13 @@ impl RecordingPublisher {
   fn unconfigured() -> Self {
     Self {
       configured: false,
+      ..Self::new(Duration::ZERO)
+    }
+  }
+
+  fn failing_notify_channel(channel: &str) -> Self {
+    Self {
+      always_fail_notify_channel: Some(channel.to_owned()),
       ..Self::new(Duration::ZERO)
     }
   }
@@ -172,6 +185,10 @@ impl PrefetchPublisher for RecordingPublisher {
     listen_channel_id: &'a str,
   ) -> BoxFuture<'a, Result<(), PublishError>> {
     Box::pin(async move {
+      if self.always_fail_notify_channel.as_deref() == Some(listen_channel_id) {
+        self.failed_notify_attempts.fetch_add(1, Ordering::AcqRel);
+        return Err(PublishError::Amqp("poison notify channel".to_owned()));
+      }
       if self
         .fail_next_notify
         .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
@@ -510,6 +527,88 @@ async fn failed_waiter_notifications_still_send_after_publish_error_and_retry_ac
       "chan-retry".to_owned()
     )]
   );
+}
+
+#[tokio::test]
+async fn stuck_failure_notification_does_not_block_job_claims_or_other_notifications() {
+  let store = Arc::new(MockStore::new());
+  {
+    let mut scrape = store
+      .scrape_batches
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner);
+    scrape.push(Ok(PrefetchBatch {
+      jobs: Vec::new(),
+      failed_notifications: vec![
+        FailedJobNotification {
+          id: "poison-1".to_owned(),
+          listen_channel_id: Some("chan-poison".to_owned()),
+        },
+        FailedJobNotification {
+          id: "good-fail-1".to_owned(),
+          listen_channel_id: Some("chan-good".to_owned()),
+        },
+      ],
+      repair_error: None,
+    }));
+    scrape.push(Ok(PrefetchBatch::from_jobs(vec![sample_job(
+      "valid-after-poison",
+      false,
+    )])));
+  }
+
+  let publisher = Arc::new(RecordingPublisher::failing_notify_channel("chan-poison"));
+  let heartbeat = Arc::new(CountingHeartbeat {
+    pings: AtomicUsize::new(0),
+    delay: Duration::ZERO,
+  });
+
+  let (shutdown_tx, shutdown_rx) = watch::channel(false);
+  let handle = tokio::spawn(run_prefetch_loops(
+    Arc::clone(&store),
+    Arc::clone(&publisher),
+    Some(Arc::clone(&heartbeat)),
+    Duration::from_millis(10),
+    shutdown_rx,
+  ));
+
+  // Wait until the poison notification has been dropped and a clean cycle fires heartbeat.
+  let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+  while heartbeat.pings.load(Ordering::Acquire) == 0 && tokio::time::Instant::now() < deadline {
+    tokio::time::sleep(Duration::from_millis(10)).await;
+  }
+
+  let _ = shutdown_tx.send(true);
+  assert!(matches!(
+    tokio::time::timeout(Duration::from_secs(2), handle).await,
+    Ok(Ok(()))
+  ));
+
+  // Valid jobs still claimed and published while the poison notification was pending.
+  assert_eq!(
+    publisher
+      .published
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner)
+      .as_slice(),
+    &[(QueueKind::Scrape, "valid-after-poison".to_owned())]
+  );
+  // Healthy notification behind the poison entry still delivered without head-of-line blocking.
+  assert_eq!(
+    publisher
+      .failed_notifications
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner)
+      .as_slice(),
+    &[(
+      QueueKind::Scrape,
+      "good-fail-1".to_owned(),
+      "chan-good".to_owned()
+    )]
+  );
+  // Poison notification was retried a bounded number of times (5) and then evicted.
+  assert_eq!(publisher.failed_notify_attempts.load(Ordering::Acquire), 5);
+  assert!(heartbeat.pings.load(Ordering::Acquire) >= 1);
 }
 
 #[tokio::test]
