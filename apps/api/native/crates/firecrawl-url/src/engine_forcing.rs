@@ -17,6 +17,8 @@ pub fn domain_matches_pattern(domain: &str, pattern: &str) -> bool {
     return true;
   }
 
+  // Intentionally matches the registrable domain itself (`domain == target`) to
+  // preserve exact parity with the previous `engine-forcing.ts` implementation.
   let target = pattern.strip_prefix("*.").unwrap_or(pattern);
   domain == target || ends_with_dot_suffix(domain, target)
 }
