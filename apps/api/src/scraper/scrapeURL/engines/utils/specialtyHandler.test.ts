@@ -476,7 +476,7 @@ describe("specialtyScrapeCheck: the bytes decide when the header does not", () =
     ).resolves.toBeUndefined();
   });
 
-  it("rejects .msi OLE2 installers instead of handing them off as legacy Office documents", async () => {
+  it("rejects .msi OLE2 installers and mislabeled archives even when served under Office document MIME types", async () => {
     await expectUnsupported(
       specialtyScrapeCheck(
         logger,
@@ -501,6 +501,48 @@ describe("specialtyScrapeCheck: the bytes decide when the header does not", () =
         logger,
         { "content-type": "application/x-msi" },
         download(DOC),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/msword" },
+        download(DOC, {
+          url: "https://example.com/releases/Setup-x64.msi",
+        }),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        {
+          "content-type": "application/msword",
+          "content-disposition": 'attachment; filename="Patch.msp"',
+        },
+        download(DOC),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        {
+          "content-type":
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        },
+        download(DOCX, {
+          url: "https://example.com/releases/App-arm64.apk",
+        }),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/msword" },
+        {
+          url: "https://example.com/releases/Setup-x64.msi",
+          content: "",
+          pageStatusCode: 200,
+        },
       ),
     );
   });

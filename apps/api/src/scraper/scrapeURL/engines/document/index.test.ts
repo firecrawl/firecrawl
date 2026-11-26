@@ -134,6 +134,21 @@ describe("scrapeDocument size caps", () => {
     await expect(scrapeDocument(nonDocumentFlagMeta)).rejects.toBeInstanceOf(
       EngineUnsuccessfulError,
     );
+
+    mocks.fetchFileToBuffer.mockImplementationOnce(
+      async (_url, _skipTls, _init, _maxSize, validateResponse) => {
+        const fakeResponse = {
+          url: "https://example.com/releases/Setup-x64.msi",
+          status: 200,
+          headers: new Headers({ "Content-Type": "application/msword" }),
+        };
+        await validateResponse(fakeResponse);
+        throw new Error("should have rejected installer redirect before body");
+      },
+    );
+    await expect(
+      scrapeDocument(makeMeta("https://example.com/report.doc")),
+    ).rejects.toBeInstanceOf(UnsupportedFileError);
   });
 
   it("cancels the response stream in real fetchFileToBuffer when validateResponse rejects", async () => {

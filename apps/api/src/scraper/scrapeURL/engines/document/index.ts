@@ -19,7 +19,10 @@ import {
   documentExtensionFromUrlPath,
 } from "../../../../lib/document-formats";
 import { readFile, stat, unlink } from "node:fs/promises";
-import { hasFilePrefetchEngine } from "../utils/specialtyHandler";
+import {
+  hasFilePrefetchEngine,
+  isDisallowedDocumentResponse,
+} from "../utils/specialtyHandler";
 import { MAX_GUNZIPPED_FILE_SIZE } from "../utils/gunzip";
 
 export const DOCUMENT_MAX_FILE_BYTES = MAX_GUNZIPPED_FILE_SIZE;
@@ -76,6 +79,16 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
       proxyUsed = meta.documentPrefetch.proxyUsed;
     } else {
       const validateDirectResponse = (res: Response) => {
+        if (
+          isDisallowedDocumentResponse(
+            res.url || (meta.rewrittenUrl ?? meta.url),
+            Object.fromEntries(res.headers),
+          )
+        ) {
+          throw new UnsupportedFileError(
+            res.headers.get("Content-Type") ?? "application/octet-stream",
+          );
+        }
         // Validate content type before reading the response body so non-document
         // payloads are rejected without buffering up to DOCUMENT_MAX_FILE_BYTES.
         const ct = res.headers.get("Content-Type");

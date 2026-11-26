@@ -437,6 +437,16 @@ function binaryAttachmentExtension(
   return BINARY_ATTACHMENT_EXTENSIONS.has(ext) ? ext : null;
 }
 
+export function isDisallowedDocumentResponse(
+  url: string | undefined,
+  headers: Record<string, string> | undefined,
+): boolean {
+  return (
+    binaryAttachmentExtension(headers) !== null ||
+    hasBinaryOrGzipArchiveUrlExtension(url)
+  );
+}
+
 function hasDisallowedBinaryControlByte(bytes: Buffer): boolean {
   for (let i = 0; i < bytes.length; i++) {
     const b = bytes[i];
@@ -785,10 +795,30 @@ export async function specialtyScrapeCheck(
     return;
   }
 
+  const mediaType = contentType.split(";")[0].trim().toLowerCase();
+  const sniffedFile = sniffHandoffFileKind(feRes);
+  const isBinaryContainer = isDisallowedContainerPayload(
+    sniffedFile,
+    mediaType,
+    attachmentBinaryExt,
+    feRes?.url,
+  );
+  if (
+    isBinaryContainer ||
+    (attachmentBinaryExt !== null &&
+      !isAllowedGzipFileHandoff(feRes, mediaType, attachmentBinaryExt))
+  ) {
+    throw new UnsupportedFileError(contentType);
+  }
+
   const isDocument = documentExtensionFromContentType(contentType) !== null;
   const isPdf =
     contentType === "application/pdf" ||
     contentType.startsWith("application/pdf;");
+
+  if (isDocument && hasBinaryOrGzipArchiveUrlExtension(feRes?.url)) {
+    throw new UnsupportedFileError(contentType);
+  }
 
   // Check for document types first (before PDF to prioritize documents)
   if (isDocument) {
@@ -818,8 +848,6 @@ export async function specialtyScrapeCheck(
     );
   }
 
-  const mediaType = contentType.split(";")[0].trim().toLowerCase();
-
   if (
     mediaType.startsWith("image/") ||
     mediaType === "application/octet-stream"
@@ -835,14 +863,7 @@ export async function specialtyScrapeCheck(
     }
   }
 
-  const sniffedFile = sniffHandoffFileKind(feRes);
-  const isBinaryContainer = isDisallowedContainerPayload(
-    sniffedFile,
-    mediaType,
-    attachmentBinaryExt,
-    feRes?.url,
-  );
-  if (sniffedFile !== null && !isBinaryContainer) {
+  if (sniffedFile !== null) {
     await handoffSniffedFile(
       sniffedFile,
       logger,
@@ -852,10 +873,6 @@ export async function specialtyScrapeCheck(
       maxFileBytes,
       downloadGcsFile,
     );
-  }
-
-  if (isBinaryContainer) {
-    throw new UnsupportedFileError(contentType);
   }
 
   // Reject explicit binary content types (unsupported images, video, audio,
