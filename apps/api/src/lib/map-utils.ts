@@ -854,7 +854,9 @@ export async function getMapResults({
   if (
     discoverStartPage &&
     !hooks?.has("map.collect") &&
-    crawlerOptions.sitemap === "include"
+    crawlerOptions.sitemap === "include" &&
+    !search &&
+    !indexOnly
   ) {
     mapResults = mapResults.filter(link => {
       const parsed = URL.parse(link.url);

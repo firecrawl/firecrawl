@@ -764,11 +764,10 @@ describe("map lifecycle hooks", () => {
     expect(mocks.scrapeURL).not.toHaveBeenCalled();
   });
 
-  it("ignores utility sitemap links for browser retry, drops late sitemap callbacks, and guards headerless files, sub-paths, EAI_AGAIN, and robots aborts", async () => {
+  it("ignores utility sitemap links before limit during discovery while preserving them for search, and drops late sitemap callbacks", async () => {
     (config as any).PLAYWRIGHT_MICROSERVICE_URL =
       "http://playwright.local/scrape";
 
-    // 1. Sitemap /_next/ and /cdn-cgi/ links reaching limit do not fill mapResults or skip browser discovery, and late sitemap callbacks after settle are ignored
     let lateCallback: ((urls: string[]) => void) | undefined;
     mocks.crawler.tryGetSitemap.mockImplementationOnce(
       async (urlsHandler: (urls: string[]) => void) => {
@@ -830,8 +829,34 @@ describe("map lifecycle hooks", () => {
     ]);
     expect(recovered.discovery?.outcome).toBe("links_found");
 
-    // 2. Headerless file URL stops at unsupported_file without Playwright retry
     vi.clearAllMocks();
+    mocks.crawler.tryGetSitemap.mockImplementationOnce(
+      async (urlsHandler: (urls: string[]) => void) => {
+        urlsHandler([
+          "https://spa.example.com/_next/static/chunk-a.js",
+          "https://spa.example.com/cdn-cgi/l/email-protection",
+        ]);
+        return 2;
+      },
+    );
+    const searched = await getMapResults({
+      url: "https://spa.example.com",
+      search: "chunk-a",
+      limit: 5,
+      teamId: "team-map-1",
+      flags: null,
+      crawlerOptions: { sitemap: "include" },
+      startPageDiscovery: true,
+    });
+    expect(mocks.scrapeURL).not.toHaveBeenCalled();
+    expect(searched.mapResults.map(x => x.url)).toContain(
+      "https://spa.example.com/_next/static/chunk-a.js",
+    );
+  });
+
+  it("stops at unsupported_file for headerless file URLs without retrying in Playwright", async () => {
+    (config as any).PLAYWRIGHT_MICROSERVICE_URL =
+      "http://playwright.local/scrape";
     mocks.crawler.tryGetSitemap.mockResolvedValue(0);
     mocks.crawler.isFile.mockImplementation((p: string) => p.endsWith(".pdf"));
     mocks.scrapeURL.mockResolvedValueOnce({
@@ -857,9 +882,11 @@ describe("map lifecycle hooks", () => {
     expect(mocks.scrapeURL).toHaveBeenCalledTimes(1);
     expect(fileRes.discovery?.outcome).toBe("unsupported_file");
     mocks.crawler.isFile.mockReturnValue(false);
+  });
 
-    // 3. Sub-path start URL does not claim verified_single_page when no child links exist
-    vi.clearAllMocks();
+  it("does not claim verified_single_page for sub-path start URLs without child links", async () => {
+    (config as any).PLAYWRIGHT_MICROSERVICE_URL =
+      "http://playwright.local/scrape";
     mocks.crawler.tryGetSitemap.mockResolvedValue(0);
     mocks.scrapeURL
       .mockResolvedValueOnce({
@@ -897,9 +924,11 @@ describe("map lifecycle hooks", () => {
       startPageDiscovery: true,
     });
     expect(subPathRes.discovery?.outcome).toBe("blocked_or_challenge");
+  });
 
-    // 4. Aborted robots check reports timeout instead of robots_disallowed
-    vi.clearAllMocks();
+  it("reports timeout instead of robots_disallowed when robots.txt aborts", async () => {
+    (config as any).PLAYWRIGHT_MICROSERVICE_URL =
+      "http://playwright.local/scrape";
     mocks.crawler.tryGetSitemap.mockResolvedValue(0);
     const abortCtrl = new AbortController();
     mocks.crawler.getRobotsTxt
@@ -930,11 +959,18 @@ describe("map lifecycle hooks", () => {
       startPageDiscovery: true,
     });
     expect(abortedRobots.discovery?.outcome).toBe("timeout");
+  });
 
-    // 5. Hung dnsLookup is bounded by the remaining discovery deadline instead of hanging
-    vi.clearAllMocks();
+  it("treats transient EAI_AGAIN DNS lookup failures as blocked_or_challenge rather than dns_error", async () => {
+    (config as any).PLAYWRIGHT_MICROSERVICE_URL =
+      "http://playwright.local/scrape";
+    mocks.dnsLookup.mockReset();
     mocks.crawler.tryGetSitemap.mockResolvedValue(0);
-    mocks.dnsLookup.mockImplementationOnce(() => new Promise(() => {}));
+    const eaiAgain = Object.assign(
+      new Error("getaddrinfo EAI_AGAIN transient.example.com"),
+      { code: "EAI_AGAIN" },
+    );
+    mocks.dnsLookup.mockRejectedValue(eaiAgain);
     mocks.scrapeURL
       .mockResolvedValueOnce({
         success: false,
@@ -942,8 +978,31 @@ describe("map lifecycle hooks", () => {
       })
       .mockResolvedValueOnce({
         success: false,
-        error: { code: "SCRAPE_TIMEOUT", message: "timed out" },
+        error: { code: "SCRAPE_ALL_ENGINES_FAILED", message: "fetch failed" },
       });
+    const transientDns = await getMapResults({
+      url: "https://transient.example.com",
+      limit: 5,
+      teamId: "team-map-1",
+      flags: null,
+      crawlerOptions: { sitemap: "include" },
+      startPageDiscovery: true,
+    });
+    expect(mocks.dnsLookup).toHaveBeenCalledWith("transient.example.com");
+    expect(transientDns.discovery?.outcome).toBe("blocked_or_challenge");
+    mocks.dnsLookup.mockReset();
+  });
+
+  it("bounds hung dnsLookup calls to the remaining discovery deadline and reports timeout", async () => {
+    (config as any).PLAYWRIGHT_MICROSERVICE_URL =
+      "http://playwright.local/scrape";
+    mocks.dnsLookup.mockReset();
+    mocks.crawler.tryGetSitemap.mockResolvedValue(0);
+    mocks.dnsLookup.mockImplementationOnce(() => new Promise(() => {}));
+    mocks.scrapeURL.mockResolvedValueOnce({
+      success: false,
+      error: { code: "SCRAPE_ALL_ENGINES_FAILED", message: "fetch failed" },
+    });
     const t0 = Date.now();
     const boundedDns = await getMapResults({
       url: "https://hung-dns.example.com",
@@ -954,6 +1013,7 @@ describe("map lifecycle hooks", () => {
       startPageDiscovery: true,
     });
     expect(Date.now() - t0).toBeLessThan(2_000);
-    expect(boundedDns.discovery?.outcome).not.toBe("dns_error");
+    expect(mocks.scrapeURL).toHaveBeenCalledTimes(1);
+    expect(boundedDns.discovery?.outcome).toBe("timeout");
   });
 });
