@@ -351,6 +351,8 @@ class Firecrawl:
         self.get_concurrency = self._v2_client.get_concurrency
         self.get_credit_usage = self._v2_client.get_credit_usage
         self.get_token_usage = self._v2_client.get_token_usage
+        self.get_credit_usage_historical = self._v2_client.get_credit_usage_historical
+        self.get_token_usage_historical = self._v2_client.get_token_usage_historical
         self.get_queue_status = self._v2_client.get_queue_status
 
         self.browser = self._v2_client.browser
@@ -516,6 +518,8 @@ class AsyncFirecrawl:
         self.get_concurrency = self._v2_client.get_concurrency
         self.get_credit_usage = self._v2_client.get_credit_usage
         self.get_token_usage = self._v2_client.get_token_usage
+        self.get_credit_usage_historical = self._v2_client.get_credit_usage_historical
+        self.get_token_usage_historical = self._v2_client.get_token_usage_historical
         self.get_queue_status = self._v2_client.get_queue_status
 
         self.browser = self._v2_client.browser
