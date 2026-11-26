@@ -383,11 +383,13 @@ fn derive_core_html_matches_individual_pipeline(tc: TestCase) {
   assert_eq!(actual.attributes, expected_attributes);
 }
 
-/// Markdown link extraction never panics on arbitrary text and returns unique,
-/// non-empty links while ignoring fenced code blocks and images.
+/// Markdown link extraction never panics on arbitrary text, returns unique
+/// non-empty links, and excludes links inside fenced code blocks, inline code
+/// spans (including unmatched backtick runs), and image syntax.
 #[hegel::test]
 fn markdown_links_never_panic_and_deduplicate(tc: TestCase) {
   let text = tc.draw(gs::text().max_size(512));
+  let slug = tc.draw(gs::sampled_from(vec!["alpha", "beta", "gamma", "delta"]));
   let Some(base_url) = Url::parse("https://example.com/docs/").ok() else {
     return;
   };
@@ -395,4 +397,10 @@ fn markdown_links_never_panic_and_deduplicate(tc: TestCase) {
   let unique: HashSet<&str> = links.iter().map(String::as_str).collect();
   assert_eq!(links.len(), unique.len());
   assert!(links.iter().all(|l| !l.is_empty()));
+
+  let doc = format!(
+    "```\nhttps://fenced.invalid/{slug}\n```\n![img](https://img.invalid/{slug}.png)\nprefix ``` [a](https://span.invalid/{slug}) `y`\n[keep](https://keep.example.com/{slug})"
+  );
+  let extracted = extract_links_from_markdown(&doc, &base_url);
+  assert_eq!(extracted, vec![format!("https://keep.example.com/{slug}")]);
 }

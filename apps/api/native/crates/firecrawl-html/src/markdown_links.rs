@@ -57,19 +57,22 @@ fn strip_inline_code_spans(line: &str) -> String {
     let tick_len = rest
       .get(rel_tick..)
       .map_or(0, |s| s.bytes().take_while(|&b| b == b'`').count());
-    let after_open = open_start.saturating_add(tick_len);
-    let delimiter = "`".repeat(tick_len);
 
-    if let Some(rel_close) = line.get(after_open..).and_then(|s| s.find(&delimiter)) {
-      out.push(' ');
-      pos = after_open
-        .saturating_add(rel_close)
-        .saturating_add(tick_len);
-    } else {
-      if let Some(ticks) = line.get(open_start..after_open) {
-        out.push_str(ticks);
+    let mut matched = false;
+    for len in (1..=tick_len).rev() {
+      let after_open = open_start.saturating_add(len);
+      let delimiter = "`".repeat(len);
+      if let Some(rel_close) = line.get(after_open..).and_then(|s| s.find(&delimiter)) {
+        out.push(' ');
+        pos = after_open.saturating_add(rel_close).saturating_add(len);
+        matched = true;
+        break;
       }
-      pos = after_open;
+    }
+
+    if !matched {
+      out.push('`');
+      pos = open_start.saturating_add(1);
     }
   }
 

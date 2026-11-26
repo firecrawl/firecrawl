@@ -762,7 +762,8 @@ pub fn extract_images(
 }
 
 /// Extract all image URLs from an already-parsed document in deterministic
-/// document discovery order.
+/// selector-group order: img, picture source, meta, link icons, video poster,
+/// and inline style.
 pub fn extract_images_from_document(
   document: &NodeRef,
   base_url: &Url,
