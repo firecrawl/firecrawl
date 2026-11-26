@@ -91,7 +91,8 @@
     "nuq-reconciler-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js nuq-reconciler-worker\"",
     "nuq-reconciler-worker:production": "node dist/src/main.js nuq-reconciler-worker",
     "prepare": "cd ../.. && husky ./apps/api/.husky",
-    "knip": "knip"
+    "knip": "knip",
+    "openapi:v2": "tsx src/openapi/generate-v2.ts"
   },
   "author": "",
   "license": "ISC",
