@@ -196,6 +196,17 @@ async function deriveMarkdownFromHTML(
   return document;
 }
 
+// NUL is never meaningful text, and storage such as PostgreSQL text columns rejects it.
+function stripNulCharacters(_meta: Meta, document: Document): Document {
+  if (document.markdown?.includes("\u0000")) {
+    document.markdown = document.markdown.replaceAll("\u0000", "");
+  }
+  if (document.html?.includes("\u0000")) {
+    document.html = document.html.replaceAll("\u0000", "");
+  }
+  return document;
+}
+
 async function deriveLinksFromHTML(
   meta: Meta,
   document: Document,
@@ -432,6 +443,7 @@ type TransformerStep = Transformer | { hook: DocumentHookName };
 const transformerStack: TransformerStep[] = [
   deriveHTMLFromRawHTML,
   deriveMarkdownFromHTML,
+  stripNulCharacters,
   performCleanContent,
   { hook: "scrape.document.markdown" },
   performPromptInjectionGuard,
