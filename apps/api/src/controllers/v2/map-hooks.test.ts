@@ -1,14 +1,19 @@
+import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const crawler = {
-    getRobotsTxt: vi.fn(async () => ""),
+    getRobotsTxt: vi.fn(async (..._args: any[]) => ""),
     importRobotsTxt: vi.fn(),
+    isRobotsAllowed: vi.fn((_target: string) => true),
+    isFile: vi.fn((_pathname: string) => false),
     tryGetSitemap: vi.fn(async (..._args: any[]) => 0),
   };
 
   return {
     crawler,
+    warn: vi.fn(),
+    scrapeURL: vi.fn(),
     billingCharge: vi.fn(
       async (..._args: any[]): Promise<number | undefined> => undefined,
     ),
@@ -18,7 +23,7 @@ const mocks = vi.hoisted(() => {
 vi.mock("../../lib/logger", () => ({
   logger: {
     info: vi.fn(),
-    warn: vi.fn(),
+    warn: mocks.warn,
     error: vi.fn(),
     debug: vi.fn(),
     child: vi.fn().mockReturnThis(),
@@ -37,6 +42,9 @@ vi.mock("../../lib/validateUrl", async importOriginal => {
   };
 });
 
+vi.mock("../../scraper/scrapeURL", () => ({ scrapeURL: mocks.scrapeURL }));
+
+import { config } from "../../config";
 import {
   applyMapCollectHook,
   applyMapFilterHook,
@@ -46,6 +54,8 @@ import { requestContext } from "../../lib/request-context";
 import type { HookHandlers } from "../../service/hooks";
 import { createService, replaceService } from "../../service/service";
 import { mapController } from "./map";
+
+const originalPlaywrightUrl = config.PLAYWRIGHT_MICROSERVICE_URL;
 
 function installHooks(hooks?: HookHandlers | HookHandlers[], report = vi.fn()) {
   const extensions = hooks
@@ -84,10 +94,11 @@ function makeReq(body: Record<string, any>) {
 }
 
 function makeRes() {
-  const res: any = {
+  const res: any = Object.assign(new EventEmitter(), {
+    destroyed: false,
     status: vi.fn(),
     json: vi.fn(),
-  };
+  });
   res.status.mockReturnValue(res);
   res.json.mockReturnValue(res);
   return res;
@@ -102,6 +113,63 @@ describe("map lifecycle hooks", () => {
 
   afterEach(() => {
     replaceService(undefined);
+    (config as any).PLAYWRIGHT_MICROSERVICE_URL = originalPlaywrightUrl;
+    mocks.crawler.isRobotsAllowed.mockReturnValue(true);
+  });
+
+  it.each(["completed", "failed"])(
+    "records %s map work after disconnect",
+    async outcome => {
+      const res = makeRes();
+      const error = new Error("map filter failed");
+      const finished = vi.fn();
+      installHooks({
+        "map.filter": docs => {
+          res.destroyed = true;
+          res.emit("close");
+          if (outcome === "failed") throw error;
+          return docs;
+        },
+        "map.finished": finished,
+      });
+      await mapController(
+        makeReq({ url: "https://example.com", sitemap: "skip" }),
+        res,
+      );
+      expect(res.json).not.toHaveBeenCalled();
+      if (outcome === "completed") {
+        expect(mocks.billingCharge).toHaveBeenCalledTimes(1);
+        expect(finished).toHaveBeenCalledTimes(1);
+      } else {
+        expect(mocks.warn).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ error }),
+        );
+        expect(mocks.billingCharge).not.toHaveBeenCalled();
+        expect(finished).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it("keeps start-page discovery on the requested origin for hosts without a registrable domain", async () => {
+    const url = "https://catalog:8443/";
+    mocks.scrapeURL.mockResolvedValueOnce({
+      success: true,
+      document: {
+        metadata: { statusCode: 200, contentType: "text/html", url },
+        links: [url + "guide", "https://catalog:9443/other"],
+      },
+    });
+    const result = await getMapResults({
+      url,
+      limit: 5,
+      teamId: "team-map-1",
+      flags: null,
+      crawlerOptions: { sitemap: "include" },
+      startPageDiscovery: true,
+    });
+    expect(result.mapResults.map(link => link.url)).toEqual([url + "guide"]);
+    expect(mocks.crawler.getRobotsTxt).toHaveBeenCalledTimes(1);
   });
 
   it("runs map.collect before map.finished, transforms URLs while keeping metadata, and slices to limit", async () => {
@@ -400,5 +468,294 @@ describe("map lifecycle hooks", () => {
       },
     );
     expect(direct).toEqual([{ url: "https://example.com/docs/a", title: "A" }]);
+  });
+
+  it("retries WAF 403 start-page fetches with Playwright while keeping 404 single-attempt", async () => {
+    (config as any).PLAYWRIGHT_MICROSERVICE_URL =
+      "http://playwright.local/scrape";
+
+    mocks.scrapeURL
+      .mockResolvedValueOnce({
+        success: true,
+        document: {
+          metadata: {
+            statusCode: 403,
+            contentType: "text/html",
+            url: "https://waf.example.com/",
+          },
+          rawHtml: "<html><title>Attention Required!</title></html>",
+          links: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        document: {
+          metadata: {
+            statusCode: 200,
+            contentType: "text/html",
+            url: "https://waf.example.com/",
+          },
+          rawHtml:
+            "<html><body><a href='https://waf.example.com/pricing'>Pricing</a></body></html>",
+          links: [
+            "https://waf.example.com/pricing",
+            "https://waf.example.com/cdn-cgi/l/email-protection",
+          ],
+        },
+      });
+
+    installHooks();
+    const res = Object.assign(makeRes(), { setHeader: vi.fn() });
+    await mapController(makeReq({ url: "https://waf.example.com" }), res);
+
+    expect(mocks.scrapeURL).toHaveBeenCalledTimes(2);
+    expect(mocks.scrapeURL.mock.calls[0][2].headers?.["User-Agent"]).toContain(
+      "Mozilla/5.0",
+    );
+    expect(mocks.scrapeURL.mock.calls[0][3].forceEngine).toBe("fetch");
+    expect(
+      mocks.scrapeURL.mock.calls[1][2].headers?.["User-Agent"],
+    ).toBeUndefined();
+    expect(mocks.scrapeURL.mock.calls[1][3].forceEngine).toBe("playwright");
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json.mock.calls[0][0].links).toEqual([
+      { url: "https://waf.example.com/pricing" },
+    ]);
+    expect(res.setHeader).toHaveBeenCalledWith(
+      "X-Firecrawl-Map-Outcome",
+      "links_found",
+    );
+    expect(res.setHeader).toHaveBeenCalledWith(
+      "X-Firecrawl-Map-Status-Code",
+      "200",
+    );
+
+    vi.clearAllMocks();
+    mocks.crawler.tryGetSitemap.mockResolvedValue(0);
+    mocks.scrapeURL.mockResolvedValueOnce({
+      success: true,
+      document: {
+        metadata: {
+          statusCode: 404,
+          contentType: "text/html",
+          url: "https://missing.example.com/",
+        },
+        rawHtml: "<html><body>Not Found</body></html>",
+        links: [],
+      },
+    });
+
+    const missing = await getMapResults({
+      url: "https://missing.example.com",
+      limit: 5,
+      teamId: "team-map-1",
+      flags: null,
+      crawlerOptions: { sitemap: "include" },
+      startPageDiscovery: true,
+    });
+    expect(mocks.scrapeURL).toHaveBeenCalledTimes(1);
+    expect(missing.mapResults).toEqual([]);
+    expect(missing.discovery).toEqual({
+      outcome: "http_not_found",
+      statusCode: 404,
+      landedUrl: "https://missing.example.com/",
+    });
+  });
+
+  it("ignores /cdn-cgi/ and /_next/ utility links and distinguishes verified single pages from challenge pages", async () => {
+    (config as any).PLAYWRIGHT_MICROSERVICE_URL =
+      "http://playwright.local/scrape";
+
+    mocks.scrapeURL
+      .mockResolvedValueOnce({
+        success: true,
+        document: {
+          metadata: {
+            statusCode: 200,
+            contentType: "text/html",
+            url: "https://spa.example.com/",
+          },
+          rawHtml: "<html><body><div id='root'></div></body></html>",
+          links: [
+            "https://spa.example.com/cdn-cgi/l/email-protection",
+            "https://spa.example.com/_next/static/chunks/main.js",
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        document: {
+          metadata: {
+            statusCode: 200,
+            contentType: "text/html",
+            url: "https://spa.example.com/",
+            title: "Acme Robotics",
+          },
+          rawHtml:
+            "<html><body><main>Acme Robotics builds autonomous warehouse picking systems for industrial logistics hubs across North America and Europe with zero subpages.</main></body></html>",
+          links: [],
+        },
+      });
+
+    const singlePage = await getMapResults({
+      url: "https://spa.example.com",
+      limit: 5,
+      teamId: "team-map-1",
+      flags: null,
+      crawlerOptions: { sitemap: "include" },
+      startPageDiscovery: true,
+    });
+    expect(mocks.scrapeURL).toHaveBeenCalledTimes(2);
+    expect(singlePage.mapResults).toEqual([]);
+    expect(singlePage.discovery).toEqual({
+      outcome: "verified_single_page",
+      statusCode: 200,
+      landedUrl: "https://spa.example.com",
+    });
+
+    vi.clearAllMocks();
+    mocks.crawler.tryGetSitemap.mockResolvedValue(0);
+    mocks.scrapeURL
+      .mockResolvedValueOnce({
+        success: true,
+        document: {
+          metadata: {
+            statusCode: 403,
+            contentType: "text/html",
+            url: "https://walled.example.com/",
+          },
+          rawHtml: "<html><title>Just a moment...</title></html>",
+          links: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        document: {
+          metadata: {
+            statusCode: 200,
+            contentType: "text/html",
+            url: "https://walled.example.com/",
+            title: "Just a moment...",
+          },
+          rawHtml:
+            "<html><body>Verify you are human before continuing to walled.example.com security check page for browser verification challenge.</body></html>",
+          links: [],
+        },
+      });
+
+    const challenged = await getMapResults({
+      url: "https://walled.example.com",
+      limit: 5,
+      teamId: "team-map-1",
+      flags: null,
+      crawlerOptions: { sitemap: "include" },
+      startPageDiscovery: true,
+    });
+    expect(challenged.discovery?.outcome).toBe("blocked_or_challenge");
+  });
+
+  it("adopts cross-domain start-page redirect scope with destination robots.txt and isolates PSL tenants", async () => {
+    mocks.crawler.isRobotsAllowed.mockImplementation(
+      (target: string) => !target.endsWith("/private"),
+    );
+    mocks.scrapeURL.mockResolvedValueOnce({
+      success: true,
+      document: {
+        metadata: {
+          statusCode: 200,
+          contentType: "text/html",
+          url: "https://onefactor.ai/",
+        },
+        rawHtml: "<html><body>OneFactor</body></html>",
+        links: [
+          "https://onefactor.ai/about",
+          "https://onefactor.ai/private",
+          "https://unrelated.io/page",
+        ],
+      },
+    });
+
+    const redirected = await getMapResults({
+      url: "https://kallaway.co",
+      limit: 5,
+      teamId: "team-map-1",
+      flags: null,
+      crawlerOptions: { sitemap: "include" },
+      startPageDiscovery: true,
+    });
+    expect(redirected.mapResults).toEqual([
+      { url: "https://onefactor.ai/about" },
+    ]);
+    expect(redirected.discovery?.outcome).toBe("links_found");
+    expect(mocks.crawler.getRobotsTxt).toHaveBeenCalledTimes(2);
+
+    vi.clearAllMocks();
+    mocks.crawler.tryGetSitemap.mockResolvedValue(0);
+    mocks.crawler.isRobotsAllowed.mockReturnValue(true);
+    mocks.scrapeURL.mockResolvedValueOnce({
+      success: true,
+      document: {
+        metadata: {
+          statusCode: 200,
+          contentType: "text/html",
+          url: "https://norelix.vercel.app/",
+        },
+        rawHtml: "<html><body>Norelix</body></html>",
+        links: [
+          "https://norelix.vercel.app/docs",
+          "https://other-tenant.vercel.app/docs",
+        ],
+      },
+    });
+
+    const pslScoped = await getMapResults({
+      url: "https://norelix.vercel.app",
+      limit: 5,
+      teamId: "team-map-1",
+      flags: null,
+      crawlerOptions: { sitemap: "include" },
+      startPageDiscovery: true,
+    });
+    expect(pslScoped.mapResults).toEqual([
+      { url: "https://norelix.vercel.app/docs" },
+    ]);
+  });
+
+  it("aborts sitemap recursion early once limit in-scope URLs arrive", async () => {
+    let signalAfterFirstBatch = false;
+    mocks.crawler.tryGetSitemap.mockImplementationOnce(
+      async (
+        urlsHandler: (urls: string[]) => void,
+        _fromMap?: boolean,
+        _only?: boolean,
+        _timeout?: number,
+        abortSignal?: AbortSignal,
+      ) => {
+        urlsHandler([
+          "https://example.com/p1",
+          "https://example.com/p2",
+          "https://example.com/p3",
+        ]);
+        signalAfterFirstBatch = Boolean(abortSignal?.aborted);
+        return 3;
+      },
+    );
+
+    const capped = await getMapResults({
+      url: "https://example.com",
+      limit: 2,
+      teamId: "team-map-1",
+      flags: null,
+      crawlerOptions: { sitemap: "include" },
+      startPageDiscovery: true,
+    });
+    expect(signalAfterFirstBatch).toBe(true);
+    expect(capped.mapResults).toEqual([
+      { url: "https://example.com/p1" },
+      { url: "https://example.com/p2" },
+    ]);
+    expect(capped.discovery?.outcome).toBe("links_found");
+    expect(mocks.scrapeURL).not.toHaveBeenCalled();
   });
 });

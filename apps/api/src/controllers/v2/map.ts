@@ -75,6 +75,15 @@ export async function mapController(
   let timeoutHandle: NodeJS.Timeout | null = null;
 
   const abort = new AbortController();
+  // Discovery runs only when no hosted map.collect extension owns discovery.
+  const discoverStartPage = !installedService()?.hooks.has("map.collect");
+  const cancelOnClose = () => {
+    if (!res.writableEnded) abort.abort();
+  };
+  if (discoverStartPage) {
+    res.once("close", cancelOnClose);
+    if (res.destroyed) cancelOnClose();
+  }
   try {
     result = (await Promise.race([
       getMapResults({
@@ -100,6 +109,7 @@ export async function mapController(
         headers: req.body.headers,
         id: mapId,
         ctx,
+        startPageDiscovery: discoverStartPage,
       }),
       ...(req.body.timeout !== undefined
         ? [
@@ -114,6 +124,12 @@ export async function mapController(
         : []),
     ])) as any;
   } catch (error) {
+    if (res.destroyed) {
+      if (error !== abort.signal.reason) {
+        logger.warn("Map failed after client disconnected", { mapId, error });
+      }
+      return;
+    }
     if (error instanceof MapTimeoutError) {
       return res.status(408).json({
         success: false,
@@ -125,6 +141,7 @@ export async function mapController(
       throw error;
     }
   } finally {
+    if (discoverStartPage) res.off("close", cancelOnClose);
     if (timeoutHandle) {
       clearTimeout(timeoutHandle);
     }
@@ -208,5 +225,22 @@ export async function mapController(
     ...(warning && { warning }),
   });
 
-  return res.status(200).json(response as MapResponse);
+  if (!res.destroyed) {
+    if (result.discovery) {
+      res.setHeader?.("X-Firecrawl-Map-Outcome", result.discovery.outcome);
+      if (result.discovery.statusCode !== undefined) {
+        res.setHeader?.(
+          "X-Firecrawl-Map-Status-Code",
+          String(result.discovery.statusCode),
+        );
+      }
+      if (result.discovery.landedUrl) {
+        res.setHeader?.(
+          "X-Firecrawl-Map-Landed-Url",
+          result.discovery.landedUrl,
+        );
+      }
+    }
+    return res.status(200).json(response as MapResponse);
+  }
 }
