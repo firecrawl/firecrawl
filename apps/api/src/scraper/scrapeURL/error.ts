@@ -66,7 +66,9 @@ export class SearchProviderUnavailableError extends TransportableError {
     _: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
-    const x = new SearchProviderUnavailableError(data.message);
+    const x = new SearchProviderUnavailableError(data.message, {
+      cause: data.cause,
+    });
     x.stack = data.stack;
     return x;
   }

@@ -288,9 +288,9 @@ describe("service.searchProviders dispatch in v2 search", () => {
       },
     ]);
 
-    await expect(search({ query: "firecrawl", logger })).rejects.toThrow(
-      SearchProviderUnavailableError,
-    );
+    const error = await search({ query: "firecrawl", logger }).catch(e => e);
+    expect(error).toBeInstanceOf(SearchProviderUnavailableError);
+    expect(error.cause).toBe(failure);
     expect(logger.error).toHaveBeenCalledWith("Error in search function", {
       error: failure,
     });
