@@ -1,0 +1,173 @@
+---
+title: "Python Agent Quickstart"
+description: "Canonical Firecrawl Python quickstart for external agents using search, scrape, and interact."
+---
+
+# Firecrawl Python Agent Quickstart
+
+This file is the canonical quickstart for external agents integrating Firecrawl via the Python SDK. It is generated from SDK source plus OpenAPI.
+
+## Install
+
+```bash
+pip install firecrawl-py
+```
+
+## Authenticate
+
+```python
+from firecrawl import Firecrawl
+
+client = Firecrawl(api_key="fc-YOUR-API-KEY")
+```
+
+Or set the `FIRECRAWL_API_KEY` environment variable and omit the `api_key` argument.
+
+## When To Use What
+
+- **search** — Use when you start with a query and need to discover relevant URLs and content across the web.
+- **scrape** — Use when you already have a URL and want to extract its page content.
+- **interact** — Use when the page needs clicks, form fills, or post-scrape browser actions via a live browser session.
+
+## Search
+
+### Why use it
+
+Search lets you find relevant web pages, news articles, and images from a query. Results can optionally include scraped page content.
+
+### Preferred SDK method
+
+```python
+client.search(query, **options)
+```
+
+### Example
+
+```python
+results = client.search("firecrawl web scraping", limit=5)
+
+for result in results.web:
+    print(result.title, result.url)
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `query` | `str` | **Required.** The search query. |
+| `limit` | `int` | Maximum number of results to return. Default: `5`. |
+| `sources` | `list[str]` | Sources to search: `"web"`, `"news"`, `"images"`. |
+| `categories` | `list[str]` | Categories to filter by: `"github"`, `"research"`, `"pdf"`. |
+| `include_domains` | `list[str]` | Only return results from these domains. Mutually exclusive with `exclude_domains`. |
+| `exclude_domains` | `list[str]` | Exclude results from these domains. Mutually exclusive with `include_domains`. |
+| `tbs` | `str` | Time-based search filter (e.g. `"qdr:d"` for past day). |
+| `location` | `str` | Geographic location string for localized results. |
+| `ignore_invalid_urls` | `bool` | Skip invalid URLs instead of failing. |
+| `timeout` | `int` | Request timeout in milliseconds. Default: `300000`. |
+| `scrape_options` | `ScrapeOptions` | When provided, each result page is scraped with these options. |
+| `integration` | `str` | Integration identifier for tracking. |
+
+Results are grouped by source: `results.web`, `results.news`, `results.images`.
+
+## Scrape
+
+### Why use it
+
+Scrape extracts content from a single URL. Supports multiple output formats, browser actions, proxies, caching, and more.
+
+### Preferred SDK method
+
+```python
+client.scrape(url, **options)
+```
+
+### Example
+
+```python
+doc = client.scrape("https://example.com", formats=["markdown"])
+
+print(doc.markdown)
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `url` | `str` | **Required.** The URL to scrape. |
+| `formats` | `list[str]` | Output formats: `"markdown"`, `"html"`, `"rawHtml"`, `"links"`, `"images"`, `"screenshot"`, `"summary"`, `"json"`, `"changeTracking"`, `"branding"`, `"audio"`, `"video"`. Also accepts format objects for `json`, `screenshot`, `changeTracking`, `question`, `highlights`. |
+| `headers` | `dict[str, str]` | Custom HTTP headers to send with the request. |
+| `include_tags` | `list[str]` | HTML tags to include in output. |
+| `exclude_tags` | `list[str]` | HTML tags to exclude from output. |
+| `only_main_content` | `bool` | Only extract the main content area. |
+| `timeout` | `int` | Request timeout in milliseconds. |
+| `wait_for` | `int` | Milliseconds to wait after page load before scraping. |
+| `mobile` | `bool` | Emulate a mobile device. |
+| `parsers` | `list` | Parser configurations (e.g. `["pdf"]` or `[{"type": "pdf", "mode": "ocr"}]`). |
+| `actions` | `list` | Browser actions to perform before scraping: `WaitAction`, `ScreenshotAction`, `ClickAction`, `WriteAction`, `PressAction`, `ScrollAction`, `ScrapeAction`, `ExecuteJavascriptAction`, `PDFAction`. |
+| `location` | `Location` | Geographic location config with `country` and `languages`. |
+| `skip_tls_verification` | `bool` | Skip TLS certificate verification. |
+| `remove_base64_images` | `bool` | Remove base64-encoded images from output. |
+| `fast_mode` | `bool` | Enable faster scraping mode. |
+| `block_ads` | `bool` | Block ads and cookie popups. |
+| `proxy` | `str` | Proxy type: `"basic"`, `"stealth"`, `"enhanced"`, `"auto"`. `enhanced` costs up to 5 credits. |
+| `max_age` | `int` | Return cached version if younger than this age in seconds. |
+| `store_in_cache` | `bool` | Store result in Firecrawl cache. |
+| `lockdown` | `bool` | Serve only from cache; returns 404 on cache miss. |
+| `profile` | `dict` | Persistent browser profile, e.g. `{"name": "my-profile", "saveChanges": True}`. |
+| `integration` | `str` | Integration identifier. |
+
+## Interact
+
+### Why use it
+
+Interact lets you execute code or natural-language prompts in a live browser session tied to a previous scrape. Use it for clicking buttons, filling forms, navigating pages, or any post-scrape browser automation.
+
+### Preferred SDK method
+
+```python
+client.interact(job_id, **options)
+```
+
+### Example
+
+```python
+doc = client.scrape("https://www.amazon.com", formats=["markdown"])
+scrape_id = doc.metadata.scrape_id
+
+client.interact(scrape_id, prompt="Search for iPhone 16 Pro Max")
+response = client.interact(
+    scrape_id,
+    prompt="Click on the first result and tell me the price",
+)
+print(response.output)
+
+client.stop_interaction(scrape_id)
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `job_id` | `str` | **Required.** The scrape job ID from a previous scrape. |
+| `code` | `str` | Code to execute in the browser sandbox. Provide `code` or `prompt` (at least one). |
+| `prompt` | `str` | Natural-language instruction for the browser agent. Provide `code` or `prompt` (at least one). |
+| `language` | `Literal["python", "node", "bash"]` | Language for code execution. Default: `"node"`. |
+| `timeout` | `int` | Execution timeout in seconds (1–300). |
+| `origin` | `str` | Optional origin tag for request attribution. |
+
+Call `client.stop_interaction(job_id)` to end the browser session.
+
+## Notes
+
+- **snake_case parameters** — All Python parameter names use snake_case.
+- **Keyword-only arguments** — All parameters after the first positional argument are keyword-only.
+- **Pydantic v2 models** — All request/response types use Pydantic v2 for validation.
+- **Async support** — An `AsyncFirecrawl` client is available at `from firecrawl import AsyncFirecrawl`.
+- **Deprecated aliases** — `scrape_url()` is deprecated; use `scrape()`. `scrape_execute()` is deprecated; use `interact()`. `delete_scrape_browser()` is deprecated; use `stop_interaction()`.
+
+## Source Of Truth
+
+- `firecrawl/apps/python-sdk/firecrawl/client.py`
+- `firecrawl/apps/python-sdk/firecrawl/v2/client.py`
+- `firecrawl/apps/python-sdk/firecrawl/v2/types.py`
+- `firecrawl-docs/api-reference/v2-openapi.json`
