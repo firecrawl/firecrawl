@@ -560,13 +560,29 @@ async fn stuck_failure_notification_does_not_block_job_claims_or_other_notificat
       repair_error: None,
     }));
     // 16 valid jobs at 250ms cadence cover 4000ms of virtual time, spanning all
-    // 5 independent notification backoff retries (0, 250, 750, 1750, 3750ms)
-    // plus one extra tick confirming poison eviction.
+    // 5 per-entry poison backoff retries (0, 250, 750, 1750, 3750ms) plus one
+    // extra tick confirming poison eviction and zero queue-wide backoff for
+    // newly arriving waiter notifications.
     for i in 1..=16 {
-      scrape.push(Ok(PrefetchBatch::from_jobs(vec![sample_job(
-        &format!("valid-after-poison-{i}"),
-        false,
-      )])));
+      let mut failed_notifications = Vec::new();
+      if i == 2 {
+        // Arrives at t=500ms while poison-1 is backed off until t=750ms.
+        failed_notifications.push(FailedJobNotification {
+          id: "fresh-during-poison".to_owned(),
+          listen_channel_id: Some("chan-fresh-1".to_owned()),
+        });
+      } else if i == 16 {
+        // Arrives at t=4000ms immediately after poison-1 was dropped at t=3750ms.
+        failed_notifications.push(FailedJobNotification {
+          id: "fresh-after-drop".to_owned(),
+          listen_channel_id: Some("chan-fresh-2".to_owned()),
+        });
+      }
+      scrape.push(Ok(PrefetchBatch {
+        jobs: vec![sample_job(&format!("valid-after-poison-{i}"), false)],
+        failed_notifications,
+        repair_error: None,
+      }));
     }
   }
 
@@ -616,12 +632,33 @@ async fn stuck_failure_notification_does_not_block_job_claims_or_other_notificat
   );
   assert_eq!(started.elapsed(), Duration::from_millis(1_250));
 
-  // All 16 valid jobs land at exactly 16 * 250ms = 4000ms virtual time, during
-  // which the poison notification exhausts its 5 independent retries and evicts.
+  // All 16 valid jobs and all 3 healthy failure notifications (including the one
+  // arriving right after poison-1 dropped at 3750ms) land by exactly 4000ms.
   assert!(
     tokio::time::timeout(Duration::from_secs(10), wait_for_published(16))
       .await
       .is_ok()
+  );
+  assert!(
+    tokio::time::timeout(Duration::from_secs(10), async {
+      loop {
+        let notified = publisher.failed_notify_event.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        if publisher
+          .failed_notifications
+          .lock()
+          .unwrap_or_else(PoisonError::into_inner)
+          .len()
+          >= 3
+        {
+          break;
+        }
+        notified.await;
+      }
+    })
+    .await
+    .is_ok()
   );
   assert_eq!(started.elapsed(), Duration::from_millis(4_000));
 
@@ -646,18 +683,31 @@ async fn stuck_failure_notification_does_not_block_job_claims_or_other_notificat
     .collect();
   assert_eq!(published, expected);
 
-  // Healthy notification behind the poison entry still delivered without head-of-line blocking.
+  // Healthy notifications behind the poison entry, arriving while poison-1 is
+  // backed off, and arriving right after poison-1 is dropped all deliver promptly.
   assert_eq!(
     publisher
       .failed_notifications
       .lock()
       .unwrap_or_else(PoisonError::into_inner)
       .as_slice(),
-    &[(
-      QueueKind::Scrape,
-      "good-fail-1".to_owned(),
-      "chan-good".to_owned()
-    )]
+    &[
+      (
+        QueueKind::Scrape,
+        "good-fail-1".to_owned(),
+        "chan-good".to_owned()
+      ),
+      (
+        QueueKind::Scrape,
+        "fresh-during-poison".to_owned(),
+        "chan-fresh-1".to_owned()
+      ),
+      (
+        QueueKind::Scrape,
+        "fresh-after-drop".to_owned(),
+        "chan-fresh-2".to_owned()
+      ),
+    ]
   );
   // Poison notification was retried 5 times on its independent backoff and then evicted.
   assert_eq!(publisher.failed_notify_attempts.load(Ordering::Acquire), 5);

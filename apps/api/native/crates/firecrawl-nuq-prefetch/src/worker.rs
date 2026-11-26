@@ -40,6 +40,8 @@ struct PendingFailureNotification {
   notification: FailedJobNotification,
   enqueued_at: Instant,
   poison_attempts: u8,
+  next_retry_at: Option<Instant>,
+  retry_backoff: Duration,
 }
 
 struct FailureNotificationQueue {
@@ -252,6 +254,8 @@ fn enqueue_failure_notifications(
         notification,
         enqueued_at: Instant::now(),
         poison_attempts: 0,
+        next_retry_at: None,
+        retry_backoff: pending_failures.base_backoff,
       });
   }
 }
@@ -263,37 +267,24 @@ async fn flush_pending_failure_notifications<P: PrefetchPublisher>(
   broker_healthy_hint: bool,
   flush_budget: Duration,
 ) {
-  // Prune expired entries at the front first so they never consume I/O budget.
-  while let Some(front) = pending_failures.entries.front() {
-    if front.enqueued_at.elapsed() >= MAX_PENDING_FAILURE_AGE {
-      if let Some(expired) = pending_failures.entries.pop_front() {
-        tracing::warn!(
-          module = "nuq/rabbitmq",
-          queue = queue.table_name(),
-          age_secs = expired.enqueued_at.elapsed().as_secs(),
-          "Dropping expired NuQ job failure notification"
-        );
-      }
-    } else {
-      break;
-    }
-  }
-
   let deadline = Instant::now().checked_add(flush_budget);
   let mut had_error = false;
+  let mut deferred: Vec<PendingFailureNotification> = Vec::new();
   let mut failed_this_flush: Vec<PendingFailureNotification> = Vec::new();
   let mut any_succeeded = broker_healthy_hint;
+  let mut attempted = 0_usize;
   let mut consecutive_errors = 0_usize;
-  let max_items = pending_failures
-    .entries
-    .len()
-    .min(MAX_FAILURE_NOTIFY_ITEMS_PER_FLUSH);
+  let initial_len = pending_failures.entries.len();
 
-  for _ in 0..max_items {
+  for _ in 0..initial_len {
+    let now = Instant::now();
     let remaining = deadline
-      .map(|end| end.saturating_duration_since(Instant::now()))
+      .map(|end| end.saturating_duration_since(now))
       .unwrap_or(flush_budget);
-    if remaining.is_zero() || consecutive_errors >= MAX_CONSECUTIVE_NOTIFY_ERRORS_PER_FLUSH {
+    if remaining.is_zero()
+      || attempted >= MAX_FAILURE_NOTIFY_ITEMS_PER_FLUSH
+      || consecutive_errors >= MAX_CONSECUTIVE_NOTIFY_ERRORS_PER_FLUSH
+    {
       break;
     }
     let Some(entry) = pending_failures.entries.pop_front() else {
@@ -308,9 +299,14 @@ async fn flush_pending_failure_notifications<P: PrefetchPublisher>(
       );
       continue;
     }
+    if entry.next_retry_at.is_some_and(|due| now < due) {
+      deferred.push(entry);
+      continue;
+    }
     let Some(listen_channel_id) = entry.notification.listen_channel_id.as_deref() else {
       continue;
     };
+    attempted = attempted.saturating_add(1);
     match tokio::time::timeout(
       remaining,
       publisher.send_job_failed(queue, &entry.notification.id, listen_channel_id),
@@ -346,9 +342,17 @@ async fn flush_pending_failure_notifications<P: PrefetchPublisher>(
     }
   }
 
+  for entry in deferred {
+    pending_failures.entries.push_back(entry);
+  }
+
+  let now = Instant::now();
   for mut entry in failed_this_flush {
     if any_succeeded {
       entry.poison_attempts = entry.poison_attempts.saturating_add(1);
+      let delay = entry.retry_backoff;
+      entry.retry_backoff = next_error_backoff(entry.retry_backoff, pending_failures.base_backoff);
+      entry.next_retry_at = now.checked_add(delay);
     }
     if entry.poison_attempts < MAX_POISON_NOTIFY_ATTEMPTS
       && entry.enqueued_at.elapsed() < MAX_PENDING_FAILURE_AGE
@@ -373,8 +377,10 @@ async fn flush_pending_failure_notifications<P: PrefetchPublisher>(
     }
   }
 
-  if had_error {
-    pending_failures.record_flush_error(Instant::now());
+  if had_error && !any_succeeded && !pending_failures.entries.is_empty() {
+    // Only apply queue-wide backoff when no send succeeded (indicating a broker
+    // outage) and entries remain; isolated poison failures back off per entry.
+    pending_failures.record_flush_error(now);
   } else {
     pending_failures.record_flush_success();
   }
@@ -458,9 +464,12 @@ where
 
     // Flush pending terminal failure notifications on their own bounded budget
     // and backoff schedule so notification errors never trigger cycle-wide
-    // error backoff on job claims.
+    // error backoff on job claims. A successful job publish bypasses queue-wide
+    // outage backoff while per-entry poison backoffs remain respected.
     let broker_healthy_hint = sent > 0 && publish_error.is_none();
-    if !pending_failures.is_empty() && pending_failures.is_due(Instant::now()) {
+    if !pending_failures.is_empty()
+      && (broker_healthy_hint || pending_failures.is_due(Instant::now()))
+    {
       flush_pending_failure_notifications(
         queue,
         publisher,
