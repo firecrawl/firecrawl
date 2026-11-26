@@ -1,7 +1,9 @@
+import { createServer } from "node:http";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   concurrentIf,
   TEST_PRODUCTION,
+  TEST_SELF_HOST,
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import { expectMapToSucceed, map, idmux, Identity } from "./lib";
@@ -19,6 +21,62 @@ beforeAll(async () => {
 // TODO: is map meant for self-host?
 describe("Map tests", () => {
   const base = TEST_SUITE_WEBSITE;
+
+  it.skipIf(!TEST_SELF_HOST || process.env.ALLOW_LOCAL_WEBHOOKS !== "true")(
+    "self-hosted map appends usable starting-page links and keeps sitemap-only results",
+    async () => {
+      let origin = "";
+      const fixture = createServer((req, res) => {
+        const page = req.url;
+        if (page === "/robots.txt") {
+          res.setHeader("Content-Type", "text/plain");
+          res.end("User-agent: *\nDisallow: /hidden\n");
+        } else if (page === "/sitemap.xml") {
+          res.setHeader("Content-Type", "text/xml");
+          res.end(`<urlset><url><loc>${origin}/listed</loc></url></urlset>`);
+        } else if (page === "/") {
+          res.setHeader("Content-Type", "text/html");
+          res.end(
+            '<a href="/extra">Extra</a><a href="/hidden">Hidden</a><a href="/image.png">Image</a>',
+          );
+        } else {
+          res.writeHead(404).end();
+        }
+      });
+      await new Promise<void>(resolve =>
+        fixture.listen(0, "127.0.0.1", resolve),
+      );
+      try {
+        const address = fixture.address();
+        if (!address || typeof address === "string")
+          throw new Error("Fixture did not bind");
+        origin = `http://127.0.0.1:${address.port}`;
+        const discovery = await map({ url: origin, timeout: 15_000 }, identity);
+        expect(discovery.statusCode).toBe(200);
+        const urls = discovery.body.links.map(link => link.url);
+        expect(urls).toContain(`${origin}/listed`);
+        expect(urls).toContain(`${origin}/extra`);
+        expect(urls.indexOf(`${origin}/listed`)).toBeLessThan(
+          urls.indexOf(`${origin}/extra`),
+        );
+        expect(urls).not.toContain(`${origin}/hidden`);
+        expect(urls).not.toContain(`${origin}/image.png`);
+
+        const sitemap = await map(
+          { url: origin, sitemap: "only", timeout: 15_000 },
+          identity,
+        );
+        expect(sitemap.statusCode).toBe(200);
+        const sitemapUrls = sitemap.body.links.map(link => link.url);
+        expect(sitemapUrls).toContain(`${origin}/listed`);
+        expect(sitemapUrls).not.toContain(`${origin}/extra`);
+      } finally {
+        fixture.closeAllConnections();
+        await new Promise<void>(resolve => fixture.close(() => resolve()));
+      }
+    },
+    35_000,
+  );
 
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "basic map succeeds",
