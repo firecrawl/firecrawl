@@ -7,8 +7,8 @@ minimumReleaseAgeExclude:
   - "body-parser@1.20.9 || 2.4.0"
   # GHSA-rxp7-6hxx-x8q5: patched release published today.
   - "ip-address@10.7.4"
-  - fast-xml-parser
-  - follow-redirects
+  - "fast-xml-parser@5.12.0"
+  - "follow-redirects@1.16.2"
   # GHSA-27r3-jxmh-p828: body-parser 1.20.9 and 2.4.0 were published
   # 2026-10-22, inside the 12-hour release-age gate.
   - body-parser
@@ -34,7 +34,8 @@ overrides:
   diff: "^8.0.3"
   ajv: "^8.18.0"
   fast-xml-builder: ">=1.1.6 <2.0.0"
-  fast-xml-parser: "^5.7.0"
+  # GHSA-474x-hrwr-fgx4: fixed in >=5.11.3. Bounded <6.0.0; cannot resolve to 6.x.
+  "fast-xml-parser": ">=5.11.3 <6.0.0"
   fast-uri: "3.1.9"
   # GHSA-3g3m-2fjr-6pw4: every 9.x to 14.0.1 is affected; fixed in 14.0.2.
   # Bounded <15.0.0.
@@ -112,8 +113,6 @@ overrides:
   # GHSA-j6r3-76f7-8jcv / GHSA-h3mg-xc3c-68pw: geoip-country@5 still asks for
   # ip-address@^6, but only its updatedb script loads it; lookup() never does.
   "geoip-country>ip-address": "10.7.4"
-patchedDependencies:
-  "node-fetch@2.7.0": "patches/node-fetch@2.7.0.patch"
 allowBuilds:
   "@mendable/firecrawl-rs": true
   bigint-buffer: true

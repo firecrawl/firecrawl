@@ -8,13 +8,17 @@ import {
   idmux,
   Identity,
   crawlStart,
-  extractRaw,
+  map,
+  browserCreateRaw,
 } from "./lib";
-import { config } from "../../../config";
-
-// Without the US OpenAI key, every OpenAI-backed feature is refused for
-// US-only teams.
-const HAS_US_OPENAI = !!config.OPENAI_US_API_KEY;
+// Without a US OpenAI key or service account, every OpenAI-backed feature is
+// refused for US-only teams.
+const HAS_US_OPENAI =
+  !!process.env.OPENAI_US_API_KEY?.trim() ||
+  !!(
+    process.env.OPENAI_IDENTITY_PROVIDER_ID?.trim() &&
+    process.env.OPENAI_US_SERVICE_ACCOUNT_ID?.trim()
+  );
 
 describeIf(TEST_PRODUCTION)("US-only teams", () => {
   let identity: Identity;
@@ -66,7 +70,7 @@ describeIf(TEST_PRODUCTION)("US-only teams", () => {
       );
 
       expect(response.markdown).toBeDefined();
-      expect(response.highlights).toBeUndefined();
+      expect((response as any).highlights).toBeUndefined();
       expect(response.warning).toContain(
         "Query mode is not supported for teams restricted to US-only processing.",
       );
@@ -180,22 +184,82 @@ describeIf(TEST_PRODUCTION)("US-only teams", () => {
     scrapeTimeout,
   );
 
-  itIf(!HAS_US_OPENAI)(
-    "refuses extract without a US route",
+  it.concurrent(
+    "scrapes with a US location",
     async () => {
-      const response = await extractRaw(
+      const response = await scrape(
+        { url: "https://firecrawl.dev", location: { country: "US" } },
+        identity,
+      );
+
+      expect(response.markdown).toBeDefined();
+    },
+    scrapeTimeout,
+  );
+
+  it.concurrent(
+    "refuses a scrape located outside the US",
+    async () => {
+      const response = await scrapeRaw(
         {
-          urls: ["https://firecrawl.dev"],
-          prompt: "Extract the company name.",
+          url: "https://firecrawl.dev",
+          location: { country: "NL" },
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(response.statusCode).toBe(403);
+      expect(response.body.success).toBe(false);
+      expect(response.body.code).toBe("US_ONLY_UNAVAILABLE");
+      expect(response.body.error).toContain(
+        'location.country "NL" isn\'t available to teams restricted to US-only processing',
+      );
+    },
+    scrapeTimeout,
+  );
+
+  it.concurrent(
+    "refuses a crawl located outside the US",
+    async () => {
+      const response = await crawlStart(
+        {
+          url: "https://firecrawl.dev",
+          scrapeOptions: { location: { country: "NL" } },
         },
         identity,
       );
 
       expect(response.statusCode).toBe(403);
       expect(response.body.code).toBe("US_ONLY_UNAVAILABLE");
-      expect(response.body.error).toContain(
-        "Extract is not available for teams restricted to US-only processing.",
+    },
+    scrapeTimeout,
+  );
+
+  it.concurrent(
+    "refuses a map located outside the US",
+    async () => {
+      const response = await map(
+        { url: "https://firecrawl.dev", location: { country: "NL" } },
+        identity,
       );
+
+      expect(response.statusCode).toBe(403);
+      expect(response.body.code).toBe("US_ONLY_UNAVAILABLE");
+    },
+    scrapeTimeout,
+  );
+
+  it.concurrent(
+    "refuses a browser session located outside the US",
+    async () => {
+      const response = await browserCreateRaw(
+        { location: { country: "NL" } },
+        identity,
+      );
+
+      expect(response.statusCode).toBe(403);
+      expect(response.body.code).toBe("US_ONLY_UNAVAILABLE");
     },
     scrapeTimeout,
   );

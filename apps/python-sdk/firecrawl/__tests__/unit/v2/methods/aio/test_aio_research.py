@@ -59,6 +59,7 @@ async def test_search_papers_builds_query_string_with_exploded_arrays():
         categories=["cs.LG", "stat.ML"],
         from_date="2020-01-01",
         to_date="2024-12-31",
+        sort="date_desc",
     )
     path, qs = split(client.last_path)
     assert path == "/v2/search/research/papers"
@@ -68,6 +69,7 @@ async def test_search_papers_builds_query_string_with_exploded_arrays():
     assert qs["categories"] == ["cs.LG", "stat.ML"]
     assert qs["from"] == ["2020-01-01"]
     assert qs["to"] == ["2024-12-31"]
+    assert qs["sort"] == ["date_desc"]
 
 
 @pytest.mark.asyncio
@@ -160,6 +162,17 @@ async def test_related_papers_omits_rerank_when_none():
 
 
 @pytest.mark.asyncio
+async def test_lookup_protein_sends_protein_and_organism():
+    client = FakeAsyncHttpClient(FakeResponse(200, {"success": True, "match": "not_found"}))
+    await aio_research.lookup_protein(client, "Q6P087", organism="Human")
+    path, qs = split(client.last_path)
+    assert path == "/v2/search/research/proteins"
+    assert qs["protein"] == ["Q6P087"]
+    assert qs["organism"] == ["Human"]
+    assert qs["origin"][0].startswith("python-sdk@")
+
+
+@pytest.mark.asyncio
 async def test_search_github_builds_query_string():
     client = FakeAsyncHttpClient(FakeResponse(200, {"success": True, "results": []}))
     await aio_research.search_github(client, "milvus hybrid search", k=10)
@@ -187,23 +200,18 @@ async def test_error_mapping():
 async def test_async_client_exposes_research_methods():
     from firecrawl.v2.client_async import AsyncFirecrawlClient
 
-    for name in (
-        "search_papers",
-        "inspect_paper",
-        "read_paper",
-        "related_papers",
-        "search_github",
-    ):
+    for name in RESEARCH_METHODS:
         assert callable(getattr(AsyncFirecrawlClient, name)), name
 
     client = AsyncFirecrawlClient(api_key="fc-test")
     client.async_http_client = FakeAsyncHttpClient(
         FakeResponse(200, {"success": True, "results": []})
     )
-    await client.search_papers("tau aggregation inhibitors", k=5)
+    await client.search_papers("tau aggregation inhibitors", k=5, sort="date_desc")
     path, qs = split(client.async_http_client.last_path)
     assert path == "/v2/search/research/papers"
     assert qs["k"] == ["5"]
+    assert qs["sort"] == ["date_desc"]
 
 
 @pytest.mark.asyncio
@@ -221,6 +229,7 @@ RESEARCH_METHODS = (
     "inspect_paper",
     "read_paper",
     "related_papers",
+    "lookup_protein",
     "search_github",
 )
 
@@ -237,7 +246,7 @@ def _unified_client(response=None):
 
 
 def test_unified_async_client_exposes_research_methods():
-    """``AsyncFirecrawl`` delegates method by method; pin all five."""
+    """``AsyncFirecrawl`` delegates method by method; pin every research method."""
     from firecrawl import AsyncFirecrawl
 
     for name in RESEARCH_METHODS:
@@ -254,10 +263,11 @@ async def test_unified_async_client_delegates_all_research_methods():
     client = _unified_client(FakeResponse(200, {"success": True, "results": []}))
     http = client._v2_client.async_http_client
 
-    await client.search_papers("tau aggregation inhibitors", k=5)
+    await client.search_papers("tau aggregation inhibitors", k=5, sort="date_desc")
     path, qs = split(http.last_path)
     assert path == "/v2/search/research/papers"
     assert qs["k"] == ["5"]
+    assert qs["sort"] == ["date_desc"]
 
     await client.inspect_paper("pmid:12345678")
     path, _ = split(http.last_path)
@@ -272,6 +282,11 @@ async def test_unified_async_client_delegates_all_research_methods():
     path, qs = split(http.last_path)
     assert path == "/v2/search/research/papers/pmid%3A12345678/similar"
     assert qs["intent"] == ["replication attempts"]
+
+    await client.lookup_protein("RPUSD3", organism="10090")
+    path, qs = split(http.last_path)
+    assert path == "/v2/search/research/proteins"
+    assert qs["organism"] == ["10090"]
 
     await client.search_github("pysam VCF parsing memory leak")
     path, qs = split(http.last_path)

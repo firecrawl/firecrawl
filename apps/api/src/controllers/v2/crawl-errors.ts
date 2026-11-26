@@ -1,19 +1,17 @@
 import { Response } from "express";
-import { config } from "../../config";
 import {
   CrawlErrorsResponse,
   CrawlStatusParams,
   RequestWithAuth,
 } from "./types";
-import { getCrawl } from "../../lib/crawl-redis";
-import { redisEvictConnection } from "../../../src/services/redis";
+import { getCrawl, getCrawlRobotsBlocked } from "../../lib/crawl-redis";
 import { configDotenv } from "dotenv";
-import { getCrawlJobAccess } from "../../lib/operational-job-access";
+import { storedZeroDataRetention } from "../../lib/request-context";
 import { logger as _logger } from "../../lib/logger";
 import { deserializeTransportableError } from "../../lib/error-serde";
 import { TransportableError } from "../../lib/error";
-import { ThirdPartyDataTermsRequiredError } from "../../lib/exchange";
 import { scrapeQueue } from "../../services/worker/nuq-router";
+import { service } from "../../service";
 configDotenv();
 
 export async function crawlErrorsController(
@@ -26,34 +24,45 @@ export async function crawlErrorsController(
     if (sc.team_id !== req.auth.team_id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
-  } else if (config.USE_DB_AUTHENTICATION) {
-    const crawlTtlHours = req.acuc?.flags?.crawlTtlHours ?? 24;
-    let access;
+  } else {
+    const jobKind = (req.path || req.originalUrl || "").includes(
+      "/batch/scrape/",
+    )
+      ? "batchScrape"
+      : "crawl";
+    let owner;
     try {
-      access = await getCrawlJobAccess(req.params.jobId);
+      owner = await service.modules.jobStore.owner(req.params.jobId, jobKind);
     } catch (requestError) {
       _logger.error("Error getting request", { error: requestError });
       throw requestError;
     }
 
-    if (access && access.teamId !== req.auth.team_id) {
+    if (
+      owner &&
+      !(owner.matchesTeam
+        ? owner.matchesTeam(req.auth.team_id)
+        : owner.teamId === req.auth.team_id)
+    ) {
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
 
-    if (access && access.expiresAtMs <= Date.now()) {
+    if (
+      owner &&
+      owner.expiresAtMs !== undefined &&
+      owner.expiresAtMs <= Date.now()
+    ) {
       return res.status(404).json({ success: false, error: "Job expired" });
     }
 
-    if (!access) {
+    if (!owner) {
       return res.status(404).json({ success: false, error: "Job not found" });
     }
-  } else {
-    return res.status(404).json({ success: false, error: "Job not found" });
   }
 
   const logger = _logger.child({
     crawlId: req.params.jobId,
-    zeroDataRetention: sc?.zeroDataRetention ?? false,
+    zeroDataRetention: storedZeroDataRetention(sc) ?? false,
   });
   const failedJobs = (
     await scrapeQueue.getGroupJobs(
@@ -88,8 +97,25 @@ export async function crawlErrorsController(
             ? {
                 code: error.code,
                 error: error.message,
-                ...(error instanceof ThirdPartyDataTermsRequiredError
-                  ? { requiresAction: error.requiresAction }
+                ...("requiresAction" in error &&
+                (
+                  error as {
+                    requiresAction?: Extract<
+                      CrawlErrorsResponse,
+                      { errors: unknown }
+                    >["errors"][number]["requiresAction"];
+                  }
+                ).requiresAction !== undefined
+                  ? {
+                      requiresAction: (
+                        error as {
+                          requiresAction?: Extract<
+                            CrawlErrorsResponse,
+                            { errors: unknown }
+                          >["errors"][number]["requiresAction"];
+                        }
+                      ).requiresAction,
+                    }
                   : {}),
               }
             : {
@@ -98,8 +124,6 @@ export async function crawlErrorsController(
         };
       })
       .filter(x => x !== null),
-    robotsBlocked: await redisEvictConnection.smembers(
-      "crawl:" + req.params.jobId + ":robots_blocked",
-    ),
+    robotsBlocked: await getCrawlRobotsBlocked(req.params.jobId),
   });
 }

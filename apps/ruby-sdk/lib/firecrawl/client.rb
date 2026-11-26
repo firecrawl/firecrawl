@@ -131,11 +131,21 @@ module Firecrawl
       @http.get("#{path}#{query(options.merge("intent" => intent, "origin" => "ruby-sdk@#{Firecrawl::VERSION}"))}")
     end
 
+    # Look up a protein's UniProt location, function and GO cellular-component terms.
+    # The response's "notice" is the UniProt credit and license. Show it with the results.
+    #
+    # @param protein [String] UniProt accession, entry name, gene symbol or protein name
+    # @param options [Hash] optional query parameters
+    # @return [Hash]
+    def lookup_protein(protein, options = {})
+      raise ArgumentError, "Protein is required" if protein.nil?
+      @http.get("/v2/search/research/proteins#{query(options.merge("protein" => protein, "origin" => "ruby-sdk@#{Firecrawl::VERSION}"))}")
+    end
+
     # Search GitHub research content.
     #
-    # @deprecated Stops responding after 2026-11-03. Use {#developer_search},
-    #   which does not carry over the score breakdown or the web fallback
-    #   results.
+    # @deprecated The research index GitHub search endpoint was removed after
+    #   2026-11-03. Use {#developer_search} instead.
     # @param query_text [String] GitHub query
     # @param options [Hash] optional query parameters
     # @return [Hash]

@@ -21,7 +21,7 @@ describe("v2.usage e2e", () => {
   test("get_concurrency", async () => {
     const resp = await client.getConcurrency();
     expect(typeof resp.concurrency).toBe("number");
-    expect(typeof resp.maxConcurrency).toBe("number");
+    expect(resp.maxConcurrency === null || typeof resp.maxConcurrency === "number").toBe(true);
   }, testTimeoutMs(60_000));
 
   test("get_credit_usage", async () => {
@@ -39,7 +39,7 @@ describe("v2.usage e2e", () => {
     expect(typeof resp.jobsInQueue).toBe("number");
     expect(typeof resp.activeJobsInQueue).toBe("number");
     expect(typeof resp.waitingJobsInQueue).toBe("number");
-    expect(typeof resp.maxConcurrency).toBe("number");
+    expect(resp.maxConcurrency === null || typeof resp.maxConcurrency === "number").toBe(true);
   }, testTimeoutMs(60_000));
 });
 

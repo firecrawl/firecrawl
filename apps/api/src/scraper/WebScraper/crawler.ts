@@ -6,7 +6,7 @@ import { getLinksFromSitemap } from "./sitemap";
 import robotsParser, { Robot } from "robots-parser";
 import { getURLDepth } from "./utils/maxDepthUtils";
 import { logger as _logger } from "../../lib/logger";
-import { redisEvictConnection } from "../../services/redis";
+import { crawlStateStore } from "../../lib/crawl-state-store";
 import { extractLinks } from "@mendable/firecrawl-rs";
 import {
   fetchRobotsTxt,
@@ -85,6 +85,7 @@ export class WebCrawler {
   private maxDiscoveryDepth: number | undefined;
   private currentDiscoveryDepth: number;
   private zeroDataRetention: boolean;
+  public readonly usOnly: boolean;
   private location?: ScrapeOptions["location"];
   private headers?: Record<string, string>;
   private robotsUserAgent?: string;
@@ -109,6 +110,7 @@ export class WebCrawler {
     maxDiscoveryDepth,
     currentDiscoveryDepth,
     zeroDataRetention,
+    usOnly,
     location,
     headers,
     robotsUserAgent,
@@ -131,6 +133,7 @@ export class WebCrawler {
     maxDiscoveryDepth?: number;
     currentDiscoveryDepth?: number;
     zeroDataRetention?: boolean;
+    usOnly?: boolean;
     location?: ScrapeOptions["location"];
     headers?: Record<string, string>;
     robotsUserAgent?: string;
@@ -155,6 +158,7 @@ export class WebCrawler {
     this.ignoreRobotsTxt = ignoreRobotsTxt ?? false;
     this.regexOnFullURL = regexOnFullURL ?? false;
     this.zeroDataRetention = zeroDataRetention ?? false;
+    this.usOnly = usOnly ?? false;
     this.logger = _logger.child({
       crawlId: this.jobId,
       module: "WebCrawler",
@@ -500,6 +504,8 @@ export class WebCrawler {
           url: this.robotsTxtUrl,
           zeroDataRetention: this.zeroDataRetention,
           location: this.location,
+          usOnly: this.usOnly,
+          skipTlsVerification,
           ...(this.robotsUserAgent
             ? {
                 headers: {
@@ -605,7 +611,7 @@ export class WebCrawler {
         );
         let filteredLinks = filteredLinksResult.links;
         leftOfLimit -= filteredLinks.length;
-        const pipeline = redisEvictConnection.pipeline();
+        const pipeline = (await crawlStateStore(this.jobId)).pipeline();
 
         const normalizedUrls = filteredLinks.map(url => normalizeUrl(url));
         normalizedUrls.forEach(normalizedUrl => {
@@ -622,11 +628,9 @@ export class WebCrawler {
             results[index][1] === 1,
         );
 
-        await redisEvictConnection.expire(
-          "sitemap:" + this.jobId + ":links",
-          3600,
-          "NX",
-        );
+        await (
+          await crawlStateStore(this.jobId)
+        ).expire("sitemap:" + this.jobId + ":links", 3600, "NX");
 
         if (uniqueURLs.length > 0) {
           deliveredCount += uniqueURLs.length;
@@ -713,7 +717,9 @@ export class WebCrawler {
     try {
       if (count > 0) {
         if (
-          await redisEvictConnection.sadd(
+          await (
+            await crawlStateStore(this.jobId)
+          ).sadd(
             "sitemap:" + this.jobId + ":links",
             normalizeUrl(this.initialUrl),
           )
@@ -723,11 +729,9 @@ export class WebCrawler {
         count++;
       }
 
-      await redisEvictConnection.expire(
-        "sitemap:" + this.jobId + ":links",
-        3600,
-        "NX",
-      );
+      await (
+        await crawlStateStore(this.jobId)
+      ).expire("sitemap:" + this.jobId + ":links", 3600, "NX");
     } catch (error) {
       this.logger.error("Error dispatching initial URL after sitemap fetch", {
         method: "tryGetSitemap",
@@ -940,6 +944,7 @@ export class WebCrawler {
           maxAge,
           zeroDataRetention: this.zeroDataRetention,
           location: this.location,
+          usOnly: this.usOnly,
           headers: this.headers,
         },
         this.logger,
@@ -1015,6 +1020,7 @@ export class WebCrawler {
                 maxAge,
                 zeroDataRetention: this.zeroDataRetention,
                 location: this.location,
+                usOnly: this.usOnly,
                 headers: this.headers,
               },
               this.logger,
@@ -1059,6 +1065,7 @@ export class WebCrawler {
             maxAge,
             zeroDataRetention: this.zeroDataRetention,
             location: this.location,
+            usOnly: this.usOnly,
             headers: this.headers,
           },
           this.logger,
@@ -1087,6 +1094,7 @@ export class WebCrawler {
                 maxAge,
                 zeroDataRetention: this.zeroDataRetention,
                 location: this.location,
+                usOnly: this.usOnly,
                 headers: this.headers,
               },
               this.logger,
