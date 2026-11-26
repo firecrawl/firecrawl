@@ -32,7 +32,6 @@ vi.mock("../../../lib/crawl-redis", () => ({
     getRobotsTxt: vi.fn().mockResolvedValue(""),
   })),
   saveCrawl: vi.fn().mockResolvedValue(undefined),
-  markCrawlActive: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../../../services/worker/nuq-router", () => ({

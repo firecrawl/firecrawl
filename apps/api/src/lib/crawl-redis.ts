@@ -73,8 +73,6 @@ export async function saveCrawl(id: string, crawl: StoredCrawl) {
 
       const redis = await crawlStateStore(id);
       await redis.set("crawl:" + id, JSON.stringify(crawl), "EX", 24 * 60 * 60);
-      await redis.sadd("crawls_by_team_id:" + crawl.team_id, id);
-      await redis.expire("crawls_by_team_id:" + crawl.team_id, 24 * 60 * 60);
     },
     { zeroDataRetention },
   );
@@ -133,11 +131,6 @@ export async function recordThreatBlocked(
   const isNew = await redis.hsetnx(key, url, JSON.stringify(decision));
   await redis.expire(key, 24 * 60 * 60);
   return isNew === 1;
-}
-
-export async function markCrawlActive(id: string) {
-  const redis = await crawlStateStore(id);
-  await redis.sadd("active_crawls", id);
 }
 
 export async function getCrawl(id: string): Promise<StoredCrawl | null> {
@@ -568,14 +561,6 @@ export async function finishCrawl(id: string, __logger: Logger = _logger) {
   });
 
   await redis.set("crawl:" + id + ":finish", "yes", "EX", 24 * 60 * 60);
-
-  await redis.srem("active_crawls", id);
-
-  const crawl = await getCrawl(id);
-  if (crawl && crawl.team_id) {
-    await redis.srem("crawls_by_team_id:" + crawl.team_id, id);
-    await redis.expire("crawls_by_team_id:" + crawl.team_id, 24 * 60 * 60);
-  }
 
   // Clear visited sets to save memory
   await redis.del("crawl:" + id + ":visited");
