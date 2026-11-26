@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => ({
   sets: new Map<string, Set<string>>(),
+  fallbackSets: new Map<string, Set<string>>(),
+  primaryCrawls: new Set<string>(),
+  fallbackCrawls: new Set<string>(),
   failValue: undefined as string | undefined,
   beforeReply: undefined as (() => Promise<void>) | undefined,
   beforeMembershipReply: undefined as (() => Promise<void>) | undefined,
@@ -12,20 +15,20 @@ const fake = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../services/redis", () => {
-  const sadd = (key: string, value: string) => {
-    const values = fake.sets.get(key) ?? new Set<string>();
-    fake.sets.set(key, values);
-    const added = values.has(value) ? 0 : 1;
-    values.add(value);
-    return added;
-  };
-  return {
-    redisEvictConnection: {
+  const makeStore = (sets: typeof fake.sets, crawls: Set<string>) => {
+    const sadd = (key: string, value: string) => {
+      const values = sets.get(key) ?? new Set<string>();
+      sets.set(key, values);
+      const added = values.has(value) ? 0 : 1;
+      values.add(value);
+      return added;
+    };
+    return {
+      exists: async (key: string) => (crawls.has(key) ? 1 : 0),
       sadd: async (key: string, value: string) => sadd(key, value),
       srem: async (key: string, ...values: string[]) =>
         values.reduce(
-          (removed, value) =>
-            removed + (fake.sets.get(key)?.delete(value) ? 1 : 0),
+          (removed, value) => removed + (sets.get(key)?.delete(value) ? 1 : 0),
           0,
         ),
       expire: async () => {
@@ -41,7 +44,7 @@ vi.mock("../../../services/redis", () => {
             commands.push(() =>
               value === fake.failMemberValue
                 ? [new Error("SISMEMBER failed"), null]
-                : [null, fake.sets.get(key)?.has(value) ? 1 : 0],
+                : [null, sets.get(key)?.has(value) ? 1 : 0],
             );
             return pipeline;
           },
@@ -63,7 +66,14 @@ vi.mock("../../../services/redis", () => {
         };
         return pipeline;
       },
-    },
+    };
+  };
+  return {
+    redisCrawlStateConnection: makeStore(fake.sets, fake.primaryCrawls),
+    redisCrawlStateFallbackConnection: makeStore(
+      fake.fallbackSets,
+      fake.fallbackCrawls,
+    ),
   };
 });
 vi.mock("../sitemap", () => ({ getLinksFromSitemap: vi.fn() }));
@@ -89,6 +99,9 @@ import { filterLinks as nativeFilterLinks } from "@mendable/firecrawl-rs";
 
 beforeEach(() => {
   fake.sets.clear();
+  fake.fallbackSets.clear();
+  fake.primaryCrawls.clear();
+  fake.fallbackCrawls.clear();
   fake.failValue = undefined;
   fake.beforeReply = undefined;
   fake.beforeMembershipReply = undefined;
@@ -115,8 +128,9 @@ async function discover(
   onlySitemap = false,
   onBatch?: (batch: string[]) => Promise<void>,
   timeout = 120000,
+  jobId = "budget",
 ) {
-  const crawler = new WebCrawler({ jobId: "budget", initialUrl: A, limit });
+  const crawler = new WebCrawler({ jobId, initialUrl: A, limit });
   vi.spyOn((crawler as any).logger, "warn").mockImplementation(
     (message: string) => {
       fake.warnings.push(message);
@@ -302,44 +316,74 @@ it("does not deliver a Redis reservation whose reply arrives after the timeout",
   expect(await discover([[A, B]], 2)).toEqual([A, B]);
 });
 
-it("releases new reservations when expiration finishes after timeout while preserving existing keys", async () => {
-  vi.useFakeTimers();
-  fake.sets.set("sitemap:budget:links", new Set(["example.com/a"]));
-  const started = gate();
-  const release = gate();
-  fake.beforeExpire = async () => {
-    fake.beforeExpire = undefined;
-    started.open();
-    await release.wait;
-  };
-  const response = discover([[A, B]], 2, false, false, undefined, 10);
-  await started.wait;
-  await vi.advanceTimersByTimeAsync(10);
-  const delivered = await response;
-  expect(delivered).toEqual([]);
-  release.open();
-  await vi.runAllTimersAsync();
-  expect(fake.sets.get("sitemap:budget:links")).toEqual(
-    new Set(["example.com/a"]),
-  );
-  expect(delivered).toEqual([]);
-  expect(await discover([[A, B]], 2)).toEqual([B]);
-});
+it.each(["primary", "fallback"] as const)(
+  "releases new reservations from the %s store when expiration finishes after timeout while preserving existing keys",
+  async store => {
+    vi.useFakeTimers();
+    const jobId = `expiry-${store}`;
+    const key = `sitemap:${jobId}:links`;
+    const sets = store === "fallback" ? fake.fallbackSets : fake.sets;
+    const otherSets = store === "fallback" ? fake.sets : fake.fallbackSets;
+    const crawls =
+      store === "fallback" ? fake.fallbackCrawls : fake.primaryCrawls;
+    crawls.add(`crawl:${jobId}`);
+    sets.set(key, new Set(["example.com/a"]));
+    const started = gate();
+    const release = gate();
+    fake.beforeExpire = async () => {
+      fake.beforeExpire = undefined;
+      started.open();
+      await release.wait;
+    };
+    const response = discover([[A, B]], 2, false, false, undefined, 10, jobId);
+    await started.wait;
+    await vi.advanceTimersByTimeAsync(10);
+    const delivered = await response;
+    expect(delivered).toEqual([]);
+    release.open();
+    await vi.runAllTimersAsync();
+    expect(sets.get(key)).toEqual(new Set(["example.com/a"]));
+    expect(delivered).toEqual([]);
+    expect(
+      await discover([[A, B]], 2, false, false, undefined, 120000, jobId),
+    ).toEqual([B]);
+    expect(otherSets.has(key)).toBe(false);
+  },
+);
 
-it("batches membership checks when a small remaining budget follows many stored URLs", async () => {
-  const existing = [
-    A,
-    ...Array.from({ length: 2048 }, (_, i) => `https://example.com/old-${i}`),
-  ];
-  fake.sets.set(
-    "sitemap:budget:links",
-    new Set(existing.map(url => url.replace(/^https:\/\//, ""))),
-  );
-  expect(await discover([[...existing, B]], 1)).toEqual([B]);
-  // There are 2049 stored keys: do not make one network round trip per key.
-  expect(fake.pipelineSizes.length).toBeLessThan(12);
-  expect(Math.max(...fake.pipelineSizes)).toBeLessThanOrEqual(512);
-});
+it.each(["primary", "fallback"] as const)(
+  "batches membership checks in the %s store when a small remaining budget follows many stored URLs",
+  async store => {
+    const jobId = `membership-${store}`;
+    const key = `sitemap:${jobId}:links`;
+    const sets = store === "fallback" ? fake.fallbackSets : fake.sets;
+    const otherSets = store === "fallback" ? fake.sets : fake.fallbackSets;
+    const crawls =
+      store === "fallback" ? fake.fallbackCrawls : fake.primaryCrawls;
+    crawls.add(`crawl:${jobId}`);
+    const existing = [
+      A,
+      ...Array.from({ length: 2048 }, (_, i) => `https://example.com/old-${i}`),
+    ];
+    sets.set(key, new Set(existing.map(url => url.replace(/^https:\/\//, ""))));
+    expect(
+      await discover(
+        [[...existing, B]],
+        1,
+        false,
+        false,
+        undefined,
+        120000,
+        jobId,
+      ),
+    ).toEqual([B]);
+    // There are 2049 stored keys: do not make one network round trip per key.
+    expect(fake.pipelineSizes.length).toBeLessThan(12);
+    expect(Math.max(...fake.pipelineSizes)).toBeLessThanOrEqual(512);
+    expect(sets.get(key)?.has("example.com/b")).toBe(true);
+    expect(otherSets.has(key)).toBe(false);
+  },
+);
 
 it("falls back to SADD when a membership lookup fails", async () => {
   fake.sets.set("sitemap:budget:links", new Set(["example.com/a"]));

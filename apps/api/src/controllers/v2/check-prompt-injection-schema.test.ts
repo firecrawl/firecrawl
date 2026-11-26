@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   crawlRequestSchema,
-  fromV1ScrapeOptions,
   scrapeOptions,
   scrapeRequestSchema,
 } from "./types";
-import { scrapeOptions as v1ScrapeOptions } from "../v1/types";
 
 const url = "https://example.com";
 const jsonFormat = {
@@ -84,23 +82,5 @@ describe("checkPromptInjection", () => {
         formats: ["rawBase64"],
       }).success,
     ).toBe(false);
-  });
-
-  it("maps v1 jsonOptions.checkPromptInjection to the top-level flag", () => {
-    const v1 = v1ScrapeOptions.parse({
-      formats: ["json"],
-      jsonOptions: { schema: jsonFormat.schema, checkPromptInjection: true },
-    });
-
-    const { scrapeOptions: converted } = fromV1ScrapeOptions(
-      v1,
-      undefined,
-      "team-id",
-    );
-
-    expect(converted.checkPromptInjection).toBe(true);
-    expect(converted.formats.find(f => f.type === "json")).not.toHaveProperty(
-      "checkPromptInjection",
-    );
   });
 });

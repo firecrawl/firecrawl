@@ -100,7 +100,7 @@ describe("V2 Scrape skipTlsVerification Default", () => {
       const response = await scrapeRaw(
         {
           url: selfSignedUrl,
-          maxAge: 0,
+          ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
         },
         identity,
       );
@@ -123,7 +123,7 @@ describe("V2 Scrape skipTlsVerification Default", () => {
         {
           url: selfSignedUrl,
           skipTlsVerification: true,
-          maxAge: 0,
+          ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
         },
         identity,
       );
@@ -140,7 +140,7 @@ describe("V2 Scrape skipTlsVerification Default", () => {
       const data = await scrape(
         {
           url: TEST_SUITE_WEBSITE, // NOTE: test website in self-host mode may not use TLS, need to check this out
-          maxAge: 0,
+          ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
         },
         identity,
       );
@@ -158,7 +158,7 @@ describe("V2 Scrape skipTlsVerification Default", () => {
         {
           url: TEST_SUITE_WEBSITE,
           formats: [{ type: "screenshot", fullPage: false }],
-          maxAge: 0,
+          ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
         },
         identity,
       );
@@ -177,7 +177,7 @@ describe("V2 Scrape skipTlsVerification Default", () => {
         {
           url: TEST_SUITE_WEBSITE,
           formats: [{ type: "screenshot", fullPage: true }],
-          maxAge: 0,
+          ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
         },
         identity,
       );

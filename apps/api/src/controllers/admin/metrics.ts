@@ -1,7 +1,8 @@
 import type { Request, Response } from "express";
 import { getRedisConnection } from "../../services/queue-service";
-import { getDbPoolMetrics } from "../../db/connection";
 import { nuqFdbGetMetrics } from "../../services/worker/nuq-fdb";
+
+import { getAdminMetricsCollectors } from "../../lib/admin-metrics-registry";
 import { nuqGetLocalMetrics } from "../../services/worker/nuq";
 import { scrapeQueue } from "../../services/worker/nuq-router";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
@@ -32,6 +33,13 @@ export async function metricsController(_: Request, res: Response) {
   } while (cursor !== "0");
 
   const semaphoreMetrics = await teamConcurrencySemaphore.getMetrics();
+  const extraMetrics = (
+    await Promise.all(getAdminMetricsCollectors().map(collector => collector()))
+  )
+    .filter(chunk => chunk.length > 0)
+    .join("\n");
+
+  const suffix = extraMetrics.length > 0 ? `\n${extraMetrics}` : "";
 
   res.contentType("text/plain").send(`\
 # HELP concurrency_limit_queue_job_count_total The total number of jobs across all concurrency limit queues
@@ -43,8 +51,7 @@ concurrency_limit_queue_job_count_total ${totalJobCount}
 concurrency_limit_queue_team_count ${teamCount}
 
 ${nuqGetLocalMetrics()}
-${semaphoreMetrics}
-${getDbPoolMetrics()}`);
+${semaphoreMetrics}${suffix}`);
 }
 
 export async function nuqMetricsController(_: Request, res: Response) {

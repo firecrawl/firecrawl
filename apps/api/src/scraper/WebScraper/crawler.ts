@@ -6,7 +6,7 @@ import { getLinksFromSitemap } from "./sitemap";
 import robotsParser, { Robot } from "robots-parser";
 import { getURLDepth } from "./utils/maxDepthUtils";
 import { logger as _logger } from "../../lib/logger";
-import { redisEvictConnection } from "../../services/redis";
+import { crawlStateStore } from "../../lib/crawl-state-store";
 import { extractLinks } from "@mendable/firecrawl-rs";
 import {
   fetchRobotsTxt,
@@ -620,7 +620,9 @@ export class WebCrawler {
         fromMap,
         fromMap,
       );
-      if (deliveryClosed || fetchAbort.aborted) return;
+      if (deliveryClosed || fetchAbort.aborted || filtered.links.length === 0)
+        return;
+      const stateStore = await crawlStateStore(this.jobId);
       let offset = 0;
       while (offset < filtered.links.length && leftOfLimit > 0) {
         if (deliveryClosed || fetchAbort.aborted) return;
@@ -639,7 +641,7 @@ export class WebCrawler {
           }
           if (lookahead.size > 0) {
             const members = [...lookahead];
-            const membership = redisEvictConnection.pipeline();
+            const membership = stateStore.pipeline();
             members.forEach(key =>
               membership.sismember("sitemap:" + this.jobId + ":links", key),
             );
@@ -676,7 +678,7 @@ export class WebCrawler {
           // original result, since retrying them would turn them into duplicates.
           for (let attempt = 0; pending.length > 0 && attempt < 3; attempt++) {
             if (deliveryClosed || fetchAbort.aborted) return;
-            const pipeline = redisEvictConnection.pipeline();
+            const pipeline = stateStore.pipeline();
             pending.forEach(index => pipeline.sadd(redisKey, keys[index]));
             const results = await pipeline.exec();
             const retry: number[] = [];
@@ -710,7 +712,7 @@ export class WebCrawler {
           const uniqueURLs = candidates.filter((_, index) =>
             inserted.has(index),
           );
-          await redisEvictConnection.expire(redisKey, 3600, "NX");
+          await stateStore.expire(redisKey, 3600, "NX");
           if (deliveryClosed || fetchAbort.aborted) return;
           if (uniqueURLs.length > 0) {
             dispatched = true;
@@ -725,7 +727,7 @@ export class WebCrawler {
             const reservedKeys = [...inserted].map(index => keys[index]);
             reservedKeys.forEach(key => knownKeys.delete(key));
             try {
-              await redisEvictConnection.srem(redisKey, ...reservedKeys);
+              await stateStore.srem(redisKey, ...reservedKeys);
             } catch (error) {
               this.logger.warn(
                 "Could not release undelivered sitemap reservations",
@@ -828,7 +830,9 @@ export class WebCrawler {
     try {
       if (count > 0) {
         if (
-          await redisEvictConnection.sadd(
+          await (
+            await crawlStateStore(this.jobId)
+          ).sadd(
             "sitemap:" + this.jobId + ":links",
             normalizeUrl(this.initialUrl),
           )
@@ -838,11 +842,9 @@ export class WebCrawler {
         count++;
       }
 
-      await redisEvictConnection.expire(
-        "sitemap:" + this.jobId + ":links",
-        3600,
-        "NX",
-      );
+      await (
+        await crawlStateStore(this.jobId)
+      ).expire("sitemap:" + this.jobId + ":links", 3600, "NX");
     } catch (error) {
       this.logger.error("Error dispatching initial URL after sitemap fetch", {
         method: "tryGetSitemap",

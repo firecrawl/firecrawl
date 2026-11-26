@@ -1,22 +1,6 @@
 import express from "express";
 import request from "supertest";
 
-vi.mock("../../services/autumn/autumn.service", () => ({
-  autumnService: { checkCredits: vi.fn() },
-  CREDITS_FEATURE_ID: "CREDITS",
-}));
-vi.mock("../../services/autumn/usage", () => ({
-  getTeamBalance: vi.fn(),
-}));
-vi.mock("../../controllers/auth", () => ({
-  authenticateUser: vi.fn(),
-}));
-vi.mock("../../services/idempotency/create", () => ({
-  createIdempotencyKey: vi.fn(),
-}));
-vi.mock("../../services/idempotency/validate", () => ({
-  validateIdempotencyKey: vi.fn(),
-}));
 vi.mock("geoip-country", () => ({ lookup: vi.fn(() => null) }));
 
 import { notFoundHandler } from "../../lib/not-found";

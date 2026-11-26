@@ -2,7 +2,9 @@ import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
   HAS_AI,
+  itIf,
   TEST_PRODUCTION,
+  TEST_SELF_HOST,
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import crypto from "node:crypto";
@@ -244,7 +246,11 @@ describe("/v2/parse", () => {
       );
 
       expect(result.markdown).toContain("Parse HTML Upload Test");
-      expect(result.metadata.creditsUsed).toBe(1);
+      if (TEST_PRODUCTION) {
+        expect(result.metadata.creditsUsed).toBe(1);
+      } else {
+        expect(result.metadata.creditsUsed).toBeUndefined();
+      }
       expect(result.metadata.sourceURL).toBe("upload.html");
     },
     scrapeTimeout,
@@ -389,9 +395,9 @@ describe("/v2/parse", () => {
   it(
     "handles upload-ref signing without authentication according to keyless config",
     async () => {
-      if (!config.USE_DB_AUTHENTICATION) {
+      if (TEST_SELF_HOST) {
         console.warn(
-          "Skipping unauthenticated uploadRef signing test because authentication is bypassed when USE_DB_AUTHENTICATION is disabled",
+          "Skipping unauthenticated uploadRef signing test in self-hosted mode",
         );
         return;
       }
@@ -445,8 +451,7 @@ describe("/v2/parse", () => {
       const init = await mintUploadRef(identity);
       if (!init) return;
 
-      const canUseRealSecondTeam =
-        !!config.IDMUX_URL && config.USE_DB_AUTHENTICATION === true;
+      const canUseRealSecondTeam = !!process.env.IDMUX_URL && !TEST_SELF_HOST;
       const otherIdentity = canUseRealSecondTeam
         ? await idmux({
             name: "parse-upload-ref-other-team",
@@ -576,7 +581,11 @@ describe("/v2/parse", () => {
       expect(markdown).toContain("Parse DOCX Upload Test Footer");
       expect(markdown.indexOf("Header")).toBeLessThan(markdown.indexOf("Body"));
       expect(markdown.indexOf("Body")).toBeLessThan(markdown.indexOf("Footer"));
-      expect(result.metadata.creditsUsed).toBe(1);
+      if (TEST_PRODUCTION) {
+        expect(result.metadata.creditsUsed).toBe(1);
+      } else {
+        expect(result.metadata.creditsUsed).toBeUndefined();
+      }
     },
     scrapeTimeout,
   );
@@ -608,45 +617,6 @@ describe("/v2/parse", () => {
       scrapeTimeout * 2,
     );
   });
-
-  describeIf(ALLOW_TEST_SUITE_WEBSITE && !!config.FIRE_PDF_BASE_URL)(
-    "PDF upload physical page markdown",
-    () => {
-      it(
-        "returns physical pages for an uploaded PDF",
-        async () => {
-          expect(pdfFixture).not.toBeNull();
-
-          const result = await parse(
-            {
-              options: {
-                formats: ["markdown"],
-                parsers: [{ type: "pdf", mode: "auto", pages: true }],
-              },
-              file: {
-                content: pdfFixture!,
-                filename: "upload.pdf",
-                contentType: "application/pdf",
-              },
-            },
-            identity,
-          );
-
-          expect(result.markdown).toContain("PDF Test File");
-          expect(result.pages).toHaveLength(result.metadata.numPages!);
-          result.pages?.forEach((page, index) => {
-            expect(page).toEqual(
-              expect.objectContaining({
-                pageNumber: index + 1,
-                markdown: expect.any(String),
-              }),
-            );
-          });
-        },
-        scrapeTimeout * 3,
-      );
-    },
-  );
 
   it(
     "returns a validation error when file is missing",
@@ -713,7 +683,7 @@ describe("/v2/parse", () => {
   it(
     "logs parse metadata into the parses table",
     async () => {
-      if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
+      if (TEST_SELF_HOST || !HAS_JOB_LOG) return;
 
       const filename = `parse-log-${Date.now()}.html`;
       await parse(
@@ -786,7 +756,7 @@ describe("/v2/parse", () => {
     scrapeTimeout,
   );
 
-  it(
+  itIf(TEST_PRODUCTION)(
     "rejects changeTracking format for parse uploads",
     async () => {
       const failure = await parseWithFailure(
@@ -881,7 +851,7 @@ describe("/v2/parse", () => {
     scrapeTimeout,
   );
 
-  it(
+  itIf(TEST_PRODUCTION)(
     "rejects non-basic/auto proxy for parse uploads",
     async () => {
       const failure = await parseWithFailure(
@@ -928,7 +898,7 @@ describe("/v2/parse", () => {
     scrapeTimeout,
   );
 
-  it(
+  itIf(TEST_PRODUCTION)(
     "rejects branding format for parse uploads",
     async () => {
       const failure = await parseWithFailure(

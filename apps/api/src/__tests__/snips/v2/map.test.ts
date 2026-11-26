@@ -1,6 +1,7 @@
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   concurrentIf,
+  TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import { expectMapToSucceed, map, idmux, Identity } from "./lib";
@@ -86,7 +87,7 @@ describe("Map tests", () => {
           url: "https://www.hfea.gov.uk",
           sitemap: "only",
           useMock: "map-sitemap-all-urls",
-          ignoreCache: true,
+          ...(TEST_PRODUCTION ? { ignoreCache: true } : {}),
         },
         identity,
       );
@@ -112,7 +113,7 @@ describe("Map tests", () => {
           url: "https://www.hfea.gov.uk",
           sitemap: "only",
           useMock: "map-sitemap-all-urls",
-          ignoreCache: true,
+          ...(TEST_PRODUCTION ? { ignoreCache: true } : {}),
           limit: 2,
         },
         identity,
@@ -133,7 +134,7 @@ describe("Map tests", () => {
           url: "https://www.hfea.gov.uk",
           sitemap: "only",
           useMock: "map-sitemap-deeply-nested",
-          ignoreCache: true,
+          ...(TEST_PRODUCTION ? { ignoreCache: true } : {}),
         },
         identity,
       );
@@ -156,7 +157,7 @@ describe("Map tests", () => {
           url: "https://www.hfea.gov.uk",
           sitemap: "only",
           useMock: "map-sitemap-deeply-nested-only",
-          ignoreCache: true,
+          ...(TEST_PRODUCTION ? { ignoreCache: true } : {}),
         },
         identity,
       );
@@ -223,9 +224,9 @@ describe("Map tests", () => {
           url: "http://firecrawl.com",
           limit: 5,
           sitemap: "only",
-          useIndex: false,
+          ...(TEST_PRODUCTION ? { useIndex: false } : {}),
           useMock: "map-redirect",
-          ignoreCache: true,
+          ...(TEST_PRODUCTION ? { ignoreCache: true } : {}),
         },
         identity,
       );
