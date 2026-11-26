@@ -703,5 +703,19 @@ macro_rules! export_oss_napi {
       let res = $crate::wrappers::detect_pdf(path, ctx).await?;
       Ok(_convert_pdf_result(res))
     }
+
+    /// Parse raw HTML once and derive cleaned HTML plus requested metadata,
+    /// links, images, and attributes with W3C trace propagation and ZDR safety.
+    #[napi_derive::napi(
+      ts_args_type = "rawHtml: string, requestJson: string, contextJson: string",
+      ts_return_type = "Promise<CoreNative.DeriveCoreHtmlResult>"
+    )]
+    pub async fn derive_core_html(
+      raw_html: String,
+      request_json: String,
+      context_json: String,
+    ) -> napi::Result<serde_json::Value> {
+      $crate::core_html::derive_core_html(raw_html, request_json, context_json).await
+    }
   };
 }

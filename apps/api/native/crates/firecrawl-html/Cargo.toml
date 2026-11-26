@@ -7,12 +7,17 @@ publish.workspace = true
 version.workspace = true
 
 [dependencies]
+firecrawl-core-types.workspace = true
 kuchikiki.workspace = true
 nodesig.workspace = true
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tracing.workspace = true
 url.workspace = true
+
+[dev-dependencies]
+hegeltest.workspace = true
 
 [lints]
 workspace = true

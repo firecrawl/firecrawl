@@ -720,11 +720,14 @@ dependencies = [
 name = "firecrawl-html"
 version = "0.1.0"
 dependencies = [
+ "firecrawl-core-types",
+ "hegeltest",
  "kuchikiki",
  "nodesig",
  "regex",
  "serde",
  "serde_json",
+ "tracing",
  "url",
 ]
 
@@ -741,15 +744,20 @@ dependencies = [
 name = "firecrawl-napi-exports"
 version = "0.1.0"
 dependencies = [
+ "firecrawl-core-types",
  "firecrawl-crawler",
  "firecrawl-html",
  "firecrawl-parsers",
+ "firecrawl-telemetry",
  "napi",
  "napi-derive",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
+ "tracing-opentelemetry",
  "tracing-subscriber",
 ]
 

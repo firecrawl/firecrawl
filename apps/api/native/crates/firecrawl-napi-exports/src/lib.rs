@@ -1,12 +1,15 @@
+pub mod core_html;
 pub mod logging;
 pub mod utils;
 pub mod wrappers;
 
 #[doc(hidden)]
 pub mod __deps {
+  pub use firecrawl_core_types;
   pub use firecrawl_crawler;
   pub use firecrawl_html;
   pub use firecrawl_parsers;
+  pub use firecrawl_telemetry;
 }
 
 pub use logging::{

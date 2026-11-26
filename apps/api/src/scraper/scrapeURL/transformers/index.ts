@@ -1,4 +1,8 @@
+import { deriveCoreHtml, type CoreNative } from "@mendable/firecrawl-rs";
+import { config } from "../../../config";
 import { parseMarkdown } from "../../../lib/html-to-markdown";
+import { decodeCoreNativeError } from "../../../lib/native-errors";
+import { serializeTraceContext } from "../../../lib/otel-tracer";
 import { Meta } from "..";
 import { Document } from "../../../controllers/v2/types";
 import { htmlTransform } from "../lib/removeUnwantedElements";
@@ -13,24 +17,85 @@ import {
 } from "./llmExtract";
 import { performQuery } from "./query";
 import { removeBase64Images } from "./removeBase64Images";
-import { performAttributes } from "./performAttributes";
+import { performAttributes as _performAttributes } from "./performAttributes";
 import { performPromptInjectionGuard } from "./promptInjectionGuard";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { scrapeHooks, toScrapeMeta } from "../hooks";
 
+type DerivedCoreHtmlCache = {
+  rawHtml: string;
+  html: string;
+  targetUrl: string;
+  metadata?: CoreNative.DeriveCoreHtmlResult["metadata"];
+  links?: string[];
+  images?: string[];
+  attributes?: CoreNative.ExtractedAttribute[];
+};
+
+type TransformerRunState = {
+  coreHtml?: DerivedCoreHtmlCache;
+};
+
 type Transformer = (
   meta: Meta,
   document: Document,
+  state?: TransformerRunState,
 ) => Document | Promise<Document>;
+
+function resolveTargetUrl(meta: Meta, document: Document): string {
+  return (
+    document.metadata.url ??
+    document.metadata.sourceURL ??
+    meta.rewrittenUrl ??
+    meta.url
+  );
+}
+
+function buildMetadataFromNative(
+  meta: Meta,
+  rawMetadata: NonNullable<CoreNative.DeriveCoreHtmlResult["metadata"]>,
+): Partial<Document["metadata"]> {
+  const { favicon: rawFavicon, ...fromRust } = rawMetadata;
+
+  let favicon: string | undefined = undefined;
+  if (typeof rawFavicon === "string" && rawFavicon) {
+    try {
+      favicon = new URL(rawFavicon, meta.rewrittenUrl ?? meta.url).href;
+    } catch (error) {
+      meta.logger.debug("Failed to resolve favicon URL", {
+        favicon: rawFavicon,
+        error,
+      });
+    }
+  }
+
+  return {
+    ...fromRust,
+    favicon,
+    scrapeId: meta.id,
+  };
+}
 
 async function deriveMetadataFromRawHTML(
   meta: Meta,
   document: Document,
+  state?: TransformerRunState,
 ): Promise<Document> {
   if (document.rawHtml === undefined) {
     throw new Error(
       "rawHtml is undefined -- this transformer is being called out of order",
     );
+  }
+
+  if (
+    state?.coreHtml?.metadata !== undefined &&
+    document.rawHtml === state.coreHtml.rawHtml
+  ) {
+    document.metadata = {
+      ...buildMetadataFromNative(meta, state.coreHtml.metadata),
+      ...document.metadata,
+    };
+    return document;
   }
 
   document.metadata = {
@@ -43,6 +108,8 @@ async function deriveMetadataFromRawHTML(
 async function deriveHTMLFromRawHTML(
   meta: Meta,
   document: Document,
+  state?: TransformerRunState,
+  needMetadata = true,
 ): Promise<Document> {
   if (document.rawHtml === undefined) {
     throw new Error(
@@ -50,46 +117,128 @@ async function deriveHTMLFromRawHTML(
     );
   }
 
-  const targetUrl =
-    document.metadata.url ??
-    document.metadata.sourceURL ??
-    meta.rewrittenUrl ??
-    meta.url;
+  const targetUrl = resolveTargetUrl(meta, document);
+
+  let cleaningUrl = targetUrl;
+  let includeTags = (meta.options.includeTags ?? [])
+    .map(x => x.trim())
+    .filter(x => x.length !== 0);
+  let excludeTags = (meta.options.excludeTags ?? [])
+    .map(x => x.trim())
+    .filter(x => x.length !== 0);
+  let onlyMainContent = meta.options.onlyMainContent;
+  let dropSignatures: string[] | undefined = undefined;
 
   const hooks = scrapeHooks();
   if (hooks?.has("scrape.html.clean")) {
     const cleaning = await hooks.transform(
       "scrape.html.clean",
       {
-        url: targetUrl,
-        includeTags: (meta.options.includeTags ?? [])
-          .map(x => x.trim())
-          .filter(x => x.length !== 0),
-        excludeTags: (meta.options.excludeTags ?? [])
-          .map(x => x.trim())
-          .filter(x => x.length !== 0),
-        onlyMainContent: meta.options.onlyMainContent,
+        url: cleaningUrl,
+        includeTags,
+        excludeTags,
+        onlyMainContent,
       },
       toScrapeMeta(meta),
     );
-    document.html = await htmlTransform(
-      document.rawHtml,
-      cleaning.url,
-      {
-        ...meta.options,
-        includeTags: cleaning.includeTags,
-        excludeTags: cleaning.excludeTags,
-        onlyMainContent: cleaning.onlyMainContent,
-      },
-      cleaning.dropSignatures,
+    cleaningUrl = cleaning.url;
+    includeTags = cleaning.includeTags
+      .map(x => x.trim())
+      .filter(x => x.length !== 0);
+    excludeTags = cleaning.excludeTags
+      .map(x => x.trim())
+      .filter(x => x.length !== 0);
+    onlyMainContent = cleaning.onlyMainContent;
+    dropSignatures =
+      cleaning.dropSignatures && cleaning.dropSignatures.length > 0
+        ? [...cleaning.dropSignatures]
+        : undefined;
+  }
+
+  if (state) {
+    const isMarkdown = isMarkdownContentType(document.metadata.contentType);
+    const needLinks =
+      !isMarkdown && !!hasFormatOfType(meta.options.formats, "links");
+    const needImages = !!hasFormatOfType(meta.options.formats, "images");
+    const attributesFormat = hasFormatOfType(
+      meta.options.formats,
+      "attributes",
     );
-    return document;
+    const attributes =
+      attributesFormat?.selectors && attributesFormat.selectors.length > 0
+        ? attributesFormat.selectors
+        : undefined;
+
+    const request: CoreNative.DeriveCoreHtmlRequest = {
+      url: cleaningUrl,
+      ...(document.metadata.contentType !== undefined
+        ? { contentType: document.metadata.contentType }
+        : {}),
+      onlyMainContent,
+      includeTags,
+      excludeTags,
+      ...(dropSignatures !== undefined ? { dropSignatures } : {}),
+      needMetadata,
+      needLinks,
+      needImages,
+      ...(attributes !== undefined ? { attributes } : {}),
+      removeBase64Images: Boolean(meta.options.removeBase64Images),
+    };
+
+    const traceCtx = serializeTraceContext();
+    const nativeContext: CoreNative.NativeCallContext = {
+      ...(traceCtx.traceparent !== undefined
+        ? { traceparent: traceCtx.traceparent }
+        : {}),
+      ...(traceCtx.tracestate !== undefined
+        ? { tracestate: traceCtx.tracestate }
+        : {}),
+      ...(meta.id ? { scrapeId: meta.id } : {}),
+      zeroDataRetention: Boolean(meta.internalOptions.zeroDataRetention),
+    };
+
+    try {
+      const derived = await deriveCoreHtml(
+        document.rawHtml,
+        JSON.stringify(request),
+        JSON.stringify(nativeContext),
+      );
+      document.html = derived.html;
+      state.coreHtml = {
+        rawHtml: document.rawHtml,
+        html: derived.html,
+        targetUrl: cleaningUrl,
+        metadata: needMetadata ? derived.metadata : state.coreHtml?.metadata,
+        links: derived.links,
+        images: derived.images,
+        attributes: derived.attributes,
+      };
+      return document;
+    } catch (error) {
+      const decoded = decodeCoreNativeError(error);
+      meta.logger.warn(
+        "deriveCoreHtml failed; falling back to legacy HTML transformers",
+        {
+          code: decoded?.failure.code,
+          error: decoded?.error ?? error,
+          module: "scrapeURL",
+          method: "deriveHTMLFromRawHTML",
+        },
+      );
+      state.coreHtml = undefined;
+    }
   }
 
   document.html = await htmlTransform(
     document.rawHtml,
-    targetUrl,
-    meta.options,
+    cleaningUrl,
+    {
+      ...meta.options,
+      includeTags,
+      excludeTags,
+      onlyMainContent,
+    },
+    dropSignatures,
   );
   return document;
 }
@@ -106,6 +255,7 @@ function requireRawHtml(document: Document): string {
 async function deriveMarkdownFromHTML(
   meta: Meta,
   document: Document,
+  state?: TransformerRunState,
 ): Promise<Document> {
   if (document.html === undefined) {
     throw new Error(
@@ -181,7 +331,12 @@ async function deriveMarkdownFromHTML(
       },
     };
 
-    document = await deriveHTMLFromRawHTML(fallbackMeta, document);
+    document = await deriveHTMLFromRawHTML(
+      fallbackMeta,
+      document,
+      state,
+      false,
+    );
     document.markdown = await parseMarkdown(document.html, {
       logger: meta.logger,
       requestId,
@@ -199,6 +354,7 @@ async function deriveMarkdownFromHTML(
 async function deriveLinksFromHTML(
   meta: Meta,
   document: Document,
+  state?: TransformerRunState,
 ): Promise<Document> {
   const isMarkdown = isMarkdownContentType(document.metadata.contentType);
 
@@ -214,14 +370,22 @@ async function deriveLinksFromHTML(
     return document;
   }
 
+  const targetUrl = resolveTargetUrl(meta, document);
+  if (
+    !isMarkdown &&
+    state?.coreHtml?.links !== undefined &&
+    document.html === state.coreHtml.html &&
+    targetUrl === state.coreHtml.targetUrl
+  ) {
+    document.links = state.coreHtml.links;
+    return document;
+  }
+
   // Engines that carry markdown natively (exchange) put synthetic metadata in
   // rawHtml, so the markdown field is the only place their links live.
   document.links = await extractLinks(
     isMarkdown ? (document.markdown ?? document.rawHtml ?? "") : document.html!,
-    document.metadata.url ??
-      document.metadata.sourceURL ??
-      meta.rewrittenUrl ??
-      meta.url,
+    targetUrl,
     document.metadata.contentType,
   );
 
@@ -231,6 +395,7 @@ async function deriveLinksFromHTML(
 async function deriveImagesFromHTML(
   meta: Meta,
   document: Document,
+  state?: TransformerRunState,
 ): Promise<Document> {
   // Only derive if the formats has images
   if (hasFormatOfType(meta.options.formats, "images")) {
@@ -240,16 +405,46 @@ async function deriveImagesFromHTML(
       );
     }
 
-    document.images = await extractImages(
-      document.html,
-      document.metadata.url ??
-        document.metadata.sourceURL ??
-        meta.rewrittenUrl ??
-        meta.url,
-    );
+    const targetUrl = resolveTargetUrl(meta, document);
+    if (
+      state?.coreHtml?.images !== undefined &&
+      document.html === state.coreHtml.html &&
+      targetUrl === state.coreHtml.targetUrl
+    ) {
+      document.images = state.coreHtml.images;
+      return document;
+    }
+
+    document.images = await extractImages(document.html, targetUrl);
   }
 
   return document;
+}
+
+async function performAttributes(
+  meta: Meta,
+  document: Document,
+  state?: TransformerRunState,
+): Promise<Document> {
+  if (
+    state?.coreHtml?.attributes !== undefined &&
+    document.html === state.coreHtml.html
+  ) {
+    if (state.coreHtml.attributes.length > 0) {
+      document.attributes = state.coreHtml.attributes;
+      meta.logger.debug("Extracted attributes", {
+        count: state.coreHtml.attributes.length,
+        attributes: state.coreHtml.attributes.map(d => ({
+          selector: d.selector,
+          attribute: d.attribute,
+          valuesCount: d.values.length,
+        })),
+      });
+    }
+    return document;
+  }
+
+  return _performAttributes(meta, document);
 }
 
 function coerceFieldsToFormats(meta: Meta, document: Document): Document {
@@ -474,6 +669,8 @@ export async function executeTransformers(
   }
 
   const executions: [string, number][] = [];
+  const runState: TransformerRunState | undefined =
+    config.RUST_DERIVE_CORE_HTML_ENABLED ? {} : undefined;
 
   for (const step of transformerStack) {
     if (typeof step !== "function") {
@@ -500,7 +697,7 @@ export async function executeTransformers(
       }),
     };
     const start = Date.now();
-    document = await step(_meta, document);
+    document = await step(_meta, document, runState);
     executions.push([step.name, Date.now() - start]);
   }
 

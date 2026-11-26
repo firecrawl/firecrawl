@@ -44,10 +44,12 @@ wildcards = "deny"
 allow-wildcard-paths = true
 highlight = "all"
 skip = [
+  { crate = "base64@0.22", reason = "nodesig 2.0 pins base64 0.22 while reqwest 0.13 pulls base64 0.23" },
   { crate = "block-buffer@0.10", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
   { crate = "cpufeatures@0.2", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
   { crate = "crypto-common@0.1", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
   { crate = "digest@0.10", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
+  { crate = "getrandom@0.2", reason = "ring 0.17 (via rustls and firecrawl-telemetry) pins getrandom 0.2 while lopdf 0.45 and zip 9 pull getrandom 0.4" },
   { crate = "getrandom@0.3", reason = "nodesig 2.0 pins rand 0.9 while lopdf 0.45 and zip 9 pull getrandom 0.4" },
   { crate = "nom@7", reason = "texting_robots 0.2 pins nom 7 while lopdf 0.45 pulls nom 8" },
   { crate = "rand@0.8", reason = "kuchikiki build-dep phf_generator 0.11 pins rand 0.8" },

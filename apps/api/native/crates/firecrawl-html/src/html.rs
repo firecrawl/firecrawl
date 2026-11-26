@@ -700,6 +700,14 @@ pub fn extract_attributes(
   options: &ExtractAttributesOptions,
 ) -> Result<Vec<ExtractedAttributeResult>, Box<dyn std::error::Error + Send + Sync>> {
   let document = parse_html().one(html).document_node;
+  extract_attributes_from_document(&document, options)
+}
+
+/// Extract specified attributes from an already-parsed document.
+pub fn extract_attributes_from_document(
+  document: &NodeRef,
+  options: &ExtractAttributesOptions,
+) -> Result<Vec<ExtractedAttributeResult>, Box<dyn std::error::Error + Send + Sync>> {
   let mut results = Vec::new();
 
   for selector_config in &options.selectors {
@@ -750,9 +758,24 @@ pub fn extract_images(
 ) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
   let document = parse_html().one(html).document_node;
   let base_url = Url::parse(base_url)?;
-  let base_href = _extract_base_href_from_document(&document, &base_url)?;
+  extract_images_from_document(&document, &base_url)
+}
+
+/// Extract all image URLs from an already-parsed document in deterministic
+/// document discovery order.
+pub fn extract_images_from_document(
+  document: &NodeRef,
+  base_url: &Url,
+) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
+  let base_href = _extract_base_href_from_document(document, base_url)?;
   let base_href_url = Url::parse(&base_href)?;
-  let mut images = HashSet::<String>::new();
+  let mut seen = HashSet::<String>::new();
+  let mut images = Vec::<String>::new();
+  let mut insert_image = |resolved: String| {
+    if seen.insert(resolved.clone()) {
+      images.push(resolved);
+    }
+  };
 
   let resolve_image_url = |src: &str| -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     if src.trim().is_empty() {
@@ -786,13 +809,13 @@ pub fn extract_images(
 
     if let Some(src) = attrs.get("src") {
       if let Ok(resolved) = resolve_image_url(src) {
-        images.insert(resolved);
+        insert_image(resolved);
       }
     }
 
     if let Some(data_src) = attrs.get("data-src") {
       if let Ok(resolved) = resolve_image_url(data_src) {
-        images.insert(resolved);
+        insert_image(resolved);
       }
     }
 
@@ -801,7 +824,7 @@ pub fn extract_images(
         if let Some(url) = part.split_whitespace().next() {
           if !url.is_empty() {
             if let Ok(resolved) = resolve_image_url(url) {
-              images.insert(resolved);
+              insert_image(resolved);
             }
           }
         }
@@ -824,7 +847,7 @@ pub fn extract_images(
         if let Some(url) = part.split_whitespace().next() {
           if !url.is_empty() {
             if let Ok(resolved) = resolve_image_url(url) {
-              images.insert(resolved);
+              insert_image(resolved);
             }
           }
         }
@@ -847,7 +870,7 @@ pub fn extract_images(
       for element in elements {
         if let Some(content) = element.attributes.borrow().get("content") {
           if let Ok(resolved) = resolve_image_url(content) {
-            images.insert(resolved);
+            insert_image(resolved);
           }
         }
       }
@@ -866,7 +889,7 @@ pub fn extract_images(
       for element in elements {
         if let Some(href) = element.attributes.borrow().get("href") {
           if let Ok(resolved) = resolve_image_url(href) {
-            images.insert(resolved);
+            insert_image(resolved);
           }
         }
       }
@@ -878,7 +901,7 @@ pub fn extract_images(
     for video in video_elements {
       if let Some(poster) = video.attributes.borrow().get("poster") {
         if let Ok(resolved) = resolve_image_url(poster) {
-          images.insert(resolved);
+          insert_image(resolved);
         }
       }
     }
@@ -893,7 +916,7 @@ pub fn extract_images(
             let url = url_match.as_str().trim();
             if !url.is_empty() {
               if let Ok(resolved) = resolve_image_url(url) {
-                images.insert(resolved);
+                insert_image(resolved);
               }
             }
           }

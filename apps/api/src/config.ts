@@ -119,6 +119,11 @@ const configSchema = z.object({
   // PDF Rust Extraction (pdf-inspector)
   PDF_RUST_EXTRACT_ENABLE: z.stringbool().optional(),
 
+  // Single-pass native HTML cleaning and extraction
+  RUST_DERIVE_CORE_HTML_ENABLED: emptyStringAsDefault(
+    z.stringbool().default(false),
+  ),
+
   // Webhooks
   SELF_HOSTED_WEBHOOK_URL: z.string().optional(),
   SELF_HOSTED_WEBHOOK_HMAC_SECRET: z.string().optional(),
