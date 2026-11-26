@@ -15,13 +15,13 @@ import { extractData } from "../lib/jsonExtract";
 import { trimToTokenLimit } from "./llmExtract";
 import { performSummary } from "./llmExtract";
 import { performCleanContent } from "./llmExtract";
-import { encoding_for_model } from "@dqbd/tiktoken";
+import { trimToTokenLimitNative } from "../../../lib/tokenizer";
 import type { Mock } from "vitest";
 import { coreLlmProviders } from "../../../lib/generic-ai";
 import { createService, replaceService } from "../../../service/service";
 
-vi.mock("@dqbd/tiktoken", () => ({
-  encoding_for_model: vi.fn(),
+vi.mock("../../../lib/tokenizer", () => ({
+  trimToTokenLimitNative: vi.fn(),
 }));
 
 beforeAll(() => {
@@ -81,40 +81,30 @@ describe("removeDefaultProperty", () => {
 });
 
 describe("trimToTokenLimit", () => {
-  // Exercise the real tiktoken encoder/decoder rather than a mock. The function's
-  // correctness (and the event-loop-freeze regression it guards against) depends on
-  // the real encode -> slice -> decode round-trip, which a hand-rolled mock cannot
-  // model faithfully.
-  let realEncodingForModel: typeof import("@dqbd/tiktoken").encoding_for_model;
+  // Exercise the real native tokenizer rather than a mock so encode -> slice ->
+  // decode round-trip behavior and bounded-input guards are verified end to end.
+  let realTrimToTokenLimitNative: typeof import("../../../lib/tokenizer").trimToTokenLimitNative;
 
   beforeAll(async () => {
-    ({ encoding_for_model: realEncodingForModel } =
-      await vi.importActual<typeof import("@dqbd/tiktoken")>("@dqbd/tiktoken"));
+    ({ trimToTokenLimitNative: realTrimToTokenLimitNative } =
+      await vi.importActual<typeof import("../../../lib/tokenizer")>(
+        "../../../lib/tokenizer",
+      ));
   });
 
-  // Records the length of every string handed to encode(), so we can prove the
-  // synchronous tokenizer never has to chew through an unbounded input.
+  // Records the length of every string handed to the tokenizer so we can prove
+  // the synchronous path never chews through an unbounded input.
   let encodeInputLengths: number[];
-  let freeCalls: number;
 
   beforeEach(() => {
     vi.clearAllMocks();
     encodeInputLengths = [];
-    freeCalls = 0;
-    (encoding_for_model as Mock).mockImplementation((model: any) => {
-      const encoder = realEncodingForModel(model);
-      const realEncode = encoder.encode.bind(encoder);
-      const realFree = encoder.free.bind(encoder);
-      encoder.encode = ((input: string) => {
+    (trimToTokenLimitNative as Mock).mockImplementation(
+      (input: string, maxTokens: number, modelId: string) => {
         encodeInputLengths.push(input.length);
-        return realEncode(input);
-      }) as typeof encoder.encode;
-      encoder.free = (() => {
-        freeCalls++;
-        return realFree();
-      }) as typeof encoder.free;
-      return encoder;
-    });
+        return realTrimToTokenLimitNative(input, maxTokens, modelId);
+      },
+    );
   });
 
   it("should return original text untouched if within token limit", () => {
@@ -126,7 +116,6 @@ describe("trimToTokenLimit", () => {
     expect(result.numTokens).toBeGreaterThan(0);
     expect(result.numTokens).toBeLessThanOrEqual(1000);
     expect(result.warning).toBeUndefined();
-    expect(freeCalls).toBe(1);
   });
 
   it("should trim to exactly maxTokens and return a byte-exact prefix", () => {
@@ -140,7 +129,6 @@ describe("trimToTokenLimit", () => {
     // ASCII content round-trips exactly, so the result must be a clean prefix.
     expect(text.startsWith(result.text)).toBe(true);
     expect(result.text.length).toBeLessThan(text.length);
-    expect(freeCalls).toBe(1);
   });
 
   it("should append previous warning if provided", () => {
@@ -156,9 +144,6 @@ describe("trimToTokenLimit", () => {
   });
 
   it("should encode only a bounded amount of a huge input (freeze regression)", () => {
-    // Before the fix, this synchronously tokenized the entire multi-megabyte
-    // string (and re-encoded it in a loop), blocking the event loop for tens of
-    // seconds. The pre-trim must cap how much text the encoder ever sees.
     const maxTokens = 1000;
     const huge = "A".repeat(10_000_000);
 
@@ -166,19 +151,17 @@ describe("trimToTokenLimit", () => {
     const result = trimToTokenLimit(huge, maxTokens, "gpt-4o");
     const durationMs = Date.now() - start;
 
-    // The encoder must never be handed more than the char-bounded candidate.
+    // The tokenizer must never be handed more than the char-bounded candidate.
     expect(Math.max(...encodeInputLengths)).toBeLessThanOrEqual(maxTokens * 5);
     expect(result.numTokens).toBeLessThanOrEqual(maxTokens);
     expect(result.text.length).toBeLessThanOrEqual(maxTokens * 5);
     expect(result.warning).toBeDefined();
-    // Generous threshold: bounded tokenization should complete near-instantly.
     expect(durationMs).toBeLessThan(2000);
-    expect(freeCalls).toBe(1);
   });
 
   it("should use fallback approach when encoder initialization throws", () => {
     const text = "This is some text to test fallback";
-    (encoding_for_model as Mock).mockImplementationOnce(() => {
+    (trimToTokenLimitNative as Mock).mockImplementationOnce(() => {
       throw new Error("Encoder error");
     });
 
@@ -195,7 +178,6 @@ describe("trimToTokenLimit", () => {
     expect(result.text).toBe("");
     expect(result.numTokens).toBe(0);
     expect(result.warning).toBeUndefined();
-    expect(freeCalls).toBe(1);
   });
 
   it("should not crash on unicode and stay within the token budget", () => {
@@ -207,7 +189,6 @@ describe("trimToTokenLimit", () => {
     expect(typeof result.text).toBe("string");
     expect(result.numTokens).toBeLessThanOrEqual(maxTokens);
     expect(result.warning).toContain("automatically trimmed");
-    expect(freeCalls).toBe(1);
   });
 
   it("should pre-trim by characters even when the result fits the token budget", () => {
@@ -278,16 +259,8 @@ describe("performSummary", () => {
 });
 
 describe("performCleanContent", () => {
-  const mockEncode = vi.fn();
-  const mockFree = vi.fn();
-  const mockEncoder = {
-    encode: mockEncode,
-    free: mockFree,
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
-    (encoding_for_model as Mock).mockReturnValue(mockEncoder);
   });
 
   const makeMeta = (onlyCleanContent: boolean) =>
@@ -304,8 +277,13 @@ describe("performCleanContent", () => {
 
   it("should skip cleaning when input tokens exceed model max output tokens", async () => {
     const longMarkdown = "A".repeat(200000); // simulate a very long document
-    // Simulate 80,000 tokens — well above gpt-4o-mini's 16,384 output limit
-    mockEncode.mockReturnValue(new Array(80000));
+    // Simulate 80,000 tokens, well above gpt-4o-mini's 16,384 output limit.
+    (trimToTokenLimitNative as Mock).mockReturnValue({
+      text: longMarkdown,
+      numTokens: 80000,
+      originalTokens: 80000,
+      trimmed: false,
+    });
 
     const document = { markdown: longMarkdown } as any;
     const result = await performCleanContent(makeMeta(true), document);
@@ -320,8 +298,13 @@ describe("performCleanContent", () => {
   });
 
   it("should not skip cleaning when input tokens are within model output limit", async () => {
-    // Simulate 5,000 tokens — well within gpt-4o-mini's 16,384 output limit
-    mockEncode.mockReturnValue(new Array(5000));
+    // Simulate 5,000 tokens, well within gpt-4o-mini's 16,384 output limit.
+    (trimToTokenLimitNative as Mock).mockReturnValue({
+      text: "Short content for cleaning",
+      numTokens: 5000,
+      originalTokens: 5000,
+      trimmed: false,
+    });
 
     const document = { markdown: "Short content for cleaning" } as any;
 

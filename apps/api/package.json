@@ -124,7 +124,6 @@
     "@ai-sdk/xai": "^5.0.46",
     "@bull-board/api": "^6.21.3",
     "@bull-board/express": "^6.21.3",
-    "@dqbd/tiktoken": "^1.0.22",
     "@mendable/firecrawl-rs": "workspace:*",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.222.0",

@@ -703,5 +703,61 @@ macro_rules! export_oss_napi {
       let res = $crate::wrappers::detect_pdf(path, ctx).await?;
       Ok(_convert_pdf_result(res))
     }
+
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[napi_derive::napi(object)]
+    pub struct TrimToTokenLimitResult {
+      pub text: String,
+      pub num_tokens: u32,
+      pub original_tokens: u32,
+      pub trimmed: bool,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[napi_derive::napi(object)]
+    pub struct FitToTokensResult {
+      pub text: String,
+      pub trimmed: bool,
+    }
+
+    /// Count BPE tokens in text for the given OpenAI model identifier.
+    /// Throws on unknown models or disallowed special tokens.
+    #[napi_derive::napi]
+    pub fn count_tokens(text: String, model_id: String) -> napi::Result<u32> {
+      $crate::tokenizer::count_tokens(&text, &model_id)
+    }
+
+    /// Trim text to at most maxTokens BPE tokens for the given model.
+    /// Uses lossy UTF-8 decoding on split multi-byte token boundaries.
+    #[napi_derive::napi]
+    pub fn trim_to_token_limit_native(
+      text: String,
+      max_tokens: u32,
+      model_id: String,
+    ) -> napi::Result<TrimToTokenLimitResult> {
+      let (text, num_tokens, original_tokens, trimmed) =
+        $crate::tokenizer::trim_to_token_limit_native(&text, max_tokens, &model_id)?;
+      Ok(TrimToTokenLimitResult {
+        text,
+        num_tokens,
+        original_tokens,
+        trimmed,
+      })
+    }
+
+    /// Fit text to at most maxTokens BPE tokens on tokio's blocking pool so
+    /// large pages never block the Node.js event loop.
+    #[napi_derive::napi]
+    pub async fn fit_to_tokens_native(
+      text: String,
+      max_tokens: u32,
+      model_id: String,
+    ) -> napi::Result<FitToTokensResult> {
+      let res = $crate::tokenizer::fit_to_tokens_native(text, max_tokens, model_id).await?;
+      Ok(FitToTokensResult {
+        text: res.text,
+        trimmed: res.trimmed,
+      })
+    }
   };
 }

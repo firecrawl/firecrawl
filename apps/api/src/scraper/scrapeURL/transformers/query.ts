@@ -1,5 +1,5 @@
 import { generateText } from "ai";
-import { encoding_for_model } from "@dqbd/tiktoken";
+import { fitToTokensNative } from "../../../lib/tokenizer";
 import { Document, FormatObject } from "../../../controllers/v2/types";
 import { Meta } from "..";
 import { config } from "../../../config";
@@ -61,10 +61,6 @@ function tooLongWarning(purpose: QueryPurpose): string {
     : "The page was too long to process in full; the answer was generated from the first part of it.";
 }
 
-// The tokenizer is synchronous, so text goes through it in chunks of this
-// many characters (about 10 ms each), yielding to the event loop in between.
-const TOKENIZE_CHUNK_CHARS = 64_000;
-
 // A prefix of at most maxBytes UTF-8 bytes, without a trailing partial
 // character. Since a BPE token is at least one byte, it also fits maxBytes
 // tokens.
@@ -88,45 +84,11 @@ async function fitToTokens(
   if (Buffer.byteLength(text, "utf8") <= maxTokens) {
     return { text, trimmed: false };
   }
-  let encoder: ReturnType<typeof encoding_for_model>;
   try {
-    encoder = encoding_for_model(TOKENIZER_MODEL);
-  } catch (error) {
-    logger.warn("Tokenizer unavailable, trimming by bytes", { error });
-    return { text: fitToBytes(text, maxTokens), trimmed: true };
-  }
-  try {
-    let used = 0;
-    let start = 0;
-    while (start < text.length) {
-      let end = Math.min(text.length, start + TOKENIZE_CHUNK_CHARS);
-      if (end < text.length) {
-        // Cut after a newline where possible so no token straddles two
-        // chunks, and never between the halves of a surrogate pair.
-        const newline = text.lastIndexOf("\n", end - 1);
-        if (newline >= start) {
-          end = newline + 1;
-        } else if (/[\uD800-\uDBFF]/.test(text[end - 1])) {
-          end -= 1;
-        }
-      }
-      const tokens = encoder.encode(text.slice(start, end));
-      if (used + tokens.length > maxTokens) {
-        const kept = new TextDecoder().decode(
-          encoder.decode(tokens.slice(0, maxTokens - used)),
-        );
-        return { text: text.slice(0, start) + kept, trimmed: true };
-      }
-      used += tokens.length;
-      start = end;
-      await new Promise(resolve => setImmediate(resolve));
-    }
-    return { text, trimmed: false };
+    return await fitToTokensNative(text, maxTokens, TOKENIZER_MODEL);
   } catch (error) {
     logger.warn("Tokenizer failed, trimming by bytes", { error });
     return { text: fitToBytes(text, maxTokens), trimmed: true };
-  } finally {
-    encoder.free();
   }
 }
 

@@ -77,9 +77,6 @@ importers:
       '@bull-board/express':
         specifier: ^6.21.3
         version: 6.21.3
-      '@dqbd/tiktoken':
-        specifier: ^1.0.22
-        version: 1.0.22
       '@mendable/firecrawl-rs':
         specifier: workspace:*
         version: link:native
@@ -428,9 +425,6 @@ packages:
 
   '@dabh/diagnostics@2.0.3':
     resolution: {integrity: sha512-hrlQOIi7hAfzsMqlGSFyVucrx38O+j6wiGOf//H2ecvIEqYN4ADBSS2iLMh5UFyDunCNniUIPk/q3riFv45xRA==}
-
-  '@dqbd/tiktoken@1.0.22':
-    resolution: {integrity: sha512-RYhO8xeHkMNX5Ixqf4M1Ve3siCYJY/dI0yLnlX4M4oIEDOvjMIQ+E+3OUpAaZcWTaMtQJzGcDAghYfllpx3i/w==}
 
   '@emnapi/core@1.11.1':
     resolution: {integrity: sha512-RSvbQmHzdKzNsLYa/wHrbc3KN4sYLKAdPZxqiM2HATqv/SBk2/ENSHpvXGaLOMcsAyz0poEGqkmmKYG3OWiJEQ==}
@@ -3758,8 +3752,6 @@ snapshots:
       colorspace: 1.1.4
       enabled: 2.0.0
       kuler: 2.0.0
-
-  '@dqbd/tiktoken@1.0.22': {}
 
   '@emnapi/core@1.11.1':
     dependencies:

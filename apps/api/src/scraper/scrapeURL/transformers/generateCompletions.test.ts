@@ -15,7 +15,7 @@ vi.mock("ai", async importOriginal => {
 });
 
 import { generateObject } from "ai";
-import { encoding_for_model } from "@dqbd/tiktoken";
+import { countTokens as countModelTokens } from "../../../lib/tokenizer";
 import type { Mock } from "vitest";
 import {
   generateCompletions,
@@ -53,12 +53,7 @@ function lastCall() {
 }
 
 function countTokens(text: string): number {
-  const encoder = encoding_for_model("gpt-4o-mini");
-  try {
-    return encoder.encode(text).length;
-  } finally {
-    encoder.free();
-  }
+  return countModelTokens(text, "gpt-4o-mini");
 }
 
 beforeAll(() => {

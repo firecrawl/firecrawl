@@ -4,11 +4,12 @@ vi.mock("ai", async importOriginal => {
   const actual = await importOriginal<typeof import("ai")>();
   return { ...actual, generateText: vi.fn() };
 });
-vi.mock("@dqbd/tiktoken", async importOriginal => {
-  const actual = await importOriginal<typeof import("@dqbd/tiktoken")>();
+vi.mock("../../../lib/tokenizer", async importOriginal => {
+  const actual =
+    await importOriginal<typeof import("../../../lib/tokenizer")>();
   return {
     ...actual,
-    encoding_for_model: vi.fn(actual.encoding_for_model),
+    fitToTokensNative: vi.fn(actual.fitToTokensNative),
   };
 });
 vi.mock("../../../lib/generic-ai", () => ({
@@ -16,7 +17,10 @@ vi.mock("../../../lib/generic-ai", () => ({
 }));
 
 import { generateText } from "ai";
-import { encoding_for_model } from "@dqbd/tiktoken";
+import {
+  countTokens as countModelTokens,
+  fitToTokensNative,
+} from "../../../lib/tokenizer";
 import type { Mock } from "vitest";
 import { keepWholeLines, performDirectQuoteQuery, performQuery } from "./query";
 import { CostTracking } from "../../../lib/cost-tracking";
@@ -67,12 +71,7 @@ function page(lines: number): string {
 }
 
 function countTokens(text: string): number {
-  const encoder = encoding_for_model("gpt-4o");
-  try {
-    return encoder.encode(text).length;
-  } finally {
-    encoder.free();
-  }
+  return countModelTokens(text, "gpt-4o");
 }
 
 // The numbered lines sent to the directQuote model.
@@ -80,11 +79,12 @@ function sentLines(prompt: string): string[] {
   return prompt.split("<lines")[1].split("\n").slice(1, -1);
 }
 
-let realEncodingForModel: typeof encoding_for_model;
+let realFitToTokensNative: typeof fitToTokensNative;
 
 beforeAll(async () => {
-  ({ encoding_for_model: realEncodingForModel } =
-    await vi.importActual<typeof import("@dqbd/tiktoken")>("@dqbd/tiktoken"));
+  ({ fitToTokensNative: realFitToTokensNative } = await vi.importActual<
+    typeof import("../../../lib/tokenizer")
+  >("../../../lib/tokenizer"));
 });
 
 const stubProvider = (name: string, enabled: () => boolean): LlmProvider =>
@@ -127,9 +127,9 @@ beforeEach(() => {
   );
   (generateText as Mock).mockReset();
   (getModel as Mock).mockClear();
-  (encoding_for_model as Mock)
+  (fitToTokensNative as Mock)
     .mockReset()
-    .mockImplementation(realEncodingForModel);
+    .mockImplementation(realFitToTokensNative);
 });
 
 afterEach(() => {
@@ -206,9 +206,9 @@ describe("performDirectQuoteQuery highlights", () => {
   });
 
   it("trims by bytes when the tokenizer fails", async () => {
-    (encoding_for_model as Mock).mockImplementationOnce(() => {
-      throw new Error("tokenizer unavailable");
-    });
+    (fitToTokensNative as Mock).mockRejectedValueOnce(
+      new Error("tokenizer unavailable"),
+    );
     respond("[0]");
     const document: any = { markdown: page(40_000), metadata: {} };
 
