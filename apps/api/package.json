@@ -75,6 +75,7 @@
     "flyio": "node dist/src/main.js api",
     "start:dev": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js api\"",
     "build": "tsc",
+    "lint": "oxlint .",
     "test": "vitest run",
     "test:prod": "vitest run --exclude='**/scraper/scrapeURL/**'",
     "test:snips": "vitest run src/__tests__/snips/v2",
@@ -96,6 +97,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@cloudflare/oxlint-config": "^0.2.0",
     "@types/amqplib": "^0.10.7",
     "@types/body-parser": "^1.19.2",
     "@types/cors": "^2.8.13",
@@ -112,8 +114,10 @@
     "husky": "^9.1.7",
     "knip": "^6.40.0",
     "lint-staged": "^16.4.0",
+    "oxlint": "^1.95.0",
     "supertest": "^6.3.3",
     "tsc-watch": "^7.1.1",
+    "tsrs": "^7.1.0-beta.tsrs5",
     "tsx": "^4.20.3",
     "undici-types": "^7.16.0",
     "vitest": "^4.1.12"
