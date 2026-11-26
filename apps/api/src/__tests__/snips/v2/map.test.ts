@@ -67,9 +67,9 @@ describe("Map tests", () => {
           identity,
         );
         expect(sitemap.statusCode).toBe(200);
-        expect(sitemap.body.links.map(link => link.url)).not.toContain(
-          `${origin}/extra`,
-        );
+        const sitemapUrls = sitemap.body.links.map(link => link.url);
+        expect(sitemapUrls).toContain(`${origin}/listed`);
+        expect(sitemapUrls).not.toContain(`${origin}/extra`);
       } finally {
         fixture.closeAllConnections();
         await new Promise<void>(resolve => fixture.close(() => resolve()));

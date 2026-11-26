@@ -250,6 +250,7 @@ async function scrapeMapStartPage(
   internalOptions: InternalOptions,
   deadline: number,
   waitFor = 0,
+  isFilePath?: (pathname: string) => boolean,
 ): Promise<StartPageAttempt> {
   const initialRemaining = Math.floor(deadline - Date.now());
   if (
@@ -305,20 +306,17 @@ async function scrapeMapStartPage(
       const message = String(
         (result.error as any)?.message ?? result.error ?? "",
       );
-      if (
-        code === "SCRAPE_DNS_RESOLUTION_ERROR" ||
-        /ENOTFOUND|DNS resolution failed/i.test(message)
-      ) {
+      if (/\bENOTFOUND\b/i.test(message)) {
         return { kind: "failed", reason: "dns_error" };
       }
-      if (waitFor === 0 && code === "SCRAPE_ALL_ENGINES_FAILED") {
+      if (
+        code === "SCRAPE_DNS_RESOLUTION_ERROR" ||
+        (waitFor === 0 && code === "SCRAPE_ALL_ENGINES_FAILED")
+      ) {
         try {
           await dnsLookup(new URL(url).hostname);
         } catch (dnsError: any) {
-          if (
-            dnsError?.code === "ENOTFOUND" ||
-            dnsError?.code === "EAI_AGAIN"
-          ) {
+          if (dnsError?.code === "ENOTFOUND") {
             return { kind: "failed", reason: "dns_error" };
           }
         }
@@ -370,9 +368,12 @@ async function scrapeMapStartPage(
         url: effectiveUrl,
       };
     }
+    const effectivePathname = URL.parse(effectiveUrl)?.pathname;
     if (
-      contentType &&
-      !/^(text\/html|application\/xhtml\+xml)\b/i.test(contentType)
+      (contentType &&
+        !/^(text\/html|application\/xhtml\+xml)\b/i.test(contentType)) ||
+      (!contentType &&
+        Boolean(effectivePathname && isFilePath?.(effectivePathname)))
     ) {
       return {
         kind: "failed",
@@ -774,22 +775,21 @@ export async function getMapResults({
         : Math.max(1_000, remainingBeforeSitemap);
     const sitemapCutoff = new AbortController();
     const sitemapSignal = AbortSignal.any([abort, sitemapCutoff.signal]);
+    let acceptingSitemapUrls = true;
+    const scopedSitemapUrls = new Set<string>();
     try {
       await crawler.tryGetSitemap(
         urls => {
-          mapResults.push(
-            ...urls.map(x => ({
-              url: x,
-            })),
-          );
-          if (
-            discoverStartPage &&
-            !search &&
-            !sitemapCutoff.signal.aborted &&
-            mapResults.length >= limit &&
-            applyMapScope(mapResults, url, scope).length >= limit
-          ) {
-            sitemapCutoff.abort();
+          if (!acceptingSitemapUrls) return;
+          const batch = urls.map(x => ({ url: x }));
+          mapResults.push(...batch);
+          if (discoverStartPage && !search && !sitemapCutoff.signal.aborted) {
+            for (const doc of applyMapScope(batch, url, scope)) {
+              scopedSitemapUrls.add(doc.url);
+            }
+            if (scopedSitemapUrls.size >= limit) {
+              sitemapCutoff.abort();
+            }
           }
         },
         true,
@@ -801,6 +801,8 @@ export async function getMapResults({
       );
     } catch (e) {
       // Silently handle sitemap errors
+    } finally {
+      acceptingSitemapUrls = false;
     }
   }
 
@@ -831,7 +833,14 @@ export async function getMapResults({
       ),
     );
     const hasNonSeedLinks = () =>
-      mapResults.some(link => !seedKeys.has(startPageLinkKey(link.url)));
+      mapResults.some(link => {
+        const parsed = URL.parse(link.url);
+        return Boolean(
+          parsed &&
+            !isMapUtilityPath(parsed.pathname) &&
+            !seedKeys.has(startPageLinkKey(link.url)),
+        );
+      });
 
     if (mapResults.length >= limit || discoveryBudget < 1_000) {
       discovery = {
@@ -875,12 +884,19 @@ export async function getMapResults({
         if (sc.robots !== undefined) {
           robotsByOrigin.set(new URL(url).origin, Promise.resolve(crawler));
         }
-        const isAllowedByRobots = async (target: string): Promise<boolean> => {
-          if (signal.aborted) return false;
+        type RobotsDecision =
+          | "allowed"
+          | "disallowed"
+          | "aborted"
+          | "cap_exceeded";
+        const checkRobots = async (target: string): Promise<RobotsDecision> => {
+          if (signal.aborted) return "aborted";
           const origin = new URL(target).origin;
           let rules = robotsByOrigin.get(origin);
           if (!rules) {
-            if (robotsByOrigin.size >= MAX_MAP_ROBOTS_ORIGINS) return false;
+            if (robotsByOrigin.size >= MAX_MAP_ROBOTS_ORIGINS) {
+              return "cap_exceeded";
+            }
             const originCrawler = crawlToCrawler(
               id,
               {
@@ -894,17 +910,26 @@ export async function getMapResults({
               },
               flags,
             );
-            rules = originCrawler.getRobotsTxt(false, signal).then(content => {
-              originCrawler.importRobotsTxt(content);
-              return originCrawler;
-            });
+            rules = originCrawler
+              .getRobotsTxt(false, signal)
+              .then(content => {
+                originCrawler.importRobotsTxt(content);
+                return originCrawler;
+              })
+              .catch(err => {
+                if (signal.aborted) throw err;
+                return originCrawler;
+              });
             robotsByOrigin.set(origin, rules);
           }
           try {
             const originCrawler = await rules;
-            return !signal.aborted && originCrawler.isRobotsAllowed(target);
+            if (signal.aborted) return "aborted";
+            return originCrawler.isRobotsAllowed(target)
+              ? "allowed"
+              : "disallowed";
           } catch {
-            return false;
+            return "aborted";
           }
         };
 
@@ -930,6 +955,7 @@ export async function getMapResults({
           mapResults.map(link => startPageLinkKey(link.url)),
         );
         let robotsDeniedLanding = false;
+        let robotsTimedOut = false;
         let acceptedScopeUrl = url;
 
         const additionalLinks = async (page: {
@@ -938,8 +964,13 @@ export async function getMapResults({
         }): Promise<MapDocument[] | null> => {
           const scopeUrl = resolveScopeForPage(page.url);
           if (!scopeUrl) return null;
-          if (!(await isAllowedByRobots(page.url))) {
+          const pageRobots = await checkRobots(page.url);
+          if (pageRobots === "disallowed") {
             robotsDeniedLanding = true;
+            return null;
+          }
+          if (pageRobots !== "allowed") {
+            if (pageRobots === "aborted") robotsTimedOut = true;
             return null;
           }
           acceptedScopeUrl = scopeUrl;
@@ -971,24 +1002,36 @@ export async function getMapResults({
             const key = startPageLinkKey(link.url);
             if (seen.has(key)) continue;
             seen.add(key);
-            if (await isAllowedByRobots(link.url)) extra.push(link);
+            if ((await checkRobots(link.url)) === "allowed") extra.push(link);
             if (signal.aborted || mapResults.length + extra.length >= limit)
               break;
           }
           return extra;
         };
 
+        const isFilePath = (pathname: string) => crawler.isFile(pathname);
         const resolvedScopeOk = resolveScopeForPage(resolvedUrl) !== null;
-        const [startAllowed, resolvedAllowed] = await Promise.all([
-          isAllowedByRobots(startUrl),
+        const [startRobots, resolvedRobots] = await Promise.all([
+          checkRobots(startUrl),
           resolvedScopeOk
-            ? isAllowedByRobots(resolvedUrl)
-            : Promise.resolve(false),
+            ? checkRobots(resolvedUrl)
+            : Promise.resolve("cap_exceeded" as const),
         ]);
 
-        if (!startAllowed || !resolvedAllowed) {
+        if (startRobots === "aborted" || resolvedRobots === "aborted") {
+          discovery = {
+            outcome: hasNonSeedLinks() ? "links_found" : "timeout",
+          };
+        } else if (
+          startRobots === "disallowed" ||
+          resolvedRobots === "disallowed"
+        ) {
           discovery = {
             outcome: hasNonSeedLinks() ? "links_found" : "robots_disallowed",
+          };
+        } else if (!resolvedScopeOk || resolvedRobots !== "allowed") {
+          discovery = {
+            outcome: hasNonSeedLinks() ? "links_found" : "blocked_or_challenge",
           };
         } else {
           const step1 = await scrapeMapStartPage(
@@ -996,6 +1039,8 @@ export async function getMapResults({
             options,
             internalOptions,
             deadline,
+            0,
+            isFilePath,
           );
           let extra =
             step1.kind === "html" ? await additionalLinks(step1) : null;
@@ -1004,6 +1049,7 @@ export async function getMapResults({
           const shouldRetryWithBrowser =
             !hasNonSeedLinks() &&
             !robotsDeniedLanding &&
+            !robotsTimedOut &&
             (step1.kind === "html"
               ? extra !== null && extra.length === 0
               : step1.reason === "blocked_status" ||
@@ -1017,6 +1063,7 @@ export async function getMapResults({
               internalOptions,
               deadline,
               START_PAGE_BROWSER_WAIT_MS,
+              isFilePath,
             );
             if (rendered.kind === "html") {
               const renderedExtra = await additionalLinks(rendered);
@@ -1046,18 +1093,22 @@ export async function getMapResults({
             };
           } else if (robotsDeniedLanding) {
             discovery = { outcome: "robots_disallowed" };
+          } else if (robotsTimedOut) {
+            discovery = { outcome: "timeout" };
           } else if (rendered?.kind === "html") {
             const normalizedLanded = checkAndUpdateURLForMap(
               rendered.url,
               crawlerOptions.ignoreQueryParameters ?? true,
             ).url;
+            const isSubpathScoped = Boolean(
+              filterByPath && !allowExternalLinks && startPathname,
+            );
             discovery = {
-              outcome: isVerifiedCleanSinglePage(
-                rendered.rawHtml,
-                rendered.title,
-              )
-                ? "verified_single_page"
-                : "blocked_or_challenge",
+              outcome:
+                !isSubpathScoped &&
+                isVerifiedCleanSinglePage(rendered.rawHtml, rendered.title)
+                  ? "verified_single_page"
+                  : "blocked_or_challenge",
               statusCode: rendered.statusCode,
               landedUrl: normalizedLanded,
             };

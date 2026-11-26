@@ -758,4 +758,165 @@ describe("map lifecycle hooks", () => {
     expect(capped.discovery?.outcome).toBe("links_found");
     expect(mocks.scrapeURL).not.toHaveBeenCalled();
   });
+
+  it("ignores utility sitemap links for browser retry, drops late sitemap callbacks, and guards headerless files, sub-paths, EAI_AGAIN, and robots aborts", async () => {
+    (config as any).PLAYWRIGHT_MICROSERVICE_URL =
+      "http://playwright.local/scrape";
+
+    // 1. Sitemap /_next/ link does not suppress browser retry, and late sitemap callback after settle is ignored
+    let lateCallback: ((urls: string[]) => void) | undefined;
+    mocks.crawler.tryGetSitemap.mockImplementationOnce(
+      async (urlsHandler: (urls: string[]) => void) => {
+        lateCallback = urlsHandler;
+        urlsHandler(["https://spa.example.com/_next/static/chunk.js"]);
+        return 1;
+      },
+    );
+    mocks.scrapeURL
+      .mockResolvedValueOnce({
+        success: true,
+        document: {
+          metadata: {
+            statusCode: 200,
+            contentType: "text/html",
+            url: "https://spa.example.com/",
+          },
+          rawHtml: "<html><body></body></html>",
+          links: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        document: {
+          metadata: {
+            statusCode: 200,
+            contentType: "text/html",
+            url: "https://spa.example.com/",
+          },
+          rawHtml: "<html><body><a href='/docs'>Docs</a></body></html>",
+          links: ["https://spa.example.com/docs"],
+        },
+      });
+
+    const recovered = await getMapResults({
+      url: "https://spa.example.com",
+      limit: 2,
+      teamId: "team-map-1",
+      flags: null,
+      crawlerOptions: { sitemap: "include" },
+      startPageDiscovery: true,
+    });
+    lateCallback?.([
+      "https://evil.example.org/leaked",
+      "https://spa.example.com/extra-1",
+      "https://spa.example.com/extra-2",
+    ]);
+    expect(mocks.scrapeURL).toHaveBeenCalledTimes(2);
+    expect(recovered.mapResults).toEqual([
+      { url: "https://spa.example.com/_next/static/chunk.js" },
+      { url: "https://spa.example.com/docs" },
+    ]);
+    expect(recovered.discovery?.outcome).toBe("links_found");
+
+    // 2. Headerless file URL stops at unsupported_file without Playwright retry
+    vi.clearAllMocks();
+    mocks.crawler.tryGetSitemap.mockResolvedValue(0);
+    mocks.crawler.isFile.mockImplementation((p: string) => p.endsWith(".pdf"));
+    mocks.scrapeURL.mockResolvedValueOnce({
+      success: true,
+      document: {
+        metadata: {
+          statusCode: 200,
+          contentType: undefined,
+          url: "https://files.example.com/whitepaper.pdf",
+        },
+        rawHtml: "%PDF-1.7",
+        links: [],
+      },
+    });
+    const fileRes = await getMapResults({
+      url: "https://files.example.com/whitepaper.pdf",
+      limit: 5,
+      teamId: "team-map-1",
+      flags: null,
+      crawlerOptions: { sitemap: "include" },
+      startPageDiscovery: true,
+    });
+    expect(mocks.scrapeURL).toHaveBeenCalledTimes(1);
+    expect(fileRes.discovery?.outcome).toBe("unsupported_file");
+    mocks.crawler.isFile.mockReturnValue(false);
+
+    // 3. Sub-path start URL does not claim verified_single_page when no child links exist
+    vi.clearAllMocks();
+    mocks.crawler.tryGetSitemap.mockResolvedValue(0);
+    mocks.scrapeURL
+      .mockResolvedValueOnce({
+        success: true,
+        document: {
+          metadata: {
+            statusCode: 200,
+            contentType: "text/html",
+            url: "https://subpath.example.com/pricing",
+          },
+          rawHtml: "<html><body></body></html>",
+          links: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        document: {
+          metadata: {
+            statusCode: 200,
+            contentType: "text/html",
+            url: "https://subpath.example.com/pricing",
+            title: "Pricing",
+          },
+          rawHtml:
+            "<html><body><main>Enterprise pricing details for warehouse automation deployments across North America and Europe with annual contracts.</main></body></html>",
+          links: ["https://subpath.example.com/about"],
+        },
+      });
+    const subPathRes = await getMapResults({
+      url: "https://subpath.example.com/pricing",
+      limit: 5,
+      teamId: "team-map-1",
+      flags: null,
+      crawlerOptions: { sitemap: "include" },
+      startPageDiscovery: true,
+    });
+    expect(subPathRes.discovery?.outcome).toBe("blocked_or_challenge");
+
+    // 4. Aborted robots check reports timeout instead of robots_disallowed
+    vi.clearAllMocks();
+    mocks.crawler.tryGetSitemap.mockResolvedValue(0);
+    const abortCtrl = new AbortController();
+    mocks.crawler.getRobotsTxt
+      .mockResolvedValueOnce("")
+      .mockImplementationOnce(async () => {
+        abortCtrl.abort(new Error("timed out"));
+        throw new Error("aborted");
+      });
+    mocks.scrapeURL.mockResolvedValueOnce({
+      success: true,
+      document: {
+        metadata: {
+          statusCode: 200,
+          contentType: "text/html",
+          url: "https://redirected.example.org/",
+        },
+        rawHtml: "<html><body><a href='/team'>Team</a></body></html>",
+        links: ["https://redirected.example.org/team"],
+      },
+    });
+    const abortedRobots = await getMapResults({
+      url: "https://origin.example.com",
+      limit: 5,
+      teamId: "team-map-1",
+      flags: null,
+      abort: abortCtrl.signal,
+      crawlerOptions: { sitemap: "include" },
+      startPageDiscovery: true,
+    });
+    expect(abortedRobots.discovery?.outcome).toBe("timeout");
+  });
 });
