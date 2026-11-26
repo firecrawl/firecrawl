@@ -1,6 +1,10 @@
 import { SearchV2Response, SearchResultType } from "../../lib/entities";
 import { Logger } from "winston";
-import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+import { TransportableError } from "../../lib/error";
+import {
+  SearchProviderUnavailableError,
+  UsOnlyUnavailableError,
+} from "../../scraper/scrapeURL/error";
 import type { TeamPlanClass } from "../../service/search-providers";
 import { service, type SearchQuery } from "../../service";
 import { searchWithProvider } from "../../lib/search-metrics";
@@ -91,10 +95,10 @@ export async function search({
       }
     }
 
-    // Fallback to empty response
     return {};
   } catch (error) {
     logger.error(`Error in search function`, { error });
-    return {};
+    if (error instanceof TransportableError) throw error;
+    throw new SearchProviderUnavailableError(undefined, { cause: error });
   }
 }

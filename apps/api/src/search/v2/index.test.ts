@@ -7,7 +7,10 @@ vi.mock("./searxng", () => ({ searxng_search: mocks.searxngSearch }));
 vi.mock("./ddgsearch", () => ({ ddgSearch: mocks.ddgSearch }));
 
 import { config } from "../../config";
-import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+import {
+  SearchProviderUnavailableError,
+  UsOnlyUnavailableError,
+} from "../../scraper/scrapeURL/error";
 import type { SearchProvider } from "../../service";
 import { createService, replaceService } from "../../service/service";
 import { coreSearchProviders } from "../providers";
@@ -267,7 +270,7 @@ describe("service.searchProviders dispatch in v2 search", () => {
     expect(mocks.ddgSearch).not.toHaveBeenCalled();
   });
 
-  it("catches provider errors, logs them, and returns an empty response", async () => {
+  it("fails with SearchProviderUnavailableError when a provider throws", async () => {
     const failure = new Error("upstream failed");
     installSearchService([
       {
@@ -285,9 +288,9 @@ describe("service.searchProviders dispatch in v2 search", () => {
       },
     ]);
 
-    const res = await search({ query: "firecrawl", logger });
-
-    expect(res).toEqual({});
+    await expect(search({ query: "firecrawl", logger })).rejects.toThrow(
+      SearchProviderUnavailableError,
+    );
     expect(logger.error).toHaveBeenCalledWith("Error in search function", {
       error: failure,
     });
