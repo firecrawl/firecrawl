@@ -4,13 +4,21 @@ import {
   fetchFileGuardingProxyFailure,
   fetchFileToBuffer,
 } from "../utils/downloadFile";
-import { convertDocumentToMarkdown } from "@mendable/firecrawl-rs";
+import {
+  convertDocumentToMarkdown,
+  parseRawDocument,
+  type CoreNative,
+} from "@mendable/firecrawl-rs";
+import { config } from "../../../../config";
+import { hasFormatOfType } from "../../../../lib/format-utils";
+import { serializeTraceContext } from "../../../../lib/otel-tracer";
 import { safeMarkdownToHtml } from "../pdf/markdownToHtml";
 import type { Response } from "undici";
 import {
   DocumentAntibotError,
   DocumentFetchProxyError,
   EngineUnsuccessfulError,
+  UnsupportedFileError,
 } from "../../error";
 import {
   documentContentTypeFromExtension,
@@ -104,9 +112,77 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
       }
     }
 
+    const rawContentType = response.headers.get("content-type");
     const extension =
-      documentExtensionFromContentType(response.headers.get("content-type")) ??
+      documentExtensionFromContentType(rawContentType) ??
       documentExtensionFromUrlPath(new URL(response.url).pathname);
+
+    if (config.RUST_PARSE_RAW_DOCUMENT_ENABLED) {
+      const traceContext = serializeTraceContext();
+      const zeroDataRetention = Boolean(
+        meta.ctx.zeroDataRetention || meta.internalOptions.zeroDataRetention,
+      );
+      const includeRawBase64 =
+        hasFormatOfType(meta.options.formats, "rawBase64") !== undefined;
+      const request: CoreNative.ParseRawDocumentRequest = {
+        url: response.url,
+        ...(rawContentType ? { contentType: rawContentType } : {}),
+        ...(extension ? { extensionHint: extension } : {}),
+        includeRawBase64,
+        parserOverride: "document",
+      };
+      const callContext: CoreNative.NativeCallContext = {
+        ...(traceContext.traceparent
+          ? { traceparent: traceContext.traceparent }
+          : {}),
+        ...(traceContext.tracestate
+          ? { tracestate: traceContext.tracestate }
+          : {}),
+        scrapeId: meta.id,
+        zeroDataRetention,
+      };
+
+      let rawResultJson: string;
+      try {
+        rawResultJson = await parseRawDocument(
+          buffer,
+          JSON.stringify(request),
+          JSON.stringify(callContext),
+        );
+      } catch (error) {
+        const unsupported = decodeNativeUnsupportedError(error);
+        if (unsupported) {
+          throw unsupported;
+        }
+        throw error;
+      }
+
+      const parsed = JSON.parse(
+        rawResultJson,
+      ) as CoreNative.ParseRawDocumentResult;
+      const markdown = parsed.markdown ?? "";
+      const html =
+        parsed.html ??
+        (await safeMarkdownToHtml(markdown, meta.logger, meta.id));
+
+      return {
+        url: response.url,
+        statusCode: response.status,
+        html,
+        markdown,
+        ...(parsed.rawBase64 !== undefined
+          ? { rawBase64: parsed.rawBase64 }
+          : {}),
+        contentType:
+          (rawContentType && rawContentType.trim().length > 0
+            ? rawContentType
+            : null) ??
+          parsed.contentType ??
+          (extension ? documentContentTypeFromExtension(extension) : null) ??
+          "application/octet-stream",
+        proxyUsed,
+      };
+    }
 
     const markdown = await convertDocumentToMarkdown(
       new Uint8Array(buffer),
@@ -120,7 +196,7 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
       html,
       markdown,
       contentType:
-        response.headers.get("content-type") ??
+        rawContentType ??
         (extension ? documentContentTypeFromExtension(extension) : null) ??
         "application/octet-stream",
       proxyUsed,
@@ -172,4 +248,30 @@ function fetchDocumentFileGuardingProxyFailure<T>(
     },
     fetch,
   );
+}
+
+function decodeNativeUnsupportedError(
+  error: unknown,
+): UnsupportedFileError | null {
+  const message = error instanceof Error ? error.message : String(error);
+  const sep = message.indexOf("|");
+  if (sep <= 0) return null;
+  if (message.slice(0, sep) !== "SCRAPE_UNSUPPORTED_FILE_ERROR") return null;
+  try {
+    const parsed = JSON.parse(message.slice(sep + 1)) as Partial<
+      Extract<
+        CoreNative.CoreNativeFailure,
+        { code: "SCRAPE_UNSUPPORTED_FILE_ERROR" }
+      >
+    >;
+    if (
+      parsed.code === "SCRAPE_UNSUPPORTED_FILE_ERROR" &&
+      typeof parsed.reason === "string"
+    ) {
+      return new UnsupportedFileError(parsed.reason);
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }

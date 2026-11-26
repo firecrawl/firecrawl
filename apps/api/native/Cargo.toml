@@ -11,6 +11,8 @@ version = "0.1.0"
 
 [workspace.dependencies]
 anydoc = "0.2.5"
+base64 = "0.23"
+encoding_rs = "0.8"
 firecrawl-core-types = { path = "crates/firecrawl-core-types" }
 firecrawl-crawler = { path = "crates/firecrawl-crawler" }
 firecrawl-html = { path = "crates/firecrawl-html" }

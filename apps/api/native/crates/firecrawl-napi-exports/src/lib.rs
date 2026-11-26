@@ -1,4 +1,5 @@
 pub mod logging;
+pub mod parse_raw_document;
 pub mod utils;
 pub mod wrappers;
 

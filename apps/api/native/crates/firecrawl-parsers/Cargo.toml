@@ -8,12 +8,22 @@ version.workspace = true
 
 [dependencies]
 anydoc.workspace = true
+base64.workspace = true
+encoding_rs.workspace = true
+firecrawl-core-types.workspace = true
 firecrawl-crawler.workspace = true
 pdf-inspector.workspace = true
+rayon.workspace = true
+regex.workspace = true
 roxmltree.workspace = true
 tinyvec.workspace = true
 tracing.workspace = true
+url.workspace = true
 zip.workspace = true
+
+[dev-dependencies]
+hegeltest.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

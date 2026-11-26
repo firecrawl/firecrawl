@@ -7,9 +7,11 @@ publish.workspace = true
 version.workspace = true
 
 [dependencies]
+firecrawl-core-types.workspace = true
 firecrawl-crawler.workspace = true
 firecrawl-html.workspace = true
 firecrawl-parsers.workspace = true
+firecrawl-telemetry.workspace = true
 napi.workspace = true
 napi-derive.workspace = true
 serde.workspace = true

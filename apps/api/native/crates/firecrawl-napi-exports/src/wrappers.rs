@@ -703,5 +703,17 @@ macro_rules! export_oss_napi {
       let res = $crate::wrappers::detect_pdf(path, ctx).await?;
       Ok(_convert_pdf_result(res))
     }
+
+    /// Sniff magic bytes and parse raw document bytes (Office documents, local
+    /// PDFs, plain text/HTML/JSON/XML fallback, or rawBase64) off the event
+    /// loop with W3C trace propagation and ZDR telemetry enforcement.
+    #[napi_derive::napi]
+    pub async fn parse_raw_document(
+      raw_bytes: napi::bindgen_prelude::Buffer,
+      request_json: String,
+      context_json: String,
+    ) -> napi::Result<String> {
+      $crate::parse_raw_document::parse_raw_document(raw_bytes, request_json, context_json).await
+    }
   };
 }

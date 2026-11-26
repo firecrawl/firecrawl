@@ -119,6 +119,9 @@ const configSchema = z.object({
   // PDF Rust Extraction (pdf-inspector)
   PDF_RUST_EXTRACT_ENABLE: z.stringbool().optional(),
 
+  // Native unified raw document parser (parseRawDocument)
+  RUST_PARSE_RAW_DOCUMENT_ENABLED: z.stringbool().optional(),
+
   // Webhooks
   SELF_HOSTED_WEBHOOK_URL: z.string().optional(),
   SELF_HOSTED_WEBHOOK_HMAC_SECRET: z.string().optional(),

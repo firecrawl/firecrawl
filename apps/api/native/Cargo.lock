@@ -741,9 +741,11 @@ dependencies = [
 name = "firecrawl-napi-exports"
 version = "0.1.0"
 dependencies = [
+ "firecrawl-core-types",
  "firecrawl-crawler",
  "firecrawl-html",
  "firecrawl-parsers",
+ "firecrawl-telemetry",
  "napi",
  "napi-derive",
  "serde",
@@ -758,11 +760,19 @@ name = "firecrawl-parsers"
 version = "0.1.0"
 dependencies = [
  "anydoc",
+ "base64 0.23.1",
+ "encoding_rs",
+ "firecrawl-core-types",
  "firecrawl-crawler",
+ "hegeltest",
  "pdf-inspector",
+ "rayon",
+ "regex",
  "roxmltree",
+ "serde_json",
  "tinyvec",
  "tracing",
+ "url",
  "zip",
 ]
 
