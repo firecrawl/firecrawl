@@ -111,7 +111,12 @@ pub(crate) fn escape_line_starts(paragraph: &str) -> String {
         out.push_str(line);
       }
       Some(b'-' | b'+' | b'*') => {
-        if bytes.get(1) == Some(&b' ') || line.trim_end().bytes().all(|b| b == b'-') {
+        let trimmed = line.trim_end();
+        let needs_escape = bytes.get(1) == Some(&b' ')
+          || trimmed.len() == 1
+          || trimmed.bytes().all(|b| b == b'-')
+          || (trimmed.len() >= 3 && trimmed.bytes().all(|b| b == b'*'));
+        if needs_escape {
           out.push('\\');
         }
         out.push_str(line);

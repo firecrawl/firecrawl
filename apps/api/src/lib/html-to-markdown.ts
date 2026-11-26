@@ -16,79 +16,189 @@ type BaselineMarkdownEngine = "go-http" | "go-koffi" | "turndown";
 const MAX_CONCURRENT_SHADOW_JOBS = 4;
 let activeShadowJobs = 0;
 
+type ActiveLink = {
+  isImage: boolean;
+  phase: "start" | "angle_dest" | "bare_dest" | "after_dest";
+  destStart: number;
+  dest: string;
+  parenDepth: number;
+  quote: string | null;
+};
+
+function recordLinkUrl(urls: Set<string>, isImage: boolean, dest: string) {
+  if (!isImage && dest && !dest.toLowerCase().startsWith("data:")) {
+    urls.add(dest);
+  }
+}
+
+function makeActiveLink(isImage: boolean, nextIndex: number): ActiveLink {
+  return {
+    isImage,
+    phase: "start",
+    destStart: nextIndex,
+    dest: "",
+    parenDepth: 0,
+    quote: null,
+  };
+}
+
 function extractMarkdownLinkUrls(markdown: string): Set<string> {
   const urls = new Set<string>();
-  const stack: Array<{ isImage: boolean }> = [];
+  const bracketStack: boolean[] = [];
+  let active: ActiveLink | null = null;
+  let pendingBang = false;
 
   for (let i = 0; i < markdown.length; i++) {
     const ch = markdown[i];
+
     if (ch === "\\") {
+      if (active && active.phase === "start") {
+        active.phase = "bare_dest";
+        active.destStart = i;
+      }
+      pendingBang = false;
       i++;
       continue;
     }
-    if (ch === "[") {
-      const isImage =
-        i > 0 && markdown[i - 1] === "!" && (i < 2 || markdown[i - 2] !== "\\");
-      stack.push({ isImage });
-      continue;
-    }
-    if (ch === "]" && stack.length > 0) {
-      const opener = stack.pop()!;
-      if (markdown[i + 1] !== "(") {
+
+    if (active) {
+      if (ch === "\n" || ch === "\r") {
+        active = null;
+        pendingBang = false;
         continue;
       }
-      let j = i + 2;
-      while (j < markdown.length && /\s/.test(markdown[j])) {
-        j++;
+
+      if (active.phase === "start") {
+        if (ch === " " || ch === "\t") {
+          pendingBang = false;
+          continue;
+        }
+        if (ch === "<") {
+          active.phase = "angle_dest";
+          active.destStart = i + 1;
+          pendingBang = false;
+          continue;
+        }
+        if (ch === ")") {
+          active = null;
+          pendingBang = false;
+          continue;
+        }
+        active.phase = "bare_dest";
+        active.destStart = i;
       }
-      let dest = "";
-      if (markdown[j] === "<") {
-        const end = markdown.indexOf(">", j + 1);
-        if (end !== -1) {
-          dest = markdown.slice(j + 1, end).trim();
-          const closeParen = markdown.indexOf(")", end + 1);
-          if (closeParen !== -1) {
-            i = closeParen;
-          }
+
+      if (active.phase === "angle_dest") {
+        if (ch === ">") {
+          active.dest = markdown.slice(active.destStart, i).trim();
+          active.phase = "after_dest";
+        } else if (ch === "<") {
+          active = null;
         }
-      } else {
-        let depth = 0;
-        let k = j;
-        while (k < markdown.length) {
-          const c = markdown[k];
-          if (c === "\\") {
-            k += 2;
-            continue;
-          }
-          if (c === "(") {
-            depth++;
-          } else if (c === ")") {
-            if (depth === 0) {
-              break;
-            }
-            depth--;
-          } else if (/\s/.test(c) && depth === 0) {
-            break;
-          }
-          k++;
-        }
-        dest = markdown.slice(j, k);
-        let close = k;
-        while (close < markdown.length && markdown[close] !== ")") {
-          if (markdown[close] === "\\") {
-            close += 2;
-            continue;
-          }
-          close++;
-        }
-        if (close < markdown.length && markdown[close] === ")") {
-          i = close;
-        }
+        pendingBang = false;
+        continue;
       }
-      if (!opener.isImage && dest && !dest.toLowerCase().startsWith("data:")) {
-        urls.add(dest);
+
+      if (active.phase === "bare_dest") {
+        if (ch === "(") {
+          active.parenDepth++;
+          pendingBang = false;
+          continue;
+        }
+        if (ch === ")") {
+          if (active.parenDepth === 0) {
+            recordLinkUrl(
+              urls,
+              active.isImage,
+              markdown.slice(active.destStart, i),
+            );
+            active = null;
+          } else {
+            active.parenDepth--;
+          }
+          pendingBang = false;
+          continue;
+        }
+        if ((ch === " " || ch === "\t") && active.parenDepth === 0) {
+          active.dest = markdown.slice(active.destStart, i);
+          active.phase = "after_dest";
+          pendingBang = false;
+          continue;
+        }
+        if (ch === "[") {
+          bracketStack.push(pendingBang);
+          pendingBang = false;
+          continue;
+        }
+        if (ch === "]" && bracketStack.length > 0) {
+          const isImage = bracketStack.pop()!;
+          if (markdown[i + 1] === "(") {
+            active = makeActiveLink(isImage, i + 2);
+            i++;
+          }
+          pendingBang = false;
+          continue;
+        }
+        pendingBang = ch === "!";
+        continue;
       }
+
+      if (active.quote !== null) {
+        if (ch === active.quote) {
+          active.quote = null;
+        }
+        pendingBang = false;
+        continue;
+      }
+      if (ch === ")") {
+        recordLinkUrl(urls, active.isImage, active.dest);
+        active = null;
+        pendingBang = false;
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        active.quote = ch;
+        pendingBang = false;
+        continue;
+      }
+      if (ch === "(") {
+        active.quote = ")";
+        pendingBang = false;
+        continue;
+      }
+      if (ch === "[") {
+        bracketStack.push(pendingBang);
+        pendingBang = false;
+        continue;
+      }
+      if (ch === "]" && bracketStack.length > 0) {
+        const isImage = bracketStack.pop()!;
+        if (markdown[i + 1] === "(") {
+          active = makeActiveLink(isImage, i + 2);
+          i++;
+        }
+        pendingBang = false;
+        continue;
+      }
+      pendingBang = ch === "!";
+      continue;
     }
+
+    if (ch === "[") {
+      bracketStack.push(pendingBang);
+      pendingBang = false;
+      continue;
+    }
+    if (ch === "]" && bracketStack.length > 0) {
+      const isImage = bracketStack.pop()!;
+      if (markdown[i + 1] === "(") {
+        active = makeActiveLink(isImage, i + 2);
+        i++;
+      }
+      pendingBang = false;
+      continue;
+    }
+    pendingBang = ch === "!";
   }
 
   return urls;

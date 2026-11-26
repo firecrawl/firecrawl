@@ -233,4 +233,31 @@ describe("parseMarkdown Rust dispatch and shadow mode", () => {
     await parse("<p>After drain</p>", { logger: mockLogger });
     expect(convertHtmlToMarkdown).toHaveBeenCalledTimes(5);
   });
+
+  it("extracts links in linear time on repeated unmatched ]( tokens", async () => {
+    const crafted = "[a](".repeat(20_000) + "[ok](https://example.com/ok)";
+    const convertHtmlToMarkdown = vi.fn(async () => crafted);
+    const parse = await loadWithMocks(
+      { RUST_HTML_TO_MD_SHADOW_RATE: "1" },
+      { convertHtmlToMarkdown },
+    );
+    const mockLogger = createMockLogger();
+
+    const start = Date.now();
+    await parse('<p><a href="https://example.com/ok">ok</a></p>', {
+      logger: mockLogger,
+    });
+    await flushMicrotasks();
+    const elapsedMs = Date.now() - start;
+
+    expect(elapsedMs).toBeLessThan(2000);
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      "Rust HTML-to-Markdown shadow comparison",
+      expect.objectContaining({
+        baseline_link_count: 1,
+        rust_link_count: 1,
+        link_recall: 1,
+      }),
+    );
+  });
 });

@@ -161,8 +161,7 @@ fn render_block_link(
 
   let card_parts: Vec<String> = inner
     .iter()
-    .flat_map(|b| b.split("\n\n"))
-    .map(format_card_block)
+    .map(|b| format_card_block(b))
     .filter(|b| !b.is_empty())
     .collect();
   if card_parts.is_empty() {
@@ -178,7 +177,11 @@ fn render_block_link(
   vec![format!("[{safe}]({encoded_href})")]
 }
 
-fn render_depth_fallback(ctx: &RenderCtx<'_>, node: &NodeRef, state: InlineState) -> String {
+pub(crate) fn render_depth_fallback(
+  ctx: &RenderCtx<'_>,
+  node: &NodeRef,
+  state: InlineState,
+) -> String {
   let mut flat = String::new();
   collect_flat_text_iterative(node, ctx.opts, &mut flat);
   let norm = normalize_inline(&flat);
@@ -191,6 +194,25 @@ fn render_depth_fallback(ctx: &RenderCtx<'_>, node: &NodeRef, state: InlineState
     escape_plain_text_brackets(&norm, false).into_owned()
   };
   escape_line_starts(&safe)
+}
+
+fn is_leaf_block(name: &str) -> bool {
+  matches!(
+    name,
+    "h1"
+      | "h2"
+      | "h3"
+      | "h4"
+      | "h5"
+      | "h6"
+      | "pre"
+      | "blockquote"
+      | "ul"
+      | "ol"
+      | "table"
+      | "hr"
+      | "summary"
+  )
 }
 
 pub(crate) fn render_block(
@@ -307,9 +329,13 @@ pub(crate) fn render_blocks(
 
     if is_block(name) {
       flush(&mut run, &mut out);
-      let rendered = render_block(ctx, &child, name, next_depth, state);
-      if !rendered.is_empty() {
-        out.push(rendered);
+      if is_leaf_block(name) {
+        let rendered = render_block(ctx, &child, name, next_depth, state);
+        if !rendered.is_empty() {
+          out.push(rendered);
+        }
+      } else {
+        out.extend(render_blocks(ctx, &child, next_depth, state));
       }
     } else if ctx.block_map.has_block(&child) {
       flush(&mut run, &mut out);

@@ -202,7 +202,7 @@ fn post_process_fences_tilde_and_linear_nested_skip_links() {
   let tilde = "~~~txt\n[\n\n\nline   \n~~~\n\nPara 1\nPara 2";
   assert_eq!(post_process_markdown(tilde), tilde);
 
-  // Tilde fences inside HTML pass through tidy verbatim without blank-line collapse.
+  // A <pre> block keeps interior blank lines verbatim inside a backtick fence.
   let pre_tilde = md("<pre><code>a\n\n\nb</code></pre>");
   assert_eq!(pre_tilde, "```\na\n\n\nb\n```");
 
@@ -252,4 +252,29 @@ fn base64_image_modes_and_iframe_skip() {
     },
   );
   assert_eq!(drop_all, "");
+}
+
+#[test]
+fn card_link_preserves_fenced_code_and_lone_markers_escape() {
+  let card = md(
+    "<a href=\"https://example.com\"><div><h3>Card</h3><pre><code>  first\n\n# comment\n  second</code></pre></div></a>",
+  );
+  assert!(
+    card.contains("**Card**"),
+    "heading inside wrapper div card converts to bold: {card}"
+  );
+  assert!(
+    !card.contains("**comment**"),
+    "# comment inside fenced code in card must not turn into bold: {card}"
+  );
+  assert!(
+    card.contains("  second"),
+    "indentation inside fenced code in card must survive: {card}"
+  );
+
+  assert_eq!(md("<p>*</p>"), "\\*");
+  assert_eq!(md("<p>+</p>"), "\\+");
+  assert_eq!(md("<p>-</p>"), "\\-");
+  assert_eq!(md("<p>***</p>"), "\\***");
+  assert_eq!(md("<p>++</p>"), "++");
 }

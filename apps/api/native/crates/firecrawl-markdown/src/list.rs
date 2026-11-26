@@ -4,11 +4,10 @@
 use kuchikiki::NodeRef;
 
 use super::block_map::{
-  attr, collapse_ws_to_string, collect_flat_text_iterative, is_block, is_skipped, normalize_inline,
-  tag_of,
+  attr, collapse_ws_to_string, is_block, is_skipped, normalize_inline, tag_of,
 };
-use super::blocks::{render_block, render_blocks};
-use super::escape::{escape_line_starts, escape_link_label_text, escape_plain_text_brackets};
+use super::blocks::{render_block, render_blocks, render_depth_fallback};
+use super::escape::escape_line_starts;
 use super::inline::{InlineState, inline};
 use super::{MarkdownOptions, RenderCtx};
 
@@ -103,18 +102,7 @@ pub(crate) fn render_list(
   state: InlineState,
 ) -> String {
   if depth >= ctx.opts.max_dom_depth {
-    let mut flat = String::new();
-    collect_flat_text_iterative(node, ctx.opts, &mut flat);
-    let norm = normalize_inline(&flat);
-    if norm.is_empty() {
-      return String::new();
-    }
-    let safe = if state.in_link {
-      escape_link_label_text(&norm)
-    } else {
-      escape_plain_text_brackets(&norm, false).into_owned()
-    };
-    return escape_line_starts(&safe);
+    return render_depth_fallback(ctx, node, state);
   }
 
   let next_depth = depth.saturating_add(1);
