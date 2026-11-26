@@ -7,12 +7,16 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Notify;
 
-use firecrawl_nuq_prefetch::{AmqpPrefetchPublisher, NuqJob, QueueKind, RedactedString};
+use firecrawl_nuq_prefetch::{
+  AmqpPrefetchPublisher, NuqJob, PublishError, QueueKind, RedactedString,
+};
 
 #[derive(Debug, Default)]
 struct CapturedQueueDeclare {
@@ -36,6 +40,7 @@ struct CapturedPublish {
 struct CapturedAmqpWire {
   connections: usize,
   declares: Vec<CapturedQueueDeclare>,
+  confirm_selects: usize,
   publishes: Vec<CapturedPublish>,
   channel_closes: usize,
   connection_closes: usize,
@@ -205,10 +210,16 @@ fn parse_basic_properties(header_payload: &[u8]) -> (Option<u8>, Option<String>,
   (delivery_mode, correlation_id, expiration)
 }
 
+struct MockBrokerControls {
+  drop_after_publish: AtomicUsize,
+  nack_budget: AtomicUsize,
+  dropped_notify: Notify,
+}
+
 async fn serve_mock_amqp_connection(
   mut stream: TcpStream,
   state: Arc<Mutex<CapturedAmqpWire>>,
-  drop_after_first_publish: Arc<AtomicUsize>,
+  controls: Arc<MockBrokerControls>,
 ) {
   let mut proto = [0_u8; 8];
   if stream.read_exact(&mut proto).await.is_err() || &proto != b"AMQP\x00\x00\x09\x01" {
@@ -267,6 +278,7 @@ async fn serve_mock_amqp_connection(
   }
 
   let mut pending_publish: Option<CapturedPublish> = None;
+  let mut delivery_tag: u64 = 0;
 
   while let Ok((frame_type, channel, payload)) = read_frame(&mut stream).await {
     match frame_type {
@@ -293,6 +305,19 @@ async fn serve_mock_amqp_connection(
             resp.extend_from_slice(&20_u16.to_be_bytes());
             resp.extend_from_slice(&11_u16.to_be_bytes());
             push_long_str(&mut resp, "");
+            if write_frame(&mut stream, 1, channel, &resp).await.is_err() {
+              break;
+            }
+          }
+          (85, 10) => {
+            // Confirm.Select -> Confirm.SelectOk (85, 11)
+            {
+              let mut guard = state.lock().unwrap_or_else(PoisonError::into_inner);
+              guard.confirm_selects = guard.confirm_selects.saturating_add(1);
+            }
+            let mut resp = Vec::new();
+            resp.extend_from_slice(&85_u16.to_be_bytes());
+            resp.extend_from_slice(&11_u16.to_be_bytes());
             if write_frame(&mut stream, 1, channel, &resp).await.is_err() {
               break;
             }
@@ -378,16 +403,49 @@ async fn serve_mock_amqp_connection(
       }
       3 => {
         if let Some(mut pub_msg) = pending_publish.take() {
+          delivery_tag = delivery_tag.saturating_add(1);
           pub_msg.body = payload;
-          state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .publishes
-            .push(pub_msg);
 
-          // Simulate a broker connection drop right after the first publish if requested.
-          if drop_after_first_publish.fetch_sub(1, Ordering::AcqRel) == 1 {
+          let should_nack = controls
+            .nack_budget
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
+            .is_ok();
+
+          let mut confirm_frame = Vec::new();
+          confirm_frame.extend_from_slice(&60_u16.to_be_bytes());
+          if should_nack {
+            // Basic.Nack (60, 120): delivery_tag (u64), bits (u8)
+            confirm_frame.extend_from_slice(&120_u16.to_be_bytes());
+            confirm_frame.extend_from_slice(&delivery_tag.to_be_bytes());
+            confirm_frame.push(0);
+          } else {
+            state
+              .lock()
+              .unwrap_or_else(PoisonError::into_inner)
+              .publishes
+              .push(pub_msg);
+            // Basic.Ack (60, 80): delivery_tag (u64), multiple (u8)
+            confirm_frame.extend_from_slice(&80_u16.to_be_bytes());
+            confirm_frame.extend_from_slice(&delivery_tag.to_be_bytes());
+            confirm_frame.push(0);
+          }
+          if write_frame(&mut stream, 1, channel, &confirm_frame)
+            .await
+            .is_err()
+          {
             break;
+          }
+
+          // Simulate a broker connection drop right after acking the first publish.
+          if !should_nack
+            && controls
+              .drop_after_publish
+              .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
+              .is_ok()
+          {
+            drop(stream);
+            controls.dropped_notify.notify_waiters();
+            return;
           }
         }
       }
@@ -423,28 +481,41 @@ async fn amqp_publisher_declares_quorum_queue_publishes_exact_wire_props_and_rec
   let Ok(addr) = addr else { return };
 
   let captured = Arc::new(Mutex::new(CapturedAmqpWire::default()));
-  let drop_budget = Arc::new(AtomicUsize::new(1));
+  let controls = Arc::new(MockBrokerControls {
+    drop_after_publish: AtomicUsize::new(1),
+    nack_budget: AtomicUsize::new(0),
+    dropped_notify: Notify::new(),
+  });
   let server_state = Arc::clone(&captured);
-  let server_drop = Arc::clone(&drop_budget);
+  let server_controls = Arc::clone(&controls);
   let server = tokio::spawn(async move {
     while let Ok((stream, _)) = listener.accept().await {
       let s = Arc::clone(&server_state);
-      let d = Arc::clone(&server_drop);
-      tokio::spawn(serve_mock_amqp_connection(stream, s, d));
+      let c = Arc::clone(&server_controls);
+      tokio::spawn(serve_mock_amqp_connection(stream, s, c));
     }
   });
 
   let publisher = AmqpPrefetchPublisher::new(Some(RedactedString::new(format!(
     "amqp://guest:guest@{addr}/%2f"
   ))));
+  assert!(publisher.is_configured());
 
   let job1 = make_job("job-001");
   let job2 = make_job("job-002");
 
+  let drop_wait = controls.dropped_notify.notified();
+  tokio::pin!(drop_wait);
+  drop_wait.as_mut().enable();
   assert!(publisher.send_job(QueueKind::Scrape, &job1).await.is_ok());
 
-  // Allow the mock broker to drop the TCP socket after job1 so job2 exercises auto-reconnect.
-  tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+  // Deterministically wait for the mock broker to drop the first TCP connection.
+  let dropped = tokio::time::timeout(Duration::from_secs(2), drop_wait).await;
+  assert!(
+    dropped.is_ok(),
+    "mock broker did not drop the first connection"
+  );
+  assert_eq!(controls.drop_after_publish.load(Ordering::Acquire), 0);
 
   assert!(publisher.send_job(QueueKind::Scrape, &job2).await.is_ok());
 
@@ -457,6 +528,7 @@ async fn amqp_publisher_declares_quorum_queue_publishes_exact_wire_props_and_rec
     "expected reconnect after simulated broker drop, got {} connections",
     wire.connections
   );
+  assert!(wire.confirm_selects >= 2);
   assert!(wire.declares.len() >= 2);
   for decl in &wire.declares {
     assert_eq!(decl.queue, "nuq.queue_scrape.prefetch");
@@ -486,14 +558,49 @@ async fn amqp_publisher_declares_quorum_queue_publishes_exact_wire_props_and_rec
 }
 
 #[tokio::test]
-async fn amqp_publisher_without_url_logs_warning_without_crashing() {
+async fn amqp_publisher_returns_error_on_broker_nack() {
+  let listener = TcpListener::bind("127.0.0.1:0").await;
+  assert!(listener.is_ok());
+  let Ok(listener) = listener else { return };
+  let addr = listener.local_addr();
+  assert!(addr.is_ok());
+  let Ok(addr) = addr else { return };
+
+  let captured = Arc::new(Mutex::new(CapturedAmqpWire::default()));
+  let controls = Arc::new(MockBrokerControls {
+    drop_after_publish: AtomicUsize::new(0),
+    nack_budget: AtomicUsize::new(1),
+    dropped_notify: Notify::new(),
+  });
+  let server_state = Arc::clone(&captured);
+  let server_controls = Arc::clone(&controls);
+  let server = tokio::spawn(async move {
+    while let Ok((stream, _)) = listener.accept().await {
+      let s = Arc::clone(&server_state);
+      let c = Arc::clone(&server_controls);
+      tokio::spawn(serve_mock_amqp_connection(stream, s, c));
+    }
+  });
+
+  let publisher = AmqpPrefetchPublisher::new(Some(RedactedString::new(format!(
+    "amqp://guest:guest@{addr}/%2f"
+  ))));
+  let job = make_job("job-nacked");
+  let res = publisher.send_job(QueueKind::Scrape, &job).await;
+  assert!(matches!(res, Err(PublishError::Amqp(_))));
+
+  publisher.shutdown().await;
+  server.abort();
+}
+
+#[tokio::test]
+async fn amqp_publisher_without_url_reports_unconfigured_without_crashing() {
   let publisher = AmqpPrefetchPublisher::new(None);
+  assert!(!publisher.is_configured());
   let job = make_job("job-no-rmq");
-  assert!(
-    publisher
-      .send_job(QueueKind::CrawlFinished, &job)
-      .await
-      .is_ok()
-  );
+  assert!(matches!(
+    publisher.send_job(QueueKind::CrawlFinished, &job).await,
+    Err(PublishError::NotConfigured)
+  ));
   publisher.shutdown().await;
 }

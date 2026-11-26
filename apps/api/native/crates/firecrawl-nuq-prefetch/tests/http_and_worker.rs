@@ -19,6 +19,7 @@ use firecrawl_nuq_prefetch::{
 struct MockStore {
   healthy: AtomicBool,
   health_errors: AtomicBool,
+  prefetch_calls: AtomicUsize,
   metrics: Mutex<PoolMetrics>,
   scrape_batches: Mutex<Vec<Result<Vec<NuqJob>, StoreError>>>,
   crawl_batches: Mutex<Vec<Result<Vec<NuqJob>, StoreError>>>,
@@ -29,6 +30,7 @@ impl MockStore {
     Self {
       healthy: AtomicBool::new(true),
       health_errors: AtomicBool::new(false),
+      prefetch_calls: AtomicUsize::new(0),
       metrics: Mutex::new(PoolMetrics {
         waiting_count: 1,
         idle_count: 4,
@@ -43,6 +45,7 @@ impl MockStore {
 impl PrefetchStore for MockStore {
   fn prefetch_jobs(&self, queue: QueueKind) -> BoxFuture<'_, Result<Vec<NuqJob>, StoreError>> {
     Box::pin(async move {
+      self.prefetch_calls.fetch_add(1, Ordering::AcqRel);
       let target = match queue {
         QueueKind::Scrape => &self.scrape_batches,
         QueueKind::CrawlFinished => &self.crawl_batches,
@@ -71,29 +74,63 @@ impl PrefetchStore for MockStore {
 }
 
 struct RecordingPublisher {
+  configured: bool,
   published: Mutex<Vec<(QueueKind, String)>>,
   publish_delay: Duration,
-  first_publish_started: Notify,
+  gate_job_id: Option<String>,
+  gated_publish_started: Notify,
+  release_gate: Notify,
 }
 
 impl RecordingPublisher {
   fn new(publish_delay: Duration) -> Self {
     Self {
+      configured: true,
       published: Mutex::new(Vec::new()),
       publish_delay,
-      first_publish_started: Notify::new(),
+      gate_job_id: None,
+      gated_publish_started: Notify::new(),
+      release_gate: Notify::new(),
+    }
+  }
+
+  fn gated_on(job_id: &str) -> Self {
+    Self {
+      configured: true,
+      published: Mutex::new(Vec::new()),
+      publish_delay: Duration::ZERO,
+      gate_job_id: Some(job_id.to_owned()),
+      gated_publish_started: Notify::new(),
+      release_gate: Notify::new(),
+    }
+  }
+
+  fn unconfigured() -> Self {
+    Self {
+      configured: false,
+      ..Self::new(Duration::ZERO)
     }
   }
 }
 
 impl PrefetchPublisher for RecordingPublisher {
+  fn is_configured(&self) -> bool {
+    self.configured
+  }
+
   fn send_job<'a>(
     &'a self,
     queue: QueueKind,
     job: &'a NuqJob,
   ) -> BoxFuture<'a, Result<(), PublishError>> {
     Box::pin(async move {
-      self.first_publish_started.notify_one();
+      if self.gate_job_id.as_deref() == Some(job.id.as_str()) {
+        let release = self.release_gate.notified();
+        tokio::pin!(release);
+        release.as_mut().enable();
+        self.gated_publish_started.notify_waiters();
+        release.await;
+      }
       if !self.publish_delay.is_zero() {
         tokio::time::sleep(self.publish_delay).await;
       }
@@ -180,6 +217,12 @@ async fn http_server_exposes_health_metrics_and_graceful_shutdown() {
   assert!(head_ok.is_ok());
   if let Ok(resp) = head_ok {
     assert_eq!(resp.status(), 200);
+    let cl = resp
+      .headers()
+      .get("content-length")
+      .and_then(|v| v.to_str().ok())
+      .map(str::to_owned);
+    assert_eq!(cl.as_deref(), Some("2"));
     assert_eq!(resp.text().await.ok().as_deref(), Some(""));
   }
 
@@ -233,11 +276,57 @@ async fn http_server_exposes_health_metrics_and_graceful_shutdown() {
   }
 
   let _ = shutdown_tx.send(true);
-  assert!(
-    tokio::time::timeout(Duration::from_secs(3), handle)
-      .await
-      .is_ok()
-  );
+  assert!(matches!(
+    tokio::time::timeout(Duration::from_secs(3), handle).await,
+    Ok(Ok(()))
+  ));
+}
+
+#[tokio::test]
+async fn http_server_and_loops_exit_when_shutdown_sender_is_dropped() {
+  let store = Arc::new(MockStore::new());
+  let server =
+    BoundHttpServer::bind(SocketAddr::from(([127, 0, 0, 1], 0)), Arc::clone(&store)).await;
+  assert!(server.is_ok());
+  let Ok(server) = server else { return };
+
+  let (shutdown_tx, shutdown_rx) = watch::channel(false);
+  let http_handle = tokio::spawn(server.serve(shutdown_rx.clone()));
+  let publisher = Arc::new(RecordingPublisher::new(Duration::ZERO));
+  let loops_handle = tokio::spawn(run_prefetch_loops(
+    Arc::clone(&store),
+    publisher,
+    Option::<Arc<CountingHeartbeat>>::None,
+    Duration::from_secs(10),
+    shutdown_rx,
+  ));
+
+  // Dropping the sender without sending `true` must terminate cleanly without spinning.
+  drop(shutdown_tx);
+  assert!(matches!(
+    tokio::time::timeout(Duration::from_secs(2), http_handle).await,
+    Ok(Ok(()))
+  ));
+  assert!(matches!(
+    tokio::time::timeout(Duration::from_secs(2), loops_handle).await,
+    Ok(Ok(()))
+  ));
+}
+
+#[tokio::test]
+async fn unconfigured_publisher_skips_claiming_jobs_from_postgres() {
+  let store = MockStore::new();
+  {
+    let mut scrape = store
+      .scrape_batches
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner);
+    scrape.push(Ok(vec![sample_job("should-not-claim", false)]));
+  }
+  let publisher = RecordingPublisher::unconfigured();
+  let res = run_prefetch_once(QueueKind::Scrape, &store, &publisher).await;
+  assert_eq!(res, Ok(0));
+  assert_eq!(store.prefetch_calls.load(Ordering::Acquire), 0);
 }
 
 #[tokio::test]
@@ -262,7 +351,7 @@ async fn prefetch_loops_run_both_queues_with_nonblocking_heartbeat_and_finish_in
     crawl.push(Ok(vec![sample_job("crawl-1", false)]));
   }
 
-  let publisher = Arc::new(RecordingPublisher::new(Duration::from_millis(25)));
+  let publisher = Arc::new(RecordingPublisher::gated_on("scrape-1"));
   // Heartbeat deliberately sleeps longer than poll_interval to verify it never stalls prefetching.
   let heartbeat = Arc::new(CountingHeartbeat {
     pings: AtomicUsize::new(0),
@@ -270,6 +359,10 @@ async fn prefetch_loops_run_both_queues_with_nonblocking_heartbeat_and_finish_in
   });
 
   let (shutdown_tx, shutdown_rx) = watch::channel(false);
+  let gated_started = publisher.gated_publish_started.notified();
+  tokio::pin!(gated_started);
+  gated_started.as_mut().enable();
+
   let loops = tokio::spawn(run_prefetch_loops(
     Arc::clone(&store),
     Arc::clone(&publisher),
@@ -278,26 +371,36 @@ async fn prefetch_loops_run_both_queues_with_nonblocking_heartbeat_and_finish_in
     shutdown_rx,
   ));
 
-  // Wait until both queues have processed their batches (scrape recovers after error).
-  let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
-  loop {
-    let count = publisher
-      .published
-      .lock()
-      .unwrap_or_else(PoisonError::into_inner)
-      .len();
-    if count >= 3 || tokio::time::Instant::now() >= deadline {
-      break;
-    }
-    tokio::time::sleep(Duration::from_millis(10)).await;
+  // Wait deterministically until the 2-job scrape batch is blocked mid-publish.
+  assert!(
+    tokio::time::timeout(Duration::from_secs(3), gated_started)
+      .await
+      .is_ok(),
+    "scrape-1 publish never started"
+  );
+  // First scrape attempt errored, so heartbeat must not have fired before the first success.
+  assert_eq!(heartbeat.pings.load(Ordering::Acquire), 0);
+
+  // Ensure the independent crawl-finished loop has also processed its batch while scrape is paused.
+  let crawl_deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+  while !publisher
+    .published
+    .lock()
+    .unwrap_or_else(PoisonError::into_inner)
+    .contains(&(QueueKind::CrawlFinished, "crawl-1".to_owned()))
+    && tokio::time::Instant::now() < crawl_deadline
+  {
+    tokio::time::sleep(Duration::from_millis(5)).await;
   }
 
+  // Trigger shutdown WHILE the 2-job scrape batch is in-flight, then release it.
   let _ = shutdown_tx.send(true);
-  assert!(
-    tokio::time::timeout(Duration::from_secs(3), loops)
-      .await
-      .is_ok()
-  );
+  publisher.release_gate.notify_waiters();
+
+  assert!(matches!(
+    tokio::time::timeout(Duration::from_secs(3), loops).await,
+    Ok(Ok(()))
+  ));
 
   let published = publisher
     .published
@@ -307,7 +410,11 @@ async fn prefetch_loops_run_both_queues_with_nonblocking_heartbeat_and_finish_in
   assert!(published.contains(&(QueueKind::CrawlFinished, "crawl-1".to_owned())));
   assert!(published.contains(&(QueueKind::Scrape, "scrape-1".to_owned())));
   assert!(published.contains(&(QueueKind::Scrape, "scrape-2".to_owned())));
-  // Semaphore gate keeps slow heartbeat to 1 in-flight call.
+  // Heartbeat fired once after the successful scrape batch and stayed bounded to 1 in-flight call.
+  let hb_deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+  while heartbeat.pings.load(Ordering::Acquire) == 0 && tokio::time::Instant::now() < hb_deadline {
+    tokio::time::sleep(Duration::from_millis(5)).await;
+  }
   assert_eq!(heartbeat.pings.load(Ordering::Acquire), 1);
 }
 

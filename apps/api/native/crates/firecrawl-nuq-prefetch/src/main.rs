@@ -34,7 +34,7 @@ ENVIRONMENT:
   NUQ_RABBITMQ_URL                     Optional RabbitMQ AMQP/AMQPS connection URL
   NUQ_PREFETCH_WORKER_PORT             HTTP server port for /health and /metrics (default: 3011)
   NUQ_PREFETCH_WORKER_HEARTBEAT_URL    Optional heartbeat URL pinged on the scrape prefetch loop
-  NUQ_POD_NAME                         Pod instance identifier (default: main)
+  NUQ_POD_NAME                         Optional pod instance identifier for OpenTelemetry
   OTEL_EXPORTER_OTLP_ENDPOINT          Optional OTLP/HTTP base endpoint for trace export
   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT   Optional OTLP/HTTP traces endpoint override
   OTEL_SERVICE_NAME                    Service name for OpenTelemetry resource
@@ -44,7 +44,7 @@ ENVIRONMENT:
 ";
 
 fn main() -> ExitCode {
-  let cmd = match parse_cli_args(std::env::args().skip(1)) {
+  let cmd = match parse_cli_args(std::env::args_os().skip(1)) {
     Ok(cmd) => cmd,
     Err(err) => {
       eprintln!("error: {err}");
@@ -110,13 +110,6 @@ async fn run_worker(config: WorkerConfig) -> ExitCode {
     "firecrawl-nuq-prefetch starting"
   );
 
-  if config.rabbitmq_url.is_none() {
-    tracing::warn!(
-      module = "nuq/rabbitmq",
-      "NUQ_RABBITMQ_URL is unset; prefetched jobs will log a warning without publishing"
-    );
-  }
-
   let store = match PgStore::new(&config.pg_settings) {
     Ok(store) => Arc::new(store),
     Err(err) => {
@@ -151,20 +144,33 @@ async fn run_worker(config: WorkerConfig) -> ExitCode {
     }
   };
 
+  let rabbitmq_configured = config.rabbitmq_url.is_some();
   let publisher = Arc::new(AmqpPrefetchPublisher::new(config.rabbitmq_url));
-  let (shutdown_tx, shutdown_rx) = watch::channel(false);
+  let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
 
   let signal_task = tokio::spawn(wait_for_shutdown_signal(shutdown_tx));
   let http_task = tokio::spawn(http_server.serve(shutdown_rx.clone()));
 
-  run_prefetch_loops(
-    Arc::clone(&store),
-    Arc::clone(&publisher),
-    heartbeat,
-    DEFAULT_POLL_INTERVAL,
-    shutdown_rx,
-  )
-  .await;
+  if rabbitmq_configured {
+    run_prefetch_loops(
+      Arc::clone(&store),
+      Arc::clone(&publisher),
+      heartbeat,
+      DEFAULT_POLL_INTERVAL,
+      shutdown_rx,
+    )
+    .await;
+  } else {
+    tracing::warn!(
+      module = "nuq/rabbitmq",
+      "NUQ_RABBITMQ_URL is unset; serving /health and /metrics without claiming PostgreSQL jobs"
+    );
+    while !*shutdown_rx.borrow() {
+      if shutdown_rx.changed().await.is_err() {
+        break;
+      }
+    }
+  }
 
   tracing::info!("All prefetch loops exited. Shutting down...");
   let _ = http_task.await;
@@ -178,7 +184,14 @@ async fn run_worker(config: WorkerConfig) -> ExitCode {
 async fn wait_for_shutdown_signal(shutdown_tx: watch::Sender<bool>) {
   #[cfg(unix)]
   {
-    let sigint = tokio::signal::ctrl_c();
+    let mut sigint = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+    {
+      Ok(stream) => Some(stream),
+      Err(err) => {
+        tracing::warn!(error = %err, "Failed to register SIGINT handler");
+        None
+      }
+    };
     let mut sigterm = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
     {
       Ok(stream) => Some(stream),
@@ -189,7 +202,14 @@ async fn wait_for_shutdown_signal(shutdown_tx: watch::Sender<bool>) {
     };
 
     tokio::select! {
-      _ = sigint => {
+      _ = async {
+        match sigint.as_mut() {
+          Some(stream) => {
+            let _ = stream.recv().await;
+          }
+          None => std::future::pending::<()>().await,
+        }
+      } => {
         tracing::info!("Received SIGINT. Shutting down gracefully...");
       }
       _ = async {
@@ -207,8 +227,15 @@ async fn wait_for_shutdown_signal(shutdown_tx: watch::Sender<bool>) {
 
   #[cfg(not(unix))]
   {
-    let _ = tokio::signal::ctrl_c().await;
-    tracing::info!("Received SIGINT. Shutting down gracefully...");
+    match tokio::signal::ctrl_c().await {
+      Ok(()) => {
+        tracing::info!("Received SIGINT. Shutting down gracefully...");
+      }
+      Err(err) => {
+        tracing::warn!(error = %err, "Failed to register Ctrl-C handler");
+        std::future::pending::<()>().await;
+      }
+    }
   }
 
   let _ = shutdown_tx.send(true);

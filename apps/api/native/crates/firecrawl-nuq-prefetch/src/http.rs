@@ -8,16 +8,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
-use http::header::{ALLOW, CONTENT_TYPE};
+use http::header::{ALLOW, CONTENT_LENGTH, CONTENT_TYPE};
 use http::{Method, Request, Response, StatusCode};
 use http_body_util::Full;
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper_util::rt::TokioIo;
+use hyper_util::rt::{TokioIo, TokioTimer};
 use thiserror::Error;
 use tokio::net::TcpListener;
-use tokio::sync::watch;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
 use tokio::task::JoinSet;
 
 use crate::pg::format_pool_metrics;
@@ -25,6 +25,9 @@ use crate::worker::PrefetchStore;
 
 const TEXT_PLAIN_UTF8: &str = "text/plain; charset=utf-8";
 const SHUTDOWN_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(10);
+const ACCEPT_ERROR_BACKOFF: Duration = Duration::from_millis(50);
+const MAX_CONCURRENT_CONNECTIONS: usize = 64;
 
 /// Errors returned when binding the HTTP server socket.
 #[derive(Debug, Error)]
@@ -75,6 +78,7 @@ impl<S: PrefetchStore> BoundHttpServer<S> {
     );
 
     let mut connections: JoinSet<()> = JoinSet::new();
+    let conn_limit = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
 
     loop {
       while connections.try_join_next().is_some() {}
@@ -83,9 +87,25 @@ impl<S: PrefetchStore> BoundHttpServer<S> {
         break;
       }
 
+      let permit = tokio::select! {
+        res = shutdown.changed() => {
+          if res.is_err() || *shutdown.borrow() {
+            break;
+          }
+          continue;
+        }
+        permit = Arc::clone(&conn_limit).acquire_owned() => {
+          match permit {
+            Ok(permit) => permit,
+            Err(_) => break,
+          }
+        }
+      };
+
       tokio::select! {
-        _ = shutdown.changed() => {
-          if *shutdown.borrow() {
+        res = shutdown.changed() => {
+          drop(permit);
+          if res.is_err() || *shutdown.borrow() {
             break;
           }
         }
@@ -94,10 +114,19 @@ impl<S: PrefetchStore> BoundHttpServer<S> {
             Ok((stream, _peer)) => {
               let store = Arc::clone(&self.store);
               let conn_shutdown = shutdown.clone();
-              connections.spawn(serve_connection(stream, store, conn_shutdown));
+              connections.spawn(serve_connection(stream, store, conn_shutdown, permit));
             }
             Err(err) => {
+              drop(permit);
               tracing::warn!(error = %err, "HTTP accept failed");
+              tokio::select! {
+                () = tokio::time::sleep(ACCEPT_ERROR_BACKOFF) => {}
+                res = shutdown.changed() => {
+                  if res.is_err() || *shutdown.borrow() {
+                    break;
+                  }
+                }
+              }
             }
           }
         }
@@ -118,6 +147,7 @@ async fn serve_connection<S: PrefetchStore>(
   stream: tokio::net::TcpStream,
   store: Arc<S>,
   mut shutdown: watch::Receiver<bool>,
+  _permit: OwnedSemaphorePermit,
 ) {
   let io = TokioIo::new(stream);
   let svc = service_fn(move |req: Request<Incoming>| {
@@ -128,6 +158,8 @@ async fn serve_connection<S: PrefetchStore>(
   let mut conn = pin!(
     http1::Builder::new()
       .keep_alive(true)
+      .timer(TokioTimer::new())
+      .header_read_timeout(HEADER_READ_TIMEOUT)
       .serve_connection(io, svc)
   );
 
@@ -191,17 +223,18 @@ fn text_response(
   body: impl Into<Bytes>,
   empty_body: bool,
 ) -> Response<Full<Bytes>> {
-  let bytes = if empty_body {
-    Bytes::new()
-  } else {
-    body.into()
-  };
-  let mut resp = Response::new(Full::new(bytes));
+  let body_bytes: Bytes = body.into();
+  let content_length = body_bytes.len();
+  let transmitted = if empty_body { Bytes::new() } else { body_bytes };
+  let mut resp = Response::new(Full::new(transmitted));
   *resp.status_mut() = status;
   let _ = resp.headers_mut().insert(
     CONTENT_TYPE,
     http::HeaderValue::from_static(TEXT_PLAIN_UTF8),
   );
+  let _ = resp
+    .headers_mut()
+    .insert(CONTENT_LENGTH, http::HeaderValue::from(content_length));
   resp
 }
 

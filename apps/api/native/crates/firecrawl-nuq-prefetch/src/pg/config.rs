@@ -12,12 +12,14 @@ use tokio_postgres::config::Host;
 const DEFAULT_APPLICATION_NAME: &str = "nuq";
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// PostgreSQL TLS verification mode matching libpq semantics.
+/// PostgreSQL TLS verification mode matching libpq semantics plus
+/// `pg-connection-string`'s `no-verify` alias.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PgSslMode {
   Disable,
   Prefer,
   Require,
+  NoVerify,
   VerifyCa,
   VerifyFull,
 }
@@ -30,6 +32,7 @@ impl PgSslMode {
       Self::Disable => "disable",
       Self::Prefer => "prefer",
       Self::Require => "require",
+      Self::NoVerify => "no-verify",
       Self::VerifyCa => "verify-ca",
       Self::VerifyFull => "verify-full",
     }
@@ -39,7 +42,8 @@ impl PgSslMode {
     match raw {
       "disable" => Ok(Self::Disable),
       "prefer" => Ok(Self::Prefer),
-      "require" | "no-verify" => Ok(Self::Require),
+      "require" => Ok(Self::Require),
+      "no-verify" => Ok(Self::NoVerify),
       "verify-ca" => Ok(Self::VerifyCa),
       "verify-full" => Ok(Self::VerifyFull),
       other => Err(PgConfigError::InvalidSslMode(other.to_owned())),
@@ -52,7 +56,7 @@ impl PgSslMode {
     match self {
       Self::Disable => "disable",
       Self::Prefer => "prefer",
-      Self::Require | Self::VerifyCa | Self::VerifyFull => "require",
+      Self::Require | Self::NoVerify | Self::VerifyCa | Self::VerifyFull => "require",
     }
   }
 }
@@ -269,8 +273,13 @@ fn parse_libpq_kv(raw: &str) -> Result<Vec<(String, String)>, PgConfigError> {
         if c.is_whitespace() {
           break;
         }
-        value.push(c);
         chars.next();
+        if c == '\\' {
+          let escaped = chars.next().ok_or(PgConfigError::ParseFailed)?;
+          value.push(escaped);
+        } else {
+          value.push(c);
+        }
       }
     }
 
@@ -360,7 +369,14 @@ fn format_redacted_endpoint(cfg: &tokio_postgres::Config) -> String {
         .or_else(|| cfg.get_ports().first().copied())
         .unwrap_or(5432);
       match host {
-        Host::Tcp(h) => format!("{h}:{port}"),
+        Host::Tcp(h) => {
+          let bracketed = if h.contains(':') && !h.starts_with('[') {
+            format!("[{h}]")
+          } else {
+            h.clone()
+          };
+          format!("{bracketed}:{port}")
+        }
         #[cfg(unix)]
         Host::Unix(p) => format!("unix:{}:{port}", p.display()),
       }
@@ -386,7 +402,7 @@ mod tests {
       ("disable", PgSslMode::Disable),
       ("prefer", PgSslMode::Prefer),
       ("require", PgSslMode::Require),
-      ("no-verify", PgSslMode::Require),
+      ("no-verify", PgSslMode::NoVerify),
       ("verify-ca", PgSslMode::VerifyCa),
       ("verify-full", PgSslMode::VerifyFull),
     ];
@@ -416,13 +432,23 @@ mod tests {
     assert_eq!(settings.ssl_mode(), PgSslMode::VerifyCa);
     assert_eq!(settings.ssl_root_cert(), Some("/etc/ca.pem"));
 
-    let kv = "host=127.0.0.1 port=6432 user=nuq password='my secret' dbname=nuq sslmode=verify-full sslrootcert='/tmp/root ca.pem'";
+    let kv = "host=127.0.0.1 port=6432 user=nuq password=my\\ secret dbname=nuq sslmode=verify-full sslrootcert='/tmp/root ca.pem'";
     let kv_settings = parse_pg_connection_settings(kv);
     assert!(kv_settings.is_ok());
     let Ok(kv_settings) = kv_settings else { return };
     assert_eq!(kv_settings.ssl_mode(), PgSslMode::VerifyFull);
     assert_eq!(kv_settings.ssl_root_cert(), Some("/tmp/root ca.pem"));
     assert_eq!(kv_settings.pg_config().get_application_name(), Some("nuq"));
+    assert_eq!(
+      kv_settings.pg_config().get_password(),
+      Some(b"my secret".as_slice())
+    );
+
+    let ipv6 = parse_pg_connection_settings("postgres://u:secret@[::1]:6432/nuq");
+    assert!(ipv6.is_ok());
+    if let Ok(settings) = ipv6 {
+      assert_eq!(settings.redacted_endpoint(), "postgres://[::1]:6432/nuq");
+    }
   }
 
   #[test]

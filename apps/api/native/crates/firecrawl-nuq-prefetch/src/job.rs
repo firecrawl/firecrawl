@@ -147,7 +147,13 @@ impl fmt::Debug for NuqJob {
         "failed_reason",
         &self.failed_reason.as_ref().map(|_| redacted_str),
       )
-      .field("lock", &self.lock)
+      .field(
+        "lock",
+        &self
+          .lock
+          .as_deref()
+          .map(|v| if is_zdr { redacted_str } else { v }),
+      )
       .field(
         "owner_id",
         &self
@@ -358,6 +364,7 @@ mod tests {
     assert!(!debug_str.contains("https://example.com"));
     assert!(!debug_str.contains("none"));
     assert!(!debug_str.contains("550e8400-e29b-41d4-a716-446655440000"));
+    assert!(!debug_str.contains("660e8400-e29b-41d4-a716-446655440000"));
     assert!(!debug_str.contains("770e8400-e29b-41d4-a716-446655440000"));
     assert!(!debug_str.contains("880e8400-e29b-41d4-a716-446655440000"));
 

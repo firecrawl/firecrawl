@@ -18,8 +18,8 @@ pub use amqp::{
   PREFETCH_QUEUE_MAX_LENGTH, PublishError, prefetch_publish_properties, prefetch_queue_args,
 };
 pub use config::{
-  CliCommand, ConfigError, DEFAULT_POD_NAME, DEFAULT_PORT, RedactedString, WorkerConfig,
-  parse_cli_args, redact_amqp_url, redact_http_url,
+  CliCommand, ConfigError, DEFAULT_PORT, RedactedString, WorkerConfig, parse_cli_args,
+  redact_amqp_url, redact_http_url,
 };
 pub use http::{BoundHttpServer, HttpServerError};
 pub use job::{

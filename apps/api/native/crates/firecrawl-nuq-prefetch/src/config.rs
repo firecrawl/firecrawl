@@ -1,6 +1,7 @@
 //! Environment and CLI configuration for the NuQ prefetch worker with
 //! automatic credential redaction in debug output, logs, and summaries.
 
+use std::ffi::OsString;
 use std::fmt;
 
 use thiserror::Error;
@@ -10,9 +11,6 @@ use crate::pg::{PgConnectionSettings, parse_pg_connection_settings};
 
 /// Default HTTP port for `/health` and `/metrics`, matching `apps/api/src/config.ts`.
 pub const DEFAULT_PORT: u16 = 3011;
-
-/// Default pod name when `NUQ_POD_NAME` is unset or empty.
-pub const DEFAULT_POD_NAME: &str = "main";
 
 /// Secret-bearing string whose `Debug` implementation always redacts its value.
 #[derive(Clone, PartialEq, Eq)]
@@ -50,6 +48,8 @@ pub enum CliCommand {
 /// Configuration and CLI parsing errors.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ConfigError {
+  #[error("CLI argument is not valid UTF-8")]
+  InvalidUtf8Arg,
   #[error("unknown CLI argument: {0}")]
   UnknownArg(String),
   #[error("missing required environment variable NUQ_DATABASE_URL")]
@@ -64,19 +64,31 @@ pub enum ConfigError {
   InvalidHeartbeatUrl(String),
 }
 
-/// Parses CLI arguments for the standalone binary.
+/// Parses CLI arguments for the standalone binary without panicking on
+/// non-UTF-8 arguments and without echoing flag values that may carry secrets.
 pub fn parse_cli_args<I, S>(args: I) -> Result<CliCommand, ConfigError>
 where
   I: IntoIterator<Item = S>,
-  S: AsRef<str>,
+  S: Into<OsString>,
 {
   let mut command = CliCommand::Run;
-  for arg in args {
-    match arg.as_ref() {
+  for raw_arg in args {
+    let arg = raw_arg
+      .into()
+      .into_string()
+      .map_err(|_| ConfigError::InvalidUtf8Arg)?;
+    match arg.as_str() {
       "--check-config" => command = CliCommand::CheckConfig,
       "-h" | "--help" => return Ok(CliCommand::Help),
       "-V" | "--version" => return Ok(CliCommand::Version),
-      other => return Err(ConfigError::UnknownArg(other.to_owned())),
+      other => {
+        let safe_name = match other.split_once('=') {
+          Some((flag, _)) => flag,
+          None if other.starts_with('-') => other,
+          None => "<positional>",
+        };
+        return Err(ConfigError::UnknownArg(safe_name.to_owned()));
+      }
     }
   }
   Ok(command)
@@ -90,7 +102,7 @@ pub struct WorkerConfig {
   pub rabbitmq_url: Option<RedactedString>,
   pub port: u16,
   pub heartbeat_url: Option<RedactedString>,
-  pub pod_name: String,
+  pub pod_name: Option<String>,
 }
 
 impl WorkerConfig {
@@ -148,10 +160,10 @@ impl WorkerConfig {
       None => None,
     };
 
+    // Match `firecrawl_telemetry::resource_from_process_env()`: omit when unset/blank.
     let pod_name = lookup("NUQ_POD_NAME")
       .map(|v| v.trim().to_owned())
-      .filter(|v| !v.is_empty())
-      .unwrap_or_else(|| DEFAULT_POD_NAME.to_owned());
+      .filter(|v| !v.is_empty());
 
     Ok(Self {
       database_url: RedactedString::new(raw_db),
@@ -215,7 +227,7 @@ fn validate_http_url(raw: &str) -> Result<(), ConfigError> {
   Ok(())
 }
 
-/// Redacts credentials and query parameters from an AMQP URL for safe logging.
+/// Redacts credentials, virtual host path, and query parameters from an AMQP URL.
 #[must_use]
 pub fn redact_amqp_url(raw: &str) -> String {
   let Ok(parsed) = Url::parse(raw) else {
@@ -229,7 +241,11 @@ pub fn redact_amqp_url(raw: &str) -> String {
     ""
   };
   let port = parsed.port().map(|p| format!(":{p}")).unwrap_or_default();
-  let path = parsed.path();
+  let path = if parsed.path().is_empty() || parsed.path() == "/" {
+    ""
+  } else {
+    "/[REDACTED]"
+  };
   format!("{scheme}://{auth}{host}{port}{path}")
 }
 
@@ -273,6 +289,20 @@ mod tests {
       parse_cli_args(["--bogus"]),
       Err(ConfigError::UnknownArg("--bogus".to_owned()))
     );
+    assert_eq!(
+      parse_cli_args(["--database-url=postgres://u:secret@host/db"]),
+      Err(ConfigError::UnknownArg("--database-url".to_owned()))
+    );
+    assert_eq!(
+      parse_cli_args(["postgres://u:secret@host/db"]),
+      Err(ConfigError::UnknownArg("<positional>".to_owned()))
+    );
+    #[cfg(unix)]
+    {
+      use std::os::unix::ffi::OsStringExt;
+      let bad = OsString::from_vec(vec![0xFF, 0xFE]);
+      assert_eq!(parse_cli_args([bad]), Err(ConfigError::InvalidUtf8Arg));
+    }
   }
 
   #[test]
@@ -284,7 +314,7 @@ mod tests {
       ),
       (
         "NUQ_RABBITMQ_URL",
-        "amqps://rmquser:rmqpass456@mq.internal:5671/vhost?heartbeat=30",
+        "amqps://rmquser:rmqpass456@mq.internal:5671/secret-vhost?heartbeat=30",
       ),
       (
         "NUQ_PREFETCH_WORKER_HEARTBEAT_URL",
@@ -297,13 +327,14 @@ mod tests {
     let Ok(cfg) = cfg else { return };
 
     assert_eq!(cfg.port, DEFAULT_PORT);
-    assert_eq!(cfg.pod_name, DEFAULT_POD_NAME);
+    assert_eq!(cfg.pod_name, None);
 
     let summary = cfg.redacted_summary();
     assert!(!summary.contains("dbpass123"));
     assert!(!summary.contains("dbuser"));
     assert!(!summary.contains("rmqpass456"));
     assert!(!summary.contains("rmquser"));
+    assert!(!summary.contains("secret-vhost"));
     assert!(!summary.contains("secret-token-789"));
     assert!(summary.contains("db.internal"));
     assert!(summary.contains("mq.internal"));
@@ -312,6 +343,7 @@ mod tests {
     let debug = format!("{cfg:?}");
     assert!(!debug.contains("dbpass123"));
     assert!(!debug.contains("rmqpass456"));
+    assert!(!debug.contains("secret-vhost"));
     assert!(!debug.contains("secret-token-789"));
   }
 
@@ -330,7 +362,7 @@ mod tests {
 
     assert!(cfg.rabbitmq_url.is_none());
     assert_eq!(cfg.port, 3011);
-    assert_eq!(cfg.pod_name, "pod-a");
+    assert_eq!(cfg.pod_name.as_deref(), Some("pod-a"));
   }
 
   #[test]

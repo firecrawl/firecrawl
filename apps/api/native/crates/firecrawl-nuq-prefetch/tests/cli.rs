@@ -23,13 +23,16 @@ fn cli_help_and_version_exit_zero() {
 }
 
 #[test]
-fn cli_rejects_unknown_argument_with_exit_code_2() {
-  let res = Command::new(BIN_PATH).arg("--not-a-flag").output();
+fn cli_rejects_unknown_argument_with_exit_code_2_without_leaking_values() {
+  let res = Command::new(BIN_PATH)
+    .arg("--database-url=postgres://u:supersecretpg@host/db")
+    .output();
   assert!(res.is_ok());
   if let Ok(out) = res {
     assert_eq!(out.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("--not-a-flag"));
+    assert!(stderr.contains("--database-url"));
+    assert!(!stderr.contains("supersecretpg"));
   }
 }
 
@@ -55,7 +58,7 @@ fn cli_check_config_validates_and_redacts_secrets() {
     )
     .env(
       "NUQ_RABBITMQ_URL",
-      "amqps://rmquser:topsecretrmq@mq.internal:5671/vhost",
+      "amqps://rmquser:topsecretrmq@mq.internal:5671/secret-vhost",
     )
     .env("NUQ_PREFETCH_WORKER_PORT", "3019")
     .env(
@@ -74,6 +77,7 @@ fn cli_check_config_validates_and_redacts_secrets() {
       "topsecretpg",
       "rmquser",
       "topsecretrmq",
+      "secret-vhost",
       "topsecrethb",
     ] {
       assert!(!stdout.contains(secret), "leaked secret {secret} in stdout");

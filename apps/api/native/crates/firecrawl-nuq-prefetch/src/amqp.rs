@@ -5,9 +5,9 @@ use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use lapin::options::{BasicPublishOptions, QueueDeclareOptions};
+use lapin::options::{BasicPublishOptions, ConfirmSelectOptions, QueueDeclareOptions};
 use lapin::types::{AMQPValue, FieldTable};
-use lapin::{BasicProperties, Channel, Connection, ConnectionProperties};
+use lapin::{BasicProperties, Channel, Confirmation, Connection, ConnectionProperties};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
@@ -54,6 +54,8 @@ pub fn prefetch_publish_properties(job_id: &str) -> BasicProperties {
 /// Errors returned when publishing prefetched jobs to RabbitMQ.
 #[derive(Debug, Error)]
 pub enum PublishError {
+  #[error("NUQ_RABBITMQ_URL is not configured")]
+  NotConfigured,
   #[error("publisher is shutting down")]
   ShuttingDown,
   #[error("failed to serialize job payload: {0}")]
@@ -134,6 +136,12 @@ impl AmqpPrefetchPublisher {
     }
   }
 
+  /// Returns whether `NUQ_RABBITMQ_URL` is configured on this publisher.
+  #[must_use]
+  pub const fn is_configured(&self) -> bool {
+    self.rabbitmq_url.is_some()
+  }
+
   fn session_slot(&self, queue: QueueKind) -> &Mutex<Option<AmqpSession>> {
     match queue {
       QueueKind::Scrape => &self.scrape_session,
@@ -141,7 +149,8 @@ impl AmqpPrefetchPublisher {
     }
   }
 
-  /// Publishes a single prefetched job to `<queueName>.prefetch`.
+  /// Publishes a single prefetched job to `<queueName>.prefetch` with broker
+  /// publisher confirms enabled so failed deliveries remain retryable.
   pub async fn send_job(&self, queue: QueueKind, job: &NuqJob) -> Result<(), PublishError> {
     let Some(url) = self.rabbitmq_url.as_ref() else {
       tracing::warn!(
@@ -149,7 +158,7 @@ impl AmqpPrefetchPublisher {
         queue = queue.table_name(),
         "NuQ sender not started"
       );
-      return Ok(());
+      return Err(PublishError::NotConfigured);
     };
 
     if self.shutting_down.load(Ordering::Acquire) {
@@ -290,7 +299,35 @@ async fn connect_and_declare(url: &str, prefetch_queue: &str) -> Result<AmqpSess
   .await;
 
   match declare_res {
-    Ok(Ok(_)) => Ok(AmqpSession {
+    Ok(Ok(_)) => {}
+    Ok(Err(err)) => {
+      let session = AmqpSession {
+        connection,
+        channel,
+      };
+      session.close_gracefully("declare_failed").await;
+      return Err(PublishError::Amqp(err.to_string()));
+    }
+    Err(_) => {
+      let session = AmqpSession {
+        connection,
+        channel,
+      };
+      session.close_gracefully("declare_timeout").await;
+      return Err(PublishError::Timeout("queue_declare"));
+    }
+  }
+
+  // Enable publisher confirms so `basic_publish` awaits broker replication acks
+  // on quorum queues instead of succeeding as soon as bytes hit the socket.
+  let confirm_res = tokio::time::timeout(
+    AMQP_OP_TIMEOUT,
+    channel.confirm_select(ConfirmSelectOptions::default()),
+  )
+  .await;
+
+  match confirm_res {
+    Ok(Ok(())) => Ok(AmqpSession {
       connection,
       channel,
     }),
@@ -299,7 +336,7 @@ async fn connect_and_declare(url: &str, prefetch_queue: &str) -> Result<AmqpSess
         connection,
         channel,
       };
-      session.close_gracefully("declare_failed").await;
+      session.close_gracefully("confirm_select_failed").await;
       Err(PublishError::Amqp(err.to_string()))
     }
     Err(_) => {
@@ -307,8 +344,8 @@ async fn connect_and_declare(url: &str, prefetch_queue: &str) -> Result<AmqpSess
         connection,
         channel,
       };
-      session.close_gracefully("declare_timeout").await;
-      Err(PublishError::Timeout("queue_declare"))
+      session.close_gracefully("confirm_select_timeout").await;
+      Err(PublishError::Timeout("confirm_select"))
     }
   }
 }
@@ -333,12 +370,20 @@ async fn publish_once(
   .map_err(|_| PublishError::Timeout("basic_publish"))?
   .map_err(|err| PublishError::Amqp(err.to_string()))?;
 
-  tokio::time::timeout(AMQP_OP_TIMEOUT, confirm)
+  let confirmation = tokio::time::timeout(AMQP_OP_TIMEOUT, confirm)
     .await
     .map_err(|_| PublishError::Timeout("publish_confirm"))?
     .map_err(|err| PublishError::Amqp(err.to_string()))?;
 
-  Ok(())
+  match confirmation {
+    Confirmation::Ack(_) => Ok(()),
+    Confirmation::Nack(_) => Err(PublishError::Amqp(
+      "broker negatively acknowledged prefetch publish".to_owned(),
+    )),
+    Confirmation::NotRequested => Err(PublishError::Amqp(
+      "publisher confirms not enabled on AMQP channel".to_owned(),
+    )),
+  }
 }
 
 #[cfg(test)]

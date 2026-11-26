@@ -143,7 +143,17 @@ impl PgStore {
     let mut jobs = Vec::new();
     for msg in messages {
       if let SimpleQueryMessage::Row(row) = msg {
-        jobs.push(NuqJob::from_pg_row(&row)?);
+        match NuqJob::from_pg_row(&row) {
+          Ok(job) => jobs.push(job),
+          Err(err) => {
+            tracing::error!(
+              module = "nuq",
+              queue = queue.table_name(),
+              error = %err,
+              "Failed to decode prefetched NuQ job row; skipping"
+            );
+          }
+        }
       }
     }
     Ok(jobs)

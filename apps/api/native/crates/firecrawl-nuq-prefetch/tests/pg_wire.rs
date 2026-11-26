@@ -182,6 +182,23 @@ async fn serve_mock_pg_connection(mut stream: TcpStream, state: Arc<Mutex<Captur
           push_data_row(
             &mut resp,
             &[
+              Some("00000000-0000-0000-0000-000000000000"),
+              Some("active"),
+              Some("not-a-valid-timestamp"),
+              Some("0"),
+              None,
+              None,
+              None,
+              None,
+              None,
+              None,
+              None,
+              None,
+            ],
+          );
+          push_data_row(
+            &mut resp,
+            &[
               Some("11111111-1111-1111-1111-111111111111"),
               Some("active"),
               Some("2026-11-26 02:00:00.987654+00"),
@@ -196,7 +213,7 @@ async fn serve_mock_pg_connection(mut stream: TcpStream, state: Arc<Mutex<Captur
               None,
             ],
           );
-          push_command_complete_and_ready(&mut resp, "UPDATE 1");
+          push_command_complete_and_ready(&mut resp, "UPDATE 2");
         } else {
           push_row_description(
             &mut resp,

@@ -174,32 +174,113 @@ fn nuq_job_wire_json_matches_rabbit_row_to_job_contract(tc: TestCase) {
     Some(i64::from(priority))
   );
   assert!(map.contains_key("data"));
-  if data_col.is_none() {
-    assert_eq!(map.get("data"), Some(&Value::Null));
-  }
+  let expected_data = match data_col.as_deref() {
+    Some(raw) => serde_json::from_str::<Value>(raw).ok(),
+    None => Some(Value::Null),
+  };
+  assert_eq!(map.get("data").cloned(), expected_data);
 
-  assert_eq!(map.contains_key("finishedAt"), finished_col.is_some());
-  assert_eq!(map.contains_key("listenChannelId"), listen_col.is_some());
-  assert_eq!(map.contains_key("returnvalue"), returnvalue_kind == 2);
-  assert_eq!(map.contains_key("failedReason"), failed_col.is_some());
-  assert_eq!(map.contains_key("lock"), lock_col.is_some());
-  assert_eq!(map.contains_key("ownerId"), owner_col.is_some());
-  assert_eq!(map.contains_key("groupId"), group_col.is_some());
+  assert_eq!(
+    map.get("finishedAt").and_then(Value::as_str),
+    finished_col.as_deref()
+  );
+  assert_eq!(
+    map.get("listenChannelId").and_then(Value::as_str),
+    listen_col.as_deref()
+  );
+  let expected_returnvalue = match returnvalue_kind {
+    2 => returnvalue_col
+      .as_deref()
+      .and_then(|raw| serde_json::from_str::<Value>(raw).ok()),
+    _ => None,
+  };
+  assert_eq!(map.get("returnvalue").cloned(), expected_returnvalue);
+  assert_eq!(
+    map.get("failedReason").and_then(Value::as_str),
+    failed_col.as_deref()
+  );
+  assert_eq!(map.get("lock").and_then(Value::as_str), lock_col.as_deref());
+  assert_eq!(
+    map.get("ownerId").and_then(Value::as_str),
+    owner_col.as_deref()
+  );
+  assert_eq!(
+    map.get("groupId").and_then(Value::as_str),
+    group_col.as_deref()
+  );
 
   let roundtrip: Result<NuqJob, _> = serde_json::from_str(&wire_str);
   assert_eq!(roundtrip.ok(), Some(job));
 }
 
-/// Arbitrary UTC epoch milliseconds formatted with timezone offsets and extra
-/// sub-millisecond microseconds always truncate identically to JS `Date`.
+fn oracle_is_leap_year(year: i32) -> bool {
+  (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+fn oracle_days_in_month(year: i32, month: u8) -> u8 {
+  match month {
+    1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+    4 | 6 | 9 | 11 => 30,
+    2 => {
+      if oracle_is_leap_year(year) {
+        29
+      } else {
+        28
+      }
+    }
+    _ => 0,
+  }
+}
+
+/// Independent Gregorian calendar oracle summing whole years and months from
+/// 1970-01-01 (distinct from Hinnant's civil formula in `timestamp.rs`).
+fn oracle_utc_epoch_millis(
+  year: i32,
+  month: u8,
+  day: u8,
+  hour: u8,
+  minute: u8,
+  second: u8,
+  millis: u16,
+) -> i64 {
+  let mut days: i64 = 0;
+  if year >= 1970 {
+    for y in 1970..year {
+      days = days.saturating_add(if oracle_is_leap_year(y) { 366 } else { 365 });
+    }
+  } else {
+    for y in year..1970 {
+      days = days.saturating_sub(if oracle_is_leap_year(y) { 366 } else { 365 });
+    }
+  }
+  for m in 1..month {
+    days = days.saturating_add(i64::from(oracle_days_in_month(year, m)));
+  }
+  days = days.saturating_add(i64::from(day.saturating_sub(1)));
+
+  let secs = days
+    .saturating_mul(86_400)
+    .saturating_add(i64::from(hour).saturating_mul(3_600))
+    .saturating_add(i64::from(minute).saturating_mul(60))
+    .saturating_add(i64::from(second));
+  secs.saturating_mul(1_000).saturating_add(i64::from(millis))
+}
+
+/// Independent calendar oracle verifies both `parse_pg_timestamp_to_epoch_millis`
+/// and `format_epoch_millis_iso_utc` across dates, timezone offsets, and extra
+/// sub-millisecond digits so parser and formatter bugs cannot cancel out.
 #[hegel::test]
-fn pg_timestamp_roundtrips_across_offsets_and_microseconds(tc: TestCase) {
-  let epoch_ms = tc.draw(
-    gs::integers::<i64>()
-      .min_value(-2_208_988_800_000)
-      .max_value(7_258_118_400_000),
-  );
+fn pg_timestamp_matches_independent_calendar_oracle_across_offsets_and_micros(tc: TestCase) {
+  let year = tc.draw(gs::integers::<i32>().min_value(1900).max_value(2200));
+  let month = tc.draw(gs::integers::<u8>().min_value(1).max_value(12));
+  let max_day = oracle_days_in_month(year, month);
+  let day = tc.draw(gs::integers::<u8>().min_value(1).max_value(max_day));
+  let hour = tc.draw(gs::integers::<u8>().max_value(23));
+  let minute = tc.draw(gs::integers::<u8>().max_value(59));
+  let second = tc.draw(gs::integers::<u8>().max_value(59));
+  let millis = tc.draw(gs::integers::<u16>().max_value(999));
   let extra_micros = tc.draw(gs::integers::<u16>().max_value(999));
+
   let tz_sign = if tc.draw(gs::booleans()) {
     1_i64
   } else {
@@ -220,6 +301,16 @@ fn pg_timestamp_roundtrips_across_offsets_and_microseconds(tc: TestCase) {
   let include_tz_mins = include_tz_secs || tz_mins != 0 || tc.draw(gs::booleans());
   let use_space = tc.draw(gs::booleans());
 
+  let local_epoch_ms = oracle_utc_epoch_millis(year, month, day, hour, minute, second, millis);
+  let expected_utc_iso_at_zero_offset =
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}Z");
+
+  // Directly cross-check the formatter against the independent oracle.
+  assert_eq!(
+    format_epoch_millis_iso_utc(local_epoch_ms),
+    Ok(expected_utc_iso_at_zero_offset.clone())
+  );
+
   let offset_secs = tz_sign.saturating_mul(
     i64::from(tz_hours)
       .saturating_mul(3_600)
@@ -230,23 +321,9 @@ fn pg_timestamp_roundtrips_across_offsets_and_microseconds(tc: TestCase) {
         0
       }),
   );
+  let expected_utc_ms = local_epoch_ms.saturating_sub(offset_secs.saturating_mul(1_000));
 
-  let local_ms = epoch_ms.saturating_add(offset_secs.saturating_mul(1_000));
-  let local_iso_res = format_epoch_millis_iso_utc(local_ms);
-  assert!(
-    local_iso_res.is_ok(),
-    "failed to format local timestamp: {local_iso_res:?}"
-  );
-  let Ok(local_iso) = local_iso_res else {
-    return;
-  };
-  let local_core = local_iso.trim_end_matches('Z');
-  let local_body = if use_space {
-    local_core.replacen('T', " ", 1)
-  } else {
-    local_core.to_owned()
-  };
-
+  let sep = if use_space { ' ' } else { 'T' };
   let sign_char = if tz_sign >= 0 { '+' } else { '-' };
   let tz_suffix = if include_tz_secs {
     format!("{sign_char}{tz_hours:02}:{tz_mins:02}:{tz_secs:02}")
@@ -256,12 +333,18 @@ fn pg_timestamp_roundtrips_across_offsets_and_microseconds(tc: TestCase) {
     format!("{sign_char}{tz_hours:02}")
   };
 
-  let pg_text = format!("{local_body}{extra_micros:03}{tz_suffix}");
-  let parsed_ms = parse_pg_timestamp_to_epoch_millis(&pg_text);
-  assert_eq!(parsed_ms, Ok(epoch_ms), "pg_text={pg_text}");
-
-  let expected_iso = format_epoch_millis_iso_utc(epoch_ms);
-  assert_eq!(parse_pg_timestamp_to_iso_utc(&pg_text), expected_iso);
+  let pg_text = format!(
+    "{year:04}-{month:02}-{day:02}{sep}{hour:02}:{minute:02}:{second:02}.{millis:03}{extra_micros:03}{tz_suffix}"
+  );
+  assert_eq!(
+    parse_pg_timestamp_to_epoch_millis(&pg_text),
+    Ok(expected_utc_ms),
+    "pg_text={pg_text}"
+  );
+  assert_eq!(
+    parse_pg_timestamp_to_iso_utc(&pg_text),
+    format_epoch_millis_iso_utc(expected_utc_ms)
+  );
 }
 
 /// `stored_zero_data_retention` prioritizes non-null `ctx.zeroDataRetention`,
@@ -324,8 +407,9 @@ fn config_redaction_never_leaks_credentials_across_sslmodes(tc: TestCase) {
   ]));
   let port = tc.draw(gs::integers::<u16>().min_value(1));
 
+  let rmq_vhost = format!("VHOST_{}", tc.draw(ascii_token(10, 18)));
   let db_url = format!("postgres://dbuser:{db_pass}@pg.example.com:6432/nuq?sslmode={sslmode}");
-  let rmq_url = format!("amqps://rmquser:{rmq_pass}@mq.example.com:5671/vhost");
+  let rmq_url = format!("amqps://rmquser:{rmq_pass}@mq.example.com:5671/{rmq_vhost}");
   let hb_url = format!("https://heartbeat.example.com/ping/{hb_token}");
   let port_str = port.to_string();
 
@@ -335,7 +419,8 @@ fn config_redaction_never_leaks_credentials_across_sslmodes(tc: TestCase) {
     let expected_mode = match sslmode {
       "disable" => PgSslMode::Disable,
       "prefer" => PgSslMode::Prefer,
-      "require" | "no-verify" => PgSslMode::Require,
+      "require" => PgSslMode::Require,
+      "no-verify" => PgSslMode::NoVerify,
       "verify-ca" => PgSslMode::VerifyCa,
       _ => PgSslMode::VerifyFull,
     };
@@ -356,7 +441,7 @@ fn config_redaction_never_leaks_credentials_across_sslmodes(tc: TestCase) {
 
   let summary = cfg.redacted_summary();
   let debug = format!("{cfg:?}");
-  for secret in [&db_pass, &rmq_pass, &hb_token] {
+  for secret in [&db_pass, &rmq_pass, &rmq_vhost, &hb_token] {
     assert!(!summary.contains(secret.as_str()));
     assert!(!debug.contains(secret.as_str()));
   }

@@ -50,6 +50,11 @@ impl PrefetchStore for PgStore {
 
 /// Queue publisher interface for forwarding claimed jobs to RabbitMQ.
 pub trait PrefetchPublisher: Send + Sync + 'static {
+  /// Returns whether a downstream broker is configured to accept prefetched jobs.
+  fn is_configured(&self) -> bool {
+    true
+  }
+
   fn send_job<'a>(
     &'a self,
     queue: QueueKind,
@@ -59,6 +64,10 @@ pub trait PrefetchPublisher: Send + Sync + 'static {
 }
 
 impl PrefetchPublisher for AmqpPrefetchPublisher {
+  fn is_configured(&self) -> bool {
+    AmqpPrefetchPublisher::is_configured(self)
+  }
+
   fn send_job<'a>(
     &'a self,
     queue: QueueKind,
@@ -132,6 +141,15 @@ where
 {
   let start = Instant::now();
   let result = async {
+    if !publisher.is_configured() {
+      tracing::warn!(
+        module = "nuq/rabbitmq",
+        queue = queue.table_name(),
+        "NuQ sender not configured; skipping prefetch claim"
+      );
+      return Ok(0);
+    }
+
     let jobs = store
       .prefetch_jobs(queue)
       .await
@@ -239,19 +257,19 @@ async fn run_single_queue_loop<S, P, H>(
   let mut backoff = poll_interval;
 
   while !*shutdown.borrow() {
-    if let Some(hb) = heartbeat.as_ref()
-      && let Ok(permit) = Arc::clone(&heartbeat_gate).try_acquire_owned()
-    {
-      let hb = Arc::clone(hb);
-      tokio::spawn(async move {
-        hb.ping().await;
-        drop(permit);
-      });
-    }
-
     let sleep_duration = match run_prefetch_once(queue, store.as_ref(), publisher.as_ref()).await {
       Ok(_) => {
         backoff = poll_interval;
+        if publisher.is_configured()
+          && let Some(hb) = heartbeat.as_ref()
+          && let Ok(permit) = Arc::clone(&heartbeat_gate).try_acquire_owned()
+        {
+          let hb = Arc::clone(hb);
+          tokio::spawn(async move {
+            hb.ping().await;
+            drop(permit);
+          });
+        }
         poll_interval
       }
       Err(err) => {
@@ -269,8 +287,8 @@ async fn run_single_queue_loop<S, P, H>(
 
     tokio::select! {
       () = tokio::time::sleep(sleep_duration) => {}
-      _ = shutdown.changed() => {
-        if *shutdown.borrow() {
+      res = shutdown.changed() => {
+        if res.is_err() || *shutdown.borrow() {
           break;
         }
       }
