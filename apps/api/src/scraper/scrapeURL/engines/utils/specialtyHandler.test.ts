@@ -375,7 +375,7 @@ describe("specialtyScrapeCheck: the bytes decide when the header does not", () =
     expect(message).toContain("application/octet-stream");
   });
 
-  it("rejects ZIP-container archives served as application/octet-stream when filename or URL names an archive", async () => {
+  it("rejects ZIP-container archives when filename or URL names an archive, even under text/html", async () => {
     const byHeader = await expectUnsupported(
       specialtyScrapeCheck(
         logger,
@@ -396,24 +396,70 @@ describe("specialtyScrapeCheck: the bytes decide when the header does not", () =
       ),
     );
     expect(byUrl).toContain("application/octet-stream");
+
+    const mislabeledHtmlZip = await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "text/html; charset=utf-8" },
+        download(DOCX, { url: "https://example.com/releases/App-1.0.0.zip" }),
+      ),
+    );
+    expect(mislabeledHtmlZip).toContain("text/html");
   });
 
-  it("keeps allowing gzipped fire-engine file handoffs through for inline decompression", async () => {
+  it("scopes gzipped fire-engine handoff exemptions to gzip media types and .xml.gz sitemaps", async () => {
     const gzipHeader = Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00]);
     await expect(
       specialtyScrapeCheck(
         logger,
         { "content-type": "application/octet-stream" },
-        download(gzipHeader),
+        download(gzipHeader, { url: "https://example.com/sitemap.xml.gz" }),
       ),
     ).resolves.toBeUndefined();
     await expect(
       specialtyScrapeCheck(
         logger,
         { "content-type": "application/x-gzip" },
-        download(gzipHeader),
+        download(gzipHeader, { url: "https://example.com/sitemap.xml.gz" }),
       ),
     ).resolves.toBeUndefined();
+
+    // Generic octet-stream download without .xml.gz must still be rejected
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        download(gzipHeader),
+      ),
+    );
+
+    // Gzipped payload served with an executable media type or binary attachment must fail
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/x-msdownload" },
+        download(gzipHeader, { url: "https://example.com/sitemap.xml.gz" }),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        {
+          "content-type": "application/gzip",
+          "content-disposition": 'attachment; filename="installer.exe"',
+        },
+        download(gzipHeader),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/gzip" },
+        download(gzipHeader, {
+          url: "https://example.com/releases/source.tar.gz",
+        }),
+      ),
+    );
   });
 
   it("rejects header-less binary executables while allowing header-less HTML", async () => {

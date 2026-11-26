@@ -318,6 +318,8 @@ const BINARY_ATTACHMENT_EXTENSIONS = new Set([
   ".dylib",
 ]);
 
+const GZIP_MEDIA_TYPES = new Set(["application/gzip", "application/x-gzip"]);
+
 function isGzippedFileHandoff(
   feRes: SpecialtyHandoffResponse | undefined,
 ): boolean {
@@ -326,10 +328,54 @@ function isGzippedFileHandoff(
   return head.length >= 2 && head[0] === 0x1f && head[1] === 0x8b;
 }
 
+function hasBinaryOrGzipArchiveUrlExtension(
+  urlString: string | undefined,
+): boolean {
+  if (!urlString) return false;
+  try {
+    const lowerPath = new URL(urlString).pathname.toLowerCase();
+    if (lowerPath.endsWith(".tgz")) return true;
+    if (lowerPath.endsWith(".gz")) {
+      const stem = lowerPath.slice(0, -3);
+      return BINARY_ATTACHMENT_EXTENSIONS.has(path.extname(stem));
+    }
+    return BINARY_ATTACHMENT_EXTENSIONS.has(path.extname(lowerPath));
+  } catch {
+    return false;
+  }
+}
+
+function hasXmlGzipUrlExtension(urlString: string | undefined): boolean {
+  if (!urlString) return false;
+  try {
+    return new URL(urlString).pathname.toLowerCase().endsWith(".xml.gz");
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedGzipFileHandoff(
+  feRes: SpecialtyHandoffResponse | undefined,
+  mediaType: string | undefined,
+  attachmentBinaryExt: string | null,
+): boolean {
+  if (!isGzippedFileHandoff(feRes)) return false;
+  if (attachmentBinaryExt !== null) return false;
+  if (hasBinaryOrGzipArchiveUrlExtension(feRes?.url)) return false;
+  if (mediaType === undefined) {
+    return hasXmlGzipUrlExtension(feRes?.url);
+  }
+  return (
+    GZIP_MEDIA_TYPES.has(mediaType) ||
+    (mediaType === "application/octet-stream" &&
+      hasXmlGzipUrlExtension(feRes?.url))
+  );
+}
+
 function hasNullBytesWithoutUtf16Bom(
   feRes: SpecialtyHandoffResponse | undefined,
 ): boolean {
-  if (!feRes || isGzippedFileHandoff(feRes)) return false;
+  if (!feRes) return false;
   const bytes =
     feRes.file?.content !== undefined
       ? Buffer.from(feRes.file.content.slice(0, 684), "base64")
@@ -509,13 +555,10 @@ export async function specialtyScrapeCheck(
       );
     }
     const headerlessFile = sniffHandoffFileKind(feRes);
-    if (
-      headerlessFile !== null &&
-      !(
-        headerlessFile === "zip" &&
-        (attachmentBinaryExt !== null || hasZipArchiveUrlExtension(feRes?.url))
-      )
-    ) {
+    const isHeaderlessZipArchive =
+      headerlessFile === "zip" &&
+      (attachmentBinaryExt !== null || hasZipArchiveUrlExtension(feRes?.url));
+    if (headerlessFile !== null && !isHeaderlessZipArchive) {
       await handoffSniffedFile(
         headerlessFile,
         logger,
@@ -526,9 +569,17 @@ export async function specialtyScrapeCheck(
         downloadGcsFile,
       );
     }
-    if (attachmentBinaryExt !== null || hasNullBytesWithoutUtf16Bom(feRes)) {
+    if (
+      !isAllowedGzipFileHandoff(feRes, undefined, attachmentBinaryExt) &&
+      (isHeaderlessZipArchive ||
+        attachmentBinaryExt !== null ||
+        hasNullBytesWithoutUtf16Bom(feRes))
+    ) {
       throw new UnsupportedFileError(
-        attachmentBinaryExt ?? "application/octet-stream",
+        attachmentBinaryExt ??
+          (isHeaderlessZipArchive
+            ? "application/zip"
+            : "application/octet-stream"),
       );
     }
     logger.warn("Failed to check contentType -- was not present in headers", {
@@ -588,15 +639,12 @@ export async function specialtyScrapeCheck(
   }
 
   const sniffedFile = sniffHandoffFileKind(feRes);
-  if (
-    sniffedFile !== null &&
-    !(
-      sniffedFile === "zip" &&
-      (ZIP_ARCHIVE_MEDIA_TYPES.has(mediaType) ||
-        attachmentBinaryExt !== null ||
-        hasZipArchiveUrlExtension(feRes?.url))
-    )
-  ) {
+  const isZipArchive =
+    sniffedFile === "zip" &&
+    (ZIP_ARCHIVE_MEDIA_TYPES.has(mediaType) ||
+      attachmentBinaryExt !== null ||
+      hasZipArchiveUrlExtension(feRes?.url));
+  if (sniffedFile !== null && !isZipArchive) {
     await handoffSniffedFile(
       sniffedFile,
       logger,
@@ -608,11 +656,15 @@ export async function specialtyScrapeCheck(
     );
   }
 
+  if (isZipArchive) {
+    throw new UnsupportedFileError(contentType);
+  }
+
   // Reject unsupported binary content types (unsupported images, video, audio,
   // installers, disk images, archives, and opaque octet-stream downloads whose
   // leading bytes did not match any supported document/PDF/image format above).
-  // Gzipped file handoffs from fire-engine (e.g. .xml.gz sitemaps) pass through
-  // to fire-engine's bounded inline decompression step.
+  // Gzipped file handoffs from fire-engine pass through only for gzip media
+  // types or .xml.gz sitemaps without binary attachment or archive extensions.
   const unsupportedBinaryPrefixes = [
     "image/",
     "video/",
@@ -657,7 +709,7 @@ export async function specialtyScrapeCheck(
     "application/vnd.ms-fontobject",
   ];
   if (
-    !isGzippedFileHandoff(feRes) &&
+    !isAllowedGzipFileHandoff(feRes, mediaType, attachmentBinaryExt) &&
     (unsupportedBinaryPrefixes.some(prefix => mediaType.startsWith(prefix)) ||
       attachmentBinaryExt !== null)
   ) {
