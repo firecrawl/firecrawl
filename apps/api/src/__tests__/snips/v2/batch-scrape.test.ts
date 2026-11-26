@@ -141,14 +141,14 @@ describe("Batch scrape tests", () => {
         );
 
         expect(response.data[0]).toHaveProperty("json");
-        expect(response.data[0].json).toHaveProperty("company_mission");
-        expect(typeof response.data[0].json.company_mission).toBe("string");
-        expect(response.data[0].json).toHaveProperty("supports_sso");
-        expect(response.data[0].json.supports_sso).toBe(false);
-        expect(typeof response.data[0].json.supports_sso).toBe("boolean");
-        expect(response.data[0].json).toHaveProperty("is_open_source");
-        expect(response.data[0].json.is_open_source).toBe(true);
-        expect(typeof response.data[0].json.is_open_source).toBe("boolean");
+        const json = response.data[0].json;
+        expect(json).toEqual(
+          expect.objectContaining({
+            company_mission: expect.any(String),
+            supports_sso: false,
+            is_open_source: true,
+          }),
+        );
       },
       180_000,
     );

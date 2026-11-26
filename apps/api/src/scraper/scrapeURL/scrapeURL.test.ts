@@ -499,12 +499,13 @@ describe("Standalone scrapeURL tests", () => {
     if (out.success) {
       expect(out.document.warning).toBeUndefined();
       expect(out.document).toHaveProperty("extract");
-      expect(out.document.extract).toHaveProperty("company_mission");
-      expect(out.document.extract).toHaveProperty("supports_sso");
-      expect(out.document.extract).toHaveProperty("is_open_source");
-      expect(typeof out.document.extract.company_mission).toBe("string");
-      expect(out.document.extract.supports_sso).toBe(false);
-      expect(out.document.extract.is_open_source).toBe(true);
+      expect(out.document.extract).toEqual(
+        expect.objectContaining({
+          company_mission: expect.any(String),
+          supports_sso: false,
+          is_open_source: true,
+        }),
+      );
     }
   }, 120_000);
 
@@ -536,12 +537,13 @@ describe("Standalone scrapeURL tests", () => {
     if (out.success) {
       expect(out.document.warning).toBeUndefined();
       expect(out.document).toHaveProperty("extract");
-      expect(out.document.extract).toHaveProperty("company_mission");
-      expect(out.document.extract).toHaveProperty("supports_sso");
-      expect(out.document.extract).toHaveProperty("is_open_source");
-      expect(typeof out.document.extract.company_mission).toBe("string");
-      expect(out.document.extract.supports_sso).toBe(false);
-      expect(out.document.extract.is_open_source).toBe(true);
+      expect(out.document.extract).toEqual(
+        expect.objectContaining({
+          company_mission: expect.any(String),
+          supports_sso: false,
+          is_open_source: true,
+        }),
+      );
     }
   }, 120_000);
 

@@ -121,8 +121,9 @@ describeIf(TEST_PRODUCTION)("US-only teams", () => {
         identity,
       );
 
-      expect(response.json).toBeDefined();
-      expect(typeof response.json.name).toBe("string");
+      expect(response.json).toEqual(
+        expect.objectContaining({ name: expect.any(String) }),
+      );
     },
     scrapeTimeout,
   );

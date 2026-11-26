@@ -1633,14 +1633,13 @@ describe("Scrape tests", () => {
           );
 
           expect(response).toHaveProperty("json");
-          expect(response.json).toHaveProperty("company_mission");
-          expect(typeof response.json.company_mission).toBe("string");
-          expect(response.json).toHaveProperty("supports_sso");
-          expect(response.json.supports_sso).toBe(false);
-          expect(typeof response.json.supports_sso).toBe("boolean");
-          expect(response.json).toHaveProperty("is_open_source");
-          expect(response.json.is_open_source).toBe(true);
-          expect(typeof response.json.is_open_source).toBe("boolean");
+          expect(response.json).toEqual(
+            expect.objectContaining({
+              company_mission: expect.any(String),
+              supports_sso: false,
+              is_open_source: true,
+            }),
+          );
         },
         scrapeTimeout,
       );
@@ -1667,8 +1666,12 @@ describe("Scrape tests", () => {
           expect(response.warning ?? "").not.toContain(
             "JSON extraction failed",
           );
-          expect(typeof response.json.company_name).toBe("string");
-          expect(typeof response.json.is_open_source).toBe("boolean");
+          expect(response.json).toEqual(
+            expect.objectContaining({
+              company_name: expect.any(String),
+              is_open_source: expect.any(Boolean),
+            }),
+          );
         },
         scrapeTimeout,
       );
