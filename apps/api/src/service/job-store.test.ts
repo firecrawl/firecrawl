@@ -37,13 +37,8 @@ vi.mock("../lib/crawl-redis", () => ({
   getDoneJobsOrderedUntil: vi.fn(),
   getLastDoneJobTimestamp: mocks.getLastDoneJobTimestamp,
   isCrawlKickoffFinished: vi.fn(),
-}));
-
-vi.mock("../services/redis", () => ({
-  redisEvictConnection: {
-    smembers: mocks.smembers,
-    scard: mocks.scard,
-  },
+  getCrawlRobotsBlocked: mocks.smembers,
+  getCrawlRobotsBlockedCount: mocks.scard,
 }));
 
 vi.mock("../lib/logger", () => ({

@@ -18,6 +18,7 @@ import { logger as _logger } from "../lib/logger";
 import { Document } from "../controllers/v2/types";
 import { service } from "../service";
 import { getCrawl } from "../lib/crawl-redis";
+import { recordCrawlStateMissing } from "../lib/crawl-state-metrics";
 import { currentLimits } from "../lib/limits";
 import { jobContext } from "../lib/request-context";
 import { Logger } from "winston";
@@ -213,7 +214,7 @@ async function _addScrapeJobToBullMQPg(
 
     if (webScraperOptions.crawl_id) {
       const sc = await getCrawl(webScraperOptions.crawl_id);
-      if (sc?.crawlerOptions?.delay || sc?.maxConcurrency) {
+      if (!sc || sc.crawlerOptions?.delay || sc.maxConcurrency) {
         await pushCrawlConcurrencyLimitActiveJob(
           webScraperOptions.crawl_id,
           jobId,
@@ -251,7 +252,7 @@ async function _addScrapeJobsToBullMQ(
 
       if (job.data.crawl_id) {
         const sc = await getCrawl(job.data.crawl_id);
-        if (sc?.crawlerOptions?.delay || sc?.maxConcurrency) {
+        if (!sc || sc.crawlerOptions?.delay || sc.maxConcurrency) {
           await pushCrawlConcurrencyLimitActiveJob(
             job.data.crawl_id,
             job.jobId,
@@ -373,8 +374,14 @@ async function addScrapeJobRaw(
   } else {
     if (webScraperOptions.crawl_id) {
       const crawl = await getCrawl(webScraperOptions.crawl_id);
+      if (!crawl) {
+        recordCrawlStateMissing("gate", webScraperOptions.crawl_id, _logger, {
+          teamId: webScraperOptions.team_id,
+          jobId,
+        });
+      }
       const concurrencyLimit = !crawl
-        ? null
+        ? 1
         : crawl.crawlerOptions?.delay === undefined &&
             crawl.maxConcurrency === undefined
           ? null
@@ -652,8 +659,14 @@ export async function addScrapeJobs(
     // == Select jobs by crawl ID ==
     for (const [crawlID, crawlJobs] of jobsByCrawlID) {
       const crawl = await getCrawl(crawlID);
+      if (!crawl) {
+        recordCrawlStateMissing("gate", crawlID, _logger, {
+          teamId,
+          jobCount: crawlJobs.length,
+        });
+      }
       const concurrencyLimit = !crawl
-        ? null
+        ? 1
         : crawl.crawlerOptions?.delay === undefined &&
             crawl.maxConcurrency === undefined
           ? null

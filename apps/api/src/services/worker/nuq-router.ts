@@ -3,6 +3,7 @@ import { logger as _logger } from "../../lib/logger";
 import { config } from "../../config";
 import { ScrapeJobData } from "../../types";
 import { redisEvictConnection } from "../../services/redis";
+import { crawlStateStore } from "../../lib/crawl-state-store";
 import { getRedisConnection } from "../../services/queue-service";
 import { currentLimits } from "../../lib/limits";
 import { jobContext, requestContext } from "../../lib/request-context";
@@ -126,7 +127,7 @@ async function getCrawlQueueBackend(
   crawlId: string,
 ): Promise<QueueBackend | null> {
   if (fdbForced()) return "fdb";
-  const raw = await redisEvictConnection.get("crawl:" + crawlId);
+  const raw = await (await crawlStateStore(crawlId)).get("crawl:" + crawlId);
   if (!raw) return null;
   try {
     const sc = JSON.parse(raw);
