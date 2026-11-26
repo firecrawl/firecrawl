@@ -2,7 +2,7 @@ use firecrawl_core_types::{
   CoreNativeError, CoreParser, CoreParserKind, CoreParsers, ParseRawDocumentRequest,
 };
 
-use super::office::crc32;
+use super::office::valid_docx;
 use crate::parse_raw_document;
 
 fn req(url: &str, content_type: Option<&str>, parsers: CoreParsers) -> ParseRawDocumentRequest {
@@ -18,71 +18,9 @@ fn req(url: &str, content_type: Option<&str>, parsers: CoreParsers) -> ParseRawD
   }
 }
 
-fn minimal_docx(text: &str) -> Vec<u8> {
-  let content_types = r#"<?xml version="1.0" encoding="UTF-8"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-</Types>"#;
-  let rels = r#"<?xml version="1.0" encoding="UTF-8"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
-</Relationships>"#;
-  let document = format!(
-    r#"<?xml version="1.0" encoding="UTF-8"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:body><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:body>
-</w:document>"#
-  );
-  let entries = [
-    ("[Content_Types].xml", content_types.as_bytes()),
-    ("_rels/.rels", rels.as_bytes()),
-    ("word/document.xml", document.as_bytes()),
-  ];
-  let (mut zip, mut dir) = (Vec::new(), Vec::new());
-  for (name, data) in entries {
-    let (nb, dl) = (
-      name.as_bytes(),
-      u32::try_from(data.len()).unwrap_or(u32::MAX),
-    );
-    let nl = u16::try_from(nb.len()).unwrap_or(u16::MAX);
-    let sizes = [crc32(data), dl, dl];
-    let offset = u32::try_from(zip.len()).unwrap_or(u32::MAX);
-    zip.extend(0x0403_4b50u32.to_le_bytes());
-    zip.extend([20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    sizes.iter().for_each(|v| zip.extend(v.to_le_bytes()));
-    zip.extend(nl.to_le_bytes());
-    zip.extend([0, 0]);
-    zip.extend(nb);
-    zip.extend(data);
-    dir.extend(0x0201_4b50u32.to_le_bytes());
-    dir.extend([20, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    sizes.iter().for_each(|v| dir.extend(v.to_le_bytes()));
-    dir.extend(nl.to_le_bytes());
-    dir.extend([0; 12]);
-    dir.extend(offset.to_le_bytes());
-    dir.extend(nb);
-  }
-  let (doff, dlen) = (
-    u32::try_from(zip.len()).unwrap_or(u32::MAX),
-    u32::try_from(dir.len()).unwrap_or(u32::MAX),
-  );
-  let count = u16::try_from(entries.len()).unwrap_or(u16::MAX);
-  zip.extend(&dir);
-  zip.extend(0x0605_4b50u32.to_le_bytes());
-  zip.extend([0, 0, 0, 0]);
-  zip.extend(count.to_le_bytes());
-  zip.extend(count.to_le_bytes());
-  zip.extend(dlen.to_le_bytes());
-  zip.extend(doff.to_le_bytes());
-  zip.extend([0, 0]);
-  zip
-}
-
 #[test]
 fn docx_served_as_application_zip_or_conflicting_mime_resolves_to_docx() {
-  let bytes = minimal_docx("Quarterly Summary");
+  let bytes = valid_docx("Quarterly Summary");
   let expected_ct = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   for declared in [
     "application/zip",
@@ -215,7 +153,7 @@ fn fallback_bom_html_under_octet_stream_and_meta_charset_restricted_to_html() {
   }
 
   // Literal <meta charset=...> inside JSON must not override UTF-8 decoding.
-  let json_bytes = r#"{"snippet":"<meta charset="utf-16le">","name":"café"}"#.as_bytes();
+  let json_bytes = r#"{"snippet":"<meta charset=\"utf-16le\">","name":"café"}"#.as_bytes();
   let json_res = parse_raw_document(
     json_bytes,
     &req(

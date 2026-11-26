@@ -144,6 +144,9 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
           JSON.stringify(callContext),
         );
       } catch (error) {
+        // Keep the direct-fetch guard ahead of decodeNativeUnsupportedError:
+        // UnsupportedFileError ends the engine loop, which would block HTML
+        // antibot retries and cross-type PDF/image handoffs on non-doc headers.
         const isDirectFetch =
           meta.documentPrefetch === undefined || meta.documentPrefetch === null;
         if (

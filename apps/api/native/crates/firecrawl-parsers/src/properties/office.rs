@@ -140,38 +140,14 @@ pub(super) fn crc32(data: &[u8]) -> u32 {
   !crc
 }
 
-/// Generates a stored (uncompressed) ZIP of OOXML, ODF, and EPUB parts with
-/// fuzzed XML payloads.
-#[hegel::composite]
-pub(super) fn zip_body(tc: &TestCase) -> Vec<u8> {
-  let mut zip = Vec::new();
-  let mut directory = Vec::new();
-  let (main_part, main_type) = tc.draw(gs::sampled_from(MAIN_PARTS));
-  let parts = tc.draw(
-    gs::vecs(gs::sampled_from(ZIP_PARTS))
-      .unique(true)
-      .min_size(1)
-      .max_size(5),
-  );
-  for name in &parts {
-    let data = match *name {
-      "mimetype" => tc.draw(gs::sampled_from(MIMETYPES)).to_string(),
-      "_rels/.rels" => format!(
-        "<Relationships xmlns=\"{RELS_NS}\"><Relationship Id=\"rId1\" Type=\"{OFFICE_DOCUMENT}\" Target=\"{main_part}\"/></Relationships>"
-      ),
-      "[Content_Types].xml" => format!(
-        "<Types xmlns=\"{TYPES_NS}\"><Override PartName=\"/{main_part}\" ContentType=\"{main_type}\"/></Types>"
-      ),
-      _ => {
-        let root = tc.draw(gs::sampled_from(XML_NAMES));
-        let children = tc.draw(gs::vecs(xml(3)).max_size(4)).concat();
-        format!("<?xml version=\"1.0\"?><{root}{NAMESPACES}>{children}</{root}>")
-      }
-    };
-    let (name_bytes, data_bytes) = (name.as_bytes(), data.as_bytes());
-    let data_len = u32::try_from(data_bytes.len()).unwrap_or(u32::MAX);
+/// Packs `(name, bytes)` entries into an uncompressed (stored) ZIP archive.
+pub(super) fn store_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+  let (mut zip, mut directory) = (Vec::new(), Vec::new());
+  for (name, data) in entries {
+    let name_bytes = name.as_bytes();
+    let data_len = u32::try_from(data.len()).unwrap_or(u32::MAX);
     let name_len = u16::try_from(name_bytes.len()).unwrap_or(u16::MAX);
-    let sizes = [crc32(data_bytes), data_len, data_len];
+    let sizes = [crc32(data), data_len, data_len];
     let offset = u32::try_from(zip.len()).unwrap_or(u32::MAX);
     zip.extend(0x0403_4b50u32.to_le_bytes());
     zip.extend([20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
@@ -181,7 +157,7 @@ pub(super) fn zip_body(tc: &TestCase) -> Vec<u8> {
     zip.extend(name_len.to_le_bytes());
     zip.extend([0, 0]);
     zip.extend(name_bytes);
-    zip.extend(data_bytes);
+    zip.extend(*data);
     directory.extend(0x0201_4b50u32.to_le_bytes());
     directory.extend([20, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     for val in sizes {
@@ -192,16 +168,79 @@ pub(super) fn zip_body(tc: &TestCase) -> Vec<u8> {
     directory.extend(offset.to_le_bytes());
     directory.extend(name_bytes);
   }
-  let directory_offset = u32::try_from(zip.len()).unwrap_or(u32::MAX);
+  let dir_offset = u32::try_from(zip.len()).unwrap_or(u32::MAX);
   let dir_len = u32::try_from(directory.len()).unwrap_or(u32::MAX);
-  let entry_count = u16::try_from(parts.len()).unwrap_or(u16::MAX);
+  let count = u16::try_from(entries.len()).unwrap_or(u16::MAX);
   zip.extend(&directory);
   zip.extend(0x0605_4b50u32.to_le_bytes());
   zip.extend([0, 0, 0, 0]);
-  zip.extend(entry_count.to_le_bytes());
-  zip.extend(entry_count.to_le_bytes());
+  zip.extend(count.to_le_bytes());
+  zip.extend(count.to_le_bytes());
   zip.extend(dir_len.to_le_bytes());
-  zip.extend(directory_offset.to_le_bytes());
+  zip.extend(dir_offset.to_le_bytes());
   zip.extend([0, 0]);
   zip
+}
+
+/// Builds a minimal valid DOCX fixture containing a single paragraph.
+pub(super) fn valid_docx(paragraph: &str) -> Vec<u8> {
+  let content_types = r#"<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>"#;
+  let rels = r#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>"#;
+  let document = format!(
+    r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body><w:p><w:r><w:t>{paragraph}</w:t></w:r></w:p></w:body>
+</w:document>"#
+  );
+  store_zip(&[
+    ("[Content_Types].xml", content_types.as_bytes()),
+    ("_rels/.rels", rels.as_bytes()),
+    ("word/document.xml", document.as_bytes()),
+  ])
+}
+
+/// Generates a stored (uncompressed) ZIP of OOXML, ODF, and EPUB parts with
+/// fuzzed XML payloads.
+#[hegel::composite]
+pub(super) fn zip_body(tc: &TestCase) -> Vec<u8> {
+  let (main_part, main_type) = tc.draw(gs::sampled_from(MAIN_PARTS));
+  let parts = tc.draw(
+    gs::vecs(gs::sampled_from(ZIP_PARTS))
+      .unique(true)
+      .min_size(1)
+      .max_size(5),
+  );
+  let owned: Vec<(&str, String)> = parts
+    .iter()
+    .map(|name| {
+      let data = match *name {
+        "mimetype" => tc.draw(gs::sampled_from(MIMETYPES)).to_string(),
+        "_rels/.rels" => format!(
+          "<Relationships xmlns=\"{RELS_NS}\"><Relationship Id=\"rId1\" Type=\"{OFFICE_DOCUMENT}\" Target=\"{main_part}\"/></Relationships>"
+        ),
+        "[Content_Types].xml" => format!(
+          "<Types xmlns=\"{TYPES_NS}\"><Override PartName=\"/{main_part}\" ContentType=\"{main_type}\"/></Types>"
+        ),
+        _ => {
+          let root = tc.draw(gs::sampled_from(XML_NAMES));
+          let children = tc.draw(gs::vecs(xml(3)).max_size(4)).concat();
+          format!("<?xml version=\"1.0\"?><{root}{NAMESPACES}>{children}</{root}>")
+        }
+      };
+      (*name, data)
+    })
+    .collect();
+  let entries: Vec<(&str, &[u8])> = owned
+    .iter()
+    .map(|(name, data)| (*name, data.as_bytes()))
+    .collect();
+  store_zip(&entries)
 }

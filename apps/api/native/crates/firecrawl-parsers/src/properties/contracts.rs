@@ -102,67 +102,7 @@ fn build_pdf(pages: &[Option<&str>]) -> Vec<u8> {
   out
 }
 
-use super::office::crc32;
-
-fn valid_docx(paragraph: &str) -> Vec<u8> {
-  let content_types = r#"<?xml version="1.0" encoding="UTF-8"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-</Types>"#;
-  let rels = r#"<?xml version="1.0" encoding="UTF-8"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
-</Relationships>"#;
-  let document = format!(
-    r#"<?xml version="1.0" encoding="UTF-8"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:body><w:p><w:r><w:t>{paragraph}</w:t></w:r></w:p></w:body>
-</w:document>"#
-  );
-  let entries = [
-    ("[Content_Types].xml", content_types.as_bytes()),
-    ("_rels/.rels", rels.as_bytes()),
-    ("word/document.xml", document.as_bytes()),
-  ];
-  let (mut zip, mut directory) = (Vec::new(), Vec::new());
-  for (name, data) in entries {
-    let (name_bytes, data_len) = (
-      name.as_bytes(),
-      u32::try_from(data.len()).unwrap_or(u32::MAX),
-    );
-    let name_len = u16::try_from(name_bytes.len()).unwrap_or(u16::MAX);
-    let sizes = [crc32(data), data_len, data_len];
-    let offset = u32::try_from(zip.len()).unwrap_or(u32::MAX);
-    zip.extend(0x0403_4b50u32.to_le_bytes());
-    zip.extend([20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    sizes.iter().for_each(|v| zip.extend(v.to_le_bytes()));
-    zip.extend(name_len.to_le_bytes());
-    zip.extend([0, 0]);
-    zip.extend(name_bytes);
-    zip.extend(data);
-    directory.extend(0x0201_4b50u32.to_le_bytes());
-    directory.extend([20, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    sizes.iter().for_each(|v| directory.extend(v.to_le_bytes()));
-    directory.extend(name_len.to_le_bytes());
-    directory.extend([0; 12]);
-    directory.extend(offset.to_le_bytes());
-    directory.extend(name_bytes);
-  }
-  let dir_offset = u32::try_from(zip.len()).unwrap_or(u32::MAX);
-  let dir_len = u32::try_from(directory.len()).unwrap_or(u32::MAX);
-  let count = u16::try_from(entries.len()).unwrap_or(u16::MAX);
-  zip.extend(&directory);
-  zip.extend(0x0605_4b50u32.to_le_bytes());
-  zip.extend([0, 0, 0, 0]);
-  zip.extend(count.to_le_bytes());
-  zip.extend(count.to_le_bytes());
-  zip.extend(dir_len.to_le_bytes());
-  zip.extend(dir_offset.to_le_bytes());
-  zip.extend([0, 0]);
-  zip
-}
+use super::office::valid_docx;
 
 fn ascii_word(tc: &TestCase) -> String {
   let len: usize = tc.draw(gs::integers().min_value(4).max_value(24));
