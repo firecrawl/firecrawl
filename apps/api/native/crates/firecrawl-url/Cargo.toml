@@ -1,0 +1,18 @@
+[package]
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+name = "firecrawl-url"
+publish.workspace = true
+version.workspace = true
+
+[dependencies]
+idna.workspace = true
+psl.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+hegeltest.workspace = true
+
+[lints]
+workspace = true

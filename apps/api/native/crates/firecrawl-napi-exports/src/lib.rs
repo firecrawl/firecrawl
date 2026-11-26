@@ -7,6 +7,7 @@ pub mod __deps {
   pub use firecrawl_crawler;
   pub use firecrawl_html;
   pub use firecrawl_parsers;
+  pub use firecrawl_url;
 }
 
 pub use logging::{

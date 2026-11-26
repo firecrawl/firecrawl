@@ -703,5 +703,98 @@ macro_rules! export_oss_napi {
       let res = $crate::wrappers::detect_pdf(path, ctx).await?;
       Ok(_convert_pdf_result(res))
     }
+
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[napi_derive::napi(object, use_nullable = true)]
+    pub struct ParsedHostname {
+      pub hostname: Option<String>,
+      pub is_ip: Option<bool>,
+      pub subdomain: Option<String>,
+      pub domain: Option<String>,
+      pub public_suffix: Option<String>,
+      pub domain_without_suffix: Option<String>,
+      pub is_icann: Option<bool>,
+      pub is_private: Option<bool>,
+      pub is_special_use: Option<bool>,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[napi_derive::napi(object)]
+    pub struct NativeSerpPage {
+      pub engine: String,
+      pub query: String,
+    }
+
+    /// Parse a bare hostname against the public suffix list (with private domains
+    /// enabled) to find its registrable domain and suffix metadata.
+    #[napi_derive::napi]
+    pub fn parse_hostname(hostname: String) -> ParsedHostname {
+      let res = $crate::__deps::firecrawl_url::parse_hostname(&hostname);
+      ParsedHostname {
+        hostname: res.hostname,
+        is_ip: res.is_ip,
+        subdomain: res.subdomain,
+        domain: res.domain,
+        public_suffix: res.public_suffix,
+        domain_without_suffix: res.domain_without_suffix,
+        is_icann: res.is_icann,
+        is_private: res.is_private,
+        is_special_use: res.is_special_use,
+      }
+    }
+
+    /// Whether a URL's host is plausibly reachable (IP literal or TLD-shaped host).
+    #[napi_derive::napi]
+    pub fn has_reachable_host(url: String) -> bool {
+      $crate::__deps::firecrawl_url::has_reachable_host(&url)
+    }
+
+    /// Extract the registrable base domain from a URL, or null if extraction fails.
+    #[napi_derive::napi]
+    pub fn extract_base_domain(url: String) -> Option<String> {
+      $crate::__deps::firecrawl_url::extract_base_domain(&url)
+    }
+
+    /// Determine whether a URL is a root base domain without subdomains or paths.
+    #[napi_derive::napi]
+    pub fn is_base_domain(url: String) -> bool {
+      $crate::__deps::firecrawl_url::is_base_domain(&url)
+    }
+
+    /// Return the search engine and query when the URL is a search results page,
+    /// otherwise null.
+    #[napi_derive::napi]
+    pub fn detect_serp_page(url: String) -> Option<NativeSerpPage> {
+      $crate::__deps::firecrawl_url::detect_serp_page(&url).map(|page| NativeSerpPage {
+        engine: page.engine.as_str().to_owned(),
+        query: page.query,
+      })
+    }
+
+    /// Pre-normalized ordered matcher for forced-engine domain patterns.
+    #[derive(Debug)]
+    #[napi_derive::napi]
+    pub struct EngineForcingMatcher {
+      inner: $crate::__deps::firecrawl_url::EngineForcingMatcher,
+    }
+
+    #[napi_derive::napi]
+    impl EngineForcingMatcher {
+      #[napi_derive::napi(constructor)]
+      pub fn new(patterns: Vec<String>) -> Self {
+        Self {
+          inner: $crate::__deps::firecrawl_url::EngineForcingMatcher::new(&patterns),
+        }
+      }
+
+      /// Return the index of the first matching pattern for `url`, or null.
+      #[napi_derive::napi]
+      pub fn match_url(&self, url: String) -> Option<u32> {
+        self
+          .inner
+          .match_url(&url)
+          .and_then(|idx| u32::try_from(idx).ok())
+      }
+    }
   };
 }

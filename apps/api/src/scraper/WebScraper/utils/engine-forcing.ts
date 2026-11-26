@@ -1,5 +1,5 @@
 import { configDotenv } from "dotenv";
-import { parse } from "tldts";
+import { EngineForcingMatcher } from "@mendable/firecrawl-rs";
 import { Engine } from "../../scrapeURL/engines";
 import { logger } from "../../../lib/logger";
 
@@ -10,7 +10,8 @@ type EngineForcingMapping = {
   [domain: string]: Engine | Engine[];
 };
 
-let engineMappings: EngineForcingMapping | null = null;
+let engineMatcher: EngineForcingMatcher | null = null;
+let engineValues: (Engine | Engine[])[] = [];
 
 /**
  * Initialize the engine forcing mappings from environment variable
@@ -21,37 +22,37 @@ export function initializeEngineForcing() {
   const envVar = config.FORCED_ENGINE_DOMAINS;
 
   if (!envVar || envVar.trim() === "") {
-    engineMappings = {};
+    engineMatcher = null;
+    engineValues = [];
     return;
   }
 
   try {
-    engineMappings = JSON.parse(envVar);
+    const parsed = JSON.parse(envVar) as EngineForcingMapping | null;
+    if (!parsed || typeof parsed !== "object") {
+      engineMatcher = null;
+      engineValues = [];
+      return;
+    }
+
+    const entries = Object.entries(parsed);
+    if (entries.length === 0) {
+      engineMatcher = null;
+      engineValues = [];
+      return;
+    }
+
+    engineMatcher = new EngineForcingMatcher(
+      entries.map(([pattern]) => pattern),
+    );
+    engineValues = entries.map(([, engine]) => engine);
   } catch (error) {
     logger.error("Error parsing FORCED_ENGINE_DOMAINS environment variable", {
       error,
     });
-    engineMappings = {};
+    engineMatcher = null;
+    engineValues = [];
   }
-}
-
-/**
- * Check if a domain matches a pattern (supports wildcards)
- * @param domain The domain to check (e.g., "sub.example.com")
- * @param pattern The pattern to match against (e.g., "example.com" or "*.example.com")
- * @returns true if the domain matches the pattern
- */
-function domainMatchesPattern(domain: string, pattern: string): boolean {
-  if (domain === pattern) {
-    return true;
-  }
-
-  if (pattern.startsWith("*.")) {
-    const basePattern = pattern.substring(2); // Remove "*."
-    return domain === basePattern || domain.endsWith(`.${basePattern}`);
-  }
-
-  return domain === pattern || domain.endsWith(`.${pattern}`);
 }
 
 /**
@@ -60,34 +61,14 @@ function domainMatchesPattern(domain: string, pattern: string): boolean {
  * @returns The forced engine(s) if a match is found, undefined otherwise
  */
 export function getEngineForUrl(url: string): Engine | Engine[] | undefined {
-  if (engineMappings === null) {
+  if (engineMatcher === null || engineValues.length === 0) {
     return undefined;
   }
 
-  if (Object.keys(engineMappings).length === 0) {
+  const matchIndex = engineMatcher.matchUrl(url);
+  if (matchIndex === null) {
     return undefined;
   }
 
-  const lowerCaseUrl = url.trim().toLowerCase();
-
-  let parsedUrl: any;
-  try {
-    parsedUrl = parse(lowerCaseUrl);
-  } catch (error) {
-    logger.warn("Error parsing URL for engine forcing", { url, error });
-    return undefined;
-  }
-
-  const domain = parsedUrl.domain;
-  if (!domain) {
-    return undefined;
-  }
-
-  for (const [pattern, engine] of Object.entries(engineMappings)) {
-    if (domainMatchesPattern(domain, pattern.toLowerCase())) {
-      return engine;
-    }
-  }
-
-  return undefined;
+  return engineValues[matchIndex];
 }

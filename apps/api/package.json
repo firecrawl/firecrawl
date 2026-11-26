@@ -165,7 +165,6 @@
     "redlock": "5.0.0-beta.2",
     "response-time": "^2.3.4",
     "robots-parser": "^3.0.1",
-    "tldts": "^7.4.10",
     "tough-cookie": "^4.1.4",
     "turndown": "^7.1.3",
     "typescript": "npm:@typescript/typescript6@6.0.2",

@@ -15,6 +15,9 @@ firecrawl-crawler = { path = "crates/firecrawl-crawler" }
 firecrawl-html = { path = "crates/firecrawl-html" }
 firecrawl-napi-exports = { path = "crates/firecrawl-napi-exports" }
 firecrawl-parsers = { path = "crates/firecrawl-parsers" }
+firecrawl-url = { path = "crates/firecrawl-url" }
+hegeltest = "0.50"
+idna = "1.1.0"
 kuchikiki = "0.8.9-speedreader"
 napi = { version = "3.0.0", features = ["serde-json", "tokio_rt"] }
 napi-build = "2"

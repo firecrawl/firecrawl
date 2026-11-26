@@ -1,6 +1,6 @@
+import { detectSerpPage as nativeDetectSerpPage } from "@mendable/firecrawl-rs";
 import { config } from "../config";
 import { sampled } from "./rollout";
-import { parseHostname } from "./url-utils";
 
 type SerpEngine =
   | "Google"
@@ -15,73 +15,6 @@ type SerpEngine =
 
 type SerpPage = { engine: SerpEngine; query: string };
 
-const MAX_QUERY_CHARS = 200;
-
-function queryParam(params: URLSearchParams, ...names: string[]): string {
-  for (const name of names) {
-    const value = (params.get(name) ?? "").trim();
-    if (value) return value.slice(0, MAX_QUERY_CHARS);
-  }
-  return "";
-}
-
-function engineAndQuery(url: URL): SerpPage | null {
-  const host = url.hostname.toLowerCase();
-  const parsedHost = parseHostname(host);
-  const domain = parsedHost.domain ?? "";
-  const domainWithoutSuffix = parsedHost.domainWithoutSuffix ?? "";
-  const subdomain = parsedHost.subdomain ?? "";
-  const path = url.pathname.replace(/\/+$/, "") || "/";
-  const params = url.searchParams;
-  const bareOrWww = subdomain === "" || subdomain === "www";
-  const page = (engine: SerpEngine, matches: boolean, ...names: string[]) => {
-    const query = matches ? queryParam(params, ...names) : "";
-    return query ? { engine, query } : null;
-  };
-
-  if (domainWithoutSuffix === "google" && bareOrWww) {
-    return page("Google", path === "/search", "q");
-  }
-  if (domain === "bing.com") {
-    return page("Bing", path === "/search", "q");
-  }
-  if (domain === "duckduckgo.com") {
-    return page(
-      "DuckDuckGo",
-      path === "/" || path === "/html" || path === "/lite",
-      "q",
-    );
-  }
-  if (host === "search.brave.com") {
-    return page("Brave", path === "/search", "q");
-  }
-  if (
-    domainWithoutSuffix === "yahoo" &&
-    (subdomain === "search" || subdomain.endsWith(".search"))
-  ) {
-    // Yahoo appends tracking after a semicolon: /search;_ylt=...
-    return page("Yahoo", /^\/search(?:[/;]|$)/.test(path), "p", "q");
-  }
-  if (domain === "baidu.com" && bareOrWww) {
-    return page("Baidu", path === "/s", "wd", "word");
-  }
-  if (domainWithoutSuffix === "yandex" && bareOrWww) {
-    return page("Yandex", path === "/search", "text");
-  }
-  if (domain === "ecosia.org") {
-    return page("Ecosia", path === "/search", "q");
-  }
-  if (domain === "startpage.com") {
-    return page(
-      "Startpage",
-      path === "/do/search" || path === "/sp/search",
-      "q",
-      "query",
-    );
-  }
-  return null;
-}
-
 /**
  * Returns the search engine and query when the URL is a results page for a
  * query (google.*\/search?q=, bing.com/search?q=, ...), otherwise null. Other
@@ -89,14 +22,7 @@ function engineAndQuery(url: URL): SerpPage | null {
  * results pages and return null.
  */
 export function detectSerpPage(url: string): SerpPage | null {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-  return engineAndQuery(parsed);
+  return nativeDetectSerpPage(url) as SerpPage | null;
 }
 
 export function serpScrapeWarning(engine: SerpEngine): string {

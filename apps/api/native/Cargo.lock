@@ -639,6 +639,7 @@ dependencies = [
  "firecrawl-crawler",
  "firecrawl-html",
  "firecrawl-parsers",
+ "firecrawl-url",
  "napi",
  "napi-derive",
  "serde",
@@ -659,6 +660,16 @@ dependencies = [
  "tinyvec",
  "tracing",
  "zip",
+]
+
+[[package]]
+name = "firecrawl-url"
+version = "0.1.0"
+dependencies = [
+ "hegeltest",
+ "idna",
+ "psl",
+ "url",
 ]
 
 [[package]]
@@ -838,6 +849,27 @@ name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+
+[[package]]
+name = "hegeltest"
+version = "0.50.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a74211064fc8a4e5116e877adbc9645f8a06ac3de8fdbddd93ca0cd1f11bbb6"
+dependencies = [
+ "hegeltest-macros",
+ "parking_lot",
+]
+
+[[package]]
+name = "hegeltest-macros"
+version = "0.50.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f792cb882712c837f830cb0f01d8db2fc23e4c279de04dbb00a0c08166a88d9e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "hex"
