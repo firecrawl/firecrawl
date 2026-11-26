@@ -1,6 +1,6 @@
-import { Response } from "express";
+import type { Response } from "express";
 import { z } from "zod";
-import { ErrorResponse, RequestWithAuth } from "./types";
+import type { ErrorResponse, RequestWithAuth } from "./types";
 import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../../lib/cost-tracking";
@@ -13,7 +13,7 @@ import { getErrorHttpResponse } from "../../lib/error";
 // Only url and prompt are required/relevant for preview
 const crawlParamsPreviewRequestSchema = z.object({
   url: z.url(),
-  prompt: z.string().max(10000),
+  prompt: z.string().max(10_000),
   // Only keeps the preview's site search and LLM call on the zero data
   // retention path and out of traces, so unlike a crawl it needs no ZDR
   // permission check.
@@ -29,8 +29,8 @@ type CrawlParamsPreviewResponse =
       success: true;
       data?: {
         url: string;
-        includePaths?: string[];
-        excludePaths?: string[];
+        includePaths?: Array<string>;
+        excludePaths?: Array<string>;
         maxDepth?: number;
         maxDiscoveryDepth?: number;
         crawlEntireDomain?: boolean;
@@ -125,7 +125,7 @@ export async function crawlParamsPreviewController(
     logger.debug("Generated crawler options from enhanced prompt", {
       originalPrompt: parsedBody.prompt,
       websiteUrlCount: websiteUrls.length,
-      generatedOptions: generatedOptions,
+      generatedOptions,
     });
 
     // Prepare response data

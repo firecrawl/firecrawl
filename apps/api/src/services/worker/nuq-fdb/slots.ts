@@ -1,8 +1,7 @@
 import type { Transaction } from "foundationdb";
 import { getNuqFdbDatabase } from "./client";
+import type { NuqFdbKeyspace, QueueEntry } from "./keyspace";
 import {
-  NuqFdbKeyspace,
-  QueueEntry,
   decodeJson,
   encodeJson,
   timeBucket,
@@ -52,7 +51,9 @@ export class NuqFdbExternalSlots {
     limit?: number,
   ): Promise<boolean> {
     const owner = normalizeOwnerId(teamId);
-    if (owner === null) return false;
+    if (owner === null) {
+      return false;
+    }
     const now = Date.now();
     const exp = now + ttlMs;
     return this.db.doTn(async tn => {
@@ -65,8 +66,9 @@ export class NuqFdbExternalSlots {
         if (
           limit !== undefined &&
           decodeI64(await tn.get(this.ks.teamActive(owner))) >= limit
-        )
+        ) {
           return false;
+        }
         bumpTeamActive(tn, this.ks, owner, 1);
       }
       tn.set(
@@ -84,7 +86,9 @@ export class NuqFdbExternalSlots {
   // Releases the slot, handing it to a pending job when one exists.
   public async release(teamId: string, holderId: string): Promise<void> {
     const owner = normalizeOwnerId(teamId);
-    if (owner === null) return;
+    if (owner === null) {
+      return;
+    }
     await this.db.doTn(async tn => {
       await this.releaseInTxn(tn, owner, holderId);
     });
@@ -98,7 +102,9 @@ export class NuqFdbExternalSlots {
     const existing = decodeJson<ExternalSlotRecord>(
       await tn.get(this.key(owner, holderId)),
     );
-    if (!existing) return false;
+    if (!existing) {
+      return false;
+    }
     tn.clear(this.key(owner, holderId));
     tn.clear(this.expiryKey(timeBucket(holderId), existing.e, holderId));
     const entry: QueueEntry = {
@@ -127,14 +133,18 @@ export class NuqFdbExternalSlots {
         tn.snapshot().getRangeAll(r.begin, r.end, { limit: 50 }),
       );
       for (const [key, value] of due) {
-        const holderId = this.ks.unpackId(key as Buffer);
-        const rec = decodeJson<{ t: string }>(value as Buffer);
-        if (!rec) continue;
+        const holderId = this.ks.unpackId(key);
+        const rec = decodeJson<{ t: string }>(value);
+        if (!rec) {
+          continue;
+        }
         await this.db.doTn(async tn => {
           // releaseInTxn validates the record still exists (and clears this
           // index entry); if the holder renewed, just drop the stale entry
           const released = await this.releaseInTxn(tn, rec.t, holderId);
-          if (!released) tn.clear(key as Buffer);
+          if (!released) {
+            tn.clear(key);
+          }
         });
       }
     }

@@ -2,11 +2,8 @@ import Module from "node:module";
 import type express from "express";
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  buildRouteRegistry,
-  type RouteRegistrar,
-  type Routers,
-} from "./routes";
+import { buildRouteRegistry } from "./routes";
+import type { RouteRegistrar, Routers } from "./routes";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -30,7 +27,7 @@ describe("buildRouteRegistry", () => {
 
   it("mounts non-core extension routes before core routes so extensions can shadow or call next()", async () => {
     const { default: expressRuntime } = await import("express");
-    const order: string[] = [];
+    const order: Array<string> = [];
 
     const { mountRoutes, describeRoutes } = buildRouteRegistry([
       {
@@ -145,7 +142,7 @@ describe("buildRouteRegistry", () => {
 
   it("works when core has no routes and only extensions register routes", async () => {
     const { default: expressRuntime } = await import("express");
-    const order: string[] = [];
+    const order: Array<string> = [];
     const { mountRoutes } = buildRouteRegistry([
       { owner: "core", isCore: true },
       {
@@ -535,7 +532,7 @@ describe("buildRouteRegistry", () => {
         owner: "ext",
         routes: ({ rootRaw, root }) => {
           rootRaw?.put("/raw-upload", function rawUpload(req, res) {
-            const chunks: Buffer[] = [];
+            const chunks: Array<Buffer> = [];
             req.on("data", chunk => chunks.push(chunk));
             req.on("end", () => {
               res.json({

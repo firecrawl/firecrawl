@@ -20,14 +20,18 @@ export function extractAndEmitNativeLogs(
   parentLogger: Logger,
   module: string,
 ): void {
-  if (!(error instanceof Error)) return;
+  if (!(error instanceof Error)) {
+    return;
+  }
   const idx = error.message.indexOf(NATIVE_LOGS_SEPARATOR);
-  if (idx === -1) return;
+  if (idx === -1) {
+    return;
+  }
 
   const logsJson = error.message.slice(idx + NATIVE_LOGS_SEPARATOR.length);
 
   try {
-    const logs: NativeLogEntry[] = JSON.parse(logsJson);
+    const logs: Array<NativeLogEntry> = JSON.parse(logsJson);
     // Only strip after successful parse so we don't lose data on failure
     error.message = error.message.slice(0, idx);
     emitNativeLogs(logs, parentLogger, module);
@@ -42,11 +46,13 @@ export function extractAndEmitNativeLogs(
  * and adding `source: "native"` + the Rust module name as labels.
  */
 export function emitNativeLogs(
-  logs: NativeLogEntry[] | undefined,
+  logs: Array<NativeLogEntry> | undefined,
   parentLogger: Logger,
   module: string,
 ): void {
-  if (!logs || logs.length === 0) return;
+  if (!logs || logs.length === 0) {
+    return;
+  }
 
   const childLogger = parentLogger.child({ source: "native", module });
 

@@ -1,17 +1,15 @@
-import { Response } from "express";
-import {
-  getV2RequestSchemas,
-  RequestWithAuth,
-  MapRequest,
-  MapResponse,
-} from "./types";
+import type { Response } from "express";
+import type { RequestWithAuth, MapRequest, MapResponse } from "./types";
+import { getV2RequestSchemas } from "./types";
 import { configDotenv } from "dotenv";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import { finalizeResponse, service, type RequestContext } from "../../service";
+import { finalizeResponse, service } from "../../service";
+import type { RequestContext } from "../../service";
 import { logger as _logger } from "../../lib/logger";
 import { MapTimeoutError } from "../../lib/error";
-import { getMapResults, MapResult } from "../../lib/map-utils";
+import type { MapResult } from "../../lib/map-utils";
+import { getMapResults } from "../../lib/map-utils";
 import { v7 as uuidv7 } from "uuid";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { installedService } from "../../service/service";
@@ -208,5 +206,5 @@ export async function mapController(
     ...(warning && { warning }),
   });
 
-  return res.status(200).json(response as MapResponse);
+  return res.status(200).json(response);
 }

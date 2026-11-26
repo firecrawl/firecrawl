@@ -11,7 +11,7 @@ import { logger } from "../../lib/logger";
 const CURRENT = "current-admin-key-0001";
 const PREVIOUS = "previous-admin-key-0002";
 
-function matchedKeys(spy: { mock: { calls: unknown[][] } }) {
+function matchedKeys(spy: { mock: { calls: Array<Array<unknown>> } }) {
   return spy.mock.calls
     .map(call => (call[1] as { matchedKey?: string } | undefined)?.matchedKey)
     .filter(Boolean);

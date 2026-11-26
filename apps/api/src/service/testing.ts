@@ -1,14 +1,13 @@
 /*
  * Helpers for tests that need a service.
  */
-import {
-  createService,
-  replaceService,
-  type CoreParts,
-  type Extension,
-  type Modules,
-  type ModulesConfig,
-  type Service,
+import { createService, replaceService } from "./service";
+import type {
+  CoreParts,
+  Extension,
+  Modules,
+  ModulesConfig,
+  Service,
 } from "./service";
 
 /** Builds a service from module defaults or a base set, with any of them replaced and any extension added. */
@@ -16,7 +15,7 @@ export function testService(
   base: ModulesConfig,
   parts: CoreParts,
   overrides: Partial<Modules> = {},
-  extensions: Extension[] = [],
+  extensions: Array<Extension> = [],
 ): Service {
   const modules: Record<string, unknown> = { ...base };
   for (const [key, value] of Object.entries(overrides)) {
@@ -24,10 +23,7 @@ export function testService(
       modules[key] = value;
     }
   }
-  return createService(
-    { modules: modules as ModulesConfig, extensions },
-    parts,
-  );
+  return createService({ modules, extensions }, parts);
 }
 
 /**

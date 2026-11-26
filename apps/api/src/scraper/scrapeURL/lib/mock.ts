@@ -1,15 +1,17 @@
-import * as fs from "fs/promises";
+import * as fs from "node:fs/promises";
 import { config } from "../../../config";
-import * as path from "path";
+import * as path from "node:path";
 import { logger as _logger } from "../../../lib/logger";
-import { Logger } from "winston";
+import type { Logger } from "winston";
 const saveMocksDirPath = path.join(__dirname, "../mocks/").replace("dist/", "");
 const loadMocksDirPath = path
   .join(__dirname, "../../../__tests__/snips/mocks")
   .replace("dist/", "");
 
 export async function saveMock(options: unknown, result: unknown) {
-  if (config.FIRECRAWL_SAVE_MOCKS !== true) return;
+  if (config.FIRECRAWL_SAVE_MOCKS !== true) {
+    return;
+  }
 
   await fs.mkdir(saveMocksDirPath, { recursive: true });
 
@@ -32,7 +34,7 @@ export async function saveMock(options: unknown, result: unknown) {
 }
 
 export type MockState = {
-  requests: {
+  requests: Array<{
     time: number;
     options: {
       url: string;
@@ -44,7 +46,7 @@ export type MockState = {
       tryCooldown?: number;
     };
     result: any;
-  }[];
+  }>;
   tracker: Record<string, number>;
 };
 

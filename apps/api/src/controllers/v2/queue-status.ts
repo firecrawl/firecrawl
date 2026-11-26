@@ -1,5 +1,5 @@
-import { RequestWithAuth } from "./types";
-import { Response } from "express";
+import type { RequestWithAuth } from "./types";
+import type { Response } from "express";
 import { redisEvictConnection } from "../../services/redis";
 import { isFdbTeam } from "../../services/worker/nuq-router";
 import {

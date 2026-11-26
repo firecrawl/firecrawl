@@ -137,7 +137,6 @@
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "@types/ws": "^8.5.12",
     "ai": "7.0.173",
-    "ajv": "^8.18.0",
     "amqplib": "^0.10.9",
     "async-mutex": "^0.5.0",
     "axios": "^1.20.0",

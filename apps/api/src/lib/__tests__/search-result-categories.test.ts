@@ -2,9 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   collectSearchResultCategories,
   countSearchResultsBySource,
-  type SearchResultType,
-  type SearchV2Response,
 } from "../entities";
+import type { SearchResultType, SearchV2Response } from "../entities";
 
 const web = (url: string, category?: string) => ({
   url,

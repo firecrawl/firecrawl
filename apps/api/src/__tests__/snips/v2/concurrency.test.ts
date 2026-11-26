@@ -36,7 +36,7 @@ describeIf(TEST_PRODUCTION)("Concurrency queue and limit", () => {
       expect(await maxConcurrency()).toBe(accountConcurrencyLimit);
       expect(await maxConcurrency()).toBe(accountConcurrencyLimit);
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -61,7 +61,7 @@ describeIf(TEST_PRODUCTION)("Concurrency queue and limit", () => {
       expect(Math.max(...concurrencies)).toBe(accountConcurrencyLimit);
       expect(crawl.completed).toBe(limit);
     },
-    600000,
+    600_000,
   );
 
   it.concurrent(
@@ -85,7 +85,7 @@ describeIf(TEST_PRODUCTION)("Concurrency queue and limit", () => {
       expect(Math.max(...concurrencies)).toBe(5);
       expect(crawl.completed).toBe(15);
     },
-    600000,
+    600_000,
   );
 
   it.concurrent(
@@ -123,7 +123,7 @@ describeIf(TEST_PRODUCTION)("Concurrency queue and limit", () => {
       expect(crawl1.completed).toBe(15);
       expect(crawl2.completed).toBe(15);
     },
-    1200000,
+    1_200_000,
   );
 
   it.concurrent(
@@ -150,7 +150,7 @@ describeIf(TEST_PRODUCTION)("Concurrency queue and limit", () => {
       expect(Math.max(...concurrencies)).toBe(accountConcurrencyLimit);
       expect(batchScrape.completed).toBe(limit);
     },
-    600000,
+    600_000,
   );
 
   it.concurrent(
@@ -176,7 +176,7 @@ describeIf(TEST_PRODUCTION)("Concurrency queue and limit", () => {
       expect(Math.max(...concurrencies)).toBe(5);
       expect(batchScrape.completed).toBe(15);
     },
-    600000,
+    600_000,
   );
 
   it.concurrent(
@@ -216,6 +216,6 @@ describeIf(TEST_PRODUCTION)("Concurrency queue and limit", () => {
       expect(batchScrape1.completed).toBe(15);
       expect(batchScrape2.completed).toBe(15);
     },
-    1200000,
+    1_200_000,
   );
 });

@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { ZodError, z } from "zod";
-import {
-  coreParts,
-  createService,
-  defaultModules,
-  type Extension,
-  type RequestContributions,
-  type ScrapeOptionsRule,
+import { coreParts, createService, defaultModules } from "../../service";
+import type {
+  Extension,
+  RequestContributions,
+  ScrapeOptionsRule,
 } from "../../service";
 import { withService } from "../../service/testing";
 import {
@@ -23,7 +21,7 @@ import {
 } from "./types";
 
 const asRequest = (value: Record<string, unknown>): RequestContributions =>
-  value as unknown as RequestContributions;
+  value;
 
 function captureZodError(fn: () => unknown): ZodError {
   try {
@@ -143,7 +141,9 @@ describe("v2 request schema wiring", () => {
       const hasCustom = options.formats.some(
         format => (format as { type: string }).type === "customExtract",
       );
-      if (!hasCustom) return;
+      if (!hasCustom) {
+        return;
+      }
       if (kind === "parse") {
         return {
           error: "Parse uploads do not support customExtract.",

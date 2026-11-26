@@ -21,7 +21,8 @@ vi.mock("geoip-country", () => ({ lookup: vi.fn(() => null) }));
 import { checkCreditsMiddleware } from "../../routes/shared";
 import { defaultModules } from "../../service/defaults";
 import type { BillingModule } from "../../service/modules";
-import { replaceService, type CoreParts } from "../../service/service";
+import { replaceService } from "../../service/service";
+import type { CoreParts } from "../../service/service";
 import { testService, withService } from "../../service/testing";
 
 const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
@@ -44,7 +45,9 @@ function runMiddleware(
     let settled = false;
     let nextCalled = false;
     const settle = (payload: { res: any; nextErr?: unknown }) => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
       settled = true;
       resolve({ ...payload, nextCalled });
     };
@@ -57,7 +60,7 @@ function runMiddleware(
         headers[name] = value;
         return res;
       }),
-      status: vi.fn((..._args: unknown[]) => {
+      status: vi.fn((..._args: Array<unknown>) => {
         setImmediate(() => settle({ res }));
         return res;
       }),

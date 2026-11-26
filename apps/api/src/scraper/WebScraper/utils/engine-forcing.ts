@@ -1,13 +1,13 @@
 import { configDotenv } from "dotenv";
 import { parse } from "tldts";
-import { Engine } from "../../scrapeURL/engines";
+import type { Engine } from "../../scrapeURL/engines";
 import { logger } from "../../../lib/logger";
 
 import { config } from "../../../config";
 configDotenv();
 
 type EngineForcingMapping = {
-  [domain: string]: Engine | Engine[];
+  [domain: string]: Engine | Array<Engine>;
 };
 
 let engineMappings: EngineForcingMapping | null = null;
@@ -47,7 +47,7 @@ function domainMatchesPattern(domain: string, pattern: string): boolean {
   }
 
   if (pattern.startsWith("*.")) {
-    const basePattern = pattern.substring(2); // Remove "*."
+    const basePattern = pattern.slice(2); // Remove "*."
     return domain === basePattern || domain.endsWith(`.${basePattern}`);
   }
 
@@ -59,7 +59,9 @@ function domainMatchesPattern(domain: string, pattern: string): boolean {
  * @param url The URL to check
  * @returns The forced engine(s) if a match is found, undefined otherwise
  */
-export function getEngineForUrl(url: string): Engine | Engine[] | undefined {
+export function getEngineForUrl(
+  url: string,
+): Engine | Array<Engine> | undefined {
   if (engineMappings === null) {
     return undefined;
   }

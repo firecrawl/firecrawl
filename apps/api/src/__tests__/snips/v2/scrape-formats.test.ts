@@ -6,7 +6,8 @@ import {
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { scrape, scrapeTimeout, idmux, Identity, scrapeRaw } from "./lib";
+import type { Identity } from "./lib";
+import { scrape, scrapeTimeout, idmux, scrapeRaw } from "./lib";
 
 let identity: Identity;
 
@@ -14,9 +15,9 @@ beforeAll(async () => {
   identity = await idmux({
     name: "scrape-formats",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000 + scrapeTimeout);
+}, 10_000 + scrapeTimeout);
 
 describeIf(ALLOW_TEST_SUITE_WEBSITE)("Scrape format variations", () => {
   const base = TEST_SUITE_WEBSITE;

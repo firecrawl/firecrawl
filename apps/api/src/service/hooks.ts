@@ -78,16 +78,16 @@ export interface ScrapePlan {
  */
 export interface HtmlCleaning {
   url: string;
-  includeTags: string[];
-  excludeTags: string[];
+  includeTags: Array<string>;
+  excludeTags: Array<string>;
   onlyMainContent: boolean;
-  dropSignatures?: string[];
+  dropSignatures?: Array<string>;
 }
 
 /** Ordered list of candidate scrape engines to attempt. */
 export interface EnginePlan {
   /** Candidate engines to try, best first. */
-  candidates: EngineName[];
+  candidates: Array<EngineName>;
   /** When true, resolved candidates carry no unsupported-feature warnings. */
   suppressUnsupportedWarnings?: boolean;
   /**
@@ -122,7 +122,7 @@ export type RequestEvent = {
 }[RequestKind];
 
 /** Request event paired with the documents produced for the response. */
-export type ResponseInfo = RequestEvent & { documents: Document[] };
+export type ResponseInfo = RequestEvent & { documents: Array<Document> };
 
 /** Completion payload delivered when a scrape job finishes. */
 export interface ScrapeFinished {
@@ -169,7 +169,7 @@ export interface CrawlFinished {
 export interface SearchPlan {
   query: string;
   limit: number;
-  sources: string[];
+  sources: Array<string>;
 }
 
 /** Individual search result transformed by `search.results` hooks. */
@@ -236,7 +236,7 @@ export interface HookPoints {
   "scrape.finished": Await<ScrapeFinished>;
   // crawl
   "crawl.kickoff": Transform<
-    string[],
+    Array<string>,
     {
       id: string;
       ctx: RequestContext;
@@ -245,7 +245,7 @@ export interface HookPoints {
     }
   >;
   "crawl.links": Transform<
-    string[],
+    Array<string>,
     {
       id: string;
       ctx: RequestContext;
@@ -257,7 +257,7 @@ export interface HookPoints {
   "crawl.finished": Await<CrawlFinished>;
   // map and search
   "map.collect": Transform<
-    string[],
+    Array<string>,
     {
       ctx: RequestContext;
       url: string;
@@ -276,7 +276,7 @@ export interface HookPoints {
     }
   >;
   "map.filter": Transform<
-    MapDocument[],
+    Array<MapDocument>,
     {
       ctx: RequestContext;
       url: string;
@@ -292,7 +292,7 @@ export interface HookPoints {
     urls: number;
     url?: string;
     options?: Record<string, unknown>;
-    links?: MapDocument[];
+    links?: Array<MapDocument>;
     charged?: number;
     timeTakenMs?: number;
     state?: Record<string, unknown>;
@@ -307,7 +307,7 @@ export interface HookPoints {
     }
   >;
   "search.results": Transform<
-    SearchHit[],
+    Array<SearchHit>,
     {
       ctx: RequestContext;
       body: RequestBodies["search"];
@@ -329,8 +329,8 @@ export interface HookPoints {
     timeTakenMs?: number;
     resultCountsBySource?: Record<string, number>;
     resultCategories?: Record<string, unknown>;
-    searchTypes?: string[];
-    scrapeFormats?: string[];
+    searchTypes?: Array<string>;
+    scrapeFormats?: Array<string>;
     shouldScrape?: boolean;
     isSuccessful?: boolean;
     error?: string;
@@ -369,7 +369,7 @@ export type HookHandler<N extends HookName> = PointHandlerOf<HookPoints[N]>;
 export type HandlersOf<Points> = {
   [Name in keyof Points]?:
     | PointHandlerOf<Points[Name]>
-    | readonly PointHandlerOf<Points[Name]>[];
+    | ReadonlyArray<PointHandlerOf<Points[Name]>>;
 };
 
 /** How hook points are invoked. The method must match the point's kind. */
@@ -448,8 +448,8 @@ export const hookPoints: Readonly<{
 }> = Object.freeze(Object.assign(Object.create(null), rawHookPoints));
 
 /** All known hook point names. */
-export const hookPointNames: readonly HookName[] = Object.freeze(
-  Object.keys(hookPoints) as HookName[],
+export const hookPointNames: ReadonlyArray<HookName> = Object.freeze(
+  Object.keys(hookPoints) as Array<HookName>,
 );
 
 /** @internal */
@@ -489,11 +489,11 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * @internal
  */
 export function buildHookRegistry(
-  sources: readonly HookRegistrySource[],
+  sources: ReadonlyArray<HookRegistrySource>,
   report: (hook: string, error: unknown) => void,
 ): {
   hooks: Hooks;
-  describedHooks: Record<string, string[]>;
+  describedHooks: Record<string, Array<string>>;
 } {
   if (typeof report !== "function") {
     throw new Error("Hook error reporter must be a function");
@@ -506,7 +506,9 @@ export function buildHookRegistry(
 
   for (const source of sources) {
     const set = source.hooks;
-    if (set === undefined) continue;
+    if (set === undefined) {
+      continue;
+    }
     if (!isPlainObject(set)) {
       throw new Error(
         `Extension "${source.owner}" hooks must be a plain object`,
@@ -519,9 +521,11 @@ export function buildHookRegistry(
       }
       const hookName = name as HookName;
       const listed = set[name];
-      if (listed === undefined) continue;
+      if (listed === undefined) {
+        continue;
+      }
 
-      const normalized: AnyHandler[] = [];
+      const normalized: Array<AnyHandler> = [];
       if (Array.isArray(listed)) {
         for (let i = 0; i < listed.length; i++) {
           const handler = listed[i];
@@ -538,7 +542,9 @@ export function buildHookRegistry(
         throw new Error(`Hook "${name}" handler must be a function`);
       }
 
-      if (normalized.length === 0) continue;
+      if (normalized.length === 0) {
+        continue;
+      }
 
       let bucket = entriesByName.get(hookName);
       if (!bucket) {
@@ -551,8 +557,8 @@ export function buildHookRegistry(
     }
   }
 
-  const table = new Map<HookName, readonly AnyHandler[]>();
-  const ownerTable: Record<string, string[]> = Object.create(null);
+  const table = new Map<HookName, ReadonlyArray<AnyHandler>>();
+  const ownerTable: Record<string, Array<string>> = Object.create(null);
 
   for (const [name, entries] of entriesByName) {
     const ordered = hookPoints[name].reverse ? [...entries].reverse() : entries;
@@ -601,7 +607,9 @@ export function buildHookRegistry(
         }
       }
     } catch (error) {
-      if (!isolate) throw error;
+      if (!isolate) {
+        throw error;
+      }
       reportFailure(name, error);
       return undefined;
     }
@@ -613,7 +621,9 @@ export function buildHookRegistry(
     },
     observe(name, payload) {
       const handlers = table.get(name);
-      if (!handlers) return;
+      if (!handlers) {
+        return;
+      }
       for (const handler of handlers) {
         try {
           const result = handler(payload);
@@ -629,7 +639,9 @@ export function buildHookRegistry(
     },
     async run(name, payload) {
       const handlers = table.get(name);
-      if (!handlers) return;
+      if (!handlers) {
+        return;
+      }
       for (const handler of handlers) {
         await invoke(name, () => handler(payload));
       }
@@ -638,12 +650,16 @@ export function buildHookRegistry(
       const handlers = table.get(name);
       // Hot path: with no handler installed, return synchronously with no
       // promise allocation.
-      if (!handlers) return value;
+      if (!handlers) {
+        return value;
+      }
       return (async () => {
         let current: unknown = value;
         for (const handler of handlers) {
           const next = await invoke(name, () => handler(current, info));
-          if (next !== undefined) current = next;
+          if (next !== undefined) {
+            current = next;
+          }
         }
         return current as typeof value;
       })();
@@ -660,7 +676,7 @@ export function buildHookRegistry(
  * @internal
  */
 export function buildHooks(
-  sets: readonly HookHandlers[],
+  sets: ReadonlyArray<HookHandlers>,
   report: (hook: string, error: unknown) => void,
 ): Hooks {
   return buildHookRegistry(

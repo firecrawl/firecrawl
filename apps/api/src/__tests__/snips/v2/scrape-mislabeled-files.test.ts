@@ -5,13 +5,8 @@ import {
   TEST_API_URL,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import {
-  idmux,
-  Identity,
-  scrape,
-  scrapeTimeout,
-  scrapeWithFailure,
-} from "./lib";
+import type { Identity } from "./lib";
+import { idmux, scrape, scrapeTimeout, scrapeWithFailure } from "./lib";
 
 let identity: Identity;
 let imageOcrOn = false;
@@ -20,7 +15,7 @@ beforeAll(async () => {
   identity = await idmux({
     name: "scrape-mislabeled-files",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
 
   const formatsResponse = await request(TEST_API_URL)
@@ -35,7 +30,7 @@ beforeAll(async () => {
         format.kind === "image" && format.available === true,
     );
   }
-}, 10000 + scrapeTimeout);
+}, 10_000 + scrapeTimeout);
 
 // The browser engine hands files it cannot render back to the API, which
 // routes them to a parser by content type — and servers mislabel. Static

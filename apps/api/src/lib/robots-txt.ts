@@ -1,12 +1,13 @@
-import robotsParser, { Robot } from "robots-parser";
-import { Logger } from "winston";
+import type { Robot } from "robots-parser";
+import robotsParser from "robots-parser";
+import type { Logger } from "winston";
+import type { ScrapeOptions } from "../controllers/v2/types";
 import {
   getV2RequestSchemas,
-  ScrapeOptions,
   scrapeOptionsAcceptsMaxAge,
 } from "../controllers/v2/types";
 import { scrapeURL } from "../scraper/scrapeURL";
-import { Engine } from "../scraper/scrapeURL/engines";
+import type { Engine } from "../scraper/scrapeURL/engines";
 import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
 import { CostTracking } from "./cost-tracking";
@@ -44,7 +45,7 @@ export async function fetchRobotsTxt(
   const urlObj = new URL(url);
   const robotsTxtUrl = `${urlObj.protocol}//${urlObj.host}/robots.txt`;
 
-  const forceEngine: Engine[] = ["fetch"];
+  const forceEngine: Array<Engine> = ["fetch"];
   const parentCtx: RequestContext = {
     teamId: "robots-txt",
     zeroDataRetention,
@@ -115,7 +116,7 @@ export async function fetchRobotsTxt(
 
   // return URL in case we've been redirected
   return {
-    content: content,
+    content,
     url: response.document.metadata.url || robotsTxtUrl,
   };
 }
@@ -137,9 +138,11 @@ export function createRobotsChecker(
 export function isUrlAllowedByRobots(
   url: string,
   robots: Robot | null,
-  userAgents: string[] = ["FireCrawlAgent", "FirecrawlAgent"],
+  userAgents: Array<string> = ["FireCrawlAgent", "FirecrawlAgent"],
 ): boolean {
-  if (!robots) return true;
+  if (!robots) {
+    return true;
+  }
 
   for (const userAgent of userAgents) {
     let isAllowed = robots.isAllowed(url, userAgent);

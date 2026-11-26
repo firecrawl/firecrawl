@@ -1,20 +1,16 @@
-import { Response } from "express";
+import type { Response } from "express";
 
-import { getV2RequestSchemas, RequestWithAuth, SearchResponse } from "./types";
+import type { RequestWithAuth, SearchResponse } from "./types";
+import { getV2RequestSchemas } from "./types";
 import type { SearchRequest } from "../../service/request";
 import { v7 as uuidv7 } from "uuid";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import {
-  finalizeResponse,
-  service,
-  type RequestContext,
-  type SettleOutcome,
-} from "../../service";
+import { finalizeResponse, service } from "../../service";
+import type { RequestContext, SettleOutcome } from "../../service";
 import { logger as _logger } from "../../lib/logger";
 import { getErrorHttpResponse, ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
-import { CategoryOption } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
 import { applySearchPlanHook } from "../../search/plan-hook";
 import type { BillingMetadata } from "../../lib/billing-types";
@@ -24,8 +20,8 @@ import {
   setSpanAttributes,
   recordSpanException,
   SpanKind,
-  type Span,
 } from "../../lib/otel-tracer";
+import type { Span } from "../../lib/otel-tracer";
 import { installedService } from "../../service/service";
 
 const IMAGE_SEARCH_US_ONLY_MESSAGE =
@@ -36,7 +32,7 @@ export async function searchController(
   res: Response<SearchResponse>,
 ) {
   const rawBody = req.body as Record<string, any> | undefined;
-  const enterprise: unknown[] = Array.isArray(rawBody?.enterprise)
+  const enterprise: Array<unknown> = Array.isArray(rawBody?.enterprise)
     ? rawBody.enterprise
     : [];
   const zeroDataRetentionTrace =
@@ -85,7 +81,9 @@ async function searchControllerInner(
   let jobIdField: { jobId?: string } = {};
 
   const settleBilling = async (outcome: SettleOutcome) => {
-    if (billingHandle === undefined || settledBilling) return;
+    if (billingHandle === undefined || settledBilling) {
+      return;
+    }
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         await service.modules.billing.settle?.(billingHandle, outcome);
@@ -133,10 +131,10 @@ async function searchControllerInner(
     });
 
     const isZDR = (
-      extBody().enterprise as ("default" | "anon" | "zdr")[] | undefined
+      extBody().enterprise as Array<"default" | "anon" | "zdr"> | undefined
     )?.includes("zdr");
     const isAnon = (
-      extBody().enterprise as ("default" | "anon" | "zdr")[] | undefined
+      extBody().enterprise as Array<"default" | "anon" | "zdr"> | undefined
     )?.includes("anon");
     const isZDROrAnon = isZDR || isAnon;
     zeroDataRetention = req.ctx?.zeroDataRetention ?? Boolean(isZDROrAnon);
@@ -157,7 +155,9 @@ async function searchControllerInner(
           billing,
         });
     req.ctx = ctx;
-    if (!agentRequestId) jobIdField = { jobId };
+    if (!agentRequestId) {
+      jobIdField = { jobId };
+    }
 
     const searchState: Record<string, unknown> = {};
     const reservation = await service.modules.billing.authorize({
@@ -175,7 +175,7 @@ async function searchControllerInner(
         sources: req.body.sources,
         domainTools: extBody().domainTools,
         enterprise: extBody().enterprise as
-          | ("default" | "anon" | "zdr")[]
+          | Array<"default" | "anon" | "zdr">
           | undefined,
         scrapeOptions: req.body.scrapeOptions,
         endpoint: "v2_search",
@@ -254,11 +254,11 @@ async function searchControllerInner(
         location: req.body.location,
         safe: req.body.safe,
         sources: planned.sources,
-        categories: req.body.categories as CategoryOption[],
+        categories: req.body.categories,
         includeDomains: req.body.includeDomains,
         excludeDomains: req.body.excludeDomains,
         enterprise: extBody().enterprise as
-          | ("default" | "anon" | "zdr")[]
+          | Array<"default" | "anon" | "zdr">
           | undefined,
         scrapeOptions: req.body.scrapeOptions,
         highlights: extBody().highlights,
@@ -344,7 +344,7 @@ async function searchControllerInner(
               state: {
                 ...searchState,
                 enterprise: extBody().enterprise as
-                  | ("default" | "anon" | "zdr")[]
+                  | Array<"default" | "anon" | "zdr">
                   | undefined,
                 threatDecisions: result.threatDecisions,
               },

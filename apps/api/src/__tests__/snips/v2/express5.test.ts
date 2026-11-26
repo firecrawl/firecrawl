@@ -1,4 +1,5 @@
-import request, { TEST_API_URL, idmux, Identity } from "./lib";
+import type { Identity } from "./lib";
+import request, { TEST_API_URL, idmux } from "./lib";
 import http from "node:http";
 import { gzipSync } from "node:zlib";
 

@@ -13,10 +13,8 @@ import {
   run,
   runProcessStop,
   service,
-  type CoreParts,
-  type Extension,
-  type Worker,
 } from "./service";
+import type { CoreParts, Extension, Worker } from "./service";
 
 const worker = (): Worker => ({ run: vi.fn() });
 const parts = (core: Partial<Extension> = {}): CoreParts => ({
@@ -25,7 +23,7 @@ const parts = (core: Partial<Extension> = {}): CoreParts => ({
 });
 
 // A test's codes are not in ErrorCodes, so a class can only be built through a cast.
-const errorClass = (...codes: string[]) =>
+const errorClass = (...codes: Array<string>) =>
   ({ codes, deserialize: vi.fn() }) as unknown as TransportableErrorClass;
 
 // A test's engine and feature names are not in Engines/EngineFeatures, so they
@@ -157,7 +155,7 @@ describe("createService", () => {
 
   it("runs process.stop handlers in reverse extension order and logs isolated errors", async () => {
     const failure = new Error("stop failed");
-    const order: string[] = [];
+    const order: Array<string> = [];
     const logged = parts({
       hooks: {
         "process.stop": () => {
@@ -243,7 +241,7 @@ describe("createService", () => {
           extensions: [
             {
               name: "proto-key",
-              hooks: withProtoKey as unknown as HookHandlers,
+              hooks: withProtoKey,
             },
           ],
         },
@@ -768,7 +766,7 @@ describe("service", () => {
 
 describe("routes and roles integration", () => {
   it("mounts extension routes before core routes through built.mountRoutes and reports them in describe().routes", async () => {
-    const calls: string[] = [];
+    const calls: Array<string> = [];
     const built = createService(
       {
         modules: {},
@@ -1004,7 +1002,7 @@ describe("run", () => {
   });
 
   it("awaits process.start hooks in order before running the role", async () => {
-    const events: string[] = [];
+    const events: Array<string> = [];
     const api: Worker = {
       run: vi.fn(() => {
         events.push("worker:run");
@@ -1074,7 +1072,7 @@ describe("run", () => {
   });
 
   it("rejects when a role throws synchronously after a process.start hook runs", async () => {
-    const started: string[] = [];
+    const started: Array<string> = [];
     const built = createService(
       {
         modules: {},
@@ -1121,7 +1119,7 @@ describe("runProcessStop", () => {
   });
 
   it("runs process.stop hooks once in reverse order with the active role", async () => {
-    const events: string[] = [];
+    const events: Array<string> = [];
     const built = createService(
       {
         modules: {},
@@ -1164,7 +1162,7 @@ describe("runProcessStop", () => {
     vi.useFakeTimers();
     try {
       const errorLogger = vi.fn();
-      const events: string[] = [];
+      const events: Array<string> = [];
       const built = createService(
         {
           modules: {},

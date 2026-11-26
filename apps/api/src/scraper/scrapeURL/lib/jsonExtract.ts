@@ -1,14 +1,11 @@
-import { Logger } from "winston";
+import type { Logger } from "winston";
+import type { GenerateCompletionsOptions } from "../transformers/llmExtract";
 import {
   generateCompletions,
-  GenerateCompletionsOptions,
   generateSchemaFromPrompt,
 } from "../transformers/llmExtract";
-import { TokenUsage } from "../../../controllers/v2/types";
-import {
-  CostLimitExceededError,
-  CostTracking,
-} from "../../../lib/cost-tracking";
+import type { TokenUsage } from "../../../controllers/v2/types";
+import { CostLimitExceededError } from "../../../lib/cost-tracking";
 import { shouldPropagateFromExtraction } from "../../../lib/error";
 import { JsonExtractionContentTooLargeError } from "../error";
 import { toRootSchema, typeIncludes } from "../../../lib/openai-strict-schema";
@@ -24,7 +21,9 @@ const resolveRefs = (
   visited = new WeakSet(),
   depth = 0,
 ): any => {
-  if (!obj || typeof obj !== "object" || depth > 10) return obj;
+  if (!obj || typeof obj !== "object" || depth > 10) {
+    return obj;
+  }
 
   if (visited.has(obj)) {
     logger.warn(
@@ -38,7 +37,7 @@ const resolveRefs = (
     // Handle $ref references
     const refPath = obj.$ref.split("/");
     if (refPath[0] === "#" && refPath[1] === "$defs") {
-      const defName = refPath[refPath.length - 1];
+      const defName = refPath.at(-1);
       if (defs[defName]) {
         return resolveRefs(
           { ...defs[defName] },
@@ -60,7 +59,9 @@ const resolveRefs = (
   // Handle objects
   const resolved: any = {};
   for (const [key, value] of Object.entries(obj)) {
-    if (key === "$defs") continue;
+    if (key === "$defs") {
+      continue;
+    }
     resolved[key] = resolveRefs(value, defs, logger, visited, depth + 1);
   }
   return resolved;
@@ -92,7 +93,7 @@ export async function extractData({
   scrapeId?: string;
   metadata: { teamId: string; functionId?: string };
 }): Promise<{
-  extractedDataArray: any[];
+  extractedDataArray: Array<any>;
   warning: any;
 }> {
   let schema = extractOptions.options.schema;
@@ -154,8 +155,9 @@ export async function extractData({
 
         if (!hasRemainingRefs) {
           schema = resolvedSchema;
-          if (schema && typeof schema === "object" && schema.$defs)
+          if (schema && typeof schema === "object" && schema.$defs) {
             delete schema.$defs;
+          }
           logger.info("Successfully resolved schema refs", {
             schema,
           });
@@ -231,6 +233,6 @@ export async function extractData({
 
   return {
     extractedDataArray: [unwrapRootArray(schema, extract)],
-    warning: warning,
+    warning,
   };
 }

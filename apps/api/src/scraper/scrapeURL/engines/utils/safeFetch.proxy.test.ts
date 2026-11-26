@@ -1,7 +1,10 @@
 import { once } from "node:events";
-import { createServer, type Server } from "node:http";
-import { connect, type Socket } from "node:net";
-import { Agent, fetch, interceptors, request, type Dispatcher } from "undici";
+import { createServer } from "node:http";
+import type { Server } from "node:http";
+import { connect } from "node:net";
+import type { Socket } from "node:net";
+import { Agent, fetch, interceptors, request } from "undici";
+import type { Dispatcher } from "undici";
 import {
   afterAll,
   afterEach,
@@ -43,7 +46,7 @@ function invoke(origin: string) {
       path: "/",
       method: "GET",
     },
-    { onError } as unknown as Dispatcher.DispatchHandler,
+    { onError },
   );
 
   return { accepted, inner, onError };
@@ -246,7 +249,7 @@ describe("getSecureDispatcher with PROXY_SERVER configured", () => {
 
     const error = await fetch(targetUrl, {
       dispatcher: safeFetch.getSecureDispatcher(),
-    }).catch(e => e);
+    }).catch(error_ => error_);
 
     expect(error).toBeInstanceOf(TypeError);
     expect(error.cause).toBeInstanceOf(safeFetch.InsecureConnectionError);

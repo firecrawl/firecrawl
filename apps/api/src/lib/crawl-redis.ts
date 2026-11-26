@@ -1,7 +1,7 @@
-import { InternalOptions } from "../scraper/scrapeURL";
-import { ScrapeOptions, TeamFlags } from "../controllers/v2/types";
+import type { InternalOptions } from "../scraper/scrapeURL";
+import type { ScrapeOptions, TeamFlags } from "../controllers/v2/types";
 import type { RequestContext } from "../service/request-context";
-import { WebhookConfig } from "../services/webhook/types";
+import type { WebhookConfig } from "../services/webhook/types";
 import { WebCrawler } from "../scraper/WebScraper/crawler";
 import { redisCrawlStateConnection } from "../services/redis";
 import { crawlStateStore, crawlStateStores } from "./crawl-state-store";
@@ -78,9 +78,14 @@ export async function saveCrawl(id: string, crawl: StoredCrawl) {
   );
 }
 
-export async function recordRobotsBlocked(crawlId: string, urls: string[]) {
+export async function recordRobotsBlocked(
+  crawlId: string,
+  urls: Array<string>,
+) {
   const redis = await crawlStateStore(crawlId);
-  if (urls.length === 0) return;
+  if (urls.length === 0) {
+    return;
+  }
   for (let i = 0; i < urls.length; i += REDIS_COMMAND_ARG_CHUNK_SIZE) {
     await redis.sadd(
       "crawl:" + crawlId + ":robots_blocked",
@@ -92,7 +97,7 @@ export async function recordRobotsBlocked(crawlId: string, urls: string[]) {
 
 export async function getCrawlRobotsBlocked(
   crawlId: string,
-): Promise<string[]> {
+): Promise<Array<string>> {
   const redis = await crawlStateStore(crawlId);
   return await redis.smembers("crawl:" + crawlId + ":robots_blocked");
 }
@@ -212,11 +217,13 @@ export async function addCrawlJob(
 
 export async function addCrawlJobs(
   id: string,
-  job_ids: string[],
+  job_ids: Array<string>,
   __logger: Logger = _logger,
 ) {
   const redis = await crawlStateStore(id);
-  if (job_ids.length === 0) return true;
+  if (job_ids.length === 0) {
+    return true;
+  }
 
   __logger.debug("Adding crawl jobs to Redis...", {
     jobIds: job_ids,
@@ -329,7 +336,7 @@ export async function addCrawlJobDone(
 
 const CRAWL_JOB_DONE_REPAIR_KEY = "crawl-job-done-repair";
 const CRAWL_JOB_DONE_REPAIR_BATCH = 100;
-const CRAWL_JOB_DONE_REPAIR_MAX = 10000;
+const CRAWL_JOB_DONE_REPAIR_MAX = 10_000;
 
 type CrawlJobDoneRepairEntry = {
   id: string;
@@ -473,7 +480,7 @@ export async function getDoneJobsOrdered(
   id: string,
   start = 0,
   end = -1,
-): Promise<string[]> {
+): Promise<Array<string>> {
   const redis = await crawlStateStore(id);
   await redis.expire("crawl:" + id + ":jobs_donez_ordered", 24 * 60 * 60);
   return await redis.zrange("crawl:" + id + ":jobs_donez_ordered", start, end);
@@ -493,8 +500,10 @@ export async function getLastDoneJobTimestamp(
     redis.zrange("crawl:" + id + ":jobs_donez_ordered", -1, -1, "WITHSCORES"),
   ]);
   const candidates = [
-    lastAny !== null ? parseInt(lastAny, 10) : NaN,
-    lastSuccess && lastSuccess.length >= 2 ? parseInt(lastSuccess[1], 10) : NaN,
+    lastAny !== null ? Number.parseInt(lastAny, 10) : Number.NaN,
+    lastSuccess && lastSuccess.length >= 2
+      ? Number.parseInt(lastSuccess[1], 10)
+      : Number.NaN,
   ].filter(x => Number.isFinite(x));
   return candidates.length > 0 ? Math.max(...candidates) : null;
 }
@@ -504,7 +513,7 @@ export async function getDoneJobsOrderedUntil(
   until: number = Infinity,
   start = 0,
   count = -1,
-): Promise<string[]> {
+): Promise<Array<string>> {
   const redis = await crawlStateStore(id);
   await redis.expire("crawl:" + id + ":jobs_donez_ordered", 24 * 60 * 60);
   return await redis.zrangebyscore(
@@ -579,7 +588,7 @@ export async function isCrawlFinishMarked(id: string): Promise<boolean> {
   return (await redis.exists("crawl:" + id + ":finish")) === 1;
 }
 
-export async function getCrawlJobs(id: string): Promise<string[]> {
+export async function getCrawlJobs(id: string): Promise<Array<string>> {
   const redis = await crawlStateStore(id);
   return await redis.smembers("crawl:" + id + ":jobs");
 }
@@ -618,7 +627,7 @@ export function normalizeURL(url: string, sc: StoredCrawl): string {
 //
 // Points 1 and 2 are proven in permu-refactor.test.ts, point 3 is not as proving a negative is hard and outside the scope of a web crawler.
 // - mogery
-export function generateURLPermutations(url: string | URL): URL[] {
+export function generateURLPermutations(url: string | URL): Array<URL> {
   const urlO = new URL(url);
 
   // Construct two versions, one with www., one without
@@ -880,11 +889,13 @@ export async function lockURL(
 export async function lockURLs(
   id: string,
   sc: StoredCrawl,
-  urls: string[],
+  urls: Array<string>,
   __logger: Logger = _logger,
 ): Promise<boolean> {
   const redis = await crawlStateStore(id);
-  if (urls.length === 0) return true;
+  if (urls.length === 0) {
+    return true;
+  }
 
   urls = urls.map(url => normalizeURL(url, sc));
   const logger = __logger.child({
@@ -908,8 +919,8 @@ export async function lockURLs(
   // early chunk may land before a later one fails, and giving up then
   // leaves those URLs marked visited without being queued — a caller retry
   // would read them as already locked and skip them.
-  let results: [Error | null, unknown][] | null = null;
-  let visitedChunkStartIndexes: number[] = [];
+  let results: Array<[Error | null, unknown]> | null = null;
+  let visitedChunkStartIndexes: Array<number> = [];
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     let attemptError: unknown = null;
@@ -986,7 +997,7 @@ export async function lockURLs(
 export async function lockURLsIndividually(
   id: string,
   sc: StoredCrawl,
-  jobs: { id: string; url: string }[],
+  jobs: Array<{ id: string; url: string }>,
 ) {
   const out: typeof jobs = [];
 
@@ -1057,7 +1068,7 @@ export function crawlToCrawler(
       sc.originUrl!,
       sc.crawlerOptions?.maxDepth ?? 10,
     ),
-    limit: sc.crawlerOptions?.limit ?? 10000,
+    limit: sc.crawlerOptions?.limit ?? 10_000,
     generateImgAltText: sc.crawlerOptions?.generateImgAltText ?? false,
     allowBackwardCrawling: sc.crawlerOptions?.allowBackwardCrawling ?? false,
     allowExternalContentLinks:
@@ -1081,7 +1092,7 @@ export function crawlToCrawler(
   if (sc.robots !== undefined) {
     try {
       crawler.importRobotsTxt(sc.robots);
-    } catch (_) {}
+    } catch {}
   }
 
   return crawler;

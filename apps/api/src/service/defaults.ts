@@ -209,7 +209,9 @@ export function queueJobStore(): JobStoreModule {
           import("../lib/owner-id.js"),
         ]);
         const job = await scrapeQueue.getJob(id);
-        if (!job) return null;
+        if (!job) {
+          return null;
+        }
         if (
           job.data != null &&
           (typeof job.data !== "object" ||
@@ -224,7 +226,9 @@ export function queueJobStore(): JobStoreModule {
             ? (job.data as { team_id: string }).team_id
             : undefined;
         const teamId = rawTeamId ?? job.ownerId;
-        if (!teamId) return null;
+        if (!teamId) {
+          return null;
+        }
         return {
           teamId,
           matchesTeam(candidate: string): boolean {
@@ -238,15 +242,21 @@ export function queueJobStore(): JobStoreModule {
 
       const { getCrawl } = await import("../lib/crawl-redis.js");
       const crawl = await getCrawl(id);
-      if (!crawl?.team_id) return null;
+      if (!crawl?.team_id) {
+        return null;
+      }
       return { teamId: crawl.team_id };
     },
 
     async read(id: string, kind: JobKind): Promise<StoredJob | null> {
-      if (kind !== "scrape") return null;
+      if (kind !== "scrape") {
+        return null;
+      }
       const { scrapeQueue } = await import("../services/worker/nuq-router.js");
       const job = await scrapeQueue.getJob(id);
-      if (!job) return null;
+      if (!job) {
+        return null;
+      }
       if (
         job.data != null &&
         (typeof job.data !== "object" ||
@@ -289,7 +299,7 @@ export function queueJobStore(): JobStoreModule {
 }
 
 const DEFAULT_IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60;
-const DEFAULT_IDEMPOTENCY_TIMEOUT_MS = 5_000;
+const DEFAULT_IDEMPOTENCY_TIMEOUT_MS = 5000;
 
 let idempotencyRedisPromise: Promise<import("ioredis").Redis> | undefined;
 

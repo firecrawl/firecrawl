@@ -3,15 +3,15 @@ import type { NuQJob } from "./nuq";
 
 const mocks = vi.hoisted(() => {
   const crawler = {
-    robots: { getSitemaps: vi.fn(() => [] as string[]) },
+    robots: { getSitemaps: vi.fn(() => [] as Array<string>) },
     usOnly: false,
     setBaseUrl: vi.fn(),
     isRobotsAllowed: vi.fn(() => true),
     filterURL: vi.fn(async () => ({ allowed: true })),
-    extractLinksFromContent: vi.fn(async () => [] as string[]),
-    filterLinks: vi.fn(async (links: string[]) => ({
+    extractLinksFromContent: vi.fn(async () => [] as Array<string>),
+    filterLinks: vi.fn(async (links: Array<string>) => ({
       links,
-      robotsBlocked: [] as string[],
+      robotsBlocked: [] as Array<string>,
       denialReasons: new Map<string, string>(),
     })),
   };
@@ -36,24 +36,24 @@ const mocks = vi.hoisted(() => {
     recordThreatBlocked: vi.fn(async () => false),
     finishCrawlKickoff: vi.fn(async () => undefined),
     finishCrawl: vi.fn(async () => undefined),
-    getCrawlJobs: vi.fn(async () => [] as string[]),
+    getCrawlJobs: vi.fn(async () => [] as Array<string>),
     getDoneJobsOrderedLength: vi.fn(async () => 0),
     saveCrawl: vi.fn(async () => undefined),
     setCrawlError: vi.fn(async () => undefined),
-    queryIndexAtSplitLevel: vi.fn(async () => [] as string[]),
+    queryIndexAtSplitLevel: vi.fn(async () => [] as Array<string>),
     generateURLSplits: vi.fn((url: string) => [url]),
     scrapeSitemap: vi.fn(async () => ({
       urls: [] as Array<{ href: string }>,
       sitemaps: [] as Array<{ href: string }>,
     })),
     startWebScraperPipeline: vi.fn(),
-    addScrapeJob: vi.fn(async (..._args: any[]) => null),
-    addScrapeJobs: vi.fn(async (..._args: any[]) => true),
-    addScrapeJobToBullMQ: vi.fn(async (..._args: any[]) => ({
+    addScrapeJob: vi.fn(async (..._args: Array<any>) => null),
+    addScrapeJobs: vi.fn(async (..._args: Array<any>) => true),
+    addScrapeJobToBullMQ: vi.fn(async (..._args: Array<any>) => ({
       id: "sitemap-job",
     })),
     getACUCTeam: vi.fn(async () => ({ flags: null })),
-    getJobs: vi.fn(async () => [] as any[]),
+    getJobs: vi.fn(async () => [] as Array<any>),
     readRequestCredits: vi.fn(async () => 5),
     readRequestCreditsFromAnalytics: vi.fn(async () => 5),
     logCrawl: vi.fn(async () => undefined),
@@ -61,9 +61,9 @@ const mocks = vi.hoisted(() => {
     logScrape: vi.fn(async () => undefined),
     createWebhookSender: vi.fn(async () => null),
     createInAppNotification: vi.fn(async () => true),
-    checkUrlsAgainstThreatPolicy: vi.fn(async (urls: string[]) => ({
+    checkUrlsAgainstThreatPolicy: vi.fn(async (urls: Array<string>) => ({
       allowedUrls: urls,
-      blocked: [] as any[],
+      blocked: [] as Array<any>,
       decisionsByUrl: new Map(),
     })),
     redisEvictConnection: {
@@ -205,18 +205,20 @@ describe("crawl lifecycle hooks", () => {
     replaceService(undefined);
     mocks.crawler.robots.getSitemaps.mockImplementation(() => []);
     mocks.crawler.extractLinksFromContent.mockResolvedValue([]);
-    mocks.crawler.filterLinks.mockImplementation(async (links: string[]) => ({
-      links,
-      robotsBlocked: [],
-      denialReasons: new Map(),
-    }));
+    mocks.crawler.filterLinks.mockImplementation(
+      async (links: Array<string>) => ({
+        links,
+        robotsBlocked: [],
+        denialReasons: new Map(),
+      }),
+    );
     mocks.queryIndexAtSplitLevel.mockResolvedValue([]);
     mocks.scrapeSitemap.mockResolvedValue({ urls: [], sitemaps: [] });
     mocks.getDoneJobsOrderedLength.mockResolvedValue(3);
     mocks.getCrawlJobs.mockResolvedValue([]);
     mocks.getJobs.mockResolvedValue([]);
     mocks.checkUrlsAgainstThreatPolicy.mockImplementation(
-      async (urls: string[]) => ({
+      async (urls: Array<string>) => ({
         allowedUrls: urls,
         blocked: [],
         decisionsByUrl: new Map(),
@@ -229,7 +231,7 @@ describe("crawl lifecycle hooks", () => {
   });
 
   it("runs crawl.kickoff then crawl.links in order and transforms enqueued kickoff URLs", async () => {
-    const order: string[] = [];
+    const order: Array<string> = [];
     installHooks({
       "crawl.kickoff": (urls, info) => {
         order.push(`kickoff:${info.id}:${info.url}:${info.ctx.teamId}`);
@@ -278,7 +280,7 @@ describe("crawl lifecycle hooks", () => {
   });
 
   it("transforms sitemap links through crawl.links with sitemapUrl as from", async () => {
-    const seenFrom: string[] = [];
+    const seenFrom: Array<string> = [];
     installHooks({
       "crawl.links": (links, info) => {
         seenFrom.push(`${info.id}:${info.from}`);
@@ -394,11 +396,13 @@ describe("crawl lifecycle hooks", () => {
       urls: [{ href: "https://example.com/from-sitemap" }],
       sitemaps: [],
     });
-    mocks.crawler.filterLinks.mockImplementation(async (links: string[]) => ({
-      links: links.filter(url => url.startsWith("https://example.com/")),
-      robotsBlocked: [],
-      denialReasons: new Map(),
-    }));
+    mocks.crawler.filterLinks.mockImplementation(
+      async (links: Array<string>) => ({
+        links: links.filter(url => url.startsWith("https://example.com/")),
+        robotsBlocked: [],
+        denialReasons: new Map(),
+      }),
+    );
 
     const sitemapJob = {
       id: "sitemap-revalidate",
@@ -427,7 +431,7 @@ describe("crawl lifecycle hooks", () => {
   });
 
   it("awaits crawl.finished for both crawl and batchScrape (v1 and v0) and propagates rejections", async () => {
-    const events: any[] = [];
+    const events: Array<any> = [];
     installHooks({
       "crawl.finished": async event => {
         events.push(event);

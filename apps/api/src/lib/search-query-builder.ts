@@ -5,14 +5,14 @@
 
 interface CategoryInput {
   type: "research" | "pdf" | "developer" | "gov";
-  sites?: string[];
+  sites?: Array<string>;
 }
 
 export type CategoryOption = string | CategoryInput;
 
 interface DomainFilterOptions {
-  includeDomains?: string[];
-  excludeDomains?: string[];
+  includeDomains?: Array<string>;
+  excludeDomains?: Array<string>;
 }
 
 interface QueryBuilderResult {
@@ -56,12 +56,12 @@ export function hasCategory(
  */
 export function buildSearchQuery(
   baseQuery: string,
-  categories?: CategoryOption[],
+  categories?: Array<CategoryOption>,
   domainOptions: DomainFilterOptions = {},
 ): QueryBuilderResult {
   const categoryMap = new Map<string, string>();
 
-  const siteFilters: string[] = [];
+  const siteFilters: Array<string> = [];
   let hasPdfFilter = false;
 
   for (const category of categories ?? []) {
@@ -150,7 +150,9 @@ export function getCategoryFromUrl(
 
     // Check against category map for other sites
     for (const [site, category] of categoryMap.entries()) {
-      if (site === "__pdf__") continue; // Skip the special PDF marker
+      if (site === "__pdf__") {
+        continue;
+      } // Skip the special PDF marker
 
       if (
         hostname === site.toLowerCase() ||
@@ -159,7 +161,7 @@ export function getCategoryFromUrl(
         return category;
       }
     }
-  } catch (e) {
+  } catch {
     // Invalid URL, skip
   }
 
@@ -169,6 +171,6 @@ export function getCategoryFromUrl(
 /**
  * Get default research sites
  */
-export function getDefaultResearchSites(): string[] {
+export function getDefaultResearchSites(): Array<string> {
   return [...DEFAULT_RESEARCH_SITES];
 }

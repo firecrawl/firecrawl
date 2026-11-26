@@ -1,4 +1,5 @@
-import express, { type Request, type Response } from "express";
+import express from "express";
+import type { Request, Response } from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -9,12 +10,14 @@ import {
   openAuth,
   openRequest,
   resolveRequestContext,
-  type AuthModule,
-  type BillingModule,
-  type BlocklistModule,
-  type CoreParts,
-  type PolicyModule,
-  type RequestSchemas,
+} from "./index";
+import type {
+  AuthModule,
+  BillingModule,
+  BlocklistModule,
+  CoreParts,
+  PolicyModule,
+  RequestSchemas,
 } from "./index";
 import { testService, withService } from "./testing";
 

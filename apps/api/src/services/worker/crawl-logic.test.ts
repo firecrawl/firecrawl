@@ -40,7 +40,7 @@ const baseSc = {
 };
 
 const jobStoreUsage = vi.fn(async () => 7);
-const crawlFinishedEvents: CrawlFinished[] = [];
+const crawlFinishedEvents: Array<CrawlFinished> = [];
 
 beforeAll(() => {
   replaceService(

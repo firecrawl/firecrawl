@@ -1,17 +1,19 @@
+import type { SpanKind } from "@opentelemetry/api";
 import {
   context,
   createContextKey,
   diag,
   isSpanContextValid,
   propagation,
-  SpanKind,
   SpanStatusCode,
   trace,
-  type Attributes,
-  type AttributeValue,
-  type Context,
-  type Link,
-  type Span,
+} from "@opentelemetry/api";
+import type {
+  Attributes,
+  AttributeValue,
+  Context,
+  Link,
+  Span,
 } from "@opentelemetry/api";
 import {
   AlwaysOffSampler,
@@ -21,11 +23,13 @@ import {
   ParentBasedSampler,
   SamplingDecision,
   TraceIdRatioBasedSampler,
-  type ReadableSpan,
-  type Sampler,
-  type SamplingResult,
-  type SpanExporter,
-  type SpanProcessor,
+} from "@opentelemetry/sdk-trace-node";
+import type {
+  ReadableSpan,
+  Sampler,
+  SamplingResult,
+  SpanExporter,
+  SpanProcessor,
 } from "@opentelemetry/sdk-trace-node";
 import {
   defaultResource,
@@ -125,7 +129,7 @@ class ZeroDataRetentionSampler implements Sampler {
     spanName: string,
     spanKind: SpanKind,
     attributes: Attributes,
-    links: Link[],
+    links: Array<Link>,
   ): SamplingResult {
     if (hasZeroDataRetentionAttribute(attributes)) {
       markTraceZeroDataRetention(traceId);
@@ -194,7 +198,7 @@ class ZeroDataRetentionSpanProcessor implements SpanProcessor {
  */
 export function samplerFromEnv(name?: string, arg?: string): Sampler {
   const hasArg = arg !== undefined && arg.trim() !== "";
-  const parsedRatio = hasArg ? Number(arg) : NaN;
+  const parsedRatio = hasArg ? Number(arg) : Number.NaN;
   const validRatio =
     Number.isFinite(parsedRatio) && parsedRatio >= 0 && parsedRatio <= 1;
   if (hasArg && !validRatio) {
@@ -279,9 +283,15 @@ export function serializeTraceContext(): SerializedTraceContext {
   propagation.inject(context.active(), carrier);
 
   const serialized: SerializedTraceContext = {};
-  if (carrier.traceparent) serialized.traceparent = carrier.traceparent;
-  if (carrier.tracestate) serialized.tracestate = carrier.tracestate;
-  if (carrier.baggage) serialized.baggage = carrier.baggage;
+  if (carrier.traceparent) {
+    serialized.traceparent = carrier.traceparent;
+  }
+  if (carrier.tracestate) {
+    serialized.tracestate = carrier.tracestate;
+  }
+  if (carrier.baggage) {
+    serialized.baggage = carrier.baggage;
+  }
   return serialized;
 }
 

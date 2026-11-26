@@ -1,6 +1,6 @@
-import { Meta } from "../..";
+import type { Meta } from "../..";
 import { config } from "../../../../config";
-import { EngineScrapeResult } from "..";
+import type { EngineScrapeResult } from "..";
 import {
   downloadFile,
   fetchFileGuardingProxyFailure,
@@ -52,11 +52,18 @@ export {
 export function getIneligibleReason(
   result: Awaited<ReturnType<typeof processPdf>>,
 ): string | null {
-  if (result.pdfType !== "TextBased") return `pdfType=${result.pdfType}`;
-  if (result.confidence < 0.95) return `confidence=${result.confidence}`;
-  if (result.isComplex) return "complex layout (tables/columns)";
-  if (!result.markdown?.length)
+  if (result.pdfType !== "TextBased") {
+    return `pdfType=${result.pdfType}`;
+  }
+  if (result.confidence < 0.95) {
+    return `confidence=${result.confidence}`;
+  }
+  if (result.isComplex) {
+    return "complex layout (tables/columns)";
+  }
+  if (!result.markdown?.length) {
     return "empty markdown (unexpected for TextBased)";
+  }
   return null;
 }
 
@@ -413,5 +420,5 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 }
 
 export function pdfMaxReasonableTime(_meta: Meta): number {
-  return 120000;
+  return 120_000;
 }

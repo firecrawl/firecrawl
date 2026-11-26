@@ -33,7 +33,8 @@ import type {
   UploadsModule,
   WebhooksModule,
 } from "./modules";
-import { createService, replaceService, type CoreParts } from "./service";
+import { createService, replaceService } from "./service";
+import type { CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
 const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
@@ -104,7 +105,9 @@ describe("memoryUploads", () => {
     });
 
     expect(prepared.ok).toBe(true);
-    if (!prepared.ok) throw new Error("expected prepared upload");
+    if (!prepared.ok) {
+      throw new Error("expected prepared upload");
+    }
     expect(prepared.target).toEqual({
       uploadUrl:
         "http://localhost:3002/v2/parse/upload/upload-1?uploadRef=signed.ref%2B1",
@@ -133,7 +136,9 @@ describe("memoryUploads", () => {
       body: Buffer.from("<p>hi</p>"),
     });
     expect(wrongTeam.ok).toBe(false);
-    if (!wrongTeam.ok) expect(wrongTeam.status).toBe(404);
+    if (!wrongTeam.ok) {
+      expect(wrongTeam.status).toBe(404);
+    }
 
     const tooLarge = await driver.receiveUpload!({
       uploadId: "upload-1",
@@ -196,7 +201,9 @@ describe("memoryUploads", () => {
     });
 
     expect(prepared.ok).toBe(true);
-    if (!prepared.ok) throw new Error("expected prepared upload");
+    if (!prepared.ok) {
+      throw new Error("expected prepared upload");
+    }
     expect(prepared.target.headers).toEqual({
       "Content-Type": "application/octet-stream",
     });
@@ -208,7 +215,9 @@ describe("memoryUploads", () => {
       body: Buffer.from("pdf"),
     });
     expect(received.ok).toBe(false);
-    if (!received.ok) expect(received.status).toBe(404);
+    if (!received.ok) {
+      expect(received.status).toBe(404);
+    }
   });
 });
 
@@ -255,7 +264,9 @@ describe("redisIdempotency", () => {
     const seen = new Map<string, number>();
     const idempotency = redisIdempotency({
       setIfAbsent: async (key, ttlSeconds) => {
-        if (seen.has(key)) return false;
+        if (seen.has(key)) {
+          return false;
+        }
         seen.set(key, ttlSeconds);
         return true;
       },

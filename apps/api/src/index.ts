@@ -1,26 +1,26 @@
 import "dotenv/config";
 import { config } from "./config";
 import { shutdownTracing } from "./otel";
-import express, { NextFunction, Request, Response } from "express";
+import type { NextFunction, Request, Response } from "express";
+import express from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
 import { getPrecrawlQueue } from "./services/queue-service";
 import { bindBullBoard } from "./lib/bull-board-registry";
 import { livenessController, readinessController } from "./controllers/health";
 import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
-import os from "os";
+import os from "node:os";
 import { logger } from "./lib/logger";
 import { adminInternalRouter, adminRouter } from "./routes/admin";
-import {
-  AdminKeySlot,
-  adminAuth,
-  adminPathKeyAuth,
-  redactAdminKey,
-} from "./lib/admin-auth";
+import type { AdminKeySlot } from "./lib/admin-auth";
+import { adminAuth, adminPathKeyAuth, redactAdminKey } from "./lib/admin-auth";
 import http from "node:http";
 import https from "node:https";
 import expressWs from "express-ws";
-import { ErrorResponse, RequestWithMaybeACUC } from "./controllers/v2/types";
+import type {
+  ErrorResponse,
+  RequestWithMaybeACUC,
+} from "./controllers/v2/types";
 import { ZodError } from "zod";
 import { QueueFullError } from "./lib/queue-full-error";
 import { v7 as uuidv7 } from "uuid";
@@ -117,7 +117,9 @@ if (!config.BULL_AUTH_KEY) {
       ["current", config.BULL_AUTH_KEY],
       ["previous", config.BULL_AUTH_KEY_PREVIOUS],
     ] as const) {
-      if (!key) continue;
+      if (!key) {
+        continue;
+      }
       const board = new ExpressAdapter();
       board.setBasePath(`/admin/${encodeURIComponent(key)}/queues`);
       attachBullBoard(board);
@@ -243,7 +245,7 @@ async function startServer(port = DEFAULT_PORT) {
     if (config.IS_KUBERNETES) {
       // Account for GCE load balancer drain timeout
       logger.info("Waiting 60s for GCE load balancer drain timeout");
-      await new Promise(resolve => setTimeout(resolve, 60000));
+      await new Promise(resolve => setTimeout(resolve, 60_000));
     }
     const adminInternalClosed = new Promise<void>(resolve =>
       adminInternalServer

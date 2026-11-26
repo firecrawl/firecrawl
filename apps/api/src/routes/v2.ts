@@ -85,7 +85,9 @@ const parsePayloadMiddleware: express.RequestHandler = (req, res, next) => {
     contentType.includes("multipart/form-data")
   ) {
     return parseUploadMiddleware(req, res, err => {
-      if (err) return next(err);
+      if (err) {
+        return next(err);
+      }
       return parseMultipartPayloadMiddleware(req, res, next);
     });
   }

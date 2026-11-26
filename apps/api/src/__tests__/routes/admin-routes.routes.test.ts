@@ -206,10 +206,12 @@ describe("admin routes with the key in the path", () => {
   });
 });
 
-function sourceFiles(dir: string): string[] {
+function sourceFiles(dir: string): Array<string> {
   return readdirSync(dir).flatMap(name => {
     const file = path.join(dir, name);
-    if (statSync(file).isDirectory()) return sourceFiles(file);
+    if (statSync(file).isDirectory()) {
+      return sourceFiles(file);
+    }
     return file.endsWith(".ts") ? [file] : [];
   });
 }
@@ -224,15 +226,22 @@ it("no caller puts the admin key in a URL", () => {
     /(?:\b(\w+)\s*=(?!=)[^;\n]*|\bBULL_AUTH_KEY(?:_PREVIOUS)?\s*:\s*(\w+)\b)/g;
 
   const offenders = sourceFiles(src).filter(file => {
-    if (allowed.has(file)) return false;
+    if (allowed.has(file)) {
+      return false;
+    }
     const text = readFileSync(file, "utf8");
     const names = new Set<string>();
     for (const line of text.split("\n")) {
-      if (!keyRef.test(line)) continue;
+      if (!keyRef.test(line)) {
+        continue;
+      }
       for (const match of line.matchAll(alias)) {
-        if (match[1] && /=[^;\n]*BULL_AUTH_KEY/.test(line.slice(match.index)))
+        if (match[1] && /=[^;\n]*BULL_AUTH_KEY/.test(line.slice(match.index))) {
           names.add(match[1]);
-        if (match[2]) names.add(match[2]);
+        }
+        if (match[2]) {
+          names.add(match[2]);
+        }
       }
     }
     const aliasRef = names.size

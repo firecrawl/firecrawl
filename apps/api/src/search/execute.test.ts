@@ -39,7 +39,7 @@ function options(categories: Array<{ type: string }>) {
     limit: 10,
     sources: [{ type: "web" }],
     categories,
-    timeout: 1_000,
+    timeout: 1000,
   } as any;
 }
 

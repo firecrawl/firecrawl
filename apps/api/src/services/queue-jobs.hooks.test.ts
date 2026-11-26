@@ -13,13 +13,13 @@ const mocks = vi.hoisted(() => {
 
   const redis = {
     zremrangebyscore: vi.fn(async () => 0),
-    zrangebyscore: vi.fn(async (): Promise<string[]> => []),
-    zrange: vi.fn(async (): Promise<string[]> => []),
+    zrangebyscore: vi.fn(async (): Promise<Array<string>> => []),
+    zrange: vi.fn(async (): Promise<Array<string>> => []),
     zcount: vi.fn(async () => 0),
     zadd: vi.fn(async () => 1),
     zrem: vi.fn(async () => 1),
-    zpopmin: vi.fn(async (): Promise<string[]> => []),
-    zscan: vi.fn(async (): Promise<[string, string[]]> => ["0", []]),
+    zpopmin: vi.fn(async (): Promise<Array<string>> => []),
+    zscan: vi.fn(async (): Promise<[string, Array<string>]> => ["0", []]),
     get: vi.fn(async (): Promise<string | null> => null),
     del: vi.fn(async () => 1),
     pipeline: vi.fn(() => pipeline),
@@ -32,16 +32,16 @@ const mocks = vi.hoisted(() => {
     resolveJobBackend: vi.fn(async (): Promise<"pg" | "fdb"> => "pg"),
     fdbEnqueueScrapeJobs: vi.fn(),
     addJob: vi.fn(async (id: string, data: any) => ({ id, data })),
-    addJobs: vi.fn(async (jobs: any[]) =>
+    addJobs: vi.fn(async (jobs: Array<any>) =>
       jobs.map(job => ({ id: job.id, data: job.data })),
     ),
     promoteJobFromBacklogOrAdd: vi.fn(async (id: string, data: any) => ({
       id,
       data,
     })),
-    getBackloggedJobIDsOfOwner: vi.fn(async (): Promise<string[]> => []),
-    getJobsFromBacklog: vi.fn(async (): Promise<any[]> => []),
-    getJobs: vi.fn(async (): Promise<any[]> => []),
+    getBackloggedJobIDsOfOwner: vi.fn(async (): Promise<Array<string>> => []),
+    getJobsFromBacklog: vi.fn(async (): Promise<Array<any>> => []),
+    getJobs: vi.fn(async (): Promise<Array<any>> => []),
     getACUCTeam: vi.fn(async () => ({ concurrency_limit: 2 })),
     getCrawl: vi.fn(async (): Promise<any> => null),
     abTestJob: vi.fn(),
@@ -252,7 +252,7 @@ describe("queue and concurrency hooks", () => {
   });
 
   it("emits concurrency.limited on PG backlog and job.enqueued upon promotion", async () => {
-    const events: string[] = [];
+    const events: Array<string> = [];
     installHooks({
       "concurrency.limited": event => {
         events.push(`limited:${event.ctx.teamId}:${event.limit}`);
@@ -296,7 +296,7 @@ describe("queue and concurrency hooks", () => {
   });
 
   it("emits concurrency.limited for PG batch overflow and both hooks for FDB backlogged enqueues", async () => {
-    const events: string[] = [];
+    const events: Array<string> = [];
     const report = installHooks({
       "job.enqueued": event => {
         events.push(`enqueued:${event.jobId}:${event.kind}`);
@@ -362,7 +362,7 @@ describe("queue and concurrency hooks", () => {
   });
 
   it("emits concurrency.limited for PG crawl-limit backlogs and job.enqueued for reconciler promotions", async () => {
-    const events: string[] = [];
+    const events: Array<string> = [];
     installHooks({
       "concurrency.limited": event => {
         events.push(`limited:${event.ctx.teamId}:${event.limit}`);

@@ -14,24 +14,30 @@ redisRateLimitClient.on("error", error => {
       logger.error("Connection to Redis Session Rate Limit Store timed out.");
     } else if (error.message === "ECONNREFUSED") {
       logger.error("Connection to Redis Session Rate Limit Store refused!");
-    } else logger.error(error);
-  } catch (error) {}
+    } else {
+      logger.error(error);
+    }
+  } catch {}
 });
 
 // Listen to 'reconnecting' event to Redis
 redisRateLimitClient.on("reconnecting", err => {
   try {
-    if (redisRateLimitClient.status === "reconnecting")
+    if (redisRateLimitClient.status === "reconnecting") {
       logger.info("Reconnecting to Redis Session Rate Limit Store...");
-    else logger.error("Error reconnecting to Redis Session Rate Limit Store.");
-  } catch (error) {}
+    } else {
+      logger.error("Error reconnecting to Redis Session Rate Limit Store.");
+    }
+  } catch {}
 });
 
 // Listen to the 'connect' event to Redis
 redisRateLimitClient.on("connect", err => {
   try {
-    if (!err) logger.info("Connected to Redis Session Rate Limit Store!");
-  } catch (error) {}
+    if (!err) {
+      logger.info("Connected to Redis Session Rate Limit Store!");
+    }
+  } catch {}
 });
 
 /**
@@ -85,7 +91,9 @@ export const redisEvictConnection = new IORedis(redisEvictURL!, {
 const redisCrawlStateURL = config.REDIS_CRAWL_STATE_URL || redisEvictURL;
 
 function crawlStateConnection(url: string): IORedis {
-  if (url === redisEvictURL) return redisEvictConnection;
+  if (url === redisEvictURL) {
+    return redisEvictConnection;
+  }
   return new IORedis(url, {
     lazyConnect: true,
     enableAutoPipelining: true,

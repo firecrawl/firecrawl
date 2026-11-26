@@ -28,9 +28,8 @@ const builtInLlmProviders = {
 } as const satisfies Partial<Record<LlmProviderName, true>>;
 
 /** Built-in LLM provider names, in registration order. */
-export const coreLlmProviderNames: readonly LlmProviderName[] = Object.freeze(
-  Object.keys(builtInLlmProviders) as LlmProviderName[],
-);
+export const coreLlmProviderNames: ReadonlyArray<LlmProviderName> =
+  Object.freeze(Object.keys(builtInLlmProviders) as Array<LlmProviderName>);
 
 /** Language model instance returned by an LLM provider. */
 export type LlmModel = Parameters<typeof wrapLanguageModel>[0]["model"];
@@ -57,9 +56,9 @@ export interface LlmProvider {
 /** The LLM providers registered on a service. */
 export interface LlmProviderRegistry {
   /** Every registered provider in registration order, without calling `enabled()`. */
-  all(): readonly LlmProvider[];
+  all(): ReadonlyArray<LlmProvider>;
   /** Providers whose `enabled()` returns true at call time, in registration order. */
-  enabled(): readonly LlmProvider[];
+  enabled(): ReadonlyArray<LlmProvider>;
   /** The registered provider for `name`, whether currently enabled or not. */
   get(name: LlmProviderName | (string & {})): LlmProvider | undefined;
 }
@@ -67,7 +66,7 @@ export interface LlmProviderRegistry {
 /** @internal */
 export interface LlmProviderRegistrySource {
   owner: string;
-  llmProviders?: readonly LlmProvider[];
+  llmProviders?: ReadonlyArray<LlmProvider>;
 }
 
 const sortedByKey = <T>(record: Record<string, T>): Record<string, T> =>
@@ -103,7 +102,7 @@ function snapshotLlmProvider(provider: LlmProvider): LlmProvider {
  * @internal
  */
 export function buildLlmProviderRegistry(
-  sources: readonly LlmProviderRegistrySource[],
+  sources: ReadonlyArray<LlmProviderRegistrySource>,
 ): {
   registry: LlmProviderRegistry;
   describedLlmProviders: Record<string, string>;

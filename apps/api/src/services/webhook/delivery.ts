@@ -1,16 +1,16 @@
 import undici from "undici";
-import { createHmac, randomUUID } from "crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import {
   getSecureDispatcherNoCookies,
   isIPPrivate,
 } from "../../scraper/scrapeURL/engines/utils/safeFetch";
-import {
-  service,
-  type WebhookContext,
-  type WebhookDelivery,
-  type WebhookResponse,
+import { service } from "../../service";
+import type {
+  WebhookContext,
+  WebhookDelivery,
+  WebhookResponse,
 } from "../../service";
 import type { WebhookConfig, WebhookEvent, WebhookEventDataMap } from "./types";
 
@@ -23,7 +23,7 @@ type WebhookSendResult = {
 };
 
 export function webhookEventMatchesFilter(
-  configuredEvents: string[] | undefined,
+  configuredEvents: Array<string> | undefined,
   event: WebhookEvent,
 ): boolean {
   if (!configuredEvents?.length) {
@@ -122,7 +122,7 @@ export class WebhookSender {
       return { delivered: false, skipped: true };
     }
 
-    const timeoutMs = this.context.v0 ? 30000 : 10000;
+    const timeoutMs = this.context.v0 ? 30_000 : 10_000;
     const ctx: WebhookContext = {
       teamId: this.context.teamId,
       zeroDataRetention: Boolean(this.context.zeroDataRetention),

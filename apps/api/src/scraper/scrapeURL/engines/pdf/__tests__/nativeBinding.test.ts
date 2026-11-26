@@ -1,6 +1,6 @@
-import { mkdtempSync, writeFileSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import path from "path";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { processPdf, detectPdf } from "@mendable/firecrawl-rs";
 
 /**
@@ -13,8 +13,8 @@ import { processPdf, detectPdf } from "@mendable/firecrawl-rs";
 
 /** Minimal valid PDF writer — no fixtures checked into the repo. */
 function makePdf(pages: number, linesPerPage: number): Buffer {
-  const kids: string[] = [];
-  const objects: [number, string][] = [];
+  const kids: Array<string> = [];
+  const objects: Array<[number, string]> = [];
   let nextId = 4;
 
   for (let i = 0; i < pages; i++) {
@@ -25,7 +25,7 @@ function makePdf(pages: number, linesPerPage: number): Buffer {
     // NB: keep the page/line numbers at the END of the sentence — a leading
     // "Page N line M:" prefix trips the extractor's header/boilerplate filter
     // and the line gets dropped.
-    const lines: string[] = [
+    const lines: Array<string> = [
       `(The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. Page ${i + 1}, line 0.) Tj`,
     ];
     for (let j = 1; j < linesPerPage; j++) {
@@ -34,14 +34,13 @@ function makePdf(pages: number, linesPerPage: number): Buffer {
       );
     }
     const text = `BT /F1 12 Tf 72 720 Td ${lines.join(" ")} ET`;
-    objects.push([
-      pageId,
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>`,
-    ]);
-    objects.push([
-      contentId,
-      `<< /Length ${text.length} >>\nstream\n${text}\nendstream`,
-    ]);
+    objects.push(
+      [
+        pageId,
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>`,
+      ],
+      [contentId, `<< /Length ${text.length} >>\nstream\n${text}\nendstream`],
+    );
   }
 
   objects.unshift(

@@ -1,5 +1,5 @@
-import { platform } from "os";
-import { join } from "path";
+import { platform } from "node:os";
+import { join } from "node:path";
 
 const currentPlatform = platform();
 const isWindows = currentPlatform === "win32";

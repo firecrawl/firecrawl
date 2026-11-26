@@ -5,9 +5,9 @@ import {
   TEST_SELF_HOST,
   TEST_SUITE_WEBSITE,
 } from "../lib";
+import type { Identity } from "./lib";
 import {
   idmux,
-  Identity,
   monitorCheckRaw,
   monitorCreateRaw,
   monitorDeleteRaw,
@@ -28,9 +28,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     identity = await idmux({
       name: "monitor",
       concurrency: 20,
-      credits: 1000000,
+      credits: 1_000_000,
     });
-  }, 10000);
+  }, 10_000);
 
   it(
     "reserves the known PDF page cost before a repeat monitor run",
@@ -66,8 +66,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
             ["completed", "partial", "failed", "skipped_no_credits"].includes(
               check.status,
             )
-          )
+          ) {
             break;
+          }
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
         expect(check.status).toBe("completed");
@@ -134,10 +135,10 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     beforeAll(async () => {
       searchZdr = await idmux({
         name: "monitor/search-zdr",
-        credits: 10000,
+        credits: 10_000,
         flags: { searchZDR: "forced-zdr" },
       });
-    }, 10000);
+    }, 10_000);
 
     it("refuses a search monitor", async () => {
       const create = await monitorCreateRaw(
@@ -206,10 +207,10 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     beforeAll(async () => {
       lockdown = await idmux({
         name: "monitor/lockdown",
-        credits: 10000,
+        credits: 10_000,
         flags: { safeMode: true, safeModeConfig: { lockdown: true } },
       });
-    }, 10000);
+    }, 10_000);
 
     it("refuses a search monitor", async () => {
       const create = await monitorCreateRaw(
@@ -357,7 +358,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         const raw = await monitorCheckRaw(monitorId, checkId, identity);
         expect(raw.statusCode).toBe(200);
         check = raw.body.data;
-        if (["completed", "partial", "failed"].includes(check.status)) break;
+        if (["completed", "partial", "failed"].includes(check.status)) {
+          break;
+        }
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
@@ -430,7 +433,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         const raw = await monitorCheckRaw(monitorId, checkId, identity);
         expect(raw.statusCode).toBe(200);
         check = raw.body.data;
-        if (["completed", "partial", "failed"].includes(check.status)) break;
+        if (["completed", "partial", "failed"].includes(check.status)) {
+          break;
+        }
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
       expect(["completed", "partial"]).toContain(check.status);
@@ -496,7 +501,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         const raw = await monitorCheckRaw(monitorId, checkId, identity);
         expect(raw.statusCode).toBe(200);
         check = raw.body.data;
-        if (["completed", "partial", "failed"].includes(check.status)) break;
+        if (["completed", "partial", "failed"].includes(check.status)) {
+          break;
+        }
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
       // Contract: deterministicJson is accepted, the reusable-json-mode extractor
@@ -558,7 +565,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         const raw = await monitorCheckRaw(monitorId, checkId, identity);
         expect(raw.statusCode).toBe(200);
         check = raw.body.data;
-        if (["completed", "partial", "failed"].includes(check.status)) break;
+        if (["completed", "partial", "failed"].includes(check.status)) {
+          break;
+        }
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
       expect(["completed", "partial"]).toContain(check.status);
@@ -735,7 +744,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         const raw = await monitorCheckRaw(monitorId, checkId, identity);
         expect(raw.statusCode).toBe(200);
         check = raw.body.data;
-        if (["completed", "partial", "failed"].includes(check.status)) break;
+        if (["completed", "partial", "failed"].includes(check.status)) {
+          break;
+        }
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
       expect(["completed", "partial"]).toContain(check.status);

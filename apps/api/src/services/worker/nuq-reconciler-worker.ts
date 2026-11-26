@@ -69,7 +69,9 @@ export async function start() {
   );
 
   async function shutdown() {
-    if (isShuttingDown) return;
+    if (isShuttingDown) {
+      return;
+    }
     isShuttingDown = true;
     _logger.info("NuQ reconciler worker shutting down");
 

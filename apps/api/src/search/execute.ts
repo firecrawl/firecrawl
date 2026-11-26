@@ -1,20 +1,26 @@
 import type { Logger } from "winston";
 import { search } from "./v2";
-import {
+import type {
   SearchV2Response,
   SearchResultType,
   WebSearchResult,
   SearchResultCountsBySource,
   SearchResultCategoriesBySource,
+} from "../lib/entities";
+import {
   countSearchResultsBySource,
   collectSearchResultCategories,
 } from "../lib/entities";
+import type { CategoryOption } from "../lib/search-query-builder";
 import {
   buildSearchQuery,
   getCategoryFromUrl,
-  CategoryOption,
 } from "../lib/search-query-builder";
-import { Document, ScrapeOptions, TeamFlags } from "../controllers/v2/types";
+import type {
+  Document,
+  ScrapeOptions,
+  TeamFlags,
+} from "../controllers/v2/types";
 import {
   getItemsToScrape,
   scrapeSearchResults,
@@ -44,10 +50,10 @@ interface SearchOptions {
   location?: string;
   safe?: boolean;
   sources: Array<{ type: string }>;
-  categories?: CategoryOption[];
-  includeDomains?: string[];
-  excludeDomains?: string[];
-  enterprise?: ("default" | "anon" | "zdr")[];
+  categories?: Array<CategoryOption>;
+  includeDomains?: Array<string>;
+  excludeDomains?: Array<string>;
+  enterprise?: Array<"default" | "anon" | "zdr">;
   scrapeOptions?: ScrapeOptions;
   highlights?: boolean;
   domainTools?: boolean;
@@ -101,10 +107,10 @@ interface SearchExecuteResult {
   resultCountsBySource: SearchResultCountsBySource;
   resultCategories: SearchResultCategoriesBySource;
   indexResultsCount: number;
-  threatDecisions: unknown[];
-  scrapedDocuments: Document[];
-  searchTypes: SearchResultType[];
-  scrapeFormats: string[];
+  threatDecisions: Array<unknown>;
+  scrapedDocuments: Array<Document>;
+  searchTypes: Array<SearchResultType>;
+  scrapeFormats: Array<string>;
   shouldScrape: boolean;
 }
 
@@ -203,7 +209,8 @@ export async function executeSearch(
   ];
   const operatorPlan = planOperatorQuery(query);
   const { operators } = operatorPlan;
-  const nonEmpty = (list: string[]) => (list.length > 0 ? list : undefined);
+  const nonEmpty = (list: Array<string>) =>
+    list.length > 0 ? list : undefined;
   const { query: searchQuery, categoryMap } = buildSearchQuery(
     operatorPlan.query,
     categories,
@@ -244,12 +251,10 @@ export async function executeSearch(
         });
 
   const searchResponse: SearchV2Response =
-    webSearchPromise === null
-      ? ({} as SearchV2Response)
-      : ((await webSearchPromise) as SearchV2Response);
+    webSearchPromise === null ? {} : await webSearchPromise;
 
   if (Array.isArray(searchState.routedResults)) {
-    const routedWeb = searchState.routedResults as WebSearchResult[];
+    const routedWeb = searchState.routedResults as Array<WebSearchResult>;
     searchResponse.web = (
       searchResponse.web
         ? [...routedWeb, ...searchResponse.web]
@@ -260,8 +265,8 @@ export async function executeSearch(
   const keepOperatorMatches = <
     T extends { url?: string; title?: string; position?: number },
   >(
-    results: T[] | undefined,
-  ): T[] | undefined => {
+    results: Array<T> | undefined,
+  ): Array<T> | undefined => {
     const kept = results?.filter(result =>
       matchesQueryOperators(result, operatorPlan),
     );
@@ -282,9 +287,9 @@ export async function executeSearch(
           item: NonNullable<SearchV2Response["images"]>[number];
         };
 
-    const hits: SearchHit[] = [];
+    const hits: Array<SearchHit> = [];
     const byRef = new Map<SearchHit, ResultEntry>();
-    const byUrl = new Map<string, ResultEntry[]>();
+    const byUrl = new Map<string, Array<ResultEntry>>();
     const newsWithoutUrl: Array<{
       index: number;
       item: NonNullable<SearchV2Response["news"]>[number];
@@ -378,7 +383,7 @@ export async function executeSearch(
       logger,
     });
 
-    const nextWeb: WebSearchResult[] = [];
+    const nextWeb: Array<WebSearchResult> = [];
     const nextNews: NonNullable<SearchV2Response["news"]> = [];
     const nextImages: NonNullable<SearchV2Response["images"]> = [];
     const consumed = new Set<ResultEntry>();
@@ -490,7 +495,9 @@ export async function executeSearch(
     }
   }
 
-  const threatDecisions: unknown[] = Array.isArray(searchState.threatDecisions)
+  const threatDecisions: Array<unknown> = Array.isArray(
+    searchState.threatDecisions,
+  )
     ? searchState.threatDecisions
     : [];
 
@@ -543,7 +550,7 @@ export async function executeSearch(
     0,
     totalResultsCount - nonBillableResultsCount,
   );
-  let scrapedDocuments: Document[] = [];
+  let scrapedDocuments: Array<Document> = [];
 
   const shouldScrape =
     scrapeOptions?.formats && scrapeOptions.formats.length > 0;

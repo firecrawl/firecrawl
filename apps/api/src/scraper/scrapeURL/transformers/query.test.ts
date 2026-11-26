@@ -36,7 +36,7 @@ const noopLogger = {
   debug: () => {},
 } as any;
 
-function makeMeta(formats: any[]) {
+function makeMeta(formats: Array<any>) {
   return {
     id: "scrape-id",
     url: "https://example.com",
@@ -76,7 +76,7 @@ function countTokens(text: string): number {
 }
 
 // The numbered lines sent to the directQuote model.
-function sentLines(prompt: string): string[] {
+function sentLines(prompt: string): Array<string> {
   return prompt.split("<lines")[1].split("\n").slice(1, -1);
 }
 

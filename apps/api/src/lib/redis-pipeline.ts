@@ -7,12 +7,12 @@
 //   "Redis pipeline command failed"
 // — so all of these events are filterable by that message across services.
 
-type PipelineResults = [Error | null, unknown][] | null;
+type PipelineResults = Array<[Error | null, unknown]> | null;
 
 // Dragonfly rejects commands with more than 2^16 arguments ("invalid
 // multibulk length"), so variadic commands over unbounded collections must
 // be chunked well below that limit.
-export const REDIS_COMMAND_ARG_CHUNK_SIZE = 16000;
+export const REDIS_COMMAND_ARG_CHUNK_SIZE = 16_000;
 
 export function firstPipelineError(results: PipelineResults): Error | null {
   const err = (results ?? []).find(([e]) => e)?.[0];

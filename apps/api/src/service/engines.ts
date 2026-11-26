@@ -99,9 +99,9 @@ export interface DescribedEngineFeature {
 /** The scrape engines and feature priorities registered on a service. */
 export interface EngineRegistry {
   /** Every registered engine in registration order, without calling `enabled()`. */
-  all(): readonly Engine[];
+  all(): ReadonlyArray<Engine>;
   /** Engines whose `enabled()` returns true at call time, in registration order. */
-  enabled(): readonly Engine[];
+  enabled(): ReadonlyArray<Engine>;
   /** The registered engine for `name`, whether currently enabled or not. */
   get(name: EngineName | (string & {})): Engine | undefined;
   /** The registered definition for `name`, or undefined if unregistered. */
@@ -115,7 +115,7 @@ export interface EngineRegistry {
 /** @internal */
 export interface EngineRegistrySource {
   owner: string;
-  engines?: readonly Engine[];
+  engines?: ReadonlyArray<Engine>;
   engineFeatures?: EngineFeatureMap;
 }
 
@@ -180,7 +180,9 @@ function snapshotEngine(engine: Engine): Engine {
  *
  * @internal
  */
-export function buildEngineRegistry(sources: readonly EngineRegistrySource[]): {
+export function buildEngineRegistry(
+  sources: ReadonlyArray<EngineRegistrySource>,
+): {
   registry: EngineRegistry;
   describedEngines: Record<string, string>;
   describedFeatures: Record<string, DescribedEngineFeature>;
@@ -200,7 +202,9 @@ export function buildEngineRegistry(sources: readonly EngineRegistrySource[]): {
     }
 
     for (const [name, feature] of Object.entries(source.engineFeatures ?? {})) {
-      if (feature === undefined) continue;
+      if (feature === undefined) {
+        continue;
+      }
       if (
         typeof feature.priority !== "number" ||
         !Number.isFinite(feature.priority) ||

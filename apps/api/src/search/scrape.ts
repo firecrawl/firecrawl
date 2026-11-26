@@ -1,13 +1,17 @@
 import { v7 as uuidv7 } from "uuid";
 import type { Logger } from "winston";
-import { Document, ScrapeOptions, TeamFlags } from "../controllers/v2/types";
+import type {
+  Document,
+  ScrapeOptions,
+  TeamFlags,
+} from "../controllers/v2/types";
 import { CostTracking } from "../lib/cost-tracking";
 import { resolveJobPriority } from "../lib/limits";
 import { service } from "../service";
-import { NuQJob } from "../services/worker/nuq";
+import type { NuQJob } from "../services/worker/nuq";
 import { processJobInternal } from "../services/worker/scrape-worker";
-import { ScrapeJobData } from "../types";
-import { SearchV2Response } from "../lib/entities";
+import type { ScrapeJobData } from "../types";
+import type { SearchV2Response } from "../lib/entities";
 import type { BillingMetadata } from "../lib/billing-types";
 import {
   contextThreatProtection,
@@ -177,8 +181,8 @@ export function getItemsToScrape(
     safeMode?: boolean;
     ctx?: RequestContext;
   },
-): ScrapeItem[] {
-  const items: ScrapeItem[] = [];
+): Array<ScrapeItem> {
+  const items: Array<ScrapeItem> = [];
   const forcedScrapeZdr = hasForcedScrapeZdr(context?.ctx?.flags ?? flags);
   const blockZeroDataRetention =
     (context?.ctx?.zeroDataRetention ?? false) ||
@@ -259,11 +263,11 @@ export function getItemsToScrape(
 }
 
 export async function scrapeSearchResults(
-  items: ScrapeJobInput[],
+  items: Array<ScrapeJobInput>,
   options: ScrapeSearchOptions,
   logger: Logger,
   flags: TeamFlags,
-): Promise<DocumentWithCostTracking[]> {
+): Promise<Array<DocumentWithCostTracking>> {
   if (items.length === 0) {
     return [];
   }
@@ -317,8 +321,8 @@ export async function scrapeSearchResults(
 
 export function mergeScrapedContent(
   searchResponse: SearchV2Response,
-  items: ScrapeItem[],
-  docs: DocumentWithCostTracking[],
+  items: Array<ScrapeItem>,
+  docs: Array<DocumentWithCostTracking>,
 ): void {
   const resultsMap = new Map<string, Document>();
   items.forEach((item, index) => {

@@ -1,9 +1,9 @@
 import { createXai } from "@ai-sdk/xai";
 import { context, propagation, trace } from "@opentelemetry/api";
-import {
-  InMemorySpanExporter,
-  type NodeTracerProvider,
-  type ReadableSpan,
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-node";
+import type {
+  NodeTracerProvider,
+  ReadableSpan,
 } from "@opentelemetry/sdk-trace-node";
 import { APICallError, generateObject, generateText, streamText } from "ai";
 import { convertArrayToReadableStream, MockLanguageModelV3 } from "ai/test";
@@ -212,8 +212,11 @@ describe("usage telemetry middleware", () => {
       resetService?.();
       vi.unstubAllGlobals();
       for (const [key, value] of Object.entries(savedEnv)) {
-        if (value === undefined) delete process.env[key];
-        else process.env[key] = value;
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
       }
       // Drop the generic-ai/config instances bound to the test env above.
       vi.resetModules();

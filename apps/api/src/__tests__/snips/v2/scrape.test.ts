@@ -13,6 +13,7 @@ import {
   HAS_AI,
   ALLOW_TEST_SUITE_WEBSITE,
 } from "../lib";
+import type { Identity } from "./lib";
 import {
   scrape,
   scrapeWithFailure,
@@ -20,13 +21,12 @@ import {
   scrapeTimeout,
   indexCooldown,
   idmux,
-  Identity,
   scrapeRaw,
   creditUsage,
   TEST_API_URL,
 } from "./lib";
 import request from "./lib";
-import crypto from "crypto";
+import crypto from "node:crypto";
 import { z } from "zod";
 
 const stringbool = z.stringbool().catch(false);
@@ -37,9 +37,9 @@ beforeAll(async () => {
   identity = await idmux({
     name: "scrape",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000 + scrapeTimeout);
+}, 10_000 + scrapeTimeout);
 
 describe("Scrape tests", () => {
   const base = TEST_SUITE_WEBSITE;
@@ -81,7 +81,7 @@ describe("Scrape tests", () => {
           {
             url: base,
             waitFor: 8000,
-            timeout: 15000,
+            timeout: 15_000,
           },
           identity,
         );
@@ -103,8 +103,8 @@ describe("Scrape tests", () => {
         const raw = await scrapeRaw(
           {
             url: base,
-            waitFor: 15000,
-            timeout: 15000,
+            waitFor: 15_000,
+            timeout: 15_000,
           },
           identity,
         );
@@ -126,8 +126,8 @@ describe("Scrape tests", () => {
         const raw = await scrapeRaw(
           {
             url: base,
-            waitFor: 20000,
-            timeout: 15000,
+            waitFor: 20_000,
+            timeout: 15_000,
           },
           identity,
         );
@@ -150,7 +150,7 @@ describe("Scrape tests", () => {
       const raw = await scrapeRaw(
         {
           url: "not-a-valid-url",
-        } as any,
+        },
         identity,
       );
 
@@ -259,7 +259,7 @@ describe("Scrape tests", () => {
       );
 
       expect(response.markdown?.trim()).toContain(
-        config.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
+        (config.PROXY_SERVER!.split("://").at(-1) ?? "").split(":")[0],
       );
     },
     scrapeTimeout,
@@ -278,7 +278,7 @@ describe("Scrape tests", () => {
       );
 
       expect(response.markdown?.trim()).toContain(
-        config.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
+        (config.PROXY_SERVER!.split("://").at(-1) ?? "").split(":")[0],
       );
     },
     scrapeTimeout,
@@ -536,11 +536,11 @@ describe("Scrape tests", () => {
         blockedIdentity,
       );
 
-      await new Promise(resolve => setTimeout(resolve, 40000));
+      await new Promise(resolve => setTimeout(resolve, 40_000));
       const rc2 = (await creditUsage(blockedIdentity)).remainingCredits;
       expect(rc1 - rc2).toBe(5);
     },
-    scrapeTimeout + 40000,
+    scrapeTimeout + 40_000,
   );
 
   itIf(TEST_SELF_HOST && !HAS_FIRE_ENGINE && ALLOW_TEST_SUITE_WEBSITE)(
@@ -592,7 +592,7 @@ describe("Scrape tests", () => {
         );
 
         expect(response.markdown).toContain("access_policies");
-        expect(response.markdown).not.toContain("access\\_policies");
+        expect(response.markdown).not.toContain(String.raw`access\_policies`);
       },
       scrapeTimeout,
     );
@@ -1407,7 +1407,7 @@ describe("Scrape tests", () => {
             {
               url: `${base}/example-long.pdf`,
               maxAge: 0,
-              timeout: 10000,
+              timeout: 10_000,
             },
             identity,
           );
@@ -1416,7 +1416,7 @@ describe("Scrape tests", () => {
             "pages, which requires more processing time than your current timeout allows.",
           );
         },
-        12000,
+        12_000,
       );
 
       it.concurrent(

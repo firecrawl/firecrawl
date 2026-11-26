@@ -325,7 +325,7 @@ export function getErrorScrapeLog(error: unknown): ErrorScrapeLog | undefined {
 
 /** A class of transportable error, registered under the codes it carries. */
 export interface TransportableErrorClass {
-  readonly codes: readonly ErrorCode[];
+  readonly codes: ReadonlyArray<ErrorCode>;
   /** Rebuilds an error from the parsed payload its `serialize()` wrote. */
   deserialize(code: ErrorCode, data: any): TransportableError;
 }
@@ -355,7 +355,7 @@ type ScrapeTimeoutProcessingDetails = {
  * median). Kept as a default parameter here so lib/error stays free of
  * scraper imports; keep the two constants in lockstep or the retry
  * hints understate what the deadline actually allows. */
-const PROCESSING_ESTIMATE_PER_PAGE_MS = 1_250;
+const PROCESSING_ESTIMATE_PER_PAGE_MS = 1250;
 /** Fixed overhead the estimate grants beyond pure page work: queue
  * pickup, render bootstrap, result assembly. */
 const PROCESSING_ESTIMATE_BASE_MS = 60_000;
@@ -438,13 +438,15 @@ export function getTimeoutProcessingDetails(
 ): ScrapeTimeoutProcessingDetails | undefined {
   if (isTransportableError(e) && e.code === "SCRAPE_TIMEOUT") {
     const p = (e as ScrapeJobTimeoutError).processing;
-    if (p && p.state === "processing_continues") return p;
+    if (p && p.state === "processing_continues") {
+      return p;
+    }
   }
   return undefined;
 }
 
 export class ScrapeJobTimeoutError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_TIMEOUT"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["SCRAPE_TIMEOUT"];
 
   constructor(
     message: string = "The scrape operation timed out before completing. This happens when a page takes too long to load, render, or process. Possible causes: (1) The website is slow or unresponsive, (2) The page has heavy JavaScript that takes time to execute, (3) The page is very large or has many resources to load, (4) Network latency is high. To fix this, try increasing the timeout parameter in your scrape request, or if using actions, ensure your selectors are correct and the page is ready before actions are executed.",
@@ -471,7 +473,9 @@ export class ScrapeJobTimeoutError extends TransportableError {
 }
 
 export class ConcurrencyQueueTimeoutError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["CONCURRENCY_QUEUE_TIMEOUT"];
+  static readonly codes: ReadonlyArray<ErrorCode> = [
+    "CONCURRENCY_QUEUE_TIMEOUT",
+  ];
 
   constructor(
     message: string = "The operation timed out while waiting for a concurrency slot to become available. This means that your requests are exhausting your concurrent browsers limit. Consider using batch endpoints which wait for concurrency slots to become available indefinitely, or consider upgrading your plan to incrase your concurrency limit at https://firecrawl.dev/pricing.",
@@ -494,7 +498,7 @@ export class ConcurrencyQueueTimeoutError extends TransportableError {
 }
 
 export class UnknownError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["UNKNOWN_ERROR"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["UNKNOWN_ERROR"];
 
   constructor(inner: unknown) {
     const innerMessage =
@@ -525,7 +529,7 @@ export class UnknownError extends TransportableError {
 }
 
 export class MapTimeoutError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["MAP_TIMEOUT"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["MAP_TIMEOUT"];
 
   constructor() {
     super(
@@ -549,7 +553,7 @@ export class MapTimeoutError extends TransportableError {
 }
 
 export class MapFailedError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["MAP_FAILED"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["MAP_FAILED"];
 
   constructor(message: string) {
     super("MAP_FAILED", message);
@@ -570,7 +574,9 @@ export class MapFailedError extends TransportableError {
 }
 
 export class RacedRedirectError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_RACED_REDIRECT_ERROR"];
+  static readonly codes: ReadonlyArray<ErrorCode> = [
+    "SCRAPE_RACED_REDIRECT_ERROR",
+  ];
 
   constructor() {
     super(
@@ -594,7 +600,7 @@ export class RacedRedirectError extends TransportableError {
 }
 
 export class SitemapError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_SITEMAP_ERROR"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["SCRAPE_SITEMAP_ERROR"];
 
   constructor(message: string, cause?: unknown) {
     super("SCRAPE_SITEMAP_ERROR", message, { cause });
@@ -615,7 +621,7 @@ export class SitemapError extends TransportableError {
 }
 
 export class CrawlDenialError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["CRAWL_DENIAL"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["CRAWL_DENIAL"];
 
   /** The URL robots.txt disallows, or null when robots.txt did not cause the denial. */
   public robotsBlockedUrl: string | null;
@@ -649,7 +655,7 @@ export class CrawlDenialError extends TransportableError {
 }
 
 export class UnsupportedSiteError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["UNSUPPORTED_SITE"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["UNSUPPORTED_SITE"];
 
   constructor() {
     super("UNSUPPORTED_SITE", UNSUPPORTED_SITE_MESSAGE);
@@ -670,7 +676,7 @@ export class UnsupportedSiteError extends TransportableError {
 }
 
 export class ActionsNotSupportedError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = [
+  static readonly codes: ReadonlyArray<ErrorCode> = [
     "SCRAPE_ACTIONS_NOT_SUPPORTED",
   ];
 

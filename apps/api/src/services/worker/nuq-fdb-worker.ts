@@ -57,7 +57,7 @@ function startCrawlFinishedLoop() {
       if (job === null) {
         await new Promise(resolve => setTimeout(resolve, noJobTimeout));
         if (!config.NUQ_RABBITMQ_URL) {
-          noJobTimeout = Math.min(noJobTimeout * 2, 10000);
+          noJobTimeout = Math.min(noJobTimeout * 2, 10_000);
         }
         continue;
       }
@@ -86,7 +86,7 @@ function startCrawlFinishedLoop() {
           logger.warn("Failed to renew crawl finished lock", { error });
           clearInterval(lockRenewInterval);
         }
-      }, 15000);
+      }, 15_000);
 
       try {
         await processFinishCrawlJobInternal(job as any);

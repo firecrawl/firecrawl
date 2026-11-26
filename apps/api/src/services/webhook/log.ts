@@ -1,6 +1,6 @@
 type WebhookLogFields = {
   host: string | null;
-  events?: string[];
+  events?: Array<string>;
   headerCount: number;
 };
 
@@ -19,11 +19,15 @@ function hostOf(url: string): string | null {
 export function summarizeWebhookForLog(
   webhook: unknown,
 ): WebhookLogFields | undefined {
-  if (webhook === undefined || webhook === null) return undefined;
+  if (webhook === undefined || webhook === null) {
+    return undefined;
+  }
   if (typeof webhook === "string") {
     return { host: hostOf(webhook), headerCount: 0 };
   }
-  if (typeof webhook !== "object") return undefined;
+  if (typeof webhook !== "object") {
+    return undefined;
+  }
 
   const { url, events, headers } = webhook as Record<string, unknown>;
   return {
@@ -38,7 +42,9 @@ export function summarizeWebhookForLog(
 
 /** Returns a shallow copy of a request body with its `webhook` field summarized. */
 export function withWebhookSummaryForLog<T>(body: T): T {
-  if (!body || typeof body !== "object" || !("webhook" in body)) return body;
+  if (!body || typeof body !== "object" || !("webhook" in body)) {
+    return body;
+  }
   return {
     ...body,
     webhook: summarizeWebhookForLog((body as { webhook: unknown }).webhook),

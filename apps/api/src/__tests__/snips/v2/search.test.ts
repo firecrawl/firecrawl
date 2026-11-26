@@ -5,7 +5,8 @@ import {
   HAS_SEARCH,
   TEST_PRODUCTION,
 } from "../lib";
-import { search, searchRaw, searchWithFailure, idmux, Identity } from "./lib";
+import type { Identity } from "./lib";
+import { search, searchRaw, searchWithFailure, idmux } from "./lib";
 import { config } from "../../../config";
 
 let identity: Identity;
@@ -14,9 +15,9 @@ beforeAll(async () => {
   identity = await idmux({
     name: "search",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000);
+}, 10_000);
 
 // NOTE: if DDG gives us issues with this, we can disable if SEARXNG is not enabled
 describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
@@ -32,7 +33,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.web).toBeDefined();
       expect(res.web?.length).toBeGreaterThan(0);
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -46,7 +47,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       const res = await search(body, identity);
       expect(res.web?.length).toBeGreaterThan(0);
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -62,7 +63,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.body.success).toBe(true);
       expect(res.body.data.web?.length).toBeGreaterThan(0);
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -81,13 +82,13 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.web?.length).toBeGreaterThan(0);
       for (const result of res.web ?? []) {
         expect(result.url).toBeDefined();
-        const hostname = new URL(result.url!).hostname;
+        const hostname = new URL(result.url).hostname;
         expect(
           hostname === "firecrawl.dev" || hostname.endsWith(".firecrawl.dev"),
         ).toBe(true);
       }
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -104,7 +105,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
 
       expect(res.error).toBe("Invalid request body");
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -117,7 +118,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
           scrapeOptions: {
             formats: ["markdown"],
           },
-          timeout: 120000,
+          timeout: 120_000,
         },
         identity,
       );
@@ -147,7 +148,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
 
       expect(markdownCount).toBeGreaterThan(0);
     },
-    125000,
+    125_000,
   );
 
   concurrentIf(TEST_PRODUCTION)(
@@ -163,7 +164,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.news).toBeDefined();
       expect(res.news?.length).toBeGreaterThan(0);
     },
-    60000,
+    60_000,
   );
 
   concurrentIf(TEST_PRODUCTION)(
@@ -179,7 +180,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.images).toBeDefined();
       expect(res.images?.length).toBeGreaterThan(0);
     },
-    60000,
+    60_000,
   );
 
   concurrentIf(TEST_PRODUCTION)(
@@ -199,7 +200,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.images).toBeDefined();
       expect(res.images?.length).toBeGreaterThan(0);
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -216,7 +217,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.web?.length).toBeGreaterThan(0);
       expect(res.web?.length).toBeLessThanOrEqual(3);
     },
-    60000,
+    60_000,
   );
 
   concurrentIf(TEST_PRODUCTION)(
@@ -234,7 +235,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.news?.length).toBeGreaterThan(0);
       expect(res.news?.length).toBeLessThanOrEqual(2);
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -251,7 +252,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.web?.length).toBeGreaterThan(0);
       expect(res.web?.length).toBeLessThanOrEqual(20);
     },
-    60000,
+    60_000,
   );
 
   concurrentIf(TEST_PRODUCTION)(
@@ -269,7 +270,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.images?.length).toBeGreaterThan(0);
       expect(res.images?.length).toBeLessThanOrEqual(20);
     },
-    60000,
+    60_000,
   );
 
   concurrentIf(TEST_PRODUCTION)(
@@ -290,7 +291,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.news?.length).toBeGreaterThan(0);
       expect(res.news?.length).toBeLessThanOrEqual(20);
     },
-    60000,
+    60_000,
   );
 
   concurrentIf(TEST_PRODUCTION)(
@@ -306,7 +307,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.web).toBeDefined();
       expect(res.web?.length).toBeGreaterThan(0);
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -322,7 +323,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
 
       expect(res.error).toBe("Invalid request body");
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -338,7 +339,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.web).toBeDefined();
       expect(res.web?.length).toBeGreaterThan(0);
     },
-    60000,
+    60_000,
   );
 
   concurrentIf(TEST_PRODUCTION)(
@@ -356,7 +357,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
         .map(result => new URL(result.url).hostname);
       expect(topHosts.some(host => host.endsWith("gob.mx"))).toBe(true);
     },
-    60000,
+    60_000,
   );
 
   concurrentIf(TEST_PRODUCTION)(
@@ -374,7 +375,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
         .map(result => new URL(result.url).hostname);
       expect(topHosts.some(host => host.endsWith("gob.mx"))).toBe(true);
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -390,7 +391,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
 
       expect(res.error).toBe("Invalid request body");
     },
-    60000,
+    60_000,
   );
 
   // SEARXNG-specific pagination tests
@@ -408,7 +409,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.web?.length).toBeGreaterThan(0);
       expect(res.web?.length).toBeLessThanOrEqual(2);
     },
-    60000,
+    60_000,
   );
 
   concurrentIf(!!config.SEARXNG_ENDPOINT)(
@@ -425,6 +426,6 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.web?.length).toBeGreaterThan(0);
       expect(res.web?.length).toBeLessThanOrEqual(21);
     },
-    60000,
+    60_000,
   );
 });

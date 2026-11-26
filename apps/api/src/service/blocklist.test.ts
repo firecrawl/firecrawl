@@ -14,7 +14,8 @@ import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
 import { blocklistMiddleware } from "../routes/shared";
 import { defaultModules, noBlocklist } from "./defaults";
 import type { BlocklistModule } from "./modules";
-import { createService, replaceService, run, type CoreParts } from "./service";
+import { createService, replaceService, run } from "./service";
+import type { CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
 const parts: CoreParts = {
@@ -162,7 +163,7 @@ describe("blocklist module integration", () => {
   });
 
   it("awaits blocklist.init() in initializeApiStartupDependencies() before starting other API dependencies", async () => {
-    const order: string[] = [];
+    const order: Array<string> = [];
     startupMocks.initializeEngineForcing.mockImplementation(() => {
       order.push("engine-forcing");
     });

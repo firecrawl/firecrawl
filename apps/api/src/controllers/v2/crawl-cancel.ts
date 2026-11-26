@@ -1,13 +1,10 @@
-import { Response } from "express";
+import type { Response } from "express";
 import { logger } from "../../lib/logger";
-import {
-  getCrawl,
-  getCrawlJobs,
-  saveCrawl,
-  StoredCrawl,
-} from "../../lib/crawl-redis";
+import type { StoredCrawl } from "../../lib/crawl-redis";
+import { getCrawl, getCrawlJobs, saveCrawl } from "../../lib/crawl-redis";
 import { configDotenv } from "dotenv";
-import { RequestWithAuth, scrapeOptions } from "./types";
+import type { RequestWithAuth } from "./types";
+import { scrapeOptions } from "./types";
 import { crawlGroup } from "../../services/worker/nuq-router";
 import { normalizeOwnerId } from "../../lib/owner-id";
 import { removeConcurrencyLimitedJobs } from "../../lib/concurrency-limit";

@@ -13,7 +13,7 @@ import {
 } from "./lib";
 
 const sleep = (ms: number) => new Promise(x => setTimeout(() => x(true), ms));
-const sleepForBatchBilling = () => sleep(40000);
+const sleepForBatchBilling = () => sleep(40_000);
 
 // TODO: can be combined with v1...?
 // TODO: fix up idmux
@@ -90,7 +90,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
 
       expect(rc1 - rc2).toBe(12);
     },
-    120000,
+    120_000,
   );
 
   it.concurrent(
@@ -139,7 +139,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
 
       expect(rc1 - rc2).toBe(2);
     },
-    180000,
+    180_000,
   );
 
   it.concurrent(
@@ -174,7 +174,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
       const rc2 = (await creditUsage(identity)).remainingCredits;
       expect(rc1 - rc2).toBe(1);
     },
-    120000,
+    120_000,
   );
 
   it.concurrent(
@@ -240,7 +240,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
 
       expect(rc1 - rc2).toBe(12);
     },
-    600000,
+    600_000,
   );
 
   it.concurrent(
@@ -301,7 +301,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
         expect(rc1 - rc2).toBe(crawl1.completed + crawl2.completed * 5);
       }
     },
-    600000,
+    600_000,
   );
 
   it.concurrent(
@@ -318,7 +318,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
       const rc2 = (await creditUsage(identity)).remainingCredits;
       expect(rc1 - rc2).toBe(1);
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -349,7 +349,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
 
       expect(creditDiff).toBe(resultCost);
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -378,7 +378,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
 
       expect(rc1 - rc2).toBe(results.web?.length ?? 0);
     },
-    600000,
+    600_000,
   );
 
   it.concurrent(
@@ -414,7 +414,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
 
       expect(rc1 - rc2).toBe(shouldUse);
     },
-    600000,
+    600_000,
   );
 
   it.concurrent(
@@ -446,7 +446,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
 
       expect(rc1 - rc2).toBe(expectedCredits);
     },
-    600000,
+    600_000,
   );
 
   it.concurrent(
@@ -516,7 +516,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
 
       expect(rc1 - rc2).toBe(10);
     },
-    120000,
+    120_000,
   );
 
   it.concurrent(
@@ -587,7 +587,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
 
       expect(rc1 - rc2).toBe(16);
     },
-    600000,
+    600_000,
   );
 
   it.concurrent(
@@ -653,7 +653,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
         expect(rc1 - rc2).toBe(crawl1.completed * 2 + crawl2.completed * 6);
       }
     },
-    600000,
+    600_000,
   );
 
   it.concurrent(
@@ -678,10 +678,10 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
       for (let i = 1; i < result.periods.length; i++) {
         const prevRaw = result.periods[i - 1].startDate
           ? Date.parse(result.periods[i - 1].startDate!)
-          : NaN;
+          : Number.NaN;
         const currRaw = result.periods[i].startDate
           ? Date.parse(result.periods[i].startDate!)
-          : NaN;
+          : Number.NaN;
         const prevNaN = Number.isNaN(prevRaw);
         const currNaN = Number.isNaN(currRaw);
         if (!prevNaN && !currNaN) {
@@ -691,7 +691,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
         }
       }
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -720,7 +720,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
         );
       }
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -748,7 +748,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
         expect(curr).toBeGreaterThanOrEqual(prev);
       }
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -819,6 +819,6 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
 
       expect(rc1 - rc2).toBe(7);
     },
-    120000,
+    120_000,
   );
 });

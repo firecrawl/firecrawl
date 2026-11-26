@@ -56,7 +56,7 @@ function resolveImageUrl(
 async function extractImagesCheerio(
   html: string,
   baseUrl: string,
-): Promise<string[]> {
+): Promise<Array<string>> {
   const $ = load(html);
   const baseHref = $("base[href]").first().attr("href") || "";
   const images: Set<string> = new Set();
@@ -196,7 +196,7 @@ async function extractImagesCheerio(
 export async function extractImages(
   html: string,
   baseUrl: string,
-): Promise<string[]> {
+): Promise<Array<string>> {
   try {
     return await _extractImages(html, baseUrl);
   } catch (error) {

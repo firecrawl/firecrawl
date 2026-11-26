@@ -3,7 +3,7 @@ import request from "supertest";
 
 const mocks = vi.hoisted(() => ({
   lookup: vi.fn(),
-  auth: { team_id: "team-1" } as { team_id: string },
+  auth: { team_id: "team-1" },
   acuc: undefined as { flags: Record<string, unknown> } | undefined,
 }));
 

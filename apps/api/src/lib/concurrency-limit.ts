@@ -1,7 +1,9 @@
 import { getRedisConnection } from "../services/queue-service";
-import { getCrawl, StoredCrawl } from "./crawl-redis";
+import type { StoredCrawl } from "./crawl-redis";
+import { getCrawl } from "./crawl-redis";
 import { logger } from "./logger";
-import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
+import { scrapeQueue } from "../services/worker/nuq";
+import type { NuQJob } from "../services/worker/nuq";
 export { QueueFullError } from "./queue-full-error";
 export {
   getTeamQueueLimit,
@@ -11,7 +13,6 @@ export {
   removeConcurrencyLimitActiveJob,
 } from "./concurrency-redis";
 import {
-  getTeamQueueLimit,
   MAX_BACKLOG_TIMEOUT_MS,
   constructConcurrencyLimitKey,
   pushConcurrencyLimitActiveJob,
@@ -38,7 +39,9 @@ function scrapeJobKind(data: ScrapeJobData): JobKind {
 /** Emits `job.enqueued` when a handler is registered on the active service. */
 export function observeJobEnqueued(jobId: string, data: ScrapeJobData): void {
   const hooks = installedService()?.hooks;
-  if (!hooks?.has("job.enqueued")) return;
+  if (!hooks?.has("job.enqueued")) {
+    return;
+  }
   hooks.observe("job.enqueued", {
     jobId,
     kind: scrapeJobKind(data),
@@ -71,7 +74,7 @@ export async function cleanOldConcurrencyLimitEntries(
 export async function getConcurrencyLimitActiveJobs(
   team_id: string,
   now: number = Date.now(),
-): Promise<string[]> {
+): Promise<Array<string>> {
   return await getRedisConnection().zrangebyscore(
     constructKey(team_id),
     now,
@@ -81,9 +84,11 @@ export async function getConcurrencyLimitActiveJobs(
 
 export async function removeConcurrencyLimitedJobs(
   team_id: string,
-  job_ids: string[],
+  job_ids: Array<string>,
 ) {
-  if (job_ids.length === 0) return;
+  if (job_ids.length === 0) {
+    return;
+  }
   const redis = getRedisConnection();
   const queueKey = constructQueueKey(team_id);
   const chunkSize = 1000;
@@ -135,7 +140,7 @@ export async function pushConcurrencyLimitedJob(
 
 export async function pushConcurrencyLimitedJobs(
   team_id: string,
-  jobs: { job: ConcurrencyLimitedJob; timeout: number }[],
+  jobs: Array<{ job: ConcurrencyLimitedJob; timeout: number }>,
   now: number = Date.now(),
 ) {
   if (jobs.length === 0) {
@@ -145,7 +150,7 @@ export async function pushConcurrencyLimitedJobs(
   const queueKey = constructQueueKey(team_id);
   const redis = getRedisConnection();
   const pipeline = redis.pipeline();
-  const zaddArgs: (string | number)[] = [];
+  const zaddArgs: Array<string | number> = [];
 
   for (const { job, timeout } of jobs) {
     const cappedTimeout = Number.isFinite(timeout)
@@ -204,7 +209,7 @@ async function cleanOldCrawlConcurrencyLimitEntries(
 export async function getCrawlConcurrencyLimitActiveJobs(
   crawl_id: string,
   now: number = Date.now(),
-): Promise<string[]> {
+): Promise<Array<string>> {
   return await getRedisConnection().zrangebyscore(
     constructCrawlKey(crawl_id),
     now,
@@ -251,17 +256,23 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
 
   // Jobs we popped but can't run due to crawl concurrency limits.
   // We'll re-add them at the end so other callers can try them later.
-  const crawlBlocked: { member: string; score: number; jobData: string }[] = [];
+  const crawlBlocked: Array<{
+    member: string;
+    score: number;
+    jobData: string;
+  }> = [];
 
   try {
     while (true) {
       // ZPOPMIN atomically removes and returns the lowest-scored member.
       // No two workers can ever get the same entry.
       const result = await redis.zpopmin(queueKey);
-      if (!result || result.length === 0) return null;
+      if (!result || result.length === 0) {
+        return null;
+      }
 
       const [member, scoreStr] = result as [string, string];
-      const score = parseFloat(scoreStr);
+      const score = Number.parseFloat(scoreStr);
 
       // Expired entry - discard
       if (score < now) {
@@ -323,7 +334,7 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
   } finally {
     // Re-add crawl-blocked jobs so they can be picked up later
     if (crawlBlocked.length > 0) {
-      const zaddArgs: (string | number)[] = [];
+      const zaddArgs: Array<string | number> = [];
       for (const { member, score } of crawlBlocked) {
         zaddArgs.push(score, member);
       }
@@ -375,11 +386,15 @@ export async function concurrentJobDone(job: NuQJob<any>) {
           await getConcurrencyLimitActiveJobs(job.data.team_id)
         ).length;
 
-        if (currentActiveConcurrency >= maxTeamConcurrency) break;
+        if (currentActiveConcurrency >= maxTeamConcurrency) {
+          break;
+        }
       }
 
       const nextJob = await getNextConcurrentJob(job.data.team_id);
-      if (nextJob === null) break;
+      if (nextJob === null) {
+        break;
+      }
 
       await pushConcurrencyLimitActiveJob(
         job.data.team_id,

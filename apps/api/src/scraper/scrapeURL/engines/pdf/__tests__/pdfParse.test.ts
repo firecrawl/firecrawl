@@ -8,9 +8,9 @@ import { scrapePDFWithParsePDF } from "../pdfParse";
  * ASCII only, so xref offsets can be computed from string lengths. No fixtures
  * checked into the repo.
  */
-function makePdf(pages: string[][]): Buffer {
+function makePdf(pages: Array<Array<string>>): Buffer {
   const kids = pages.map((_, i) => `${4 + i * 2} 0 R`).join(" ");
-  const objects: [number, string][] = [
+  const objects: Array<[number, string]> = [
     [1, "<< /Type /Catalog /Pages 2 0 R >>"],
     [2, `<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`],
     [3, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"],
@@ -22,18 +22,20 @@ function makePdf(pages: string[][]): Buffer {
       .map((line, j) => `${j === 0 ? "" : "0 -14 Td "}(${line}) Tj`)
       .join(" ");
     const content = `BT /F1 12 Tf 72 720 Td ${ops} ET`;
-    objects.push([
-      pageId,
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>`,
-    ]);
-    objects.push([
-      contentId,
-      `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
-    ]);
+    objects.push(
+      [
+        pageId,
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentId} 0 R >>`,
+      ],
+      [
+        contentId,
+        `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+      ],
+    );
   });
 
   let out = "%PDF-1.4\n";
-  const offsets: number[] = [];
+  const offsets: Array<number> = [];
   for (const [id, body] of objects) {
     offsets[id] = out.length;
     out += `${id} 0 obj\n${body}\nendobj\n`;

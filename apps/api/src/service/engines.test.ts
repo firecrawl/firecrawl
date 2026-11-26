@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  buildEngineRegistry,
-  type Engine,
-  type EngineFeatureMap,
-} from "./engines";
+import { buildEngineRegistry } from "./engines";
+import type { Engine, EngineFeatureMap } from "./engines";
 
 const makeEngine = (
   name: string,
@@ -264,7 +261,7 @@ describe("buildEngineRegistry", () => {
           engines: [
             makeEngine("bad-mrt", {
               maxReasonableTime:
-                30000 as unknown as Engine["maxReasonableTime"],
+                30_000 as unknown as Engine["maxReasonableTime"],
             }),
           ],
         },

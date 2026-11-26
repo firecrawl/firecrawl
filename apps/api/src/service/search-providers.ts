@@ -41,15 +41,17 @@ const builtInSearchProviders: Record<
 };
 
 /** Built-in search provider names, in default priority order. */
-export const coreSearchProviderNames: readonly SearchProviderName[] =
-  Object.freeze(Object.keys(builtInSearchProviders) as SearchProviderName[]);
+export const coreSearchProviderNames: ReadonlyArray<SearchProviderName> =
+  Object.freeze(
+    Object.keys(builtInSearchProviders) as Array<SearchProviderName>,
+  );
 
 /**
  * Static metadata for built-in search providers, in default priority order.
  *
  * @internal
  */
-export const coreSearchProviderSpecs: readonly CoreSearchProviderSpec[] =
+export const coreSearchProviderSpecs: ReadonlyArray<CoreSearchProviderSpec> =
   Object.freeze(
     coreSearchProviderNames.map(name => {
       const spec = builtInSearchProviders[name];
@@ -78,10 +80,10 @@ export interface SearchQuery {
   sleepInterval?: number;
   timeout?: number;
   page?: number;
-  type?: SearchResultType | SearchResultType[];
-  enterprise?: ("default" | "anon" | "zdr")[];
-  includeDomains?: string[];
-  excludeDomains?: string[];
+  type?: SearchResultType | Array<SearchResultType>;
+  enterprise?: Array<"default" | "anon" | "zdr">;
+  includeDomains?: Array<string>;
+  excludeDomains?: Array<string>;
   usOnly?: boolean;
   /** The team's plan class, when the caller knows it. Omitted, nothing is stated. */
   teamPlanClass?: TeamPlanClass;
@@ -124,12 +126,12 @@ export interface DescribedSearchProvider {
 /** The search providers registered on a service. */
 export interface SearchProviderRegistry {
   /** Every registered provider in registration order, without calling `enabled()`. */
-  all(): readonly SearchProvider[];
+  all(): ReadonlyArray<SearchProvider>;
   /**
    * Providers whose `enabled()` returns true at call time, sorted by `priority`
    * descending with registration order breaking ties.
    */
-  enabled(): readonly SearchProvider[];
+  enabled(): ReadonlyArray<SearchProvider>;
   /** The registered provider for `name`, whether currently enabled or not. */
   get(name: SearchProviderName | (string & {})): SearchProvider | undefined;
 }
@@ -137,7 +139,7 @@ export interface SearchProviderRegistry {
 /** @internal */
 export interface SearchProviderRegistrySource {
   owner: string;
-  searchProviders?: readonly SearchProvider[];
+  searchProviders?: ReadonlyArray<SearchProvider>;
 }
 
 const sortedByKey = <T>(record: Record<string, T>): Record<string, T> =>
@@ -198,7 +200,7 @@ function snapshotSearchProvider(provider: SearchProvider): SearchProvider {
  * @internal
  */
 export function buildSearchProviderRegistry(
-  sources: readonly SearchProviderRegistrySource[],
+  sources: ReadonlyArray<SearchProviderRegistrySource>,
 ): {
   registry: SearchProviderRegistry;
   describedSearchProviders: Record<string, DescribedSearchProvider>;

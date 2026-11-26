@@ -2,29 +2,40 @@ import express from "express";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  config: {
-    ENV: "production" as string | undefined,
-    PARSE_UPLOAD_REF_SECRET: "test-upload-ref-secret" as string | undefined,
-    PARSE_UPLOAD_PUBLIC_BASE_URL: undefined as string | undefined,
-  },
-  redisEval: vi.fn(),
-  pipelineExec: vi.fn(),
-  imageOcrEnabled: false,
-  detectUploadedFileKind: vi.fn(
-    (
-      filename: string,
-      _contentType?: string,
-      _imageOcrEnabled?: boolean,
-    ): string | null => {
-      if (filename.endsWith(".html")) return "html";
-      if (filename.endsWith(".pdf")) return "pdf";
-      return null;
-    },
-  ),
-  loggerWarn: vi.fn(),
-  loggerError: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  const config: {
+    ENV: string | undefined;
+    PARSE_UPLOAD_REF_SECRET: string | undefined;
+    PARSE_UPLOAD_PUBLIC_BASE_URL: string | undefined;
+  } = {
+    ENV: "production",
+    PARSE_UPLOAD_REF_SECRET: "test-upload-ref-secret",
+    PARSE_UPLOAD_PUBLIC_BASE_URL: undefined,
+  };
+  return {
+    config,
+    redisEval: vi.fn(),
+    pipelineExec: vi.fn(),
+    imageOcrEnabled: false,
+    detectUploadedFileKind: vi.fn(
+      (
+        filename: string,
+        _contentType?: string,
+        _imageOcrEnabled?: boolean,
+      ): string | null => {
+        if (filename.endsWith(".html")) {
+          return "html";
+        }
+        if (filename.endsWith(".pdf")) {
+          return "pdf";
+        }
+        return null;
+      },
+    ),
+    loggerWarn: vi.fn(),
+    loggerError: vi.fn(),
+  };
+});
 
 vi.mock("../../../config", () => ({
   config: mocks.config,
@@ -80,13 +91,8 @@ import {
   parseUploadRefPayloadMiddleware,
   parseUploadUrlController,
 } from "../parse-upload";
-import {
-  coreParts,
-  createService,
-  defaultModules,
-  type UploadDriver,
-  type UploadsModule,
-} from "../../../service";
+import { coreParts, createService, defaultModules } from "../../../service";
+import type { UploadDriver, UploadsModule } from "../../../service";
 import { replaceService } from "../../../service/service";
 import { testService, withService } from "../../../service/testing";
 
@@ -147,8 +153,12 @@ beforeEach(() => {
     [null, 1],
   ]);
   mocks.detectUploadedFileKind.mockReset().mockImplementation(filename => {
-    if (filename.endsWith(".html")) return "html";
-    if (filename.endsWith(".pdf")) return "pdf";
+    if (filename.endsWith(".html")) {
+      return "html";
+    }
+    if (filename.endsWith(".pdf")) {
+      return "pdf";
+    }
     return null;
   });
   mocks.loggerWarn.mockReset();

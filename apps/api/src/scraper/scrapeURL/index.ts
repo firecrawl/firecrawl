@@ -1,4 +1,4 @@
-import { Logger } from "winston";
+import type { Logger } from "winston";
 import { config } from "../../config";
 import {
   withSpan,
@@ -8,17 +8,14 @@ import {
 
 import {
   applyScrapeOptionsDefaults,
-  type Document,
   scrapeOptions,
-  type TeamFlags,
 } from "../../controllers/v2/types";
+import type { Document, TeamFlags } from "../../controllers/v2/types";
 import type { ScrapeOptions } from "../../service/request";
 import { logger as _logger } from "../../lib/logger";
+import type { Engine, EngineScrapeResult, FeatureFlag } from "./engines";
 import {
   buildFallbackList,
-  Engine,
-  EngineScrapeResult,
-  FeatureFlag,
   getEngineMaxReasonableTime,
   resolveCandidateEngines,
   scrapeURLWithEngine,
@@ -55,8 +52,9 @@ import { ScrapeRetryTracker } from "./retryTracker";
 import { executeTransformers } from "./transformers";
 import { LLMRefusalError } from "./transformers/llmExtract";
 import { shouldCheckRobots } from "./shouldCheckRobots";
-import { loadMock, MockState } from "./lib/mock";
-import { CostTracking } from "../../lib/cost-tracking";
+import type { MockState } from "./lib/mock";
+import { loadMock } from "./lib/mock";
+import type { CostTracking } from "../../lib/cost-tracking";
 import { getEngineForUrl } from "../WebScraper/utils/engine-forcing";
 import { service } from "../../service";
 import type { EnginePlan } from "../../service/hooks";
@@ -66,11 +64,8 @@ import {
   isUrlAllowedByRobots,
 } from "../../lib/robots-txt";
 import { getCrawl } from "../../lib/crawl-redis";
-import {
-  AbortInstance,
-  AbortManager,
-  AbortManagerThrownError,
-} from "./lib/abortManager";
+import type { AbortInstance } from "./lib/abortManager";
+import { AbortManager, AbortManagerThrownError } from "./lib/abortManager";
 import {
   abortsEngineRace,
   ActionsNotSupportedError,
@@ -96,11 +91,8 @@ import {
   imageExtensionFromContentType,
   imageExtensionFromUrlPath,
 } from "../../lib/image-formats";
-import {
-  imageOcrGate,
-  shouldParseImages,
-  type ImageOcrGate,
-} from "../../lib/image-ocr-gate";
+import { imageOcrGate, shouldParseImages } from "../../lib/image-ocr-gate";
+import type { ImageOcrGate } from "../../lib/image-ocr-gate";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -116,13 +108,13 @@ export type ScrapeUrlResponse =
       document: Document;
       unsupportedFeatures?: Set<FeatureFlag>;
       exchange?: Record<string, unknown>;
-      threatDecisions?: unknown[];
+      threatDecisions?: Array<unknown>;
       state?: ScrapeState;
     }
   | {
       success: false;
       error: any;
-      threatDecisions?: unknown[];
+      threatDecisions?: Array<unknown>;
       state?: ScrapeState;
     };
 
@@ -258,7 +250,7 @@ export type Meta = {
    * by reference, because engines run on a copy of meta. */
   firePdfCacheKey?: { current?: string };
   abortHandle?: NodeJS.Timeout;
-  threatDecisions: unknown[];
+  threatDecisions: Array<unknown>;
 };
 
 function buildFeatureFlags(
@@ -603,7 +595,7 @@ export type InternalOptions = {
   ctx?: RequestContext;
 
   priority?: number; // Passed along to fire-engine
-  forceEngine?: Engine | Engine[];
+  forceEngine?: Engine | Array<Engine>;
   /**
    * Sitemap fetch strategy hint for `scrape.engines.select` hooks when
    * `teamId === "sitemap"`: `"direct"` for plain HTTP fetch, `"http"` for
@@ -979,8 +971,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
     };
 
     const remainingEngines = [...fallbackList];
-    let enginePromises: EngineBundlePromise[] = [];
-    const enginesAttempted: Engine[] = [];
+    let enginePromises: Array<EngineBundlePromise> = [];
+    const enginesAttempted: Array<Engine> = [];
 
     meta.abort.throwIfAborted();
 
@@ -1036,7 +1028,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         });
 
         while (true) {
-          let timeouts: NodeJS.Timeout[] = [];
+          const timeouts: Array<NodeJS.Timeout> = [];
           try {
             result = await Promise.race([
               ...enginePromises.map(x => x.promise),
@@ -1068,7 +1060,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
                     } catch (error) {
                       reject(error);
                     }
-                  }, meta.abort.scrapeTimeout() ?? 300000),
+                  }, meta.abort.scrapeTimeout() ?? 300_000),
                 );
               }),
             ]);
@@ -1331,7 +1323,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         ...(engineResult.exchange?.provider
           ? { provider: engineResult.exchange.provider }
           : {}),
-      } as Document["metadata"],
+      },
     };
 
     if (result.unsupportedFeatures.size > 0) {
@@ -1625,7 +1617,7 @@ export async function scrapeURL(
 
       try {
         let result: ScrapeUrlResponse;
-        const skippedFormatWarnings: string[] = [];
+        const skippedFormatWarnings: Array<string> = [];
         while (true) {
           try {
             result = await scrapeURLLoop(meta);

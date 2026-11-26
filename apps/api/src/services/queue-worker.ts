@@ -8,7 +8,8 @@ import { register } from "prom-client";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
 import { service } from "../service";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
-import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
+import type { NuQJob } from "./worker/nuq";
+import { crawlFinishedQueue, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
 import { getCrawl } from "../lib/crawl-redis";
 import { recordCrawlStateMissing } from "../lib/crawl-state-metrics";
@@ -64,7 +65,7 @@ const crawlFinishWorker = async () => {
       __logger.info("No jobs to process", { module: "nuq/metrics" });
       await new Promise(resolve => setTimeout(resolve, noJobTimeout));
       if (!config.NUQ_RABBITMQ_URL) {
-        noJobTimeout = Math.min(noJobTimeout * 2, 10000);
+        noJobTimeout = Math.min(noJobTimeout * 2, 10_000);
       }
       continue;
     }
@@ -86,7 +87,7 @@ const crawlFinishWorker = async () => {
         return;
       }
       logger.info("Renewed lock");
-    }, 15000);
+    }, 15_000);
 
     let processResult:
       | {
@@ -165,8 +166,8 @@ app.get("/liveness", (req, res) => {
         currentLiveness = true;
         res.status(200).json({ ok: true });
       })
-      .catch(e => {
-        _logger.error("WORKER NETWORKING CHECK FAILED", { error: e });
+      .catch(error => {
+        _logger.error("WORKER NETWORKING CHECK FAILED", { error });
         currentLiveness = false;
         res.status(500).json({ ok: false });
       });
@@ -200,8 +201,8 @@ export async function start() {
     isShuttingDown = true;
   });
 
-  await service.modules.blocklist.init().catch(e => {
-    _logger.error("Failed to initialize blocklist", { error: e });
+  await service.modules.blocklist.init().catch(error => {
+    _logger.error("Failed to initialize blocklist", { error });
     process.exit(1);
   });
 

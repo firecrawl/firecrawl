@@ -8,9 +8,9 @@ import {
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import crypto from "node:crypto";
+import type { Identity } from "./lib";
 import request, {
   idmux,
-  Identity,
   parse,
   parseWithFailure,
   scrapeTimeout,
@@ -196,13 +196,15 @@ function decodeUploadRefPayload(uploadRef: string) {
 
 async function waitForSingleRow<T>(
   fetcher: () => Promise<T | null>,
-  timeoutMs: number = 10000,
+  timeoutMs: number = 10_000,
   intervalMs: number = 250,
 ): Promise<T | null> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const row = await fetcher();
-    if (row) return row;
+    if (row) {
+      return row;
+    }
     await new Promise(resolve => setTimeout(resolve, intervalMs));
   }
   return null;
@@ -218,14 +220,14 @@ beforeAll(async () => {
   identity = await idmux({
     name: "parse",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
 
   if (ALLOW_TEST_SUITE_WEBSITE) {
     const response = await fetch(`${TEST_SUITE_WEBSITE}/example.pdf`);
     pdfFixture = Buffer.from(await response.arrayBuffer());
   }
-}, 10000 + scrapeTimeout);
+}, 10_000 + scrapeTimeout);
 
 describe("/v2/parse", () => {
   it(
@@ -260,7 +262,9 @@ describe("/v2/parse", () => {
     "parses an upload-ref HTML file into markdown",
     async () => {
       const init = await mintUploadRef(identity);
-      if (!init) return;
+      if (!init) {
+        return;
+      }
 
       expect(init.maxSizeBytes).toBe(50 * 1024 * 1024);
 
@@ -313,7 +317,7 @@ describe("/v2/parse", () => {
       const capIdentity = await idmux({
         name: `parse-upload-ref-cap-${Date.now()}`,
         concurrency: 100,
-        credits: 1000000,
+        credits: 1_000_000,
       });
       const key = getUnparsedUploadRefsKey(capIdentity.teamId);
       await getRedisConnection().del(key);
@@ -449,14 +453,16 @@ describe("/v2/parse", () => {
     "rejects upload refs owned by another team",
     async () => {
       const init = await mintUploadRef(identity);
-      if (!init) return;
+      if (!init) {
+        return;
+      }
 
       const canUseRealSecondTeam = !!process.env.IDMUX_URL && !TEST_SELF_HOST;
       const otherIdentity = canUseRealSecondTeam
         ? await idmux({
             name: "parse-upload-ref-other-team",
             concurrency: 100,
-            credits: 1000000,
+            credits: 1_000_000,
           })
         : identity;
 
@@ -490,7 +496,9 @@ describe("/v2/parse", () => {
     "rejects tampered upload refs",
     async () => {
       const init = await mintUploadRef(identity);
-      if (!init) return;
+      if (!init) {
+        return;
+      }
 
       const failure = await request(TEST_API_URL)
         .post("/v2/parse")
@@ -512,7 +520,9 @@ describe("/v2/parse", () => {
     "rejects expired upload refs",
     async () => {
       const init = await mintUploadRef(identity);
-      if (!init) return;
+      if (!init) {
+        return;
+      }
 
       const payload = decodeUploadRefPayload(init.uploadRef);
       if (payload.driver !== "local" && !config.PARSE_UPLOAD_REF_SECRET) {
@@ -550,7 +560,9 @@ describe("/v2/parse", () => {
         "upload-ref.xhtml",
         "application/xhtml+xml",
       );
-      if (!init) return;
+      if (!init) {
+        return;
+      }
 
       expect(init.uploadRef).toEqual(expect.any(String));
     },
@@ -683,7 +695,9 @@ describe("/v2/parse", () => {
   it(
     "logs parse metadata into the parses table",
     async () => {
-      if (TEST_SELF_HOST || !HAS_JOB_LOG) return;
+      if (TEST_SELF_HOST || !HAS_JOB_LOG) {
+        return;
+      }
 
       const filename = `parse-log-${Date.now()}.html`;
       await parse(
@@ -740,7 +754,7 @@ describe("/v2/parse", () => {
           options: {
             formats: ["markdown"],
             actions: [{ type: "wait", milliseconds: 250 }],
-          } as any,
+          },
           file: {
             content: htmlFixture,
             filename: "upload.html",
@@ -763,7 +777,7 @@ describe("/v2/parse", () => {
         {
           options: {
             formats: ["markdown", { type: "changeTracking" }],
-          } as any,
+          },
           file: {
             content: htmlFixture,
             filename: "upload.html",
@@ -787,7 +801,7 @@ describe("/v2/parse", () => {
           options: {
             formats: ["markdown"],
             waitFor: 1000,
-          } as any,
+          },
           file: {
             content: htmlFixture,
             filename: "upload.html",
@@ -811,7 +825,7 @@ describe("/v2/parse", () => {
           options: {
             formats: ["markdown"],
             location: { country: "US" },
-          } as any,
+          },
           file: {
             content: htmlFixture,
             filename: "upload.html",
@@ -835,7 +849,7 @@ describe("/v2/parse", () => {
           options: {
             formats: ["markdown"],
             mobile: true,
-          } as any,
+          },
           file: {
             content: htmlFixture,
             filename: "upload.html",
@@ -859,7 +873,7 @@ describe("/v2/parse", () => {
           options: {
             formats: ["markdown"],
             proxy: "stealth",
-          } as any,
+          },
           file: {
             content: htmlFixture,
             filename: "upload.html",
@@ -882,7 +896,7 @@ describe("/v2/parse", () => {
         {
           options: {
             formats: ["markdown", { type: "screenshot" }],
-          } as any,
+          },
           file: {
             content: htmlFixture,
             filename: "upload.html",
@@ -905,7 +919,7 @@ describe("/v2/parse", () => {
         {
           options: {
             formats: ["markdown", { type: "branding" }],
-          } as any,
+          },
           file: {
             content: htmlFixture,
             filename: "upload.html",
@@ -942,7 +956,7 @@ describe("/v2/parse", () => {
                   },
                 },
               ],
-            } as any,
+            },
             file: {
               content: htmlFixture,
               filename: "upload.html",
@@ -965,7 +979,7 @@ describe("/v2/parse", () => {
           {
             options: {
               formats: ["markdown", { type: "summary" }],
-            } as any,
+            },
             file: {
               content: htmlFixture,
               filename: "upload.html",

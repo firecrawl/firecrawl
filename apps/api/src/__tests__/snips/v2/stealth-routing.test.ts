@@ -63,7 +63,7 @@ describe("Stealth proxy routing without fire-engine (buildFallbackList)", () => 
     setEnv(original);
   });
 
-  const buildStubMeta = (featureFlags: string[]) =>
+  const buildStubMeta = (featureFlags: Array<string>) =>
     ({
       id: "test",
       url: "https://example.com/",

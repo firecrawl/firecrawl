@@ -1,17 +1,11 @@
-import { z } from "zod";
-import {
-  BaseScrapeOptions,
-  ScrapeOptions,
-  Document as V2Document,
-  TeamFlags,
-} from "./controllers/v2/types";
-import { AuthCreditUsageChunk } from "./controllers/v2/types";
+import type { z } from "zod";
+import type { BaseScrapeOptions, ScrapeOptions } from "./controllers/v2/types";
 import { ExtractorOptions } from "./lib/entities";
-import { InternalOptions } from "./scraper/scrapeURL";
+import type { InternalOptions } from "./scraper/scrapeURL";
 import type { CostTracking } from "./lib/cost-tracking";
 import type { BillingMetadata } from "./lib/billing-types";
 import type { RequestContext } from "./service/request-context";
-import { webhookSchema } from "./services/webhook/schema";
+import type { webhookSchema } from "./services/webhook/schema";
 import type { SerializedTraceContext } from "./lib/otel-tracer";
 
 type ScrapeJobCommon = {

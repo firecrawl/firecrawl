@@ -208,7 +208,7 @@ export type ChargeEvent =
        * `charge()` prices only the search itself and does not re-bill these
        * documents.
        */
-      documents: Document[];
+      documents: Array<Document>;
       state?: SearchChargeState;
     }
   | {
@@ -434,7 +434,7 @@ export interface JobStoreModule {
    * `read` calls when omitted.
    */
   readMany?(
-    ids: readonly string[],
+    ids: ReadonlyArray<string>,
     kind: JobKind,
   ): Promise<Map<string, StoredJob>>;
   /**
@@ -538,12 +538,12 @@ export type Admission<
       ok: true;
       ctx: X;
       body: RequestBodies[K];
-      warnings?: string[];
+      warnings?: Array<string>;
       headers?: Record<string, string>;
       /** True when the policy module already evaluated URL blocklist rules. */
       blocklistChecked?: boolean;
       /** URLs dropped during admission for partial-admission endpoints like batch scrape. */
-      droppedUrls?: string[];
+      droppedUrls?: Array<string>;
     }
   | { ok: false; refusal: Refusal };
 

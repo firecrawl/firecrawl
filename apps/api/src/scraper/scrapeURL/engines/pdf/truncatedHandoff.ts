@@ -13,13 +13,19 @@ const EOF_SEARCH_BYTES = 4096;
 function declaredContentLength(
   headers: Record<string, string> | undefined,
 ): number | undefined {
-  if (!headers) return undefined;
+  if (!headers) {
+    return undefined;
+  }
   const header = (name: string) =>
     Object.entries(headers).find(([k]) => k.toLowerCase() === name)?.[1];
   const encoding = header("content-encoding")?.trim().toLowerCase();
-  if (encoding && encoding !== "identity") return undefined;
+  if (encoding && encoding !== "identity") {
+    return undefined;
+  }
   const raw = header("content-length")?.trim();
-  if (!raw || !/^\d+$/.test(raw)) return undefined;
+  if (!raw || !/^\d+$/.test(raw)) {
+    return undefined;
+  }
   const length = Number(raw);
   return Number.isSafeInteger(length) && length > 0 ? length : undefined;
 }
@@ -38,12 +44,16 @@ async function isTruncatedPdf(
   const fh = await open(filePath, "r");
   try {
     const { size } = await fh.stat();
-    if (contentLength !== undefined && size < contentLength) return true;
+    if (contentLength !== undefined && size < contentLength) {
+      return true;
+    }
     const length = Math.min(size, EOF_SEARCH_BYTES);
     const tail = Buffer.alloc(length);
     await fh.read(tail, 0, length, size - length);
     const marker = tail.lastIndexOf("%%EOF");
-    if (marker === -1) return true;
+    if (marker === -1) {
+      return true;
+    }
     return !/^[\s\0]*$/.test(tail.subarray(marker + 5).toString("latin1"));
   } finally {
     await fh.close();
@@ -77,7 +87,9 @@ async function startsWithSameBytes(
   copy: string,
 ): Promise<boolean> {
   const handoffBytes = await fileSize(handoff);
-  if ((await fileSize(copy)) < handoffBytes) return false;
+  if ((await fileSize(copy)) < handoffBytes) {
+    return false;
+  }
   const headLength = Math.min(handoffBytes, SAME_FILE_HEAD_BYTES);
   const tailStart = Math.max(0, handoffBytes - SAME_FILE_TAIL_BYTES);
   for (const [position, length] of [
@@ -88,7 +100,9 @@ async function startsWithSameBytes(
       readRange(handoff, position, length),
       readRange(copy, position, length),
     ]);
-    if (!a.equals(b)) return false;
+    if (!a.equals(b)) {
+      return false;
+    }
   }
   return true;
 }
@@ -127,7 +141,9 @@ export async function completeTruncatedHandoff(
   maxSize: number,
   download: typeof downloadFile = downloadFile,
 ): Promise<PdfPrefetch> {
-  if (!prefetch.handoff || prefetch.gcsReference) return prefetch;
+  if (!prefetch.handoff || prefetch.gcsReference) {
+    return prefetch;
+  }
   const { contentLength } = prefetch.handoff;
   if (
     !isPdfBuffer(await readHead(prefetch.filePath)) ||
@@ -165,7 +181,9 @@ export async function completeTruncatedHandoff(
       maxSize,
     );
   } catch (error) {
-    if (error instanceof AbortManagerThrownError) throw error;
+    if (error instanceof AbortManagerThrownError) {
+      throw error;
+    }
     meta.abort.throwIfAborted();
     report("refetch_failed", { error });
     return prefetch;
@@ -179,7 +197,9 @@ export async function completeTruncatedHandoff(
     return prefetch;
   };
 
-  if (!refetched.response.ok) return keepHandoff("refetch_bad_status");
+  if (!refetched.response.ok) {
+    return keepHandoff("refetch_bad_status");
+  }
   if (!isPdfBuffer(await readHead(refetchedPath))) {
     return keepHandoff("refetch_not_pdf");
   }

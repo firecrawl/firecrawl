@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { vi } from "vitest";
 import { config } from "../../config";
 import { redisEvictConnection } from "../../services/redis";
@@ -44,9 +44,7 @@ describeIf("NuQ router (forced FDB mode)", () => {
     const db = getNuqFdbDatabase();
     for (const name of ["scrape", "crawl_finished"]) {
       const r = fdb.tuple.range(["nuq", name]);
-      await db.doTn(async tn =>
-        tn.clearRange(r.begin as Buffer, r.end as Buffer),
-      );
+      await db.doTn(async tn => tn.clearRange(r.begin, r.end));
     }
   });
 
@@ -98,10 +96,10 @@ describeIf("NuQ router (forced FDB mode)", () => {
     }
     expect(taken).not.toBeNull();
     expect(taken.id).toBe(jobId);
-    expect((taken as any).backend).toBe("fdb");
+    expect(taken.backend).toBe("fdb");
 
-    expect(await scrapeQueue.renewLock(jobId, taken.lock!)).toBe(true);
-    expect(await scrapeQueue.jobFinish(jobId, taken.lock!, { ok: true })).toBe(
+    expect(await scrapeQueue.renewLock(jobId, taken.lock)).toBe(true);
+    expect(await scrapeQueue.jobFinish(jobId, taken.lock, { ok: true })).toBe(
       true,
     );
 
@@ -124,7 +122,7 @@ describeIf("NuQ router (forced FDB mode)", () => {
       redisGet.mockImplementation(async key =>
         key === `nuq:job_backend:${jobId}` ? "fdb" : null,
       );
-      redisSet.mockResolvedValue("OK" as any);
+      redisSet.mockResolvedValue("OK");
 
       const { jobs, backloggedCount } = await fdbEnqueueScrapeJobs(
         [
@@ -195,7 +193,7 @@ describeIf("NuQ router (forced FDB mode)", () => {
       } catch {}
     }
     expect(taken?.id).toBe(jobId);
-    await scrapeQueue.jobFinish(jobId, taken.lock!, null);
+    await scrapeQueue.jobFinish(jobId, taken.lock, null);
 
     expect((await crawlGroup.getGroup(gid))?.status).toBe("completed");
     expect(await scrapeQueue.getGroupNumericStats(gid)).toMatchObject({
@@ -213,7 +211,7 @@ describeIf("NuQ router (forced FDB mode)", () => {
     }
     expect(fin).not.toBeNull();
     expect(fin.groupId).toBe(gid);
-    expect(await crawlFinishedQueue.jobFinish(fin.id, fin.lock!, null)).toBe(
+    expect(await crawlFinishedQueue.jobFinish(fin.id, fin.lock, null)).toBe(
       true,
     );
 
@@ -250,7 +248,7 @@ describeIf("NuQ router (forced FDB mode)", () => {
       } catch {}
     }
     expect(taken?.id).toBe(jobId);
-    await scrapeQueue.jobFail(jobId, taken.lock!, "routed failure");
+    await scrapeQueue.jobFail(jobId, taken.lock, "routed failure");
 
     const failed = await scrapeQueue.getGroupJobs(gid, "failed");
     expect(failed).toHaveLength(1);

@@ -64,7 +64,7 @@ describe("Wikipedia engine routing under zero data retention (buildFallbackList)
   const buildStubMeta = (
     url: string,
     zeroDataRetention: boolean,
-    forceEngine?: string[],
+    forceEngine?: Array<string>,
   ) =>
     ({
       id: "test",

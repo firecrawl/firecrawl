@@ -5,7 +5,8 @@
  * to avoid blocking Node.js event loop with heavy conversions.
  */
 
-import axios, { AxiosInstance, AxiosError } from "axios";
+import type { AxiosError } from "axios";
+import axios from "axios";
 import { config } from "../config";
 import { logger } from "./logger";
 import type { Logger } from "winston";
@@ -116,7 +117,7 @@ export async function convertHTMLToMarkdownWithHttpService(
         ? `HTML to Markdown conversion failed: ${errorMessage} - ${errorDetails}`
         : `HTML to Markdown conversion failed: ${errorMessage}`;
 
-      throw new Error(fullErrorMessage);
+      throw new Error(fullErrorMessage, { cause: error });
     } else {
       contextLogger.error(
         "Unexpected error during HTML to Markdown conversion",

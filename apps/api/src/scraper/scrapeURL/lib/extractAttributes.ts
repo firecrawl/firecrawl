@@ -5,7 +5,7 @@ import { extractAttributes as _extractAttributes } from "@mendable/firecrawl-rs"
 type AttributeResult = {
   selector: string;
   attribute: string;
-  values: string[];
+  values: Array<string>;
 };
 
 type AttributeSelector = {
@@ -21,8 +21,8 @@ type AttributeSelector = {
  */
 export async function extractAttributes(
   html: string,
-  selectors: AttributeSelector[],
-): Promise<AttributeResult[]> {
+  selectors: Array<AttributeSelector>,
+): Promise<Array<AttributeResult>> {
   if (!selectors || selectors.length === 0) {
     return [];
   }
@@ -54,14 +54,14 @@ export async function extractAttributes(
   }
 
   // Fallback to Cheerio implementation
-  const results: AttributeResult[] = [];
+  const results: Array<AttributeResult> = [];
 
   try {
     const $ = load(html);
 
     for (const extraction of selectors) {
       const { selector, attribute } = extraction;
-      const values: string[] = [];
+      const values: Array<string> = [];
 
       // Find all elements matching the selector
       $(selector).each((_, element) => {

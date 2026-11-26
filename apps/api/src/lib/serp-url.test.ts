@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockConfig = vi.hoisted(() => ({
   SERP_SCRAPE_WARNING: undefined as boolean | undefined,
-  SERP_SCRAPE_WARNING_TEAM_IDS: undefined as string[] | undefined,
+  SERP_SCRAPE_WARNING_TEAM_IDS: undefined as Array<string> | undefined,
   SERP_SCRAPE_WARNING_ROLLOUT_PERCENT: 0,
 }));
 

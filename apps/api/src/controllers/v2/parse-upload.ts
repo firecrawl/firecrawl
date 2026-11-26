@@ -1,17 +1,18 @@
 import crypto from "node:crypto";
 import path from "node:path";
-import { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
 import { v7 as uuidv7 } from "uuid";
 import { z } from "zod";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { getRedisConnection } from "../../services/queue-service";
-import { RequestWithAuth, UploadedParseFile } from "./types";
+import type { RequestWithAuth, UploadedParseFile } from "./types";
 import { detectUploadedFileKind, getSupportedParseFileTypes } from "./parse";
 import { isImageOcrEnabled } from "../../lib/image-ocr-gate";
 import { reportPipelineError } from "../../lib/redis-pipeline";
-import { service, type StoredUploadRef } from "../../service";
+import { service } from "../../service";
+import type { StoredUploadRef } from "../../service";
 
 const PARSE_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
 const PARSE_UPLOAD_TTL_MS = 10 * 60 * 1000;
@@ -120,7 +121,7 @@ function verifyUploadRef(uploadRef: string): ParseUploadRefPayload {
 }
 
 function sanitizeFilename(filename: string): string {
-  const base = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, "_");
+  const base = path.basename(filename).replaceAll(/[^a-zA-Z0-9._-]/g, "_");
   return base || "upload";
 }
 
@@ -136,7 +137,9 @@ function isSupportedParseUpload(
 
 function buildPublicBaseUrl(req: Request): string {
   const configured = config.PARSE_UPLOAD_PUBLIC_BASE_URL;
-  if (configured) return configured.replace(/\/$/, "");
+  if (configured) {
+    return configured.replace(/\/$/, "");
+  }
   return `${req.protocol}://${req.host}`;
 }
 

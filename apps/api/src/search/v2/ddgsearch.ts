@@ -1,7 +1,7 @@
 import * as undici from "undici";
 import { config } from "../../config";
 import { JSDOM } from "jsdom";
-import { SearchV2Response, WebSearchResult } from "../../lib/entities";
+import type { SearchV2Response, WebSearchResult } from "../../lib/entities";
 import { logger } from "../../lib/logger";
 import { getSecureDispatcher } from "../../scraper/scrapeURL/engines/utils/safeFetch";
 
@@ -42,13 +42,13 @@ function cleanUrl(href: string): string {
 function extractResults(
   document: Document,
   seenUrls: Set<string>,
-): WebSearchResult[] {
+): Array<WebSearchResult> {
   const anomalyModal = document.querySelector(".anomaly-modal__modal");
   if (anomalyModal) {
     throw new DDGAntiBotError();
   }
 
-  const results: WebSearchResult[] = [];
+  const results: Array<WebSearchResult> = [];
   const blocks = Array.from(document.querySelectorAll(".result.web-result"));
 
   for (const block of blocks) {
@@ -57,7 +57,9 @@ function extractResults(
     ) as HTMLAnchorElement | null;
     const snippet = block.querySelector(".result__snippet");
 
-    if (!titleLink || !snippet) continue;
+    if (!titleLink || !snippet) {
+      continue;
+    }
 
     const rawUrl = titleLink.href?.trim();
     const title = titleLink.textContent?.trim();
@@ -80,10 +82,14 @@ function getNextPageData(document: Document): URLSearchParams | null {
     'input[type="submit"][class="btn btn--alt"][value="Next"]',
   ) as HTMLInputElement | null;
 
-  if (!nextButton) return null;
+  if (!nextButton) {
+    return null;
+  }
 
   const nextForm = nextButton.closest("form") as HTMLFormElement | null;
-  if (!nextForm) return null;
+  if (!nextForm) {
+    return null;
+  }
 
   const formData = new URLSearchParams();
   const inputs = Array.from(nextForm.querySelectorAll("input"));
@@ -128,7 +134,7 @@ export async function ddgSearch(
       params.set("df", tbs);
     }
 
-    const results: WebSearchResult[] = [];
+    const results: Array<WebSearchResult> = [];
     const seenUrls = new Set<string>();
     const dispatcher = getSecureDispatcher(false);
     let isFirstPage = true;
@@ -192,7 +198,9 @@ export async function ddgSearch(
 
         results.push(...newResults);
 
-        if (newResults.length === 0) break;
+        if (newResults.length === 0) {
+          break;
+        }
 
         nextPageData = getNextPageData(doc);
       } catch (error: any) {
@@ -212,7 +220,9 @@ export async function ddgSearch(
           throw error;
         }
       } finally {
-        if (timeoutHandle) clearTimeout(timeoutHandle);
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+        }
       }
 
       await new Promise(r => setTimeout(r, 1000));
@@ -251,7 +261,9 @@ export async function ddgSearch(
       }
 
       logger.error("DuckDuckGo: Blocked by anti-bot measures", { term });
-      throw new Error("DuckDuckGo: Blocked by anti-bot measures.");
+      throw new Error("DuckDuckGo: Blocked by anti-bot measures.", {
+        cause: error,
+      });
     }
 
     if (error.response?.status === 429) {
@@ -259,7 +271,9 @@ export async function ddgSearch(
         status: error.response.status,
         statusText: error.response.statusText,
       });
-      throw new Error("DuckDuckGo: Too many requests, try again later.");
+      throw new Error("DuckDuckGo: Too many requests, try again later.", {
+        cause: error,
+      });
     }
     logger.error("DuckDuckGo search error", { error: error.message, term });
     throw error;

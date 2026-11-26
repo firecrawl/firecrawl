@@ -3,9 +3,8 @@ import {
   buildSearchProviderRegistry,
   coreSearchProviderNames,
   coreSearchProviderSpecs,
-  type SearchProvider,
-  type SearchQuery,
 } from "./search-providers";
+import type { SearchProvider, SearchQuery } from "./search-providers";
 
 const makeProvider = (
   name: string,
@@ -193,7 +192,7 @@ describe("buildSearchProviderRegistry", () => {
       enabled: () => true,
       search: vi.fn(async () => null),
     };
-    const list: SearchProvider[] = [mutable];
+    const list: Array<SearchProvider> = [mutable];
 
     const { registry } = buildSearchProviderRegistry([
       { owner: "core", searchProviders: list },

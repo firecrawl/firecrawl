@@ -62,7 +62,8 @@ import { coreErrors } from "../lib/error-serde";
 import { normalizeOwnerId } from "../lib/owner-id";
 import { defaultModules, queueJobStore } from "./defaults";
 import type { JobStoreModule, StoredJob } from "./modules";
-import { replaceService, type CoreParts } from "./service";
+import { replaceService } from "./service";
+import type { CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
 const parts: CoreParts = {

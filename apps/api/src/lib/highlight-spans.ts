@@ -19,7 +19,7 @@ interface Sentence {
   isHeader?: boolean;
 }
 
-function extractInlineText(tokens: marked.Token[]): string {
+function extractInlineText(tokens: Array<marked.Token>): string {
   let out = "";
   for (const t of tokens) {
     switch (t.type) {
@@ -42,8 +42,9 @@ function extractInlineText(tokens: marked.Token[]): string {
         if (
           /^\[?\w{1,3}\]?$/.test(linkText) &&
           linkToken.href.includes("cite_note")
-        )
+        ) {
           break;
+        }
         out += `[${linkText}](${linkToken.href})`;
         break;
       }
@@ -70,21 +71,25 @@ function extractInlineText(tokens: marked.Token[]): string {
  * a blockId grouping spans from the same source block, and table/code metadata
  * so `assembleAnswer` can reconstruct structure from the selected spans.
  */
-export function parseMarkdownToSentences(markdown: string): Sentence[] {
-  const result: Sentence[] = [];
+export function parseMarkdownToSentences(markdown: string): Array<Sentence> {
+  const result: Array<Sentence> = [];
   const tokens = marked.lexer(markdown);
   let blockId = 0;
 
   function pushSentences(text: string, source: SentenceSource, bid: number) {
-    const trimmed = text.replace(/\s+/g, " ").trim();
-    if (!trimmed) return;
+    const trimmed = text.replaceAll(/\s+/g, " ").trim();
+    if (!trimmed) {
+      return;
+    }
     for (const part of trimmed.split(/(?<=[.!?])\s+/)) {
       const s = part.trim();
-      if (s) result.push({ text: s, source, blockId: bid });
+      if (s) {
+        result.push({ text: s, source, blockId: bid });
+      }
     }
   }
 
-  function walkBlocks(tokens: marked.Token[]) {
+  function walkBlocks(tokens: Array<marked.Token>) {
     for (const token of tokens) {
       switch (token.type) {
         case "heading": {
@@ -92,7 +97,9 @@ export function parseMarkdownToSentences(markdown: string): Sentence[] {
           const text = extractInlineText(
             (token as marked.Tokens.Heading).tokens,
           ).trim();
-          if (text) result.push({ text, source: "heading", blockId: bid });
+          if (text) {
+            result.push({ text, source: "heading", blockId: bid });
+          }
           break;
         }
         case "paragraph": {
@@ -121,20 +128,22 @@ export function parseMarkdownToSentences(markdown: string): Sentence[] {
             .map(cell => extractInlineText(cell.tokens).trim())
             .filter(Boolean)
             .join(" | ");
-          if (headerText)
+          if (headerText) {
             result.push({
               text: headerText,
               source: "table",
               blockId: bid,
               isHeader: true,
             });
+          }
           for (const row of table.rows) {
             const rowText = row
               .map(cell => extractInlineText(cell.tokens).trim())
               .filter(Boolean)
               .join(" | ");
-            if (rowText)
+            if (rowText) {
               result.push({ text: rowText, source: "table", blockId: bid });
+            }
           }
           break;
         }
@@ -145,13 +154,14 @@ export function parseMarkdownToSentences(markdown: string): Sentence[] {
           const lines = codeToken.text.split("\n");
           for (const line of lines) {
             const trimmed = line.trim();
-            if (trimmed)
+            if (trimmed) {
               result.push({
                 text: trimmed,
                 source: "code",
                 blockId: bid,
                 lang,
               });
+            }
           }
           break;
         }
@@ -183,8 +193,8 @@ export function parseMarkdownToSentences(markdown: string): Sentence[] {
  * spans rebuild a fenced block; same-block text spans rejoin into a paragraph.
  */
 export function assembleAnswer(
-  sentences: Sentence[],
-  indices: number[],
+  sentences: Array<Sentence>,
+  indices: Array<number>,
 ): string {
   const selectedIndices = new Set(
     indices.filter(i => i >= 0 && i < sentences.length),
@@ -212,17 +222,19 @@ export function assembleAnswer(
     .sort((a, b) => a - b)
     .map(i => ({ index: i, ...sentences[i] }));
 
-  const parts: string[] = [];
-  let codeRun: { texts: string[]; lang?: string } | null = null;
+  const parts: Array<string> = [];
+  let codeRun: { texts: Array<string>; lang?: string } | null = null;
 
   function flushCode() {
-    if (!codeRun) return;
+    if (!codeRun) {
+      return;
+    }
     const fence = codeRun.lang ? "```" + codeRun.lang : "```";
     parts.push(fence + "\n" + codeRun.texts.join("\n") + "\n```");
     codeRun = null;
   }
 
-  let tableRows: string[] | null = null;
+  let tableRows: Array<string> | null = null;
 
   function formatTableRow(text: string): string {
     return "| " + text.split(" | ").join(" | ") + " |";
@@ -232,9 +244,11 @@ export function assembleAnswer(
     tableRows = [];
     if (cur.isHeader) {
       const cols = cur.text.split(" | ");
-      const escaped = cols.map(c => c.replace(/\*/g, "\\*"));
-      tableRows.push("| " + escaped.join(" | ") + " |");
-      tableRows.push("| " + cols.map(() => "---").join(" | ") + " |");
+      const escaped = cols.map(c => c.replaceAll("*", String.raw`\*`));
+      tableRows.push(
+        "| " + escaped.join(" | ") + " |",
+        "| " + cols.map(() => "---").join(" | ") + " |",
+      );
     } else {
       tableRows.push(formatTableRow(cur.text));
     }
@@ -247,7 +261,7 @@ export function assembleAnswer(
     }
     if (cur.isHeader) {
       const cols = cur.text.split(" | ");
-      const escaped = cols.map(c => c.replace(/\*/g, "\\*"));
+      const escaped = cols.map(c => c.replaceAll("*", String.raw`\*`));
       tableRows.unshift("| " + escaped.join(" | ") + " |");
       tableRows.splice(1, 0, "| " + cols.map(() => "---").join(" | ") + " |");
     } else {
@@ -256,7 +270,9 @@ export function assembleAnswer(
   }
 
   function flushTable() {
-    if (!tableRows) return;
+    if (!tableRows) {
+      return;
+    }
     parts.push(tableRows.join("\n"));
     tableRows = null;
   }

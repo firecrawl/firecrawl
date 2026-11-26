@@ -6,7 +6,8 @@ import {
   TEST_SUITE_WEBSITE,
   TEST_API_URL,
 } from "../lib";
-import { batchScrape, scrapeTimeout, idmux, Identity } from "./lib";
+import type { Identity } from "./lib";
+import { batchScrape, scrapeTimeout, idmux } from "./lib";
 import request from "supertest";
 
 let identity: Identity;
@@ -16,14 +17,14 @@ beforeAll(async () => {
   identity = await idmux({
     name: "batch-scrape",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
   lowConcurrencyIdentity = await idmux({
     name: "batch-scrape-cancel",
     concurrency: 2,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000);
+}, 10_000);
 
 describe("Batch scrape tests", () => {
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
@@ -149,7 +150,7 @@ describe("Batch scrape tests", () => {
         expect(response.data[0].json.is_open_source).toBe(true);
         expect(typeof response.data[0].json.is_open_source).toBe("boolean");
       },
-      180000,
+      180_000,
     );
   });
 });

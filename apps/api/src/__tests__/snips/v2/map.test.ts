@@ -4,7 +4,8 @@ import {
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { expectMapToSucceed, map, idmux, Identity } from "./lib";
+import type { Identity } from "./lib";
+import { expectMapToSucceed, map, idmux } from "./lib";
 
 let identity: Identity;
 
@@ -12,9 +13,9 @@ beforeAll(async () => {
   identity = await idmux({
     name: "map",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000);
+}, 10_000);
 
 // TODO: is map meant for self-host?
 describe("Map tests", () => {
@@ -32,7 +33,7 @@ describe("Map tests", () => {
 
       expectMapToSucceed(response);
     },
-    60000,
+    60_000,
   );
 
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
@@ -50,13 +51,13 @@ describe("Map tests", () => {
       expect(response.body.success).toBe(false);
       expect(response.body.error).toContain("The map operation timed out");
     },
-    10000,
+    10_000,
   );
 
   it.concurrent(
     "handles query parameters correctly",
     async () => {
-      let response = await map(
+      const response = await map(
         {
           url: "https://www.hfea.gov.uk",
           sitemap: "only",
@@ -76,7 +77,7 @@ describe("Map tests", () => {
         ),
       ).toBe(true);
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -102,7 +103,7 @@ describe("Map tests", () => {
       expect(urls).toContain("https://www.hfea.gov.uk/second-page");
       expect(urls).toContain("https://www.hfea.gov.uk/third-page");
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -123,7 +124,7 @@ describe("Map tests", () => {
       expect(response.body.success).toBe(true);
       expect(response.body.links.length).toBe(2);
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -146,7 +147,7 @@ describe("Map tests", () => {
       expect(urls).toContain("https://www.hfea.gov.uk/first-page");
       expect(urls).toContain("https://www.hfea.gov.uk/second-page");
     },
-    60000,
+    60_000,
   );
 
   it.concurrent(
@@ -166,7 +167,7 @@ describe("Map tests", () => {
       expect(response.body.success).toBe(true);
       expect(response.body.links).toEqual([]);
     },
-    60000,
+    60_000,
   );
 
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
@@ -213,7 +214,7 @@ describe("Map tests", () => {
       expect(response.body.warning).toContain("base domain");
       expect(response.body.warning).toContain("example.com");
     },
-    60000,
+    60_000,
   );
 
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
@@ -249,6 +250,6 @@ describe("Map tests", () => {
         response.body.links.every(link => !link.url.includes("firecrawl.com")),
       ).toBe(true);
     },
-    60000,
+    60_000,
   );
 });

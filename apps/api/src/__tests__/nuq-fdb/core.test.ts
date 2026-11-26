@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { config } from "../../config";
 import {
   NuQFdbQueue,
@@ -24,7 +24,7 @@ const expectInlineReturnvalue = !(
 const RUN = randomUUID().slice(0, 8);
 const TEST_LEASE_MS = 1500;
 
-const createdQueueNames: string[] = [];
+const createdQueueNames: Array<string> = [];
 
 type Ctx = {
   queue: NuQFdbQueue;
@@ -53,11 +53,13 @@ async function makeCtx(name: string): Promise<Ctx> {
 async function takeAll(
   queue: NuQFdbQueue,
   maxJobs: number = 50,
-): Promise<any[]> {
-  const out: any[] = [];
+): Promise<Array<any>> {
+  const out: Array<any> = [];
   while (out.length < maxJobs) {
     const job = await queue.getJobToProcess();
-    if (job === null) break;
+    if (job === null) {
+      break;
+    }
     out.push(job);
   }
   return out;
@@ -83,9 +85,7 @@ describeIf("NuQ FDB core", () => {
     const db = getNuqFdbDatabase();
     for (const name of createdQueueNames) {
       const r = fdb.tuple.range(["nuq", name]);
-      await db.doTn(async tn =>
-        tn.clearRange(r.begin as Buffer, r.end as Buffer),
-      );
+      await db.doTn(async tn => tn.clearRange(r.begin, r.end));
     }
   });
 
@@ -100,7 +100,7 @@ describeIf("NuQ FDB core", () => {
     expect(taken[0].lock).toBeDefined();
     expect(taken[0].data.url).toBe("https://example.com");
 
-    const ok = await queue.jobFinish(id, taken[0].lock!, { result: "yay" });
+    const ok = await queue.jobFinish(id, taken[0].lock, { result: "yay" });
     expect(ok).toBe(true);
 
     const job = await queue.getJob(id);
@@ -120,9 +120,9 @@ describeIf("NuQ FDB core", () => {
     expect(job.id).toBe(id);
 
     expect(await queue.jobFinish(id, randomUUID(), null)).toBe(false);
-    expect(await queue.jobFinish(id, job.lock!, { ok: 1 })).toBe(true);
-    expect(await queue.jobFinish(id, job.lock!, { ok: 1 })).toBe(true);
-    expect(await queue.jobFail(id, job.lock!, "nope")).toBe(false);
+    expect(await queue.jobFinish(id, job.lock, { ok: 1 })).toBe(true);
+    expect(await queue.jobFinish(id, job.lock, { ok: 1 })).toBe(true);
+    expect(await queue.jobFail(id, job.lock, "nope")).toBe(false);
   });
 
   test("team concurrency gate: limit 2 admits 2, backlogs the rest, promotes on finish", async () => {
@@ -171,18 +171,20 @@ describeIf("NuQ FDB core", () => {
     );
 
     // finishing one job promotes exactly one backlogged job
-    await queue.jobFinish(taken[0].id, taken[0].lock!, null);
+    await queue.jobFinish(taken[0].id, taken[0].lock, null);
     expect(await queue.getTeamActiveCount(owner)).toBe(2);
     expect(await queue.getTeamPendingCount(owner)).toBe(2);
 
     const next = await takeAll(queue, 5);
     expect(next.length).toBe(1);
 
-    await queue.jobFinish(taken[1].id, taken[1].lock!, null);
-    await queue.jobFinish(next[0].id, next[0].lock!, null);
+    await queue.jobFinish(taken[1].id, taken[1].lock, null);
+    await queue.jobFinish(next[0].id, next[0].lock, null);
     const rest = await takeAll(queue, 5);
     expect(rest.length).toBe(2);
-    for (const j of rest) await queue.jobFinish(j.id, j.lock!, null);
+    for (const j of rest) {
+      await queue.jobFinish(j.id, j.lock, null);
+    }
     expect(await queue.getTeamActiveCount(owner)).toBe(0);
     expect(await queue.getTeamPendingCount(owner)).toBe(0);
   });
@@ -236,7 +238,7 @@ describeIf("NuQ FDB core", () => {
 
     const [b] = await takeAll(queue, 1);
     expect(b.id).toBe(blocker);
-    await queue.jobFinish(b.id, b.lock!, null);
+    await queue.jobFinish(b.id, b.lock, null);
 
     const [promoted] = await takeAll(queue, 1);
     expect(promoted.id).toBe(highPrio);
@@ -257,7 +259,7 @@ describeIf("NuQ FDB core", () => {
     const [k] = await takeAll(queue, 1);
     expect(k.id).toBe(kickoff);
     expect(await queue.getTeamActiveCount(owner)).toBe(0);
-    await queue.jobFinish(k.id, k.lock!, null);
+    await queue.jobFinish(k.id, k.lock, null);
     expect(await queue.getTeamActiveCount(owner)).toBe(0);
   });
 
@@ -309,9 +311,10 @@ describeIf("NuQ FDB core", () => {
     stats = await queue.getGroupNumericStats(gid);
     expect(stats.active).toBe(3);
 
-    for (const j of taken.slice(0, 2))
-      await queue.jobFinish(j.id, j.lock!, null);
-    await queue.jobFail(taken[2].id, taken[2].lock!, "boom");
+    for (const j of taken.slice(0, 2)) {
+      await queue.jobFinish(j.id, j.lock, null);
+    }
+    await queue.jobFail(taken[2].id, taken[2].lock, "boom");
 
     stats = await queue.getGroupNumericStats(gid);
     expect(stats.completed).toBe(2);
@@ -359,14 +362,14 @@ describeIf("NuQ FDB core", () => {
     const taken1 = await takeAll(queue, 3);
     expect(taken1.length).toBe(1);
 
-    await queue.jobFinish(taken1[0].id, taken1[0].lock!, null);
+    await queue.jobFinish(taken1[0].id, taken1[0].lock, null);
     const taken2 = await takeAll(queue, 3);
     expect(taken2.length).toBe(1);
 
-    await queue.jobFinish(taken2[0].id, taken2[0].lock!, null);
+    await queue.jobFinish(taken2[0].id, taken2[0].lock, null);
     const taken3 = await takeAll(queue, 3);
     expect(taken3.length).toBe(1);
-    await queue.jobFinish(taken3[0].id, taken3[0].lock!, null);
+    await queue.jobFinish(taken3[0].id, taken3[0].lock, null);
 
     const g = await group.getGroup(gid);
     expect(g?.status).toBe("completed");
@@ -394,7 +397,7 @@ describeIf("NuQ FDB core", () => {
 
     const [first] = await takeAll(queue, 2);
     expect(first).toBeDefined();
-    await queue.jobFinish(first.id, first.lock!, null);
+    await queue.jobFinish(first.id, first.lock, null);
 
     // second job is in the delay index, not takeable yet
     await sweeper.sweepOnce();
@@ -405,7 +408,7 @@ describeIf("NuQ FDB core", () => {
     const [second] = await takeAll(queue, 1);
     expect(second).toBeDefined();
     expect(second.id).toBe(ids.find(i => i !== first.id));
-    await queue.jobFinish(second.id, second.lock!, null);
+    await queue.jobFinish(second.id, second.lock, null);
   });
 
   test("lease expiry: sweeper requeues a stalled job, then fails it after MAX_STALLS", async () => {
@@ -425,7 +428,7 @@ describeIf("NuQ FDB core", () => {
     expect(j?.status).toBe("queued");
 
     // worker that lost its lease can no longer finish
-    expect(await queue.jobFinish(id, job.lock!, null)).toBe(false);
+    expect(await queue.jobFinish(id, job.lock, null)).toBe(false);
 
     // stall it to death
     for (let i = 0; i < 9; i++) {
@@ -449,12 +452,12 @@ describeIf("NuQ FDB core", () => {
 
     for (let i = 0; i < 3; i++) {
       await new Promise(resolve => setTimeout(resolve, TEST_LEASE_MS / 2));
-      expect(await queue.renewLock(id, job.lock!)).toBe(true);
+      expect(await queue.renewLock(id, job.lock)).toBe(true);
     }
     await sweeper.sweepOnce();
     const j = await queue.getJob(id);
     expect(j?.status).toBe("active");
-    expect(await queue.jobFinish(id, job.lock!, null)).toBe(true);
+    expect(await queue.jobFinish(id, job.lock, null)).toBe(true);
   }, 30_000);
 
   test("backlog timeout: pending jobs are silently dropped at their deadline", async () => {
@@ -476,7 +479,7 @@ describeIf("NuQ FDB core", () => {
     expect(await queue.getJob(doomed)).toBeNull();
 
     const [b] = await takeAll(queue, 1);
-    await queue.jobFinish(b.id, b.lock!, null);
+    await queue.jobFinish(b.id, b.lock, null);
   });
 
   test("group cancellation: pending dropped, ready diverted, group still completes", async () => {
@@ -509,7 +512,7 @@ describeIf("NuQ FDB core", () => {
     expect(after.length).toBe(0);
 
     // active job finishes normally; that drains the group
-    await queue.jobFinish(active.id, active.lock!, null);
+    await queue.jobFinish(active.id, active.lock, null);
     await sweeper.sweepOnce();
 
     const g = await group.getGroup(gid);
@@ -570,7 +573,7 @@ describeIf("NuQ FDB core", () => {
 
     const wait1 = queue.waitForJob(id1, 15_000);
     const [j1] = await takeAll(queue, 1);
-    await queue.jobFinish(j1.id, j1.lock!, { doc: "ok" });
+    await queue.jobFinish(j1.id, j1.lock, { doc: "ok" });
     if (expectInlineReturnvalue) {
       await expect(wait1).resolves.toEqual({ doc: "ok" });
     } else {
@@ -581,18 +584,20 @@ describeIf("NuQ FDB core", () => {
     await queue.addJob(id2, scrapeData(), { ownerId: owner }, UNLIMITED);
     const wait2 = queue.waitForJob(id2, 15_000);
     const [j2] = await takeAll(queue, 1);
-    await queue.jobFail(j2.id, j2.lock!, "scrape exploded");
+    await queue.jobFail(j2.id, j2.lock, "scrape exploded");
     await expect(wait2).rejects.toThrow("scrape exploded");
 
     const id3 = randomUUID();
     await queue.addJob(id3, scrapeData(), { ownerId: owner }, UNLIMITED);
     await expect(queue.waitForJob(id3, 500)).rejects.toThrow(/timed out/i);
     const [j3] = await takeAll(queue, 1);
-    await queue.jobFinish(j3.id, j3.lock!, null);
+    await queue.jobFinish(j3.id, j3.lock, null);
   }, 30_000);
 
   test("large returnvalue is chunked and reassembled (self-host path)", async () => {
-    if (!expectInlineReturnvalue) return;
+    if (!expectInlineReturnvalue) {
+      return;
+    }
     const { queue } = await makeCtx("chunks");
     const owner = freshOwner();
     const id = randomUUID();
@@ -600,7 +605,7 @@ describeIf("NuQ FDB core", () => {
     const [job] = await takeAll(queue, 1);
 
     const big = { blob: "x".repeat(300 * 1024) };
-    await queue.jobFinish(id, job.lock!, big);
+    await queue.jobFinish(id, job.lock, big);
 
     const j = await queue.getJob(id);
     expect(j?.status).toBe("completed");
@@ -624,9 +629,9 @@ describeIf("NuQ FDB core", () => {
     );
     const taken = await takeAll(queue, 5);
     expect(taken.length).toBe(5);
-    const finishOrder: string[] = [];
+    const finishOrder: Array<string> = [];
     for (const j of taken) {
-      await queue.jobFinish(j.id, j.lock!, null);
+      await queue.jobFinish(j.id, j.lock, null);
       finishOrder.push(j.id);
     }
 
@@ -652,13 +657,13 @@ describeIf("NuQ FDB core", () => {
       gate(10),
     );
     const taken = await takeAll(queue, 4);
-    const expectedFailed: {
+    const expectedFailed: Array<{
       id: string;
       failedReason: string;
       url: string;
-    }[] = [];
+    }> = [];
     for (const [index, job] of taken.entries()) {
-      await queue.jobFail(job.id, job.lock!, `failure-${index}`);
+      await queue.jobFail(job.id, job.lock, `failure-${index}`);
       expectedFailed.push({
         id: job.id,
         failedReason: `failure-${index}`,
@@ -692,7 +697,7 @@ describeIf("NuQ FDB core", () => {
       gate(10),
     );
     const [job] = await takeAll(queue, 1);
-    await queue.jobFail(job.id, job.lock!, "zdr failure");
+    await queue.jobFail(job.id, job.lock, "zdr failure");
 
     const failed = await queue.getGroupJobs(gid, "failed");
     expect(failed).toHaveLength(1);
@@ -718,7 +723,7 @@ describeIf("NuQ FDB core", () => {
     expect(await queue.getGroupAnyJob(gid, randomUUID())).toBeNull();
 
     const [j] = await takeAll(queue, 1);
-    await queue.jobFinish(j.id, j.lock!, null);
+    await queue.jobFinish(j.id, j.lock, null);
   });
 
   // A completed crawl member must retain its input data so the crawl-finish job
@@ -738,7 +743,7 @@ describeIf("NuQ FDB core", () => {
     );
 
     const [j] = await takeAll(queue, 1);
-    await queue.jobFinish(j.id, j.lock!, { ok: true });
+    await queue.jobFinish(j.id, j.lock, { ok: true });
 
     const any = await queue.getGroupAnyJob(gid, owner);
     expect(any?.id).toBe(id);
@@ -763,7 +768,7 @@ describeIf("NuQ FDB core", () => {
     );
 
     const [j] = await takeAll(queue, 1);
-    await queue.jobFinish(j.id, j.lock!, null);
+    await queue.jobFinish(j.id, j.lock, null);
 
     const got = await queue.getJob(id);
     expect(got?.data).toBeNull();
@@ -790,7 +795,7 @@ describeIf("NuQ FDB core", () => {
 
     const [j] = await takeAll(queue, 1);
     expect(j.id).toBe(b);
-    await queue.jobFinish(j.id, j.lock!, null);
+    await queue.jobFinish(j.id, j.lock, null);
   });
 
   test("limit raise promotes backlogged jobs via the sweeper", async () => {
@@ -822,9 +827,11 @@ describeIf("NuQ FDB core", () => {
 
     const taken = await takeAll(queue, 4);
     expect(taken.length).toBe(4);
-    for (const j of taken) await queue.jobFinish(j.id, j.lock!, null);
+    for (const j of taken) {
+      await queue.jobFinish(j.id, j.lock, null);
+    }
     const [last] = await takeAll(queue, 1);
-    await queue.jobFinish(last.id, last.lock!, null);
+    await queue.jobFinish(last.id, last.lock, null);
   });
 
   test("group TTL cleanup removes job records", async () => {
@@ -841,7 +848,7 @@ describeIf("NuQ FDB core", () => {
       gate(10),
     );
     const [j] = await takeAll(queue, 1);
-    await queue.jobFinish(j.id, j.lock!, null);
+    await queue.jobFinish(j.id, j.lock, null);
 
     expect((await group.getGroup(gid))?.status).toBe("completed");
     await new Promise(resolve => setTimeout(resolve, 1100));

@@ -7,7 +7,7 @@ import { service } from "../service";
  * idempotency module. Returns false for malformed or duplicate keys.
  */
 export async function claimIdempotencyKey(
-  rawHeader: string | string[],
+  rawHeader: string | Array<string>,
   teamId: string,
 ): Promise<boolean> {
   const key = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;

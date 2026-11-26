@@ -1,9 +1,6 @@
-import { Response } from "express";
-import {
-  OngoingCrawlsResponse,
-  RequestWithAuth,
-  toV2CrawlerOptions,
-} from "./types";
+import type { Response } from "express";
+import type { OngoingCrawlsResponse, RequestWithAuth } from "./types";
+import { toV2CrawlerOptions } from "./types";
 import { getCrawl } from "../../lib/crawl-redis";
 import { configDotenv } from "dotenv";
 import { crawlGroup } from "../../services/worker/nuq-router";

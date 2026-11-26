@@ -8,7 +8,7 @@ import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { v7 as uuidv7 } from "uuid";
 import type { Document } from "../controllers/v2/types";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
-import type { Refusal, RequestEvent, RequestKind, ResponseInfo } from "./hooks";
+import type { Refusal, RequestKind } from "./hooks";
 import type {
   AdmitInput,
   AuthRoute,
@@ -16,7 +16,6 @@ import type {
   CoreRouteKind,
   RouteKind,
 } from "./modules";
-import type { RequestContext } from "./request-context";
 import { service } from "./service";
 
 export type { AuthRoute, CoreRouteKind, RouteKind };
@@ -43,7 +42,9 @@ export function requestKindForPath(path: string): RequestKind | undefined {
 
 /** Sends a ready-made HTTP refusal if the response has not already been sent. */
 export function sendRefusal(res: Response, refusal: Refusal): void {
-  if (res.headersSent) return;
+  if (res.headersSent) {
+    return;
+  }
   for (const [name, value] of Object.entries(refusal.headers ?? {})) {
     res.setHeader(name, value);
   }
@@ -271,7 +272,7 @@ export function openRequest(
           stage: "preflight",
           requestedUnits,
           ctx: req.ctx,
-          state: state as AuthorizeState,
+          state,
         });
 
         if (!authz.ok) {
@@ -325,7 +326,7 @@ export function openRequest(
         id,
         ctx: req.ctx,
         body: req.body,
-      } as RequestEvent);
+      });
 
       next();
     })().catch(next);
@@ -350,7 +351,7 @@ export function resolveRequestContext(route: string): RequestHandler {
         req.ctx = {
           teamId: req.caller.teamId,
           zeroDataRetention: false,
-        } as RequestContext;
+        };
         next();
         return;
       }
@@ -397,7 +398,7 @@ export function finalizeResponse<
   req: Request,
   kind: K,
   payload: T,
-  documents: Document[] = [],
+  documents: Array<Document> = [],
 ): T | Promise<T> {
   if (!service.hooks.has("request.responding") || !req.ctx) {
     return payload;
@@ -409,5 +410,5 @@ export function finalizeResponse<
     ctx: req.ctx,
     body: req.body,
     documents,
-  } as ResponseInfo) as T | Promise<T>;
+  }) as T | Promise<T>;
 }

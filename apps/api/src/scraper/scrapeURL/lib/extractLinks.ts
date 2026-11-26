@@ -52,10 +52,10 @@ function resolveUrlWithBaseHref(
 async function extractLinksRust(
   html: string,
   baseUrl: string,
-): Promise<string[]> {
+): Promise<Array<string>> {
   const hrefs = await _extractLinks(html);
   const baseHref = await _extractBaseHref(html, baseUrl);
-  const links: string[] = [];
+  const links: Array<string> = [];
 
   hrefs.forEach(href => {
     href = href.trim();
@@ -72,7 +72,7 @@ export async function extractLinks(
   html: string,
   baseUrl: string,
   contentType?: string,
-): Promise<string[]> {
+): Promise<Array<string>> {
   if (isMarkdownContentType(contentType)) {
     return extractLinksFromMarkdown(html, baseUrl);
   }
@@ -89,7 +89,7 @@ export async function extractLinks(
 
   const $ = load(html);
   const baseHref = $("base[href]").first().attr("href") || "";
-  const links: string[] = [];
+  const links: Array<string> = [];
 
   $("a").each((_, element) => {
     let href = $(element).attr("href");

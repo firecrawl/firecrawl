@@ -5,7 +5,8 @@ import {
   getDoneJobsOrderedLength,
   isCrawlFinishMarked,
 } from "../../lib/crawl-redis";
-import { getCrawl, type StoredCrawl } from "../../lib/crawl-redis";
+import { getCrawl } from "../../lib/crawl-redis";
+import type { StoredCrawl } from "../../lib/crawl-redis";
 import { recordCrawlStateMissing } from "../../lib/crawl-state-metrics";
 import { getJobs } from "../../controllers/v2/crawl-status";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";

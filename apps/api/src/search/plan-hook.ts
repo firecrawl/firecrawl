@@ -4,14 +4,14 @@ import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
 
 export async function applySearchPlanHook<T extends { type: string }>(
-  plan: { query: string; limit: number; sources: T[] },
+  plan: { query: string; limit: number; sources: Array<T> },
   info: {
     ctx: RequestContext;
     body: SearchRequest;
     state?: Record<string, unknown>;
     logger?: Logger;
   },
-): Promise<{ query: string; limit: number; sources: T[] }> {
+): Promise<{ query: string; limit: number; sources: Array<T> }> {
   const hooks = installedService()?.hooks;
   if (!hooks?.has("search.plan")) {
     return plan;

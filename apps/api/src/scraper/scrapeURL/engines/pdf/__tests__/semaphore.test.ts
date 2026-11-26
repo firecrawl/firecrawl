@@ -21,7 +21,7 @@ describe("pdfExtractionSemaphore", () => {
   it("bounds concurrency to the configured limit and queues the rest", async () => {
     let active = 0;
     let maxActive = 0;
-    const started: number[] = [];
+    const started: Array<number> = [];
 
     const work = (i: number) =>
       withPdfExtractionPermit(async () => {

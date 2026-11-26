@@ -1,7 +1,8 @@
 // TODO: refactor
 
-import { AnyNode, Cheerio, load } from "cheerio"; // rustified
-import { ScrapeOptions } from "../../../controllers/v2/types";
+import type { AnyNode, Cheerio } from "cheerio";
+import { load } from "cheerio"; // rustified
+import type { ScrapeOptions } from "../../../controllers/v2/types";
 import { transformHtml } from "@mendable/firecrawl-rs";
 import { logger } from "../../../lib/logger";
 
@@ -82,9 +83,9 @@ export const htmlTransform = async (
   html: string,
   url: string,
   scrapeOptions: ScrapeOptions,
-  dropSignatures?: string[],
+  dropSignatures?: Array<string>,
 ) => {
-  const omceSignatures: string[] | undefined =
+  const omceSignatures: Array<string> | undefined =
     dropSignatures && dropSignatures.length > 0
       ? [...dropSignatures]
       : undefined;
@@ -181,7 +182,7 @@ export const htmlTransform = async (
       const tok = x.trim().split(" ");
       return {
         url: tok[0],
-        size: parseInt((tok[1] ?? "1x").slice(0, -1), 10),
+        size: Number.parseInt((tok[1] ?? "1x").slice(0, -1), 10),
         isX: (tok[1] ?? "").endsWith("x"),
       };
     });
@@ -203,12 +204,12 @@ export const htmlTransform = async (
   soup("img[src]").each((_, el) => {
     try {
       el.attribs.src = new URL(el.attribs.src, url).href;
-    } catch (_) {}
+    } catch {}
   });
   soup("a[href]").each((_, el) => {
     try {
       el.attribs.href = new URL(el.attribs.href, url).href;
-    } catch (_) {}
+    } catch {}
   });
 
   const cleanedHtml = soup.html();

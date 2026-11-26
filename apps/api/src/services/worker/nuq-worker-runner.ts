@@ -5,7 +5,7 @@ import { logger as _logger } from "../../lib/logger";
 import { jobDurationSeconds } from "../../lib/job-metrics";
 import { storedZeroDataRetention } from "../../lib/request-context";
 import { processJobInternal } from "./scrape-worker";
-import { NuQJob } from "./nuq";
+import type { NuQJob } from "./nuq";
 import { register } from "prom-client";
 import Express from "express";
 import { startNodeRuntimeMetrics } from "../../lib/node-runtime-metrics";
@@ -47,7 +47,9 @@ async function withTimeout<T>(
       }),
     ]);
   } finally {
-    if (timer) clearTimeout(timer);
+    if (timer) {
+      clearTimeout(timer);
+    }
   }
 }
 
@@ -116,7 +118,9 @@ export async function runNuqWorker(options: {
   });
 
   function shutdown() {
-    if (isShuttingDown) return;
+    if (isShuttingDown) {
+      return;
+    }
     isShuttingDown = true;
     shutdownStartedAt = Date.now();
     _logger.info("NuQ worker stopping after active work", {
@@ -136,7 +140,7 @@ export async function runNuqWorker(options: {
       _logger.info("No jobs to process", { module: "nuq/metrics" });
       await new Promise(resolve => setTimeout(resolve, noJobTimeout));
       if (!config.NUQ_RABBITMQ_URL) {
-        noJobTimeout = Math.min(noJobTimeout * 2, 10000);
+        noJobTimeout = Math.min(noJobTimeout * 2, 10_000);
       }
       continue;
     }
@@ -164,7 +168,7 @@ export async function runNuqWorker(options: {
         logger.warn("Failed to renew lock", { error });
         clearInterval(lockRenewInterval);
       }
-    }, 15000);
+    }, 15_000);
 
     let processResult:
       | { ok: true; data: Awaited<ReturnType<typeof processJobInternal>> }

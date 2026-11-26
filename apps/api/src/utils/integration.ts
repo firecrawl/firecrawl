@@ -37,7 +37,7 @@ export const integrationSchema = z
 
 /** The X-Integration header as an integration value, or undefined when it is missing or invalid. */
 export function integrationFromHeader(req: {
-  headers?: Record<string, string | string[] | undefined>;
+  headers?: Record<string, string | Array<string> | undefined>;
 }): string | undefined {
   const header = req.headers?.["x-integration"];
   const value =
@@ -53,8 +53,10 @@ export function integrationFromHeader(req: {
  */
 export function resolveIntegration<T>(
   explicit: T,
-  req: { headers?: Record<string, string | string[] | undefined> },
+  req: { headers?: Record<string, string | Array<string> | undefined> },
 ): T | string {
-  if (explicit != null && explicit !== "cli") return explicit;
+  if (explicit != null && explicit !== "cli") {
+    return explicit;
+  }
   return integrationFromHeader(req) ?? explicit;
 }

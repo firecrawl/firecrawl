@@ -28,9 +28,7 @@ const REGISTRABLE_DOMAIN_OPTIONS = {
  * Parses a hostname against the public suffix list to find its registrable domain.
  * @param hostname - The hostname to parse (not a full URL)
  */
-export function parseHostname(
-  hostname: string,
-): ReturnType<typeof parseTld> {
+export function parseHostname(hostname: string): ReturnType<typeof parseTld> {
   return parseTld(hostname, REGISTRABLE_DOMAIN_OPTIONS);
 }
 
@@ -61,7 +59,9 @@ const LOOKS_LIKE_TLD =
  * @param url - A full URL string; tldts extracts the host itself.
  */
 export function hasReachableHost(url: string): boolean {
-  if (parseTld(url).isIp === true) return true;
+  if (parseTld(url).isIp === true) {
+    return true;
+  }
   return LOOKS_LIKE_TLD.test(url);
 }
 
@@ -98,10 +98,12 @@ export function isBaseDomain(url: string): boolean {
 
     // Compare against extracted base domain (handles multi-part TLDs)
     const baseDomain = extractBaseDomain(url);
-    if (!baseDomain) return false;
+    if (!baseDomain) {
+      return false;
+    }
 
     return cleanHostname === baseDomain;
-  } catch (error) {
+  } catch {
     // If URL parsing fails, consider it not a base domain
     return false;
   }
@@ -120,7 +122,7 @@ export function extractBaseDomain(url: string): string | null {
     const parsed = parseHostname(hostname);
 
     return parsed.domain || null;
-  } catch (error) {
+  } catch {
     return null;
   }
 }

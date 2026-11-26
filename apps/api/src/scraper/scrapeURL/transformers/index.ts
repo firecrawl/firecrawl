@@ -1,6 +1,6 @@
 import { parseMarkdown } from "../../../lib/html-to-markdown";
-import { Meta } from "..";
-import { Document } from "../../../controllers/v2/types";
+import type { Meta } from "..";
+import type { Document } from "../../../controllers/v2/types";
 import { htmlTransform } from "../lib/removeUnwantedElements";
 import { extractLinks } from "../lib/extractLinks";
 import { isMarkdownContentType } from "../lib/extractLinksFromMarkdown";
@@ -429,7 +429,7 @@ type DocumentHookName =
 type TransformerStep = Transformer | { hook: DocumentHookName };
 
 // TODO: allow some of these to run in parallel
-const transformerStack: TransformerStep[] = [
+const transformerStack: Array<TransformerStep> = [
   deriveHTMLFromRawHTML,
   deriveMarkdownFromHTML,
   performCleanContent,
@@ -473,7 +473,7 @@ export async function executeTransformers(
     return coerceFieldsToFormats(meta, document);
   }
 
-  const executions: [string, number][] = [];
+  const executions: Array<[string, number]> = [];
 
   for (const step of transformerStack) {
     if (typeof step !== "function") {

@@ -5,11 +5,13 @@ import {
   buildHooks,
   hookPointNames,
   hookPoints,
-  type EnginePlan,
-  type HookHandler,
-  type HookHandlers,
-  type HookName,
-  type ScrapeMeta,
+} from "./hooks";
+import type {
+  EnginePlan,
+  HookHandler,
+  HookHandlers,
+  HookName,
+  ScrapeMeta,
 } from "./hooks";
 import type { RequestContext } from "./request-context";
 
@@ -99,7 +101,7 @@ describe("buildHooks", () => {
     const map = Object.create(null) as Record<string, unknown>;
     map["map.finished"] = handler;
 
-    const hooks = buildHooks([map as HookHandlers], vi.fn());
+    const hooks = buildHooks([map], vi.fn());
 
     expect(hooks.has("map.finished")).toBe(true);
     hooks.observe("map.finished", { id: "m1", ctx, urls: 4 });
@@ -111,7 +113,7 @@ describe("buildHooks", () => {
     const second = vi.fn((plan: EnginePlan) => ({
       candidates: [...plan.candidates, "playwright" as const],
     }));
-    const list: HookHandler<"scrape.engines.select">[] = [first];
+    const list: Array<HookHandler<"scrape.engines.select">> = [first];
     const set: HookHandlers = { "scrape.engines.select": list };
     const sets = [set];
 
@@ -202,12 +204,9 @@ describe("buildHooks", () => {
       ).toThrow('Hook "map.finished" handler at index 1 must be a function');
 
       const sparse = new Array(1);
-      expect(() =>
-        buildHooks(
-          [{ "map.finished": sparse } as unknown as HookHandlers],
-          vi.fn(),
-        ),
-      ).toThrow('Hook "map.finished" handler at index 0 must be a function');
+      expect(() => buildHooks([{ "map.finished": sparse }], vi.fn())).toThrow(
+        'Hook "map.finished" handler at index 0 must be a function',
+      );
 
       expect(() =>
         buildHooks([null as unknown as HookHandlers], vi.fn()),
@@ -232,7 +231,7 @@ describe("buildHooks", () => {
 
   describe("observe", () => {
     it("runs handlers in registration order without waiting and is a no-op when empty", () => {
-      const order: string[] = [];
+      const order: Array<string> = [];
       let asyncFinished = false;
       const hooks = buildHooks(
         [
@@ -345,7 +344,7 @@ describe("buildHooks", () => {
 
   describe("run", () => {
     it("runs handlers sequentially in registration order across sets", async () => {
-      const order: string[] = [];
+      const order: Array<string> = [];
       const hooks = buildHooks(
         [
           {
@@ -412,7 +411,7 @@ describe("buildHooks", () => {
 
     it("runs process.stop handlers in reverse registration order and isolates sync and async failures", async () => {
       const report = vi.fn();
-      const order: string[] = [];
+      const order: Array<string> = [];
       const syncErr = new Error("sync stop failure");
       const asyncErr = new Error("async stop failure");
 
@@ -463,7 +462,7 @@ describe("buildHooks", () => {
     });
 
     it("continues remaining process.stop handlers even if the error reporter throws", async () => {
-      const order: string[] = [];
+      const order: Array<string> = [];
       const hooks = buildHooks(
         [
           {
@@ -492,7 +491,7 @@ describe("buildHooks", () => {
     it("times out a hanging process.stop handler after 45_000ms, isolates it, and runs remaining handlers", async () => {
       vi.useFakeTimers();
       const report = vi.fn();
-      const order: string[] = [];
+      const order: Array<string> = [];
       let rejectLate: ((reason: Error) => void) | undefined;
 
       const hooks = buildHooks(

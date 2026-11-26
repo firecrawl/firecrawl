@@ -1,8 +1,8 @@
 import request from "supertest";
+import type { Identity } from "../lib";
 import {
   describeIf,
   HAS_AI,
-  Identity,
   idmux,
   scrapeTimeout,
   TEST_API_URL,
@@ -28,8 +28,8 @@ let otherIdentity: Identity;
 
 beforeAll(async () => {
   [identity, otherIdentity] = await Promise.all([
-    idmux({ name: "agent-thread", credits: 1000000 }),
-    idmux({ name: "agent-thread-other", credits: 1000000 }),
+    idmux({ name: "agent-thread", credits: 1_000_000 }),
+    idmux({ name: "agent-thread-other", credits: 1_000_000 }),
   ]);
 }, scrapeTimeout);
 
@@ -77,7 +77,7 @@ const listAgents = async () => {
     .set("Authorization", `Bearer ${identity.apiKey}`);
 
   expect(response.statusCode).toBe(200);
-  return (response.body.agents ?? []) as ListedAgent[];
+  return (response.body.agents ?? []) as Array<ListedAgent>;
 };
 
 const listAgentIds = async () => (await listAgents()).map(a => a.id);
@@ -88,7 +88,9 @@ async function waitForTerminal(jobId: string) {
   while (Date.now() < deadline) {
     const status = await statusOf(jobId);
     expect(status.statusCode).toBe(200);
-    if (status.body.status !== "processing") return status.body;
+    if (status.body.status !== "processing") {
+      return status.body;
+    }
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
 
@@ -334,7 +336,7 @@ describeIf(REQUIRES_FIRE_ENGINE && REQUIRES_AI && HAS_AGENT_BETA)(
         const trace = await traceOf(second.id);
         expect(trace.statusCode).toBe(200);
         expect(
-          (trace.body.events as { type: string }[]).some(
+          (trace.body.events as Array<{ type: string }>).some(
             event => event.type === "assistant.message",
           ),
         ).toBe(true);

@@ -1,12 +1,12 @@
-import { NextFunction, Request, Response } from "express";
-import {
-  type AgentInteropStatus,
+import type { NextFunction, Request, Response } from "express";
+import type {
   AuthCreditUsageChunk,
   RequestWithAuth,
   RequestWithMaybeAuth,
   RequestWithMaybeACUC,
 } from "../controllers/v2/types";
-import { RateLimiterMode } from "../types";
+import type { AgentInteropStatus } from "../controllers/v2/types";
+import type { RateLimiterMode } from "../types";
 import { requestContext } from "../lib/request-context";
 import { logger } from "../lib/logger";
 import {
@@ -16,12 +16,8 @@ import {
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
 import * as geoip from "geoip-country";
 import { claimIdempotencyKey } from "../lib/idempotency";
-import {
-  service,
-  type AuthRoute,
-  type BillingOperation,
-  type Caller,
-} from "../service";
+import { service } from "../service";
+import type { AuthRoute, BillingOperation, Caller } from "../service";
 import {
   rejectRequest,
   requestKindForPath,
@@ -103,7 +99,7 @@ export function checkCreditsMiddleware(
         (req.body as any).limit = authz.clampedLimit;
       }
       next();
-    })().catch(err => next(err));
+    })().catch(error => next(error));
   };
 }
 
@@ -176,7 +172,7 @@ export function authMiddleware(
       req.acuc = caller.chunk ?? undefined;
       req.caller = result.caller;
       next();
-    })().catch(err => next(err));
+    })().catch(error => next(error));
   };
 }
 
@@ -204,7 +200,7 @@ export function idempotencyMiddleware(
       }
     }
     next();
-  })().catch(err => next(err));
+  })().catch(error => next(error));
 }
 
 export function blocklistMiddleware(
@@ -257,7 +253,7 @@ export function blocklistMiddleware(
       });
     }
     next();
-  })().catch(err => next(err));
+  })().catch(error => next(error));
 }
 
 export function countryCheck(
@@ -389,6 +385,6 @@ export function wrap(
   controller: (req: Request, res: Response) => Promise<any>,
 ): (req: Request, res: Response, next: NextFunction) => any {
   return (req, res, next) => {
-    controller(req, res).catch(err => next(err));
+    controller(req, res).catch(error => next(error));
   };
 }

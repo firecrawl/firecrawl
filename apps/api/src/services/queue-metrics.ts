@@ -8,7 +8,7 @@ const STATES = ["waiting", "delayed", "active", "failed"] as const;
 // disconnected, and VMServiceScrape gives the whole endpoint 30s.
 const COLLECT_TIMEOUT_MS = 5000;
 
-let monitoredQueues: Queue[] = [];
+let monitoredQueues: Array<Queue> = [];
 
 /**
  * Exports depth and drain progress for these queues on every scrape. Multiple
@@ -17,7 +17,7 @@ let monitoredQueues: Queue[] = [];
  * the numbers are Redis-wide, so every pod that exports them adds an identical
  * copy of each series.
  */
-export function startBullmqQueueMetrics(queues: Queue[]) {
+export function startBullmqQueueMetrics(queues: Array<Queue>) {
   const byName = new Map(monitoredQueues.map(queue => [queue.name, queue]));
   for (const queue of queues) {
     byName.set(queue.name, queue);
@@ -126,7 +126,7 @@ export const bullmqQueueOldestOverdueSeconds = new Gauge({
       const score = result.value[1];
       // BullMQ scores a delayed job as dueAtMs * 0x1000 plus a counter.
       const dueAt =
-        score === undefined ? now : Math.floor(Number(score) / 0x1000);
+        score === undefined ? now : Math.floor(Number(score) / 0x10_00);
       this.labels(queue).set(Math.max(0, (now - dueAt) / 1000));
     });
   },

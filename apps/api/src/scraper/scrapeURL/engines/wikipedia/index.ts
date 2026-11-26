@@ -1,6 +1,6 @@
 import * as undici from "undici";
-import { EngineScrapeResult } from "..";
-import { Meta } from "../..";
+import type { EngineScrapeResult } from "..";
+import type { Meta } from "../..";
 import { config } from "../../../../config";
 import { EngineError } from "../../error";
 import { getRedisConnection } from "../../../../services/queue-service";
@@ -29,7 +29,7 @@ async function getAccessToken(logger: Meta["logger"]): Promise<string> {
 
   // Acquire a distributed lock so only one instance authenticates at a time.
   // Others wait and then read the token from Redis.
-  return await redlock.using([REDIS_AUTH_LOCK_KEY], 10000, async signal => {
+  return await redlock.using([REDIS_AUTH_LOCK_KEY], 10_000, async signal => {
     // Double-check: another instance may have authenticated while we waited for the lock
     try {
       const cached = await redis.get(REDIS_TOKEN_KEY);
@@ -122,15 +122,19 @@ export function parseWikimediaUrl(url: string): {
   };
 
   for (const [domain, projectSuffix] of Object.entries(wikiProjects)) {
-    const regex = new RegExp(`^([a-z]{2,3})\\.${domain.replace(".", "\\.")}$`);
+    const regex = new RegExp(
+      `^([a-z]{2,3})\\.${domain.replace(".", String.raw`\.`)}$`,
+    );
     const match = hostname.match(regex);
     if (match) {
       const lang = match[1];
       const pathMatch = parsed.pathname.match(/^\/wiki\/(.+)$/);
-      if (!pathMatch) return null;
+      if (!pathMatch) {
+        return null;
+      }
 
       return {
-        articleName: decodeURIComponent(pathMatch[1]).replace(/ /g, "_"),
+        articleName: decodeURIComponent(pathMatch[1]).replaceAll(" ", "_"),
         lang,
         projectIdentifier: `${lang}${projectSuffix}`,
       };
@@ -165,29 +169,33 @@ async function resolveRedirect(
       headers: { Accept: "application/json" },
     });
 
-    if (!response.ok) return articleName;
+    if (!response.ok) {
+      return articleName;
+    }
 
     const data = (await response.json()) as {
       query?: {
-        redirects?: { from: string; to: string }[];
-        normalized?: { from: string; to: string }[];
-        pages?: { title: string; missing?: boolean }[];
+        redirects?: Array<{ from: string; to: string }>;
+        normalized?: Array<{ from: string; to: string }>;
+        pages?: Array<{ title: string; missing?: boolean }>;
       };
     };
 
     const redirects = data.query?.redirects;
-    if (redirects && redirects.length > 0) {
-      const resolved = redirects[redirects.length - 1].to;
+    const lastRedirect = redirects?.at(-1);
+    if (lastRedirect) {
+      const resolved = lastRedirect.to;
       logger.info("Resolved Wikipedia redirect", {
         from: articleName,
         to: resolved,
       });
-      return resolved.replace(/ /g, "_");
+      return resolved.replaceAll(" ", "_");
     }
 
     const normalized = data.query?.normalized;
-    if (normalized && normalized.length > 0) {
-      return normalized[normalized.length - 1].to.replace(/ /g, "_");
+    const lastNormalized = normalized?.at(-1);
+    if (lastNormalized) {
+      return lastNormalized.to.replaceAll(" ", "_");
     }
 
     return articleName;
@@ -217,8 +225,8 @@ interface WikimediaArticle {
     name: string;
   };
   date_modified: string;
-  categories?: { name: string; url: string }[];
-  has_parts?: { name: string }[];
+  categories?: Array<{ name: string; url: string }>;
+  has_parts?: Array<{ name: string }>;
   image?: {
     content_url: string;
     width?: number;
@@ -297,7 +305,7 @@ export async function scrapeURLWithWikipedia(
     );
   }
 
-  const articles = (await response.json()) as WikimediaArticle[];
+  const articles = (await response.json()) as Array<WikimediaArticle>;
 
   if (!articles || articles.length === 0) {
     throw new EngineError(
@@ -358,14 +366,14 @@ export async function scrapeURLWithWikipedia(
 
 function escapeHtml(str: string): string {
   return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 export function wikipediaMaxReasonableTime(_meta: Meta): number {
-  return 10000;
+  return 10_000;
 }
 
 export function isWikimediaUrl(url: string): boolean {

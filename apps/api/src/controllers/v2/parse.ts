@@ -1,10 +1,9 @@
-import { NextFunction, Request, Response } from "express";
+import type { NextFunction, Request, Response } from "express";
 
 import { logger as _logger } from "../../lib/logger";
-import {
+import type {
   Document,
   FormatObject,
-  getV2RequestSchemas,
   ParseRequest,
   RequestWithAuth,
   ScrapeOptions,
@@ -12,13 +11,14 @@ import {
   UploadedParseFile,
   UploadedParseFileKind,
 } from "./types";
+import { getV2RequestSchemas } from "./types";
 import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
 import { getErrorHttpResponse, isTransportableError } from "../../lib/error";
-import { NuQJob } from "../../services/worker/nuq";
+import type { NuQJob } from "../../services/worker/nuq";
 import { withSpan, setSpanAttributes, SpanKind } from "../../lib/otel-tracer";
 import { processJobInternal } from "../../services/worker/scrape-worker";
-import { ScrapeJobData } from "../../types";
+import type { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { currentLimits, resolveJobPriority } from "../../lib/limits";
 import {
@@ -26,12 +26,8 @@ import {
   requestContext,
 } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import {
-  finalizeResponse,
-  service,
-  type RequestContext,
-  type SettleOutcome,
-} from "../../service";
+import { finalizeResponse, service } from "../../service";
+import type { RequestContext, SettleOutcome } from "../../service";
 import type { EngineName } from "../../service/engines";
 import { installedService } from "../../service/service";
 import type { BillingMetadata } from "../../lib/billing-types";
@@ -166,7 +162,7 @@ function sanitizeParseRequestForLogs(
       : null;
 
   if (!file || typeof file !== "object") {
-    return body as Record<string, unknown>;
+    return body;
   }
 
   return {
@@ -248,7 +244,7 @@ export function parseMultipartPayloadMiddleware(
         return;
       }
       optionsPayload = parsed as Record<string, unknown>;
-    } catch (error) {
+    } catch {
       res.status(400).json({
         success: false,
         code: "BAD_REQUEST",
@@ -418,7 +414,9 @@ export async function parseController(
       });
 
       const settleBilling = async (outcome: SettleOutcome) => {
-        if (billingHandle === undefined || settledBilling) return;
+        if (billingHandle === undefined || settledBilling) {
+          return;
+        }
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
             await service.modules.billing.settle?.(billingHandle, outcome);
@@ -577,30 +575,32 @@ export async function parseController(
           },
           ctx,
         );
-      } catch (e) {
+      } catch (error) {
         await settleBilling({ ok: false });
 
         const timeoutErr =
-          isTransportableError(e) &&
-          (e.code === "SCRAPE_TIMEOUT" ||
-            e.code === "CONCURRENCY_QUEUE_TIMEOUT");
+          isTransportableError(error) &&
+          (error.code === "SCRAPE_TIMEOUT" ||
+            error.code === "CONCURRENCY_QUEUE_TIMEOUT");
 
         setSpanAttributes(span, {
-          "parse.error": e instanceof Error ? e.message : String(e),
-          "parse.error_type": isTransportableError(e) ? e.code : "unknown",
+          "parse.error": error instanceof Error ? error.message : String(error),
+          "parse.error_type": isTransportableError(error)
+            ? error.code
+            : "unknown",
         });
 
         const jobIdField = agentRequestId ? {} : { jobId };
 
-        if (isTransportableError(e)) {
+        if (isTransportableError(error)) {
           if (!timeoutErr) {
             logger.error("Error in parseController", {
               version: "v2",
-              error: e,
+              error,
             });
           }
 
-          const httpResponse = getErrorHttpResponse(e);
+          const httpResponse = getErrorHttpResponse(error);
           if (httpResponse) {
             setSpanAttributes(span, {
               "parse.status_code": httpResponse.status,
@@ -608,20 +608,20 @@ export async function parseController(
             return res.status(httpResponse.status).json({
               ...httpResponse.extraFields,
               success: false,
-              code: e.code,
-              error: e.message,
+              code: error.code,
+              error: error.message,
               ...jobIdField,
             });
           }
 
-          if (e.code === "SCRAPE_ACTIONS_NOT_SUPPORTED") {
+          if (error.code === "SCRAPE_ACTIONS_NOT_SUPPORTED") {
             setSpanAttributes(span, {
               "parse.status_code": 400,
             });
             return res.status(400).json({
               success: false,
-              code: e.code,
-              error: e.message,
+              code: error.code,
+              error: error.message,
               ...jobIdField,
             });
           }
@@ -632,15 +632,15 @@ export async function parseController(
           });
           return res.status(statusCode).json({
             success: false,
-            code: e.code,
-            error: e.message,
+            code: error.code,
+            error: error.message,
             ...jobIdField,
           });
         } else {
           const id = uuidv7();
           logger.error("Error in parseController", {
             version: "v2",
-            error: e,
+            error,
             errorId: id,
             path: req.path,
             teamId: req.auth.team_id,
@@ -689,7 +689,7 @@ export async function parseController(
 
       const rawFormats = (req.body.formats ?? []) as Array<{
         type: string;
-        modes?: string[];
+        modes?: Array<string>;
       }>;
       let usedLlm =
         rawFormats.some(
@@ -708,7 +708,7 @@ export async function parseController(
         }
       }
 
-      const formats: string[] =
+      const formats: Array<string> =
         req.body.formats?.map((f: FormatObject) => f?.type) ?? [];
 
       logger.info("Request metrics", {

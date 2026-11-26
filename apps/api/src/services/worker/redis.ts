@@ -1,4 +1,5 @@
-import IORedis, { Redis } from "ioredis";
+import type { Redis } from "ioredis";
+import IORedis from "ioredis";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 
@@ -68,13 +69,17 @@ const redis = new IORedis(config.REDIS_URL!, {
 let initPromise: Promise<void> | null = null;
 
 export const ensureRedis = async () => {
-  if (initPromise) return initPromise;
+  if (initPromise) {
+    return initPromise;
+  }
 
   // If Redis is already connected/ready, just load scripts if needed
   if (redis.status === "ready") {
     initPromise = (async () => {
       for (const [k, v] of Object.entries(luaScripts)) {
-        if (!scripts[k]) scripts[k] = {};
+        if (!scripts[k]) {
+          scripts[k] = {};
+        }
         for (const [k2, v2] of Object.entries(v)) {
           if (!scripts[k][k2]) {
             const h = await redis.script("LOAD", v2);
@@ -116,16 +121,16 @@ export const ensureRedis = async () => {
       }
     }
     logger.info("Redis connected and scripts loaded");
-  })().catch(err => {
+  })().catch(error => {
     initPromise = null;
-    throw err;
+    throw error;
   });
   return initPromise;
 };
 
 export const shutdownRedis = async () => {
   initPromise = null;
-  for (const key of Object.keys(scripts) as (keyof ScriptHashes)[]) {
+  for (const key of Object.keys(scripts) as Array<keyof ScriptHashes>) {
     scripts[key] = {} as ScriptHashes[typeof key];
   }
 
@@ -135,8 +140,8 @@ export const shutdownRedis = async () => {
 
   try {
     await redis.quit();
-  } catch (err) {
-    logger.warn("Error while closing NuQ Redis connection", { err });
+  } catch (error) {
+    logger.warn("Error while closing NuQ Redis connection", { err: error });
     redis.disconnect();
   }
 };
@@ -149,8 +154,8 @@ export const semaphoreKeys = (teamId: string) => {
 
 async function runScript<T>(
   hash: string,
-  keys: string[],
-  args?: (string | number)[],
+  keys: Array<string>,
+  args?: Array<string | number>,
 ): Promise<T> {
   await ensureRedis();
   return (await redis.evalsha(

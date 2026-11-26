@@ -6,14 +6,14 @@ export type AbortInstance = {
 };
 
 export class AbortManager {
-  private aborts: AbortInstance[] = [];
+  private aborts: Array<AbortInstance> = [];
   private mappedController: AbortController | null = null;
   private listeners: Array<{ signal: AbortSignal; handler: () => void }> = [];
 
-  constructor(...instances: (AbortInstance | undefined | null)[]) {
+  constructor(...instances: Array<AbortInstance | undefined | null>) {
     this.aborts = instances.filter(
       x => x !== undefined && x !== null,
-    ) as AbortInstance[];
+    ) as Array<AbortInstance>;
   }
 
   dispose() {
@@ -29,8 +29,8 @@ export class AbortManager {
   private resolveInner(abort: AbortInstance): any {
     try {
       return abort.throwable();
-    } catch (err) {
-      return err;
+    } catch (error) {
+      return error;
     }
   }
 
@@ -47,7 +47,9 @@ export class AbortManager {
     }
 
     const handler = () => {
-      if (!this.mappedController) return;
+      if (!this.mappedController) {
+        return;
+      }
 
       const inner = this.resolveInner(abort);
       const reason = new AbortManagerThrownError(abort.tier, inner);
@@ -59,10 +61,10 @@ export class AbortManager {
     this.listeners.push({ signal: abort.signal, handler });
   }
 
-  add(...instances: (AbortInstance | undefined | null)[]) {
+  add(...instances: Array<AbortInstance | undefined | null>) {
     const pureInstances = instances.filter(
       x => x !== undefined && x !== null,
-    ) as AbortInstance[];
+    ) as Array<AbortInstance>;
     this.aborts.push(...pureInstances);
 
     if (this.mappedController !== null) {
@@ -72,12 +74,12 @@ export class AbortManager {
     }
   }
 
-  child(...instances: (AbortInstance | undefined | null)[]): AbortManager {
+  child(...instances: Array<AbortInstance | undefined | null>): AbortManager {
     const manager = new AbortManager(
       ...this.aborts,
       ...(instances.filter(
         x => x !== undefined && x !== null,
-      ) as AbortInstance[]),
+      ) as Array<AbortInstance>),
     );
     return manager;
   }

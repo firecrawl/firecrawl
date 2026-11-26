@@ -45,7 +45,9 @@ function fdbForced(): boolean {
 }
 
 async function optionalFdbSlot<T>(operation: () => Promise<T>): Promise<T> {
-  if (fdbForced()) return operation();
+  if (fdbForced()) {
+    return operation();
+  }
   if (!(await nuqFdbHealthCheck(FDB_OPTIONAL_SLOT_TIMEOUT_MS))) {
     throw new Error("FDB health check failed before optional slot operation");
   }
@@ -192,13 +194,17 @@ function startHeartbeat(
             });
           },
         );
-        if (stopped) break;
+        if (stopped) {
+          break;
+        }
 
         const ok = await heartbeat(teamId, holderId);
         if (!ok) {
           throw new TransportableError("SCRAPE_TIMEOUT", "heartbeat_failed");
         }
-        if (stopped) break;
+        if (stopped) {
+          break;
+        }
         await sleep(intervalMs);
       }
     } catch (error) {
@@ -229,8 +235,12 @@ async function resolveMirrorBackend(
   teamId: string,
   ctx: RequestContext,
 ): Promise<MirrorBackend> {
-  if (!(await isFdbTeam(teamId, ctx))) return "pg";
-  if (fdbForced()) return "fdb";
+  if (!(await isFdbTeam(teamId, ctx))) {
+    return "pg";
+  }
+  if (fdbForced()) {
+    return "fdb";
+  }
   return (await nuqFdbHealthCheck(FDB_OPTIONAL_SLOT_TIMEOUT_MS)) ? "fdb" : "pg";
 }
 

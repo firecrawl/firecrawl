@@ -1,6 +1,6 @@
-import type { Socket } from "net";
+import type { Socket } from "node:net";
 import { config } from "../../../../config";
-import type { TLSSocket } from "tls";
+import type { TLSSocket } from "node:tls";
 import * as undici from "undici";
 import { interceptors } from "undici";
 import { CookieJar } from "tough-cookie";
@@ -38,7 +38,9 @@ export class InsecureConnectionError extends Error {
 }
 
 export function isIPPrivate(address: string): boolean {
-  if (!IPAddr.isValid(address)) return false;
+  if (!IPAddr.isValid(address)) {
+    return false;
+  }
 
   const addr = IPAddr.parse(address);
   return addr.range() !== "unicast";
@@ -63,7 +65,7 @@ export const rejectPrivateIPLiteralTargets: undici.Dispatcher.DispatcherComposeI
         options.origin instanceof URL
           ? options.origin
           : new URL(options.origin.toString());
-      const hostname = origin.hostname.replace(/^\[|\]$/g, "");
+      const hostname = origin.hostname.replaceAll(/^\[|\]$/g, "");
       privateTarget =
         isIPPrivate(hostname) || /(^|\.)localhost\.?$/.test(hostname);
     } catch {
@@ -118,7 +120,7 @@ function createBaseAgent(skipTlsVerification: boolean) {
 
 function attachSecurityCheck(agent: undici.Dispatcher) {
   agent.on("connect", (_, targets) => {
-    const client: undici.Client = targets.slice(-1)[0] as undici.Client;
+    const client: undici.Client = targets.at(-1) as undici.Client;
     const socketSymbol = Object.getOwnPropertySymbols(client).find(
       x => x.description === "socket",
     )!;

@@ -1,4 +1,4 @@
-import { Meta } from "../..";
+import type { Meta } from "../..";
 import escapeHtml from "escape-html";
 import PdfParse from "pdf-parse";
 import { readFile } from "node:fs/promises";

@@ -34,5 +34,5 @@ export function getRoutePattern(req: Request): string {
   if ((req as unknown as Record<symbol, boolean>)[UNMATCHED_FLAG] === true) {
     return UNMATCHED_ROUTE;
   }
-  return redactAdminKey(req.path).replace(UUID_REGEX, ":id");
+  return redactAdminKey(req.path).replaceAll(UUID_REGEX, ":id");
 }

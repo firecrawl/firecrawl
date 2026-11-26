@@ -1,27 +1,28 @@
-import { randomUUID } from "crypto";
-import { Logger } from "winston";
+import { randomUUID } from "node:crypto";
+import type { Logger } from "winston";
 import { logger as _logger } from "../../../lib/logger";
 import { getNuqFdbDatabase } from "./client";
-import {
+import type {
   NuqFdbKeyspace,
   JobMeta,
   JobStatusRecord,
   GroupMeta,
   QueueEntry,
+} from "./keyspace";
+import {
   decodeI64,
   encodeI64,
   decodeJson,
   encodeJson,
   timeBucket,
   TIME_BUCKETS,
-  F_GATED,
   F_CRAWL_GATED,
   F_COUNTABLE,
   F_GACC,
   F_KEY_GATED,
 } from "./keyspace";
+import type { GroupJobIndexValue } from "./ops";
 import {
-  ONE,
   MINUS_ONE,
   EMPTY,
   MAX_STALLS,
@@ -37,13 +38,11 @@ import {
   deleteJobRecords,
   popTeamPending,
   popKeyPending,
-  setGroupJobIndex,
   bumpGroupStatusCount,
   bumpTeamActive,
-  GroupJobIndexValue,
 } from "./ops";
-import { NuQFdbQueue } from "./queue";
-import { NuqFdbExternalSlots } from "./slots";
+import type { NuQFdbQueue } from "./queue";
+import type { NuqFdbExternalSlots } from "./slots";
 
 const SWEEP_LOCK_TTL_MS = 15_000;
 const SWEEP_BATCH = 50;
@@ -87,11 +86,13 @@ function emptySweepLagStats(): SweepLagStats {
 function addDueKeysToLagStats(
   stats: SweepLagStats,
   ks: NuqFdbKeyspace,
-  due: [unknown, unknown][],
+  due: Array<[unknown, unknown]>,
   now: number,
 ): void {
   stats.dueCount += due.length;
-  if (due.length >= SWEEP_BATCH) stats.saturatedBucketCount++;
+  if (due.length >= SWEEP_BATCH) {
+    stats.saturatedBucketCount++;
+  }
   for (const [key] of due) {
     const dueAt = Number(ks.unpackId(key as Buffer, 1));
     if (Number.isFinite(dueAt)) {
@@ -109,7 +110,9 @@ function logSweepLag(
   index: "lease" | "backlog_timeout" | "delay",
   stats: SweepLagStats,
 ): void {
-  if (stats.dueCount === 0 && stats.saturatedBucketCount === 0) return;
+  if (stats.dueCount === 0 && stats.saturatedBucketCount === 0) {
+    return;
+  }
   logger[stats.saturatedBucketCount > 0 ? "warn" : "debug"](
     "NuQ FDB sweeper lag",
     {
@@ -132,8 +135,8 @@ export class NuqFdbSweeper {
   private running = false;
 
   constructor(
-    public readonly queues: NuQFdbQueue[],
-    public readonly externalSlots: NuqFdbExternalSlots[] = [],
+    public readonly queues: Array<NuQFdbQueue>,
+    public readonly externalSlots: Array<NuqFdbExternalSlots> = [],
   ) {}
 
   private get db() {
@@ -149,7 +152,9 @@ export class NuqFdbSweeper {
       const rec = decodeJson<{ w: string; x: number }>(
         await tn.get(this.lockKs.sweeperLock()),
       );
-      if (rec && rec.x > now && rec.w !== this.sweeperId) return false;
+      if (rec && rec.x > now && rec.w !== this.sweeperId) {
+        return false;
+      }
       tn.set(
         this.lockKs.sweeperLock(),
         encodeJson({ w: this.sweeperId, x: now + SWEEP_LOCK_TTL_MS }),
@@ -179,9 +184,13 @@ export class NuqFdbSweeper {
   }
 
   public start(intervalMs: number = 1000, logger: Logger = _logger): void {
-    if (this.loop) return;
+    if (this.loop) {
+      return;
+    }
     this.loop = setInterval(async () => {
-      if (this.running) return;
+      if (this.running) {
+        return;
+      }
       this.running = true;
       try {
         if (await this.tryAcquireLock()) {
@@ -222,8 +231,8 @@ export class NuqFdbSweeper {
       );
       addDueKeysToLagStats(stats, ks, due, now);
       for (const [key, value] of due) {
-        const id = ks.unpackId(key as Buffer);
-        const lease = decodeJson<{ l: string }>(value as Buffer);
+        const id = ks.unpackId(key);
+        const lease = decodeJson<{ l: string }>(value);
         await this.db.doTn(async tn => {
           const txc = newTxContext();
           const st = decodeJson<JobStatusRecord>(
@@ -231,17 +240,19 @@ export class NuqFdbSweeper {
           );
           // stale entries: job moved on (renewal, finish) or was reaped already
           if (!st || st.s !== "active" || st.l !== lease?.l) {
-            tn.clear(key as Buffer);
+            tn.clear(key);
             return;
           }
           if (st.e !== undefined && st.e > now) {
             // renewed after our snapshot; the old index entry is what expired
-            tn.clear(key as Buffer);
+            tn.clear(key);
             return;
           }
           const meta = decodeJson<JobMeta>(await tn.get(ks.jobMeta(id)));
-          tn.clear(key as Buffer);
-          if (!meta) return;
+          tn.clear(key);
+          if (!meta) {
+            return;
+          }
           const entry = entryFromMeta(id, meta);
 
           if (st.st < MAX_STALLS) {
@@ -321,16 +332,20 @@ export class NuqFdbSweeper {
       );
       addDueKeysToLagStats(stats, ks, due, now);
       for (const [key] of due) {
-        const id = ks.unpackId(key as Buffer);
+        const id = ks.unpackId(key);
         await this.db.doTn(async tn => {
           const txc = newTxContext();
-          tn.clear(key as Buffer);
+          tn.clear(key);
           const st = decodeJson<JobStatusRecord>(
             await tn.get(ks.jobStatus(id)),
           );
-          if (!st || st.s !== "pending" || !st.loc) return;
+          if (!st || st.s !== "pending" || !st.loc) {
+            return;
+          }
           const meta = decodeJson<JobMeta>(await tn.get(ks.jobMeta(id)));
-          if (!meta) return;
+          if (!meta) {
+            return;
+          }
           clearPendingPlacement(
             tn,
             ks,
@@ -354,8 +369,9 @@ export class NuqFdbSweeper {
           if (meta.g && meta.f & F_GACC && queue.groupOps) {
             tn.clear(ks.groupJob(meta.g, id));
             tn.add(ks.groupRemaining(meta.g), MINUS_ONE);
-            if (meta.f & F_COUNTABLE)
+            if (meta.f & F_COUNTABLE) {
               bumpGroupStatusCount(tn, ks, meta.g, "pending", -1);
+            }
             tn.set(ks.taskGroupFinish(meta.g), EMPTY);
           }
           deleteJobRecords(tn, ks, id);
@@ -384,15 +400,19 @@ export class NuqFdbSweeper {
       );
       addDueKeysToLagStats(stats, ks, due, now);
       for (const [key, value] of due) {
-        const e = decodeJson<QueueEntry>(value as Buffer);
-        if (!e) continue;
+        const e = decodeJson<QueueEntry>(value);
+        if (!e) {
+          continue;
+        }
         await this.db.doTn(async tn => {
           const txc = newTxContext();
           const st = decodeJson<JobStatusRecord>(
             await tn.get(ks.jobStatus(e.i)),
           );
-          tn.clear(key as Buffer);
-          if (!st || st.s !== "pending" || st.loc?.k !== "dl") return;
+          tn.clear(key);
+          if (!st || st.s !== "pending" || st.loc?.k !== "dl") {
+            return;
+          }
           // the job already holds its crawl slot; admit through the key gate
           // and then the team gate
           await admitThroughGates(tn, ks, e, txc);
@@ -411,21 +431,23 @@ export class NuqFdbSweeper {
     now: number,
     logger: Logger,
   ): Promise<void> {
-    if (!queue.groupOps) return;
+    if (!queue.groupOps) {
+      return;
+    }
     const ks = queue.ks;
     const r = ks.taskGroupFinishRange();
     const tasks = await this.db.doTn(async tn =>
       tn.snapshot().getRangeAll(r.begin, r.end, { limit: 200 }),
     );
     for (const [key] of tasks) {
-      const gid = ks.unpackId(key as Buffer);
+      const gid = ks.unpackId(key);
       await this.db.doTn(async tn => {
         const txc = newTxContext();
         // normal read so a concurrent finisher's decrement forces a retry --
         // clearing the task may not race with the group draining to zero
         const rem = decodeI64(await tn.get(ks.groupRemaining(gid)));
         if (rem > 0) {
-          tn.clear(key as Buffer);
+          tn.clear(key);
           return;
         }
         await queue.groupOps!.tryCompleteGroup(tn, gid, now, txc);
@@ -440,14 +462,16 @@ export class NuqFdbSweeper {
     now: number,
     logger: Logger,
   ): Promise<void> {
-    if (!queue.groupOps) return;
+    if (!queue.groupOps) {
+      return;
+    }
     const ks = queue.ks;
     const r = ks.taskGroupCancelRange();
     const tasks = await this.db.doTn(async tn =>
       tn.snapshot().getRangeAll(r.begin, r.end, { limit: 20 }),
     );
     for (const [key] of tasks) {
-      const gid = ks.unpackId(key as Buffer);
+      const gid = ks.unpackId(key);
       let exhausted = false;
       let begin: Buffer | null = null;
       // clean pending members in batches until none remain
@@ -460,12 +484,14 @@ export class NuqFdbSweeper {
             .getRangeAll(rangeBegin, jr.end, { limit: 500 });
           let cleaned = 0;
           for (const [mKey, mValue] of members) {
-            const gj = decodeJson<GroupJobIndexValue>(mValue as Buffer);
-            if (!gj || gj.s !== "pending") continue;
+            const gj = decodeJson<GroupJobIndexValue>(mValue);
+            if (!gj || gj.s !== "pending") {
+              continue;
+            }
             if (cleaned >= SWEEP_BATCH) {
               return { exhausted: false, nextBegin: rangeBegin };
             }
-            const id = ks.unpackId(mKey as Buffer);
+            const id = ks.unpackId(mKey);
             const st = decodeJson<JobStatusRecord>(
               await tn.get(ks.jobStatus(id)),
             );
@@ -474,7 +500,9 @@ export class NuqFdbSweeper {
               continue;
             }
             const meta = decodeJson<JobMeta>(await tn.get(ks.jobMeta(id)));
-            if (!meta) continue;
+            if (!meta) {
+              continue;
+            }
             clearPendingPlacement(
               tn,
               ks,
@@ -496,16 +524,15 @@ export class NuqFdbSweeper {
               tn.add(ks.keyActive(meta.k), MINUS_ONE);
               tn.set(ks.taskKeyRaise(meta.k), EMPTY);
             }
-            tn.clear(mKey as Buffer);
+            tn.clear(mKey);
             tn.add(ks.groupRemaining(gid), MINUS_ONE);
-            if (meta.f & F_COUNTABLE)
+            if (meta.f & F_COUNTABLE) {
               bumpGroupStatusCount(tn, ks, gid, "pending", -1);
+            }
             deleteJobRecords(tn, ks, id);
             cleaned++;
           }
-          const lastKey = members[members.length - 1]?.[0] as
-            | Buffer
-            | undefined;
+          const lastKey = members.at(-1)?.[0];
           return {
             exhausted: members.length < 500,
             nextBegin: lastKey ? keyAfter(lastKey) : jr.end,
@@ -516,7 +543,7 @@ export class NuqFdbSweeper {
       }
       if (exhausted) {
         await this.db.doTn(async tn => {
-          tn.clear(key as Buffer);
+          tn.clear(key);
           tn.set(ks.taskGroupFinish(gid), EMPTY);
         });
       }
@@ -536,7 +563,7 @@ export class NuqFdbSweeper {
       tn.snapshot().getRangeAll(r.begin, r.end, { limit: 50 }),
     );
     for (const [key] of tasks) {
-      const tid = ks.unpackId(key as Buffer);
+      const tid = ks.unpackId(key);
       const done = await this.db.doTn(async tn => {
         const txc = newTxContext();
         const limitBuf = await tn.get(ks.teamLimit(tid));
@@ -546,17 +573,21 @@ export class NuqFdbSweeper {
         let promoted = 0;
         while (free > 0) {
           const e = await popTeamPending(tn, ks, tid);
-          if (!e) break;
+          if (!e) {
+            break;
+          }
           promoteEntryToReady(tn, ks, e, txc);
           promoted++;
           free--;
         }
-        if (promoted > 0) bumpTeamActive(tn, ks, tid, promoted);
+        if (promoted > 0) {
+          bumpTeamActive(tn, ks, tid, promoted);
+        }
         // done when no free slots remain or the pending queue is drained
         return free > 0 || limit - active <= 0;
       });
       if (done) {
-        await this.db.doTn(async tn => tn.clear(key as Buffer));
+        await this.db.doTn(async tn => tn.clear(key));
       }
     }
   }
@@ -575,7 +606,7 @@ export class NuqFdbSweeper {
       tn.snapshot().getRangeAll(r.begin, r.end, { limit: 50 }),
     );
     for (const [key] of tasks) {
-      const kid = ks.unpackId(key as Buffer);
+      const kid = ks.unpackId(key);
       const done = await this.db.doTn(async tn => {
         const txc = newTxContext();
         const limitBuf = await tn.get(ks.keyLimit(kid));
@@ -585,17 +616,21 @@ export class NuqFdbSweeper {
         let promoted = 0;
         while (free > 0) {
           const e = await popKeyPending(tn, ks, kid);
-          if (!e) break;
+          if (!e) {
+            break;
+          }
           await admitThroughTeamGate(tn, ks, e, txc);
           promoted++;
           free--;
         }
-        if (promoted > 0) tn.add(ks.keyActive(kid), encodeI64(promoted));
+        if (promoted > 0) {
+          tn.add(ks.keyActive(kid), encodeI64(promoted));
+        }
         // done when no free slots remain or the pending queue is drained
         return free > 0 || limit - active <= 0;
       });
       if (done) {
-        await this.db.doTn(async tn => tn.clear(key as Buffer));
+        await this.db.doTn(async tn => tn.clear(key));
       }
     }
   }
@@ -613,11 +648,13 @@ export class NuqFdbSweeper {
       const due = await this.db.doTn(async tn =>
         tn.snapshot().getRangeAll(r.begin, r.end, { limit: SWEEP_BATCH * 2 }),
       );
-      if (due.length === 0) continue;
+      if (due.length === 0) {
+        continue;
+      }
       await this.db.doTn(async tn => {
         for (const [key] of due) {
-          const id = ks.unpackId(key as Buffer);
-          tn.clear(key as Buffer);
+          const id = ks.unpackId(key);
+          tn.clear(key);
           const st = decodeJson<JobStatusRecord>(
             await tn.get(ks.jobStatus(id)),
           );
@@ -637,14 +674,16 @@ export class NuqFdbSweeper {
     now: number,
     logger: Logger,
   ): Promise<void> {
-    if (!queue.groupOps) return;
+    if (!queue.groupOps) {
+      return;
+    }
     const ks = queue.ks;
     const r = ks.groupExpiryScanRange(now);
     const due = await this.db.doTn(async tn =>
       tn.snapshot().getRangeAll(r.begin, r.end, { limit: 20 }),
     );
     for (const [key] of due) {
-      const gid = ks.unpackId(key as Buffer);
+      const gid = ks.unpackId(key);
       // delete member job records in batches, then the group's own keyspace
       let drained = false;
       for (let rounds = 0; rounds < 200 && !drained; rounds++) {
@@ -654,9 +693,9 @@ export class NuqFdbSweeper {
             .snapshot()
             .getRangeAll(jr.begin, jr.end, { limit: 200 });
           for (const [mKey] of members) {
-            const id = ks.unpackId(mKey as Buffer);
+            const id = ks.unpackId(mKey);
             deleteJobRecords(tn, ks, id);
-            tn.clear(mKey as Buffer);
+            tn.clear(mKey);
           }
           return members.length < 200;
         });
@@ -667,14 +706,16 @@ export class NuqFdbSweeper {
         const fjobBuf = await tn.get(ks.groupFinishedJob(gid));
         if (fjobBuf && queue.groupOps!.finishedKs) {
           const fid = fjobBuf.toString("utf8");
-          deleteJobRecords(tn, queue.groupOps!.finishedKs as any, fid);
+          deleteJobRecords(tn, queue.groupOps!.finishedKs, fid);
         }
         const gr = ks.groupRange(gid);
         tn.clearRange(gr.begin, gr.end);
-        if (g) tn.clear(ks.ongoingGroup(g.o, gid));
+        if (g) {
+          tn.clear(ks.ongoingGroup(g.o, gid));
+        }
         tn.clear(ks.taskGroupFinish(gid));
         tn.clear(ks.taskGroupCancel(gid));
-        tn.clear(key as Buffer);
+        tn.clear(key);
       });
     }
   }

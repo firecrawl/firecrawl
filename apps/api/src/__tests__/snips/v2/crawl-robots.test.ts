@@ -8,7 +8,8 @@ import {
   TEST_SELF_HOST,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { crawl, crawlErrors, Identity, idmux, scrapeTimeout } from "./lib";
+import type { Identity } from "./lib";
+import { crawl, crawlErrors, idmux, scrapeTimeout } from "./lib";
 
 // The test site's robots.txt disallows /robots-test/blocked/. The
 // /robots-test/ page is allowed and links to the blocked page.
@@ -21,9 +22,9 @@ beforeAll(async () => {
   identity = await idmux({
     name: "crawl-robots",
     concurrency: 20,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000);
+}, 10_000);
 
 const isBlockedUrl = (url: string) => url.includes("/robots-test/blocked");
 
@@ -88,7 +89,7 @@ describe("Crawl robots.txt reporting", () => {
 // A local site whose robots.txt disallows /blocked/, so the tests can count
 // the requests a crawl makes. Proxies and remote engines cannot reach it.
 describeIf(TEST_SELF_HOST && !HAS_PROXY)("Crawl robots.txt requests", () => {
-  const LINKS: Record<string, string[]> = {
+  const LINKS: Record<string, Array<string>> = {
     "/allowed/start/": ["/blocked/from-allowed/"],
     "/allowed/redirect-links/": ["/redirect/discovered/"],
     "/blocked/redirect-target/": ["/allowed/behind-redirect/"],
@@ -148,7 +149,7 @@ describeIf(TEST_SELF_HOST && !HAS_PROXY)("Crawl robots.txt requests", () => {
     (await crawlErrors(crawlId, identity)).robotsBlocked.map(
       url => new URL(url).pathname,
     );
-  const crawledPaths = (data: { metadata?: { url?: string } }[]) =>
+  const crawledPaths = (data: Array<{ metadata?: { url?: string } }>) =>
     data.map(doc => new URL(doc.metadata?.url ?? base).pathname);
 
   it.concurrent(

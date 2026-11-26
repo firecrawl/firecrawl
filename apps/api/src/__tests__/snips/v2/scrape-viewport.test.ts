@@ -1,5 +1,6 @@
 import { describeIf, TEST_PRODUCTION } from "../lib";
-import { Identity, idmux, scrapeTimeout, scrape, scrapeRaw } from "./lib";
+import type { Identity } from "./lib";
+import { idmux, scrapeTimeout, scrape, scrapeRaw } from "./lib";
 
 describeIf(TEST_PRODUCTION)("V2 Scrape Screenshot Viewport", () => {
   let identity: Identity;
@@ -8,9 +9,9 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Screenshot Viewport", () => {
     identity = await idmux({
       name: "v2-scrape-viewport",
       concurrency: 100,
-      credits: 1000000,
+      credits: 1_000_000,
     });
-  }, 10000);
+  }, 10_000);
 
   test(
     "should take screenshot with custom viewport dimensions",

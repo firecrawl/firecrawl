@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { config } from "../../config";
 import { NuQFdbQueue, NuQFdbJobGroup } from "../../services/worker/nuq-fdb";
 import {
@@ -11,16 +11,14 @@ const describeIf = config.FDB_CLUSTER_FILE ? describe : describe.skip;
 const RUN = randomUUID().slice(0, 8);
 
 describeIf("NuQ FDB concurrency stress", () => {
-  const queueNames: string[] = [];
+  const queueNames: Array<string> = [];
 
   afterAll(async () => {
     const fdb = getFdb();
     const db = getNuqFdbDatabase();
     for (const name of queueNames) {
       const r = fdb.tuple.range(["nuq", name]);
-      await db.doTn(async tn =>
-        tn.clearRange(r.begin as Buffer, r.end as Buffer),
-      );
+      await db.doTn(async tn => tn.clearRange(r.begin, r.end));
     }
   });
 

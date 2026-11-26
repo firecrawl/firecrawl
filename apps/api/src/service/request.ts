@@ -76,22 +76,22 @@ export type ScrapeOptions = Omit<
   BaseScrapeOptions,
   "formats" | keyof ScrapeOptionsFields
 > & {
-  formats: Format[];
+  formats: Array<Format>;
 } & ScrapeOptionsFields;
 
 export type ScrapeRequest = Omit<
   BaseScrapeRequest,
-  "formats" | keyof ScrapeOptionsFields | keyof ScrapeRequestFields
+  "formats" | keyof ScrapeOptionsFields
 > & {
-  formats: Format[];
+  formats: Array<Format>;
 } & ScrapeOptionsFields &
   ScrapeRequestFields;
 
 export type ParseRequest = Omit<
   BaseParseRequest,
-  "formats" | keyof ScrapeOptionsFields | keyof ParseRequestFields
+  "formats" | keyof ScrapeOptionsFields
 > & {
-  formats: Format[];
+  formats: Array<Format>;
 } & ScrapeOptionsFields &
   ParseRequestFields;
 
@@ -104,9 +104,9 @@ export type CrawlRequest = Omit<
 
 export type BatchScrapeRequest = Omit<
   BaseBatchScrapeRequest,
-  "formats" | keyof ScrapeOptionsFields | keyof BatchScrapeRequestFields
+  "formats" | keyof ScrapeOptionsFields
 > & {
-  formats: Format[];
+  formats: Array<Format>;
 } & ScrapeOptionsFields &
   BatchScrapeRequestFields;
 
@@ -133,7 +133,7 @@ export interface RequestBodies {
 export type RequestKind = keyof RequestBodies;
 
 /** Request kinds that expose a compiled request schema on `service.schemas`. */
-export const requestKinds: readonly RequestKind[] = Object.freeze([
+export const requestKinds: ReadonlyArray<RequestKind> = Object.freeze([
   "scrape",
   "parse",
   "crawl",
@@ -157,7 +157,7 @@ export type RequestFieldBucket = (typeof requestFieldBuckets)[number];
 
 /** Outcome returned by a `ScrapeOptionsRule`. */
 export type ScrapeOptionsRuleResult =
-  | { error: string; path?: (string | number)[] }
+  | { error: string; path?: Array<string | number> }
   | { set: Partial<ScrapeOptions> }
   | void;
 
@@ -180,7 +180,7 @@ export interface RequestContributions {
   readonly map?: FieldSchemas<MapRequestFields>;
   readonly search?: FieldSchemas<SearchRequestFields>;
   readonly formats?: FormatSchemas;
-  readonly rules?: readonly ScrapeOptionsRule[];
+  readonly rules?: ReadonlyArray<ScrapeOptionsRule>;
 }
 
 /** Compiled Zod schemas for each API request kind and standalone scrape options. */
@@ -201,7 +201,7 @@ export interface DescribedRequestSchemas {
   map: Record<string, string>;
   search: Record<string, string>;
   formats: Record<string, string>;
-  rules: string[];
+  rules: Array<string>;
 }
 
 /** Validated, snapshotted request-schema contributions passed to a schema builder. */
@@ -214,7 +214,7 @@ export interface ResolvedRequestContributions {
   readonly map: Readonly<Record<string, z.ZodType>>;
   readonly search: Readonly<Record<string, z.ZodType>>;
   readonly formats: Readonly<Record<string, z.ZodType>>;
-  readonly rules: readonly ScrapeOptionsRule[];
+  readonly rules: ReadonlyArray<ScrapeOptionsRule>;
 }
 
 /** Builds compiled `RequestSchemas` from validated extension contributions. */
@@ -227,10 +227,12 @@ export type RequestSchemaBuilder = (
  * undefined when not requested.
  */
 export function hasFormatOfType<K extends FormatName>(
-  formats: readonly Format[] | undefined,
+  formats: ReadonlyArray<Format> | undefined,
   type: K,
 ): Formats[K] | undefined {
-  if (!formats) return undefined;
+  if (!formats) {
+    return undefined;
+  }
   return formats.find((format): format is Formats[K] => format.type === type);
 }
 
@@ -316,7 +318,9 @@ function collectSchemaMap(
   bucket: string,
   owner: string,
 ): void {
-  if (raw === undefined) return;
+  if (raw === undefined) {
+    return;
+  }
   if (!isPlainObject(raw)) {
     throw new Error(
       `Request "${bucket}" contributions from "${owner}" must be a plain object`,
@@ -329,7 +333,9 @@ function collectSchemaMap(
       );
     }
     const schema = raw[key];
-    if (schema === undefined) continue;
+    if (schema === undefined) {
+      continue;
+    }
     if (!isZodSchema(schema)) {
       throw new Error(
         `Request schema "${bucket}.${key}" from "${owner}" must be a Zod schema`,
@@ -352,7 +358,7 @@ function collectSchemaMap(
  * @internal
  */
 export function buildRequestSchemaRegistry(
-  sources: readonly RequestSchemaSource[],
+  sources: ReadonlyArray<RequestSchemaSource>,
   buildSchemas?: RequestSchemaBuilder,
 ): {
   schemas: RequestSchemas;
@@ -382,12 +388,14 @@ export function buildRequestSchemaRegistry(
   };
   const formatSchemas: Record<string, z.ZodType> = Object.create(null);
   const formatOwners: Record<string, string> = Object.create(null);
-  const rules: ScrapeOptionsRule[] = [];
-  const ruleOwners: string[] = [];
+  const rules: Array<ScrapeOptionsRule> = [];
+  const ruleOwners: Array<string> = [];
 
   for (const source of sources) {
     const request = source.request;
-    if (request === undefined) continue;
+    if (request === undefined) {
+      continue;
+    }
     if (!isPlainObject(request)) {
       throw new Error(
         `Request contributions from "${source.owner}" must be a plain object`,
@@ -469,7 +477,9 @@ export function buildRequestSchemaRegistry(
   const builder = buildSchemas ?? defaultBuildRequestSchemas;
   let compiled: RequestSchemas | undefined;
   const resolveSchemas = (): RequestSchemas => {
-    if (compiled) return compiled;
+    if (compiled) {
+      return compiled;
+    }
     const built = builder(snapshot);
     if (typeof built !== "object" || built === null) {
       throw new Error("Request schema builder must return a schemas object");
@@ -544,7 +554,7 @@ export function buildRequestSchemaRegistry(
  * `RequestSchemas` facade built from them.
  */
 export function buildRequestSchemas(
-  contributions: readonly RequestContributions[],
+  contributions: ReadonlyArray<RequestContributions>,
   buildSchemas?: RequestSchemaBuilder,
 ): RequestSchemas {
   return buildRequestSchemaRegistry(

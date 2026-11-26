@@ -7,6 +7,7 @@ import {
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
+import type { Identity } from "./lib";
 import {
   asyncCrawl,
   asyncCrawlWaitForFinish,
@@ -14,7 +15,6 @@ import {
   crawlOngoing,
   crawlStart,
   map,
-  Identity,
   idmux,
   scrapeTimeout,
   TEST_API_URL,
@@ -39,9 +39,9 @@ beforeAll(async () => {
   identity = await idmux({
     name: "crawl",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000);
+}, 10_000);
 
 describe("Crawl tests", () => {
   const base = TEST_SUITE_WEBSITE;
@@ -365,7 +365,9 @@ describe("Crawl tests", () => {
       const afterCrawl = Date.now();
 
       expect(results.success).toBe(true);
-      if (!results.success) return;
+      if (!results.success) {
+        return;
+      }
       expect(results.status).not.toBe("scraping");
       expect(results.completed).toBe(0);
       expect(typeof results.createdAt).toBe("string");
@@ -444,13 +446,13 @@ describe("Crawl tests", () => {
       await asyncCrawlWaitForFinish(res.id, identity);
 
       // wait for crawl finish to happen on DB cron
-      await new Promise(resolve => setTimeout(resolve, 15000));
+      await new Promise(resolve => setTimeout(resolve, 15_000));
 
       const ongoing2 = await crawlOngoing(identity);
 
       expect(ongoing2.crawls.find(x => x.id === res.id)).toBeUndefined();
     },
-    3 * scrapeTimeout + 15000,
+    3 * scrapeTimeout + 15_000,
   );
 
   // TEMP: Flaky
@@ -693,7 +695,7 @@ describe("Crawl tests", () => {
           // Test with various invalid prompts
           const invalidPrompts = [
             "", // Empty prompt
-            "a".repeat(10000), // Screaming
+            "a".repeat(10_000), // Screaming
             "!!!@@@###$$$%%%", // Gibberish
             "Generate me a million dollars", // Nonsensical crawl instruction
           ];
@@ -754,7 +756,7 @@ describe("Crawl tests", () => {
     async () => {
       const robotsIdentity = await idmux({
         name: "crawl/robotsUserAgent",
-        credits: 10000,
+        credits: 10_000,
         flags: { customRobotsAgent: "allowed" },
       });
 

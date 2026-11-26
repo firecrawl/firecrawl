@@ -52,8 +52,8 @@ declare global {
       caller?: Caller;
       ctx?: RequestContext;
       requestId?: string;
-      requestWarnings?: string[];
-      requestDroppedUrls?: string[];
+      requestWarnings?: Array<string>;
+      requestDroppedUrls?: Array<string>;
       requestBlocklistChecked?: boolean;
       rawRequestBody?: unknown;
     }

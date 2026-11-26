@@ -1,10 +1,10 @@
 import { config } from "../config";
 import type { SearchV2Response, WebSearchResult } from "../lib/entities";
-import {
-  coreSearchProviderSpecs,
-  type SearchProvider,
-  type SearchProviderName,
-  type SearchQuery,
+import { coreSearchProviderSpecs } from "../service/search-providers";
+import type {
+  SearchProvider,
+  SearchProviderName,
+  SearchQuery,
 } from "../service/search-providers";
 import { matchesDomains } from "./operators";
 import { searxng_search as searxng_search_legacy } from "./searxng";
@@ -14,7 +14,7 @@ import { searxng_search as searxng_search_v2 } from "./v2/searxng";
 function filterWebByDomains(
   results: SearchV2Response,
   query: SearchQuery,
-): WebSearchResult[] {
+): Array<WebSearchResult> {
   return (results.web ?? []).filter(result =>
     matchesDomains(result.url, query.includeDomains, query.excludeDomains),
   );
@@ -80,7 +80,7 @@ const providerImplementations: Record<
 };
 
 /** Built-in search providers registered by `coreParts()`. */
-export const coreSearchProviders: readonly SearchProvider[] = Object.freeze(
+export const coreSearchProviders: ReadonlyArray<SearchProvider> = Object.freeze(
   coreSearchProviderSpecs.map(spec => {
     const impl = providerImplementations[spec.name];
     return Object.freeze({

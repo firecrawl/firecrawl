@@ -1,11 +1,12 @@
 import { describeIf, TEST_PRODUCTION } from "../lib";
-import request, { idmux, Identity, scrapeTimeout, TEST_API_URL } from "./lib";
+import type { Identity } from "./lib";
+import request, { idmux, scrapeTimeout, TEST_API_URL } from "./lib";
 
 type ParseFormat = {
   format: string;
   kind: "document" | "image";
-  extensions: string[];
-  mimeTypes: string[];
+  extensions: Array<string>;
+  mimeTypes: Array<string>;
   available: boolean;
 };
 
@@ -15,11 +16,11 @@ beforeAll(async () => {
   identity = await idmux({
     name: "parse-formats",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000 + scrapeTimeout);
+}, 10_000 + scrapeTimeout);
 
-async function getParseFormats(): Promise<ParseFormat[]> {
+async function getParseFormats(): Promise<Array<ParseFormat>> {
   const response = await request(TEST_API_URL)
     .get("/v2/parse/formats")
     .set("Authorization", `Bearer ${identity.apiKey}`);
@@ -78,7 +79,9 @@ describe("GET /v2/parse/formats", () => {
         expect(format.extensions.length).toBeGreaterThan(0);
         expect(format.mimeTypes.length).toBeGreaterThan(0);
         expect(typeof format.available).toBe("boolean");
-        if (format.kind === "document") expect(format.available).toBe(true);
+        if (format.kind === "document") {
+          expect(format.available).toBe(true);
+        }
       }
     },
     scrapeTimeout,

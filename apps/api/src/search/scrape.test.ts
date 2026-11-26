@@ -48,7 +48,7 @@ describe("scrapeSearchResults", () => {
             billing: { endpoint: "agent" },
           },
           { debug: vi.fn(), info: vi.fn(), error: vi.fn() } as any,
-          null as any,
+          null,
         );
       },
     );
@@ -193,7 +193,7 @@ describe("getItemsToScrape", () => {
 
   it("keeps all items under noBlocklist()", async () => {
     await withService(testService(defaultModules(), parts), async () => {
-      const items = getItemsToScrape(sampleResults as any, null, {
+      const items = getItemsToScrape(sampleResults, null, {
         team_id: "team-1",
         org_id: "org-1",
         origin: "search",
@@ -219,7 +219,7 @@ describe("getItemsToScrape", () => {
         blocklist: { ...noBlocklist(), isBlocked },
       }),
       async () => {
-        const items = getItemsToScrape(sampleResults as any, null, {
+        const items = getItemsToScrape(sampleResults, null, {
           team_id: "team-1",
           org_id: "org-1",
           origin: "search",

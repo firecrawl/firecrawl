@@ -1,19 +1,14 @@
 import type { Logger } from "winston";
-import {
-  getV2RequestSchemas,
-  scrapeOptions,
-  ScrapeOptions,
-} from "../../controllers/v2/types";
+import type { ScrapeOptions } from "../../controllers/v2/types";
+import { getV2RequestSchemas, scrapeOptions } from "../../controllers/v2/types";
 import { logger as _logger } from "../../lib/logger";
-import { Engine } from "../scrapeURL/engines";
+import type { Engine } from "../scrapeURL/engines";
 import type { RequestContext } from "../../service/request-context";
 import { installedService } from "../../service/service";
 import { scrapeURL } from "../scrapeURL";
 import { CostTracking } from "../../lib/cost-tracking";
-import {
-  processSitemap,
-  SitemapProcessingResult,
-} from "@mendable/firecrawl-rs";
+import type { SitemapProcessingResult } from "@mendable/firecrawl-rs";
+import { processSitemap } from "@mendable/firecrawl-rs";
 import { fetchFileToBuffer } from "../scrapeURL/engines/utils/downloadFile";
 import {
   gunzipBounded,
@@ -33,8 +28,8 @@ type SitemapScrapeOptions = {
 };
 
 type SitemapData = {
-  urls: URL[];
-  sitemaps: URL[];
+  urls: Array<URL>;
+  sitemaps: Array<URL>;
 };
 
 async function _getSitemapXMLGZ(
@@ -57,7 +52,7 @@ async function _getSitemapXMLGZ(
       error,
     );
   }
-  return decompressed.toString("utf-8");
+  return decompressed.toString("utf8");
 }
 
 async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
@@ -65,7 +60,7 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
     return await _getSitemapXMLGZ(options);
   }
 
-  const forceEngine: Engine[] = ["fetch"];
+  const forceEngine: Array<Engine> = ["fetch"];
   const parentCtx: RequestContext = {
     teamId: "sitemap",
     zeroDataRetention: options.zeroDataRetention,

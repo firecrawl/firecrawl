@@ -1,26 +1,25 @@
-import { Response } from "express";
+import type { Response } from "express";
 
 import { logger as _logger } from "../../lib/logger";
-import {
+import type {
   Document,
   FormatObject,
-  getV2RequestSchemas,
   RequestWithAuth,
   ScrapeRequest,
   ScrapeResponse,
 } from "./types";
+import { getV2RequestSchemas } from "./types";
 import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
 import {
   getErrorHttpResponse,
   getTimeoutProcessingDetails,
   isTransportableError,
-  TransportableError,
 } from "../../lib/error";
-import { NuQJob } from "../../services/worker/nuq";
+import type { NuQJob } from "../../services/worker/nuq";
 import { withSpan, setSpanAttributes, SpanKind } from "../../lib/otel-tracer";
 import { processJobInternal } from "../../services/worker/scrape-worker";
-import { ScrapeJobData } from "../../types";
+import type { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { currentLimits, resolveJobPriority } from "../../lib/limits";
 import {
@@ -28,12 +27,8 @@ import {
   requestContext,
 } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import {
-  finalizeResponse,
-  service,
-  type RequestContext,
-  type SettleOutcome,
-} from "../../service";
+import { finalizeResponse, service } from "../../service";
+import type { RequestContext, SettleOutcome } from "../../service";
 import type { BillingMetadata } from "../../lib/billing-types";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
@@ -149,7 +144,9 @@ export async function scrapeController(
       });
 
       const settleBilling = async (outcome: SettleOutcome) => {
-        if (billingHandle === undefined || settledBilling) return;
+        if (billingHandle === undefined || settledBilling) {
+          return;
+        }
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
             await service.modules.billing.settle?.(billingHandle, outcome);
@@ -188,9 +185,9 @@ export async function scrapeController(
             ctx,
             clientOrigin: req.body.origin ?? "api",
           })
-          .catch(err =>
+          .catch(error =>
             logger.error("Background job registration failed", {
-              error: err,
+              error,
               jobId,
             }),
           );
@@ -317,7 +314,7 @@ export async function scrapeController(
                     concurrencyLimited: limited,
                     keylessReserved: billingHandle !== undefined,
                     requestId: agentRequestId ?? undefined,
-                    logRequestPromise: logRequestPromise,
+                    logRequestPromise,
                   },
                 };
 
@@ -335,29 +332,32 @@ export async function scrapeController(
           },
           ctx,
         );
-      } catch (e) {
+      } catch (error) {
         void settleBilling({ ok: false });
 
         const timeoutErr =
-          isTransportableError(e) &&
-          (e.code === "SCRAPE_TIMEOUT" ||
-            e.code === "CONCURRENCY_QUEUE_TIMEOUT");
+          isTransportableError(error) &&
+          (error.code === "SCRAPE_TIMEOUT" ||
+            error.code === "CONCURRENCY_QUEUE_TIMEOUT");
 
         setSpanAttributes(span, {
-          "scrape.error": e instanceof Error ? e.message : String(e),
-          "scrape.error_type": isTransportableError(e) ? e.code : "unknown",
+          "scrape.error":
+            error instanceof Error ? error.message : String(error),
+          "scrape.error_type": isTransportableError(error)
+            ? error.code
+            : "unknown",
         });
 
         const jobIdField = agentRequestId ? {} : { jobId };
 
-        if (isTransportableError(e)) {
+        if (isTransportableError(error)) {
           if (!timeoutErr) {
             logger.error(`Error in scrapeController`, {
               version: "v2",
-              error: e,
+              error,
             });
           }
-          const httpResponse = getErrorHttpResponse(e);
+          const httpResponse = getErrorHttpResponse(error);
           if (httpResponse) {
             setSpanAttributes(span, {
               "scrape.status_code": httpResponse.status,
@@ -365,69 +365,69 @@ export async function scrapeController(
             return res.status(httpResponse.status).json({
               ...httpResponse.extraFields,
               success: false,
-              code: e.code,
-              error: e.message,
+              code: error.code,
+              error: error.message,
               ...jobIdField,
             });
           }
 
           // DNS resolution errors should return 200 with success: false
-          if (e.code === "SCRAPE_DNS_RESOLUTION_ERROR") {
+          if (error.code === "SCRAPE_DNS_RESOLUTION_ERROR") {
             setSpanAttributes(span, {
               "scrape.status_code": 200,
             });
             return res.status(200).json({
               success: false,
-              code: e.code,
-              error: e.message,
+              code: error.code,
+              error: error.message,
               ...jobIdField,
             });
           }
 
-          if (e.code === "SCRAPE_ACTIONS_NOT_SUPPORTED") {
+          if (error.code === "SCRAPE_ACTIONS_NOT_SUPPORTED") {
             setSpanAttributes(span, {
               "scrape.status_code": 400,
             });
             return res.status(400).json({
               success: false,
-              code: e.code,
-              error: e.message,
+              code: error.code,
+              error: error.message,
               ...jobIdField,
             });
           }
 
-          if (e.code === "UNSUPPORTED_SITE") {
+          if (error.code === "UNSUPPORTED_SITE") {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });
             return res.status(403).json({
               success: false,
-              code: e.code,
-              error: e.message,
+              code: error.code,
+              error: error.message,
               ...jobIdField,
             });
           }
 
-          if (e.code === "SCRAPE_PROMPT_INJECTION_DETECTED") {
+          if (error.code === "SCRAPE_PROMPT_INJECTION_DETECTED") {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });
             return res.status(403).json({
               success: false,
-              code: e.code,
-              error: e.message,
+              code: error.code,
+              error: error.message,
               ...jobIdField,
             });
           }
 
-          if (e.code === "SCRAPE_JSON_CONTENT_TOO_LARGE") {
+          if (error.code === "SCRAPE_JSON_CONTENT_TOO_LARGE") {
             setSpanAttributes(span, {
               "scrape.status_code": 400,
             });
             return res.status(400).json({
               success: false,
-              code: e.code,
-              error: e.message,
+              code: error.code,
+              error: error.message,
               ...jobIdField,
             });
           }
@@ -441,14 +441,14 @@ export async function scrapeController(
           // `details` plus a standard Retry-After header so clients (and
           // retry libraries) know a timed retry returns the finished
           // result instead of restarting the work.
-          const processing = getTimeoutProcessingDetails(e);
+          const processing = getTimeoutProcessingDetails(error);
           if (processing) {
             res.setHeader("Retry-After", String(processing.retryAfterSeconds));
           }
           return res.status(statusCode).json({
             success: false,
-            code: e.code,
-            error: e.message,
+            code: error.code,
+            error: error.message,
             ...jobIdField,
             ...(processing && { details: processing }),
           });
@@ -456,7 +456,7 @@ export async function scrapeController(
           const id = uuidv7();
           logger.error(`Error in scrapeController`, {
             version: "v2",
-            error: e,
+            error,
             errorId: id,
             path: req.path,
             teamId: req.auth.team_id,
@@ -506,7 +506,7 @@ export async function scrapeController(
 
       const rawFormats = (req.body.formats ?? []) as Array<{
         type: string;
-        modes?: string[];
+        modes?: Array<string>;
       }>;
       let usedLlm =
         rawFormats.some(
@@ -527,7 +527,7 @@ export async function scrapeController(
         }
       }
 
-      const formats: string[] =
+      const formats: Array<string> =
         req.body.formats?.map((f: FormatObject) => f?.type) ?? [];
 
       logger.info("Request metrics", {

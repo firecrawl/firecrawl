@@ -2,7 +2,7 @@ import koffi from "koffi";
 import { config } from "../config";
 import { logger } from "./logger";
 import type { Logger } from "winston";
-import { stat } from "fs/promises";
+import { stat } from "node:fs/promises";
 import { HTML_TO_MARKDOWN_PATH } from "../natives";
 import { convertHTMLToMarkdownWithHttpService } from "./html-to-markdown-client";
 import { postProcessMarkdown } from "@mendable/firecrawl-rs";
@@ -29,7 +29,7 @@ class GoMarkdownConverter {
     if (!GoMarkdownConverter.instance) {
       try {
         await stat(HTML_TO_MARKDOWN_PATH);
-      } catch (_) {
+      } catch {
         throw Error("Go shared library not found");
       }
       GoMarkdownConverter.instance = new GoMarkdownConverter();
@@ -108,25 +108,25 @@ export async function parseMarkdown(
   }
 
   // Fallback to TurndownService if Go parser fails or is not enabled
-  var TurndownService = require("turndown");
-  var turndownPluginGfm = require("joplin-turndown-plugin-gfm");
+  const TurndownService = require("turndown");
+  const turndownPluginGfm = require("joplin-turndown-plugin-gfm");
 
   const turndownService = new TurndownService();
   turndownService.addRule("inlineLink", {
-    filter: function (node, options) {
+    filter(node, options) {
       return (
         options.linkStyle === "inlined" &&
         node.nodeName === "A" &&
         node.getAttribute("href")
       );
     },
-    replacement: function (content, node) {
-      var href = node.getAttribute("href").trim();
-      var title = node.title ? ' "' + node.title + '"' : "";
+    replacement(content, node) {
+      const href = node.getAttribute("href").trim();
+      const title = node.title ? ' "' + node.title + '"' : "";
       return "[" + content.trim() + "](" + href + title + ")\n";
     },
   });
-  var gfm = turndownPluginGfm.gfm;
+  const gfm = turndownPluginGfm.gfm;
   turndownService.use(gfm);
 
   try {
@@ -165,7 +165,7 @@ function processMultiLineLinks(markdownContent: string): string {
 
 function removeSkipToContentLinks(markdownContent: string): string {
   // Remove [Skip to Content](#page) and [Skip to content](#skip)
-  const newMarkdownContent = markdownContent.replace(
+  const newMarkdownContent = markdownContent.replaceAll(
     /\[Skip to Content\]\(#[^\)]*\)/gi,
     "",
   );

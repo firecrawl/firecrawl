@@ -16,19 +16,16 @@ import type { Meta } from "../scraper/scrapeURL";
 import {
   coreEngineFeatures,
   coreEngineSpecs,
-  type CoreEngineSpec,
 } from "../scraper/scrapeURL/engines/metadata";
+import type { CoreEngineSpec } from "../scraper/scrapeURL/engines/metadata";
 import type { Engine, EngineName } from "./engines";
-import {
-  coreLlmProviderNames,
-  type LlmProvider,
-  type LlmProviderName,
-} from "./llm-providers";
-import {
-  coreSearchProviderSpecs,
-  type CoreSearchProviderSpec,
-  type SearchProvider,
-  type SearchProviderName,
+import { coreLlmProviderNames } from "./llm-providers";
+import type { LlmProvider, LlmProviderName } from "./llm-providers";
+import { coreSearchProviderSpecs } from "./search-providers";
+import type {
+  CoreSearchProviderSpec,
+  SearchProvider,
+  SearchProviderName,
 } from "./search-providers";
 import { defaultBuildRequestSchemas } from "./request";
 import type { CoreParts, Worker } from "./service";
@@ -96,7 +93,7 @@ export function coreParts(): CoreParts {
         const loaded = loadCoreEngine(spec.name);
         return loaded.maxReasonableTime
           ? loaded.maxReasonableTime(meta)
-          : 30000;
+          : 30_000;
       },
     };
   };

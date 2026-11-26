@@ -1,11 +1,13 @@
 import type { Transaction } from "foundationdb";
 import { logger as _logger } from "../../../lib/logger";
-import {
+import type {
   NuqFdbKeyspace,
   QueueEntry,
   JobStatusRecord,
   GroupMeta,
   PendingLoc,
+} from "./keyspace";
+import {
   encodeI64,
   decodeI64,
   encodeJson,
@@ -13,7 +15,6 @@ import {
   timeBucket,
   teamPendingShard,
   READY_SHARDS,
-  TEAM_PENDING_SHARDS,
   F_GATED,
   F_CRAWL_GATED,
   F_COUNTABLE,
@@ -35,7 +36,9 @@ export function bumpTeamActive(
   teamId: string,
   delta: number,
 ): void {
-  if (delta === 0) return;
+  if (delta === 0) {
+    return;
+  }
   const encoded = encodeI64(delta);
   tn.add(ks.teamActive(teamId), encoded);
   tn.add(ks.teamActiveIndex(teamId), encoded);
@@ -176,10 +179,15 @@ export function pendingKeyFromLoc(
   keyId: string | undefined,
   loc: PendingLoc,
 ): Buffer {
-  if (loc.k === "tq")
+  if (loc.k === "tq") {
     return ks.teamPendingKey(ownerId, loc.s, loc.p, loc.c, id);
-  if (loc.k === "kq") return ks.keyPendingKey(keyId!, loc.p, loc.c, id);
-  if (loc.k === "gq") return ks.groupPendingKey(groupId!, loc.p, loc.c, id);
+  }
+  if (loc.k === "kq") {
+    return ks.keyPendingKey(keyId!, loc.p, loc.c, id);
+  }
+  if (loc.k === "gq") {
+    return ks.groupPendingKey(groupId!, loc.p, loc.c, id);
+  }
   return ks.delayed(timeBucket(id), loc.at, id);
 }
 
@@ -224,10 +232,11 @@ export async function popTeamPending(
   const startedAt = Date.now();
   const range = ks.teamShardCountRange(tid);
   const counts = await tn.snapshot().getRangeAll(range.begin, range.end);
-  const nonEmpty: number[] = [];
+  const nonEmpty: Array<number> = [];
   for (const [key, value] of counts) {
-    if (decodeI64(value as Buffer) > 0)
-      nonEmpty.push(Number(ks.unpackId(key as Buffer)));
+    if (decodeI64(value) > 0) {
+      nonEmpty.push(Number(ks.unpackId(key)));
+    }
   }
   // shuffle so concurrent finishers spread across shards
   for (let i = nonEmpty.length - 1; i > 0; i--) {
@@ -245,8 +254,8 @@ export async function popTeamPending(
       continue; // counter was stale
     }
     const [key, value] = head[0];
-    const e = decodeJson<QueueEntry>(value as Buffer)!;
-    tn.clear(key as Buffer);
+    const e = decodeJson<QueueEntry>(value)!;
+    tn.clear(key);
     tn.add(ks.teamShardCount(tid, shard), MINUS_ONE);
     tn.add(ks.teamPendingCount(tid), MINUS_ONE);
     clearBacklogTimeout(tn, ks, e);
@@ -286,10 +295,12 @@ export async function popKeyPending(
 ): Promise<QueueEntry | null> {
   const r = ks.keyPendingRange(kid);
   const head = await tn.getRangeAll(r.begin, r.end, { limit: 1 });
-  if (head.length === 0) return null;
+  if (head.length === 0) {
+    return null;
+  }
   const [key, value] = head[0];
-  const e = decodeJson<QueueEntry>(value as Buffer)!;
-  tn.clear(key as Buffer);
+  const e = decodeJson<QueueEntry>(value)!;
+  tn.clear(key);
   tn.add(ks.keyPendingCount(kid), MINUS_ONE);
   tn.add(ks.teamPendingCount(e.o), MINUS_ONE);
   clearBacklogTimeout(tn, ks, e);
@@ -303,10 +314,12 @@ export async function popCrawlPending(
 ): Promise<QueueEntry | null> {
   const r = ks.groupPendingRange(gid);
   const head = await tn.getRangeAll(r.begin, r.end, { limit: 1 });
-  if (head.length === 0) return null;
+  if (head.length === 0) {
+    return null;
+  }
   const [key, value] = head[0];
-  const e = decodeJson<QueueEntry>(value as Buffer)!;
-  tn.clear(key as Buffer);
+  const e = decodeJson<QueueEntry>(value)!;
+  tn.clear(key);
   tn.add(ks.groupPendingCount(gid), MINUS_ONE);
   tn.add(ks.teamPendingCount(e.o), MINUS_ONE);
   clearBacklogTimeout(tn, ks, e);
@@ -336,12 +349,16 @@ export async function releaseSlotsAndPromote(
   now: number,
   txc: TxContext,
 ): Promise<void> {
-  if (!(e.f & F_GATED)) return;
+  if (!(e.f & F_GATED)) {
+    return;
+  }
   const tid = e.o;
 
   const holdsKey = held.key && !!e.k && !!(e.f & F_KEY_GATED);
   const holdsCrawl = held.crawl && !!e.g && !!(e.f & F_CRAWL_GATED);
-  if (!held.team && !holdsKey && !holdsCrawl) return;
+  if (!held.team && !holdsKey && !holdsCrawl) {
+    return;
+  }
 
   // Limit-lowering convergence: if the team is over its limit, don't hand off.
   let overLimit = false;

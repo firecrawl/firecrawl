@@ -1,5 +1,5 @@
 import { config } from "../../../config";
-import {
+import type {
   ScrapeRequestInput as CoreScrapeRequestInput,
   Document,
   CrawlRequestInput as CoreCrawlRequestInput,
@@ -40,7 +40,7 @@ import {
   Identity,
   idmux,
 } from "../lib";
-import { SearchV2Response } from "../../../lib/entities";
+import type { SearchV2Response } from "../../../lib/entities";
 
 // Re-export shared utilities for backwards compatibility
 export { scrapeTimeout, indexCooldown, Identity, idmux, TEST_API_URL };
@@ -113,14 +113,14 @@ export type MonitorCreateInput = {
   notification?: {
     email?: {
       enabled?: boolean;
-      recipients?: string[];
+      recipients?: Array<string>;
       includeDiffs?: boolean;
     };
   };
   targets: Array<
     | {
         type: "scrape";
-        urls: string[];
+        urls: Array<string>;
         scrapeOptions?: Record<string, unknown>;
       }
     | {
@@ -131,7 +131,7 @@ export type MonitorCreateInput = {
       }
     | {
         type: "search";
-        queries: string[];
+        queries: Array<string>;
       }
   >;
   retentionDays?: number;
@@ -512,7 +512,9 @@ export async function asyncCrawlWaitForFinish(
   let x: Awaited<ReturnType<typeof crawlStatus>> | undefined;
 
   do {
-    if (x) await pollSleep();
+    if (x) {
+      await pollSleep();
+    }
     x = await crawlStatus(id, identity);
     expect(x.statusCode).toBe(200);
     expect(typeof x.body.status).toBe("string");
@@ -548,7 +550,9 @@ export async function crawl(
   let x: Awaited<ReturnType<typeof crawlStatus>> | undefined;
 
   do {
-    if (x) await pollSleep();
+    if (x) {
+      await pollSleep();
+    }
     x = await crawlStatus(cs.body.id, identity);
     expect(x.statusCode).toBe(200);
     expect(typeof x.body.status).toBe("string");
@@ -637,7 +641,9 @@ export async function batchScrape(
   let x: Awaited<ReturnType<typeof batchScrapeStatus>> | undefined;
 
   do {
-    if (x) await pollSleep();
+    if (x) {
+      await pollSleep();
+    }
     x = await batchScrapeStatus(bss.body.id, identity);
     expect(x.statusCode).toBe(200);
     expect(typeof x.body.status).toBe("string");
@@ -723,7 +729,7 @@ export async function searchWithFailure(
 
 export async function researchRaw(
   path: string,
-  query: Record<string, string | number | boolean | string[]> | undefined,
+  query: Record<string, string | number | boolean | Array<string>> | undefined,
   identity?: Identity,
   headers?: Record<string, string>,
 ) {
@@ -894,12 +900,12 @@ export async function creditUsageHistorical(
   options: { byApiKey?: boolean } = {},
 ): Promise<{
   success: boolean;
-  periods: {
+  periods: Array<{
     startDate: string | null;
     endDate: string | null;
     apiKey?: string;
     creditsUsed: number;
-  }[];
+  }>;
 }> {
   const req = await request(TEST_API_URL)
     .get("/v2/team/credit-usage/historical")
@@ -916,11 +922,11 @@ export async function creditUsageHistorical(
 
 export async function tokenUsageHistorical(identity: Identity): Promise<{
   success: boolean;
-  periods: {
+  periods: Array<{
     startDate: string | null;
     endDate: string | null;
     tokensUsed: number;
-  }[];
+  }>;
 }> {
   const req = await request(TEST_API_URL)
     .get("/v2/team/token-usage/historical")
@@ -959,16 +965,18 @@ export async function crawlWithConcurrencyTracking(
   identity: Identity,
 ): Promise<{
   crawl: Exclude<CrawlStatusResponse, ErrorResponse>;
-  concurrencies: number[];
+  concurrencies: Array<number>;
 }> {
   const cs = await crawlStart(body, identity);
   expectCrawlStartToSucceed(cs);
 
   let x,
-    concurrencies: number[] = [];
+    concurrencies: Array<number> = [];
 
   do {
-    if (x) await pollSleep();
+    if (x) {
+      await pollSleep();
+    }
     x = await crawlStatus(cs.body.id, identity);
     expect(x.statusCode).toBe(200);
     expect(typeof x.body.status).toBe("string");
@@ -987,16 +995,18 @@ export async function batchScrapeWithConcurrencyTracking(
   identity: Identity,
 ): Promise<{
   batchScrape: Exclude<CrawlStatusResponse, ErrorResponse>;
-  concurrencies: number[];
+  concurrencies: Array<number>;
 }> {
   const cs = await batchScrapeStart(body, identity);
   expectBatchScrapeStartToSucceed(cs);
 
   let x,
-    concurrencies: number[] = [];
+    concurrencies: Array<number> = [];
 
   do {
-    if (x) await pollSleep();
+    if (x) {
+      await pollSleep();
+    }
     x = await batchScrapeStatus(cs.body.id, identity);
     expect(x.statusCode).toBe(200);
     expect(typeof x.body.status).toBe("string");

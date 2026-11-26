@@ -5,12 +5,14 @@ const mocks = vi.hoisted(() => ({
   checkUrlsAgainstThreatPolicy: vi.fn(),
   resolveThreatProtection: vi.fn(async (): Promise<any> => ({ policy: null })),
   removeExplicitResults: vi.fn(),
-  projectSearchTotalCredits: vi.fn((..._args: any[]) => 0),
-  reserveKeylessCredits: vi.fn(async (..._args: any[]) => ({ ok: true })),
-  billingAuthorize: vi.fn(async (..._args: any[]) => ({ ok: true as const })),
-  billingSettle: vi.fn(async (..._args: any[]) => undefined),
+  projectSearchTotalCredits: vi.fn((..._args: Array<any>) => 0),
+  reserveKeylessCredits: vi.fn(async (..._args: Array<any>) => ({ ok: true })),
+  billingAuthorize: vi.fn(async (..._args: Array<any>) => ({
+    ok: true as const,
+  })),
+  billingSettle: vi.fn(async (..._args: Array<any>) => undefined),
   billingCharge: vi.fn(
-    async (..._args: any[]): Promise<number | undefined> => undefined,
+    async (..._args: Array<any>): Promise<number | undefined> => undefined,
   ),
   billTeam: vi.fn(async () => undefined),
   logRequest: vi.fn(async () => undefined),
@@ -49,19 +51,16 @@ vi.mock("../../search/scrape", () => ({
 
 import { executeSearch } from "../../search/execute";
 import type { HookHandlers } from "../../service/hooks";
-import {
-  createService,
-  replaceService,
-  type Extension,
-} from "../../service/service";
+import { createService, replaceService } from "../../service/service";
+import type { Extension } from "../../service/service";
 import { searchController } from "./search";
 
 function installHooks(
-  hooks?: HookHandlers | HookHandlers[],
+  hooks?: HookHandlers | Array<HookHandlers>,
   report = vi.fn(),
   request?: Extension["request"],
 ) {
-  const extensions: Extension[] = hooks
+  const extensions: Array<Extension> = hooks
     ? (Array.isArray(hooks) ? hooks : [hooks]).map((h, i) => ({
         name: `test-hooks-${i}`,
         hooks: h,
@@ -159,8 +158,8 @@ describe("search lifecycle hooks", () => {
   });
 
   it("runs search.plan -> search.results -> search.finished in order and applies transforms", async () => {
-    const order: string[] = [];
-    const finishedEvents: any[] = [];
+    const order: Array<string> = [];
+    const finishedEvents: Array<any> = [];
     let seenBodyQuery: string | undefined;
 
     installHooks({
@@ -255,7 +254,7 @@ describe("search lifecycle hooks", () => {
   });
 
   it("reserves credits before search.plan runs, chains search.results handlers, and keeps URL-less positions", async () => {
-    const order: string[] = [];
+    const order: Array<string> = [];
     mocks.billingAuthorize.mockImplementation(async () => {
       order.push("reserve");
       return { ok: true as const };
@@ -379,7 +378,7 @@ describe("search lifecycle hooks", () => {
   });
 
   it("omits charged when self-hosted and isolates search.finished observer errors", async () => {
-    const events: any[] = [];
+    const events: Array<any> = [];
     const report = installHooks({
       "search.finished": event => {
         events.push(event);
@@ -587,7 +586,7 @@ describe("search lifecycle hooks", () => {
   });
 
   it("keeps empty web array for empty routedResults and returns 503 with reservation release when tools-only discovery is unavailable", async () => {
-    const finishedEvents: any[] = [];
+    const finishedEvents: Array<any> = [];
     mocks.billingAuthorize.mockResolvedValue({
       ok: true as const,
       handle: "reservation-handle",

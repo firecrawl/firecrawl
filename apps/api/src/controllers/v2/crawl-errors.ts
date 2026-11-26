@@ -1,5 +1,5 @@
-import { Response } from "express";
-import {
+import type { Response } from "express";
+import type {
   CrawlErrorsResponse,
   CrawlStatusParams,
   RequestWithAuth,
@@ -9,7 +9,6 @@ import { configDotenv } from "dotenv";
 import { storedZeroDataRetention } from "../../lib/request-context";
 import { logger as _logger } from "../../lib/logger";
 import { deserializeTransportableError } from "../../lib/error-serde";
-import { TransportableError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq-router";
 import { service } from "../../service";
 configDotenv();
@@ -77,9 +76,7 @@ export async function crawlErrorsController(
   return res.status(200).json({
     errors: failedJobs
       .map(x => {
-        const error = deserializeTransportableError(
-          x.failedReason!,
-        ) as TransportableError | null;
+        const error = deserializeTransportableError(x.failedReason!);
         if (error?.code === "SCRAPE_RACED_REDIRECT_ERROR") {
           return null;
         }

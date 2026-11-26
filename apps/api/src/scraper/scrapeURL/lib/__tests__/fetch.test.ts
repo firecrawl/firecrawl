@@ -1,8 +1,4 @@
-import {
-  redactHeaders,
-  redactRequestBodyForLog,
-  robustFetch,
-} from "../fetch";
+import { redactHeaders, redactRequestBodyForLog, robustFetch } from "../fetch";
 import type { MockState } from "../mock";
 
 const secretHeaders = {
@@ -101,7 +97,7 @@ describe("redactRequestBodyForLog", () => {
     const body = {
       url: "https://example.com/login",
       engine: "chrome-cdp",
-      timeout: 30000,
+      timeout: 30_000,
       mobileProxy: true,
       headers: secretHeaders,
       actions: secretActions,
@@ -112,7 +108,7 @@ describe("redactRequestBodyForLog", () => {
     expect(redacted).toEqual({
       url: "https://example.com/login",
       engine: "chrome-cdp",
-      timeout: 30000,
+      timeout: 30_000,
       mobileProxy: true,
       headers: redactHeaders(secretHeaders),
       actions: [

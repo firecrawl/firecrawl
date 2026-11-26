@@ -3,7 +3,7 @@ import { vi } from "vitest";
 const mockExecuteSearch = vi.fn();
 
 vi.mock("../../../search/execute", () => ({
-  executeSearch: (...args: any[]) => mockExecuteSearch(...args),
+  executeSearch: (...args: Array<any>) => mockExecuteSearch(...args),
 }));
 
 vi.mock("../../../lib/logger", () => ({

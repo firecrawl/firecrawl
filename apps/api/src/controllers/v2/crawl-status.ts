@@ -1,5 +1,5 @@
-import { Response } from "express";
-import {
+import type { Response } from "express";
+import type {
   CrawlStatusParams,
   CrawlStatusResponse,
   RequestWithAuth,
@@ -9,25 +9,18 @@ import {
   getCrawl,
   getCrawlError,
   getCrawlExpiry,
-  getCrawlQualifiedJobCount,
-  getDoneJobsOrderedLength,
-  getDoneJobsOrderedUntil,
   getLastDoneJobTimestamp,
-  isCrawlKickoffFinished,
   getCrawlRobotsBlockedCount,
 } from "../../lib/crawl-redis";
 import { configDotenv } from "dotenv";
 import { logger } from "../../lib/logger";
-import {
-  scrapeQueue,
-  NuQJob,
-  NuQJobStatus,
-  crawlGroup,
-} from "../../services/worker/nuq-router";
-import { ScrapeJobSingleUrls } from "../../types";
+import type { NuQJob, NuQJobStatus } from "../../services/worker/nuq-router";
+import { scrapeQueue, crawlGroup } from "../../services/worker/nuq-router";
+import type { ScrapeJobSingleUrls } from "../../types";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { storedZeroDataRetention } from "../../lib/request-context";
-import { service, type StoredJob } from "../../service";
+import { service } from "../../service";
+import type { StoredJob } from "../../service";
 configDotenv();
 
 export type PseudoJob<T> = {
@@ -45,9 +38,11 @@ export type PseudoJob<T> = {
 const JOB_STORE_READ_CONCURRENCY = 20;
 
 async function readStoredJobs(
-  ids: readonly string[],
+  ids: ReadonlyArray<string>,
 ): Promise<Map<string, StoredJob>> {
-  if (ids.length === 0) return new Map();
+  if (ids.length === 0) {
+    return new Map();
+  }
   const store = service.modules.jobStore;
   if (store.readMany) {
     return store.readMany(ids, "scrape");
@@ -59,7 +54,9 @@ async function readStoredJobs(
       batch.map(async id => [id, await store.read(id, "scrape")] as const),
     );
     for (const [id, job] of entries) {
-      if (job) result.set(id, job);
+      if (job) {
+        result.set(id, job);
+      }
     }
   }
   return result;
@@ -103,7 +100,9 @@ export async function getJob(
   }
 
   if (!nuqJob && !stored) {
-    if (storeReadError) throw storeReadError;
+    if (storeReadError) {
+      throw storeReadError;
+    }
     return null;
   }
 
@@ -139,14 +138,16 @@ export async function getJob(
 }
 
 export async function getJobs(
-  ids: string[],
+  ids: Array<string>,
   _logger = logger,
-): Promise<PseudoJob<any>[]> {
+): Promise<Array<PseudoJob<any>>> {
   const fetchExternal = Boolean(
     service.modules.jobStore.storesResultsExternally?.(),
   );
   const [nuqJobs, externalJobs] = await Promise.all([
-    scrapeQueue.getJobs(ids, _logger) as Promise<NuQJob<ScrapeJobSingleUrls>[]>,
+    scrapeQueue.getJobs(ids, _logger) as Promise<
+      Array<NuQJob<ScrapeJobSingleUrls>>
+    >,
     fetchExternal
       ? readStoredJobs(ids)
       : Promise.resolve(new Map<string, StoredJob>()),
@@ -167,13 +168,15 @@ export async function getJobs(
     }
   }
 
-  const jobs: PseudoJob<any>[] = [];
+  const jobs: Array<PseudoJob<any>> = [];
 
   for (const id of ids) {
     const nuqJob = nuqJobMap.get(id);
     const storedJob = storedJobMap.get(id);
 
-    if (!nuqJob) continue;
+    if (!nuqJob) {
+      continue;
+    }
 
     const data = storedJob?.document ?? nuqJob.returnvalue;
 
@@ -209,10 +212,12 @@ export async function crawlStatusController(
   }
 
   const start =
-    typeof req.query.skip === "string" ? parseInt(req.query.skip, 10) : 0;
+    typeof req.query.skip === "string"
+      ? Number.parseInt(req.query.skip, 10)
+      : 0;
   const end =
     typeof req.query.limit === "string"
-      ? start + parseInt(req.query.limit, 10) - 1
+      ? start + Number.parseInt(req.query.limit, 10) - 1
       : undefined;
 
   const group = await crawlGroup.getGroup(req.params.jobId);
@@ -243,7 +248,7 @@ export async function crawlStatusController(
   // check if the crawl failed during kickoff (e.g. queue full)
   const crawlError = await getCrawlError(req.params.jobId);
 
-  let outputBulkA: {
+  const outputBulkA: {
     status?: "completed" | "scraping" | "cancelled" | "failed";
     completed?: number;
     total?: number;
@@ -293,7 +298,7 @@ export async function crawlStatusController(
   }
 
   let outputBulkB: {
-    data: Document[];
+    data: Array<Document>;
     next: string | undefined;
   };
 
@@ -306,10 +311,10 @@ export async function crawlStatusController(
     logger.child({ zeroDataRetention }),
   );
 
-  let scrapes: Document[] = [];
+  const scrapes: Array<Document> = [];
   let iteratedOver = 0;
   let bytes = 0;
-  const bytesLimit = 10485760; // 10 MiB in bytes
+  const bytesLimit = 10_485_760; // 10 MiB in bytes
 
   const missingIds = doneJobs.filter(x => x.returnvalue == null).map(x => x.id);
   const storedById = await readStoredJobs(missingIds);

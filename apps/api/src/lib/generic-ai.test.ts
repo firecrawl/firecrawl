@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  coreLlmProviderNames,
-  type LlmModel,
-  type LlmProvider,
-} from "../service/llm-providers";
+import { coreLlmProviderNames } from "../service/llm-providers";
+import type { LlmModel, LlmProvider } from "../service/llm-providers";
 
 const fakeModel = (modelId: string, provider = "custom"): LlmModel =>
   ({
@@ -28,10 +25,10 @@ afterEach(() => {
 });
 
 async function loadFresh(
-  providers?: readonly LlmProvider[],
+  providers?: ReadonlyArray<LlmProvider>,
   extensions: Array<{
     name: string;
-    llmProviders?: readonly LlmProvider[];
+    llmProviders?: ReadonlyArray<LlmProvider>;
   }> = [],
 ) {
   vi.resetModules();

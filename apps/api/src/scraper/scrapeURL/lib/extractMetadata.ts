@@ -1,6 +1,6 @@
 import { load } from "cheerio"; // rustified
-import { Document } from "../../../controllers/v2/types";
-import { Meta } from "..";
+import type { Document } from "../../../controllers/v2/types";
+import type { Meta } from "..";
 import { extractMetadata as _extractMetadata } from "@mendable/firecrawl-rs";
 
 async function extractMetadataRust(
@@ -59,7 +59,7 @@ export async function extractMetadata(
   let ogAudio: string | undefined = undefined;
   let ogDeterminer: string | undefined = undefined;
   let ogLocale: string | undefined = undefined;
-  let ogLocaleAlternate: string[] | undefined = undefined;
+  let ogLocaleAlternate: Array<string> | undefined = undefined;
   let ogSiteName: string | undefined = undefined;
   let ogVideo: string | undefined = undefined;
   let dcTermsCreated: string | undefined = undefined;
@@ -76,7 +76,7 @@ export async function extractMetadata(
   let publishedTime: string | undefined = undefined;
   let articleTag: string | undefined = undefined;
   let articleSection: string | undefined = undefined;
-  const customMetadata: Record<string, string | string[]> = {};
+  const customMetadata: Record<string, string | Array<string>> = {};
 
   const soup = load(html);
 
@@ -159,19 +159,16 @@ export async function extractMetadata(
                 customMetadata[name] = content;
               } else {
                 customMetadata[name] = Array.isArray(customMetadata[name])
-                  ? [...(customMetadata[name] as string[]), content].join(", ")
+                  ? [...customMetadata[name], content].join(", ")
                   : `${customMetadata[name]}, ${content}`;
               }
             } else {
               if (customMetadata[name] === undefined) {
                 customMetadata[name] = content;
               } else if (Array.isArray(customMetadata[name])) {
-                (customMetadata[name] as string[]).push(content);
+                customMetadata[name].push(content);
               } else {
-                customMetadata[name] = [
-                  customMetadata[name] as string,
-                  content,
-                ];
+                customMetadata[name] = [customMetadata[name], content];
               }
             }
           }

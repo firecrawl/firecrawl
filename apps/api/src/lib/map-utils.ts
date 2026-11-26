@@ -1,12 +1,12 @@
 import { v7 as uuidv7 } from "uuid";
-import {
+import type {
   TeamFlags,
   MapDocument,
-  scrapeOptions,
   ScrapeOptions,
-  MAX_MAP_LIMIT,
 } from "../controllers/v2/types";
-import { crawlToCrawler, StoredCrawl } from "./crawl-redis";
+import { scrapeOptions, MAX_MAP_LIMIT } from "../controllers/v2/types";
+import type { StoredCrawl } from "./crawl-redis";
+import { crawlToCrawler } from "./crawl-redis";
 import {
   checkAndUpdateURLForMap,
   isSameDomain,
@@ -14,7 +14,7 @@ import {
   resolveRedirects,
 } from "./validateUrl";
 import { performCosineSimilarityV2 } from "./map-cosine";
-import { Logger } from "winston";
+import type { Logger } from "winston";
 import { requestContext } from "./request-context";
 import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
@@ -25,11 +25,13 @@ export interface MapResult {
   success: boolean;
   job_id: string;
   time_taken: number;
-  mapResults: MapDocument[];
+  mapResults: Array<MapDocument>;
   state?: Record<string, unknown>;
 }
 
-function dedupeMapDocumentArray(documents: MapDocument[]): MapDocument[] {
+function dedupeMapDocumentArray(
+  documents: Array<MapDocument>,
+): Array<MapDocument> {
   const urlMap = new Map<string, MapDocument>();
 
   for (const doc of documents) {
@@ -53,7 +55,7 @@ interface MapScopeOptions {
 }
 
 function applyMapScope(
-  documents: MapDocument[],
+  documents: Array<MapDocument>,
   baseUrl: string,
   {
     ignoreQueryParameters = true,
@@ -61,7 +63,7 @@ function applyMapScope(
     filterByPath = true,
     allowExternalLinks = false,
   }: MapScopeOptions = {},
-): MapDocument[] {
+): Array<MapDocument> {
   let scoped = documents
     .map(x => {
       try {
@@ -69,7 +71,7 @@ function applyMapScope(
           ...x,
           url: checkAndUpdateURLForMap(x.url, ignoreQueryParameters).url.trim(),
         };
-      } catch (_) {
+      } catch {
         return null;
       }
     })
@@ -108,7 +110,7 @@ function applyMapScope(
  * map documents.
  */
 export async function applyMapFilterHook(
-  mapResults: MapDocument[],
+  mapResults: Array<MapDocument>,
   {
     ctx,
     url,
@@ -122,7 +124,7 @@ export async function applyMapFilterHook(
     state?: Record<string, unknown>;
     logger?: Logger;
   },
-): Promise<MapDocument[]> {
+): Promise<Array<MapDocument>> {
   const hooks = installedService()?.hooks;
   if (!hooks?.has("map.filter")) {
     return mapResults;
@@ -143,7 +145,7 @@ export async function applyMapFilterHook(
  * hooks post-scope and post-limit.
  */
 export async function applyMapCollectHook(
-  mapResults: MapDocument[],
+  mapResults: Array<MapDocument>,
   {
     ctx,
     url,
@@ -175,7 +177,7 @@ export async function applyMapCollectHook(
     state?: Record<string, unknown>;
     logger?: Logger;
   },
-): Promise<MapDocument[]> {
+): Promise<Array<MapDocument>> {
   const hooks = installedService()?.hooks;
   const skipDiscovery = state?.skipDiscovery === true;
   const runCollect = Boolean(hooks?.has("map.collect")) && !skipDiscovery;
@@ -311,7 +313,7 @@ export async function getMapResults({
   }
 
   const id = providedId ?? uuidv7();
-  let mapResults: MapDocument[] = [];
+  let mapResults: Array<MapDocument> = [];
   const zeroDataRetention =
     ctx?.zeroDataRetention === true || requestZeroDataRetention || indexOnly;
   const searchZeroDataRetention = zeroDataRetention;
@@ -330,7 +332,7 @@ export async function getMapResults({
     originUrl: url,
     crawlerOptions: {
       ...crawlerOptions,
-      limit: crawlerOptions.sitemapOnly ? 10000000 : limit,
+      limit: crawlerOptions.sitemapOnly ? 10_000_000 : limit,
       scrapeOptions: undefined,
     },
     scrapeOptions: scrapeOptions.parse({
@@ -348,7 +350,7 @@ export async function getMapResults({
   try {
     sc.robots = await crawler.getRobotsTxt(false, abort);
     crawler.importRobotsTxt(sc.robots);
-  } catch (_) {
+  } catch {
     // Robots.txt fetch failed, continue without it
   }
 
@@ -364,7 +366,7 @@ export async function getMapResults({
       },
       true,
       true,
-      crawlerOptions.timeout ?? 30000,
+      crawlerOptions.timeout ?? 30_000,
       abort,
       crawlerOptions.useMock,
       ignoreCache ? 0 : undefined,
@@ -378,11 +380,11 @@ export async function getMapResults({
               ...x,
               url: checkAndUpdateURLForMap(x.url).url.trim(),
             };
-          } catch (_) {
+          } catch {
             return null;
           }
         })
-        .filter(x => x !== null) as MapDocument[];
+        .filter(x => x !== null) as Array<MapDocument>;
     }
   } else if (crawlerOptions.sitemap === "include" && !indexOnly) {
     try {
@@ -396,12 +398,12 @@ export async function getMapResults({
         },
         true,
         false,
-        crawlerOptions.timeout ?? 30000,
+        crawlerOptions.timeout ?? 30_000,
         abort,
         undefined,
         ignoreCache ? 0 : undefined,
       );
-    } catch (e) {
+    } catch {
       // Silently handle sitemap errors
     }
   }
@@ -486,7 +488,7 @@ export async function buildPromptWithWebsiteStructure({
   maxFireEngineResults?: number;
   zeroDataRetention?: boolean;
   ctx?: RequestContext;
-}): Promise<{ prompt: string; websiteUrls: string[] }> {
+}): Promise<{ prompt: string; websiteUrls: Array<string> }> {
   try {
     logger.debug("Getting website structure for prompt enhancement");
     const mapResult = await getMapResults({
@@ -517,9 +519,9 @@ export async function buildPromptWithWebsiteStructure({
     )} URLs):\n${websiteUrls.slice(0, 120).join("\n")}\n\nBased on this structure and the user's request, generate appropriate crawler options.`;
 
     return { prompt, websiteUrls };
-  } catch (e) {
+  } catch (error) {
     logger.warn("Failed to get website structure for prompt enhancement", {
-      error: (e as any)?.message ?? e,
+      error: error?.message ?? error,
     });
     return { prompt: basePrompt, websiteUrls: [] };
   }

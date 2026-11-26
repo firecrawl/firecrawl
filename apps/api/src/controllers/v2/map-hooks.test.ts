@@ -4,13 +4,13 @@ const mocks = vi.hoisted(() => {
   const crawler = {
     getRobotsTxt: vi.fn(async () => ""),
     importRobotsTxt: vi.fn(),
-    tryGetSitemap: vi.fn(async (..._args: any[]) => 0),
+    tryGetSitemap: vi.fn(async (..._args: Array<any>) => 0),
   };
 
   return {
     crawler,
     billingCharge: vi.fn(
-      async (..._args: any[]): Promise<number | undefined> => undefined,
+      async (..._args: Array<any>): Promise<number | undefined> => undefined,
     ),
   };
 });
@@ -47,7 +47,10 @@ import type { HookHandlers } from "../../service/hooks";
 import { createService, replaceService } from "../../service/service";
 import { mapController } from "./map";
 
-function installHooks(hooks?: HookHandlers | HookHandlers[], report = vi.fn()) {
+function installHooks(
+  hooks?: HookHandlers | Array<HookHandlers>,
+  report = vi.fn(),
+) {
   const extensions = hooks
     ? (Array.isArray(hooks) ? hooks : [hooks]).map((h, i) => ({
         name: `test-hooks-${i}`,
@@ -105,7 +108,7 @@ describe("map lifecycle hooks", () => {
   });
 
   it("runs map.collect before map.finished, transforms URLs while keeping metadata, and slices to limit", async () => {
-    const order: string[] = [];
+    const order: Array<string> = [];
     let finishedId: string | undefined;
     installHooks([
       {
@@ -172,7 +175,7 @@ describe("map lifecycle hooks", () => {
   });
 
   it("forwards map.collect state to billing.charge and isolates map.finished observer errors", async () => {
-    const finished: number[] = [];
+    const finished: Array<number> = [];
     const report = installHooks([
       {
         "map.collect": urls => [
@@ -223,7 +226,7 @@ describe("map lifecycle hooks", () => {
 
   it("propagates map.collect errors and preserves identical output when unregistered", async () => {
     mocks.crawler.tryGetSitemap.mockImplementation(
-      async (cb: (urls: string[]) => void) => {
+      async (cb: (urls: Array<string>) => void) => {
         cb(["https://example.com/a"]);
         return 1;
       },
@@ -329,8 +332,8 @@ describe("map lifecycle hooks", () => {
   });
 
   it("runs map.filter after scope and limit slicing, supports skipDiscovery, and runs direct applyMapFilterHook", async () => {
-    const seenByFilter: string[][] = [];
-    const collectSpy = vi.fn((urls: string[]) => [
+    const seenByFilter: Array<Array<string>> = [];
+    const collectSpy = vi.fn((urls: Array<string>) => [
       ...urls,
       "https://example.com/docs/a",
       "https://example.com/docs/b",

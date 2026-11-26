@@ -28,7 +28,7 @@ export interface Worker {
 /** The process roles registered on a service. */
 export interface RoleRegistry {
   /** Every registered role name, sorted alphabetically. */
-  names(): readonly string[];
+  names(): ReadonlyArray<string>;
   /** Whether a role with `name` is registered on this service. */
   has(name: string): boolean;
   /** The registered worker for `name`, or undefined if unregistered. */
@@ -63,7 +63,9 @@ const sortedByKey = <T>(record: Record<string, T>): Record<string, T> =>
  *
  * @internal
  */
-export function buildWorkerRegistry(sources: readonly WorkerRegistrySource[]): {
+export function buildWorkerRegistry(
+  sources: ReadonlyArray<WorkerRegistrySource>,
+): {
   roles: RoleRegistry;
   workers: Readonly<Record<string, Worker>>;
   describedRoles: Record<string, string>;
@@ -71,7 +73,9 @@ export function buildWorkerRegistry(sources: readonly WorkerRegistrySource[]): {
   const byName = new Map<string, { owner: string; worker: Worker }>();
 
   for (const source of sources) {
-    if (source.workers === undefined) continue;
+    if (source.workers === undefined) {
+      continue;
+    }
     if (!isPlainObject(source.workers)) {
       throw new Error(
         `Extension "${source.owner}" workers must be a plain object`,

@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../search/execute", () => ({
-  executeSearch: (...args: any[]) => mocks.executeSearch(...args),
+  executeSearch: (...args: Array<any>) => mocks.executeSearch(...args),
 }));
 
 vi.mock("../lib/logger", () => ({
@@ -26,7 +26,8 @@ import { searchController } from "../controllers/v2/search";
 import { CostTracking } from "../lib/cost-tracking";
 import { defaultModules, unmeteredBilling } from "./defaults";
 import type { BillingModule } from "./modules";
-import { replaceService, type CoreParts } from "./service";
+import { replaceService } from "./service";
+import type { CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
 const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };

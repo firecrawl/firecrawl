@@ -162,7 +162,7 @@ describe("removeDuplicateUrls", () => {
   });
 
   it("should handle empty input", () => {
-    const urls: string[] = [];
+    const urls: Array<string> = [];
     const result = removeDuplicateUrls(urls);
     expect(result).toEqual([]);
   });

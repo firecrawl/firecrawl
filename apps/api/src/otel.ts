@@ -1,4 +1,5 @@
-import { diag, DiagLogLevel, type DiagLogger } from "@opentelemetry/api";
+import { diag, DiagLogLevel } from "@opentelemetry/api";
+import type { DiagLogger } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { config } from "./config";
 import { logger } from "./lib/logger";

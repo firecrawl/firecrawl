@@ -1,6 +1,6 @@
 import axios from "axios";
 import { config } from "../config";
-import { SearchResult } from "../../src/lib/entities";
+import type { SearchResult } from "../../src/lib/entities";
 import { logger } from "../lib/logger";
 
 interface SearchOptions {
@@ -16,7 +16,7 @@ interface SearchOptions {
 export async function searxng_search(
   q: string,
   options: SearchOptions,
-): Promise<SearchResult[]> {
+): Promise<Array<SearchResult>> {
   const resultsPerPage = 20;
   const requestedResults = Math.max(options.num_results, 0);
   const startPage = options.page ?? 1;
@@ -25,9 +25,9 @@ export async function searxng_search(
   const cleanedUrl = url.endsWith("/") ? url.slice(0, -1) : url;
   const finalUrl = cleanedUrl + "/search";
 
-  const fetchPage = async (page: number): Promise<SearchResult[]> => {
+  const fetchPage = async (page: number): Promise<Array<SearchResult>> => {
     const params = {
-      q: q,
+      q,
       language: options.lang,
       // gl: options.country, //not possible with SearXNG
       // location: options.location, //not possible with SearXNG
@@ -42,7 +42,7 @@ export async function searxng_search(
       headers: {
         "Content-Type": "application/json",
       },
-      params: params,
+      params,
     });
 
     const data = response.data;
@@ -67,7 +67,7 @@ export async function searxng_search(
       1,
       Math.ceil(requestedResults / resultsPerPage),
     );
-    let results: SearchResult[] = [];
+    let results: Array<SearchResult> = [];
 
     for (let pageOffset = 0; pageOffset < pagesToFetch; pageOffset += 1) {
       const pageResults = await fetchPage(startPage + pageOffset);

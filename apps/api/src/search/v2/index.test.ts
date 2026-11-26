@@ -25,7 +25,7 @@ const originalSearxngEndpoint = config.SEARXNG_ENDPOINT;
 function installSearchService(
   extensions: Array<{
     name: string;
-    searchProviders?: readonly SearchProvider[];
+    searchProviders?: ReadonlyArray<SearchProvider>;
   }> = [],
 ) {
   replaceService(

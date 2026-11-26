@@ -1,7 +1,7 @@
 import { generateText } from "ai";
 import { encoding_for_model } from "@dqbd/tiktoken";
-import { Document, FormatObject } from "../../../controllers/v2/types";
-import { Meta } from "..";
+import type { Document, FormatObject } from "../../../controllers/v2/types";
+import type { Meta } from "..";
 import { config } from "../../../config";
 import { getModel } from "../../../lib/generic-ai";
 import { service } from "../../../service";
@@ -15,7 +15,7 @@ import { aiTelemetry } from "../../../lib/ai-telemetry";
 
 const PROMPT_TAGS = /(<\/?)(query|page|lines)([\s>])/gi;
 function escapePromptTags(text: string): string {
-  return text.replace(PROMPT_TAGS, "$1\u200B$2$3");
+  return text.replaceAll(PROMPT_TAGS, "$1\u200B$2$3");
 }
 
 // Prefer Vertex when registered and enabled; fall back to the google provider
@@ -140,7 +140,9 @@ export function keepWholeLines(text: string, prefix: string): string {
   const endsAtLineEnd =
     text.startsWith(prefix) &&
     (prefix.length === text.length || text[prefix.length] === "\n");
-  if (endsAtLineEnd) return prefix;
+  if (endsAtLineEnd) {
+    return prefix;
+  }
   const lastNewline = prefix.lastIndexOf("\n");
   return lastNewline === -1 ? prefix : prefix.slice(0, lastNewline);
 }
@@ -177,7 +179,7 @@ export async function performDirectQuoteQuery(
   const fitted = await fitToTokens(
     indexedLines,
     Math.max(
-      1_024,
+      1024,
       directQuoteModel.contextTokens - DIRECT_QUOTE_RESERVED_TOKENS,
     ),
     meta.logger,
@@ -247,8 +249,8 @@ ${escapePromptTags(indexedLines)}
       outputTokens,
     });
 
-    const cleaned = result.text.replace(/^```[\w]*\n?|```$/g, "").trim();
-    const indices: number[] = JSON.parse(cleaned);
+    const cleaned = result.text.replaceAll(/^```[\w]*\n?|```$/g, "").trim();
+    const indices: Array<number> = JSON.parse(cleaned);
 
     if (fitted.trimmed) {
       addWarning(document, tooLongWarning(purpose));
@@ -432,7 +434,7 @@ export async function performQuery(
     return document;
   }
 
-  const markdown = document.markdown!;
+  const markdown = document.markdown;
 
   if (!markdown || markdown.trim() === "") {
     document.warning =

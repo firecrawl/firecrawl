@@ -54,10 +54,8 @@ vi.mock("../../../lib/logger", () => ({
 }));
 
 import { context, propagation, trace } from "@opentelemetry/api";
-import {
-  InMemorySpanExporter,
-  type NodeTracerProvider,
-} from "@opentelemetry/sdk-trace-node";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-node";
+import type { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { generateObject } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import type { Mock } from "vitest";

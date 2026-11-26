@@ -1,5 +1,5 @@
-import path from "path";
-import fs from "fs";
+import path from "node:path";
+import fs from "node:fs";
 import { convertDocumentToMarkdown } from "@mendable/firecrawl-rs";
 
 describe("Document Converter tests", () => {
@@ -35,7 +35,7 @@ describe("Document Converter tests", () => {
 
         expect(markdown).toBe(expectedMarkdownBase(name));
       },
-      10000,
+      10_000,
     );
   });
 

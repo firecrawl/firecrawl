@@ -11,19 +11,19 @@ import {
 function fakeQueue(
   name: string,
   counts: Record<string, number>,
-  earliestDelayed: string[],
+  earliestDelayed: Array<string>,
 ) {
-  const zrange = vi.fn(async (..._args: unknown[]) => earliestDelayed);
+  const zrange = vi.fn(async (..._args: Array<unknown>) => earliestDelayed);
   const queue = {
     name,
-    getJobCounts: vi.fn(async (..._states: string[]) => counts),
+    getJobCounts: vi.fn(async (..._states: Array<string>) => counts),
     toKey: (type: string) => `bull:${name}:${type}`,
     client: Promise.resolve({ zrange }),
   } as unknown as Queue;
   return { queue, zrange };
 }
 
-async function values(gauge: { get: () => Promise<{ values: any[] }> }) {
+async function values(gauge: { get: () => Promise<{ values: Array<any> }> }) {
   return (await gauge.get()).values.map(v => ({ ...v.labels, value: v.value }));
 }
 
@@ -77,11 +77,11 @@ describe("BullMQ queue metrics", () => {
     const dueAt = 1_700_000_000_000;
     const overdue = fakeQueue("{overdue}", {}, [
       "firebill|key",
-      String(dueAt * 0x1000 + 7),
+      String(dueAt * 0x10_00 + 7),
     ]);
     startBullmqQueueMetrics([
       overdue.queue,
-      fakeQueue("{notYetDue}", {}, ["a", String((dueAt + 900_000) * 0x1000)])
+      fakeQueue("{notYetDue}", {}, ["a", String((dueAt + 900_000) * 0x10_00)])
         .queue,
       fakeQueue("{empty}", {}, []).queue,
     ]);

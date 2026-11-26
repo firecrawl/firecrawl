@@ -3,14 +3,15 @@ import { safeMarkdownToHtml } from "../markdownToHtml";
 // Allow a single test to force marked.parse to throw. marked's ESM exports are
 // read-only, so we mock the module with a passthrough that delegates to the real
 // parse unless a test installs an override.
-const markedOverride = vi.hoisted(
-  () => ({ parse: null as null | ((...args: any[]) => any) }),
-);
-vi.mock("marked", async (importOriginal) => {
+const markedOverride = vi.hoisted(() => ({
+  parse: null as null | ((...args: Array<any>) => any),
+}));
+vi.mock("marked", async importOriginal => {
   const actual = await importOriginal<typeof import("marked")>();
   return {
     ...actual,
-    parse: (...args: any[]) => (markedOverride.parse ?? actual.parse)(...args),
+    parse: (...args: Array<any>) =>
+      (markedOverride.parse ?? actual.parse)(...args),
   };
 });
 
@@ -40,7 +41,7 @@ describe("safeMarkdownToHtml", () => {
     // ~200KB markdown table
     const row = "| " + "cell | ".repeat(10) + "\n";
     const header = row + "| " + "--- | ".repeat(10) + "\n";
-    const table = header + row.repeat(5_000);
+    const table = header + row.repeat(5000);
     expect(table.length).toBeGreaterThan(200_000);
 
     const htmlTable = await safeMarkdownToHtml(table, noopLogger, "test-table");

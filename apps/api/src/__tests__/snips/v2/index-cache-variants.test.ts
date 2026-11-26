@@ -1,6 +1,7 @@
 import { describeIf, TEST_PRODUCTION, indexCooldown } from "../lib";
-import { Identity, idmux, scrapeTimeout, scrape } from "./lib";
-import crypto from "crypto";
+import type { Identity } from "./lib";
+import { idmux, scrapeTimeout, scrape } from "./lib";
+import crypto from "node:crypto";
 
 // E2E coverage for the index URL->id lookup variant semantics, which the
 // Dragonfly index cache (services/index-cache.ts) replicates client-side from
@@ -13,9 +14,9 @@ describeIf(TEST_PRODUCTION)("V2 index lookup variant matching", () => {
     identity = await idmux({
       name: "v2-index-cache-variants",
       concurrency: 100,
-      credits: 1000000,
+      credits: 1_000_000,
     });
-  }, 10000);
+  }, 10_000);
 
   test(
     "screenshot-capable index entry serves a request without screenshot",

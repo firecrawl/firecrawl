@@ -36,7 +36,7 @@ const configSchema = z.object({
   BULL_AUTH_KEY_PREVIOUS: emptyStringAsUndefined(z.string()),
   BULL_AUTH_KEY_PATH_ROUTES: emptyStringAsDefault(z.stringbool().default(true)),
   ADMIN_INTERNAL_PORT: emptyStringAsUndefined(
-    z.coerce.number().int().positive().max(65535),
+    z.coerce.number().int().positive().max(65_535),
   ),
   ADMIN_INTERNAL_HOST: emptyStringAsDefault(z.string().default("localhost")),
   OPENAI_API_KEY: z.string().optional(),
@@ -103,11 +103,11 @@ const configSchema = z.object({
   NUQ_WAIT_MODE: z.string().optional(),
 
   // Harness Configuration
-  HARNESS_STARTUP_TIMEOUT_MS: z.coerce.number().default(60000),
+  HARNESS_STARTUP_TIMEOUT_MS: z.coerce.number().default(60_000),
 
   // Job & Lock Management
-  JOB_LOCK_EXTEND_INTERVAL: z.coerce.number().default(10000),
-  JOB_LOCK_EXTENSION_TIME: z.coerce.number().default(60000),
+  JOB_LOCK_EXTEND_INTERVAL: z.coerce.number().default(10_000),
+  JOB_LOCK_EXTENSION_TIME: z.coerce.number().default(60_000),
 
   // Proxy
   PROXY_SERVER: z.string().optional(),

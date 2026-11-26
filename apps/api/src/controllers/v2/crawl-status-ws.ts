@@ -1,12 +1,12 @@
 import { RateLimiterMode } from "../../types";
-import {
+import type {
   CrawlStatusParams,
   CrawlStatusResponse,
   Document,
   ErrorResponse,
   RequestWithAuth,
 } from "./types";
-import { WebSocket } from "ws";
+import type { WebSocket } from "ws";
 import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../lib/logger";
 import {
@@ -16,10 +16,13 @@ import {
   getCrawlJobs,
   getDoneJobsOrdered,
 } from "../../lib/crawl-redis";
-import { getJobs, PseudoJob } from "./crawl-status";
+import type { PseudoJob } from "./crawl-status";
+import { getJobs } from "./crawl-status";
 import { getConcurrencyLimitedJobs } from "../../lib/concurrency-limit";
-import { scrapeQueue, NuQJobStatus } from "../../services/worker/nuq-router";
-import { service, type Caller } from "../../service";
+import type { NuQJobStatus } from "../../services/worker/nuq-router";
+import { scrapeQueue } from "../../services/worker/nuq-router";
+import { service } from "../../service";
+import type { Caller } from "../../service";
 
 type ErrorMessage = {
   type: "error";
@@ -44,8 +47,11 @@ function send(ws: WebSocket, msg: Message) {
   if (ws.readyState === 1) {
     return new Promise((resolve, reject) => {
       ws.send(JSON.stringify(msg), err => {
-        if (err) reject(err);
-        else resolve(null);
+        if (err) {
+          reject(err);
+        } else {
+          resolve(null);
+        }
       });
     });
   }
@@ -70,11 +76,13 @@ async function crawlStatusWS(
     return close(ws, 3003, { type: "error", error: "Forbidden" });
   }
 
-  let doneJobIDs: string[] = [];
+  let doneJobIDs: Array<string> = [];
   let finished = false;
 
   const loop = async () => {
-    if (finished) return;
+    if (finished) {
+      return;
+    }
 
     const jobIDs = await getCrawlJobs(req.params.jobId);
 
@@ -84,14 +92,14 @@ async function crawlStatusWS(
 
     const notDoneJobIDs = jobIDs.filter(x => !doneJobIDs.includes(x));
 
-    const newlyDoneJobIDs: string[] = (
+    const newlyDoneJobIDs: Array<string> = (
       await scrapeQueue.getJobsWithStatuses(notDoneJobIDs, [
         "completed",
         "failed",
       ])
     ).map(x => x.id);
 
-    const newlyDoneJobs: PseudoJob<any>[] = await getJobs(
+    const newlyDoneJobs: Array<PseudoJob<any>> = await getJobs(
       newlyDoneJobIDs,
       logger,
     );
@@ -122,8 +130,8 @@ async function crawlStatusWS(
   doneJobIDs = _doneJobIDs;
   const jobs = new Map((await scrapeQueue.getJobs(jobIDs)).map(x => [x.id, x]));
 
-  const validJobStatuses: [string, NuQJobStatus][] = [];
-  const validJobIDs: string[] = [];
+  const validJobStatuses: Array<[string, NuQJobStatus]> = [];
+  const validJobIDs: Array<string> = [];
 
   for (const id of jobIDs) {
     if (throttledJobsSet.has(id)) {
@@ -184,7 +192,7 @@ async function crawlStatusWS(
       completed: doneJobIDs.length,
       creditsUsed: jobIDs.length,
       expiresAt: (await getCrawlExpiry(req.params.jobId)).toISOString(),
-      data: data,
+      data,
     },
   });
 
@@ -216,15 +224,15 @@ export async function crawlStatusWSController(
     req.auth = { team_id: caller.teamId, org_id: caller.orgId ?? null };
 
     await crawlStatusWS(ws, req);
-  } catch (err) {
+  } catch (error) {
     const id = uuidv7();
-    let verbose = JSON.stringify(err);
+    let verbose = JSON.stringify(error);
     if (verbose === "{}") {
-      if (err instanceof Error) {
+      if (error instanceof Error) {
         verbose = JSON.stringify({
-          message: err.message,
-          name: err.name,
-          stack: err.stack,
+          message: error.message,
+          name: error.name,
+          stack: error.stack,
         });
       }
     }

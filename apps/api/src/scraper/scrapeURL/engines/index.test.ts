@@ -11,10 +11,8 @@ import {
   coreEngines,
   getEngineMaxReasonableTime,
   scrapeURLWithEngine,
-  type Engine,
-  type EngineScrapeResult,
-  type FeatureFlag,
 } from "./index";
+import type { Engine, EngineScrapeResult, FeatureFlag } from "./index";
 import { coreEngineSpecs } from "./metadata";
 import { getScrapeMeta } from "../metaContext";
 import { FormatUnavailableError } from "../../../lib/error";
@@ -23,8 +21,8 @@ import type { HookHandlers } from "../../../service/hooks";
 const makeMeta = (
   overrides: {
     url?: string;
-    featureFlags?: FeatureFlag[];
-    forceEngine?: Engine | Engine[];
+    featureFlags?: Array<FeatureFlag>;
+    forceEngine?: Engine | string | Array<Engine | string>;
     maxAge?: number;
     lockdown?: boolean;
     formats?: Array<Record<string, unknown>>;
@@ -88,11 +86,11 @@ const makeEngine = (
   }) as unknown as RegisteredEngine;
 
 const install = (
-  engines: readonly RegisteredEngine[],
+  engines: ReadonlyArray<RegisteredEngine>,
   engineFeatures: EngineFeatureMap = coreEngineFeatures,
   extensions: Array<{
     name: string;
-    engines?: readonly RegisteredEngine[];
+    engines?: ReadonlyArray<RegisteredEngine>;
     engineFeatures?: EngineFeatureMap;
     hooks?: HookHandlers;
   }> = [],
@@ -218,7 +216,7 @@ describe("engine registry integration", () => {
   });
 
   it("adds stealthProxy to meta.featureFlags when the engine supports it and is not a cache engine", async () => {
-    const receivedFlags: FeatureFlag[][] = [];
+    const receivedFlags: Array<Array<FeatureFlag>> = [];
     install([
       makeEngine("custom;stealth", {
         features: { stealthProxy: true },
@@ -256,7 +254,7 @@ describe("engine registry integration", () => {
   it("skips unregistered forced engines with a warning and fails on unregistered features or dispatch", async () => {
     install([makeEngine("fetch", { quality: 5 })]);
 
-    const meta = makeMeta({ forceEngine: ["missing" as Engine, "fetch"] });
+    const meta = makeMeta({ forceEngine: ["missing", "fetch"] });
     const list = await buildFallbackList(meta);
     expect(list.map(e => e.engine)).toEqual(["fetch"]);
     expect(meta.logger.warn).toHaveBeenCalledWith(
@@ -281,7 +279,7 @@ describe("engine registry integration", () => {
     install([makeEngine("fetch", { maxReasonableTime: undefined })]);
 
     const meta = makeMeta();
-    expect(getEngineMaxReasonableTime(meta, "fetch")).toBe(30000);
+    expect(getEngineMaxReasonableTime(meta, "fetch")).toBe(30_000);
     expect(meta.logger.warn).toHaveBeenCalledWith("No MRT for engine", {
       engine: "fetch",
     });
@@ -296,12 +294,12 @@ describe("engine registry integration", () => {
     const fresh = await buildFallbackList(makeMeta({ maxAge: 0 }));
     expect(fresh.map(e => e.engine)).toEqual(["fetch"]);
 
-    const cached = await buildFallbackList(makeMeta({ maxAge: 60000 }));
+    const cached = await buildFallbackList(makeMeta({ maxAge: 60_000 }));
     expect(cached.map(e => e.engine)).toEqual(["custom;cache", "fetch"]);
 
     const customScreenshot = await buildFallbackList(
       makeMeta({
-        maxAge: 60000,
+        maxAge: 60_000,
         formats: [{ type: "screenshot", quality: 80 }],
       }),
     );

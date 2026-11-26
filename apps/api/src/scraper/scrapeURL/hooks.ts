@@ -73,10 +73,14 @@ export interface ScrapeFinishedOutcome {
 export function createScrapeFinishedEmitter(job: ScrapeFinishedJobInfo) {
   let emitted = false;
   return async (outcome: ScrapeFinishedOutcome): Promise<void> => {
-    if (emitted) return;
+    if (emitted) {
+      return;
+    }
     emitted = true;
     const hooks = scrapeHooks();
-    if (!hooks?.has("scrape.finished")) return;
+    if (!hooks?.has("scrape.finished")) {
+      return;
+    }
     await hooks.run("scrape.finished", {
       jobId: job.jobId,
       requestId: job.requestId,

@@ -2,9 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildLlmProviderRegistry,
   coreLlmProviderNames,
-  type LlmModel,
-  type LlmProvider,
 } from "./llm-providers";
+import type { LlmModel, LlmProvider } from "./llm-providers";
 
 const fakeModel = (id: string): LlmModel =>
   ({

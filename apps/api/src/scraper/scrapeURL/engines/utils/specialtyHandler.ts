@@ -1,9 +1,9 @@
-import { Logger } from "winston";
+import type { Logger } from "winston";
 import { AddFeatureError, UnsupportedFileError } from "../../error";
-import path from "path";
-import os from "os";
-import { writeFile } from "fs/promises";
-import { Meta } from "../..";
+import path from "node:path";
+import os from "node:os";
+import { writeFile } from "node:fs/promises";
+import type { Meta } from "../..";
 import { documentExtensionFromContentType } from "../../../../lib/document-formats";
 
 export interface GcsFileDownloader {
@@ -21,13 +21,19 @@ export interface GcsFileDownloader {
 function declaredContentLength(
   headers: Record<string, string> | undefined,
 ): number | undefined {
-  if (!headers) return undefined;
+  if (!headers) {
+    return undefined;
+  }
   const header = (name: string) =>
     Object.entries(headers).find(([k]) => k.toLowerCase() === name)?.[1];
   const encoding = header("content-encoding")?.trim().toLowerCase();
-  if (encoding && encoding !== "identity") return undefined;
+  if (encoding && encoding !== "identity") {
+    return undefined;
+  }
   const raw = header("content-length")?.trim();
-  if (!raw || !/^\d+$/.test(raw)) return undefined;
+  if (!raw || !/^\d+$/.test(raw)) {
+    return undefined;
+  }
   const length = Number(raw);
   return Number.isSafeInteger(length) && length > 0 ? length : undefined;
 }
@@ -225,9 +231,13 @@ async function sniffImageHandoff(
   imageOcrEnabled: ImageOcrGate,
 ): Promise<string | null> {
   const content = feRes?.file?.content;
-  if (content === undefined) return null;
+  if (content === undefined) {
+    return null;
+  }
   const contentType = sniffImageContentTypeFromBase64(content);
-  if (contentType === null) return null;
+  if (contentType === null) {
+    return null;
+  }
   // Only now consult the gate (image parser + deployment switch); non-image
   // responses never reach it.
   return (await imageOcrEnabled()) ? contentType : null;
@@ -245,7 +255,7 @@ type HandoffFileKind = "pdf" | "zip" | "ole";
 
 const HANDOFF_FILE_SIGNATURES: Array<{
   kind: HandoffFileKind;
-  bytes: number[];
+  bytes: Array<number>;
 }> = [
   // "%PDF-"
   { kind: "pdf", bytes: [0x25, 0x50, 0x44, 0x46, 0x2d] },
@@ -275,7 +285,9 @@ function matchHandoffSignature(
   head: ArrayLike<number>,
 ): HandoffFileKind | null {
   for (const { kind, bytes } of HANDOFF_FILE_SIGNATURES) {
-    if (head.length < bytes.length) continue;
+    if (head.length < bytes.length) {
+      continue;
+    }
     let matches = true;
     for (let i = 0; i < bytes.length; i++) {
       if (head[i] !== bytes[i]) {
@@ -283,7 +295,9 @@ function matchHandoffSignature(
         break;
       }
     }
-    if (matches) return kind;
+    if (matches) {
+      return kind;
+    }
   }
   return null;
 }
@@ -298,13 +312,17 @@ function matchHandoffSignature(
 function sniffHandoffFileKind(
   feRes: SpecialtyHandoffResponse | undefined,
 ): HandoffFileKind | null {
-  if (!feRes) return null;
+  if (!feRes) {
+    return null;
+  }
   if (feRes.file?.content !== undefined) {
     const chars = Math.ceil(HANDOFF_SNIFF_BYTES / 3) * 4;
     const kind = matchHandoffSignature(
       Buffer.from(feRes.file.content.slice(0, chars), "base64"),
     );
-    if (kind !== null) return kind;
+    if (kind !== null) {
+      return kind;
+    }
   }
   return matchHandoffSignature(
     Array.from(feRes.content.slice(0, HANDOFF_SNIFF_BYTES), c =>

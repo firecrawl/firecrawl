@@ -5,7 +5,8 @@ import {
   TEST_SUITE_WEBSITE,
   testIf,
 } from "../lib";
-import { Identity, idmux, scrapeTimeout, scrape, scrapeRaw } from "./lib";
+import type { Identity } from "./lib";
+import { idmux, scrapeTimeout, scrape, scrapeRaw } from "./lib";
 import https from "node:https";
 
 const SELF_SIGNED_KEY = `-----BEGIN PRIVATE KEY-----
@@ -64,7 +65,7 @@ describe("V2 Scrape skipTlsVerification Default", () => {
     identity = await idmux({
       name: "v2-scrape-skip-tls",
       concurrency: 100,
-      credits: 1000000,
+      credits: 1_000_000,
     });
 
     tlsServer = https.createServer(
@@ -83,7 +84,7 @@ describe("V2 Scrape skipTlsVerification Default", () => {
       throw new Error("Failed to start self-signed TLS fixture");
     }
     selfSignedUrl = `https://127.0.0.1:${address.port}/`;
-  }, 10000);
+  }, 10_000);
 
   afterAll(async () => {
     if (!tlsServer) {

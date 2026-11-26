@@ -1,7 +1,7 @@
-import { Logger } from "winston";
+import type { Logger } from "winston";
 import { logger } from "../../lib/logger";
 import { Client, Pool } from "pg";
-import { type ScrapeJobData } from "../../types";
+import type { ScrapeJobData } from "../../types";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { storedZeroDataRetention } from "../../lib/request-context";
 import amqp from "amqplib";
@@ -116,13 +116,15 @@ class NuQ<JobData = any, JobReturnValue = any> {
       }
     | null = null;
   private listens: {
-    [key: string]: ((status: "completed" | "failed") => void)[];
+    [key: string]: Array<(status: "completed" | "failed") => void>;
   } = {};
   private listenerStarting = false;
   private shuttingDown = false;
 
   private async startListener() {
-    if (this.listener || this.shuttingDown || this.listenerStarting) return;
+    if (this.listener || this.shuttingDown || this.listenerStarting) {
+      return;
+    }
 
     if (config.NUQ_RABBITMQ_URL) {
       this.listenerStarting = true;
@@ -151,7 +153,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
             durable: false,
             arguments: {
               "x-queue-type": "classic",
-              "x-message-ttl": 60000,
+              "x-message-ttl": 60_000,
             },
           },
         );
@@ -174,12 +176,14 @@ class NuQ<JobData = any, JobReturnValue = any> {
         });
         this.listener = null;
 
-        if (reconnectTimeout) clearTimeout(reconnectTimeout);
+        if (reconnectTimeout) {
+          clearTimeout(reconnectTimeout);
+        }
         reconnectTimeout = setTimeout(
           (() => {
-            this.startListener().catch(err =>
+            this.startListener().catch(error =>
               logger.error("Error in NuQ listener reconnect", {
-                err,
+                err: error,
                 module: "nuq/rabbitmq",
               }),
             );
@@ -254,12 +258,14 @@ class NuQ<JobData = any, JobReturnValue = any> {
             const nl = this.listener;
             this.listener = null;
             nl.client.end().catch(() => {});
-            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            if (reconnectTimeout) {
+              clearTimeout(reconnectTimeout);
+            }
             reconnectTimeout = setTimeout(
               (() => {
-                this.startListener().catch(err =>
+                this.startListener().catch(error =>
                   logger.error("Error in NuQ listener reconnect", {
-                    err,
+                    err: error,
                     module: "nuq",
                   }),
                 );
@@ -273,12 +279,14 @@ class NuQ<JobData = any, JobReturnValue = any> {
           logger.info("NuQ listener disconnected", { module: "nuq" });
           this.listener = null;
 
-          if (reconnectTimeout) clearTimeout(reconnectTimeout);
+          if (reconnectTimeout) {
+            clearTimeout(reconnectTimeout);
+          }
           reconnectTimeout = setTimeout(
             (() => {
-              this.startListener().catch(err =>
+              this.startListener().catch(error =>
                 logger.error("Error in NuQ listener reconnect", {
-                  err,
+                  err: error,
                   module: "nuq",
                 }),
               );
@@ -313,8 +321,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
   ) {
     await this.startListener();
 
-    if (!(id in this.listens)) this.listens[id] = [listener];
-    else this.listens[id].push(listener);
+    if (!(id in this.listens)) {
+      this.listens[id] = [listener];
+    } else {
+      this.listens[id].push(listener);
+    }
   }
 
   private async removeListener(
@@ -323,7 +334,9 @@ class NuQ<JobData = any, JobReturnValue = any> {
   ) {
     if (id in this.listens) {
       this.listens[id] = this.listens[id].filter(l => l !== listener);
-      if (this.listens[id].length === 0) delete this.listens[id];
+      if (this.listens[id].length === 0) {
+        delete this.listens[id];
+      }
     }
   }
 
@@ -337,7 +350,9 @@ class NuQ<JobData = any, JobReturnValue = any> {
   private senderStarting = false;
 
   private async startSender() {
-    if (this.sender || this.shuttingDown || this.senderStarting) return;
+    if (this.sender || this.shuttingDown || this.senderStarting) {
+      return;
+    }
     this.senderStarting = true;
 
     try {
@@ -348,7 +363,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
           durable: true,
           arguments: {
             "x-queue-type": "quorum",
-            "x-max-length": 20000,
+            "x-max-length": 20_000,
           },
         });
 
@@ -467,7 +482,9 @@ class NuQ<JobData = any, JobReturnValue = any> {
     row: any,
     backlogged?: boolean,
   ): NuQJob<JobData, JobReturnValue> | null {
-    if (!row) return null;
+    if (!row) {
+      return null;
+    }
     return {
       id: row.id,
       status: backlogged ? "backlog" : row.status,
@@ -488,7 +505,9 @@ class NuQ<JobData = any, JobReturnValue = any> {
   // serialized to JSON, so dates arrive as strings. Revive them here instead
   // of running the payload back through rowToJob (which expects raw DB rows).
   private rabbitRowToJob(row: any): NuQJob<JobData, JobReturnValue> | null {
-    if (!row) return null;
+    if (!row) {
+      return null;
+    }
     return {
       ...row,
       createdAt: new Date(row.createdAt),
@@ -539,10 +558,12 @@ class NuQ<JobData = any, JobReturnValue = any> {
   }
 
   public async getJobs(
-    ids: string[],
+    ids: Array<string>,
     _logger: Logger = logger,
-  ): Promise<NuQJob<JobData, JobReturnValue>[]> {
-    if (ids.length === 0) return [];
+  ): Promise<Array<NuQJob<JobData, JobReturnValue>>> {
+    if (ids.length === 0) {
+      return [];
+    }
 
     const start = Date.now();
     try {
@@ -563,10 +584,12 @@ class NuQ<JobData = any, JobReturnValue = any> {
   }
 
   public async getJobsFromBacklog(
-    ids: string[],
+    ids: Array<string>,
     _logger: Logger = logger,
-  ): Promise<NuQJob<JobData, JobReturnValue>[]> {
-    if (ids.length === 0) return [];
+  ): Promise<Array<NuQJob<JobData, JobReturnValue>>> {
+    if (ids.length === 0) {
+      return [];
+    }
 
     const start = Date.now();
     try {
@@ -587,11 +610,13 @@ class NuQ<JobData = any, JobReturnValue = any> {
   }
 
   public async getJobsWithStatus(
-    ids: string[],
+    ids: Array<string>,
     status: NuQJobStatus,
     _logger: Logger = logger,
-  ): Promise<NuQJob<JobData, JobReturnValue>[]> {
-    if (ids.length === 0) return [];
+  ): Promise<Array<NuQJob<JobData, JobReturnValue>>> {
+    if (ids.length === 0) {
+      return [];
+    }
 
     const start = Date.now();
     try {
@@ -613,11 +638,13 @@ class NuQ<JobData = any, JobReturnValue = any> {
   }
 
   public async getJobsWithStatuses(
-    ids: string[],
-    statuses: NuQJobStatus[],
+    ids: Array<string>,
+    statuses: Array<NuQJobStatus>,
     _logger: Logger = logger,
-  ): Promise<NuQJob<JobData, JobReturnValue>[]> {
-    if (ids.length === 0) return [];
+  ): Promise<Array<NuQJob<JobData, JobReturnValue>>> {
+    if (ids.length === 0) {
+      return [];
+    }
 
     const start = Date.now();
     try {
@@ -682,7 +709,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
             `,
             [groupId],
           )
-        ).rows.map(row => [row.status, parseInt(row.count, 10)]),
+        ).rows.map(row => [row.status, Number.parseInt(row.count, 10)]),
       );
     } finally {
       _logger.info("nuqGetGroupNumericStats metrics", {
@@ -696,7 +723,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
   public async getBackloggedOwnerIDs(
     _logger: Logger = logger,
-  ): Promise<string[]> {
+  ): Promise<Array<string>> {
     const start = Date.now();
     try {
       return (
@@ -716,7 +743,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
   public async getBackloggedJobIDsOfOwner(
     ownerId: string,
     _logger: Logger = logger,
-  ): Promise<string[]> {
+  ): Promise<Array<string>> {
     const start = Date.now();
     try {
       return (
@@ -741,7 +768,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
     limit?: number,
     offset = 0,
     _logger: Logger = logger,
-  ): Promise<NuQJob<JobData, JobReturnValue>[]> {
+  ): Promise<Array<NuQJob<JobData, JobReturnValue>>> {
     const start = Date.now();
     try {
       return (
@@ -793,10 +820,12 @@ class NuQ<JobData = any, JobReturnValue = any> {
   }
 
   public async removeJobs(
-    ids: string[],
+    ids: Array<string>,
     _logger: Logger = logger,
   ): Promise<number> {
-    if (ids.length === 0) return 0;
+    if (ids.length === 0) {
+      return 0;
+    }
 
     const start = Date.now();
     try {
@@ -955,7 +984,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
       data: JobData;
       options: NuQJobOptions;
     }>,
-  ): Promise<NuQJob<JobData, JobReturnValue>[]> {
+  ): Promise<Array<NuQJob<JobData, JobReturnValue>>> {
     return withSpan(
       "nuq.addJobs",
       async span => {
@@ -982,7 +1011,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
             }
           }
 
-          const results: NuQJob<JobData, JobReturnValue>[] = [];
+          const results: Array<NuQJob<JobData, JobReturnValue>> = [];
 
           // Batch size: 6 params per job, stay well under PG's 65535 param limit
           // 1000 jobs = 6000 params, leaving plenty of headroom
@@ -993,7 +1022,9 @@ class NuQ<JobData = any, JobReturnValue = any> {
             jobsToInsert: typeof jobs,
             tableSuffix: string,
           ) => {
-            if (jobsToInsert.length === 0) return;
+            if (jobsToInsert.length === 0) {
+              return;
+            }
 
             // Process in batches
             for (
@@ -1004,8 +1035,8 @@ class NuQ<JobData = any, JobReturnValue = any> {
               const batch = jobsToInsert.slice(offset, offset + BATCH_SIZE);
 
               // Build the VALUES clause and parameters array
-              const valuesPlaceholders: string[] = [];
-              const params: any[] = [];
+              const valuesPlaceholders: Array<string> = [];
+              const params: Array<any> = [];
 
               const columns = [
                 "id",
@@ -1029,21 +1060,19 @@ class NuQ<JobData = any, JobReturnValue = any> {
                 );
 
                 params.push(
-                  ...[
-                    job.id,
-                    job.data,
-                    job.options.priority ?? 0,
-                    job.options.listenable ? this.listenChannelId : null,
-                    normalizeOwnerId(job.options.ownerId),
-                    job.options.groupId ?? null,
-                    ...(tableSuffix === "_backlog"
-                      ? [
-                          job.options.backloggedTimesOutAt
-                            ? job.options.backloggedTimesOutAt.toISOString()
-                            : null,
-                        ]
-                      : []),
-                  ],
+                  job.id,
+                  job.data,
+                  job.options.priority ?? 0,
+                  job.options.listenable ? this.listenChannelId : null,
+                  normalizeOwnerId(job.options.ownerId),
+                  job.options.groupId ?? null,
+                  ...(tableSuffix === "_backlog"
+                    ? [
+                        job.options.backloggedTimesOutAt
+                          ? job.options.backloggedTimesOutAt.toISOString()
+                          : null,
+                      ]
+                    : []),
                 );
               }
 
@@ -1202,42 +1231,46 @@ class NuQ<JobData = any, JobReturnValue = any> {
             }
 
             const listener = async function (_msg: "completed" | "failed") {
-              if (timer) clearTimeout(timer);
+              if (timer) {
+                clearTimeout(timer);
+              }
               const job = await this.getJob(id, _logger);
               if (!job) {
                 reject(new Error("Job raced out while waiting for it"));
               } else {
                 if (job.status === "completed") {
-                  resolve(job.returnvalue!);
+                  resolve(job.returnvalue);
                 } else {
-                  reject(new Error(job.failedReason!));
+                  reject(new Error(job.failedReason));
                 }
               }
             }.bind(this);
 
             try {
               await this.addListener(id, listener);
-            } catch (e) {
-              reject(e);
+            } catch (error) {
+              reject(error);
             }
 
             try {
               const job = await this.getJob(id, _logger);
               if (job && ["completed", "failed"].includes(job.status)) {
                 this.removeListener(id, listener);
-                if (timer) clearTimeout(timer);
+                if (timer) {
+                  clearTimeout(timer);
+                }
                 if (job.status === "completed") {
                   resolve(job.returnvalue!);
                 } else {
-                  reject(new Error(job.failedReason!));
+                  reject(new Error(job.failedReason));
                 }
                 return;
               }
-            } catch (e) {
+            } catch (error) {
               _logger.warn("nuqGetJob ensure check failed", {
                 module: "nuq",
                 method: "nuqWaitForJob",
-                error: e,
+                error,
                 scrapeId: id,
               });
             }
@@ -1248,13 +1281,13 @@ class NuQ<JobData = any, JobReturnValue = any> {
                 const job = await this.getJob(id, _logger);
                 if (job && ["completed", "failed"].includes(job.status)) {
                   if (job.status === "completed") {
-                    return resolve(job.returnvalue!);
+                    return resolve(job.returnvalue);
                   } else {
-                    return reject(new Error(job.failedReason!));
+                    return reject(new Error(job.failedReason));
                   }
                 }
-              } catch (e) {
-                return reject(e);
+              } catch (error) {
+                return reject(error);
               }
 
               if (timeoutAt && Date.now() > timeoutAt) {
@@ -1338,10 +1371,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
             } else {
               return null;
             }
-          } catch (err) {
+          } catch (error) {
             logger.warn("NuQ sender get failed, falling back to postgres", {
               module: "nuq/rabbitmq",
-              err,
+              err: error,
             });
             // Reset sender so it can be re-established on next call
             this.sender = null;
@@ -1538,7 +1571,9 @@ class NuQ<JobData = any, JobReturnValue = any> {
       ["backlog", 0],
     ]);
 
-    result.rows.forEach(x => statusCounts.set(x.status, parseInt(x.count, 10)));
+    result.rows.forEach(x =>
+      statusCounts.set(x.status, Number.parseInt(x.count, 10)),
+    );
 
     return `# HELP ${prometheusQueueName}_job_count Number of jobs in each status\n# TYPE ${prometheusQueueName}_job_count gauge\n${Array.from(
       statusCounts.entries(),
@@ -1607,7 +1642,9 @@ class NuQJobGroup {
   ];
 
   private rowToGroup(row: any): NuQJobGroupInstance | null {
-    if (!row) return null;
+    if (!row) {
+      return null;
+    }
     return {
       id: row.id,
       status: row.status,
@@ -1628,7 +1665,7 @@ class NuQJobGroup {
       setSpanAttributes(span, {
         "nuq.group_name": this.groupName,
         "nuq.group_id": id,
-        "nuq.ttl": ttl ?? 86400000,
+        "nuq.ttl": ttl ?? 86_400_000,
       });
 
       const start = Date.now();
@@ -1637,7 +1674,7 @@ class NuQJobGroup {
           (
             await nuqPool.query(
               `INSERT INTO ${this.groupName} (id, owner_id, ttl) VALUES ($1, $2, $3) RETURNING ${this.groupReturning.join(", ")};`,
-              [id, normalizeOwnerId(ownerId), ttl ?? 86400000],
+              [id, normalizeOwnerId(ownerId), ttl ?? 86_400_000],
             )
           ).rows[0],
         )!;
@@ -1707,7 +1744,7 @@ class NuQJobGroup {
   public async getOngoingByOwner(
     ownerId: string,
     _logger: Logger = logger,
-  ): Promise<NuQJobGroupInstance[]> {
+  ): Promise<Array<NuQJobGroupInstance>> {
     return withSpan("nuq.getGroupByOwner", async span => {
       setSpanAttributes(span, {
         "nuq.group_name": this.groupName,
@@ -1737,7 +1774,7 @@ class NuQJobGroup {
           module: "nuq/metrics",
           method: "nuqGetGroupByOwner",
           duration,
-          ownerId: ownerId,
+          ownerId,
         });
       }
     });

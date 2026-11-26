@@ -65,7 +65,7 @@ function inline(content: string): SpecialtyHandoffResponse {
 
 const ocrGate = () => vi.fn(async () => true);
 
-const tempFiles: string[] = [];
+const tempFiles: Array<string> = [];
 afterEach(async () => {
   await Promise.all(
     tempFiles.splice(0).map(file => unlink(file).catch(() => undefined)),
@@ -83,7 +83,9 @@ async function expectHandoff(run: Promise<unknown>): Promise<AddFeatureError> {
       handoff.documentPrefetch,
       handoff.imagePrefetch,
     ]) {
-      if (prefetch) tempFiles.push(prefetch.filePath);
+      if (prefetch) {
+        tempFiles.push(prefetch.filePath);
+      }
     }
     return handoff;
   }
@@ -320,7 +322,7 @@ describe("specialtyScrapeCheck: the bytes decide when the header does not", () =
         }),
       ),
     );
-    expect(declared.pdfPrefetch?.handoff).toEqual({ contentLength: 123456 });
+    expect(declared.pdfPrefetch?.handoff).toEqual({ contentLength: 123_456 });
 
     const encoded = await expectHandoff(
       specialtyScrapeCheck(

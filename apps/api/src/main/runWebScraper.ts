@@ -1,10 +1,11 @@
 import { stopsCrawlRetry } from "../lib/error";
-import { ScrapeJobSingleUrls, RunWebScraperParams } from "../types";
+import type { ScrapeJobSingleUrls, RunWebScraperParams } from "../types";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
-import { scrapeURL, ScrapeUrlResponse } from "../scraper/scrapeURL";
+import type { ScrapeUrlResponse } from "../scraper/scrapeURL";
+import { scrapeURL } from "../scraper/scrapeURL";
 import type { NuQJob } from "../services/worker/nuq";
-import { CostTracking } from "../lib/cost-tracking";
+import type { CostTracking } from "../lib/cost-tracking";
 import { jobContext } from "../lib/request-context";
 configDotenv();
 
@@ -126,7 +127,9 @@ async function runWebScraper({
       }
     } catch (_error) {
       error = _error;
-      if (stopsCrawlRetry(_error)) break;
+      if (stopsCrawlRetry(_error)) {
+        break;
+      }
     }
   }
 

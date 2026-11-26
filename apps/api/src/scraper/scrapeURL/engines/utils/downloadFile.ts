@@ -1,15 +1,14 @@
-import path from "path";
-import os from "os";
+import path from "node:path";
+import os from "node:os";
 import { createWriteStream, promises as fs } from "node:fs";
 import {
-  AddFeatureError,
   DNSResolutionError,
   EngineError,
   SiteError,
   SSLError,
   UnsupportedFileError,
 } from "../../error";
-import { Writable } from "stream";
+import { Writable } from "node:stream";
 import { TransformStream as NodeTransformStream } from "node:stream/web";
 import { v7 as uuid } from "uuid";
 import * as undici from "undici";
@@ -157,7 +156,9 @@ function createSizeLimiter(maxSize: number) {
 
 function checkContentLength(response: undici.Response, maxSize: number) {
   const header = response.headers.get("content-length");
-  if (header === null) return;
+  if (header === null) {
+    return;
+  }
   const declared = Number(header);
   if (Number.isFinite(declared) && declared > maxSize) {
     throw new UnsupportedFileError("File exceeds size limit");
@@ -188,12 +189,14 @@ export async function fetchFileToBuffer(
         buffer: Buffer.from(await response.arrayBuffer()),
       };
     }
-    const chunks: Uint8Array[] = [];
+    const chunks: Array<Uint8Array> = [];
     let bytesRead = 0;
     const reader = response.body.getReader();
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        break;
+      }
       bytesRead += value.byteLength;
       if (bytesRead > maxSize) {
         await reader.cancel().catch(() => {});
@@ -205,9 +208,11 @@ export async function fetchFileToBuffer(
       response,
       buffer: Buffer.concat(chunks),
     };
-  } catch (e) {
-    if (e instanceof UnsupportedFileError) throw e;
-    throw mapUndiciError(url, skipTlsVerification, e);
+  } catch (error) {
+    if (error instanceof UnsupportedFileError) {
+      throw error;
+    }
+    throw mapUndiciError(url, skipTlsVerification, error);
   }
 }
 
@@ -252,7 +257,9 @@ export async function downloadFile(
         signal: init?.signal || undefined,
       })
       .catch(error => {
-        if (error instanceof UnsupportedFileError) throw error;
+        if (error instanceof UnsupportedFileError) {
+          throw error;
+        }
         throw new EngineError("Failed to write to temp file", {
           cause: { error },
         });
@@ -262,10 +269,12 @@ export async function downloadFile(
       response,
       tempFilePath,
     };
-  } catch (e) {
+  } catch (error) {
     shouldCleanup = true;
-    if (e instanceof UnsupportedFileError) throw e;
-    throw mapUndiciError(url, skipTlsVerification, e);
+    if (error instanceof UnsupportedFileError) {
+      throw error;
+    }
+    throw mapUndiciError(url, skipTlsVerification, error);
   } finally {
     tempFileWrite.close();
     if (shouldCleanup) {

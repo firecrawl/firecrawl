@@ -1,5 +1,5 @@
 export type AgentInteropStatus = "trusted" | "none" | "invalid";
-import { Request, Response } from "express";
+import type { Request } from "express";
 import { config } from "../../config";
 import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
@@ -8,20 +8,20 @@ import { countries } from "../../lib/validate-country";
 import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
 import { addStrictSchemaIssue } from "../../lib/openai-strict-schema";
 export { addStrictSchemaIssue };
-import { ScrapeActionContent } from "../../lib/entities";
+import type { ScrapeActionContent } from "../../lib/entities";
 import type { TeamPlanClass } from "../../service/search-providers";
 import type { RateLimiterMode } from "../../types";
-import { ErrorCode } from "../../lib/error";
+import type { ErrorCode } from "../../lib/error";
 import { integrationSchema } from "../../utils/integration";
 import { webhookSchema } from "../../services/webhook/schema";
 import { installedService } from "../../service/service";
-import {
-  registerDefaultRequestSchemaBuilder,
-  type RequestKind,
-  type RequestSchemas,
-  type ResolvedRequestContributions,
-  type ScrapeOptions as ServiceScrapeOptions,
-  type ScrapeOptionsRule,
+import { registerDefaultRequestSchemaBuilder } from "../../service/request";
+import type {
+  RequestKind,
+  RequestSchemas,
+  ResolvedRequestContributions,
+  ScrapeOptions as ServiceScrapeOptions,
+  ScrapeOptionsRule,
 } from "../../service/request";
 
 // Base URL schema with common validation logic
@@ -34,7 +34,7 @@ export const URL = z
   // .overwrite rather than .transform, so this stays a ZodString and .url() /
   // .regex() can still chain onto it.
   .overwrite(x => {
-    if (!protocolIncluded(x as string)) {
+    if (!protocolIncluded(x)) {
       x = `http://${x}`;
     }
 
@@ -56,7 +56,7 @@ export const URL = z
     if (config.TEST_SUITE_SELF_HOSTED && config.ALLOW_LOCAL_WEBHOOKS) {
       if (
         /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
-          x as string,
+          x,
         )
       ) {
         return true;
@@ -65,13 +65,13 @@ export const URL = z
     // Same TLD-shaped check as before, plus IP literals — which the old
     // inline regex accepted only when the last octet had 2+ digits, so
     // 8.8.8.8 was rejected while 169.254.169.254 passed.
-    return hasReachableHost(x as string);
+    return hasReachableHost(x);
   }, "URL must have a valid top-level domain or be an IP address")
   .refine(x => {
     try {
-      checkUrl(x as string);
+      checkUrl(x);
       return true;
-    } catch (_) {
+    } catch {
       return false;
     }
   }, "Invalid URL");
@@ -99,12 +99,16 @@ export function normalizeSchemaForOpenAI(schema: any): any {
   const visited = new WeakSet();
 
   function normalizeObject(obj: any): any {
-    if (typeof obj !== "object" || obj === null) return obj;
+    if (typeof obj !== "object" || obj === null) {
+      return obj;
+    }
     if (Array.isArray(obj)) {
       return obj.map(item => normalizeObject(item));
     }
 
-    if (visited.has(obj)) return obj;
+    if (visited.has(obj)) {
+      return obj;
+    }
     visited.add(obj);
 
     const normalized = { ...obj };
@@ -195,9 +199,13 @@ export function validateSchemaForOpenAI(schema: any): boolean {
   const visited = new WeakSet();
 
   function hasInvalidStructure(obj: any): boolean {
-    if (typeof obj !== "object" || obj === null) return false;
+    if (typeof obj !== "object" || obj === null) {
+      return false;
+    }
 
-    if (visited.has(obj)) return false;
+    if (visited.has(obj)) {
+      return false;
+    }
     visited.add(obj);
 
     if (obj.hasOwnProperty("$ref")) {
@@ -219,7 +227,9 @@ export function validateSchemaForOpenAI(schema: any): boolean {
         value !== null &&
         !value.hasOwnProperty("$ref")
       ) {
-        if (hasInvalidStructure(value)) return true;
+        if (hasInvalidStructure(value)) {
+          return true;
+        }
       }
     }
     return false;
@@ -234,7 +244,7 @@ export const OPENAI_SCHEMA_ERROR_MESSAGE =
 const ACTIONS_MAX_WAIT_TIME = 60;
 const MAX_ACTIONS = 50;
 function calculateTotalWaitTime(
-  actions: any[] = [],
+  actions: Array<any> = [],
   waitFor: number = 0,
 ): number {
   const actionWaitTime = actions.reduce((acc, action) => {
@@ -359,7 +369,7 @@ const jsonFormatWithOptions = z.strictObject({
       message: OPENAI_SCHEMA_ERROR_MESSAGE,
     })
     .superRefine(addStrictSchemaIssue),
-  prompt: z.string().max(10000).optional(),
+  prompt: z.string().max(10_000).optional(),
   // Deprecated: lifted into the top-level checkPromptInjection at parse time.
   checkPromptInjection: z.boolean().optional(),
 });
@@ -403,7 +413,7 @@ type AttributesFormatWithOptions = z.output<typeof attributesFormatWithOptions>;
 
 const questionFormatWithOptions = z.strictObject({
   type: z.literal("question"),
-  question: z.string().min(1).max(10000),
+  question: z.string().min(1).max(10_000),
 });
 
 type QuestionFormatWithOptions = z.output<typeof questionFormatWithOptions>;
@@ -411,7 +421,7 @@ type QuestionFormatWithOptions = z.output<typeof questionFormatWithOptions>;
 /** @deprecated Use `question` format instead. */
 const queryFormatWithOptions = z.strictObject({
   type: z.literal("query"),
-  prompt: z.string().max(10000),
+  prompt: z.string().max(10_000),
   mode: z.enum(["freeform", "directQuote"]).optional().default("freeform"),
 });
 
@@ -438,7 +448,7 @@ export type PDFMode = z.infer<typeof pdfModeSchema>;
 const pdfParserWithOptions = z.strictObject({
   type: z.literal("pdf"),
   mode: pdfModeSchema.optional(),
-  maxPages: z.int().positive().finite().max(10000).optional(),
+  maxPages: z.int().positive().finite().max(10_000).optional(),
 });
 
 const parsersSchema = z
@@ -447,10 +457,14 @@ const parsersSchema = z
 
 type Parsers = z.infer<typeof parsersSchema>;
 
-export function shouldParsePDF(parsers?: readonly unknown[]): boolean {
-  if (!parsers) return true;
+export function shouldParsePDF(parsers?: ReadonlyArray<unknown>): boolean {
+  if (!parsers) {
+    return true;
+  }
   return parsers.some(parser => {
-    if (parser === "pdf") return true;
+    if (parser === "pdf") {
+      return true;
+    }
     if (typeof parser === "object" && parser !== null && "type" in parser) {
       return (parser as { type?: unknown }).type === "pdf";
     }
@@ -459,9 +473,11 @@ export function shouldParsePDF(parsers?: readonly unknown[]): boolean {
 }
 
 export function getPDFMaxPages(
-  parsers?: readonly unknown[],
+  parsers?: ReadonlyArray<unknown>,
 ): number | undefined {
-  if (!parsers) return undefined;
+  if (!parsers) {
+    return undefined;
+  }
   const pdfParser = parsers.find(parser => {
     if (typeof parser === "object" && parser !== null && "type" in parser) {
       return (parser as { type?: unknown }).type === "pdf";
@@ -474,29 +490,33 @@ export function getPDFMaxPages(
   return undefined;
 }
 
-export function getPDFMode(parsers?: readonly unknown[]): PDFMode {
-  if (!parsers) return "auto";
+export function getPDFMode(parsers?: ReadonlyArray<unknown>): PDFMode {
+  if (!parsers) {
+    return "auto";
+  }
   for (const parser of parsers) {
-    if (parser === "pdf") return "auto";
+    if (parser === "pdf") {
+      return "auto";
+    }
     if (
       typeof parser === "object" &&
       parser !== null &&
       (parser as { type?: unknown }).type === "pdf"
     ) {
-      return ((parser as { mode?: PDFMode }).mode ?? "auto") as PDFMode;
+      return (parser as { mode?: PDFMode }).mode ?? "auto";
     }
   }
   return "auto";
 }
 
 function transformIframeSelector(selector: string): string {
-  return selector.replace(/(?:^|[\s,])iframe(?=\s|$|[.#\[:,])/g, match => {
+  return selector.replaceAll(/(?:^|[\s,])iframe(?=\s|$|[.#\[:,])/g, match => {
     const prefix = match.match(/^[\s,]/)?.[0] || "";
     return prefix + 'div[data-original-tag="iframe"]';
   });
 }
 
-const SPECIAL_COUNTRIES = ["us-generic", "us-whitelist"];
+const SPECIAL_COUNTRIES = new Set(["us-generic", "us-whitelist"]);
 
 const locationSchema = z
   .object({
@@ -507,11 +527,13 @@ const locationSchema = z
         val =>
           !val ||
           Object.keys(countries).includes(val.toUpperCase()) ||
-          SPECIAL_COUNTRIES.includes(val.toLowerCase()),
+          SPECIAL_COUNTRIES.has(val.toLowerCase()),
         "Invalid country code. Use a valid ISO 3166-1 alpha-2 country code.",
       )
       .transform(val => {
-        if (!val) return "us-generic";
+        if (!val) {
+          return "us-generic";
+        }
         return val.toLowerCase();
       }),
     languages: z.array(z.string()).optional(),
@@ -532,7 +554,9 @@ const scrapeOptionFields = z.strictObject({
   formats: z
     .preprocess(
       val => {
-        if (!Array.isArray(val)) return val;
+        if (!Array.isArray(val)) {
+          return val;
+        }
         return val.map(format => {
           if (typeof format === "string") {
             return { type: format };
@@ -579,7 +603,7 @@ const scrapeOptionFields = z.strictObject({
   onlyMainContent: z.boolean().prefault(true),
   onlyCleanContent: z.boolean().prefault(false),
   timeout: z.int().positive().min(1000).optional(),
-  waitFor: z.int().nonnegative().max(60000).prefault(0),
+  waitFor: z.int().nonnegative().max(60_000).prefault(0),
   mobile: z.boolean().prefault(false),
   parsers: parsersSchema.optional(),
   actions: actionsSchema.optional(),
@@ -636,7 +660,7 @@ export const applyScrapeOptionsDefaults = <T extends ScrapeOptionsBase>(
  * flag and drops it from the format. Also accepts raw stored monitor options.
  */
 export function liftCheckPromptInjection<
-  T extends { formats?: unknown[]; checkPromptInjection?: unknown },
+  T extends { formats?: Array<unknown>; checkPromptInjection?: unknown },
 >(options: T): T {
   let requestedOnFormat = false;
   const formats = options.formats?.map(format => {
@@ -664,18 +688,20 @@ export function liftCheckPromptInjection<
 const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
   obj: T,
 ): T extends undefined ? undefined : T => {
-  if (!obj) return obj as T extends undefined ? undefined : T;
+  if (!obj) {
+    return obj as T extends undefined ? undefined : T;
+  }
   // Handle timeout
   let result = liftCheckPromptInjection(applyScrapeOptionsDefaults(obj));
   if (
     obj.formats.find(x => typeof x === "object" && x.type === "json") &&
-    obj.timeout === 30000
+    obj.timeout === 30_000
   ) {
-    result = { ...result, timeout: 60000 };
+    result = { ...result, timeout: 60_000 };
   }
 
-  if (obj.proxy === "auto" && obj.timeout === 30000) {
-    result = { ...result, timeout: 120000 };
+  if (obj.proxy === "auto" && obj.timeout === 30_000) {
+    result = { ...result, timeout: 120_000 };
   }
 
   return result as T extends undefined ? undefined : T;
@@ -691,13 +717,15 @@ export const extractTransform = (
 // Type-safe wrapper for non-nullable cases (used in required scrapeOptions schema)
 // This ensures TypeScript knows the output is always ScrapeOptionsBase, not undefined
 const extractTransformRequired = <T extends ScrapeOptionsBase>(obj: T): T => {
-  return extractTransformImpl(obj)! as T;
+  return extractTransformImpl(obj) as T;
 };
 
 export const scrapeOptions = strictWithMessage(baseScrapeOptions)
   .refine(
     obj => {
-      if (!obj.actions) return true;
+      if (!obj.actions) {
+        return true;
+      }
       return (
         calculateTotalWaitTime(obj.actions, obj.waitFor) <=
         ACTIONS_MAX_WAIT_TIME * 1000
@@ -841,7 +869,7 @@ export type BatchScrapeRequestInput = Omit<
 > & {
   formats?: z.input<typeof baseScrapeOptions>["formats"];
 } & {
-  urls: z.input<typeof URL>[];
+  urls: Array<z.input<typeof URL>>;
   origin?: string;
   integration?: z.input<typeof integrationSchema> | null;
   webhook?: z.input<typeof webhookSchema>;
@@ -855,7 +883,7 @@ export const crawlerOptions = z.strictObject({
   includePaths: pathPatternsSchema.prefault([]),
   excludePaths: pathPatternsSchema.prefault([]),
   maxDiscoveryDepth: z.number().optional(),
-  limit: z.number().prefault(10000), // default?
+  limit: z.number().prefault(10_000), // default?
   crawlEntireDomain: z.boolean().optional(),
   allowExternalLinks: z.boolean().prefault(false),
   allowSubdomains: z.boolean().prefault(false),
@@ -893,10 +921,10 @@ const crawlRequestSchemaBase = crawlerOptions.extend({
   integration: integrationSchema.optional().transform(val => val || null),
   scrapeOptions: baseScrapeOptions.prefault(() => baseScrapeOptions.parse({})),
   webhook: webhookSchema.optional(),
-  limit: z.number().prefault(10000),
+  limit: z.number().prefault(10_000),
   maxConcurrency: z.int().positive().optional(),
   zeroDataRetention: z.boolean().optional(),
-  prompt: z.string().max(10000).optional(),
+  prompt: z.string().max(10_000).optional(),
 });
 
 export const crawlRequestSchema = strictWithMessage(crawlRequestSchemaBase)
@@ -928,7 +956,7 @@ export const crawlRequestSchema = strictWithMessage(crawlRequestSchemaBase)
 export type CrawlRequest = z.infer<typeof crawlRequestSchema>;
 export type CrawlRequestInput = z.input<typeof crawlRequestSchema>;
 
-export const MAX_MAP_LIMIT = 100000;
+export const MAX_MAP_LIMIT = 100_000;
 
 const mapRequestSchemaBase = crawlerOptions
   .omit({ sitemap: true, ignoreQueryParameters: true })
@@ -975,7 +1003,7 @@ export interface DocumentMetadata {
   ogAudio?: string;
   ogDeterminer?: string;
   ogLocale?: string;
-  ogLocaleAlternate?: string[];
+  ogLocaleAlternate?: Array<string>;
   ogSiteName?: string;
   ogVideo?: string;
   favicon?: string;
@@ -1006,7 +1034,7 @@ export interface DocumentMetadata {
   cacheState?: "hit" | "miss";
   cachedAt?: string;
   creditsUsed?: number;
-  postprocessorsUsed?: string[];
+  postprocessorsUsed?: Array<string>;
   indexId?: string; // ID used to store the document in the index (GCS)
   concurrencyLimited?: boolean;
   concurrencyQueueDurationMs?: number;
@@ -1020,27 +1048,27 @@ export interface Document {
   html?: string;
   rawHtml?: string;
   rawBase64?: string;
-  links?: string[];
-  images?: string[];
+  links?: Array<string>;
+  images?: Array<string>;
   screenshot?: string;
   extract?: any;
   json?: any;
   summary?: string;
   answer?: string;
   warning?: string;
-  attributes?: {
+  attributes?: Array<{
     selector: string;
     attribute: string;
-    values: string[];
-  }[];
+    values: Array<string>;
+  }>;
   actions?: {
-    screenshots?: string[];
-    scrapes?: ScrapeActionContent[];
-    javascriptReturns?: {
+    screenshots?: Array<string>;
+    scrapes?: Array<ScrapeActionContent>;
+    javascriptReturns?: Array<{
       type: string;
       value: unknown;
-    }[];
-    pdfs?: string[];
+    }>;
+    pdfs?: Array<string>;
   };
   metadata: DocumentMetadata;
   serpResults?: {
@@ -1070,7 +1098,7 @@ export type ScrapeResponse =
       success: true;
       warning?: string;
       data: Document & {
-        tools?: unknown[];
+        tools?: Array<unknown>;
       };
       scrape_id?: string;
     };
@@ -1089,7 +1117,7 @@ export type BatchScrapeResponse =
       success: true;
       id: string;
       url: string;
-      invalidURLs?: string[];
+      invalidURLs?: Array<string>;
     };
 
 // Map document interface (transitioned from v1)
@@ -1105,7 +1133,7 @@ export type MapResponse =
   | {
       success: true;
       id: string;
-      links?: MapDocument[];
+      links?: Array<MapDocument>;
       warning?: string;
     };
 
@@ -1138,7 +1166,7 @@ export type CrawlStatusResponse =
       completedAt?: string;
       duration?: number;
       next?: string;
-      data: Document[];
+      data: Array<Document>;
       warning?: string;
     }
   | {
@@ -1152,26 +1180,26 @@ export type CrawlStatusResponse =
       createdAt?: string;
       completedAt?: string;
       duration?: number;
-      data: Document[];
+      data: Array<Document>;
     };
 
 export type OngoingCrawlsResponse =
   | ErrorResponse
   | {
       success: true;
-      crawls: {
+      crawls: Array<{
         id: string;
         teamId: string;
         url: string;
         created_at: string;
         options: CrawlerOptions;
-      }[];
+      }>;
     };
 
 export type CrawlErrorsResponse =
   | ErrorResponse
   | {
-      errors: {
+      errors: Array<{
         id: string;
         timestamp?: string;
         url: string;
@@ -1184,8 +1212,8 @@ export type CrawlErrorsResponse =
           url?: string;
           [key: string]: unknown;
         };
-      }[];
-      robotsBlocked: string[];
+      }>;
+      robotsBlocked: Array<string>;
     };
 
 type AuthObject = {
@@ -1266,10 +1294,10 @@ export type TeamFlags = {
     disableCountrySelection?: boolean;
     disableAutomaticReferrer?: boolean;
     respectPaywalls?: boolean;
-    allowlist?: string[];
+    allowlist?: Array<string>;
   };
   siemLogging?: boolean;
-  unblockedDomains?: string[];
+  unblockedDomains?: Array<string>;
   forceZDR?: boolean;
   allowZDR?: boolean;
   scrapeZDR?: "disabled" | "allowed" | "forced";
@@ -1498,7 +1526,7 @@ const searchRequestSchemaBase = z.strictObject({
   location: z.string().optional(),
   origin: z.string().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
-  timeout: z.int().positive().finite().prefault(60000),
+  timeout: z.int().positive().finite().prefault(60_000),
   ignoreInvalidURLs: z.boolean().prefault(false),
   asyncScraping: z.boolean().prefault(false),
   scrapeOptions: baseScrapeOptions
@@ -1506,7 +1534,9 @@ const searchRequestSchemaBase = z.strictObject({
       formats: z
         .preprocess(
           val => {
-            if (!Array.isArray(val)) return val;
+            if (!Array.isArray(val)) {
+              return val;
+            }
             return val.map(format => {
               if (typeof format === "string") {
                 return { type: format };
@@ -1567,7 +1597,7 @@ const transformSearchRequest = <
     // Check if it's a string array by checking the first element
     if (typeof sources[0] === "string") {
       // It's a string array, transform to object array
-      sources = (sources as string[]).map(s => {
+      sources = (sources as Array<string>).map(s => {
         switch (s) {
           case "web":
             return {
@@ -1605,7 +1635,7 @@ const transformSearchRequest = <
     // Check if it's a string array by checking the first element
     if (typeof categories[0] === "string") {
       // It's a string array, transform to object array
-      categories = (categories as string[]).map(c => {
+      categories = (categories as Array<string>).map(c => {
         switch (c) {
           case "pdf":
             return {
@@ -1645,7 +1675,7 @@ export type SearchResponse =
   | {
       success: true;
       warning?: string;
-      data: Document[];
+      data: Array<Document>;
       creditsUsed?: number;
       id: string;
     }
@@ -1661,9 +1691,9 @@ export type SearchResponse =
       warning?: string;
       data: import("../../lib/entities").SearchV2Response;
       scrapeIds: {
-        web?: string[];
-        news?: string[];
-        images?: string[];
+        web?: Array<string>;
+        news?: Array<string>;
+        images?: Array<string>;
       };
       creditsUsed?: number;
       id: string;
@@ -1732,12 +1762,14 @@ function createScrapeFormatsSchema(
   const members = Object.values({
     ...coreScrapeFormatSchemas,
     ...extraFormats,
-  }) as [z.ZodType, z.ZodType, ...z.ZodType[]];
+  }) as [z.ZodType, z.ZodType, ...Array<z.ZodType>];
 
   return z
     .preprocess(
       val => {
-        if (!Array.isArray(val)) return val;
+        if (!Array.isArray(val)) {
+          return val;
+        }
         return val.map(format => {
           if (typeof format === "string") {
             return { type: format };
@@ -1765,11 +1797,13 @@ function createSearchFormatsSchema(
   const members = Object.values({
     ...coreSearchFormatSchemas,
     ...extraFormats,
-  }) as [z.ZodType, z.ZodType, ...z.ZodType[]];
+  }) as [z.ZodType, z.ZodType, ...Array<z.ZodType>];
 
   return z
     .preprocess(val => {
-      if (!Array.isArray(val)) return val;
+      if (!Array.isArray(val)) {
+        return val;
+      }
       return val.map(format => {
         if (typeof format === "string") {
           return { type: format };
@@ -1800,14 +1834,16 @@ function applyBaseScrapeOptionsRefines<T extends z.ZodType<any>>(schema: T) {
 function applyScrapeOptionsRules<T extends Record<string, unknown>>(
   value: T,
   kind: RequestKind,
-  rules: readonly ScrapeOptionsRule[],
+  rules: ReadonlyArray<ScrapeOptionsRule>,
   ctx: z.RefinementCtx,
-  pathPrefix: (string | number)[] = [],
+  pathPrefix: Array<string | number> = [],
 ): T | typeof z.NEVER {
   let current = value;
   for (const rule of rules) {
     const verdict = rule(current as unknown as ServiceScrapeOptions, { kind });
-    if (!verdict) continue;
+    if (!verdict) {
+      continue;
+    }
     if ("error" in verdict) {
       ctx.addIssue({
         code: "custom",
@@ -1828,28 +1864,30 @@ function applyScrapeOptionsRules<T extends Record<string, unknown>>(
 function applyExtractTransformAndRules<T extends Record<string, unknown>>(
   value: T,
   kind: RequestKind,
-  rules: readonly ScrapeOptionsRule[],
+  rules: ReadonlyArray<ScrapeOptionsRule>,
   ctx: z.RefinementCtx,
-  pathPrefix: (string | number)[] = [],
+  pathPrefix: Array<string | number> = [],
 ): T | typeof z.NEVER {
   const originalTimeout = (value as { timeout?: unknown }).timeout;
   let base = liftCheckPromptInjection(
     applyScrapeOptionsDefaults(value as unknown as ScrapeOptionsBase),
   ) as unknown as T & {
-    formats?: unknown[];
+    formats?: Array<unknown>;
     timeout?: number;
     proxy?: string;
   };
-  if (base.proxy === "auto" && originalTimeout === 30000) {
-    base = { ...base, timeout: 120000 };
+  if (base.proxy === "auto" && originalTimeout === 30_000) {
+    base = { ...base, timeout: 120_000 };
   }
   const ruled =
     rules.length > 0
       ? applyScrapeOptionsRules(base, kind, rules, ctx, pathPrefix)
       : base;
-  if (ruled === z.NEVER) return z.NEVER;
+  if (ruled === z.NEVER) {
+    return z.NEVER;
+  }
   let result = ruled as T & {
-    formats?: unknown[];
+    formats?: Array<unknown>;
     timeout?: number;
     proxy?: string;
   };
@@ -1860,10 +1898,10 @@ function applyExtractTransformAndRules<T extends Record<string, unknown>>(
         x !== null &&
         (x as { type?: unknown }).type === "json",
     ) &&
-    originalTimeout === 30000 &&
-    result.timeout === 30000
+    originalTimeout === 30_000 &&
+    result.timeout === 30_000
   ) {
-    result = { ...result, timeout: 60000 };
+    result = { ...result, timeout: 60_000 };
   }
   return result;
 }
@@ -1898,7 +1936,7 @@ const defaultV2RequestSchemas: RequestSchemas = Object.freeze({
   map: mapRequestSchema,
   search: searchRequestSchema,
   scrapeOptions,
-}) as unknown as RequestSchemas;
+});
 
 /**
  * Builds the v2 request and scrape-options schemas with extension-contributed
@@ -2040,7 +2078,9 @@ export function buildV2RequestSchemas(
               contributions.rules,
               ctx,
             );
-            if (ruled === z.NEVER) return z.NEVER;
+            if (ruled === z.NEVER) {
+              return z.NEVER;
+            }
             return { ...ruled, file };
           })
       : parseRequestSchema;
@@ -2069,7 +2109,9 @@ export function buildV2RequestSchemas(
               ctx,
               ["scrapeOptions"],
             );
-            if (ruled === z.NEVER) return z.NEVER;
+            if (ruled === z.NEVER) {
+              return z.NEVER;
+            }
             return {
               ...x,
               url: x.url,
@@ -2130,7 +2172,9 @@ export function buildV2RequestSchemas(
               ctx,
               ["scrapeOptions"],
             );
-            if (ruled === z.NEVER) return z.NEVER;
+            if (ruled === z.NEVER) {
+              return z.NEVER;
+            }
             return {
               ...transformed,
               scrapeOptions: ruled,
@@ -2172,7 +2216,9 @@ export function buildV2RequestSchemas(
       ? baseScrapeOpts
           .refine(
             (obj: any) => {
-              if (!obj.actions) return true;
+              if (!obj.actions) {
+                return true;
+              }
               return (
                 calculateTotalWaitTime(obj.actions, obj.waitFor) <=
                 ACTIONS_MAX_WAIT_TIME * 1000
@@ -2206,7 +2252,7 @@ export function buildV2RequestSchemas(
     map,
     search,
     scrapeOptions: compiledScrapeOptions,
-  } as unknown as RequestSchemas;
+  };
 }
 
 const maxAgeScrapeOptionsSchemas = new WeakSet<object>();

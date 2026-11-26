@@ -1,13 +1,9 @@
-import { Response } from "express";
+import type { Response } from "express";
 import { v7 as uuidv7 } from "uuid";
-import {
-  CrawlRequest,
-  CrawlResponse,
-  getV2RequestSchemas,
-  RequestWithAuth,
-  toV0CrawlerOptions,
-} from "./types";
-import { crawlToCrawler, saveCrawl, StoredCrawl } from "../../lib/crawl-redis";
+import type { CrawlRequest, CrawlResponse, RequestWithAuth } from "./types";
+import { getV2RequestSchemas, toV0CrawlerOptions } from "./types";
+import type { StoredCrawl } from "../../lib/crawl-redis";
+import { crawlToCrawler, saveCrawl } from "../../lib/crawl-redis";
 import { _addScrapeJobToBullMQ } from "../../services/queue-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
@@ -23,7 +19,8 @@ import {
   requestContext,
 } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import { finalizeResponse, service, type RequestContext } from "../../service";
+import { finalizeResponse, service } from "../../service";
+import type { RequestContext } from "../../service";
 import type { BillingMetadata } from "../../lib/billing-types";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { getErrorHttpResponse } from "../../lib/error";
@@ -163,10 +160,7 @@ export async function crawlController(
   // This prevents empty defaults like [] from overwriting meaningful prompt-generated values.
   const finalCrawlerOptions: any = { ...crawlerOptions };
   for (const [key, value] of Object.entries(promptGeneratedOptions)) {
-    const userProvided = Object.prototype.hasOwnProperty.call(
-      preNormalizedBody,
-      key,
-    );
+    const userProvided = Object.hasOwn(preNormalizedBody, key);
     if (
       !userProvided ||
       preNormalizedBody[key] === undefined ||
@@ -258,9 +252,9 @@ export async function crawlController(
     // if (robotsCrawlDelay !== null && !sc.crawlerOptions.delay) {
     //   sc.crawlerOptions.delay = robotsCrawlDelay;
     // }
-  } catch (e) {
+  } catch (error) {
     logger.debug("Failed to get robots.txt (this is probably fine!)", {
-      error: e,
+      error,
     });
   }
 
@@ -301,8 +295,8 @@ export async function crawlController(
     id,
     url: `${protocol}://${req.host}/v2/crawl/${id}`,
     ...(req.body.prompt && {
-      promptGeneratedOptions: promptGeneratedOptions,
-      finalCrawlerOptions: finalCrawlerOptions,
+      promptGeneratedOptions,
+      finalCrawlerOptions,
     }),
   });
   return res.status(200).json(payload as CrawlResponse);

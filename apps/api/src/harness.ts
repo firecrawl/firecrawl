@@ -1,8 +1,9 @@
 import { config } from "./config";
-import { type ChildProcess, spawn } from "child_process";
-import { existsSync } from "fs";
-import * as net from "net";
-import { basename, join } from "path";
+import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
+import * as net from "node:net";
+import { basename, join } from "node:path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
 import { startRole } from "./main";
 import { installedService, runProcessStop } from "./service/service";
@@ -48,7 +49,7 @@ interface ProcessResult {
 interface Services {
   api?: ProcessResult;
   worker?: ProcessResult;
-  nuqWorkers: ProcessResult[];
+  nuqWorkers: Array<ProcessResult>;
   nuqPrefetchWorker?: ProcessResult;
   nuqReconcilerWorker?: ProcessResult;
   extractWorker?: ProcessResult;
@@ -69,17 +70,17 @@ interface Services {
 }
 
 const colors = {
-  reset: "\x1b[0m",
-  bold: "\x1b[1m",
-  dim: "\x1b[2m",
-  red: "\x1b[31m",
-  green: "\x1b[32m",
-  yellow: "\x1b[33m",
-  blue: "\x1b[34m",
-  magenta: "\x1b[35m",
-  cyan: "\x1b[36m",
-  gray: "\x1b[90m",
-  white: "\x1b[37m",
+  reset: "\u001b[0m",
+  bold: "\u001b[1m",
+  dim: "\u001b[2m",
+  red: "\u001b[31m",
+  green: "\u001b[32m",
+  yellow: "\u001b[33m",
+  blue: "\u001b[34m",
+  magenta: "\u001b[35m",
+  cyan: "\u001b[36m",
+  gray: "\u001b[90m",
+  white: "\u001b[37m",
 };
 
 const processGroupColors: Record<string, string> = {
@@ -96,8 +97,12 @@ const processGroupColors: Record<string, string> = {
 
 function getProcessGroup(name: string): string {
   let group = name;
-  if (name.includes("@")) group = name.split("@")[0];
-  if (name.includes("-")) group = name.split("-")[0];
+  if (name.includes("@")) {
+    group = name.split("@")[0];
+  }
+  if (name.includes("-")) {
+    group = name.split("-")[0];
+  }
   return group;
 }
 
@@ -108,9 +113,13 @@ function getProcessColor(name: string): string {
 
 function formatDuration(nanoseconds: bigint): string {
   const milliseconds = Number(nanoseconds) / 1e6;
-  if (milliseconds < 1000) return `${milliseconds.toFixed(0)}ms`;
+  if (milliseconds < 1000) {
+    return `${milliseconds.toFixed(0)}ms`;
+  }
   const seconds = milliseconds / 1000;
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)}s`;
+  }
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds - minutes * 60;
   return `${minutes}m ${remainingSeconds.toFixed(0)}s`;
@@ -133,7 +142,7 @@ const POSTGRES_PORT = config.POSTGRES_PORT;
 // Shell escape helper to prevent command injection
 function shellEscape(arg: string): string {
   // Wrap in single quotes and escape any single quotes within
-  return `'${arg.replace(/'/g, "'\\''")}'`;
+  return `'${arg.replaceAll("'", String.raw`'\''`)}'`;
 }
 
 const logger = {
@@ -197,12 +206,20 @@ function waitForPort(
     let socket: net.Socket | null = null;
 
     const done = (err?: Error) => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
       settled = true;
 
-      if (retryTimer) clearTimeout(retryTimer);
-      if (socket) socket.destroy();
-      if (overallTimer) clearTimeout(overallTimer);
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+      }
+      if (socket) {
+        socket.destroy();
+      }
+      if (overallTimer) {
+        clearTimeout(overallTimer);
+      }
 
       signal?.removeEventListener("abort", onAbort);
       err ? reject(err) : resolve();
@@ -225,15 +242,21 @@ function waitForPort(
       timeoutMs,
     );
 
-    if (signal?.aborted) return done(abortError());
+    if (signal?.aborted) {
+      return done(abortError());
+    }
     signal?.addEventListener("abort", onAbort, { once: true });
 
     const check = () => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
       socket = new net.Socket();
       const retry = () => {
         socket?.destroy();
-        if (!settled) retryTimer = setTimeout(check, 250);
+        if (!settled) {
+          retryTimer = setTimeout(check, 250);
+        }
       };
       socket.once("error", retry);
       socket.setTimeout(1000, retry);
@@ -246,7 +269,7 @@ function waitForPort(
 
 function execForward(
   name: string,
-  command: string | string[],
+  command: string | Array<string>,
   env: Record<string, string> = {},
 ): ProcessResult {
   let child: ChildProcess;
@@ -292,17 +315,22 @@ function execForward(
     const processOutput = (data: string, isError = false) => {
       const buffer = isError ? stderrBuffer : stdoutBuffer;
       const newBuffer =
-        buffer + data.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+        buffer + data.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
       const lines = newBuffer.split("\n");
       const completeLines = lines.slice(0, -1);
-      const remainingBuffer = lines[lines.length - 1];
+      const remainingBuffer = lines.at(-1) ?? "";
 
       completeLines.forEach(line => {
-        if (line.trim()) logger.processOutput(name, line, isReduceNoise);
+        if (line.trim()) {
+          logger.processOutput(name, line, isReduceNoise);
+        }
       });
 
-      if (isError) stderrBuffer = remainingBuffer;
-      else stdoutBuffer = remainingBuffer;
+      if (isError) {
+        stderrBuffer = remainingBuffer;
+      } else {
+        stdoutBuffer = remainingBuffer;
+      }
     };
 
     child.stdout?.on("data", data => processOutput(data.toString(), false));
@@ -322,8 +350,11 @@ function execForward(
     child.on("error", error => {
       childProcesses.delete(child);
       logger.processEnd(name, -1, process.hrtime.bigint() - startTime);
-      if (stopping.has(child)) resolve();
-      else reject(new Error(`${name} failed to start: ${error.message}`));
+      if (stopping.has(child)) {
+        resolve();
+      } else {
+        reject(new Error(`${name} failed to start: ${error.message}`));
+      }
     });
   });
 
@@ -371,7 +402,7 @@ function terminateProcess(proc: ChildProcess, force: boolean): Promise<void> {
     } else if (proc.pid) {
       try {
         process.kill(-proc.pid, "SIGTERM");
-      } catch (e) {
+      } catch {
         proc.kill("SIGTERM");
       }
 
@@ -441,7 +472,7 @@ async function stopAndRemoveContainer(
         `${runtime} stop ${containerName}`,
       );
       await stop.promise;
-    } catch (e) {
+    } catch {
       logger.warn(`Failed to stop container ${containerName}, continuing...`);
     }
   }
@@ -453,7 +484,7 @@ async function stopAndRemoveContainer(
       `${runtime} rm -f ${containerName}`,
     );
     await remove.promise;
-  } catch (e) {
+  } catch {
     // Container might not exist, that's fine
   }
 }
@@ -508,7 +539,7 @@ async function waitForPostgres(
 
       logger.success("PostgreSQL is ready");
       return;
-    } catch (e) {
+    } catch {
       // Not ready yet, wait and retry
       await new Promise(resolve => setTimeout(resolve, 500));
     }
@@ -619,7 +650,7 @@ async function waitForRabbitMQ(
 
       logger.success("RabbitMQ is ready");
       return;
-    } catch (e) {
+    } catch {
       // Not ready yet, wait and retry
       await new Promise(resolve => setTimeout(resolve, 500));
     }
@@ -706,7 +737,7 @@ async function waitForFdb(
       await check.promise;
       logger.success("FoundationDB is ready");
       return;
-    } catch (e) {
+    } catch {
       await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
@@ -757,8 +788,8 @@ async function setupFdb(): Promise<Services["fdb"]> {
   await configure.promise;
 
   // the host-side client needs a cluster file pointing at the published port
-  const { writeFileSync, mkdirSync } = await import("fs");
-  const { tmpdir } = await import("os");
+  const { writeFileSync, mkdirSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
   const clusterDir = join(tmpdir(), "firecrawl-fdb");
   mkdirSync(clusterDir, { recursive: true });
   const clusterFile = join(clusterDir, "fdb.cluster");
@@ -819,7 +850,7 @@ async function installDependencies() {
   logger.success("Dependencies installed");
 }
 
-async function startServices(command?: string[]): Promise<Services> {
+async function startServices(command?: Array<string>): Promise<Services> {
   // Setup NUQ PostgreSQL container if needed
   const nuqPostgres = await setupNuqPostgres();
 
@@ -963,7 +994,7 @@ async function startServices(command?: string[]): Promise<Services> {
 async function stopDevelopmentServices(services: Services) {
   logger.section("Stopping services");
 
-  const processesToStop: ChildProcess[] = [
+  const processesToStop: Array<ChildProcess> = [
     services.api?.process,
     services.worker?.process,
     ...services.nuqWorkers.map(w => w.process),
@@ -977,8 +1008,8 @@ async function stopDevelopmentServices(services: Services) {
   await Promise.race([
     await Promise.all(
       processesToStop.map(proc => terminateProcess(proc, true)),
-    ).catch(e => {
-      logger.error("Error while stopping processes", e);
+    ).catch(error => {
+      logger.error("Error while stopping processes", error);
     }),
   ]);
 
@@ -1014,12 +1045,16 @@ async function runDevMode(): Promise<void> {
   const watch = new TscWatchClient();
 
   const restartServices = async () => {
-    if (shuttingDown) return;
+    if (shuttingDown) {
+      return;
+    }
 
     pending = true;
     restartSignal?.abort();
 
-    if (restarting) return;
+    if (restarting) {
+      return;
+    }
     restarting = true;
 
     try {
@@ -1031,7 +1066,9 @@ async function runDevMode(): Promise<void> {
           currentServices = null;
         }
 
-        if (shuttingDown) return;
+        if (shuttingDown) {
+          return;
+        }
 
         currentServices = await startServices();
 
@@ -1042,9 +1079,13 @@ async function runDevMode(): Promise<void> {
           await waitForPort(Number(PORT), "localhost", {
             signal: restartSignal?.signal,
           });
-        } catch (e) {
-          if (e?.name !== "AbortError") throw e;
-          if (shuttingDown) return;
+        } catch (error) {
+          if (error?.name !== "AbortError") {
+            throw error;
+          }
+          if (shuttingDown) {
+            return;
+          }
 
           logger.section(
             "Recompilation triggering during restart, trying again...",
@@ -1110,7 +1151,7 @@ async function runDevMode(): Promise<void> {
   watch.kill();
 }
 
-async function runProductionMode(command: string[]): Promise<void> {
+async function runProductionMode(command: Array<string>): Promise<void> {
   const services = await startServices(command);
 
   logger.info(`Waiting for API on localhost:${PORT}`);
@@ -1124,22 +1165,34 @@ let serviceError = false;
 async function waitForTermination(services: Services): Promise<void> {
   logger.info("All services running. Press Ctrl+C to stop");
 
-  const promises: Promise<void>[] = [
+  const promises: Array<Promise<void>> = [
     new Promise<void>(resolve => {
       process.on("SIGINT", resolve);
       process.on("SIGTERM", resolve);
     }),
   ];
 
-  if (services.command) promises.push(services.command.promise);
-  if (services.api) promises.push(services.api.promise);
-  if (services.worker) promises.push(services.worker.promise);
-  if (services.indexWorker) promises.push(services.indexWorker.promise);
-  if (services.extractWorker) promises.push(services.extractWorker.promise);
-  if (services.nuqPrefetchWorker)
+  if (services.command) {
+    promises.push(services.command.promise);
+  }
+  if (services.api) {
+    promises.push(services.api.promise);
+  }
+  if (services.worker) {
+    promises.push(services.worker.promise);
+  }
+  if (services.indexWorker) {
+    promises.push(services.indexWorker.promise);
+  }
+  if (services.extractWorker) {
+    promises.push(services.extractWorker.promise);
+  }
+  if (services.nuqPrefetchWorker) {
     promises.push(services.nuqPrefetchWorker.promise);
-  if (services.nuqReconcilerWorker)
+  }
+  if (services.nuqReconcilerWorker) {
     promises.push(services.nuqReconcilerWorker.promise);
+  }
 
   promises.push(...services.nuqWorkers.map(w => w.promise));
 
@@ -1150,7 +1203,9 @@ async function waitForTermination(services: Services): Promise<void> {
 }
 
 function gracefulShutdown(): Promise<void> {
-  if (shutdownPromise) return shutdownPromise;
+  if (shutdownPromise) {
+    return shutdownPromise;
+  }
   shuttingDown = true;
   shutdownPromise = (async () => {
     restartSignal?.abort();

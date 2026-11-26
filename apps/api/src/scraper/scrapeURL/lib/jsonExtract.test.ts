@@ -64,7 +64,7 @@ describe("extractData", () => {
             metadata: {},
           },
           metadata: { teamId: "test-team" },
-        } as any,
+        },
         scrapeId: "test-scrape",
         metadata: { teamId: "test-team" },
       });
@@ -85,14 +85,14 @@ describe("extractData", () => {
             metadata: {},
           },
           metadata: { teamId: "test-team" },
-        } as any,
+        },
         metadata: { teamId: "test-team" },
       });
     }
 
     function sentSchema() {
       const calls = (generateCompletions as Mock).mock.calls;
-      return calls[calls.length - 1][0].options.schema;
+      return calls.at(-1)![0].options.schema;
     }
 
     function mockExtract(extract: any) {

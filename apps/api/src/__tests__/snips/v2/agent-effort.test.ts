@@ -1,8 +1,8 @@
 import request from "supertest";
+import type { Identity } from "../lib";
 import {
   describeIf,
   HAS_AI,
-  Identity,
   idmux,
   scrapeTimeout,
   TEST_API_URL,
@@ -24,7 +24,7 @@ let identity: Identity;
 beforeAll(async () => {
   identity = await idmux({
     name: "agent-effort",
-    credits: 1000000,
+    credits: 1_000_000,
   });
 }, scrapeTimeout);
 

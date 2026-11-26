@@ -14,7 +14,7 @@ const getURLobj = (s: string) => {
   let urlObj = {};
   try {
     urlObj = new URL(s);
-  } catch (err) {
+  } catch {
     error = true;
   }
   return { error, urlObj };
@@ -36,7 +36,7 @@ export const checkAndUpdateURL = (url: string) => {
     throw new Error("Invalid URL");
   }
 
-  return { urlObj: typedUrlObj, url: url };
+  return { urlObj: typedUrlObj, url };
 };
 
 export const checkUrl = (url: string) => {
@@ -159,10 +159,10 @@ export const checkAndUpdateURLForMap = (
     typedUrlObj.search = "";
   }
 
-  return { urlObj: typedUrlObj, url: url };
+  return { urlObj: typedUrlObj, url };
 };
 
-export function removeDuplicateUrls(urls: string[]): string[] {
+export function removeDuplicateUrls(urls: Array<string>): Array<string> {
   const urlMap = new Map<string, string>();
 
   for (const url of urls) {

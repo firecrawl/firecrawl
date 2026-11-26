@@ -1,20 +1,18 @@
-import crypto from "crypto";
-import { Logger } from "winston";
+import crypto from "node:crypto";
+import type { Logger } from "winston";
 import { z } from "zod";
 import { generateObject, NoObjectGeneratedError } from "ai";
 import { Semaphore } from "async-mutex";
 import { getModel } from "../../../lib/generic-ai";
-import {
-  CostLimitExceededError,
-  CostTracking,
-} from "../../../lib/cost-tracking";
+import type { CostTracking } from "../../../lib/cost-tracking";
+import { CostLimitExceededError } from "../../../lib/cost-tracking";
 import { calculateCost } from "../transformers/llmExtract";
 import { PromptInjectionDetectedError } from "../error";
 import type { TeamFlags } from "../../../controllers/v2/types";
 import { aiTelemetry } from "../../../lib/ai-telemetry";
 
 const GUARD_MODEL = "gpt-4o-mini";
-const GUARD_MAX_CHUNK_CHARS = 32000;
+const GUARD_MAX_CHUNK_CHARS = 32_000;
 const GUARD_CHUNK_OVERLAP_CHARS = 2000;
 const GUARD_CONCURRENCY_LIMIT = 5;
 
@@ -22,12 +20,14 @@ export function chunkByChars(
   text: string,
   maxCharsPerChunk: number,
   overlap: number = 0,
-): string[] {
-  const chunks: string[] = [];
+): Array<string> {
+  const chunks: Array<string> = [];
   const stride = maxCharsPerChunk - overlap;
   for (let i = 0; i < text.length; i += stride) {
     chunks.push(text.slice(i, i + maxCharsPerChunk));
-    if (i + maxCharsPerChunk >= text.length) break;
+    if (i + maxCharsPerChunk >= text.length) {
+      break;
+    }
   }
   return chunks;
 }
@@ -239,7 +239,9 @@ export async function checkForPromptInjection({
         ),
       ),
     );
-    if (scanned.includes(false)) everyChunkScanned = false;
+    if (scanned.includes(false)) {
+      everyChunkScanned = false;
+    }
   }
   return everyChunkScanned;
 }

@@ -94,7 +94,7 @@ describe("trimToTokenLimit", () => {
 
   // Records the length of every string handed to encode(), so we can prove the
   // synchronous tokenizer never has to chew through an unbounded input.
-  let encodeInputLengths: number[];
+  let encodeInputLengths: Array<number>;
   let freeCalls: number;
 
   beforeEach(() => {
@@ -303,9 +303,9 @@ describe("performCleanContent", () => {
     }) as any;
 
   it("should skip cleaning when input tokens exceed model max output tokens", async () => {
-    const longMarkdown = "A".repeat(200000); // simulate a very long document
+    const longMarkdown = "A".repeat(200_000); // simulate a very long document
     // Simulate 80,000 tokens — well above gpt-4o-mini's 16,384 output limit
-    mockEncode.mockReturnValue(new Array(80000));
+    mockEncode.mockReturnValue(new Array(80_000));
 
     const document = { markdown: longMarkdown } as any;
     const result = await performCleanContent(makeMeta(true), document);
@@ -345,7 +345,7 @@ describe("performCleanContent", () => {
     // but if it gets that far, it proves the guard didn't fire.
     try {
       await performCleanContent(meta, document);
-    } catch (_e) {
+    } catch {
       // Expected — no LLM available in test
     }
 

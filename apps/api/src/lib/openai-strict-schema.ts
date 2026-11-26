@@ -1,4 +1,4 @@
-import { z } from "zod";
+import type { z } from "zod";
 
 // OpenAI structured outputs (strict mode) accept only a subset of JSON Schema.
 // normalizeSchemaKeywords fixes the mechanical mistakes we see in user-written
@@ -38,7 +38,9 @@ function mapValues(obj: Schema, fn: (v: any) => any): Schema {
 }
 
 function lowercaseType(type: unknown): unknown {
-  if (typeof type === "string") return type.toLowerCase();
+  if (typeof type === "string") {
+    return type.toLowerCase();
+  }
   if (Array.isArray(type)) {
     return type.map(t => (typeof t === "string" ? t.toLowerCase() : t));
   }
@@ -55,8 +57,12 @@ export function typeIncludes(type: unknown, name: string): boolean {
 // "properties" maps names to schemas instead of being a schema itself (a
 // field that happens to be called "properties").
 function isTypelessRootSchema(node: Schema): boolean {
-  if (!isPlainObject(node.properties)) return false;
-  if (typeof node.properties.type === "string") return false;
+  if (!isPlainObject(node.properties)) {
+    return false;
+  }
+  if (typeof node.properties.type === "string") {
+    return false;
+  }
   return Object.entries(node).every(([key, value]) => {
     switch (key) {
       case "$schema":
@@ -100,7 +106,9 @@ export function normalizeSchemaKeywords(schema: any): any {
 }
 
 function normalizeNode(node: any, isRoot: boolean): any {
-  if (!isPlainObject(node)) return node;
+  if (!isPlainObject(node)) {
+    return node;
+  }
   const out: Schema = { ...node };
 
   if (out.type !== undefined) {
@@ -157,7 +165,9 @@ const ROOT_ANNOTATIONS = new Set(["$schema", "$id", "$comment"]);
  * schema) moves to the root of that object schema.
  */
 export function toRootSchema(schema: any): any {
-  if (!isBareRootMap(schema)) return normalizeSchemaKeywords(schema);
+  if (!isBareRootMap(schema)) {
+    return normalizeSchemaKeywords(schema);
+  }
   const { $defs, ...rest } = schema;
   const hasDefs = isPlainObject($defs) && typeof $defs.type !== "string";
   const fields = hasDefs ? rest : schema;
@@ -185,7 +195,9 @@ function describe(value: unknown): string {
  * that function fixes is not reported.
  */
 export function findStrictSchemaViolation(schema: any): string | null {
-  if (schema === undefined || schema === null) return null;
+  if (schema === undefined || schema === null) {
+    return null;
+  }
   const root = toRootSchema(schema);
   if (!isPlainObject(root)) {
     return `Invalid JSON schema: expected an object, got ${describe(root)}.`;
@@ -270,13 +282,17 @@ function checkNode(node: any, path: string): string | null {
     }
     for (const [key, value] of Object.entries(node.properties)) {
       const violation = checkNode(value, child(`properties.${key}`));
-      if (violation) return violation;
+      if (violation) {
+        return violation;
+      }
     }
   }
 
   if (isPlainObject(node.items)) {
     const violation = checkNode(node.items, child("items"));
-    if (violation) return violation;
+    if (violation) {
+      return violation;
+    }
   }
 
   if (node.anyOf !== undefined) {
@@ -285,7 +301,9 @@ function checkNode(node: any, path: string): string | null {
     }
     for (let i = 0; i < node.anyOf.length; i++) {
       const violation = checkNode(node.anyOf[i], child(`anyOf.${i}`));
-      if (violation) return violation;
+      if (violation) {
+        return violation;
+      }
     }
   }
 
@@ -293,7 +311,9 @@ function checkNode(node: any, path: string): string | null {
     if (isPlainObject(node[defsKey])) {
       for (const [key, value] of Object.entries(node[defsKey])) {
         const violation = checkNode(value, child(`${defsKey}.${key}`));
-        if (violation) return violation;
+        if (violation) {
+          return violation;
+        }
       }
     }
   }

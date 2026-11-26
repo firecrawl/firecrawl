@@ -1,27 +1,27 @@
-import { Response } from "express";
+import type { Response } from "express";
 import { v7 as uuidv7 } from "uuid";
-import {
+import type {
   BatchScrapeRequest,
-  parseBatchScrapeRequest,
-  URL as urlSchema,
   RequestWithAuth,
   ScrapeOptions,
   BatchScrapeResponse,
 } from "./types";
+import { parseBatchScrapeRequest, URL as urlSchema } from "./types";
+import type { StoredCrawl } from "../../lib/crawl-redis";
 import {
   addCrawlJobs,
   finishCrawlKickoff,
   getCrawl,
   lockURLs,
   saveCrawl,
-  StoredCrawl,
 } from "../../lib/crawl-redis";
 import { resolveJobPriority } from "../../lib/limits";
 import { addScrapeJobs } from "../../services/queue-jobs";
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 import { logger as _logger } from "../../lib/logger";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
-import { finalizeResponse, service, type RequestContext } from "../../service";
+import { finalizeResponse, service } from "../../service";
+import type { RequestContext } from "../../service";
 import {
   crawlGroup,
   resolveNewGroupBackend,
@@ -50,7 +50,7 @@ export async function batchScrapeController(
   // Only batch scrapes can be appended to: crawls (including monitor crawls)
   // carry their own billing and scope.
   const appendTarget = req.body.appendToId
-    ? ((await getCrawl(req.body.appendToId)) as StoredCrawl | null)
+    ? await getCrawl(req.body.appendToId)
     : null;
   if (
     req.body.appendToId &&
@@ -107,8 +107,8 @@ export async function batchScrapeController(
       origin: req.body.origin ?? null,
     });
 
-  let urls: string[] = req.body.urls;
-  let invalidURLs: string[] | undefined =
+  let urls: Array<string> = req.body.urls;
+  let invalidURLs: Array<string> | undefined =
     req.requestDroppedUrls && req.requestDroppedUrls.length > 0
       ? [...req.requestDroppedUrls]
       : undefined;
@@ -128,7 +128,7 @@ export async function batchScrapeController(
           invalidURLs.push(u);
           blockedFound = true;
         }
-      } catch (_) {
+      } catch {
         invalidURLs.push(u);
       }
     }
@@ -202,7 +202,9 @@ export async function batchScrapeController(
       extBody.__agentInterop?.shouldBill ?? true
     );
     sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
-    if (workContactOnly) sc.internalOptions.workContactOnly = true;
+    if (workContactOnly) {
+      sc.internalOptions.workContactOnly = true;
+    }
   }
 
   const crawlTtlHours = ctx.crawlTtlHours ?? 24;

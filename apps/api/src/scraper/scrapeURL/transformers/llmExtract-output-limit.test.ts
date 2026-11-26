@@ -69,7 +69,7 @@ describe("isTruncatedJson", () => {
     ['{"items": ["a", "b"', true],
     ['{"items": ["a", "unterminated', true],
     ['```json\n{"items": [', true],
-    ['{"quote": "\\"}', true],
+    [String.raw`{"quote": "\"}`, true],
     ['{"items": ["a", "b"]}', false],
     ['```json\n{"items": ["a"]}\n```', false],
     ['{"brace": "}", "bracket": "["}', false],

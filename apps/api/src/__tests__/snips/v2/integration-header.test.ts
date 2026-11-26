@@ -5,7 +5,8 @@ import {
   describeIf,
   TEST_PRODUCTION,
 } from "../lib";
-import request, { idmux, Identity, scrapeTimeout, TEST_API_URL } from "./lib";
+import type { Identity } from "./lib";
+import request, { idmux, scrapeTimeout, TEST_API_URL } from "./lib";
 import { HAS_JOB_LOG, waitForJobLogRow } from "../job-log";
 
 const CAN_READ_LOG = TEST_PRODUCTION && HAS_JOB_LOG;
@@ -42,9 +43,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("X-Integration header", () => {
     identity = await idmux({
       name: "integration-header",
       concurrency: 100,
-      credits: 1000000,
+      credits: 1_000_000,
     });
-  }, 10000);
+  }, 10_000);
 
   concurrentIf(CAN_READ_LOG).each(["/v2/scrape"] as const)(
     "attributes %s to a header-only integration",
@@ -56,7 +57,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("X-Integration header", () => {
       expect(res.body.success).toBe(true);
       expect(await loggedIntegration(identity, url)).toBe("n8n");
     },
-    scrapeTimeout + 60000,
+    scrapeTimeout + 60_000,
   );
 
   concurrentIf(CAN_READ_LOG)(
@@ -76,7 +77,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("X-Integration header", () => {
         "_integration_header_test",
       );
     },
-    scrapeTimeout + 60000,
+    scrapeTimeout + 60_000,
   );
 
   concurrentIf(CAN_READ_LOG)(
@@ -94,7 +95,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("X-Integration header", () => {
       expect(res.body.success).toBe(true);
       expect(await loggedIntegration(identity, url)).toBe("hermes");
     },
-    scrapeTimeout + 60000,
+    scrapeTimeout + 60_000,
   );
 
   it.concurrent(
@@ -110,10 +111,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("X-Integration header", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
-      if (!CAN_READ_LOG) return;
+      if (!CAN_READ_LOG) {
+        return;
+      }
       expect(await loggedIntegration(identity, url)).toBe("cli");
     },
-    scrapeTimeout + 60000,
+    scrapeTimeout + 60_000,
   );
 
   it.concurrent(
@@ -129,9 +132,11 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("X-Integration header", () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
-      if (!CAN_READ_LOG) return;
+      if (!CAN_READ_LOG) {
+        return;
+      }
       expect(await loggedIntegration(identity, url)).toBeNull();
     },
-    scrapeTimeout + 60000,
+    scrapeTimeout + 60_000,
   );
 });

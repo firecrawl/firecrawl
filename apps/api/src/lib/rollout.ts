@@ -11,13 +11,17 @@
  * FNV-1a over the key, mapped onto [0, 100).
  */
 export function sampled(cohortKey: string, percent: number): boolean {
-  if (percent <= 0) return false;
-  if (percent >= 100) return true;
+  if (percent <= 0) {
+    return false;
+  }
+  if (percent >= 100) {
+    return true;
+  }
 
-  let hash = 2166136261;
+  let hash = 2_166_136_261;
   for (let i = 0; i < cohortKey.length; i++) {
     hash ^= cohortKey.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
+    hash = Math.imul(hash, 16_777_619);
   }
-  return ((hash >>> 0) / 0x1_0000_0000) * 100 < percent;
+  return ((hash >>> 0) / 0x1_00_00_00_00) * 100 < percent;
 }

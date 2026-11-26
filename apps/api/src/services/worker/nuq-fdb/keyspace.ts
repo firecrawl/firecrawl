@@ -84,7 +84,9 @@ export function encodeI64(n: number): Buffer {
 }
 
 export function decodeI64(buf: Buffer | undefined | null): number {
-  if (!buf || buf.length < 8) return 0;
+  if (!buf || buf.length < 8) {
+    return 0;
+  }
   return Number(buf.readBigInt64LE());
 }
 
@@ -93,15 +95,17 @@ export function encodeJson(v: any): Buffer {
 }
 
 export function decodeJson<T = any>(buf: Buffer | undefined | null): T | null {
-  if (!buf) return null;
+  if (!buf) {
+    return null;
+  }
   return JSON.parse(buf.toString("utf8")) as T;
 }
 
 export function fnv1a(str: string): number {
-  let hash = 0x811c9dc5;
+  let hash = 0x81_1c_9d_c5;
   for (let i = 0; i < str.length; i++) {
     hash ^= str.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
+    hash = Math.imul(hash, 0x01_00_01_93);
   }
   return hash >>> 0;
 }
@@ -129,16 +133,16 @@ export function teamPendingShard(jobId: string): number {
 export class NuqFdbKeyspace {
   constructor(public readonly queueName: string) {}
 
-  pack(parts: any[]): Buffer {
-    return getFdb().tuple.pack(["nuq", this.queueName, ...parts]) as Buffer;
+  pack(parts: Array<any>): Buffer {
+    return getFdb().tuple.pack(["nuq", this.queueName, ...parts]);
   }
 
-  private packRange(parts: any[]): { begin: Buffer; end: Buffer } {
+  private packRange(parts: Array<any>): { begin: Buffer; end: Buffer } {
     const begin = this.pack(parts);
     return { begin, end: prefixEnd(begin) };
   }
 
-  unpack(key: Buffer): unknown[] {
+  unpack(key: Buffer): Array<unknown> {
     return getFdb().tuple.unpack(key);
   }
 

@@ -37,7 +37,7 @@ describe("chunkByChars", () => {
   });
 
   it("keeps every chunk within the char limit", () => {
-    const text = "x".repeat(10000);
+    const text = "x".repeat(10_000);
 
     const chunks = chunkByChars(text, 300);
 
@@ -50,7 +50,7 @@ describe("chunkByChars", () => {
     const huge = "A".repeat(10_000_000);
 
     const start = Date.now();
-    chunkByChars(huge, 100000);
+    chunkByChars(huge, 100_000);
     const durationMs = Date.now() - start;
 
     expect(durationMs).toBeLessThan(1000);
@@ -69,7 +69,7 @@ describe("chunkByChars", () => {
   });
 
   it("still respects the char limit per chunk when overlapping", () => {
-    const text = "x".repeat(10000);
+    const text = "x".repeat(10_000);
 
     const chunks = chunkByChars(text, 300, 50);
 

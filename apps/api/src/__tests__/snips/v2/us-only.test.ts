@@ -1,4 +1,5 @@
 import { describeIf, itIf, TEST_PRODUCTION } from "../lib";
+import type { Identity } from "./lib";
 import {
   scrape,
   scrapeRaw,
@@ -6,7 +7,6 @@ import {
   search,
   searchRaw,
   idmux,
-  Identity,
   crawlStart,
   map,
   browserCreateRaw,
@@ -27,10 +27,10 @@ describeIf(TEST_PRODUCTION)("US-only teams", () => {
     identity = await idmux({
       name: "us-only/scrape",
       concurrency: 100,
-      credits: 1000000,
+      credits: 1_000_000,
       flags: { usOnly: true },
     });
-  }, 10000 + scrapeTimeout);
+  }, 10_000 + scrapeTimeout);
 
   it.concurrent(
     "scrapes markdown and skips the query format with a warning",
@@ -290,10 +290,10 @@ describeIf(TEST_PRODUCTION)("US-only teams: search", () => {
     identity = await idmux({
       name: "us-only/search",
       concurrency: 100,
-      credits: 1000000,
+      credits: 1_000_000,
       flags: { usOnly: true },
     });
-  }, 10000 + scrapeTimeout);
+  }, 10_000 + scrapeTimeout);
 
   it.concurrent(
     "returns web results",

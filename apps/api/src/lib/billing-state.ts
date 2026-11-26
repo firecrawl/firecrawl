@@ -33,13 +33,13 @@ declare module "../service/modules" {
     /** Requested result count for search reservations. */
     limit?: number;
     /** Requested search categories for search reservations. */
-    categories?: unknown[];
+    categories?: Array<unknown>;
     /** Requested search sources for search reservations. */
-    sources?: unknown[];
+    sources?: Array<unknown>;
     /** Whether domain tool discovery was requested for search reservations. */
     domainTools?: boolean;
     /** Enterprise search modes requested. */
-    enterprise?: ("default" | "anon" | "zdr")[];
+    enterprise?: Array<"default" | "anon" | "zdr">;
     /** Scrape options for scrape, parse, or scrapeful search reservations. */
     scrapeOptions?: ScrapeOptions;
     /** Route identifier for reservation refusal responses. */
@@ -47,22 +47,22 @@ declare module "../service/modules" {
   }
 
   interface SearchChargeState {
-    enterprise?: ("default" | "anon" | "zdr")[];
-    threatDecisions?: unknown[];
+    enterprise?: Array<"default" | "anon" | "zdr">;
+    threatDecisions?: Array<unknown>;
     [key: string]: unknown;
   }
 
   interface MapChargeState {
     perUrl?: boolean;
     chargeId?: string;
-    threatDecisions?: unknown[];
+    threatDecisions?: Array<unknown>;
   }
 
   interface CrawlChargeState {
     crawlerOptions?: unknown;
     chargeId?: string;
     resolveOrgFromTeam?: boolean;
-    threatDecisions?: unknown[];
+    threatDecisions?: Array<unknown>;
   }
 }
 
@@ -75,6 +75,6 @@ declare module "../service/hooks" {
     error?: Error | null;
     unsupportedFeatures?: Set<FeatureFlag>;
     exchange?: Record<string, unknown>;
-    threatDecisions?: unknown[];
+    threatDecisions?: Array<unknown>;
   }
 }

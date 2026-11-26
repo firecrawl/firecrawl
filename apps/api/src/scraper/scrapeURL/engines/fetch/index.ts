@@ -1,6 +1,6 @@
 import * as undici from "undici";
-import { EngineScrapeResult } from "..";
-import { Meta } from "../..";
+import type { EngineScrapeResult } from "..";
+import type { Meta } from "../..";
 import { SSLError } from "../../error";
 import { TLS_CERT_ERROR_CODES } from "../utils/safeFetch";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
@@ -8,8 +8,9 @@ import {
   getSecureDispatcher,
   InsecureConnectionError,
 } from "../utils/safeFetch";
-import { MockState, saveMock } from "../../lib/mock";
-import { TextDecoder } from "util";
+import type { MockState } from "../../lib/mock";
+import { saveMock } from "../../lib/mock";
+import { TextDecoder } from "node:util";
 
 function decodeHtmlBuffer(
   buf: Buffer,
@@ -20,7 +21,7 @@ function decodeHtmlBuffer(
   charsetSource?: "header" | "meta";
   decodeError?: unknown;
 } {
-  let text = buf.toString("utf8");
+  const text = buf.toString("utf8");
 
   const headerCharsetRaw = (contentType?.match(
     /charset\s*=\s*["']?([^;"'\s]+)/i,
@@ -101,7 +102,7 @@ export async function scrapeURLWithFetch(
     url: string;
     body: string;
     status: number;
-    headers: [string, string][];
+    headers: Array<[string, string]>;
   };
 
   if (meta.fetchPrefetch !== undefined && meta.fetchPrefetch !== null) {
@@ -230,5 +231,5 @@ export async function scrapeURLWithFetch(
 }
 
 export function fetchMaxReasonableTime(meta: Meta): number {
-  return 15000;
+  return 15_000;
 }

@@ -36,7 +36,6 @@ import {
   ActionsNotSupportedError,
   ConcurrencyQueueTimeoutError,
   CrawlDenialError,
-  type ErrorCode,
   isTransportableError,
   MapFailedError,
   MapTimeoutError,
@@ -47,6 +46,7 @@ import {
   UnknownError,
   UnsupportedSiteError,
 } from "./error";
+import type { ErrorCode } from "./error";
 import {
   coreErrors,
   deserializeTransportableError,
@@ -92,7 +92,7 @@ describe("deserializeTransportableError", () => {
 
     it("reads a payload written as code, separator, JSON", () => {
       const revived = deserializeTransportableError(
-        'SCRAPE_TIMEOUT|{"stack":"Error: slow | very slow\\n    at worker","message":"slow | very slow"}',
+        String.raw`SCRAPE_TIMEOUT|{"stack":"Error: slow | very slow\n    at worker","message":"slow | very slow"}`,
       )!;
 
       expect(revived).toBeInstanceOf(ScrapeJobTimeoutError);
@@ -231,12 +231,9 @@ describe("the wire form of every class", () => {
   };
   // The code, a label, the error, and the fields its class writes after the
   // three every error has, in the order it writes them.
-  const samples: [
-    ErrorCode,
-    string,
-    () => TransportableError,
-    Record<string, unknown>,
-  ][] = [
+  const samples: Array<
+    [ErrorCode, string, () => TransportableError, Record<string, unknown>]
+  > = [
     [
       "SCRAPE_TIMEOUT",
       "ScrapeJobTimeoutError",
@@ -461,8 +458,8 @@ describe("the wire form of every class", () => {
     [
       "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR",
       "PDFInsufficientTimeError",
-      () => new PDFInsufficientTimeError(412, 95000),
-      { pageCount: 412, minTimeout: 95000 },
+      () => new PDFInsufficientTimeError(412, 95_000),
+      { pageCount: 412, minTimeout: 95_000 },
     ],
     [
       "SCRAPE_DNS_RESOLUTION_ERROR",

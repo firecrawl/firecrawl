@@ -4,7 +4,8 @@ import {
   TEST_API_URL,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { idmux, Identity, scrapeTimeout } from "./lib";
+import type { Identity } from "./lib";
+import { idmux, scrapeTimeout } from "./lib";
 import request from "supertest";
 import { describe, expect, beforeAll } from "vitest";
 
@@ -15,14 +16,14 @@ beforeAll(async () => {
   identity = await idmux({
     name: "crawl-status-cursor",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
   lowConcurrencyIdentity = await idmux({
     name: "crawl-status-cursor-cancel",
     concurrency: 1,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000);
+}, 10_000);
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -38,7 +39,7 @@ async function getStatus(path: string, apiKey: string) {
 // Follows `next` like the SDKs do, with a hop cap so a cursor that never ends
 // fails the test instead of hanging it.
 async function followCursor(firstPath: string, apiKey: string) {
-  const docs: any[] = [];
+  const docs: Array<any> = [];
   let path: string | undefined = firstPath;
   let hops = 0;
   let last: any;
@@ -53,7 +54,7 @@ async function followCursor(firstPath: string, apiKey: string) {
   return { docs, hops, last, ended: path === undefined };
 }
 
-async function startBatch(urls: string[], apiKey: string) {
+async function startBatch(urls: Array<string>, apiKey: string) {
   const res = await request(TEST_API_URL)
     .post("/v2/batch/scrape")
     .set("Authorization", `Bearer ${apiKey}`)
@@ -79,7 +80,9 @@ describe("Crawl status cursor", () => {
 
       let status: any;
       do {
-        if (status) await sleep(250);
+        if (status) {
+          await sleep(250);
+        }
         status = await getStatus(`/v2/batch/scrape/${id}`, apiKey);
       } while (status.status === "scraping");
       expect(status.status).toBe("completed");
@@ -110,7 +113,9 @@ describe("Crawl status cursor", () => {
 
       let status: any;
       do {
-        if (status) await sleep(100);
+        if (status) {
+          await sleep(100);
+        }
         status = await getStatus(`/v2/batch/scrape/${id}`, apiKey);
       } while (status.status === "scraping" && status.completed < 1);
       expect(status.status).toBe("scraping");

@@ -1,11 +1,6 @@
 import request from "supertest";
-import {
-  describeIf,
-  idmux,
-  type Identity,
-  TEST_API_URL,
-  TEST_PRODUCTION,
-} from "../lib";
+import { describeIf, idmux, TEST_API_URL, TEST_PRODUCTION } from "../lib";
+import type { Identity } from "../lib";
 
 async function getConfig(identity: Identity) {
   return request(TEST_API_URL)

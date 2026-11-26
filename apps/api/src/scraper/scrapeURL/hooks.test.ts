@@ -22,7 +22,8 @@ vi.mock("./lib/removeUnwantedElements", async importOriginal => {
 });
 
 import { scrapeURL } from ".";
-import { coreEngineFeatures, type EngineScrapeResult } from "./engines";
+import { coreEngineFeatures } from "./engines";
+import type { EngineScrapeResult } from "./engines";
 import { EngineError, NoEnginesLeftError, SiteError } from "./error";
 import { createScrapeFinishedEmitter } from "./hooks";
 import { AbortManager, AbortManagerThrownError } from "./lib/abortManager";
@@ -47,7 +48,7 @@ const makeEngine = (
     quality: options.quality ?? 10,
     features: options.features ?? {},
     enabled: options.enabled ?? (() => true),
-    maxReasonableTime: () => 5_000,
+    maxReasonableTime: () => 5000,
     ...(options.cache ? { cache: true } : {}),
     ...(options.supportsProfile ? { supportsProfile: true } : {}),
     ...(options.prefetchesFiles ? { prefetchesFiles: true } : {}),
@@ -56,8 +57,8 @@ const makeEngine = (
   }) as unknown as RegisteredEngine;
 
 const installTestService = (
-  engines: readonly RegisteredEngine[],
-  extensions: Extension[] = [],
+  engines: ReadonlyArray<RegisteredEngine>,
+  extensions: Array<Extension> = [],
 ) => {
   replaceService(
     createService(
@@ -97,12 +98,12 @@ describe("scrape pipeline hook points", () => {
     );
 
     const pushTrace = (state: Record<string, unknown>, label: string) => {
-      const trace = (state.trace as string[] | undefined) ?? [];
+      const trace = (state.trace as Array<string> | undefined) ?? [];
       trace.push(label);
       state.trace = trace;
     };
 
-    const finishedEvents: ScrapeFinished[] = [];
+    const finishedEvents: Array<ScrapeFinished> = [];
 
     installTestService(
       [
@@ -227,7 +228,9 @@ describe("scrape pipeline hook points", () => {
     );
 
     expect(result.success).toBe(true);
-    if (!result.success) return;
+    if (!result.success) {
+      return;
+    }
 
     const emitFinished = createScrapeFinishedEmitter({
       jobId: "scrape-hooks-e2e",
@@ -331,7 +334,9 @@ describe("scrape pipeline hook points", () => {
     );
 
     expect(result.success).toBe(true);
-    if (!result.success) return;
+    if (!result.success) {
+      return;
+    }
     expect(playwrightScrape).toHaveBeenCalledTimes(1);
     expect(fetchScrape).not.toHaveBeenCalled();
     expect(result.document.markdown).toContain("From playwright");
@@ -412,7 +417,9 @@ describe("scrape pipeline hook points", () => {
     );
 
     expect(result.success).toBe(false);
-    if (result.success) return;
+    if (result.success) {
+      return;
+    }
     expect(fetchScrape).toHaveBeenCalledTimes(1);
     expect(playwrightScrape).toHaveBeenCalledTimes(1);
     expect(result.error).toBeInstanceOf(NoEnginesLeftError);
@@ -503,7 +510,9 @@ describe("scrape pipeline hook points", () => {
 
     expect(first.success).toBe(true);
     expect(second.success).toBe(true);
-    if (!first.success || !second.success) return;
+    if (!first.success || !second.success) {
+      return;
+    }
     expect(first.document.markdown).toContain("Hello World");
     expect(first.document.html).toContain("<h1>Hello World</h1>");
     expect(first.document.metadata.title).toBe("Baseline");
@@ -615,7 +624,7 @@ describe("scrape pipeline hook points", () => {
           hooks: {
             "scrape.start": plan => ({
               ...plan,
-              options: { ...plan.options, timeout: 2_500 },
+              options: { ...plan.options, timeout: 2500 },
             }),
           },
         },
@@ -633,7 +642,7 @@ describe("scrape pipeline hook points", () => {
     expect(shortened.success).toBe(true);
     expect(observedTimeout).toBeDefined();
     expect(observedTimeout!).toBeGreaterThan(0);
-    expect(observedTimeout!).toBeLessThanOrEqual(2_500);
+    expect(observedTimeout!).toBeLessThanOrEqual(2500);
 
     installTestService(
       [makeEngine("fetch", fetchScrape, { quality: 20 })],
@@ -705,7 +714,9 @@ describe("scrape pipeline hook points", () => {
     );
 
     expect(result.success).toBe(false);
-    if (result.success) return;
+    if (result.success) {
+      return;
+    }
     expect(result.error).toBeInstanceOf(Error);
     expect(result.error.message).toBe("blocked at start");
     expect(result.state).toEqual({ vetoedAt: "scrape.start" });
@@ -749,7 +760,9 @@ describe("scrape pipeline hook points", () => {
     );
 
     expect(result.success).toBe(false);
-    if (result.success) return;
+    if (result.success) {
+      return;
+    }
     expect(result.error).toBeInstanceOf(Error);
     expect(result.error.message).toBe("blocked after fetch");
     expect(result.state).toEqual({ vetoedAt: "scrape.fetched" });
@@ -932,7 +945,9 @@ describe("scrape pipeline hook points", () => {
     );
 
     expect(result.success).toBe(true);
-    if (!result.success) return;
+    if (!result.success) {
+      return;
+    }
     expect(result.document.markdown).toContain("Recovered");
     expect(primaryScrape).toHaveBeenCalledTimes(1);
     expect(fallbackScrape).toHaveBeenCalledTimes(1);
@@ -993,7 +1008,9 @@ describe("scrape pipeline hook points", () => {
     );
 
     expect(result.success).toBe(true);
-    if (!result.success) return;
+    if (!result.success) {
+      return;
+    }
     expect(result.document.metadata.cacheState).toBe("miss");
     expect(result.document.warning).toBeUndefined();
     expect(

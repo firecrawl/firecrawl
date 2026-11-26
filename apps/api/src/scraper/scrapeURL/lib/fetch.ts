@@ -1,9 +1,12 @@
-import { Logger } from "winston";
-import { z, ZodError } from "zod";
-import { MockState, saveMock } from "./mock";
-import { fetch, Response, FormData, Agent } from "undici";
+import type { Logger } from "winston";
+import type { z } from "zod";
+import { ZodError } from "zod";
+import type { MockState } from "./mock";
+import { saveMock } from "./mock";
+import type { Response } from "undici";
+import { fetch, FormData, Agent } from "undici";
 import { cacheableLookup } from "./cacheableLookup";
-import dns from "dns";
+import dns from "node:dns";
 import { AbortManagerThrownError } from "./abortManager";
 
 type RobustFetchParams<Schema extends z.Schema<any>> = {
@@ -34,7 +37,9 @@ const SENSITIVE_HEADER =
 export function redactHeaders(
   headers: Record<string, string> | undefined,
 ): Record<string, string> | undefined {
-  if (headers === undefined) return undefined;
+  if (headers === undefined) {
+    return undefined;
+  }
   return Object.fromEntries(
     Object.entries(headers).map(([name, value]) => [
       name,
@@ -73,10 +78,14 @@ export function redactRequestBodyForLog<T>(body: T): T {
     ...(Array.isArray(actions)
       ? {
           actions: actions.map(action => {
-            if (action === null || typeof action !== "object") return action;
+            if (action === null || typeof action !== "object") {
+              return action;
+            }
             const redacted: Record<string, unknown> = { ...action };
             for (const field of SENSITIVE_ACTION_FIELDS) {
-              if (field in redacted) redacted[field] = "[REDACTED]";
+              if (field in redacted) {
+                redacted[field] = "[REDACTED]";
+              }
             }
             return redacted;
           }),
@@ -215,11 +224,7 @@ export async function robustFetch<
             requestId,
           });
           throw new Error("Request failed", {
-            cause: {
-              params: logParams,
-              requestId,
-              error,
-            },
+            cause: error,
           });
         }
       } else {
@@ -247,7 +252,7 @@ export async function robustFetch<
     const makeRequestTypeId = (
       request: (typeof mock)["requests"][number]["options"],
     ) => {
-      let trueUrl = request.url.startsWith(fireEngineBaseUrl)
+      const trueUrl = request.url.startsWith(fireEngineBaseUrl)
         ? request.url.replace(fireEngineBaseUrl, "<fire-engine>")
         : request.url;
 
@@ -334,7 +339,7 @@ export async function robustFetch<
   let data: Output;
   try {
     data = JSON.parse(response.body);
-  } catch (error) {
+  } catch {
     logger.debug("Request sent malformed JSON", {
       params: logParams,
       response: { status: response.status, body: response.body },
@@ -362,13 +367,7 @@ export async function robustFetch<
           schema,
         });
         throw new Error("Response does not match provided schema", {
-          cause: {
-            params: logParams,
-            response,
-            requestId,
-            error,
-            schema,
-          },
+          cause: error,
         });
       } else {
         logger.debug("Parsing response with provided schema failed", {
@@ -379,13 +378,7 @@ export async function robustFetch<
           schema,
         });
         throw new Error("Parsing response with provided schema failed", {
-          cause: {
-            params: logParams,
-            response,
-            requestId,
-            error,
-            schema,
-          },
+          cause: error,
         });
       }
     }

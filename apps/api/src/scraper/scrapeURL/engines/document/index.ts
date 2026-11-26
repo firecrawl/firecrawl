@@ -1,5 +1,5 @@
-import { Meta } from "../..";
-import { EngineScrapeResult } from "..";
+import type { Meta } from "../..";
+import type { EngineScrapeResult } from "..";
 import {
   fetchFileGuardingProxyFailure,
   fetchFileToBuffer,
@@ -142,7 +142,7 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
 }
 
 export function documentMaxReasonableTime(meta: Meta): number {
-  return 15000;
+  return 15_000;
 }
 
 /**

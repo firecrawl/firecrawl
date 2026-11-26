@@ -66,7 +66,9 @@ describe("Scrape robots policy", () => {
 
       expect(robots.fetchRobotsTxt).toHaveBeenCalledOnce();
       expect(result.success).toBe(false);
-      if (result.success) throw new Error("Expected a robots denial");
+      if (result.success) {
+        throw new Error("Expected a robots denial");
+      }
       expect(result.error).toBeInstanceOf(CrawlDenialError);
       expect(result.error.message).toBe("URL blocked by robots.txt");
       expect((result.error as CrawlDenialError).robotsBlockedUrl).toBe(

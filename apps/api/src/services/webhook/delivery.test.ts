@@ -41,13 +41,12 @@ vi.mock("../../lib/logger", () => {
 });
 
 import { config } from "../../config";
-import {
-  defaultModules,
-  directWebhooks,
-  type CoreParts,
-  type WebhookContext,
-  type WebhookDelivery,
-  type WebhooksModule,
+import { defaultModules, directWebhooks } from "../../service";
+import type {
+  CoreParts,
+  WebhookContext,
+  WebhookDelivery,
+  WebhooksModule,
 } from "../../service";
 import { testService, withService } from "../../service/testing";
 import { createWebhookSender } from "./index";
@@ -154,7 +153,7 @@ describe("webhook delivery", () => {
     });
 
     it("routes signingSecret and deliver through a custom webhooks module with ZDR context", async () => {
-      const secretCalls: WebhookContext[] = [];
+      const secretCalls: Array<WebhookContext> = [];
       const deliverCalls: Array<{
         ctx: WebhookContext;
         delivery: WebhookDelivery;

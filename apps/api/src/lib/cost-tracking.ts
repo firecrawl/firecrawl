@@ -10,7 +10,7 @@ const nanProof = (n: number | null | undefined) =>
   isNaN(n ?? 0) ? 0 : (n ?? 0);
 
 export class CostTracking {
-  calls: {
+  calls: Array<{
     type: "smartScrape" | "other";
     metadata: Record<string, any>;
     cost: number;
@@ -20,7 +20,7 @@ export class CostTracking {
       output: number;
     };
     stack: string;
-  }[] = [];
+  }> = [];
   limit: number | null = null;
 
   constructor(limit: number | null = null) {

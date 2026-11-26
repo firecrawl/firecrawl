@@ -1,9 +1,10 @@
 import { AxiosError } from "axios";
 import { config } from "../../config";
 import { load } from "cheerio"; // rustified
-import { URL } from "url";
+import { URL } from "node:url";
 import { getLinksFromSitemap } from "./sitemap";
-import robotsParser, { Robot } from "robots-parser";
+import type { Robot } from "robots-parser";
+import robotsParser from "robots-parser";
 import { getURLDepth } from "./utils/maxDepthUtils";
 import { logger as _logger } from "../../lib/logger";
 import { crawlStateStore } from "../../lib/crawl-state-store";
@@ -14,7 +15,7 @@ import {
   isUrlAllowedByRobots,
 } from "../../lib/robots-txt";
 import { ScrapeJobTimeoutError } from "../../lib/error";
-import { ScrapeOptions } from "../../controllers/v2/types";
+import type { ScrapeOptions } from "../../controllers/v2/types";
 import { filterLinks, filterUrl } from "@mendable/firecrawl-rs";
 import { extractBaseDomain } from "../../lib/url-utils";
 import {
@@ -53,18 +54,18 @@ export enum DenialReason {
 }
 
 interface FilterLinksResult {
-  links: string[];
+  links: Array<string>;
   denialReasons: Map<string, string>;
   /** The links robots.txt disallows. */
-  robotsBlocked: string[];
+  robotsBlocked: Array<string>;
 }
 
 export class WebCrawler {
   private jobId: string;
   private initialUrl: string;
   private baseUrl: string;
-  private includes: string[];
-  private excludes: string[];
+  private includes: Array<string>;
+  private excludes: Array<string>;
   private maxCrawledLinks: number;
   private maxCrawledDepth: number;
   private visited: Set<string> = new Set();
@@ -98,8 +99,8 @@ export class WebCrawler {
     baseUrl,
     includes,
     excludes,
-    maxCrawledLinks = 10000,
-    limit = 10000,
+    maxCrawledLinks = 10_000,
+    limit = 10_000,
     generateImgAltText = false,
     maxCrawledDepth = 10,
     allowBackwardCrawling = false,
@@ -119,8 +120,8 @@ export class WebCrawler {
     jobId: string;
     initialUrl: string;
     baseUrl?: string;
-    includes?: string[];
-    excludes?: string[];
+    includes?: Array<string>;
+    excludes?: Array<string>;
     maxCrawledLinks?: number;
     limit?: number;
     generateImgAltText?: boolean;
@@ -178,7 +179,7 @@ export class WebCrawler {
   }
 
   public async filterLinks(
-    sitemapLinks: string[],
+    sitemapLinks: Array<string>,
     limit: number,
     maxDepth: number,
     fromMap: boolean = false,
@@ -217,7 +218,7 @@ export class WebCrawler {
       const res = await filterLinks({
         links: sitemapLinks,
         limit: isFinite(limit) ? limit : undefined,
-        maxDepth: maxDepth,
+        maxDepth,
         baseUrl: this.baseUrl,
         initialUrl: this.initialUrl,
         regexOnFullUrl: this.regexOnFullURL,
@@ -409,7 +410,7 @@ export class WebCrawler {
         let normalizedLink;
         try {
           normalizedLink = new URL(link);
-        } catch (_) {
+        } catch {
           if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
             this.logger.debug(`${link} URL PARSE FAIL`);
           }
@@ -557,7 +558,7 @@ export class WebCrawler {
       robotsTxtUrl: this.robotsTxtUrl,
       robotsTxtLength: txt.length,
       sitemapsFound: sitemaps.length,
-      sitemaps: sitemaps,
+      sitemaps,
       crawlDelay: this.robotsCrawlDelay,
     });
   }
@@ -567,10 +568,10 @@ export class WebCrawler {
   }
 
   public async tryGetSitemap(
-    urlsHandler: (urls: string[]) => unknown,
+    urlsHandler: (urls: Array<string>) => unknown,
     fromMap: boolean = false,
     onlySitemap: boolean = false,
-    timeout: number = 120000,
+    timeout: number = 120_000,
     abort?: AbortSignal,
     mock?: string,
     maxAge: number = SITEMAP_MAX_AGE,
@@ -596,20 +597,20 @@ export class WebCrawler {
       return url;
     };
 
-    const _urlsHandler = async (urls: string[]) => {
+    const _urlsHandler = async (urls: Array<string>) => {
       this.logger.debug("urlsHandler invoked");
       if (fromMap && onlySitemap) {
         deliveredCount += urls.length;
         return await urlsHandler(urls);
       } else {
-        let filteredLinksResult = await this.filterLinks(
+        const filteredLinksResult = await this.filterLinks(
           [...new Set(urls)],
           leftOfLimit,
           this.maxCrawledDepth,
           fromMap,
           fromMap,
         );
-        let filteredLinks = filteredLinksResult.links;
+        const filteredLinks = filteredLinksResult.links;
         leftOfLimit -= filteredLinks.length;
         const pipeline = (await crawlStateStore(this.jobId)).pipeline();
 
@@ -658,7 +659,7 @@ export class WebCrawler {
         method: "tryGetSitemap",
         initialUrl: this.initialUrl,
         robotsSitemapsCount: robotsSitemaps.length,
-        robotsSitemaps: robotsSitemaps,
+        robotsSitemaps,
         hasRobotsTxt: this.robotsTxt.length > 0,
       });
 
@@ -748,8 +749,8 @@ export class WebCrawler {
     skipRobots: boolean = false,
   ): Promise<FilterResult> {
     return await filterUrl({
-      href: href,
-      url: url,
+      href,
+      url,
       baseUrl: this.baseUrl,
       excludes: this.excludes,
       ignoreRobotsTxt: this.ignoreRobotsTxt || skipRobots,
@@ -762,7 +763,7 @@ export class WebCrawler {
 
   private async extractLinksFromHTMLRust(html: string, url: string) {
     const links = await extractLinks(html);
-    const filteredLinks: string[] = [];
+    const filteredLinks: Array<string> = [];
     for (const link of links) {
       const filterResult = await this.filterURL(link, url, true);
       if (filterResult.allowed && filterResult.url) {
@@ -773,7 +774,7 @@ export class WebCrawler {
   }
 
   private async extractLinksFromHTMLCheerio(html: string, url: string) {
-    let links: string[] = [];
+    let links: Array<string> = [];
 
     const $ = load(html);
     for (let i = 0; i < $("a").length; i++) {
@@ -808,7 +809,7 @@ export class WebCrawler {
   }
 
   private async extractLinksFromMarkdownContent(text: string, url: string) {
-    const filteredLinks: string[] = [];
+    const filteredLinks: Array<string> = [];
     for (const link of extractLinksFromMarkdown(text, url)) {
       const filterResult = await this.filterURL(link, url, true);
       if (filterResult.allowed && filterResult.url) {
@@ -834,11 +835,11 @@ export class WebCrawler {
             .map(x => {
               try {
                 return new URL(x, url).href;
-              } catch (e) {
+              } catch {
                 return null;
               }
             })
-            .filter(x => x !== null) as string[],
+            .filter(x => x !== null) as Array<string>,
         ),
       ];
     } catch (error) {
@@ -912,7 +913,7 @@ export class WebCrawler {
 
   private async tryFetchSitemapLinks(
     url: string,
-    urlsHandler: (urls: string[]) => unknown,
+    urlsHandler: (urls: Array<string>) => unknown,
     abort?: AbortSignal,
     mock?: string,
     maxAge?: number,

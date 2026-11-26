@@ -17,6 +17,6 @@ function apiKeyToFcApiKey(apiKey: string | null | undefined) {
   if (!apiKey) {
     return null;
   }
-  const uuidWithoutDashes = apiKey.replace(/-/g, "");
+  const uuidWithoutDashes = apiKey.replaceAll("-", "");
   return `fc-${uuidWithoutDashes}`;
 }

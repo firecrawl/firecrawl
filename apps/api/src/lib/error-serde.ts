@@ -2,7 +2,6 @@ import {
   ActionsNotSupportedError,
   ConcurrencyQueueTimeoutError,
   CrawlDenialError,
-  type ErrorCode,
   isTransportableError,
   MapFailedError,
   MapTimeoutError,
@@ -10,10 +9,10 @@ import {
   ScrapeJobTimeoutError,
   SitemapError,
   TransportableError,
-  type TransportableErrorClass,
   UnknownError,
   UnsupportedSiteError,
 } from "./error";
+import type { ErrorCode, TransportableErrorClass } from "./error";
 import {
   ActionError,
   DNSResolutionError,
@@ -50,7 +49,7 @@ import { service } from "../service";
  * The service's own error classes. Reading a code that no class carries gives
  * a plain TransportableError.
  */
-export const coreErrors: TransportableErrorClass[] = [
+export const coreErrors: Array<TransportableErrorClass> = [
   ExchangeRefusedError,
   SiteRestrictionError,
   ScrapeJobTimeoutError,

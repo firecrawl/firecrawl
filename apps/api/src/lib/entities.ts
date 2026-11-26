@@ -23,13 +23,13 @@ export type PageOptions = {
   headers?: Record<string, string>;
   replaceAllPathsWithAbsolutePaths?: boolean;
   parsePDF?: boolean;
-  removeTags?: string | string[];
-  onlyIncludeTags?: string | string[];
+  removeTags?: string | Array<string>;
+  onlyIncludeTags?: string | Array<string>;
   includeLinks?: boolean;
   useFastMode?: boolean; // beta
   disableJsDom?: boolean; // beta
   atsv?: boolean; // anti-bot solver, beta
-  actions?: Action[]; // beta
+  actions?: Array<Action>; // beta
   geolocation?: {
     country?: string;
   };
@@ -73,21 +73,21 @@ export class Document {
     sourceURL?: string;
     [key: string]: any;
   };
-  childrenLinks?: string[];
+  childrenLinks?: Array<string>;
   provider?: string;
   warning?: string;
   actions?: {
-    screenshots?: string[];
-    scrapes?: ScrapeActionContent[];
-    javascriptReturns?: {
+    screenshots?: Array<string>;
+    scrapes?: Array<ScrapeActionContent>;
+    javascriptReturns?: Array<{
       type: string;
       value: unknown;
-    }[];
-    pdfs?: string[];
+    }>;
+    pdfs?: Array<string>;
   };
 
   index?: number;
-  linksOnPage?: string[]; // Add this new field as a separate property
+  linksOnPage?: Array<string>; // Add this new field as a separate property
 
   constructor(data: Partial<Document>) {
     if (!data.content) {
@@ -144,7 +144,7 @@ interface NewsSearchResult {
   markdown?: string;
   html?: string;
   rawHtml?: string;
-  links?: string[];
+  links?: Array<string>;
   screenshot?: string;
   metadata?: Record<string, any>;
   answer?: string;
@@ -161,7 +161,7 @@ export interface WebSearchResult {
   markdown?: string;
   html?: string;
   rawHtml?: string;
-  links?: string[];
+  links?: Array<string>;
   screenshot?: string;
   metadata?: Record<string, any>;
   answer?: string;
@@ -171,11 +171,11 @@ export interface WebSearchResult {
 export type SearchResultType = "web" | "images" | "news";
 
 export interface SearchV2Response {
-  tools?: unknown[];
-  skills?: SkillCard[];
-  web?: WebSearchResult[];
-  images?: ImageSearchResult[];
-  news?: NewsSearchResult[];
+  tools?: Array<unknown>;
+  skills?: Array<SkillCard>;
+  web?: Array<WebSearchResult>;
+  images?: Array<ImageSearchResult>;
+  news?: Array<NewsSearchResult>;
 }
 
 /**
@@ -234,7 +234,9 @@ export function collectSearchResultCategories(
 
   for (const source of ["web", "images", "news"] as const) {
     const results = response[source];
-    if (!results?.length) continue;
+    if (!results?.length) {
+      continue;
+    }
 
     const categories: Record<string, string> = {};
     results.forEach((result, index) => {

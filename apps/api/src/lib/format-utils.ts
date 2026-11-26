@@ -15,7 +15,7 @@ export function hasFormatOfType<
   F extends { type: string } = FormatObject,
   T extends F["type"] = F["type"],
 >(
-  formats: readonly F[] | undefined,
+  formats: ReadonlyArray<F> | undefined,
   type: T,
 ):
   | (F extends { type: infer FT extends string }
@@ -54,7 +54,7 @@ export function hasFormatOfType<
  * includesFormat(["markdown", "html"], "markdown") // true
  */
 export function includesFormat(
-  formats: (string | FormatObject)[] | undefined,
+  formats: Array<string | FormatObject> | undefined,
   type: string,
 ): boolean {
   if (!formats) {

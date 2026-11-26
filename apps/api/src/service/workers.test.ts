@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildWorkerRegistry, type Worker } from "./workers";
+import { buildWorkerRegistry } from "./workers";
+import type { Worker } from "./workers";
 
 const worker = (): Worker => ({ run: vi.fn() });
 
