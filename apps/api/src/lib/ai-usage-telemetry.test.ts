@@ -185,9 +185,8 @@ describe("usage telemetry middleware", () => {
     let resetService: (() => void) | undefined;
     try {
       vi.resetModules();
-      const { createService, replaceService } = await import(
-        "../service/service.js"
-      );
+      const { createService, replaceService } =
+        await import("../service/service.js");
       const { coreLlmProviders, getModel } = await import("./generic-ai.js");
       replaceService(
         createService(

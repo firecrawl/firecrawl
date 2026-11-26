@@ -178,9 +178,8 @@ export async function parseMarkdown(
 
   // Fallback to TurndownService if Go parser fails or is not enabled
   const turndownModule: unknown = await import("turndown");
-  const turndownPluginGfmModule: unknown = await import(
-    "joplin-turndown-plugin-gfm"
-  );
+  const turndownPluginGfmModule: unknown =
+    await import("joplin-turndown-plugin-gfm");
   const TurndownService = extractTurndownConstructor(turndownModule);
   const gfm = extractGfmPlugin(turndownPluginGfmModule);
   if (!TurndownService || !gfm) {

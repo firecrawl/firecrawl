@@ -518,13 +518,11 @@ describe("crawlStatusController and helpers with jobStore", () => {
       markdown: "from read",
       metadata: { statusCode: 200, proxyUsed: "basic" as const },
     };
-    const read = vi.fn(
-      async (): Promise<StoredJob | null> => ({
-        state: "completed",
-        document: externalDoc,
-        completedAtMs: 1_700_000_005_000,
-      }),
-    );
+    const read = vi.fn(async (): Promise<StoredJob | null> => ({
+      state: "completed",
+      document: externalDoc,
+      completedAtMs: 1_700_000_005_000,
+    }));
     const customStore: JobStoreModule = {
       ...queueJobStore(),
       storesResultsExternally: () => true,

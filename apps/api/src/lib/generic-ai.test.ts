@@ -37,9 +37,8 @@ async function loadFresh(
   }> = [],
 ) {
   vi.resetModules();
-  const { createService, replaceService } = await import(
-    "../service/service.js"
-  );
+  const { createService, replaceService } =
+    await import("../service/service.js");
   const genericAi = await import("./generic-ai.js");
   replaceService(
     createService(
@@ -140,9 +139,8 @@ describe("coreLlmProviders and getModel", () => {
     vi.stubEnv("OPENAI_API_KEY", "test-openai-key");
     vi.stubEnv("OLLAMA_BASE_URL", "http://localhost:11434/api");
     const { getModel, cleanup } = await loadFresh();
-    const { UsOnlyUnavailableError } = await import(
-      "../scraper/scrapeURL/error.js"
-    );
+    const { UsOnlyUnavailableError } =
+      await import("../scraper/scrapeURL/error.js");
     try {
       expect(() =>
         getModel("gpt-4o-mini", "openai", {

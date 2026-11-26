@@ -117,9 +117,8 @@ describe("buildRouteRegistry", () => {
   it("does not load express when no extension registers routes", async () => {
     const requireSpy = vi.spyOn(Module.prototype, "require");
     vi.resetModules();
-    const { buildRouteRegistry: freshBuildRouteRegistry } = await import(
-      "./routes.js"
-    );
+    const { buildRouteRegistry: freshBuildRouteRegistry } =
+      await import("./routes.js");
 
     const { describeRoutes } = freshBuildRouteRegistry([
       { owner: "core", isCore: true },

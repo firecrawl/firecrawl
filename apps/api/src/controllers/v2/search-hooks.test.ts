@@ -9,9 +9,9 @@ import type { BillingModule } from "../../service/modules";
 const mocks = vi.hoisted(() => ({
   search: vi.fn<typeof searchV2>(),
   checkUrlsAgainstThreatPolicy: vi.fn(),
-  resolveThreatProtection: vi.fn(
-    async (): Promise<{ policy: null }> => ({ policy: null }),
-  ),
+  resolveThreatProtection: vi.fn(async (): Promise<{ policy: null }> => ({
+    policy: null,
+  })),
   removeExplicitResults: vi.fn(),
   projectSearchTotalCredits: vi.fn((_input: { limit: number }) => 0),
   reserveKeylessCredits: vi.fn(async () => ({ ok: true })),

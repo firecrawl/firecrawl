@@ -53,14 +53,14 @@ function decodeHtmlBuffer(
 ): DecodedHtmlResult {
   const text = buf.toString("utf8");
 
-  const headerCharsetRaw = (contentType?.match(
-    /charset\s*=\s*["']?([^;"'\s]+)/i,
-  ) ?? [])[1];
+  const headerCharsetRaw = (
+    contentType?.match(/charset\s*=\s*["']?([^;"'\s]+)/i) ?? []
+  )[1];
   const headerCharset = headerCharsetRaw?.trim();
 
-  const metaCharsetRaw = (text.match(
-    /<meta\b[^>]*charset\s*=\s*["']?([^"'\s/>]+)/i,
-  ) ?? [])[1];
+  const metaCharsetRaw = (
+    text.match(/<meta\b[^>]*charset\s*=\s*["']?([^"'\s/>]+)/i) ?? []
+  )[1];
   const metaCharset = metaCharsetRaw?.trim();
 
   if (headerCharset) {
@@ -244,8 +244,9 @@ export async function scrapeURLWithFetch(
     html: response.body,
     statusCode: response.status,
     contentType:
-      (response.headers.find(x => x[0].toLowerCase() === "content-type") ??
-        [])[1] ?? undefined,
+      (
+        response.headers.find(x => x[0].toLowerCase() === "content-type") ?? []
+      )[1] ?? undefined,
 
     proxyUsed: "basic",
   };

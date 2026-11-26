@@ -131,14 +131,12 @@ describe("scrape pipeline hook points", () => {
     const fetchScrape = vi.fn(async (): Promise<EngineScrapeResult> => {
       throw new EngineError("fetch failed");
     });
-    const playwrightScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://example.com/page",
-        html: "<html><head><title>Initial</title></head><body><h1>Hello</h1></body></html>",
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
+    const playwrightScrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://example.com/page",
+      html: "<html><head><title>Initial</title></head><body><h1>Hello</h1></body></html>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    }));
 
     const finishedEvents: Array<ScrapeFinished> = [];
 
@@ -294,22 +292,18 @@ describe("scrape pipeline hook points", () => {
   });
 
   it("lets scrape.start add engine features that steer engine selection", async () => {
-    const fetchScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://example.com/basic",
-        html: "<html><body><p>From fetch</p></body></html>",
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
-    const playwrightScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://example.com/wait",
-        html: "<html><body><p>From playwright</p></body></html>",
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
+    const fetchScrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://example.com/basic",
+      html: "<html><body><p>From fetch</p></body></html>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    }));
+    const playwrightScrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://example.com/wait",
+      html: "<html><body><p>From playwright</p></body></html>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    }));
 
     installTestService(
       [
@@ -486,14 +480,12 @@ describe("scrape pipeline hook points", () => {
   it("produces deterministic output with an empty hooks registry", async () => {
     const html =
       "<html><head><title>Baseline</title></head><body><h1>Hello World</h1></body></html>";
-    const scrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://example.com/baseline",
-        html,
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
+    const scrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://example.com/baseline",
+      html,
+      statusCode: 200,
+      proxyUsed: "basic",
+    }));
 
     installTestService([makeEngine("fetch", scrape, { quality: 20 })]);
 
@@ -534,30 +526,24 @@ describe("scrape pipeline hook points", () => {
   });
 
   it("enforces ZDR and profile engine safety policies on scrape.engines.select", async () => {
-    const wikiScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://en.wikipedia.org/wiki/Test",
-        html: "<html><body><p>Wiki</p></body></html>",
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
-    const fetchScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://en.wikipedia.org/wiki/Test",
-        html: "<html><body><p>Direct</p></body></html>",
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
-    const cdpScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://example.com/profile",
-        html: "<html><body><p>Authenticated</p></body></html>",
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
+    const wikiScrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://en.wikipedia.org/wiki/Test",
+      html: "<html><body><p>Wiki</p></body></html>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    }));
+    const fetchScrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://en.wikipedia.org/wiki/Test",
+      html: "<html><body><p>Direct</p></body></html>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    }));
+    const cdpScrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://example.com/profile",
+      html: "<html><body><p>Authenticated</p></body></html>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    }));
 
     installTestService(
       [
@@ -934,14 +920,12 @@ describe("scrape pipeline hook points", () => {
     const primaryScrape = vi.fn(async () => {
       throw new SiteError("ERR_TUNNEL_CONNECTION_FAILED");
     });
-    const fallbackScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://example.com/retry",
-        html: "<html><body><p>Recovered</p></body></html>",
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
+    const fallbackScrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://example.com/retry",
+      html: "<html><body><p>Recovered</p></body></html>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    }));
 
     installTestService(
       [
@@ -988,23 +972,21 @@ describe("scrape pipeline hook points", () => {
     const cacheScrape = vi.fn(async () => {
       throw new EngineError("cache miss");
     });
-    const emptyEngineScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://example.com/blank",
-        html: "",
-        markdown: "",
-        statusCode: 200,
-        proxyUsed: "basic",
-        exchange: {
-          accessEventId: "evt-1",
-          provider: {
-            id: "acme",
-            creditsCost: 5,
-            steps: [{ provider: "acme", status: "matched", creditsCost: 5 }],
-          },
+    const emptyEngineScrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://example.com/blank",
+      html: "",
+      markdown: "",
+      statusCode: 200,
+      proxyUsed: "basic",
+      exchange: {
+        accessEventId: "evt-1",
+        provider: {
+          id: "acme",
+          creditsCost: 5,
+          steps: [{ provider: "acme", status: "matched", creditsCost: 5 }],
         },
-      }),
-    );
+      },
+    }));
 
     installTestService(
       [

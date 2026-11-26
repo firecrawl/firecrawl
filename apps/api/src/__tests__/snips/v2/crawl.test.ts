@@ -819,21 +819,18 @@ describe("Crawl tests", () => {
   );
 
   describe("UUID validation", () => {
-    it.concurrent(
-      "should reject invalid UUID 'None' for crawl status",
-      async () => {
-        const response = await request(TEST_API_URL)
-          .get("/v2/crawl/None")
-          .set("Authorization", `Bearer ${identity.apiKey}`)
-          .send();
+    it.concurrent("should reject invalid UUID 'None' for crawl status", async () => {
+      const response = await request(TEST_API_URL)
+        .get("/v2/crawl/None")
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .send();
 
-        expect(response.statusCode).toBe(400);
-        expect(response.body.success).toBe(false);
-        expect(response.body.error).toBe(
-          "Invalid job ID format. Job ID must be a valid UUID.",
-        );
-      },
-    );
+      expect(response.statusCode).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toBe(
+        "Invalid job ID format. Job ID must be a valid UUID.",
+      );
+    });
 
     it.concurrent("should reject malformed UUID for crawl cancel", async () => {
       const response = await request(TEST_API_URL)

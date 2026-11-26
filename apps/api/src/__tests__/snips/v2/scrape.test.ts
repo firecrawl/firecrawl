@@ -1438,24 +1438,20 @@ describe("Scrape tests", () => {
       //   expect(response.markdown).toContain("Robust adaptive beamforming based on jointly estimating covariance matrix");
       // }, 60000);
 
-      it.concurrent(
-        "blocks long PDFs with insufficient timeout",
-        async () => {
-          const response = await scrapeWithFailure(
-            {
-              url: `${base}/example-long.pdf`,
-              maxAge: 0,
-              timeout: 10_000,
-            },
-            identity,
-          );
+      it.concurrent("blocks long PDFs with insufficient timeout", async () => {
+        const response = await scrapeWithFailure(
+          {
+            url: `${base}/example-long.pdf`,
+            maxAge: 0,
+            timeout: 10_000,
+          },
+          identity,
+        );
 
-          expect(response.error).toContain(
-            "pages, which requires more processing time than your current timeout allows.",
-          );
-        },
-        12_000,
-      );
+        expect(response.error).toContain(
+          "pages, which requires more processing time than your current timeout allows.",
+        );
+      }, 12_000);
 
       it.concurrent(
         "scrapes long PDFs with sufficient timeout",
@@ -2123,36 +2119,30 @@ describe("Attribute formats", () => {
   });
 
   describe("UUID validation", () => {
-    it.concurrent(
-      "should reject invalid UUID 'None' for scrape status",
-      async () => {
-        const response = await request(TEST_API_URL)
-          .get("/v2/scrape/None")
-          .set("Authorization", `Bearer ${identity.apiKey}`)
-          .send();
+    it.concurrent("should reject invalid UUID 'None' for scrape status", async () => {
+      const response = await request(TEST_API_URL)
+        .get("/v2/scrape/None")
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .send();
 
-        expect(response.statusCode).toBe(400);
-        expect(response.body.success).toBe(false);
-        expect(response.body.error).toBe(
-          "Invalid job ID format. Job ID must be a valid UUID.",
-        );
-      },
-    );
+      expect(response.statusCode).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toBe(
+        "Invalid job ID format. Job ID must be a valid UUID.",
+      );
+    });
 
-    it.concurrent(
-      "should reject malformed UUID for scrape status",
-      async () => {
-        const response = await request(TEST_API_URL)
-          .get("/v2/scrape/not-a-valid-uuid")
-          .set("Authorization", `Bearer ${identity.apiKey}`)
-          .send();
+    it.concurrent("should reject malformed UUID for scrape status", async () => {
+      const response = await request(TEST_API_URL)
+        .get("/v2/scrape/not-a-valid-uuid")
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .send();
 
-        expect(response.statusCode).toBe(400);
-        expect(response.body.success).toBe(false);
-        expect(response.body.error).toBe(
-          "Invalid job ID format. Job ID must be a valid UUID.",
-        );
-      },
-    );
+      expect(response.statusCode).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toBe(
+        "Invalid job ID format. Job ID must be a valid UUID.",
+      );
+    });
   });
 });

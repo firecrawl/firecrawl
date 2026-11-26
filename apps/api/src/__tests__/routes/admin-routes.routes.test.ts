@@ -50,9 +50,8 @@ async function adminApp(pathRoutes: boolean) {
   config.BULL_AUTH_KEY_PREVIOUS = PREVIOUS;
   config.BULL_AUTH_KEY_PATH_ROUTES = pathRoutes;
   const { logger } = await import("../../lib/logger.js");
-  const { adminInternalRouter, adminRouter } = await import(
-    "../../routes/admin.js"
-  );
+  const { adminInternalRouter, adminRouter } =
+    await import("../../routes/admin.js");
   const app = express();
   app.use(express.json());
   app.use(adminRouter);

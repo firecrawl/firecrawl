@@ -23,20 +23,16 @@ describe("Document Converter tests", () => {
       }
     });
 
-    it.concurrent(
-      `should convert ${name} document and return expected markdown`,
-      async () => {
-        const fileBuffer = fs.readFileSync(filePath);
+    it.concurrent(`should convert ${name} document and return expected markdown`, async () => {
+      const fileBuffer = fs.readFileSync(filePath);
 
-        // No extension hint: the format must be detected from the bytes
-        const markdown = await convertDocumentToMarkdown(
-          new Uint8Array(fileBuffer),
-        );
+      // No extension hint: the format must be detected from the bytes
+      const markdown = await convertDocumentToMarkdown(
+        new Uint8Array(fileBuffer),
+      );
 
-        expect(markdown).toBe(expectedMarkdownBase(name));
-      },
-      10_000,
-    );
+      expect(markdown).toBe(expectedMarkdownBase(name));
+    }, 10_000);
   });
 
   describe("XLSX document conversion", () => {

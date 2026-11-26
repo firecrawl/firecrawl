@@ -394,9 +394,11 @@ export async function specialtyScrapeCheck(
   imageOcrEnabled: ImageOcrGate = async () => false,
   downloadGcsFile?: GcsFileDownloader,
 ) {
-  const contentType = (Object.entries(headers ?? {}).find(
-    x => x[0].toLowerCase() === "content-type",
-  ) ?? [])[1];
+  const contentType = (
+    Object.entries(headers ?? {}).find(
+      x => x[0].toLowerCase() === "content-type",
+    ) ?? []
+  )[1];
 
   if (feRes?.file?.gcs_uri !== undefined) {
     throw new AddFeatureError(

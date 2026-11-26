@@ -109,53 +109,45 @@ describe("Batch scrape tests", () => {
   });
 
   describeIf(TEST_PRODUCTION)("JSON format", () => {
-    it.concurrent(
-      "works",
-      async () => {
-        const response = await batchScrape(
-          {
-            urls: [TEST_SUITE_WEBSITE],
-            formats: [
-              {
-                type: "json",
-                prompt:
-                  "Based on the information on the page, find what the company's mission is and whether it supports SSO, and whether it is open source.",
-                schema: {
-                  type: "object",
-                  properties: {
-                    company_mission: {
-                      type: "string",
-                    },
-                    supports_sso: {
-                      type: "boolean",
-                    },
-                    is_open_source: {
-                      type: "boolean",
-                    },
+    it.concurrent("works", async () => {
+      const response = await batchScrape(
+        {
+          urls: [TEST_SUITE_WEBSITE],
+          formats: [
+            {
+              type: "json",
+              prompt:
+                "Based on the information on the page, find what the company's mission is and whether it supports SSO, and whether it is open source.",
+              schema: {
+                type: "object",
+                properties: {
+                  company_mission: {
+                    type: "string",
                   },
-                  required: [
-                    "company_mission",
-                    "supports_sso",
-                    "is_open_source",
-                  ],
+                  supports_sso: {
+                    type: "boolean",
+                  },
+                  is_open_source: {
+                    type: "boolean",
+                  },
                 },
+                required: ["company_mission", "supports_sso", "is_open_source"],
               },
-            ],
-          },
-          identity,
-        );
+            },
+          ],
+        },
+        identity,
+      );
 
-        expect(response.data[0]).toHaveProperty("json");
-        const json = response.data[0].json;
-        expect(json).toEqual(
-          expect.objectContaining({
-            company_mission: expect.any(String),
-            supports_sso: false,
-            is_open_source: true,
-          }),
-        );
-      },
-      180_000,
-    );
+      expect(response.data[0]).toHaveProperty("json");
+      const json = response.data[0].json;
+      expect(json).toEqual(
+        expect.objectContaining({
+          company_mission: expect.any(String),
+          supports_sso: false,
+          is_open_source: true,
+        }),
+      );
+    }, 180_000);
   });
 });

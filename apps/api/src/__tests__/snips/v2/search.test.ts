@@ -21,135 +21,111 @@ beforeAll(async () => {
 
 // NOTE: if DDG gives us issues with this, we can disable if SEARXNG is not enabled
 describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
-  it.concurrent(
-    "works",
-    async () => {
-      const res = await search(
-        {
-          query: "firecrawl",
-        },
-        identity,
-      );
-      expect(res.web).toBeDefined();
-      expect(res.web?.length).toBeGreaterThan(0);
-    },
-    60_000,
-  );
-
-  it.concurrent(
-    "ignores legacy client model on search requests",
-    async () => {
-      const body = {
-        query: "firecrawl documentation",
-        clientModel: "claude-sonnet-4-6",
-        limit: 1,
-      };
-      const res = await search(body, identity);
-      expect(res.web?.length).toBeGreaterThan(0);
-    },
-    60_000,
-  );
-
-  it.concurrent(
-    "ignores legacy objective on search requests",
-    async () => {
-      const body = {
+  it.concurrent("works", async () => {
+    const res = await search(
+      {
         query: "firecrawl",
-        objective: "Find official documentation",
-        limit: 1,
-      };
-      const res = await searchRaw(body, identity);
-      expect(res.statusCode).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.web?.length).toBeGreaterThan(0);
-    },
-    60_000,
-  );
+      },
+      identity,
+    );
+    expect(res.web).toBeDefined();
+    expect(res.web?.length).toBeGreaterThan(0);
+  }, 60_000);
 
-  it.concurrent(
-    "works with includeDomains",
-    async () => {
-      const res = await search(
-        {
-          query: "firecrawl",
-          includeDomains: ["firecrawl.dev"],
-          limit: 3,
+  it.concurrent("ignores legacy client model on search requests", async () => {
+    const body = {
+      query: "firecrawl documentation",
+      clientModel: "claude-sonnet-4-6",
+      limit: 1,
+    };
+    const res = await search(body, identity);
+    expect(res.web?.length).toBeGreaterThan(0);
+  }, 60_000);
+
+  it.concurrent("ignores legacy objective on search requests", async () => {
+    const body = {
+      query: "firecrawl",
+      objective: "Find official documentation",
+      limit: 1,
+    };
+    const res = await searchRaw(body, identity);
+    expect(res.statusCode).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.web?.length).toBeGreaterThan(0);
+  }, 60_000);
+
+  it.concurrent("works with includeDomains", async () => {
+    const res = await search(
+      {
+        query: "firecrawl",
+        includeDomains: ["firecrawl.dev"],
+        limit: 3,
+      },
+      identity,
+    );
+
+    expect(res.web).toBeDefined();
+    expect(res.web?.length).toBeGreaterThan(0);
+    for (const result of res.web ?? []) {
+      expect(result.url).toBeDefined();
+      const hostname = new URL(result.url).hostname;
+      expect(
+        hostname === "firecrawl.dev" || hostname.endsWith(".firecrawl.dev"),
+      ).toBe(true);
+    }
+  }, 60_000);
+
+  it.concurrent("rejects includeDomains with excludeDomains", async () => {
+    const res = await searchWithFailure(
+      {
+        query: "firecrawl",
+        includeDomains: ["firecrawl.dev"],
+        excludeDomains: ["example.com"],
+      },
+      identity,
+    );
+
+    expect(res.error).toBe("Invalid request body");
+  }, 60_000);
+
+  it.concurrent("works with scrape", async () => {
+    const res = await search(
+      {
+        query: "firecrawl.dev",
+        limit: 5,
+        scrapeOptions: {
+          formats: ["markdown"],
         },
-        identity,
-      );
+        timeout: 120_000,
+      },
+      identity,
+    );
 
-      expect(res.web).toBeDefined();
-      expect(res.web?.length).toBeGreaterThan(0);
-      for (const result of res.web ?? []) {
-        expect(result.url).toBeDefined();
-        const hostname = new URL(result.url).hostname;
+    expect(res.web).toBeDefined();
+    expect(res.web?.length).toBeGreaterThan(0);
+
+    let markdownCount = 0;
+
+    for (const doc of res.web ?? []) {
+      if (doc.markdown) {
+        markdownCount += 1;
+      } else {
+        // Search can return URLs that are not consistently scrapeable in test environments,
+        // so log the failing entries to make partial scrape failures easier to debug.
+        console.warn("Search scrape result missing markdown", {
+          url: doc.url,
+          error: doc.metadata?.error,
+          statusCode: doc.metadata?.statusCode,
+        });
         expect(
-          hostname === "firecrawl.dev" || hostname.endsWith(".firecrawl.dev"),
+          doc.metadata?.error !== undefined ||
+            (doc.metadata?.statusCode ?? 200) >= 400,
         ).toBe(true);
       }
-    },
-    60_000,
-  );
+    }
 
-  it.concurrent(
-    "rejects includeDomains with excludeDomains",
-    async () => {
-      const res = await searchWithFailure(
-        {
-          query: "firecrawl",
-          includeDomains: ["firecrawl.dev"],
-          excludeDomains: ["example.com"],
-        },
-        identity,
-      );
-
-      expect(res.error).toBe("Invalid request body");
-    },
-    60_000,
-  );
-
-  it.concurrent(
-    "works with scrape",
-    async () => {
-      const res = await search(
-        {
-          query: "firecrawl.dev",
-          limit: 5,
-          scrapeOptions: {
-            formats: ["markdown"],
-          },
-          timeout: 120_000,
-        },
-        identity,
-      );
-
-      expect(res.web).toBeDefined();
-      expect(res.web?.length).toBeGreaterThan(0);
-
-      let markdownCount = 0;
-
-      for (const doc of res.web ?? []) {
-        if (doc.markdown) {
-          markdownCount += 1;
-        } else {
-          // Search can return URLs that are not consistently scrapeable in test environments,
-          // so log the failing entries to make partial scrape failures easier to debug.
-          console.warn("Search scrape result missing markdown", {
-            url: doc.url,
-            error: doc.metadata?.error,
-            statusCode: doc.metadata?.statusCode,
-          });
-          expect(
-            doc.metadata?.error !== undefined ||
-              (doc.metadata?.statusCode ?? 200) >= 400,
-          ).toBe(true);
-        }
-      }
-
-      expect(markdownCount).toBeGreaterThan(0);
-    },
-    125_000,
-  );
+    expect(markdownCount).toBeGreaterThan(0);
+  }, 125_000);
 
   concurrentIf(TEST_PRODUCTION)(
     "works for news",
@@ -203,22 +179,18 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
     60_000,
   );
 
-  it.concurrent(
-    "respects limit for web",
-    async () => {
-      const res = await search(
-        {
-          query: "firecrawl",
-          limit: 3,
-        },
-        identity,
-      );
-      expect(res.web).toBeDefined();
-      expect(res.web?.length).toBeGreaterThan(0);
-      expect(res.web?.length).toBeLessThanOrEqual(3);
-    },
-    60_000,
-  );
+  it.concurrent("respects limit for web", async () => {
+    const res = await search(
+      {
+        query: "firecrawl",
+        limit: 3,
+      },
+      identity,
+    );
+    expect(res.web).toBeDefined();
+    expect(res.web?.length).toBeGreaterThan(0);
+    expect(res.web?.length).toBeLessThanOrEqual(3);
+  }, 60_000);
 
   concurrentIf(TEST_PRODUCTION)(
     "respects limit for news",
@@ -238,22 +210,18 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
     60_000,
   );
 
-  it.concurrent(
-    "respects limit for above 10",
-    async () => {
-      const res = await search(
-        {
-          query: "firecrawl",
-          limit: 20,
-        },
-        identity,
-      );
-      expect(res.web).toBeDefined();
-      expect(res.web?.length).toBeGreaterThan(0);
-      expect(res.web?.length).toBeLessThanOrEqual(20);
-    },
-    60_000,
-  );
+  it.concurrent("respects limit for above 10", async () => {
+    const res = await search(
+      {
+        query: "firecrawl",
+        limit: 20,
+      },
+      identity,
+    );
+    expect(res.web).toBeDefined();
+    expect(res.web?.length).toBeGreaterThan(0);
+    expect(res.web?.length).toBeLessThanOrEqual(20);
+  }, 60_000);
 
   concurrentIf(TEST_PRODUCTION)(
     "respects limit for above 10 images",
@@ -310,37 +278,29 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
     60_000,
   );
 
-  it.concurrent(
-    "rejects non-boolean safe",
-    async () => {
-      const res = await searchWithFailure(
-        {
-          query: "firecrawl",
-          safe: "active",
-        },
-        identity,
-      );
+  it.concurrent("rejects non-boolean safe", async () => {
+    const res = await searchWithFailure(
+      {
+        query: "firecrawl",
+        safe: "active",
+      },
+      identity,
+    );
 
-      expect(res.error).toBe("Invalid request body");
-    },
-    60_000,
-  );
+    expect(res.error).toBe("Invalid request body");
+  }, 60_000);
 
-  it.concurrent(
-    "country defaults to undefined when location is set",
-    async () => {
-      const res = await search(
-        {
-          query: "firecrawl",
-          location: "San Francisco",
-        },
-        identity,
-      );
-      expect(res.web).toBeDefined();
-      expect(res.web?.length).toBeGreaterThan(0);
-    },
-    60_000,
-  );
+  it.concurrent("country defaults to undefined when location is set", async () => {
+    const res = await search(
+      {
+        query: "firecrawl",
+        location: "San Francisco",
+      },
+      identity,
+    );
+    expect(res.web).toBeDefined();
+    expect(res.web?.length).toBeGreaterThan(0);
+  }, 60_000);
 
   concurrentIf(TEST_PRODUCTION)(
     "targets the country named by location when country is omitted",
@@ -378,21 +338,17 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
     60_000,
   );
 
-  it.concurrent(
-    "rejects non-string location",
-    async () => {
-      const res = await searchWithFailure(
-        {
-          query: "firecrawl",
-          location: 123,
-        },
-        identity,
-      );
+  it.concurrent("rejects non-string location", async () => {
+    const res = await searchWithFailure(
+      {
+        query: "firecrawl",
+        location: 123,
+      },
+      identity,
+    );
 
-      expect(res.error).toBe("Invalid request body");
-    },
-    60_000,
-  );
+    expect(res.error).toBe("Invalid request body");
+  }, 60_000);
 
   // SEARXNG-specific pagination tests
   concurrentIf(!!config.SEARXNG_ENDPOINT)(

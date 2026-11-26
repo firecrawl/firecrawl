@@ -558,10 +558,11 @@ export interface PolicyContextInput {
 }
 
 /** Outcome of `PolicyModule.context`. */
-export type PolicyContextResult<X extends BaseRequestContext = RequestContext> =
-
-    | { ok: true; ctx: X; headers?: Record<string, string> }
-    | { ok: false; refusal: Refusal };
+export type PolicyContextResult<
+  X extends BaseRequestContext = RequestContext,
+> =
+  | { ok: true; ctx: X; headers?: Record<string, string> }
+  | { ok: false; refusal: Refusal };
 
 /**
  * Request admission and context construction. The type parameter keeps

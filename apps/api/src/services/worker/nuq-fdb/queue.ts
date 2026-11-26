@@ -1470,7 +1470,7 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
       const r = ks.groupJobRange(groupId);
       let begin: Buffer | KeySelector<Buffer> = r.begin;
       // scan for the first countable (single_urls) member
-      for (let scanned = 0; scanned < 2000; ) {
+      for (let scanned = 0; scanned < 2000;) {
         const batch = await tn
           .snapshot()
           .getRangeAll(begin, r.end, { limit: 200 });

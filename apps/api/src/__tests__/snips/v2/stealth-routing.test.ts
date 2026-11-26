@@ -81,9 +81,8 @@ describe("Stealth proxy routing without fire-engine (buildFallbackList)", () => 
 
     // Re-import engines fresh so it reads the env vars set above at eval time.
     vi.resetModules();
-    const enginesModule = await import(
-      "../../../scraper/scrapeURL/engines/index.js"
-    );
+    const enginesModule =
+      await import("../../../scraper/scrapeURL/engines/index.js");
     const serviceModule = await import("../../../service/service.js");
     buildFallbackList = enginesModule.buildFallbackList;
     replaceService = serviceModule.replaceService;

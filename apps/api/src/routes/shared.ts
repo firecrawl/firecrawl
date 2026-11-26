@@ -340,10 +340,10 @@ function hasRestrictedBodyOptions(body: unknown): boolean {
   }
   return Boolean(
     body.scrapeOptions.actions ||
-      hasNonEmptyObject(body.scrapeOptions.headers) ||
-      body.scrapeOptions.agent ||
-      hasAgentOption(body.scrapeOptions.jsonOptions) ||
-      hasAgentOption(body.scrapeOptions.extract),
+    hasNonEmptyObject(body.scrapeOptions.headers) ||
+    body.scrapeOptions.agent ||
+    hasAgentOption(body.scrapeOptions.jsonOptions) ||
+    hasAgentOption(body.scrapeOptions.extract),
   );
 }
 
