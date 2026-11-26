@@ -1,0 +1,96 @@
+apps/api/src/scraper/WebScraper/crawler.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 9,614,631-633,720-722,732-734
+apps/api/src/controllers/v2/types.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 1220-1223
+apps/api/src/services/worker/crawl-hooks.test.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 110,123-124
+apps/php-sdk/composer.json
+  s_ebed3335e17158::t_45fa160c4e30b0 4
+apps/python-sdk/pyproject.toml
+  s_ebed3335e17158::t_45fa160c4e30b0 8
+apps/api/src/lib/crawl-state-metrics.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 1-24
+apps/api/src/config.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 54-55
+apps/api/src/exports/util.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 27-30
+apps/api/src/services/redis.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 84-108
+apps/api/src/services/worker/nuq-router.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 6,130
+apps/api/src/controllers/v2/crawl.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 36,60-61
+apps/api/src/services/queue-jobs.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 21,217,255,377-382,384,662-667,669
+apps/api/src/exports/redis.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 4,9
+apps/api/src/services/webhook/delivery.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 120,179
+apps/api/src/service/job-store.test.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 40-41
+apps/api/src/services/worker/crawl-logic.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 6,8-9,25,27-34,221-253
+  s_ebed3335e17158::t_33e0da81746cf7 254
+apps/api/src/controllers/v2/crawl-status.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 17,363
+apps/api/src/scraper/scrapeURL/engines/pdf/index.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 115,122,132-140
+apps/api/src/lib/concurrency-queue-reconciler.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 17-18,141,143-158,196
+apps/api/src/controllers/v2/batch-scrape.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 36,337
+apps/api/src/lib/crawl-redis.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 6-8,23,70,78-81,88,91,96-110,126,135,137-138,143-144,154-155,162,177,179,204-205,229,238,275,290,374,405-407,410-424,426,432,440,446,455,474-476,488-490,499-501,503-504,519-521,532-533,535-536,542-543,545-547,552-553,557-558,562-563,567,574,576,580-581,585-586,593-598,602-603,607-608,745-746,768,818,866,911,942
+  s_ebed3335e17158::t_28600d59431240 742
+apps/api/src/services/worker/crawl-logic.test.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 15,196-255
+apps/api/src/lib/concurrency-limit.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 26,247,282-284,286-292,296
+apps/api/src/services/webhook/log.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 1-46
+apps/rust-sdk/Cargo.toml
+  s_ebed3335e17158::t_45fa160c4e30b0 8
+apps/api/src/lib/auth-denied-log.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 19
+apps/api/src/controllers/v2/__tests__/crawl-errors.test.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 19
+apps/python-sdk/setup.py
+  s_ebed3335e17158::t_45fa160c4e30b0 25
+apps/api/src/services/webhook/log.test.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 1-70
+apps/api/src/lib/crawl-redis-lock.test.ts
+  s_ebed3335e17158::t_82c9a5206c2ab6 27-29
+apps/api/src/services/worker/scrape-worker.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 32,89,483-485,545-547,752,953-955,960-962,1187-1189,1196-1201,1231-1236,1313,1607-1612
+apps/api/src/services/worker/nuq-fdb-worker.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 6-7,36-41
+apps/api/src/services/queue-worker.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 7,14,38-43,143-145
+  s_ebed3335e17158::t_7f3d7ad967fdb1 146
+apps/api/src/controllers/v2/crawl-errors.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 7,127
+apps/js-sdk/firecrawl/package.json
+  s_ebed3335e17158::t_45fa160c4e30b0 4
+apps/api/src/controllers/v2/__tests__/crawl-status-next.test.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 20
+apps/api/src/lib/concurrency-limit.test.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 1-64
+apps/api/src/lib/crawl-state-store.ts
+  s_ebed3335e17158::t_45fa160c4e30b0 1-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0a1b9d0258e09f97a88e59cb3e80e114fdd76646",
+  "prompts": {},
+  "sessions": {
+    "s_ebed3335e17158": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51673b54-d6f0-4ca1-b756-22f5f909ee70",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
