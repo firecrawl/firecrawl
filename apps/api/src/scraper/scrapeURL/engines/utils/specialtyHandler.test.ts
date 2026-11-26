@@ -342,4 +342,91 @@ describe("specialtyScrapeCheck: the bytes decide when the header does not", () =
       specialtyScrapeCheck(logger, { "content-type": "text/html" }),
     ).resolves.toBeUndefined();
   });
+
+  it.each([
+    "application/octet-stream",
+    "binary/octet-stream",
+    "application/x-download",
+    "application/force-download",
+    "application/x-msdownload",
+    "application/x-apple-diskimage",
+    "Application/Zip",
+  ])("rejects non-document binary payloads served as %s", async contentType => {
+    const exe = Buffer.concat([
+      Buffer.from([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00]),
+      Buffer.alloc(64),
+    ]);
+    const message = await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "Content-Type": contentType },
+        download(exe),
+      ),
+    );
+    expect(message).toContain(contentType);
+  });
+
+  it("rejects application/octet-stream when no bytes are available to prove a document", async () => {
+    const message = await expectUnsupported(
+      specialtyScrapeCheck(logger, {
+        "content-type": "application/octet-stream",
+      }),
+    );
+    expect(message).toContain("application/octet-stream");
+  });
+
+  it("rejects ZIP-container archives served as application/octet-stream when filename or URL names an archive", async () => {
+    const byHeader = await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        {
+          "content-type": "application/octet-stream",
+          "content-disposition": 'attachment; filename="App-macOS-arm64.zip"',
+        },
+        download(DOCX),
+      ),
+    );
+    expect(byHeader).toContain("application/octet-stream");
+
+    const byUrl = await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        download(DOCX, { url: "https://example.com/releases/App-0.2.69.apk" }),
+      ),
+    );
+    expect(byUrl).toContain("application/octet-stream");
+  });
+
+  it("keeps allowing gzipped fire-engine file handoffs through for inline decompression", async () => {
+    const gzipHeader = Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00]);
+    await expect(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        download(gzipHeader),
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/x-gzip" },
+        download(gzipHeader),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("rejects header-less binary executables while allowing header-less HTML", async () => {
+    const exe = Buffer.from([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00]);
+    await expectUnsupported(
+      specialtyScrapeCheck(logger, undefined, inline(exe.toString("latin1"))),
+    );
+    await expect(
+      specialtyScrapeCheck(
+        logger,
+        undefined,
+        inline("<!DOCTYPE html><html><body>Hello</body></html>"),
+      ),
+    ).resolves.toBeUndefined();
+  });
 });

@@ -269,7 +269,113 @@ const ZIP_ARCHIVE_MEDIA_TYPES = new Set([
   "application/zip",
   "application/x-zip-compressed",
   "application/java-archive",
+  "application/vnd.android.package-archive",
+  "application/x-xpinstall",
+  "application/x-chrome-extension",
 ]);
+
+const ZIP_ARCHIVE_EXTENSIONS = new Set([
+  ".zip",
+  ".apk",
+  ".aab",
+  ".ipa",
+  ".jar",
+  ".war",
+  ".whl",
+  ".xpi",
+  ".crx",
+  ".nupkg",
+]);
+
+const BINARY_ATTACHMENT_EXTENSIONS = new Set([
+  ...ZIP_ARCHIVE_EXTENSIONS,
+  ".exe",
+  ".msi",
+  ".msix",
+  ".dmg",
+  ".pkg",
+  ".mpkg",
+  ".iso",
+  ".img",
+  ".bin",
+  ".run",
+  ".appimage",
+  ".deb",
+  ".rpm",
+  ".tar",
+  ".tgz",
+  ".tbz2",
+  ".txz",
+  ".gz",
+  ".bz2",
+  ".xz",
+  ".zst",
+  ".7z",
+  ".rar",
+  ".wasm",
+  ".so",
+  ".dll",
+  ".dylib",
+]);
+
+function isGzippedFileHandoff(
+  feRes: SpecialtyHandoffResponse | undefined,
+): boolean {
+  if (feRes?.file?.content === undefined) return false;
+  const head = Buffer.from(feRes.file.content.slice(0, 4), "base64");
+  return head.length >= 2 && head[0] === 0x1f && head[1] === 0x8b;
+}
+
+function hasNullBytesWithoutUtf16Bom(
+  feRes: SpecialtyHandoffResponse | undefined,
+): boolean {
+  if (!feRes || isGzippedFileHandoff(feRes)) return false;
+  const bytes =
+    feRes.file?.content !== undefined
+      ? Buffer.from(feRes.file.content.slice(0, 684), "base64")
+      : Buffer.from(feRes.content.slice(0, 512), "latin1");
+  if (bytes.length === 0) return false;
+  if (
+    bytes.length >= 2 &&
+    ((bytes[0] === 0xff && bytes[1] === 0xfe) ||
+      (bytes[0] === 0xfe && bytes[1] === 0xff))
+  ) {
+    return false;
+  }
+  return bytes.includes(0x00);
+}
+
+function binaryAttachmentExtension(
+  headers: Record<string, string> | undefined,
+): string | null {
+  const disposition = Object.entries(headers ?? {}).find(
+    ([k]) => k.toLowerCase() === "content-disposition",
+  )?.[1];
+  if (!disposition || !/^\s*attachment\b/i.test(disposition)) return null;
+  const utf8Match = /filename\*\s*=\s*(?:utf-8|iso-8859-1)?''([^;\s]+)/i.exec(
+    disposition,
+  );
+  const plainMatch = /filename\s*=\s*(?:"([^"]+)"|([^;\s]+))/i.exec(
+    disposition,
+  );
+  let rawName = utf8Match?.[1] ?? plainMatch?.[1] ?? plainMatch?.[2];
+  if (!rawName) return null;
+  try {
+    rawName = decodeURIComponent(rawName);
+  } catch {}
+  const ext = path.extname(rawName).toLowerCase();
+  return BINARY_ATTACHMENT_EXTENSIONS.has(ext) ? ext : null;
+}
+
+function hasZipArchiveUrlExtension(urlString: string | undefined): boolean {
+  if (!urlString) return false;
+  try {
+    const ext = path.extname(new URL(urlString).pathname).toLowerCase();
+    return ZIP_ARCHIVE_EXTENSIONS.has(ext);
+  } catch {
+    return false;
+  }
+}
 
 function matchHandoffSignature(
   head: ArrayLike<number>,
@@ -384,6 +490,8 @@ export async function specialtyScrapeCheck(
     );
   }
 
+  const attachmentBinaryExt = binaryAttachmentExtension(headers);
+
   if (!contentType) {
     // A header-less binary is still recognizable by its magic bytes.
     const headerlessImage = await sniffImageHandoff(feRes, imageOcrEnabled);
@@ -401,7 +509,13 @@ export async function specialtyScrapeCheck(
       );
     }
     const headerlessFile = sniffHandoffFileKind(feRes);
-    if (headerlessFile !== null) {
+    if (
+      headerlessFile !== null &&
+      !(
+        headerlessFile === "zip" &&
+        (attachmentBinaryExt !== null || hasZipArchiveUrlExtension(feRes?.url))
+      )
+    ) {
       await handoffSniffedFile(
         headerlessFile,
         logger,
@@ -410,6 +524,11 @@ export async function specialtyScrapeCheck(
         signal,
         maxFileBytes,
         downloadGcsFile,
+      );
+    }
+    if (attachmentBinaryExt !== null || hasNullBytesWithoutUtf16Bom(feRes)) {
+      throw new UnsupportedFileError(
+        attachmentBinaryExt ?? "application/octet-stream",
       );
     }
     logger.warn("Failed to check contentType -- was not present in headers", {
@@ -471,7 +590,12 @@ export async function specialtyScrapeCheck(
   const sniffedFile = sniffHandoffFileKind(feRes);
   if (
     sniffedFile !== null &&
-    !(sniffedFile === "zip" && ZIP_ARCHIVE_MEDIA_TYPES.has(mediaType))
+    !(
+      sniffedFile === "zip" &&
+      (ZIP_ARCHIVE_MEDIA_TYPES.has(mediaType) ||
+        attachmentBinaryExt !== null ||
+        hasZipArchiveUrlExtension(feRes?.url))
+    )
   ) {
     await handoffSniffedFile(
       sniffedFile,
@@ -484,22 +608,58 @@ export async function specialtyScrapeCheck(
     );
   }
 
-  // Reject unsupported binary content types (unsupported images, video, audio, archives, etc.)
+  // Reject unsupported binary content types (unsupported images, video, audio,
+  // installers, disk images, archives, and opaque octet-stream downloads whose
+  // leading bytes did not match any supported document/PDF/image format above).
+  // Gzipped file handoffs from fire-engine (e.g. .xml.gz sitemaps) pass through
+  // to fire-engine's bounded inline decompression step.
   const unsupportedBinaryPrefixes = [
     "image/",
     "video/",
     "audio/",
+    "font/",
+    "application/octet-stream",
+    "binary/octet-stream",
+    "application/x-download",
+    "application/force-download",
+    "application/download",
     "application/zip",
+    "application/x-zip-compressed",
     "application/x-tar",
     "application/x-rar",
+    "application/vnd.rar",
     "application/x-7z",
+    "application/gzip",
+    "application/x-gzip",
+    "application/x-bzip2",
+    "application/x-xz",
+    "application/zstd",
     "application/wasm",
     "application/x-executable",
     "application/x-sharedlib",
+    "application/x-msdownload",
+    "application/x-msdos-program",
+    "application/x-dosexec",
+    "application/vnd.microsoft.portable-executable",
+    "application/x-msi",
+    "application/x-apple-diskimage",
+    "application/x-dmg",
+    "application/x-iso9660-image",
+    "application/vnd.debian.binary-package",
+    "application/x-debian-package",
+    "application/x-rpm",
+    "application/x-redhat-package-manager",
+    "application/vnd.android.package-archive",
+    "application/x-xpinstall",
+    "application/x-chrome-extension",
     "application/java-archive",
+    "application/font-woff",
+    "application/vnd.ms-fontobject",
   ];
   if (
-    unsupportedBinaryPrefixes.some(prefix => contentType.startsWith(prefix))
+    !isGzippedFileHandoff(feRes) &&
+    (unsupportedBinaryPrefixes.some(prefix => mediaType.startsWith(prefix)) ||
+      attachmentBinaryExt !== null)
   ) {
     throw new UnsupportedFileError(contentType);
   }
