@@ -164,7 +164,17 @@ export async function getLinksFromSitemap(
       }
     }
 
-    const instructions = await processSitemap(content);
+    const instructions = await processSitemap(content).catch(error => {
+      logger.warn("Sitemap XML processing failed", {
+        method: "getLinksFromSitemap",
+        sitemapUrl,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    });
+    if (!instructions) {
+      return 0;
+    }
 
     let count = 0;
     for (const instruction of instructions.instructions) {

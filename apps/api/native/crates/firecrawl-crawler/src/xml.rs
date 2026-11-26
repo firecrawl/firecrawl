@@ -59,6 +59,92 @@ pub fn exceeds_element_depth(xml: &str, limit: usize) -> bool {
   false
 }
 
+/// Returns `true` when any `<!DOCTYPE ...>` internal subset contains an
+/// `<!ENTITY` declaration, ignoring comments, CDATA sections, processing
+/// instructions, and quoted literals.
+pub(crate) fn has_dtd_entity_declaration(xml: &str) -> bool {
+  let mut i = 0usize;
+  while let Some(offset) = xml[i..].find('<') {
+    i += offset;
+    let rest = &xml[i..];
+    let skip_to = if rest.starts_with("<!--") {
+      Some("-->")
+    } else if rest.starts_with("<![CDATA[") {
+      Some("]]>")
+    } else if rest.starts_with("<?") {
+      Some("?>")
+    } else {
+      None
+    };
+    if let Some(marker) = skip_to {
+      let Some(end) = rest.find(marker) else {
+        return false;
+      };
+      i += end + marker.len();
+      continue;
+    }
+    if rest.starts_with("<!DOCTYPE") {
+      let Some(end) = doctype_end(rest) else {
+        return false;
+      };
+      if doctype_subset_has_entity(&rest[..=end]) {
+        return true;
+      }
+      i += end + 1;
+      continue;
+    }
+    let Some(end) = unquoted_tag_end(rest) else {
+      return false;
+    };
+    i += end + 1;
+  }
+  false
+}
+
+fn doctype_subset_has_entity(decl: &str) -> bool {
+  let bytes = decl.as_bytes();
+  let mut quote: Option<u8> = None;
+  let mut in_subset = false;
+  let mut i = 0usize;
+  while i < bytes.len() {
+    let b = bytes[i];
+    if let Some(q) = quote {
+      if b == q {
+        quote = None;
+      }
+      i += 1;
+      continue;
+    }
+    if in_subset {
+      if bytes[i..].starts_with(b"<!--") {
+        let Some(end) = find_bytes(bytes, i + 4, b"-->") else {
+          return false;
+        };
+        i = end + 3;
+        continue;
+      }
+      if bytes[i..].starts_with(b"<?") {
+        let Some(end) = find_bytes(bytes, i + 2, b"?>") else {
+          return false;
+        };
+        i = end + 2;
+        continue;
+      }
+      if bytes[i..].starts_with(b"<!ENTITY") {
+        return true;
+      }
+    }
+    match b {
+      b'"' | b'\'' => quote = Some(b),
+      b'[' => in_subset = true,
+      b']' => in_subset = false,
+      _ => {}
+    }
+    i += 1;
+  }
+  false
+}
+
 /// Index of the `>` closing the DOCTYPE declaration at the start of `decl`.
 /// An internal subset (`[...]`) may hold comments, processing instructions
 /// and quoted literals, which are skipped as units so their contents cannot
@@ -176,5 +262,21 @@ mod tests {
   fn quote_in_a_doctype_comment_does_not_hide_deep_nesting() {
     let xml = format!("<!DOCTYPE a [ <!-- don't --> ]>{}", nested(40));
     assert!(exceeds_element_depth(&xml, 32));
+  }
+
+  #[test]
+  fn detects_entity_declarations_only_in_dtd_subsets() {
+    assert!(has_dtd_entity_declaration(
+      r#"<!DOCTYPE urlset [ <!ENTITY x "y"> ]><urlset/>"#
+    ));
+    assert!(!has_dtd_entity_declaration(
+      r#"<!-- <!ENTITY x "y"> --><urlset/>"#
+    ));
+    assert!(!has_dtd_entity_declaration(
+      r#"<urlset><url><loc><![CDATA[<!ENTITY x "y">]]></loc></url></urlset>"#
+    ));
+    assert!(!has_dtd_entity_declaration(
+      r#"<!DOCTYPE urlset [ <!-- <!ENTITY x "y"> --> ]><urlset/>"#
+    ));
   }
 }

@@ -50,9 +50,9 @@ skip = [
   { crate = "digest@0.10", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
   { crate = "getrandom@0.3", reason = "nodesig 2.0 pins rand 0.9 while lopdf 0.45 and zip 9 pull getrandom 0.4" },
   { crate = "rand@0.8", reason = "kuchikiki build-dep phf_generator 0.11 pins rand 0.8" },
-  { crate = "rand@0.9", reason = "nodesig 2.0 pins rand 0.9 while lopdf 0.45 and zip 9 pull rand 0.10" },
+  { crate = "rand@0.9", reason = "nodesig 2.0 pins rand 0.9 while lopdf 0.45 pulls rand 0.10" },
   { crate = "rand_core@0.6", reason = "kuchikiki build-dep phf_generator 0.11 pins rand 0.8" },
-  { crate = "rand_core@0.9", reason = "nodesig 2.0 pins rand 0.9 while lopdf 0.45 and zip 9 pull rand 0.10" },
+  { crate = "rand_core@0.9", reason = "nodesig 2.0 pins rand 0.9 while lopdf 0.45 pulls rand 0.10" },
   { crate = "sha2@0.10", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
   { crate = "syn@2", reason = "transitive proc macros mix syn 2 and syn 3" },
 ]

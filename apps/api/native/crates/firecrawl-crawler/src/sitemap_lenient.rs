@@ -5,38 +5,8 @@ use crate::sitemap::{
   MAX_SITEMAP_DEPTH, ParseOutcome, ParsedSitemap, SitemapEntry, SitemapIndex, SitemapUrl,
   SitemapUrlset,
 };
+use crate::sitemap_entities::lookup_named_entity;
 use crate::xml::doctype_end;
-
-const NAMED_ENTITIES: &[(&str, char)] = &[
-  ("amp", '&'),
-  ("lt", '<'),
-  ("gt", '>'),
-  ("quot", '"'),
-  ("apos", '\''),
-  ("nbsp", '\u{00a0}'),
-  ("copy", '\u{00a9}'),
-  ("reg", '\u{00ae}'),
-  ("trade", '\u{2122}'),
-  ("mdash", '\u{2014}'),
-  ("ndash", '\u{2013}'),
-  ("hellip", '\u{2026}'),
-  ("lsquo", '\u{2018}'),
-  ("rsquo", '\u{2019}'),
-  ("ldquo", '\u{201c}'),
-  ("rdquo", '\u{201d}'),
-  ("bull", '\u{2022}'),
-  ("middot", '\u{00b7}'),
-  ("laquo", '\u{00ab}'),
-  ("raquo", '\u{00bb}'),
-  ("euro", '\u{20ac}'),
-  ("pound", '\u{00a3}'),
-  ("yen", '\u{00a5}'),
-  ("cent", '\u{00a2}'),
-  ("times", '\u{00d7}'),
-  ("divide", '\u{00f7}'),
-  ("plusmn", '\u{00b1}'),
-  ("deg", '\u{00b0}'),
-];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RootKind {
@@ -121,7 +91,12 @@ pub(crate) fn parse_sitemap_lenient(xml: &str) -> Result<ParsedSitemap, ParseOut
           return Err(ParseOutcome::XmlError("mismatched closing tag".to_string()));
         }
 
-        if let (true, Some(text)) = (stack.len() == 2, loc_buf.take()) {
+        let finished_loc = if stack.len() == 2 {
+          loc_buf.take()
+        } else {
+          None
+        };
+        if let Some(text) = finished_loc {
           if loc_has_text {
             match root_kind {
               Some(RootKind::Urlset) => urls.push(SitemapUrl { loc: vec![text] }),
@@ -382,7 +357,7 @@ fn decode_entity_into(entity: &str, out: &mut String) -> Result<(), ParseOutcome
     ));
   }
 
-  if let Some(&(_, ch)) = NAMED_ENTITIES.iter().find(|&&(name, _)| name == entity) {
+  if let Some(ch) = lookup_named_entity(entity) {
     out.push(ch);
   } else {
     out.push('&');

@@ -212,7 +212,18 @@ impl Robots {
     let Some(group) = self.group_for(Some(user_agent)) else {
       return true;
     };
-    find_rule(path, &group.rules).is_none_or(|r| r.allow)
+    if !find_rule(path, &group.rules).is_none_or(|r| r.allow) {
+      return false;
+    }
+    if !path.ends_with('/') {
+      let mut with_slash = String::with_capacity(path.len().saturating_add(1));
+      with_slash.push_str(path);
+      with_slash.push('/');
+      if find_rule(&with_slash, &group.rules).is_some_and(|r| !r.allow) {
+        return false;
+      }
+    }
+    true
   }
 
   fn group_for(&self, user_agent: Option<&str>) -> Option<&AgentGroup> {
@@ -289,4 +300,56 @@ fn origin_of(url: &Url) -> RobotsOrigin {
     .port()
     .unwrap_or(if scheme == "https" { 443 } else { 80 });
   RobotsOrigin { scheme, host, port }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn decodes_unreserved_percent_escapes_without_decoding_reserved() {
+    let robots = Robots::parse(
+      "https://example.com/robots.txt",
+      "User-agent: *\nDisallow: /baz\nDisallow: /%61dmin\nDisallow: /a/b\n",
+    );
+    assert_eq!(
+      robots.is_allowed("https://example.com/b%61z", None),
+      Some(false)
+    );
+    assert_eq!(
+      robots.is_allowed("https://example.com/admin", None),
+      Some(false)
+    );
+    // Reserved %2F stays distinct from '/'.
+    assert_eq!(
+      robots.is_allowed("https://example.com/a%2Fb", None),
+      Some(true)
+    );
+  }
+
+  #[test]
+  fn preserves_empty_query_delimiter_for_matching() {
+    let robots = Robots::parse(
+      "https://example.com/robots.txt",
+      "User-agent: *\nDisallow: /search?$\n",
+    );
+    assert_eq!(
+      robots.is_allowed("https://example.com/search?", None),
+      Some(false)
+    );
+    assert_eq!(
+      robots.is_allowed("https://example.com/search", None),
+      Some(true)
+    );
+  }
+
+  #[test]
+  fn path_only_evaluator_enforces_trailing_slash_disallow() {
+    let robots = Robots::parse_rules_only("User-agent: *\nDisallow: /blocked/\n");
+    let parsed = Url::parse("https://example.com/blocked").ok();
+    assert!(parsed.is_some());
+    if let Some(url) = parsed {
+      assert!(!robots.is_url_path_allowed(&url, None));
+    }
+  }
 }

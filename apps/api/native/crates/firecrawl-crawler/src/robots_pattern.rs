@@ -131,11 +131,11 @@ fn parse_radix_f64(digits: &str, radix: u32) -> Option<f64> {
 
 pub(crate) fn extract_path_and_query(url: &Url) -> String {
   let mut path = url.path().to_string();
-  if let Some(query) = url.query().filter(|q| !q.is_empty()) {
+  if let Some(query) = url.query() {
     path.push('?');
     path.push_str(query);
   }
-  url_encode_to_upper(&path)
+  normalize_percent_escapes(&path)
 }
 
 fn is_encode_uri_passthrough(b: u8) -> bool {
@@ -181,23 +181,46 @@ pub(crate) fn normalize_encoding(path: &str) -> String {
       }
     }
   }
-  url_encode_to_upper(&encoded)
+  normalize_percent_escapes(&encoded)
 }
 
-fn url_encode_to_upper(path: &str) -> String {
+fn hex_value(b: u8) -> Option<u8> {
+  match b {
+    b'0'..=b'9' => Some(b.saturating_sub(b'0')),
+    b'a'..=b'f' => Some(b.saturating_sub(b'a').saturating_add(10)),
+    b'A'..=b'F' => Some(b.saturating_sub(b'A').saturating_add(10)),
+    _ => None,
+  }
+}
+
+fn is_rfc3986_unreserved(b: u8) -> bool {
+  b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~')
+}
+
+fn normalize_percent_escapes(path: &str) -> String {
   let bytes = path.as_bytes();
   let mut out = Vec::with_capacity(bytes.len());
   let mut i = 0usize;
   while let Some(&b) = bytes.get(i) {
     match (
       b,
-      bytes.get(i.saturating_add(1)),
-      bytes.get(i.saturating_add(2)),
+      bytes.get(i.saturating_add(1)).and_then(|&h| hex_value(h)),
+      bytes.get(i.saturating_add(2)).and_then(|&h| hex_value(h)),
     ) {
-      (b'%', Some(&h1), Some(&h2)) if h1.is_ascii_hexdigit() && h2.is_ascii_hexdigit() => {
-        out.push(b'%');
-        out.push(h1.to_ascii_uppercase());
-        out.push(h2.to_ascii_uppercase());
+      (b'%', Some(hi), Some(lo)) => {
+        let decoded = (hi << 4) | lo;
+        if is_rfc3986_unreserved(decoded) {
+          out.push(decoded);
+        } else {
+          out.push(b'%');
+          if let (Some(&h), Some(&l)) = (
+            HEX_UPPER.get(usize::from(hi)),
+            HEX_UPPER.get(usize::from(lo)),
+          ) {
+            out.push(h);
+            out.push(l);
+          }
+        }
         i = i.saturating_add(3);
       }
       _ => {

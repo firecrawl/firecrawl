@@ -33,6 +33,8 @@ macro_rules! declare_vendored_native {
     mod robots_pattern;
     #[path = "native/sitemap.rs"]
     mod sitemap;
+    #[path = "native/sitemap_entities.rs"]
+    mod sitemap_entities;
     #[path = "native/sitemap_lenient.rs"]
     mod sitemap_lenient;
     #[path = "native/xml.rs"]

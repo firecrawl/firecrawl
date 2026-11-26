@@ -22,6 +22,7 @@ cp "$crates/firecrawl-crawler/src/crawler.rs" "src/native/crawler.rs"
 cp "$crates/firecrawl-crawler/src/robots.rs" "src/native/robots.rs"
 cp "$crates/firecrawl-crawler/src/robots_pattern.rs" "src/native/robots_pattern.rs"
 cp "$crates/firecrawl-crawler/src/sitemap.rs" "src/native/sitemap.rs"
+cp "$crates/firecrawl-crawler/src/sitemap_entities.rs" "src/native/sitemap_entities.rs"
 cp "$crates/firecrawl-crawler/src/sitemap_lenient.rs" "src/native/sitemap_lenient.rs"
 cp "$crates/firecrawl-parsers/src/document.rs" "src/native/document.rs"
 

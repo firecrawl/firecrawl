@@ -5,26 +5,41 @@ use std::{collections::HashSet, sync::LazyLock};
 use regex::Regex;
 use url::Url;
 
-static IMAGE: LazyLock<Option<Regex>> = LazyLock::new(|| Regex::new(r"!\[[^\]]*\]\([^)]*\)").ok());
-static INLINE_LINK: LazyLock<Option<Regex>> = LazyLock::new(|| {
-  Regex::new(r#"\[[^\]]*\]\(\s*(<[^>\n]*>|[^)\s]+)(?:\s+["'][^"']*["'])?\s*\)"#).ok()
+#[allow(clippy::expect_used)]
+fn compile_static_regex(pattern: &str, name: &str) -> Regex {
+  Regex::new(pattern).expect(name)
+}
+
+static IMAGE: LazyLock<Regex> =
+  LazyLock::new(|| compile_static_regex(r"!\[[^\]]*\]\([^)]*\)", "valid IMAGE regex"));
+static INLINE_LINK: LazyLock<Regex> = LazyLock::new(|| {
+  compile_static_regex(
+    r#"\[[^\]]*\]\(\s*(<[^>\n]*>|[^)\s]+)(?:\s+["'][^"']*["'])?\s*\)"#,
+    "valid INLINE_LINK regex",
+  )
 });
-static REFERENCE_DEFINITION: LazyLock<Option<Regex>> =
-  LazyLock::new(|| Regex::new(r"(?m)^[ \t]{0,3}\[[^\]]+\]:[ \t]*(<[^>]+>|\S+)").ok());
-static AUTOLINK: LazyLock<Option<Regex>> =
-  LazyLock::new(|| Regex::new(r"<((?:https?://|mailto:)[^>\s]+)>").ok());
-static BARE_URL: LazyLock<Option<Regex>> =
-  LazyLock::new(|| Regex::new(r#"(?:^|[\s(<])(https?://[^\s<>"'`)\]]+)"#).ok());
+static REFERENCE_DEFINITION: LazyLock<Regex> = LazyLock::new(|| {
+  compile_static_regex(
+    r"(?m)^[ \t]{0,3}\[[^\]]+\]:[ \t]*(<[^>]+>|\S+)",
+    "valid REFERENCE_DEFINITION regex",
+  )
+});
+static AUTOLINK: LazyLock<Regex> = LazyLock::new(|| {
+  compile_static_regex(r"<((?:https?://|mailto:)[^>\s]+)>", "valid AUTOLINK regex")
+});
+static BARE_URL: LazyLock<Regex> = LazyLock::new(|| {
+  compile_static_regex(
+    r#"(?:^|[\s(<])(https?://[^\s<>"'`)\]]+)"#,
+    "valid BARE_URL regex",
+  )
+});
 
 /// Extracts deduplicated resolved links from a markdown or plaintext body,
 /// excluding images, fenced code blocks, and inline code spans.
 #[must_use]
 pub fn extract_links_from_markdown(text: &str, base_url: &str) -> Vec<String> {
   let stripped = strip_code(text);
-  let body = match IMAGE.as_ref() {
-    Some(re) => re.replace_all(&stripped, " "),
-    None => std::borrow::Cow::Borrowed(stripped.as_str()),
-  };
+  let body = IMAGE.replace_all(&stripped, " ");
 
   let base = Url::parse(base_url).ok();
   let mut seen: HashSet<String> = HashSet::new();
@@ -39,32 +54,24 @@ pub fn extract_links_from_markdown(text: &str, base_url: &str) -> Vec<String> {
     }
   };
 
-  if let Some(re) = INLINE_LINK.as_ref() {
-    for cap in re.captures_iter(&body) {
-      if let Some(m) = cap.get(1) {
-        push(m.as_str(), false);
-      }
+  for cap in INLINE_LINK.captures_iter(&body) {
+    if let Some(m) = cap.get(1) {
+      push(m.as_str(), false);
     }
   }
-  if let Some(re) = REFERENCE_DEFINITION.as_ref() {
-    for cap in re.captures_iter(&body) {
-      if let Some(m) = cap.get(1) {
-        push(m.as_str(), false);
-      }
+  for cap in REFERENCE_DEFINITION.captures_iter(&body) {
+    if let Some(m) = cap.get(1) {
+      push(m.as_str(), false);
     }
   }
-  if let Some(re) = AUTOLINK.as_ref() {
-    for cap in re.captures_iter(&body) {
-      if let Some(m) = cap.get(1) {
-        push(m.as_str(), false);
-      }
+  for cap in AUTOLINK.captures_iter(&body) {
+    if let Some(m) = cap.get(1) {
+      push(m.as_str(), false);
     }
   }
-  if let Some(re) = BARE_URL.as_ref() {
-    for cap in re.captures_iter(&body) {
-      if let Some(m) = cap.get(1) {
-        push(m.as_str(), true);
-      }
+  for cap in BARE_URL.captures_iter(&body) {
+    if let Some(m) = cap.get(1) {
+      push(m.as_str(), true);
     }
   }
 
@@ -150,7 +157,85 @@ fn parse_fence_prefix(line: &str) -> Option<(u8, usize, usize)> {
   (len >= 3).then_some((fence_byte, len, idx))
 }
 
-/// Linear-time replacement equivalent to JS `line.replace(/(`+)(?:(?!\1)[^\n])*\1/g, " ")`.
+struct RunIndex {
+  size: usize,
+  tree: Vec<usize>,
+  suffix_max: Vec<usize>,
+}
+
+impl RunIndex {
+  fn new(runs: &[(usize, usize)]) -> Self {
+    let n = runs.len();
+    let mut suffix_max = vec![0usize; n];
+    let mut running_max = 0usize;
+    for idx in (0..n).rev() {
+      if let Some(slot) = suffix_max.get_mut(idx) {
+        *slot = running_max;
+      }
+      if let Some(&(_, len)) = runs.get(idx) {
+        running_max = running_max.max(len);
+      }
+    }
+
+    let size = n.next_power_of_two();
+    let mut tree = vec![0usize; size.saturating_mul(2)];
+    for (idx, &(_, len)) in runs.iter().enumerate() {
+      if let Some(slot) = tree.get_mut(size.saturating_add(idx)) {
+        *slot = len;
+      }
+    }
+    for idx in (1..size).rev() {
+      let left = tree.get(idx.saturating_mul(2)).copied().unwrap_or(0);
+      let right = tree
+        .get(idx.saturating_mul(2).saturating_add(1))
+        .copied()
+        .unwrap_or(0);
+      if let Some(slot) = tree.get_mut(idx) {
+        *slot = left.max(right);
+      }
+    }
+
+    Self {
+      size,
+      tree,
+      suffix_max,
+    }
+  }
+
+  fn max_after(&self, idx: usize) -> usize {
+    self.suffix_max.get(idx).copied().unwrap_or(0)
+  }
+
+  fn first_ge(&self, from: usize, target: usize) -> Option<usize> {
+    if from >= self.size || target == 0 {
+      return None;
+    }
+    self.first_ge_rec(1, 0, self.size, from, target)
+  }
+
+  fn first_ge_rec(
+    &self,
+    node: usize,
+    lo: usize,
+    hi: usize,
+    from: usize,
+    target: usize,
+  ) -> Option<usize> {
+    if hi <= from || self.tree.get(node).copied().unwrap_or(0) < target {
+      return None;
+    }
+    if hi.saturating_sub(lo) == 1 {
+      return Some(lo);
+    }
+    let mid = lo.saturating_add(hi.saturating_sub(lo) / 2);
+    let left_child = node.saturating_mul(2);
+    self
+      .first_ge_rec(left_child, lo, mid, from, target)
+      .or_else(|| self.first_ge_rec(left_child.saturating_add(1), mid, hi, from, target))
+  }
+}
+
+/// O(N + R log R) replacement equivalent to JS `line.replace(/(`+)(?:(?!\1)[^\n])*\1/g, " ")`.
 fn strip_inline_code(line: &str) -> String {
   if !line.contains('`') {
     return line.to_string();
@@ -171,6 +256,7 @@ fn strip_inline_code(line: &str) -> String {
     }
   }
 
+  let index = RunIndex::new(&runs);
   let mut out = String::with_capacity(line.len());
   let mut cursor = 0usize;
   let mut run_idx = 0usize;
@@ -187,25 +273,30 @@ fn strip_inline_code(line: &str) -> String {
       out.push_str(before);
     }
 
-    let later_runs = runs.get(run_idx.saturating_add(1)..).unwrap_or(&[]);
-    let max_later = later_runs.iter().map(|&(_, l)| l).max().unwrap_or(0);
+    let next_idx = run_idx.saturating_add(1);
+    let max_later = index.max_after(run_idx);
     let half = eff_len / 2;
 
-    if max_later >= eff_len {
-      if let Some(&(close_start, _)) = later_runs.iter().find(|&&(_, l)| l >= eff_len) {
-        out.push(' ');
-        cursor = close_start.saturating_add(eff_len);
-        run_idx = advance_run_idx(&runs, run_idx, cursor);
-        continue;
-      }
+    let close_span = if max_later >= eff_len {
+      index
+        .first_ge(next_idx, eff_len)
+        .and_then(|ci| runs.get(ci).map(|&(cs, _)| (cs, eff_len)))
     } else if max_later > half {
-      if let Some(&(close_start, _)) = later_runs.iter().find(|&&(_, l)| l >= max_later) {
-        out.push(' ');
-        cursor = close_start.saturating_add(max_later);
-        run_idx = advance_run_idx(&runs, run_idx, cursor);
-        continue;
-      }
-    } else if half >= 1 {
+      index
+        .first_ge(next_idx, max_later)
+        .and_then(|ci| runs.get(ci).map(|&(cs, _)| (cs, max_later)))
+    } else {
+      None
+    };
+
+    if let Some((close_start, matched_len)) = close_span {
+      out.push(' ');
+      cursor = close_start.saturating_add(matched_len);
+      run_idx = advance_run_idx(&runs, run_idx, cursor);
+      continue;
+    }
+
+    if half >= 1 {
       out.push(' ');
       cursor = eff_start.saturating_add(half.saturating_mul(2));
       run_idx = advance_run_idx(&runs, run_idx, cursor);
@@ -231,4 +322,22 @@ fn advance_run_idx(runs: &[(usize, usize)], mut idx: usize, cursor: usize) -> us
     idx = idx.saturating_add(1);
   }
   idx
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn strips_many_inline_code_spans_in_subquadratic_time() {
+    let mut line = String::new();
+    for i in 0..4_000 {
+      line.push_str("`https://example.com/in-code/");
+      line.push_str(&i.to_string());
+      line.push_str("` ");
+    }
+    line.push_str("https://example.com/outside");
+    let links = extract_links_from_markdown(&line, "https://example.com/");
+    assert_eq!(links, vec!["https://example.com/outside"]);
+  }
 }

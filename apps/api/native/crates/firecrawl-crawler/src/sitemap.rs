@@ -7,7 +7,7 @@ use url::Url;
 
 use crate::crawler::is_file;
 use crate::sitemap_lenient::parse_sitemap_lenient;
-use crate::xml::exceeds_element_depth;
+use crate::xml::{exceeds_element_depth, has_dtd_entity_declaration};
 
 /// Sitemaps nest a handful of levels; anything deeper is malformed.
 pub(crate) const MAX_SITEMAP_DEPTH: usize = 32;
@@ -65,7 +65,7 @@ pub fn parse_sitemap_xml(xml_content: &str) -> Result<ParsedSitemap, String> {
     ));
   }
   // Entity replacement text can carry nested markup the depth scan never sees.
-  if cleaned.contains("<!ENTITY") {
+  if has_dtd_entity_declaration(&cleaned) {
     return Err("XML parsing error: entity declarations are not supported".to_string());
   }
 
@@ -242,5 +242,63 @@ fn parse_with_roxmltree(xml: &str) -> Result<ParsedSitemap, ParseOutcome> {
       })
     }
     _ => Err(ParseOutcome::InvalidRoot),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn allows_entity_text_in_comment_and_cdata() {
+    let xml = r#"<?xml version="1.0"?>
+<!-- <!ENTITY fake "val"> -->
+<urlset><url><loc><![CDATA[https://example.com/?x=<!ENTITY]]></loc></url></urlset>"#;
+    let parsed = parse_sitemap_xml(xml);
+    assert!(parsed.is_ok());
+  }
+
+  #[test]
+  fn lenient_parser_decodes_full_html4_entities() {
+    let xml =
+      "<urlset><url><loc>https://example.com/caf&eacute;?&auml;=1</loc><image:img/></url></urlset>";
+    let parsed = parse_sitemap_xml(xml);
+    assert!(parsed.is_ok());
+    if let Ok(p) = parsed {
+      let loc = p
+        .urlset
+        .and_then(|u| u.url.into_iter().next())
+        .and_then(|u| u.loc.into_iter().next());
+      assert_eq!(
+        loc.as_deref(),
+        Some("https://example.com/caf\u{00e9}?\u{00e4}=1")
+      );
+    }
+  }
+
+  #[test]
+  fn lenient_parser_keeps_loc_when_child_element_closes() {
+    let xml = "<urlset><url><loc>https://example.com/<span/>path</loc><image:img/></url></urlset>";
+    let parsed = parse_sitemap_xml(xml);
+    assert!(parsed.is_ok());
+    if let Ok(p) = parsed {
+      let loc = p
+        .urlset
+        .and_then(|u| u.url.into_iter().next())
+        .and_then(|u| u.loc.into_iter().next());
+      assert_eq!(loc.as_deref(), Some("https://example.com/path"));
+    }
+
+    let xml_nested =
+      "<urlset><url><loc>https://example.com/<span>x</span>path</loc><image:img/></url></urlset>";
+    let parsed_nested = parse_sitemap_xml(xml_nested);
+    assert!(parsed_nested.is_ok());
+    if let Ok(p) = parsed_nested {
+      let loc = p
+        .urlset
+        .and_then(|u| u.url.into_iter().next())
+        .and_then(|u| u.loc.into_iter().next());
+      assert_eq!(loc.as_deref(), Some("https://example.com/path"));
+    }
   }
 }

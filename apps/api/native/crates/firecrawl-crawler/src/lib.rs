@@ -3,6 +3,7 @@ pub mod markdown_links;
 pub mod robots;
 mod robots_pattern;
 pub mod sitemap;
+mod sitemap_entities;
 mod sitemap_lenient;
 pub mod xml;
 
