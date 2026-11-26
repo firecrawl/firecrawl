@@ -26,8 +26,9 @@ pub use job::{
   JobDecodeError, NuqJob, PREFETCH_RETURNING_COLUMNS, QueueKind, stored_zero_data_retention,
 };
 pub use pg::{
-  DEFAULT_POOL_MAX_SIZE, PgConfigError, PgConnectionSettings, PgSslMode, PgStore, PoolMetrics,
-  StoreError, format_pool_metrics, parse_pg_connection_settings,
+  DEFAULT_POOL_MAX_SIZE, FailedJobNotification, PgConfigError, PgConnectionSettings, PgSslMode,
+  PgStore, PoolMetrics, PrefetchBatch, StoreError, format_pool_metrics,
+  parse_pg_connection_settings,
 };
 pub use timestamp::{
   JS_DATE_MAX_EPOCH_MILLIS, TimestampError, format_epoch_millis_iso_utc,

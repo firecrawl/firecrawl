@@ -70,6 +70,15 @@ pub enum PublishError {
   Amqp(String),
 }
 
+impl PublishError {
+  /// Returns `true` when frames may already have been written to the broker,
+  /// so retrying on a fresh connection could enqueue a duplicate message.
+  #[must_use]
+  pub fn is_ambiguous_outcome(&self) -> bool {
+    matches!(self, Self::ConfirmTimeout | Self::Timeout("basic_publish"))
+  }
+}
+
 struct AmqpSession {
   connection: Connection,
   channel: Channel,
@@ -163,6 +172,48 @@ impl AmqpPrefetchPublisher {
   /// Publishes a single prefetched job to `<queueName>.prefetch` with broker
   /// publisher confirms enabled so failed deliveries remain retryable.
   pub async fn send_job(&self, queue: QueueKind, job: &NuqJob) -> Result<(), PublishError> {
+    let payload =
+      serde_json::to_vec(job).map_err(|err| PublishError::Serialize(err.to_string()))?;
+    let routing_key = queue.prefetch_queue_name();
+    let properties = prefetch_publish_properties(&job.id);
+
+    self
+      .publish_frame(queue, routing_key, &payload, properties)
+      .await?;
+
+    if !job.is_zero_data_retention() {
+      tracing::info!(
+        module = "nuq/rabbitmq",
+        queue = queue.table_name(),
+        job_id = %job.id,
+        "NuQ job prefetch sent"
+      );
+    }
+    Ok(())
+  }
+
+  /// Publishes a terminal `"failed"` notification to `<queueName>.listen.<listen_channel_id>`,
+  /// matching `NuQ::sendJobEnd(id, "failed", listenChannelId)` in `nuq.ts`.
+  pub async fn send_job_failed(
+    &self,
+    queue: QueueKind,
+    job_id: &str,
+    listen_channel_id: &str,
+  ) -> Result<(), PublishError> {
+    let routing_key = format!("{}.listen.{listen_channel_id}", queue.table_name());
+    let properties = BasicProperties::default().with_correlation_id(job_id.into());
+    self
+      .publish_frame(queue, &routing_key, b"failed", properties)
+      .await
+  }
+
+  async fn publish_frame(
+    &self,
+    queue: QueueKind,
+    routing_key: &str,
+    payload: &[u8],
+    properties: BasicProperties,
+  ) -> Result<(), PublishError> {
     let Some(url) = self.rabbitmq_url.as_ref() else {
       tracing::warn!(
         module = "nuq/rabbitmq",
@@ -176,15 +227,12 @@ impl AmqpPrefetchPublisher {
       return Err(PublishError::ShuttingDown);
     }
 
-    let payload =
-      serde_json::to_vec(job).map_err(|err| PublishError::Serialize(err.to_string()))?;
-    let routing_key = queue.prefetch_queue_name();
-    let properties = prefetch_publish_properties(&job.id);
-
+    let prefetch_queue = queue.prefetch_queue_name();
     let mut guard = self.session_slot(queue).lock().await;
 
     // If publishing fails on an existing cached session (for example, after a
-    // broker restart), drop it, reconnect once, and retry the publish.
+    // broker restart), drop it, reconnect once, and retry unless delivery
+    // outcome is already ambiguous.
     for attempt in 0..2_u8 {
       if self.shutting_down.load(Ordering::Acquire) {
         return Err(PublishError::ShuttingDown);
@@ -207,7 +255,7 @@ impl AmqpPrefetchPublisher {
       };
 
       if guard.is_none() {
-        let session = connect_and_declare(url.expose(), routing_key, self.op_timeout).await?;
+        let session = connect_and_declare(url.expose(), prefetch_queue, self.op_timeout).await?;
         *guard = Some(session);
       }
 
@@ -218,33 +266,23 @@ impl AmqpPrefetchPublisher {
       match publish_once(
         &session.channel,
         routing_key,
-        &payload,
+        payload,
         properties.clone(),
         self.op_timeout,
       )
       .await
       {
-        Ok(()) => {
-          if !job.is_zero_data_retention() {
-            tracing::info!(
-              module = "nuq/rabbitmq",
-              queue = queue.table_name(),
-              job_id = %job.id,
-              "NuQ job prefetch sent"
-            );
-          }
-          return Ok(());
-        }
+        Ok(()) => return Ok(()),
         Err(err) => {
           if let Some(dead) = guard.take() {
             dead.close_gracefully("error").await;
           }
-          if matches!(err, PublishError::ConfirmTimeout) {
+          if err.is_ambiguous_outcome() {
             tracing::warn!(
               module = "nuq/rabbitmq",
               queue = queue.table_name(),
               error = %err,
-              "NuQ sender publish confirm timed out; outcome is ambiguous so not retrying"
+              "NuQ sender publish timed out; delivery outcome is ambiguous so not retrying"
             );
             return Err(err);
           }
@@ -443,5 +481,14 @@ mod tests {
       props.expiration().as_ref().map(|s| s.as_str()),
       Some("50000")
     );
+  }
+
+  #[test]
+  fn classifies_ambiguous_publish_timeouts_as_non_retryable() {
+    assert!(PublishError::ConfirmTimeout.is_ambiguous_outcome());
+    assert!(PublishError::Timeout("basic_publish").is_ambiguous_outcome());
+    assert!(!PublishError::Timeout("connect").is_ambiguous_outcome());
+    assert!(!PublishError::Nacked.is_ambiguous_outcome());
+    assert!(!PublishError::Amqp("reset".to_owned()).is_ambiguous_outcome());
   }
 }

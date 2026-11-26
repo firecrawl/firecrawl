@@ -27,6 +27,34 @@ const POOL_RECYCLE_TIMEOUT: Duration = Duration::from_secs(5);
 const PREFETCH_QUERY_TIMEOUT: Duration = Duration::from_secs(30);
 const HEALTH_QUERY_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// A claimed row that could not be decoded and was transitioned to `failed`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FailedJobNotification {
+  pub id: String,
+  pub listen_channel_id: Option<String>,
+}
+
+/// Result of a single PostgreSQL prefetch query, separating valid claimed jobs
+/// from undecodable rows that were marked `failed` and any repair error.
+#[derive(Debug, Default)]
+pub struct PrefetchBatch {
+  pub jobs: Vec<NuqJob>,
+  pub failed_notifications: Vec<FailedJobNotification>,
+  pub repair_error: Option<StoreError>,
+}
+
+impl PrefetchBatch {
+  /// Wraps a plain vector of decoded jobs with no decode failures.
+  #[must_use]
+  pub fn from_jobs(jobs: Vec<NuqJob>) -> Self {
+    Self {
+      jobs,
+      failed_notifications: Vec::new(),
+      repair_error: None,
+    }
+  }
+}
+
 /// Pool occupancy snapshot matching `nuqGetLocalMetrics()` in `nuq.ts`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PoolMetrics {
@@ -130,7 +158,7 @@ impl PgStore {
   }
 
   /// Claims up to 500 queued jobs from `queue` using the Simple Query Protocol.
-  pub async fn prefetch_jobs(&self, queue: QueueKind) -> Result<Vec<NuqJob>, StoreError> {
+  pub async fn prefetch_jobs(&self, queue: QueueKind) -> Result<PrefetchBatch, StoreError> {
     let client = self
       .pool
       .get()
@@ -140,12 +168,12 @@ impl PgStore {
     let messages =
       run_simple_query_with_timeout(client, queue.prefetch_sql(), PREFETCH_QUERY_TIMEOUT).await?;
 
-    let mut jobs = Vec::new();
+    let mut batch = PrefetchBatch::default();
     let mut decode_failures: Vec<(String, String)> = Vec::new();
     for msg in messages {
       if let SimpleQueryMessage::Row(row) = msg {
         match NuqJob::from_pg_row(&row) {
-          Ok(job) => jobs.push(job),
+          Ok(job) => batch.jobs.push(job),
           Err(err) => {
             tracing::error!(
               module = "nuq",
@@ -158,6 +186,12 @@ impl PgStore {
               && is_canonical_uuid(lock)
             {
               decode_failures.push((id.to_owned(), lock.to_owned()));
+            } else {
+              batch.repair_error.get_or_insert_with(|| {
+                StoreError::Query(
+                  "undecodable prefetched row missing valid canonical UUID id/lock".to_owned(),
+                )
+              });
             }
           }
         }
@@ -165,40 +199,86 @@ impl PgStore {
     }
 
     for (id, lock) in decode_failures {
-      self.mark_decode_failed(queue, &id, &lock).await;
+      match self.mark_decode_failed(queue, &id, &lock).await {
+        Ok(Some(notification)) => batch.failed_notifications.push(notification),
+        Ok(None) => {}
+        Err(err) => {
+          tracing::warn!(
+            module = "nuq",
+            queue = queue.table_name(),
+            error = %err,
+            "Failed to mark undecodable NuQ job row failed after retry"
+          );
+          batch.repair_error.get_or_insert(err);
+        }
+      }
     }
 
-    Ok(jobs)
+    Ok(batch)
   }
 
-  /// Transitions an undecodable claimed row straight to `failed` so the lock
-  /// reaper does not repeatedly requeue a permanently corrupt row.
-  async fn mark_decode_failed(&self, queue: QueueKind, id: &str, lock: &str) {
-    let client = match self.pool.get().await {
-      Ok(client) => client,
-      Err(err) => {
-        tracing::warn!(
-          module = "nuq",
-          queue = queue.table_name(),
-          error = %err,
-          "Failed to acquire connection to mark undecodable NuQ job row failed"
-        );
-        return;
-      }
-    };
-
+  /// Transitions an undecodable claimed row straight to `failed` and emits a
+  /// PostgreSQL `pg_notify` failure signal atomically, retrying once on
+  /// transient failure and returning `listen_channel_id` for AMQP waiter alerts.
+  async fn mark_decode_failed(
+    &self,
+    queue: QueueKind,
+    id: &str,
+    lock: &str,
+  ) -> Result<Option<FailedJobNotification>, StoreError> {
+    let table = queue.table_name();
     let sql = format!(
-      "UPDATE {} SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = 'Failed to decode prefetched NuQ job row' WHERE id = '{id}'::uuid AND lock = '{lock}'::uuid;",
-      queue.table_name()
+      "WITH failed AS (\
+         UPDATE {table} \
+         SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = 'Failed to decode prefetched NuQ job row' \
+         WHERE id = '{id}'::uuid AND lock = '{lock}'::uuid \
+         RETURNING id, listen_channel_id\
+       ) \
+       SELECT f.id, f.listen_channel_id, pg_notify('{table}', f.id::text || '|failed') FROM failed f;"
     );
-    if let Err(err) = run_simple_query_with_timeout(client, &sql, HEALTH_QUERY_TIMEOUT).await {
-      tracing::warn!(
-        module = "nuq",
-        queue = queue.table_name(),
-        error = %err,
-        "Failed to mark undecodable NuQ job row failed"
-      );
+
+    let mut last_err = None;
+    for attempt in 0..2_u8 {
+      let client = match self.pool.get().await {
+        Ok(client) => client,
+        Err(err) => {
+          last_err = Some(StoreError::PoolAcquire(err.to_string()));
+          if attempt == 0 {
+            continue;
+          }
+          break;
+        }
+      };
+
+      match run_simple_query_with_timeout(client, &sql, HEALTH_QUERY_TIMEOUT).await {
+        Ok(messages) => {
+          for msg in messages {
+            if let SimpleQueryMessage::Row(row) = msg {
+              let failed_id = row.try_get("id").ok().flatten().unwrap_or(id).to_owned();
+              let listen_channel_id = row
+                .try_get("listen_channel_id")
+                .ok()
+                .flatten()
+                .filter(|v| !v.is_empty())
+                .map(str::to_owned);
+              return Ok(Some(FailedJobNotification {
+                id: failed_id,
+                listen_channel_id,
+              }));
+            }
+          }
+          return Ok(None);
+        }
+        Err(err) => {
+          last_err = Some(err);
+          if attempt == 0 {
+            continue;
+          }
+        }
+      }
     }
+
+    Err(last_err.unwrap_or_else(|| StoreError::Query("decode repair failed".to_owned())))
   }
 
   /// Executes `SELECT 1;` via the Simple Query Protocol, matching `nuqHealthCheck()`.

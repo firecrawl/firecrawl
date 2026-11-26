@@ -3,19 +3,46 @@
 //! named prepared statements (`'P'`) for PgBouncer transaction-mode safety,
 //! decodes all 12 `RETURNING` columns cleanly, and reports accurate pool metrics.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-use firecrawl_nuq_prefetch::{PgStore, QueueKind, parse_pg_connection_settings};
+use firecrawl_nuq_prefetch::{
+  FailedJobNotification, PgStore, QueueKind, StoreError, parse_pg_connection_settings,
+};
 
 #[derive(Debug, Default)]
 struct CapturedPgWire {
   application_name: Option<String>,
   queries: Vec<String>,
   saw_parse_message: bool,
+  failed_row_updates_handled: usize,
+}
+
+struct MockPgControls {
+  fail_repair_remaining: AtomicUsize,
+}
+
+fn push_error_response_and_ready(buf: &mut Vec<u8>, message: &str) {
+  let mut err_body = Vec::new();
+  err_body.push(b'S');
+  err_body.extend_from_slice(b"ERROR\0");
+  err_body.push(b'C');
+  err_body.extend_from_slice(b"XX000\0");
+  err_body.push(b'M');
+  err_body.extend_from_slice(message.as_bytes());
+  err_body.push(0);
+  err_body.push(0);
+  buf.push(b'E');
+  let len = i32::try_from(err_body.len().saturating_add(4)).unwrap_or(4);
+  buf.extend_from_slice(&len.to_be_bytes());
+  buf.extend_from_slice(&err_body);
+  buf.push(b'Z');
+  buf.extend_from_slice(&5_i32.to_be_bytes());
+  buf.push(b'I');
 }
 
 async fn write_auth_ok_and_ready(stream: &mut TcpStream) -> std::io::Result<()> {
@@ -85,7 +112,11 @@ fn push_command_complete_and_ready(buf: &mut Vec<u8>, tag: &str) {
   buf.push(b'I');
 }
 
-async fn serve_mock_pg_connection(mut stream: TcpStream, state: Arc<Mutex<CapturedPgWire>>) {
+async fn serve_mock_pg_connection(
+  mut stream: TcpStream,
+  state: Arc<Mutex<CapturedPgWire>>,
+  controls: Arc<MockPgControls>,
+) {
   let Ok(len) = stream.read_i32().await else {
     return;
   };
@@ -161,7 +192,29 @@ async fn serve_mock_pg_connection(mut stream: TcpStream, state: Arc<Mutex<Captur
           push_row_description(&mut resp, &["?column?"]);
           push_data_row(&mut resp, &[Some("1")]);
           push_command_complete_and_ready(&mut resp, "SELECT 1");
-        } else if sql.contains("nuq.queue_scrape") {
+        } else if sql.contains("SET status = 'failed'::nuq.job_status") {
+          let mut guard = state.lock().unwrap_or_else(PoisonError::into_inner);
+          guard.failed_row_updates_handled = guard.failed_row_updates_handled.saturating_add(1);
+          drop(guard);
+          let should_error = controls
+            .fail_repair_remaining
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
+            .is_ok();
+          if should_error {
+            push_error_response_and_ready(&mut resp, "simulated repair update failure");
+          } else {
+            push_row_description(&mut resp, &["id", "listen_channel_id", "pg_notify"]);
+            push_data_row(
+              &mut resp,
+              &[
+                Some("00000000-0000-0000-0000-000000000000"),
+                Some("waiter-channel-9"),
+                Some(""),
+              ],
+            );
+            push_command_complete_and_ready(&mut resp, "SELECT 1");
+          }
+        } else if sql.starts_with("WITH next AS") && sql.contains("nuq.queue_scrape") {
           push_row_description(
             &mut resp,
             &[
@@ -188,7 +241,7 @@ async fn serve_mock_pg_connection(mut stream: TcpStream, state: Arc<Mutex<Captur
               Some("0"),
               None,
               None,
-              None,
+              Some("waiter-channel-9"),
               None,
               None,
               Some("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
@@ -214,10 +267,6 @@ async fn serve_mock_pg_connection(mut stream: TcpStream, state: Arc<Mutex<Captur
             ],
           );
           push_command_complete_and_ready(&mut resp, "UPDATE 2");
-        } else if sql.starts_with("UPDATE ")
-          && sql.contains("SET status = 'failed'::nuq.job_status")
-        {
-          push_command_complete_and_ready(&mut resp, "UPDATE 1");
         } else {
           push_row_description(
             &mut resp,
@@ -258,11 +307,16 @@ async fn pg_store_uses_application_name_nuq_and_simple_query_only_for_pgbouncer_
   let Ok(addr) = addr else { return };
 
   let captured = Arc::new(Mutex::new(CapturedPgWire::default()));
+  let controls = Arc::new(MockPgControls {
+    fail_repair_remaining: AtomicUsize::new(0),
+  });
   let server_state = Arc::clone(&captured);
+  let server_controls = Arc::clone(&controls);
   let server = tokio::spawn(async move {
     while let Ok((stream, _)) = listener.accept().await {
       let conn_state = Arc::clone(&server_state);
-      tokio::spawn(serve_mock_pg_connection(stream, conn_state));
+      let conn_controls = Arc::clone(&server_controls);
+      tokio::spawn(serve_mock_pg_connection(stream, conn_state, conn_controls));
     }
   });
 
@@ -277,11 +331,21 @@ async fn pg_store_uses_application_name_nuq_and_simple_query_only_for_pgbouncer_
 
   assert_eq!(store.health_check().await.ok(), Some(true));
 
-  let scrape_jobs = store.prefetch_jobs(QueueKind::Scrape).await;
-  assert!(scrape_jobs.is_ok(), "prefetch failed: {scrape_jobs:?}");
-  let Ok(scrape_jobs) = scrape_jobs else { return };
-  assert_eq!(scrape_jobs.len(), 1);
-  if let Some(job) = scrape_jobs.first() {
+  let scrape_batch = store.prefetch_jobs(QueueKind::Scrape).await;
+  assert!(scrape_batch.is_ok(), "prefetch failed: {scrape_batch:?}");
+  let Ok(scrape_batch) = scrape_batch else {
+    return;
+  };
+  assert!(scrape_batch.repair_error.is_none());
+  assert_eq!(
+    scrape_batch.failed_notifications,
+    vec![FailedJobNotification {
+      id: "00000000-0000-0000-0000-000000000000".to_owned(),
+      listen_channel_id: Some("waiter-channel-9".to_owned()),
+    }]
+  );
+  assert_eq!(scrape_batch.jobs.len(), 1);
+  if let Some(job) = scrape_batch.jobs.first() {
     assert_eq!(job.id, "11111111-1111-1111-1111-111111111111");
     assert_eq!(job.status, "active");
     assert_eq!(job.created_at, "2026-11-26T02:00:00.987Z");
@@ -306,9 +370,9 @@ async fn pg_store_uses_application_name_nuq_and_simple_query_only_for_pgbouncer_
     assert!(job.failed_reason.is_none());
   }
 
-  let crawl_jobs = store.prefetch_jobs(QueueKind::CrawlFinished).await;
-  assert!(crawl_jobs.is_ok());
-  assert_eq!(crawl_jobs.ok().map(|v| v.len()), Some(0));
+  let crawl_batch = store.prefetch_jobs(QueueKind::CrawlFinished).await;
+  assert!(crawl_batch.is_ok());
+  assert_eq!(crawl_batch.ok().map(|b| b.jobs.len()), Some(0));
 
   let metrics = store.pool_metrics();
   assert!(metrics.total_count >= 1);
@@ -324,6 +388,7 @@ async fn pg_store_uses_application_name_nuq_and_simple_query_only_for_pgbouncer_
     !wire.saw_parse_message,
     "PgBouncer transaction mode violated: saw extended query Parse message"
   );
+  assert_eq!(wire.failed_row_updates_handled, 1);
   assert_eq!(wire.queries.len(), 4);
   assert_eq!(wire.queries.first().map(String::as_str), Some("SELECT 1;"));
   assert_eq!(
@@ -333,11 +398,58 @@ async fn pg_store_uses_application_name_nuq_and_simple_query_only_for_pgbouncer_
   assert_eq!(
     wire.queries.get(2).map(String::as_str),
     Some(
-      "UPDATE nuq.queue_scrape SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = 'Failed to decode prefetched NuQ job row' WHERE id = '00000000-0000-0000-0000-000000000000'::uuid AND lock = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid;"
+      "WITH failed AS (UPDATE nuq.queue_scrape SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = 'Failed to decode prefetched NuQ job row' WHERE id = '00000000-0000-0000-0000-000000000000'::uuid AND lock = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid RETURNING id, listen_channel_id) SELECT f.id, f.listen_channel_id, pg_notify('nuq.queue_scrape', f.id::text || '|failed') FROM failed f;"
     )
   );
   assert_eq!(
     wire.queries.get(3).map(String::as_str),
     Some(QueueKind::CrawlFinished.prefetch_sql())
   );
+}
+
+#[tokio::test]
+async fn pg_store_retries_and_propagates_decode_repair_failure_without_dropping_valid_jobs() {
+  let listener = TcpListener::bind("127.0.0.1:0").await;
+  assert!(listener.is_ok());
+  let Ok(listener) = listener else { return };
+  let addr = listener.local_addr();
+  assert!(addr.is_ok());
+  let Ok(addr) = addr else { return };
+
+  let captured = Arc::new(Mutex::new(CapturedPgWire::default()));
+  let controls = Arc::new(MockPgControls {
+    fail_repair_remaining: AtomicUsize::new(2),
+  });
+  let server_state = Arc::clone(&captured);
+  let server_controls = Arc::clone(&controls);
+  let server = tokio::spawn(async move {
+    while let Ok((stream, _)) = listener.accept().await {
+      let conn_state = Arc::clone(&server_state);
+      let conn_controls = Arc::clone(&server_controls);
+      tokio::spawn(serve_mock_pg_connection(stream, conn_state, conn_controls));
+    }
+  });
+
+  let url = format!("postgres://postgres:secret@{addr}/nuq?sslmode=disable");
+  let settings = parse_pg_connection_settings(&url);
+  assert!(settings.is_ok());
+  let Ok(settings) = settings else { return };
+  let store = PgStore::new(&settings);
+  assert!(store.is_ok());
+  let Ok(store) = store else { return };
+
+  let batch = store.prefetch_jobs(QueueKind::Scrape).await;
+  assert!(batch.is_ok());
+  let Ok(batch) = batch else { return };
+  assert_eq!(batch.jobs.len(), 1);
+  assert!(batch.failed_notifications.is_empty());
+  assert!(matches!(batch.repair_error, Some(StoreError::Query(_))));
+
+  store.close();
+  server.abort();
+
+  let wire = captured.lock().unwrap_or_else(PoisonError::into_inner);
+  // 1 initial attempt + 1 retry on repair UPDATE failure.
+  assert_eq!(wire.failed_row_updates_handled, 2);
+  assert_eq!(controls.fail_repair_remaining.load(Ordering::Acquire), 0);
 }

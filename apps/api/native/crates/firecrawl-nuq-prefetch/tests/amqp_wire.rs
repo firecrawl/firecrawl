@@ -533,6 +533,12 @@ async fn amqp_publisher_declares_quorum_queue_publishes_exact_wire_props_and_rec
   assert_eq!(controls.drop_after_publish.load(Ordering::Acquire), 0);
 
   assert!(publisher.send_job(QueueKind::Scrape, &job2).await.is_ok());
+  assert!(
+    publisher
+      .send_job_failed(QueueKind::Scrape, "job-bad", "listen-42")
+      .await
+      .is_ok()
+  );
 
   publisher.shutdown().await;
   server.abort();
@@ -552,7 +558,7 @@ async fn amqp_publisher_declares_quorum_queue_publishes_exact_wire_props_and_rec
     assert_eq!(decl.max_length, Some(20_000));
   }
 
-  assert_eq!(wire.publishes.len(), 2);
+  assert_eq!(wire.publishes.len(), 3);
   let expected_ids = ["job-001", "job-002"];
   for (pub_msg, expected_id) in wire.publishes.iter().zip(expected_ids.iter()) {
     assert_eq!(pub_msg.exchange, "");
@@ -567,6 +573,12 @@ async fn amqp_publisher_declares_quorum_queue_publishes_exact_wire_props_and_rec
       assert_eq!(decoded.id, *expected_id);
       assert_eq!(decoded.created_at, "2026-11-26T02:00:00.000Z");
     }
+  }
+  if let Some(fail_msg) = wire.publishes.get(2) {
+    assert_eq!(fail_msg.exchange, "");
+    assert_eq!(fail_msg.routing_key, "nuq.queue_scrape.listen.listen-42");
+    assert_eq!(fail_msg.correlation_id.as_deref(), Some("job-bad"));
+    assert_eq!(fail_msg.body.as_slice(), b"failed");
   }
   assert!(wire.channel_closes >= 1);
   assert!(wire.connection_closes >= 1);

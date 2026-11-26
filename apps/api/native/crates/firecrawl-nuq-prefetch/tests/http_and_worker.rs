@@ -11,9 +11,9 @@ use tracing_subscriber::layer::{Context as LayerContext, SubscriberExt};
 use tracing_subscriber::{EnvFilter, Layer};
 
 use firecrawl_nuq_prefetch::{
-  BoundHttpServer, BoxFuture, HeartbeatClient, NuqJob, PoolMetrics, PrefetchPublisher,
-  PrefetchStore, PublishError, QueueKind, StoreError, format_pool_metrics, run_prefetch_loops,
-  run_prefetch_once,
+  BoundHttpServer, BoxFuture, FailedJobNotification, HeartbeatClient, NuqJob, PoolMetrics,
+  PrefetchBatch, PrefetchPublisher, PrefetchStore, PublishError, QueueKind, StoreError,
+  format_pool_metrics, run_prefetch_loops, run_prefetch_once,
 };
 
 struct MockStore {
@@ -21,8 +21,8 @@ struct MockStore {
   health_errors: AtomicBool,
   prefetch_calls: AtomicUsize,
   metrics: Mutex<PoolMetrics>,
-  scrape_batches: Mutex<Vec<Result<Vec<NuqJob>, StoreError>>>,
-  crawl_batches: Mutex<Vec<Result<Vec<NuqJob>, StoreError>>>,
+  scrape_batches: Mutex<Vec<Result<PrefetchBatch, StoreError>>>,
+  crawl_batches: Mutex<Vec<Result<PrefetchBatch, StoreError>>>,
 }
 
 impl MockStore {
@@ -43,7 +43,7 @@ impl MockStore {
 }
 
 impl PrefetchStore for MockStore {
-  fn prefetch_jobs(&self, queue: QueueKind) -> BoxFuture<'_, Result<Vec<NuqJob>, StoreError>> {
+  fn prefetch_jobs(&self, queue: QueueKind) -> BoxFuture<'_, Result<PrefetchBatch, StoreError>> {
     Box::pin(async move {
       self.prefetch_calls.fetch_add(1, Ordering::AcqRel);
       let target = match queue {
@@ -52,7 +52,7 @@ impl PrefetchStore for MockStore {
       };
       let mut batches = target.lock().unwrap_or_else(PoisonError::into_inner);
       if batches.is_empty() {
-        Ok(Vec::new())
+        Ok(PrefetchBatch::default())
       } else {
         batches.remove(0)
       }
@@ -76,6 +76,7 @@ impl PrefetchStore for MockStore {
 struct RecordingPublisher {
   configured: bool,
   published: Mutex<Vec<(QueueKind, String)>>,
+  failed_notifications: Mutex<Vec<(QueueKind, String, String)>>,
   publish_delay: Duration,
   gate_job_id: Option<String>,
   gated_publish_started: Notify,
@@ -87,6 +88,7 @@ impl RecordingPublisher {
     Self {
       configured: true,
       published: Mutex::new(Vec::new()),
+      failed_notifications: Mutex::new(Vec::new()),
       publish_delay,
       gate_job_id: None,
       gated_publish_started: Notify::new(),
@@ -98,6 +100,7 @@ impl RecordingPublisher {
     Self {
       configured: true,
       published: Mutex::new(Vec::new()),
+      failed_notifications: Mutex::new(Vec::new()),
       publish_delay: Duration::ZERO,
       gate_job_id: Some(job_id.to_owned()),
       gated_publish_started: Notify::new(),
@@ -145,6 +148,22 @@ impl PrefetchPublisher for RecordingPublisher {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .push((queue, job.id.clone()));
+      Ok(())
+    })
+  }
+
+  fn send_job_failed<'a>(
+    &'a self,
+    queue: QueueKind,
+    job_id: &'a str,
+    listen_channel_id: &'a str,
+  ) -> BoxFuture<'a, Result<(), PublishError>> {
+    Box::pin(async move {
+      self
+        .failed_notifications
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push((queue, job_id.to_owned(), listen_channel_id.to_owned()));
       Ok(())
     })
   }
@@ -321,12 +340,59 @@ async fn unconfigured_publisher_skips_claiming_jobs_from_postgres() {
       .scrape_batches
       .lock()
       .unwrap_or_else(PoisonError::into_inner);
-    scrape.push(Ok(vec![sample_job("should-not-claim", false)]));
+    scrape.push(Ok(PrefetchBatch::from_jobs(vec![sample_job(
+      "should-not-claim",
+      false,
+    )])));
   }
   let publisher = RecordingPublisher::unconfigured();
   let res = run_prefetch_once(QueueKind::Scrape, &store, &publisher).await;
   assert_eq!(res, Ok(0));
   assert_eq!(store.prefetch_calls.load(Ordering::Acquire), 0);
+}
+
+#[tokio::test]
+async fn run_prefetch_once_notifies_failed_waiters_and_propagates_repair_errors() {
+  let store = MockStore::new();
+  {
+    let mut scrape = store
+      .scrape_batches
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner);
+    scrape.push(Ok(PrefetchBatch {
+      jobs: vec![sample_job("valid-1", false)],
+      failed_notifications: vec![FailedJobNotification {
+        id: "corrupt-1".to_owned(),
+        listen_channel_id: Some("chan-7".to_owned()),
+      }],
+      repair_error: Some(StoreError::Query("repair update failed".to_owned())),
+    }));
+  }
+
+  let publisher = RecordingPublisher::new(Duration::ZERO);
+  let res = run_prefetch_once(QueueKind::Scrape, &store, &publisher).await;
+  // Valid job still publishes and repaired waiter still gets notified before propagating repair error.
+  assert!(res.is_err());
+  assert_eq!(
+    publisher
+      .published
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner)
+      .as_slice(),
+    &[(QueueKind::Scrape, "valid-1".to_owned())]
+  );
+  assert_eq!(
+    publisher
+      .failed_notifications
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner)
+      .as_slice(),
+    &[(
+      QueueKind::Scrape,
+      "corrupt-1".to_owned(),
+      "chan-7".to_owned()
+    )]
+  );
 }
 
 #[tokio::test]
@@ -338,17 +404,19 @@ async fn prefetch_loops_run_both_queues_with_nonblocking_heartbeat_and_finish_in
       .lock()
       .unwrap_or_else(PoisonError::into_inner);
     scrape.push(Err(StoreError::Query("transient blip".to_owned())));
-    scrape.push(Ok(vec![
+    scrape.push(Ok(PrefetchBatch::from_jobs(vec![
       sample_job("scrape-1", false),
       sample_job("scrape-2", true),
-    ]));
+    ])));
   }
   {
     let mut crawl = store
       .crawl_batches
       .lock()
       .unwrap_or_else(PoisonError::into_inner);
-    crawl.push(Ok(vec![sample_job("crawl-1", false)]));
+    crawl.push(Ok(PrefetchBatch::from_jobs(vec![sample_job(
+      "crawl-1", false,
+    )])));
   }
 
   let publisher = Arc::new(RecordingPublisher::gated_on("scrape-1"));
@@ -475,10 +543,10 @@ async fn zdr_layer_suppresses_logs_for_zdr_jobs_and_emits_for_normal_jobs() {
       .scrape_batches
       .lock()
       .unwrap_or_else(PoisonError::into_inner);
-    scrape.push(Ok(vec![
+    scrape.push(Ok(PrefetchBatch::from_jobs(vec![
       sample_job("normal-job-id", false),
       sample_job("zdr-job-id", true),
-    ]));
+    ])));
   }
   let publisher = RecordingPublisher::new(Duration::ZERO);
   let captured: CapturedEvents = Arc::new(Mutex::new(Vec::new()));
