@@ -208,28 +208,42 @@ pub(crate) fn is_pdf_extension_hint(request: &ParseRawDocumentRequest) -> bool {
   path.ends_with(".pdf") || path.contains(".pdf/")
 }
 
+fn declared_ext_matches_format(declared_ext: &str, detected: anydoc::Format) -> bool {
+  match detected {
+    anydoc::Format::Docx => matches!(declared_ext, "docx" | "docm"),
+    anydoc::Format::Excel => matches!(declared_ext, "xlsx" | "xlsm" | "xlsb" | "xls"),
+    anydoc::Format::Pptx => matches!(declared_ext, "pptx" | "pptm"),
+    other => declared_ext == extension_for_anydoc_format(other),
+  }
+}
+
 pub(crate) fn resolve_document_content_type(
   raw_ct: Option<&str>,
   detected: Option<anydoc::Format>,
   ext_hint: Option<&str>,
 ) -> String {
-  if let Some(ct) = raw_ct.map(str::trim).filter(|s| !s.is_empty()) {
+  let trimmed_ct = raw_ct.map(str::trim).filter(|s| !s.is_empty());
+  if let Some(fmt) = detected {
+    if let Some(ct) = trimmed_ct {
+      let mt = media_type(ct);
+      if document_extension_from_media_type(&mt)
+        .is_some_and(|declared_ext| declared_ext_matches_format(declared_ext, fmt))
+      {
+        return ct.to_string();
+      }
+    }
+    return content_type_for_anydoc_format(fmt).to_string();
+  }
+  if let Some(ct) = trimmed_ct {
     let mt = media_type(ct);
     if document_extension_from_media_type(&mt).is_some() {
       return ct.to_string();
     }
   }
-  if let Some(fmt) = detected {
-    return content_type_for_anydoc_format(fmt).to_string();
-  }
   if let Some(ct) = ext_hint.and_then(document_content_type_for_extension) {
     return ct.to_string();
   }
-  raw_ct
-    .map(str::trim)
-    .filter(|s| !s.is_empty())
-    .unwrap_or("application/octet-stream")
-    .to_string()
+  trimmed_ct.unwrap_or("application/octet-stream").to_string()
 }
 
 pub(crate) fn infer_text_content_type(bytes: &[u8], request: &ParseRawDocumentRequest) -> String {
@@ -239,7 +253,10 @@ pub(crate) fn infer_text_content_type(bytes: &[u8], request: &ParseRawDocumentRe
     .map(str::trim)
     .filter(|s| !s.is_empty())
   {
-    return ct.to_string();
+    let mt = media_type(ct);
+    if mt != "application/octet-stream" && mt != "binary/octet-stream" {
+      return ct.to_string();
+    }
   }
   let ext = request
     .extension_hint
@@ -264,8 +281,14 @@ pub(crate) fn infer_text_content_type(bytes: &[u8], request: &ParseRawDocumentRe
     return (*ct).to_string();
   }
   let head = bytes.get(..bytes.len().min(512)).unwrap_or(bytes);
-  let trimmed = String::from_utf8_lossy(head);
-  let start = trimmed.trim_start().to_ascii_lowercase();
+  let decoded = match encoding_rs::Encoding::for_bom(head) {
+    Some((enc, bom_len)) => enc.decode(head.get(bom_len..).unwrap_or_default()).0,
+    None => String::from_utf8_lossy(head),
+  };
+  let start = decoded
+    .trim_start_matches('﻿')
+    .trim_start()
+    .to_ascii_lowercase();
   if start.starts_with("<!doctype html") || start.starts_with("<html") {
     return "text/html".to_string();
   }

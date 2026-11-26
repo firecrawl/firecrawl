@@ -10,11 +10,10 @@ use tracing::Span;
 use crate::document::convert_document_bytes_to_markdown;
 use crate::fallback::parse_fallback_bytes;
 use crate::formats::{
-  content_type_for_anydoc_format, document_extension_from_media_type, extension_for_anydoc_format,
-  infer_text_content_type, media_type, resolve_document_content_type,
-  resolve_document_extension_hint,
+  document_extension_from_media_type, extension_for_anydoc_format, infer_text_content_type,
+  media_type, resolve_document_content_type, resolve_document_extension_hint,
 };
-use crate::magic::sniff_unsupported_binary_magic;
+use crate::magic::{RTF_MAGIC, sniff_pdf_bytes, sniff_unsupported_binary_magic};
 use crate::pdf_local::parse_pdf_bytes;
 use crate::sniff::{SniffOutcome, sniff_document};
 
@@ -99,6 +98,31 @@ fn parse_office_document(
 }
 
 fn raw_base64_content_type(raw_bytes: &[u8], request: &ParseRawDocumentRequest) -> String {
+  // Inspect unambiguous byte signatures before honoring declared headers so
+  // mislabeled binaries (e.g. a PDF served as text/plain) retain their real MIME.
+  if raw_bytes.starts_with(RTF_MAGIC) {
+    return resolve_document_content_type(
+      request.content_type.as_deref(),
+      Some(anydoc::Format::Rtf),
+      Some("rtf"),
+    );
+  }
+  if let Some(fmt) = anydoc::Format::from_bytes(raw_bytes) {
+    if fmt == anydoc::Format::Pdf {
+      return "application/pdf".to_string();
+    }
+    return resolve_document_content_type(
+      request.content_type.as_deref(),
+      Some(fmt),
+      Some(extension_for_anydoc_format(fmt)),
+    );
+  }
+  if sniff_pdf_bytes(raw_bytes) {
+    return "application/pdf".to_string();
+  }
+  if let Some(mime) = sniff_unsupported_binary_magic(raw_bytes) {
+    return mime.to_string();
+  }
   if let Some(ct) = request
     .content_type
     .as_deref()
@@ -106,12 +130,6 @@ fn raw_base64_content_type(raw_bytes: &[u8], request: &ParseRawDocumentRequest) 
     .filter(|s| !s.is_empty())
   {
     return ct.to_string();
-  }
-  if let Some(fmt) = anydoc::Format::from_bytes(raw_bytes) {
-    return content_type_for_anydoc_format(fmt).to_string();
-  }
-  if let Some(mime) = sniff_unsupported_binary_magic(raw_bytes) {
-    return mime.to_string();
   }
   "application/octet-stream".to_string()
 }
@@ -160,6 +178,15 @@ fn dispatch_override(
 /// Sniffs magic bytes, Content-Type, and filename/extension hints, enforces
 /// `maxFileSizeBytes`, and parses raw document bytes through the open-source
 /// local parser pipeline (`pdf`, `document`, `fallback`, or `rawBase64`).
+///
+/// Parser selection policy:
+/// - `parser_override` forces a specific parser directly.
+/// - `parsers: ["rawBase64"]` returns raw base64 without running content parsers.
+/// - `CoreParsers::default()` contains only `[Pdf]` to match the API's `parsers`
+///   schema, so `Document` and `Fallback` remain implicitly enabled for Office
+///   and text inputs while `parsers` controls whether PDF parsing runs (passing
+///   `parsers: []` disables PDF parsing and returns `rawBase64`) and carries
+///   `CorePdfParserOptions`.
 #[tracing::instrument(
   name = "firecrawl_parsers::parse_raw_document",
   skip(raw_bytes, request),

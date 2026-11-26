@@ -89,8 +89,9 @@ fn is_unsupported_binary_content_type(mt: &str) -> bool {
     .any(|prefix| mt.starts_with(prefix))
 }
 
-/// Classifies raw document bytes using magic bytes, Content-Type, filename,
-/// extension hint, and URL path.
+/// Classifies raw document bytes by inspecting unambiguous byte signatures
+/// first, then falling back to Content-Type, filename, extension hint, and URL
+/// path.
 pub(crate) fn sniff_document(bytes: &[u8], request: &ParseRawDocumentRequest) -> SniffOutcome {
   let raw_ct = request.content_type.as_deref();
   let mt = raw_ct.map(media_type).unwrap_or_default();
@@ -98,8 +99,8 @@ pub(crate) fn sniff_document(bytes: &[u8], request: &ParseRawDocumentRequest) ->
   let hint_ext = resolve_document_extension_hint(request);
   let is_text_ct = is_explicit_text_media_type(&mt);
 
-  // Container signatures run before the PDF scan so an OOXML/ODF package
-  // holding an embedded PDF keeps its outer document classification.
+  // 1. Unambiguous document container magic runs before PDF scanning so an
+  // OOXML/ODF package holding an embedded PDF keeps its outer document type.
   if bytes.starts_with(RTF_MAGIC) {
     let ct = resolve_document_content_type(raw_ct, Some(anydoc::Format::Rtf), Some("rtf"));
     return SniffOutcome::Document {
@@ -122,9 +123,8 @@ pub(crate) fn sniff_document(bytes: &[u8], request: &ParseRawDocumentRequest) ->
     };
   }
   if bytes.starts_with(ZIP_LOCAL_HEADER) {
-    if ZIP_ARCHIVE_MEDIA_TYPES.contains(&mt.as_str()) && hint_ext.is_none() {
-      return SniffOutcome::UnsupportedBinary { reason: mt };
-    }
+    // Inspect ZIP entries first so DOCX/XLSX/PPTX/ODF/EPUB served with
+    // Content-Type: application/zip is still recognized by its inner structure.
     if let Some(fmt) = anydoc::Format::from_bytes(bytes).filter(|f| *f != anydoc::Format::Pdf) {
       let ext = Some(extension_for_anydoc_format(fmt).to_string());
       let ct = resolve_document_content_type(raw_ct, Some(fmt), ext.as_deref());
@@ -133,6 +133,9 @@ pub(crate) fn sniff_document(bytes: &[u8], request: &ParseRawDocumentRequest) ->
         extension_hint: ext,
         content_type: ct,
       };
+    }
+    if ZIP_ARCHIVE_MEDIA_TYPES.contains(&mt.as_str()) && hint_ext.is_none() {
+      return SniffOutcome::UnsupportedBinary { reason: mt };
     }
     if ct_doc_ext.is_some() || hint_ext.is_some() {
       let ext = ct_doc_ext.map(str::to_string).or(hint_ext);
@@ -151,19 +154,23 @@ pub(crate) fn sniff_document(bytes: &[u8], request: &ParseRawDocumentRequest) ->
     return SniffOutcome::UnsupportedBinary { reason };
   }
 
-  if mt == "application/pdf" {
-    return SniffOutcome::Pdf {
-      signal: "content_type",
-    };
-  }
+  // 2. Remaining unambiguous magic signatures run before trusting Content-Type
+  // headers so mislabeled PDFs or binaries are never routed to the wrong parser.
   if sniff_pdf_bytes(bytes) {
     return SniffOutcome::Pdf {
       signal: "magic:pdf",
     };
   }
-  if is_pdf_extension_hint(request) && !is_text_ct {
+  if let Some(mime) = sniff_unsupported_binary_magic(bytes) {
+    return SniffOutcome::UnsupportedBinary {
+      reason: mime.to_string(),
+    };
+  }
+
+  // 3. Declared Content-Type headers when bytes had no definitive signature.
+  if mt == "application/pdf" {
     return SniffOutcome::Pdf {
-      signal: "extension",
+      signal: "content_type",
     };
   }
   if let Some(ext) = ct_doc_ext {
@@ -176,9 +183,11 @@ pub(crate) fn sniff_document(bytes: &[u8], request: &ParseRawDocumentRequest) ->
   if is_unsupported_binary_content_type(&mt) {
     return SniffOutcome::UnsupportedBinary { reason: mt };
   }
-  if !is_text_ct && let Some(mime) = sniff_unsupported_binary_magic(bytes) {
-    return SniffOutcome::UnsupportedBinary {
-      reason: mime.to_string(),
+
+  // 4. Filename, extension_hint, and URL path hints.
+  if is_pdf_extension_hint(request) && !is_text_ct {
+    return SniffOutcome::Pdf {
+      signal: "extension",
     };
   }
   if let Some(ext) = hint_ext {

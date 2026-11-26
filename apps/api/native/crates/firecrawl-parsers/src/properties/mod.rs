@@ -12,6 +12,7 @@ use hegel::{
 use crate::parse_raw_document;
 
 mod contracts;
+mod edge_cases;
 mod office;
 
 const URLS: &[&str] = &[

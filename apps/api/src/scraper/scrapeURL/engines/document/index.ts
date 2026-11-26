@@ -89,25 +89,19 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
       response = result.response;
       buffer = result.buffer;
 
-      // Validate content type only when fetching directly (not using prefetch)
+      // Validate content type before parsing on the legacy path; when native
+      // sniffing is enabled, defer rejection until parseRawDocument inspects
+      // the bytes so mislabeled direct downloads (e.g. application/octet-stream)
+      // still parse while HTML antibot pages keep their existing fallback.
       const ct = response.headers.get("Content-Type");
-      if (ct && documentExtensionFromContentType(ct) === null) {
-        // The server declared a non-document type and nothing asked for a
-        // document (no `document` flag means neither a document URL extension nor
-        // a caller-requested format), so this engine is just the tail of the
-        // stealth fallback list running against an ordinary HTML page.
-        //
-        // Escalating here is unrecoverable: DocumentAntibotError's remedy is to
-        // clear the `document` flag and re-run the waterfall, which is a no-op
-        // when the flag was never set, so the next attempt fetches the same page,
-        // raises the same error, and burns attempts until SCRAPE_MAX_ATTEMPTS.
-        // Fail this engine instead and let the waterfall move on. Mirrors the pdf
-        // engine's guard, which is why pdf never developed this loop.
+      if (
+        !config.RUST_PARSE_RAW_DOCUMENT_ENABLED &&
+        ct &&
+        documentExtensionFromContentType(ct) === null
+      ) {
         if (!meta.featureFlags.has("document")) {
           throw new EngineUnsuccessfulError("document");
         }
-
-        // if downloaded file wasn't a valid document, throw antibot error
         throw new DocumentAntibotError();
       }
     }
@@ -150,6 +144,18 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
           JSON.stringify(callContext),
         );
       } catch (error) {
+        const isDirectFetch =
+          meta.documentPrefetch === undefined || meta.documentPrefetch === null;
+        if (
+          isDirectFetch &&
+          rawContentType &&
+          documentExtensionFromContentType(rawContentType) === null
+        ) {
+          if (!meta.featureFlags.has("document")) {
+            throw new EngineUnsuccessfulError("document");
+          }
+          throw new DocumentAntibotError();
+        }
         const unsupported = decodeNativeUnsupportedError(error);
         if (unsupported) {
           throw unsupported;
@@ -174,10 +180,12 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
           ? { rawBase64: parsed.rawBase64 }
           : {}),
         contentType:
+          (parsed.contentType && parsed.contentType.trim().length > 0
+            ? parsed.contentType
+            : null) ??
           (rawContentType && rawContentType.trim().length > 0
             ? rawContentType
             : null) ??
-          parsed.contentType ??
           (extension ? documentContentTypeFromExtension(extension) : null) ??
           "application/octet-stream",
         proxyUsed,

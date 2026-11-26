@@ -1,6 +1,7 @@
 //! Local PDF inspection and text extraction via `pdf-inspector`.
 
-use std::sync::LazyLock;
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::{Condvar, LazyLock, Mutex};
 
 use base64::Engine;
 use firecrawl_core_types::parsers::MAX_PDF_PAGES;
@@ -31,6 +32,50 @@ static PDF_POOL_THREADS: LazyLock<usize> = LazyLock::new(|| {
     .max(1)
 });
 
+/// Process-wide semaphore capping simultaneous local PDF extractions to
+/// `PDF_EXTRACTION_CONCURRENCY` so concurrent calls cannot spawn unbounded
+/// Rayon pools or retain unbounded parsed PDFs in memory.
+struct PdfConcurrencyGate {
+  active: Mutex<usize>,
+  available: Condvar,
+}
+
+static PDF_CONCURRENCY_GATE: LazyLock<PdfConcurrencyGate> = LazyLock::new(|| PdfConcurrencyGate {
+  active: Mutex::new(0),
+  available: Condvar::new(),
+});
+
+struct PdfPermit;
+
+impl PdfPermit {
+  fn acquire() -> Self {
+    let limit = *PDF_EXTRACTION_CONCURRENCY;
+    let mut guard = PDF_CONCURRENCY_GATE
+      .active
+      .lock()
+      .unwrap_or_else(|poisoned| poisoned.into_inner());
+    while *guard >= limit {
+      guard = PDF_CONCURRENCY_GATE
+        .available
+        .wait(guard)
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    }
+    *guard = guard.saturating_add(1);
+    Self
+  }
+}
+
+impl Drop for PdfPermit {
+  fn drop(&mut self) {
+    let mut guard = PDF_CONCURRENCY_GATE
+      .active
+      .lock()
+      .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *guard = guard.saturating_sub(1);
+    PDF_CONCURRENCY_GATE.available.notify_one();
+  }
+}
+
 fn map_pdf_type(pdf_type: PdfType) -> CorePdfType {
   match pdf_type {
     PdfType::TextBased => CorePdfType::TextBased,
@@ -40,13 +85,15 @@ fn map_pdf_type(pdf_type: PdfType) -> CorePdfType {
   }
 }
 
-/// Runs `f` on a scoped rayon thread pool whose worker threads inherit the
-/// caller's active tracing subscriber dispatch and current span so ZDR
-/// suppression and panic withholding remain active across rayon workers.
+/// Runs `f` under the process-wide concurrency cap on a scoped rayon thread
+/// pool whose worker threads inherit the caller's active tracing subscriber
+/// dispatch and current span so ZDR suppression remains active across rayon
+/// workers, converting any downstream panic into a structured parse error.
 fn run_on_scoped_pdf_pool<R: Send>(f: impl FnOnce() -> R + Send) -> Result<R, CoreNativeError> {
+  let _permit = PdfPermit::acquire();
   let span = Span::current();
   let dispatch = tracing::dispatcher::get_default(Dispatch::clone);
-  rayon::ThreadPoolBuilder::new()
+  let outcome = rayon::ThreadPoolBuilder::new()
     .num_threads(*PDF_POOL_THREADS)
     .build_scoped(
       |thread| {
@@ -55,11 +102,16 @@ fn run_on_scoped_pdf_pool<R: Send>(f: impl FnOnce() -> R + Send) -> Result<R, Co
           thread.run();
         });
       },
-      |pool| pool.install(f),
+      |pool| catch_unwind(AssertUnwindSafe(|| pool.install(f))),
     )
     .map_err(|err| CoreNativeError::Internal {
       message: format!("failed to build PDF worker pool: {err}"),
-    })
+    })?;
+
+  outcome.map_err(|_| CoreNativeError::DocumentParse {
+    parser: CoreParserKind::Pdf,
+    message: "PDF parser panicked while processing malformed input".to_string(),
+  })
 }
 
 fn map_pdf_error(err: PdfError) -> CoreNativeError {
@@ -98,7 +150,7 @@ pub(crate) fn parse_pdf_bytes(
     });
   }
 
-  // Fast-reject non-PDF buffers before building a scoped rayon pool.
+  // Fast-reject non-PDF buffers before acquiring a permit or building a pool.
   if !sniff_pdf_bytes(raw_bytes) {
     return Err(CoreNativeError::UnsupportedFile {
       reason: "Not a valid PDF: missing %PDF- header".to_string(),

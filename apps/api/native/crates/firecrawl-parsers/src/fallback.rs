@@ -44,16 +44,19 @@ pub(crate) fn deduce_encoding(bytes: &[u8], content_type: &str) -> &'static Enco
   {
     return encoding;
   }
-  let head = bytes
-    .get(..bytes.len().min(META_CHARSET_SNIFF_LIMIT))
-    .unwrap_or(bytes);
-  if let Some(encoding) = META_CHARSET_RE
-    .as_ref()
-    .and_then(|re| re.captures(head))
-    .and_then(|caps| caps.get(1))
-    .and_then(|m| Encoding::for_label(m.as_bytes()))
-  {
-    return encoding;
+  let mt = media_type(content_type);
+  if mt == "text/html" || mt == "application/xhtml+xml" {
+    let head = bytes
+      .get(..bytes.len().min(META_CHARSET_SNIFF_LIMIT))
+      .unwrap_or(bytes);
+    if let Some(encoding) = META_CHARSET_RE
+      .as_ref()
+      .and_then(|re| re.captures(head))
+      .and_then(|caps| caps.get(1))
+      .and_then(|m| Encoding::for_label(m.as_bytes()))
+    {
+      return encoding;
+    }
   }
   UTF_8
 }

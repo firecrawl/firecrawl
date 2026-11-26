@@ -8,6 +8,7 @@ const ZIP_EMPTY_ARCHIVE: &[u8] = b"PK\x05\x06";
 const ZIP_SPANNED_ARCHIVE: &[u8] = b"PK\x07\x08";
 pub(crate) const OLE2_SIGNATURE: &[u8] = &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
 const BINARY_SNIFF_LIMIT: usize = 8192;
+const EBML_DOCTYPE_PROBE_LIMIT: usize = 64;
 
 /// Checks for the `%PDF-` header starting within the first 1024 bytes, matching
 /// `pdf-inspector`'s header probe window.
@@ -23,6 +24,63 @@ pub(crate) fn sniff_pdf_bytes(bytes: &[u8]) -> bool {
   })
 }
 
+fn sniff_iso_bmff(bytes: &[u8]) -> Option<&'static str> {
+  if bytes.len() < 12 || bytes.get(4..8) != Some(b"ftyp") {
+    return None;
+  }
+  // Box size is a big-endian u32; valid ftyp headers are small (< 64 KiB).
+  if bytes.get(0..2) != Some(&[0, 0]) {
+    return None;
+  }
+  match bytes.get(8..12) {
+    Some(b"avif" | b"avis") => Some("image/avif"),
+    Some(b"heic" | b"heix" | b"hevc" | b"hevx" | b"heim" | b"heis" | b"mif1" | b"msf1") => {
+      Some("image/heif")
+    }
+    Some(b"qt  ") => Some("video/quicktime"),
+    Some(b"M4A " | b"M4B " | b"M4P ") => Some("audio/mp4"),
+    Some(b"3gp4" | b"3gp5" | b"3gp6" | b"3gp7" | b"3gp8" | b"3gp9" | b"3g2a") => Some("video/3gpp"),
+    Some(
+      b"isom" | b"iso2" | b"iso5" | b"iso6" | b"mp41" | b"mp42" | b"M4V " | b"avc1" | b"dash",
+    ) => Some("video/mp4"),
+    Some(_) => Some("application/octet-stream"),
+    None => None,
+  }
+}
+
+fn sniff_ebml(bytes: &[u8]) -> Option<&'static str> {
+  if !bytes.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
+    return None;
+  }
+  let window = bytes
+    .get(..bytes.len().min(EBML_DOCTYPE_PROBE_LIMIT))
+    .unwrap_or(bytes);
+  // Look for EBML DocType element ID (0x42 0x82) followed by a 1-byte VINT size.
+  for idx in 0..window.len().saturating_sub(3) {
+    if window.get(idx..idx.saturating_add(2)) != Some(&[0x42, 0x82]) {
+      continue;
+    }
+    let Some(&vint) = window.get(idx.saturating_add(2)) else {
+      break;
+    };
+    if (vint & 0x80) == 0 {
+      continue;
+    }
+    let len = usize::from(vint & 0x7F);
+    let start = idx.saturating_add(3);
+    let end = start.saturating_add(len);
+    if let Some(doc_type) = window.get(start..end) {
+      if doc_type == b"webm" {
+        return Some("video/webm");
+      }
+      if doc_type == b"matroska" {
+        return Some("video/x-matroska");
+      }
+    }
+  }
+  Some("application/octet-stream")
+}
+
 /// Detects unambiguous binary formats by magic header (excluding PDF, RTF, OLE2,
 /// and OOXML/ODF/EPUB ZIP containers which are checked beforehand).
 pub(crate) fn sniff_unsupported_binary_magic(bytes: &[u8]) -> Option<&'static str> {
@@ -32,10 +90,25 @@ pub(crate) fn sniff_unsupported_binary_magic(bytes: &[u8]) -> Option<&'static st
   if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
     return Some("image/jpeg");
   }
-  if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
-    return Some("image/gif");
+  if (bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"))
+    && let Some(&[w0, w1, h0, h1]) = bytes.get(6..10)
+  {
+    let w = u16::from_le_bytes([w0, w1]);
+    let h = u16::from_le_bytes([h0, h1]);
+    let has_binary_framing = [w0, w1, h0, h1].contains(&0)
+      || bytes
+        .get(10..)
+        .is_some_and(|rest| rest.iter().any(|&b| b == 0 || b >= 0x80));
+    if w > 0 && h > 0 && has_binary_framing {
+      return Some("image/gif");
+    }
   }
-  if bytes.starts_with(b"RIFF") {
+  if bytes.starts_with(b"RIFF")
+    && bytes.len() >= 12
+    && bytes
+      .get(4..8)
+      .is_some_and(|sz| sz.iter().any(|&b| !(0x20..0x7F).contains(&b)))
+  {
     match bytes.get(8..12) {
       Some(b"WEBP") => return Some("image/webp"),
       Some(b"WAVE") => return Some("audio/wav"),
@@ -52,18 +125,19 @@ pub(crate) fn sniff_unsupported_binary_magic(bytes: &[u8]) -> Option<&'static st
   if bytes.starts_with(b"BM") && bytes.len() >= 14 && bytes.get(6..10) == Some(&[0, 0, 0, 0]) {
     return Some("image/bmp");
   }
-  if bytes.get(4..8) == Some(b"ftyp") {
-    return match bytes.get(8..12) {
-      Some(b"avif" | b"avis") => Some("image/avif"),
-      Some(b"heic" | b"heix" | b"mif1" | b"msf1") => Some("image/heif"),
-      Some(_) => Some("video/mp4"),
-      None => None,
-    };
+  if let Some(mime) = sniff_iso_bmff(bytes) {
+    return Some(mime);
   }
   if bytes.starts_with(&[0x1F, 0x8B, 0x08]) {
     return Some("application/gzip");
   }
-  if bytes.starts_with(b"BZh") && bytes.get(3).is_some_and(|b| (b'1'..=b'9').contains(b)) {
+  if bytes.starts_with(b"BZh")
+    && bytes.get(3).is_some_and(|b| (b'1'..=b'9').contains(b))
+    && matches!(
+      bytes.get(4..10),
+      Some(&[0x31, 0x41, 0x59, 0x26, 0x53, 0x59] | &[0x17, 0x72, 0x45, 0x38, 0x50, 0x90])
+    )
+  {
     return Some("application/x-bzip2");
   }
   if bytes.starts_with(&[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]) {
@@ -78,7 +152,9 @@ pub(crate) fn sniff_unsupported_binary_magic(bytes: &[u8]) -> Option<&'static st
   if bytes.starts_with(&[0x52, 0x61, 0x72, 0x21, 0x1A, 0x07]) {
     return Some("application/x-rar-compressed");
   }
-  if bytes.get(257..262) == Some(b"ustar") {
+  if bytes.get(257..262) == Some(b"ustar")
+    && matches!(bytes.get(262..264), Some(&[0x00, b'0'] | b"  "))
+  {
     return Some("application/x-tar");
   }
   if bytes.starts_with(b"\x7fELF")
@@ -96,20 +172,26 @@ pub(crate) fn sniff_unsupported_binary_magic(bytes: &[u8]) -> Option<&'static st
   if bytes.starts_with(b"SQLite format 3\0") {
     return Some("application/vnd.sqlite3");
   }
-  if bytes.starts_with(b"OggS") {
+  if bytes.starts_with(b"OggS") && bytes.len() >= 28 && bytes.get(4) == Some(&0) {
     return Some("audio/ogg");
   }
-  if bytes.starts_with(b"fLaC") {
+  if bytes.starts_with(b"fLaC")
+    && bytes.len() >= 8
+    && bytes.get(4).is_some_and(|b| (*b & 0x7F) == 0)
+  {
     return Some("audio/flac");
   }
-  if bytes.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
-    return Some("video/webm");
+  if let Some(mime) = sniff_ebml(bytes) {
+    return Some(mime);
   }
   if bytes.starts_with(b"ID3")
     && bytes.len() >= 10
-    && bytes.get(3).is_some_and(|b| *b < 0xFF)
+    && bytes.get(3).is_some_and(|b| (2..=4).contains(b))
     && bytes.get(4).is_some_and(|b| *b < 0xFF)
     && bytes.get(5).is_some_and(|b| (b & 0x0F) == 0)
+    && bytes
+      .get(6..10)
+      .is_some_and(|sz| sz.iter().all(|b| *b < 0x80))
   {
     return Some("audio/mpeg");
   }
