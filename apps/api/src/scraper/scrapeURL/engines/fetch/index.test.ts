@@ -243,4 +243,70 @@ describe("scrapeURLWithFetch binary and size guards", () => {
     expect(res.html).toBe(html);
     expect(res.contentType).toBe("text/html; charset=utf-8");
   });
+
+  it("cancels .msi OLE2 installers and explicit installer MIME responses on the first chunk while returning UTF-8 text served as application/octet-stream", async () => {
+    let msiCancelled = false;
+    const msiPrefix = Buffer.concat([
+      Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
+      Buffer.alloc(1024, 0x00),
+    ]);
+    fetchMock.mockResolvedValueOnce(
+      makeStreamingResponse({
+        url: "https://cdn.example.com/AgentInstaller-2.4.0.msi",
+        headers: {
+          "content-type": "application/octet-stream",
+          "content-length": "180000000",
+        },
+        firstChunk: msiPrefix,
+        onNextPull: () => {
+          throw new Error("should not pull remaining MSI chunks");
+        },
+        onCancel: () => {
+          msiCancelled = true;
+        },
+      }),
+    );
+    await expect(
+      scrapeURLWithFetch(makeMeta("https://example.com/download-msi")),
+    ).rejects.toBeInstanceOf(UnsupportedFileError);
+    expect(msiCancelled).toBe(true);
+
+    let mimeOnlyCancelled = false;
+    fetchMock.mockResolvedValueOnce(
+      makeStreamingResponse({
+        url: "https://cdn.example.com/download",
+        headers: {
+          "content-type": "application/x-msdownload",
+        },
+        firstChunk: Buffer.from("#!/bin/sh\necho installer\n".padEnd(600, "a")),
+        onNextPull: () => {
+          throw new Error("should cancel based on installer MIME type alone");
+        },
+        onCancel: () => {
+          mimeOnlyCancelled = true;
+        },
+      }),
+    );
+    await expect(
+      scrapeURLWithFetch(makeMeta("https://cdn.example.com/download")),
+    ).rejects.toBeInstanceOf(UnsupportedFileError);
+    expect(mimeOnlyCancelled).toBe(true);
+
+    const s3Text =
+      '<?xml version="1.0" encoding="UTF-8"?>\n<urlset><url><loc>https://example.com/blog</loc></url></urlset>';
+    fetchMock.mockResolvedValueOnce(
+      makeStreamingResponse({
+        url: "https://s3.example.com/sitemap.xml",
+        headers: {
+          "content-type": "application/octet-stream",
+        },
+        firstChunk: Buffer.from(s3Text, "utf8"),
+      }),
+    );
+    const ok = await scrapeURLWithFetch(
+      makeMeta("https://s3.example.com/sitemap.xml"),
+    );
+    expect(ok.statusCode).toBe(200);
+    expect(ok.html).toBe(s3Text);
+  });
 });

@@ -11,14 +11,18 @@ import {
   DocumentAntibotError,
   DocumentFetchProxyError,
   EngineUnsuccessfulError,
+  UnsupportedFileError,
 } from "../../error";
 import {
   documentContentTypeFromExtension,
   documentExtensionFromContentType,
   documentExtensionFromUrlPath,
 } from "../../../../lib/document-formats";
-import { readFile, unlink } from "node:fs/promises";
+import { readFile, stat, unlink } from "node:fs/promises";
 import { hasFilePrefetchEngine } from "../utils/specialtyHandler";
+import { MAX_GUNZIPPED_FILE_SIZE } from "../utils/gunzip";
+
+export const DOCUMENT_MAX_FILE_BYTES = MAX_GUNZIPPED_FILE_SIZE;
 
 export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
   // When an enabled engine prefetches files via browser handoff, this engine
@@ -51,6 +55,10 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
     if (meta.documentPrefetch !== undefined && meta.documentPrefetch !== null) {
       // Use prefetched document
       tempFilePath = meta.documentPrefetch.filePath;
+      const prefetchedStat = await stat(tempFilePath);
+      if (prefetchedStat.size > DOCUMENT_MAX_FILE_BYTES) {
+        throw new UnsupportedFileError("File exceeds size limit");
+      }
       buffer = await readFile(tempFilePath);
 
       // Create a mock response object with content-type from prefetch
@@ -76,6 +84,7 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
             headers: meta.options.headers,
             signal: meta.abort.asSignal(),
           },
+          DOCUMENT_MAX_FILE_BYTES,
         ),
       );
       response = result.response;

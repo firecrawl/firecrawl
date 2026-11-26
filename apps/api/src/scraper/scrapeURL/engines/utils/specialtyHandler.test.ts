@@ -475,4 +475,70 @@ describe("specialtyScrapeCheck: the bytes decide when the header does not", () =
       ),
     ).resolves.toBeUndefined();
   });
+
+  it("rejects .msi OLE2 installers instead of handing them off as legacy Office documents", async () => {
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        download(DOC, {
+          url: "https://example.com/releases/Setup-x64.msi",
+        }),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        {
+          "content-type": "application/octet-stream",
+          "content-disposition": 'attachment; filename="Setup-x64.msi"',
+        },
+        download(DOC),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/x-msi" },
+        download(DOC),
+      ),
+    );
+  });
+
+  it("allows UTF-8 plain text and XML served as application/octet-stream while rejecting explicit installer MIME types even with ASCII bytes", async () => {
+    const xmlSitemap = Buffer.from(
+      '<?xml version="1.0" encoding="UTF-8"?>\n<urlset><url><loc>https://example.com/café</loc></url></urlset>',
+      "utf8",
+    );
+    await expect(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        inline(xmlSitemap.toString("latin1")),
+      ),
+    ).resolves.toBeUndefined();
+
+    // Printable ASCII self-extracting installer with no filename/URL extension:
+    // proves the explicit installer MIME check rejects it on Content-Type alone.
+    const asciiInstaller = Buffer.from(
+      "#!/bin/sh\necho Installing package...\nexit 0\n",
+      "utf8",
+    );
+    for (const mime of [
+      "application/x-msdownload",
+      "application/x-apple-diskimage",
+      "application/x-executable",
+      "application/x-msi",
+      "application/zip",
+    ]) {
+      const msg = await expectUnsupported(
+        specialtyScrapeCheck(
+          logger,
+          { "content-type": mime },
+          inline(asciiInstaller.toString("latin1")),
+        ),
+      );
+      expect(msg).toContain(mime);
+    }
+  });
 });
