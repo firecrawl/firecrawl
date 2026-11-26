@@ -68,4 +68,31 @@ describe("executeTransformers", () => {
     expect(document.markdown).toBe("# Example Person");
     expect(document.json).toEqual({ name: "Example Person" });
   });
+
+  it("strips NUL characters from engine-delivered markdown and rawHtml", async () => {
+    const document = await executeTransformers(
+      {
+        url: "https://example.com/form.pdf",
+        options: {
+          formats: [{ type: "markdown" }, { type: "rawHtml" }],
+          onlyMainContent: false,
+        },
+        internalOptions: {},
+        logger: logger(),
+      } as any,
+      {
+        rawHtml: "<p>field: S\u0000c\u0000h</p>",
+        markdown: "field: S\u0000c\u0000h",
+        metadata: {
+          sourceURL: "https://example.com/form.pdf",
+          url: "https://example.com/form.pdf",
+          statusCode: 200,
+          contentType: "application/pdf",
+        },
+      } as any,
+    );
+
+    expect(document.markdown).toBe("field: Sch");
+    expect(document.rawHtml).toBe("<p>field: Sch</p>");
+  });
 });
