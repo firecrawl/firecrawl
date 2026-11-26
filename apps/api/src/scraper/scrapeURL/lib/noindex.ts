@@ -14,7 +14,7 @@ function contentValues(value: unknown): string[] {
 // Returns true when any robots or FirecrawlAgent meta tag contains noindex.
 // Values may be a string or, when a page repeats the tag, an array of strings.
 export function hasNoindexDirective(
-  metadata: Record<string, unknown> | undefined,
+  metadata: object | undefined,
 ): boolean {
   if (!metadata) return false;
   for (const [key, value] of Object.entries(metadata)) {
