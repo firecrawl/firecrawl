@@ -291,6 +291,27 @@ describe("service.searchProviders dispatch in v2 search", () => {
     const error = await search({ query: "firecrawl", logger }).catch(e => e);
     expect(error).toBeInstanceOf(SearchProviderUnavailableError);
     expect(error.cause).toBe(failure);
+  });
+
+  it("rethrows a TransportableError from a provider unchanged", async () => {
+    const failure = new UsOnlyUnavailableError("no route");
+    installSearchService([
+      {
+        name: "custom",
+        searchProviders: [
+          {
+            name: "broken" as SearchProvider["name"],
+            priority: 200,
+            enabled: () => true,
+            search: async () => {
+              throw failure;
+            },
+          },
+        ],
+      },
+    ]);
+
+    await expect(search({ query: "firecrawl", logger })).rejects.toBe(failure);
     expect(logger.error).toHaveBeenCalledWith("Error in search function", {
       error: failure,
     });
