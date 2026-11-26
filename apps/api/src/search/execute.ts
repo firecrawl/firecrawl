@@ -50,7 +50,7 @@ interface SearchOptions {
   location?: string;
   safe?: boolean;
   sources: Array<{ type: string }>;
-  categories?: Array<CategoryOption>;
+  categories?: Array<CategoryOption | { type: string; sites?: Array<string> }>;
   includeDomains?: Array<string>;
   excludeDomains?: Array<string>;
   enterprise?: Array<"default" | "anon" | "zdr">;
@@ -135,20 +135,9 @@ function buildSearchRequestFallback(
 ): SearchRequest {
   const fallbackCategories: NonNullable<SearchRequest["categories"]> = (
     options.categories ?? []
-  ).flatMap(category => {
-    if (typeof category !== "string") {
-      return [category];
-    }
-    switch (category) {
-      case "research":
-      case "pdf":
-      case "developer":
-      case "gov":
-        return [{ type: category }];
-      default:
-        return [];
-    }
-  });
+  ).map(category =>
+    typeof category === "string" ? { type: category } : category,
+  );
   const fallback: SearchRequestFallback = {
     query: options.query,
     limit: options.limit,
@@ -248,9 +237,24 @@ export async function executeSearch(
   }
   const operatorPlan = planOperatorQuery(query);
   const { operators } = operatorPlan;
+  const queryCategories: Array<CategoryOption> | undefined =
+    categories?.flatMap((category): Array<CategoryOption> => {
+      if (typeof category === "string") {
+        return [category];
+      }
+      switch (category.type) {
+        case "research":
+        case "pdf":
+        case "developer":
+        case "gov":
+          return [{ type: category.type, sites: category.sites }];
+        default:
+          return [];
+      }
+    });
   const { query: searchQuery, categoryMap } = buildSearchQuery(
     operatorPlan.query,
-    categories,
+    queryCategories,
     {
       includeDomains: options.includeDomains,
       excludeDomains: options.excludeDomains,

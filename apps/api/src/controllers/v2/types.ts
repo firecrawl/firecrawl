@@ -1608,14 +1608,9 @@ type SearchSourceEntry =
     })
   | { type: string };
 
-const knownCategoryTypeSchema = z.enum(["research", "pdf", "developer", "gov"]);
-
 type SearchCategoryEntry =
   | z.infer<typeof pdfCategoryOptions>
-  | {
-      type: z.infer<typeof knownCategoryTypeSchema>;
-      sites?: Array<string>;
-    };
+  | { type: string; sites?: Array<string> };
 
 const transformSearchRequest = <
   T extends Omit<
@@ -1696,13 +1691,18 @@ const transformSearchRequest = <
     x.categories;
   if (rawCategories && Array.isArray(rawCategories)) {
     if (rawCategories.length > 0 && typeof rawCategories[0] === "string") {
-      categories = rawCategories.flatMap((c): Array<SearchCategoryEntry> => {
-        if (typeof c !== "string") {
-          return [];
-        }
-        const parsed = knownCategoryTypeSchema.safeParse(c);
-        return parsed.success ? [{ type: parsed.data }] : [];
-      });
+      categories = rawCategories
+        .filter((c): c is string => typeof c === "string")
+        .map((c): SearchCategoryEntry => {
+          switch (c) {
+            case "pdf":
+              return {
+                type: "pdf" as const,
+              };
+            default:
+              return { type: c };
+          }
+        });
     } else {
       categories = rawCategories.filter(
         (entry): entry is SearchCategoryEntry => typeof entry !== "string",
