@@ -114,6 +114,27 @@ const crawlStatusBodySchema = z.object({
   warning: z.string().optional(),
 });
 
+const crawlStatusFailedBodySchema = z.object({
+  success: z.literal(false),
+  status: z.literal("failed"),
+  error: z.string(),
+  completed: z.number(),
+  total: z.number(),
+  creditsUsed: z.number(),
+  expiresAt: z.string(),
+  createdAt: z.string().optional(),
+  completedAt: z.string().optional(),
+  duration: z.number().optional(),
+  next: z.string().optional(),
+  data: z.array(documentSchema),
+  warning: z.string().optional(),
+});
+
+const crawlStatusResponseBodySchema = z.discriminatedUnion("success", [
+  crawlStatusBodySchema,
+  crawlStatusFailedBodySchema,
+]);
+
 const requiresActionShapeSchema = z.object({
   type: z.string(),
   terms: z.string().optional(),
@@ -754,7 +775,7 @@ export async function crawl(
   body: CrawlRequestInput,
   identity: Identity,
   shouldSucceed: boolean = true,
-): Promise<Exclude<CrawlStatusResponse & { id: string }, ErrorResponse>> {
+): Promise<z.infer<typeof crawlStatusResponseBodySchema> & { id: string }> {
   const cs = await crawlStart(body, identity);
   expectCrawlStartToSucceed(cs);
   const parsedStart = crawlStartSuccessSchema.safeParse(cs.body);
@@ -782,7 +803,9 @@ export async function crawl(
     expectCrawlToSucceed(x);
   }
 
-  const parsedStatus = crawlStatusBodySchema.safeParse(x.body);
+  const parsedStatus = (
+    shouldSucceed ? crawlStatusBodySchema : crawlStatusResponseBodySchema
+  ).safeParse(x.body);
   if (!parsedStatus.success) {
     throw new Error("Unexpected crawl status response shape");
   }

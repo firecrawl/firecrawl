@@ -174,8 +174,15 @@ export class NuQFdbJobGroup {
     }
     return await this.db.doTn(async tn => {
       const existingBuf = await tn.get(this.ks.groupMeta(id));
-      const existing = decodeJson(existingBuf, groupMetaSchema);
-      if (existing) {
+      if (existingBuf !== undefined && existingBuf !== null) {
+        const existing = decodeJson(existingBuf, groupMetaSchema);
+        if (!existing) {
+          logger.error("Corrupt NuQ FDB group metadata record", {
+            queueName: this.ks.queueName,
+            groupId: id,
+          });
+          throw new Error(`Corrupt NuQ FDB group metadata for group ${id}`);
+        }
         return this.toInstance(id, existing);
       }
       const now = Date.now();

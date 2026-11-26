@@ -426,6 +426,13 @@ export class NuqFdbSweeper {
       for (const [key, value] of due) {
         const e = decodeJson(value, queueEntrySchema);
         if (!e) {
+          logger.warn("Dropping corrupt NuQ FDB delayed queue entry", {
+            queueName: ks.queueName,
+            jobId: ks.unpackId(key),
+          });
+          await this.db.doTn(async tn => {
+            tn.clear(key);
+          });
           continue;
         }
         await this.db.doTn(async tn => {

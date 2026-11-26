@@ -212,6 +212,7 @@ function encodedJsonBytes(v: unknown): number {
 function decodeNullableJsonChunks<T>(
   parts: Array<[Buffer, Buffer]>,
   decode: (raw: unknown) => T,
+  context: { queueName: string; jobId: string; field: string },
 ): T | null {
   if (parts.length === 0) {
     return null;
@@ -221,14 +222,19 @@ function decodeNullableJsonChunks<T>(
       Buffer.concat(parts.map(([, v]) => v)).toString("utf8"),
     );
     return parsed !== null ? decode(parsed) : null;
-  } catch {
-    return null;
+  } catch (error: unknown) {
+    _logger.error("Failed to decode NuQ FDB job payload chunks", {
+      ...context,
+      error,
+    });
+    throw error;
   }
 }
 
 function decodeOptionalJsonChunks<T>(
   parts: Array<[Buffer, Buffer]>,
   decode: (raw: unknown) => T,
+  context: { queueName: string; jobId: string; field: string },
 ): T {
   if (parts.length === 0) {
     return decode(null);
@@ -238,8 +244,12 @@ function decodeOptionalJsonChunks<T>(
       Buffer.concat(parts.map(([, v]) => v)).toString("utf8"),
     );
     return decode(parsed);
-  } catch {
-    return decode(null);
+  } catch (error: unknown) {
+    _logger.error("Failed to decode NuQ FDB job payload chunks", {
+      ...context,
+      error,
+    });
+    throw error;
   }
 }
 
@@ -1209,7 +1219,11 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
 
     const dataRange = ks.jobDataRange(id);
     const dataParts = await snap.getRangeAll(dataRange.begin, dataRange.end);
-    const data = decodeNullableJsonChunks(dataParts, this.options.decodeData);
+    const data = decodeNullableJsonChunks(dataParts, this.options.decodeData, {
+      queueName: this.queueName,
+      jobId: id,
+      field: "data",
+    });
 
     let returnvalue: JobReturnValue | undefined = undefined;
     if (st.s === "completed") {
@@ -1218,6 +1232,11 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
       returnvalue = decodeOptionalJsonChunks(
         rvParts,
         this.options.decodeReturnvalue,
+        {
+          queueName: this.queueName,
+          jobId: id,
+          field: "returnvalue",
+        },
       );
     }
     let failedReason: string | undefined = undefined;

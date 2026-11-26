@@ -19,7 +19,6 @@ import {
   REDIS_COMMAND_ARG_CHUNK_SIZE,
 } from "./redis-pipeline";
 import { withWebhookSummaryForLog } from "../services/webhook/log";
-import { jsonObjectSchema } from "./json-types";
 
 export type StoredCrawlerOptions = JobCrawlerOptions & {
   includes?: Array<string>;
@@ -78,11 +77,13 @@ function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
+const shallowObjectSchema = z.looseObject({});
+
 const storedCrawlPayloadSchema = z.object({
   team_id: z.string(),
-  crawlerOptions: jsonObjectSchema.nullish(),
-  scrapeOptions: jsonObjectSchema.nullish(),
-  internalOptions: jsonObjectSchema.nullish(),
+  crawlerOptions: shallowObjectSchema.nullish(),
+  scrapeOptions: shallowObjectSchema.nullish(),
+  internalOptions: shallowObjectSchema.nullish(),
   createdAt: z.number().nullish(),
 });
 

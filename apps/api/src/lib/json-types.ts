@@ -16,8 +16,9 @@ type MutableJsonValue =
 
 type MutableJsonObject = { [key: string]: MutableJsonValue | undefined };
 
-const inMemoryJsonValueSchema: z.ZodType<MutableJsonValue | undefined> = z.lazy(
-  () =>
+/** Zod schema matching a JSON value that may carry explicit undefined entries in memory. */
+export const inMemoryJsonValueSchema: z.ZodType<MutableJsonValue | undefined> =
+  z.lazy(() =>
     z.union([
       z.string(),
       z.number(),
@@ -27,7 +28,7 @@ const inMemoryJsonValueSchema: z.ZodType<MutableJsonValue | undefined> = z.lazy(
       z.array(inMemoryJsonValueSchema),
       z.record(z.string(), inMemoryJsonValueSchema),
     ]),
-);
+  );
 
 /** Zod schema matching a plain JSON object that may carry explicit undefined values in memory. */
 export const jsonRecordSchema: z.ZodType<MutableJsonObject> = z.record(

@@ -8,7 +8,7 @@ import { z } from "zod";
 type KnownCategoryType = "research" | "pdf" | "developer" | "gov";
 
 interface CategoryInput {
-  type: string;
+  type: KnownCategoryType;
   sites?: Array<string>;
 }
 

@@ -19,7 +19,7 @@ const promptCrawlerOptionsSchema = z.object({
   ignoreQueryParameters: softOptional(z.boolean()),
   deduplicateSimilarURLs: softOptional(z.boolean()),
   regexOnFullURL: softOptional(z.boolean()),
-  delay: softOptional(z.number()),
+  delay: softOptional(z.number().positive().max(60)),
   limit: softOptional(z.number()),
 });
 

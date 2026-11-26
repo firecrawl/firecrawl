@@ -510,10 +510,12 @@ export async function scrapeController(
           "scrape.status_code": 500,
           "scrape.error_id": id,
         });
+        const jobIdField = agentRequestId ? {} : { jobId };
         return res.status(500).json({
           success: false,
           code: "UNKNOWN_ERROR",
           error: service.modules.messages.errorContact(id),
+          ...jobIdField,
         });
       }
 

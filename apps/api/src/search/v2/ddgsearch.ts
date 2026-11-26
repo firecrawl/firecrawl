@@ -198,6 +198,7 @@ export async function ddgSearch(
         }
 
         if (response.status === 429) {
+          await response.body?.cancel();
           throw new DDGRateLimitError(response.status, response.statusText);
         }
 

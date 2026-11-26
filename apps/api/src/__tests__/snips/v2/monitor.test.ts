@@ -24,9 +24,9 @@ import {
 
 const monitorCheckDataSchema = z.object({
   status: z.string(),
-  estimatedCredits: z.number().optional(),
-  actualCredits: z.number().optional(),
-  reservedCredits: z.number().optional(),
+  estimatedCredits: z.number().nullish(),
+  actualCredits: z.number().nullish(),
+  reservedCredits: z.number().nullish(),
 });
 
 type MonitorCheckData = z.infer<typeof monitorCheckDataSchema>;

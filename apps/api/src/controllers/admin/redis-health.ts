@@ -71,7 +71,7 @@ export async function redisHealthController(req: Request, res: Response) {
       logger.info("Both Redis instances are healthy");
       return res.status(200).json({ status: "healthy", details: healthStatus });
     } else {
-      logger.info("Redis instances health check", { details: healthStatus });
+      logger.warn("Redis instances health check", { details: healthStatus });
       return res
         .status(500)
         .json({ status: "unhealthy", details: healthStatus });

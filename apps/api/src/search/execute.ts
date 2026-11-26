@@ -135,9 +135,20 @@ function buildSearchRequestFallback(
 ): SearchRequest {
   const fallbackCategories: NonNullable<SearchRequest["categories"]> = (
     options.categories ?? []
-  ).map(category =>
-    typeof category === "string" ? { type: category } : category,
-  );
+  ).flatMap(category => {
+    if (typeof category !== "string") {
+      return [category];
+    }
+    switch (category) {
+      case "research":
+      case "pdf":
+      case "developer":
+      case "gov":
+        return [{ type: category }];
+      default:
+        return [];
+    }
+  });
   const fallback: SearchRequestFallback = {
     query: options.query,
     limit: options.limit,

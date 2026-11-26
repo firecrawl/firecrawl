@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { jsonRecordSchema, jsonValueSchema } from "./json-types";
+import { inMemoryJsonValueSchema, jsonRecordSchema } from "./json-types";
 import type { JsonObject, LogMeta } from "./json-types";
 import { UNSUPPORTED_SITE_MESSAGE } from "./strings";
 
@@ -270,12 +270,7 @@ const errorCodeSchema = z.custom<ErrorCode>(
 
 const logMetaSchema = z.record(
   z.string(),
-  z.union([
-    jsonValueSchema,
-    z.instanceof(Error),
-    z.instanceof(Date),
-    z.undefined(),
-  ]),
+  z.union([inMemoryJsonValueSchema, z.instanceof(Error), z.instanceof(Date)]),
 );
 
 const rawScrapeLogSchema = z.object({

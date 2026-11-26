@@ -121,20 +121,17 @@ function attachSecurityCheck(agent: Dispatcher) {
   agent.on("connect", (_, targets) => {
     const client = targets.at(-1);
     if (!client) {
-      throw new InsecureConnectionError();
+      return;
     }
     const socketSymbol = Object.getOwnPropertySymbols(client).find(
       x => x.description === "socket",
     );
-    if (!socketSymbol) {
-      throw new InsecureConnectionError();
-    }
-    const socket: unknown = Object.getOwnPropertyDescriptor(
-      client,
-      socketSymbol,
-    )?.value;
+    const socket: unknown = socketSymbol
+      ? Object.getOwnPropertyDescriptor(client, socketSymbol)?.value
+      : undefined;
     if (!(socket instanceof Socket)) {
-      throw new InsecureConnectionError();
+      void client.destroy(new InsecureConnectionError()).catch(() => {});
+      return;
     }
 
     if (

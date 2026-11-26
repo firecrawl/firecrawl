@@ -1,4 +1,4 @@
-import { jsonValueSchema } from "../../lib/json-types";
+import { inMemoryJsonValueSchema, jsonValueSchema } from "../../lib/json-types";
 import type { JsonValue } from "../../lib/json-types";
 
 /** Analytics job-log queries are disabled in core test runs. */
@@ -35,8 +35,11 @@ export async function waitForJobLogRow<T extends Record<string, unknown>>(
 /** Parses a job log JSON column; empty or malformed text reads as null. */
 export function jobLogJson(value: unknown): JsonValue {
   if (typeof value !== "string") {
-    const parsed = jsonValueSchema.safeParse(value);
-    return parsed.success ? parsed.data : null;
+    if (value === undefined) {
+      return null;
+    }
+    const parsed = inMemoryJsonValueSchema.safeParse(value);
+    return parsed.success && parsed.data !== undefined ? parsed.data : null;
   }
   try {
     const raw: unknown = JSON.parse(value);

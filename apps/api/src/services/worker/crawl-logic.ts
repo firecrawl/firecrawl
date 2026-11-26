@@ -59,16 +59,14 @@ const jobCrawlerOptionsSchema = z.custom<JobCrawlerOptions>(
   value => jobCrawlerOptionsShapeSchema.safeParse(value).success,
 );
 
-const v0DocumentMetadataShapeSchema = z.looseObject({
-  sourceURL: z.string().nullish(),
-  creditsUsed: z.number().nullish(),
-});
+const v0DocumentMetadataShapeSchema = z.looseObject({});
 
 const v0DocumentMetadataSchema = z.custom<Partial<DocumentMetadata>>(
   value => v0DocumentMetadataShapeSchema.safeParse(value).success,
 );
 
 const stringSchema = z.string();
+const numberSchema = z.number();
 
 const v0CrawlDocRawSchema = z.object({
   content: z.unknown().optional(),
@@ -89,7 +87,11 @@ function extractV0CrawlDoc(returnvalue: unknown): V0CrawlDoc | null {
   const metadataParsed = v0DocumentMetadataSchema.safeParse(
     parsed.data.metadata,
   );
-  const metadata = metadataParsed.success ? metadataParsed.data : {};
+  const metadata: Partial<DocumentMetadata> = metadataParsed.success
+    ? metadataParsed.data
+    : {};
+  const sourceURLParsed = stringSchema.safeParse(metadata.sourceURL);
+  const creditsUsedParsed = numberSchema.safeParse(metadata.creditsUsed);
   const contentParsed = stringSchema.safeParse(parsed.data.content);
   const rawHtmlParsed = stringSchema.safeParse(parsed.data.rawHtml);
   const markdownParsed = stringSchema.safeParse(parsed.data.markdown);
@@ -100,9 +102,12 @@ function extractV0CrawlDoc(returnvalue: unknown): V0CrawlDoc | null {
     : rawHtmlParsed.success
       ? rawHtmlParsed.data
       : (markdown ?? "");
-  const source =
-    metadata.sourceURL ?? (urlParsed.success ? urlParsed.data : "");
-  const creditsUsed = metadata.creditsUsed ?? 0;
+  const source = sourceURLParsed.success
+    ? sourceURLParsed.data
+    : urlParsed.success
+      ? urlParsed.data
+      : "";
+  const creditsUsed = creditsUsedParsed.success ? creditsUsedParsed.data : 0;
   return { content, markdown, metadata, source, creditsUsed };
 }
 

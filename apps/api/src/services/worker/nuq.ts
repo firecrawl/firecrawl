@@ -1528,15 +1528,46 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
             if (message === false) {
               return null;
             }
+            let parsedEnvelope: { id: string; lock?: string } | undefined;
             try {
               const parsed: unknown = JSON.parse(message.content.toString());
+              const env = rabbitJobEnvelopeSchema.safeParse(parsed);
+              if (env.success) {
+                parsedEnvelope = {
+                  id: env.data.id,
+                  lock: optionalString(env.data.lock),
+                };
+              }
               return this.rabbitRowToJob(parsed);
             } catch (error: unknown) {
               logger.error("Failed to decode NuQ RabbitMQ job payload", {
                 module: "nuq/rabbitmq",
                 queueName: this.queueName,
+                jobId: parsedEnvelope?.id,
                 err: error,
               });
+              if (parsedEnvelope?.lock) {
+                const failedReason =
+                  error instanceof Error
+                    ? error.message
+                    : "Invalid job data payload";
+                await this.jobFail(
+                  parsedEnvelope.id,
+                  parsedEnvelope.lock,
+                  failedReason,
+                  logger,
+                ).catch((failError: unknown) => {
+                  logger.error(
+                    "Failed to mark corrupt NuQ RabbitMQ job failed",
+                    {
+                      module: "nuq/rabbitmq",
+                      queueName: this.queueName,
+                      jobId: parsedEnvelope?.id,
+                      err: failError,
+                    },
+                  );
+                });
+              }
               return null;
             }
           }

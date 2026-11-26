@@ -249,10 +249,13 @@ export function clearPendingPlacement(
 // Pops the best entry from a team's pending shards. Snapshot-reads the shard
 // occupancy counters and probes up to 3 non-empty shards. Returns null if all
 // probed shards are empty.
+const MAX_CORRUPT_PENDING_SKIPS = 16;
+
 export async function popTeamPending(
   tn: Transaction,
   ks: NuqFdbKeyspace,
   tid: string,
+  txc: TxContext = newTxContext(),
 ): Promise<QueueEntry | null> {
   const startedAt = Date.now();
   const range = ks.teamShardCountRange(tid);
@@ -284,7 +287,7 @@ export async function popTeamPending(
     tn.add(ks.teamShardCount(tid, shard), MINUS_ONE);
     tn.add(ks.teamPendingCount(tid), MINUS_ONE);
     if (!e) {
-      await failCorruptPendingEntry(tn, ks, "tq", key, tid);
+      await failCorruptPendingEntry(tn, ks, "tq", key, txc, tid);
       continue;
     }
     clearBacklogTimeout(tn, ks, e);
@@ -321,46 +324,55 @@ export async function popKeyPending(
   tn: Transaction,
   ks: NuqFdbKeyspace,
   kid: string,
+  txc: TxContext = newTxContext(),
 ): Promise<QueueEntry | null> {
   const r = ks.keyPendingRange(kid);
-  const head = await tn.getRangeAll(r.begin, r.end, { limit: 1 });
-  if (head.length === 0) {
-    return null;
+  for (let skipped = 0; skipped < MAX_CORRUPT_PENDING_SKIPS; skipped++) {
+    const head = await tn.getRangeAll(r.begin, r.end, { limit: 1 });
+    if (head.length === 0) {
+      return null;
+    }
+    const [key, value] = head[0];
+    const e = decodeJson(value, queueEntrySchema);
+    tn.clear(key);
+    tn.add(ks.keyPendingCount(kid), MINUS_ONE);
+    if (!e) {
+      await failCorruptPendingEntry(tn, ks, "kq", key, txc);
+      continue;
+    }
+    tn.add(ks.teamPendingCount(e.o), MINUS_ONE);
+    clearBacklogTimeout(tn, ks, e);
+    return e;
   }
-  const [key, value] = head[0];
-  const e = decodeJson(value, queueEntrySchema);
-  tn.clear(key);
-  tn.add(ks.keyPendingCount(kid), MINUS_ONE);
-  if (!e) {
-    await failCorruptPendingEntry(tn, ks, "kq", key);
-    return null;
-  }
-  tn.add(ks.teamPendingCount(e.o), MINUS_ONE);
-  clearBacklogTimeout(tn, ks, e);
-  return e;
+  tn.set(ks.taskKeyRaise(kid), EMPTY);
+  return null;
 }
 
 export async function popCrawlPending(
   tn: Transaction,
   ks: NuqFdbKeyspace,
   gid: string,
+  txc: TxContext = newTxContext(),
 ): Promise<QueueEntry | null> {
   const r = ks.groupPendingRange(gid);
-  const head = await tn.getRangeAll(r.begin, r.end, { limit: 1 });
-  if (head.length === 0) {
-    return null;
+  for (let skipped = 0; skipped < MAX_CORRUPT_PENDING_SKIPS; skipped++) {
+    const head = await tn.getRangeAll(r.begin, r.end, { limit: 1 });
+    if (head.length === 0) {
+      return null;
+    }
+    const [key, value] = head[0];
+    const e = decodeJson(value, queueEntrySchema);
+    tn.clear(key);
+    tn.add(ks.groupPendingCount(gid), MINUS_ONE);
+    if (!e) {
+      await failCorruptPendingEntry(tn, ks, "gq", key, txc);
+      continue;
+    }
+    tn.add(ks.teamPendingCount(e.o), MINUS_ONE);
+    clearBacklogTimeout(tn, ks, e);
+    return e;
   }
-  const [key, value] = head[0];
-  const e = decodeJson(value, queueEntrySchema);
-  tn.clear(key);
-  tn.add(ks.groupPendingCount(gid), MINUS_ONE);
-  if (!e) {
-    await failCorruptPendingEntry(tn, ks, "gq", key);
-    return null;
-  }
-  tn.add(ks.teamPendingCount(e.o), MINUS_ONE);
-  clearBacklogTimeout(tn, ks, e);
-  return e;
+  return null;
 }
 
 // === Slot release + inline promotion chain
@@ -410,7 +422,7 @@ export async function releaseSlotsAndPromote(
 
   let teamHead: QueueEntry | null | "consumed" = null;
   if (held.team && !overLimit) {
-    teamHead = await popTeamPending(tn, ks, tid);
+    teamHead = await popTeamPending(tn, ks, tid, txc);
   }
   // whether the freed team slot is still unassigned after the pops so far
   const teamSlotFree = () => held.team && !overLimit && teamHead === null;
@@ -433,7 +445,7 @@ export async function releaseSlotsAndPromote(
       tn.add(ks.keyActive(heldKeyId), MINUS_ONE);
       keyHandedOff = true; // accounted for; don't decrement again below
     } else {
-      const keyHead = await popKeyPending(tn, ks, heldKeyId);
+      const keyHead = await popKeyPending(tn, ks, heldKeyId, txc);
       if (keyHead) {
         keyHandedOff = true;
         // the key head now owns the freed key slot; it still needs a team slot
@@ -459,7 +471,7 @@ export async function releaseSlotsAndPromote(
       groupMetaSchema,
     );
     if (gMeta && gMeta.s === "active") {
-      crawlPromoted = await popCrawlPending(tn, ks, heldGroupId);
+      crawlPromoted = await popCrawlPending(tn, ks, heldGroupId, txc);
       if (crawlPromoted) {
         crawlDelaySeconds = gMeta.d ?? 0;
       } else {
@@ -595,6 +607,7 @@ async function failCorruptPendingEntry(
   ks: NuqFdbKeyspace,
   queue: "tq" | "kq" | "gq",
   key: Buffer,
+  txc: TxContext,
   ownerId?: string,
 ): Promise<void> {
   const id = ks.unpackId(key);
@@ -642,12 +655,25 @@ async function failCorruptPendingEntry(
   );
 
   if (meta) {
-    if (queue !== "gq" && meta.f & F_CRAWL_GATED && meta.g) {
-      tn.add(ks.groupCrawlActive(meta.g), MINUS_ONE);
-    }
-    if (queue === "tq" && meta.f & F_KEY_GATED && meta.k) {
-      tn.add(ks.keyActive(meta.k), MINUS_ONE);
-      tn.set(ks.taskKeyRaise(meta.k), EMPTY);
+    if (queue !== "gq" && meta.f & F_GATED) {
+      const entry: QueueEntry = {
+        i: id,
+        o: meta.o,
+        g: meta.g,
+        k: meta.k,
+        p: meta.p,
+        f: meta.f,
+        c: meta.c,
+        to: meta.to,
+      };
+      await releaseSlotsAndPromote(
+        tn,
+        ks,
+        entry,
+        { team: false, key: queue === "tq", crawl: true },
+        now,
+        txc,
+      );
     }
     if (meta.g && meta.f & F_GACC) {
       setGroupJobIndex(tn, ks, meta.g, id, !!(meta.f & F_COUNTABLE), "failed");

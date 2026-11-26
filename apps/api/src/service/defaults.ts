@@ -219,7 +219,10 @@ export function queueJobStore(): JobStoreModule {
         const jobData: unknown = job.data;
         const singleUrlJobDataSchema = z.object({
           mode: z.literal("single_urls"),
-          team_id: z.string().optional(),
+          team_id: z
+            .string()
+            .nullish()
+            .transform(value => value ?? undefined),
         });
         let rawTeamId: string | undefined;
         if (jobData !== null && jobData !== undefined) {
