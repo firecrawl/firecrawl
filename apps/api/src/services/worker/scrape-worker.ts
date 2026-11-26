@@ -110,13 +110,6 @@ const storedCrawlerObjectSchema = z.custom<StoredCrawlerOptions>(
   value => typeof value === "object" && value !== null && !Array.isArray(value),
 );
 
-const storedCrawlerLegacyFieldsSchema = z.looseObject({
-  limit: z.unknown().optional(),
-  maxDepth: z.unknown().optional(),
-  sitemapOnly: z.unknown().optional(),
-  ignoreSitemap: z.unknown().optional(),
-});
-
 function parseLegacyNumber(value: unknown): number | undefined {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : undefined;
@@ -154,22 +147,22 @@ function getStoredCrawlerOptions(sc: StoredCrawl): StoredCrawlerOptions | null {
   if (!parsedObj.success) {
     return null;
   }
-  const fields = storedCrawlerLegacyFieldsSchema.safeParse(sc.crawlerOptions);
-  if (!fields.success) {
-    return parsedObj.data;
-  }
   const normalized: StoredCrawlerOptions = { ...parsedObj.data };
-  if (fields.data.limit !== undefined) {
-    normalized.limit = parseLegacyNumber(fields.data.limit);
+  const rawLimit: unknown = parsedObj.data.limit;
+  if (rawLimit !== undefined) {
+    normalized.limit = parseLegacyNumber(rawLimit);
   }
-  if (fields.data.maxDepth !== undefined) {
-    normalized.maxDepth = parseLegacyNumber(fields.data.maxDepth);
+  const rawMaxDepth: unknown = parsedObj.data.maxDepth;
+  if (rawMaxDepth !== undefined) {
+    normalized.maxDepth = parseLegacyNumber(rawMaxDepth);
   }
-  if (fields.data.sitemapOnly !== undefined) {
-    normalized.sitemapOnly = parseLegacyBoolean(fields.data.sitemapOnly);
+  const rawSitemapOnly: unknown = parsedObj.data.sitemapOnly;
+  if (rawSitemapOnly !== undefined) {
+    normalized.sitemapOnly = parseLegacyBoolean(rawSitemapOnly);
   }
-  if (fields.data.ignoreSitemap !== undefined) {
-    normalized.ignoreSitemap = parseLegacyBoolean(fields.data.ignoreSitemap);
+  const rawIgnoreSitemap: unknown = parsedObj.data.ignoreSitemap;
+  if (rawIgnoreSitemap !== undefined) {
+    normalized.ignoreSitemap = parseLegacyBoolean(rawIgnoreSitemap);
   }
   return normalized;
 }

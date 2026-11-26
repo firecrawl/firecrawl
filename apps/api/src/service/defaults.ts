@@ -4,7 +4,6 @@
  * This file imports only module types so constructing default modules or
  * describing a service never loads configuration, queues, or storage clients.
  */
-import { z } from "zod";
 import type { Document } from "../controllers/v2/types";
 import type { JobKind } from "./hooks";
 import type {
@@ -192,27 +191,49 @@ export function memoryUploads(): UploadsModule {
   return { driver: () => driver };
 }
 
+let queueJobStoreSchemasPromise: Promise<{
+  singleUrlJobDataSchema: {
+    safeParse: (
+      value: unknown,
+    ) =>
+      | { success: true; data: { mode: "single_urls"; team_id?: string } }
+      | { success: false };
+  };
+  singleUrlModeSchema: {
+    safeParse: (value: unknown) => { success: boolean };
+  };
+  storedDocumentSchema: {
+    safeParse: (
+      value: unknown,
+    ) => { success: true; data: Document } | { success: false };
+  };
+}> | null = null;
+
+function getQueueJobStoreSchemas() {
+  queueJobStoreSchemasPromise ??= import("zod").then(({ z }) => ({
+    singleUrlJobDataSchema: z.object({
+      mode: z.literal("single_urls"),
+      team_id: z
+        .string()
+        .nullish()
+        .transform(value => value ?? undefined),
+    }),
+    singleUrlModeSchema: z.object({
+      mode: z.literal("single_urls"),
+    }),
+    storedDocumentSchema: z.custom<Document>(
+      value =>
+        typeof value === "object" && value !== null && !Array.isArray(value),
+    ),
+  }));
+  return queueJobStoreSchemasPromise;
+}
+
 /**
  * Default open-source job store backed by the job queue and Redis crawl state.
  * Registration, terminal recording, and removal are no-ops because finished
  * queue payloads stay inline; usage returns null.
  */
-const singleUrlJobDataSchema = z.object({
-  mode: z.literal("single_urls"),
-  team_id: z
-    .string()
-    .nullish()
-    .transform(value => value ?? undefined),
-});
-
-const singleUrlModeSchema = z.object({
-  mode: z.literal("single_urls"),
-});
-
-const storedDocumentSchema = z.custom<Document>(
-  value => typeof value === "object" && value !== null && !Array.isArray(value),
-);
-
 export function queueJobStore(): JobStoreModule {
   return {
     storesResultsExternally(): boolean {
@@ -223,9 +244,14 @@ export function queueJobStore(): JobStoreModule {
 
     async owner(id: string, kind: JobKind): Promise<JobOwner | null> {
       if (kind === "scrape") {
-        const [{ scrapeQueue }, { normalizeOwnerId }] = await Promise.all([
+        const [
+          { scrapeQueue },
+          { normalizeOwnerId },
+          { singleUrlJobDataSchema },
+        ] = await Promise.all([
           import("../services/worker/nuq-router.js"),
           import("../lib/owner-id.js"),
+          getQueueJobStoreSchemas(),
         ]);
         const job = await scrapeQueue.getJob(id);
         if (!job) {
@@ -267,7 +293,11 @@ export function queueJobStore(): JobStoreModule {
       if (kind !== "scrape") {
         return null;
       }
-      const { scrapeQueue } = await import("../services/worker/nuq-router.js");
+      const [{ scrapeQueue }, { singleUrlModeSchema, storedDocumentSchema }] =
+        await Promise.all([
+          import("../services/worker/nuq-router.js"),
+          getQueueJobStoreSchemas(),
+        ]);
       const job = await scrapeQueue.getJob(id);
       if (!job) {
         return null;

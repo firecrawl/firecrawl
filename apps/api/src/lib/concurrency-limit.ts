@@ -297,6 +297,21 @@ export async function removeCrawlConcurrencyLimitActiveJob(
   await getRedisConnection().zrem(constructCrawlKey(crawl_id), id);
 }
 
+function parseCrawlDelay(rawDelay: unknown): number | undefined {
+  if (typeof rawDelay === "number") {
+    return Number.isFinite(rawDelay) ? rawDelay : undefined;
+  }
+  if (typeof rawDelay === "string") {
+    const trimmed = rawDelay.trim();
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
 /**
  * Grabs the next job from the team's concurrency limit queue. Handles crawl concurrency limits.
  *
@@ -406,17 +421,11 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
             });
           }
         }
-        const rawDelay: unknown = sc?.crawlerOptions?.delay;
-        const delay =
-          typeof rawDelay === "number"
-            ? rawDelay
-            : typeof rawDelay === "string" && rawDelay.trim().length > 0
-              ? Number(rawDelay.trim())
-              : undefined;
+        const delay = parseCrawlDelay(sc?.crawlerOptions?.delay);
         const maxCrawlConcurrency =
           sc === null
             ? 1
-            : delay !== undefined && Number.isFinite(delay) && delay > 0
+            : delay !== undefined && delay > 0
               ? 1
               : (sc.maxConcurrency ?? null);
 
@@ -520,8 +529,8 @@ export async function concurrentJobDone(job: NuQJob<ScrapeJobData>) {
         );
 
         const sc = await getCrawl(nextJob.job.data.crawl_id);
-        const delay = sc?.crawlerOptions?.delay;
-        if (typeof delay === "number") {
+        const delay = parseCrawlDelay(sc?.crawlerOptions?.delay);
+        if (delay !== undefined) {
           await new Promise<void>(resolve => {
             setTimeout(resolve, delay * 1000);
           });
