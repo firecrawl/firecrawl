@@ -518,6 +518,37 @@ describe("specialtyScrapeCheck: the bytes decide when the header does not", () =
       ),
     ).resolves.toBeUndefined();
 
+    // Valid UTF-16LE XML with BOM passes, while binary bytes starting with FF FE or FE FF are rejected.
+    const utf16LeXml = Buffer.concat([
+      Buffer.from([0xff, 0xfe]),
+      Buffer.from('<?xml version="1.0"?><urlset></urlset>', "utf16le"),
+    ]);
+    await expect(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        inline(utf16LeXml.toString("latin1")),
+      ),
+    ).resolves.toBeUndefined();
+
+    const fakeBomBinary = Buffer.from([
+      0xff, 0xfe, 0x00, 0xd8, 0x01, 0x00, 0x85, 0x00, 0x00, 0xe0,
+    ]);
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        inline(fakeBomBinary.toString("latin1")),
+      ),
+    );
+    await expectUnsupported(
+      specialtyScrapeCheck(
+        logger,
+        { "content-type": "application/octet-stream" },
+        download(fakeBomBinary),
+      ),
+    );
+
     // Printable ASCII self-extracting installer with no filename/URL extension:
     // proves the explicit installer MIME check rejects it on Content-Type alone.
     const asciiInstaller = Buffer.from(

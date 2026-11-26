@@ -341,6 +341,8 @@ const GENERIC_OCTET_MEDIA_TYPES = new Set([
 ]);
 
 const utf8FatalDecoder = new TextDecoder("utf-8", { fatal: true });
+const utf16LeFatalDecoder = new TextDecoder("utf-16le", { fatal: true });
+const utf16BeFatalDecoder = new TextDecoder("utf-16be", { fatal: true });
 
 function isGzippedFileHandoff(
   feRes: SpecialtyHandoffResponse | undefined,
@@ -474,27 +476,98 @@ function trimIncompleteTrailingUtf8(bytes: Buffer): Buffer {
   return bytes;
 }
 
+function hasDisallowedDecodedControlOrNonTextChar(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (
+      (code >= 0x00 && code <= 0x08) ||
+      code === 0x0b ||
+      (code >= 0x0e && code <= 0x1f) ||
+      (code >= 0x7f && code <= 0x9f) ||
+      (code >= 0xe000 && code <= 0xf8ff) ||
+      (code >= 0xfdd0 && code <= 0xfdef) ||
+      code === 0xfffe ||
+      code === 0xffff
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isValidBomUtf16TextSample(bytes: Buffer): boolean {
+  const isLe = bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xfe;
+  const isBe = bytes.length >= 4 && bytes[0] === 0xfe && bytes[1] === 0xff;
+  if (!isLe && !isBe) return false;
+
+  let end = bytes.length - ((bytes.length - 2) % 2);
+  if (end - 2 >= 2) {
+    const lastUnit = isLe
+      ? bytes[end - 2] | (bytes[end - 1] << 8)
+      : (bytes[end - 2] << 8) | bytes[end - 1];
+    // Trim a trailing high surrogate cut off at the 512-byte sniff boundary.
+    if (lastUnit >= 0xd800 && lastUnit <= 0xdbff) {
+      end -= 2;
+    }
+  }
+  if (end <= 2) return false;
+
+  let decoded: string;
+  try {
+    const payload = bytes.subarray(2, end);
+    decoded = isLe
+      ? utf16LeFatalDecoder.decode(payload)
+      : utf16BeFatalDecoder.decode(payload);
+  } catch {
+    return false;
+  }
+  if (
+    decoded.length === 0 ||
+    hasDisallowedDecodedControlOrNonTextChar(decoded)
+  ) {
+    return false;
+  }
+  let commonTextChars = 0;
+  for (let i = 0; i < decoded.length; i++) {
+    const code = decoded.charCodeAt(i);
+    if (
+      code === 0x09 ||
+      code === 0x0a ||
+      code === 0x0d ||
+      (code >= 0x20 && code <= 0x7e) ||
+      (code >= 0x3000 && code <= 0x303f)
+    ) {
+      commonTextChars++;
+    }
+  }
+  return commonTextChars >= Math.max(1, Math.ceil(decoded.length * 0.1));
+}
+
+function isValidTextByteSample(bytes: Buffer): boolean {
+  if (bytes.length === 0) return false;
+  if (
+    bytes.length >= 2 &&
+    ((bytes[0] === 0xff && bytes[1] === 0xfe) ||
+      (bytes[0] === 0xfe && bytes[1] === 0xff))
+  ) {
+    return isValidBomUtf16TextSample(bytes);
+  }
+  if (hasDisallowedBinaryControlByte(bytes)) return false;
+  try {
+    utf8FatalDecoder.decode(trimIncompleteTrailingUtf8(bytes));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function isLikelyTextPayload(
   feRes: SpecialtyHandoffResponse | undefined,
 ): boolean {
   if (!feRes) return false;
   if (feRes.file?.content !== undefined) {
     const bytes = Buffer.from(feRes.file.content.slice(0, 684), "base64");
-    if (bytes.length === 0) return false;
-    if (
-      bytes.length >= 2 &&
-      ((bytes[0] === 0xff && bytes[1] === 0xfe) ||
-        (bytes[0] === 0xfe && bytes[1] === 0xff))
-    ) {
-      return true;
-    }
-    if (hasDisallowedBinaryControlByte(bytes)) return false;
-    try {
-      utf8FatalDecoder.decode(trimIncompleteTrailingUtf8(bytes));
-      return true;
-    } catch {
-      return false;
-    }
+    return isValidTextByteSample(bytes);
   }
 
   const sample = feRes.content.slice(0, 512);
@@ -508,35 +581,10 @@ function isLikelyTextPayload(
     }
   }
   if (hasWideChar) {
-    for (let i = 0; i < sample.length; i++) {
-      const code = sample.charCodeAt(i);
-      if (
-        (code >= 0x00 && code <= 0x08) ||
-        code === 0x0b ||
-        (code >= 0x0e && code <= 0x1f) ||
-        code === 0x7f
-      ) {
-        return false;
-      }
-    }
-    return true;
+    return !hasDisallowedDecodedControlOrNonTextChar(sample);
   }
 
-  const bytes = Buffer.from(sample, "latin1");
-  if (
-    bytes.length >= 2 &&
-    ((bytes[0] === 0xff && bytes[1] === 0xfe) ||
-      (bytes[0] === 0xfe && bytes[1] === 0xff))
-  ) {
-    return true;
-  }
-  if (hasDisallowedBinaryControlByte(bytes)) return false;
-  try {
-    utf8FatalDecoder.decode(trimIncompleteTrailingUtf8(bytes));
-    return true;
-  } catch {
-    return false;
-  }
+  return isValidTextByteSample(Buffer.from(sample, "latin1"));
 }
 
 function isDisallowedContainerPayload(

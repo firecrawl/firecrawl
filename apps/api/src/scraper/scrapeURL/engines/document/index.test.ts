@@ -1,12 +1,30 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { UnsupportedFileError } from "../../error";
+import {
+  DocumentAntibotError,
+  EngineUnsuccessfulError,
+  UnsupportedFileError,
+} from "../../error";
 
 const mocks = vi.hoisted(() => ({
   fetchFileToBuffer: vi.fn(),
+  undiciFetch: vi.fn(),
   stat: vi.fn(),
   readFile: vi.fn(),
   unlink: vi.fn(async () => undefined),
   convertDocumentToMarkdown: vi.fn(async () => "# Converted"),
+}));
+
+vi.mock("undici", async importOriginal => {
+  const actual = await importOriginal<typeof import("undici")>();
+  return {
+    ...actual,
+    fetch: mocks.undiciFetch,
+  };
+});
+
+vi.mock("../utils/safeFetch", () => ({
+  getSecureDispatcher: vi.fn(() => undefined),
+  TLS_CERT_ERROR_CODES: new Set<string>(),
 }));
 
 vi.mock("../utils/downloadFile", async importOriginal => {
@@ -79,7 +97,87 @@ describe("scrapeDocument size caps", () => {
       false,
       expect.any(Object),
       DOCUMENT_MAX_FILE_BYTES,
+      expect.any(Function),
     );
+  });
+
+  it("validates Content-Type via fetchFileToBuffer hook before buffering non-document responses", async () => {
+    mocks.fetchFileToBuffer.mockImplementationOnce(
+      async (_url, _skipTls, _init, _maxSize, validateResponse) => {
+        const fakeResponse = {
+          url: "https://example.com/not-a-doc",
+          status: 200,
+          headers: new Headers({ "Content-Type": "application/octet-stream" }),
+        };
+        await validateResponse(fakeResponse);
+        throw new Error("should have rejected before reading response body");
+      },
+    );
+
+    await expect(
+      scrapeDocument(makeMeta("https://example.com/not-a-doc")),
+    ).rejects.toBeInstanceOf(DocumentAntibotError);
+
+    mocks.fetchFileToBuffer.mockImplementationOnce(
+      async (_url, _skipTls, _init, _maxSize, validateResponse) => {
+        const fakeResponse = {
+          url: "https://example.com/html-page",
+          status: 200,
+          headers: new Headers({ "Content-Type": "text/html" }),
+        };
+        await validateResponse(fakeResponse);
+        throw new Error("should have rejected before reading response body");
+      },
+    );
+    const nonDocumentFlagMeta = makeMeta("https://example.com/html-page");
+    nonDocumentFlagMeta.featureFlags = new Set();
+    await expect(scrapeDocument(nonDocumentFlagMeta)).rejects.toBeInstanceOf(
+      EngineUnsuccessfulError,
+    );
+  });
+
+  it("cancels the response stream in real fetchFileToBuffer when validateResponse rejects", async () => {
+    const { fetchFileToBuffer: realFetchFileToBuffer } = await vi.importActual<
+      typeof import("../utils/downloadFile")
+    >("../utils/downloadFile");
+    const undici = await import("undici");
+    let bodyRead = false;
+    let bodyCancelled = false;
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        pull() {
+          bodyRead = true;
+          throw new Error("should not pull body chunks");
+        },
+        cancel() {
+          bodyCancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    mocks.undiciFetch.mockResolvedValueOnce({
+      url: "https://example.com/binary",
+      status: 200,
+      headers: new undici.Headers({
+        "content-type": "application/octet-stream",
+      }),
+      body: stream as any,
+    } as any);
+    await expect(
+      realFetchFileToBuffer(
+        "https://example.com/binary",
+        false,
+        undefined,
+        DOCUMENT_MAX_FILE_BYTES,
+        res => {
+          if (res.headers.get("content-type") === "application/octet-stream") {
+            throw new DocumentAntibotError();
+          }
+        },
+      ),
+    ).rejects.toBeInstanceOf(DocumentAntibotError);
+    expect(bodyRead).toBe(false);
+    expect(bodyCancelled).toBe(true);
   });
 
   it("rejects oversized prefetched files before reading them into memory and unlinks the temp file", async () => {
