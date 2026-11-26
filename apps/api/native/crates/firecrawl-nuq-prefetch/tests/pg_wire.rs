@@ -398,7 +398,7 @@ async fn pg_store_uses_application_name_nuq_and_simple_query_only_for_pgbouncer_
   assert_eq!(
     wire.queries.get(2).map(String::as_str),
     Some(
-      "WITH failed AS (UPDATE nuq.queue_scrape SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = 'Failed to decode prefetched NuQ job row' WHERE id = '00000000-0000-0000-0000-000000000000'::uuid AND lock = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid RETURNING id, listen_channel_id) SELECT f.id, f.listen_channel_id, pg_notify('nuq.queue_scrape', f.id::text || '|failed') FROM failed f;"
+      "WITH updated AS (UPDATE nuq.queue_scrape SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = 'Failed to decode prefetched NuQ job row' WHERE id = '00000000-0000-0000-0000-000000000000'::uuid AND lock = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid RETURNING id, listen_channel_id), target AS (SELECT id, listen_channel_id FROM updated UNION ALL SELECT id, listen_channel_id FROM nuq.queue_scrape WHERE NOT EXISTS (SELECT 1 FROM updated) AND id = '00000000-0000-0000-0000-000000000000'::uuid AND status = 'failed'::nuq.job_status AND failedreason = 'Failed to decode prefetched NuQ job row') SELECT t.id, t.listen_channel_id, pg_notify('nuq.queue_scrape', t.id::text || '|failed') FROM target t;"
     )
   );
   assert_eq!(

@@ -219,7 +219,8 @@ impl PgStore {
 
   /// Transitions an undecodable claimed row straight to `failed` and emits a
   /// PostgreSQL `pg_notify` failure signal atomically, retrying once on
-  /// transient failure and returning `listen_channel_id` for AMQP waiter alerts.
+  /// transient failure and recovering `(id, listen_channel_id)` from the
+  /// already-failed row if the first response was lost after commit.
   async fn mark_decode_failed(
     &self,
     queue: QueueKind,
@@ -228,13 +229,21 @@ impl PgStore {
   ) -> Result<Option<FailedJobNotification>, StoreError> {
     let table = queue.table_name();
     let sql = format!(
-      "WITH failed AS (\
+      "WITH updated AS (\
          UPDATE {table} \
          SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = 'Failed to decode prefetched NuQ job row' \
          WHERE id = '{id}'::uuid AND lock = '{lock}'::uuid \
          RETURNING id, listen_channel_id\
+       ), target AS (\
+         SELECT id, listen_channel_id FROM updated \
+         UNION ALL \
+         SELECT id, listen_channel_id FROM {table} \
+         WHERE NOT EXISTS (SELECT 1 FROM updated) \
+           AND id = '{id}'::uuid \
+           AND status = 'failed'::nuq.job_status \
+           AND failedreason = 'Failed to decode prefetched NuQ job row'\
        ) \
-       SELECT f.id, f.listen_channel_id, pg_notify('{table}', f.id::text || '|failed') FROM failed f;"
+       SELECT t.id, t.listen_channel_id, pg_notify('{table}', t.id::text || '|failed') FROM target t;"
     );
 
     let mut last_err = None;

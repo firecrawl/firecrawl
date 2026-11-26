@@ -77,6 +77,8 @@ struct RecordingPublisher {
   configured: bool,
   published: Mutex<Vec<(QueueKind, String)>>,
   failed_notifications: Mutex<Vec<(QueueKind, String, String)>>,
+  fail_next_send_job: AtomicUsize,
+  fail_next_notify: AtomicUsize,
   publish_delay: Duration,
   gate_job_id: Option<String>,
   gated_publish_started: Notify,
@@ -89,6 +91,8 @@ impl RecordingPublisher {
       configured: true,
       published: Mutex::new(Vec::new()),
       failed_notifications: Mutex::new(Vec::new()),
+      fail_next_send_job: AtomicUsize::new(0),
+      fail_next_notify: AtomicUsize::new(0),
       publish_delay,
       gate_job_id: None,
       gated_publish_started: Notify::new(),
@@ -101,6 +105,8 @@ impl RecordingPublisher {
       configured: true,
       published: Mutex::new(Vec::new()),
       failed_notifications: Mutex::new(Vec::new()),
+      fail_next_send_job: AtomicUsize::new(0),
+      fail_next_notify: AtomicUsize::new(0),
       publish_delay: Duration::ZERO,
       gate_job_id: Some(job_id.to_owned()),
       gated_publish_started: Notify::new(),
@@ -127,6 +133,13 @@ impl PrefetchPublisher for RecordingPublisher {
     job: &'a NuqJob,
   ) -> BoxFuture<'a, Result<(), PublishError>> {
     Box::pin(async move {
+      if self
+        .fail_next_send_job
+        .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
+        .is_ok()
+      {
+        return Err(PublishError::Amqp("simulated publish error".to_owned()));
+      }
       if self.gate_job_id.as_deref() == Some(job.id.as_str()) {
         let release = self.release_gate.notified();
         tokio::pin!(release);
@@ -159,6 +172,13 @@ impl PrefetchPublisher for RecordingPublisher {
     listen_channel_id: &'a str,
   ) -> BoxFuture<'a, Result<(), PublishError>> {
     Box::pin(async move {
+      if self
+        .fail_next_notify
+        .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
+        .is_ok()
+      {
+        return Err(PublishError::Amqp("simulated notify error".to_owned()));
+      }
       self
         .failed_notifications
         .lock()
@@ -391,6 +411,103 @@ async fn run_prefetch_once_notifies_failed_waiters_and_propagates_repair_errors(
       QueueKind::Scrape,
       "corrupt-1".to_owned(),
       "chan-7".to_owned()
+    )]
+  );
+}
+
+#[tokio::test]
+async fn failed_waiter_notifications_still_send_after_publish_error_and_retry_across_loop_ticks() {
+  // Part 1: valid job publish error must not skip failure notification for undecodable rows.
+  let store = MockStore::new();
+  {
+    let mut scrape = store
+      .scrape_batches
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner);
+    scrape.push(Ok(PrefetchBatch {
+      jobs: vec![sample_job("will-fail-publish", false)],
+      failed_notifications: vec![FailedJobNotification {
+        id: "corrupt-during-pub-err".to_owned(),
+        listen_channel_id: Some("chan-err".to_owned()),
+      }],
+      repair_error: None,
+    }));
+  }
+  let publisher = RecordingPublisher::new(Duration::ZERO);
+  publisher.fail_next_send_job.store(1, Ordering::Release);
+  assert!(
+    run_prefetch_once(QueueKind::Scrape, &store, &publisher)
+      .await
+      .is_err()
+  );
+  assert_eq!(
+    publisher
+      .failed_notifications
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner)
+      .as_slice(),
+    &[(
+      QueueKind::Scrape,
+      "corrupt-during-pub-err".to_owned(),
+      "chan-err".to_owned()
+    )]
+  );
+
+  // Part 2: transient notify failure is retained and retried on the next loop tick.
+  let loop_store = Arc::new(MockStore::new());
+  {
+    let mut scrape = loop_store
+      .scrape_batches
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner);
+    scrape.push(Ok(PrefetchBatch {
+      jobs: Vec::new(),
+      failed_notifications: vec![FailedJobNotification {
+        id: "corrupt-retry".to_owned(),
+        listen_channel_id: Some("chan-retry".to_owned()),
+      }],
+      repair_error: None,
+    }));
+  }
+  let loop_pub = Arc::new(RecordingPublisher::new(Duration::ZERO));
+  loop_pub.fail_next_notify.store(1, Ordering::Release);
+
+  let (shutdown_tx, shutdown_rx) = watch::channel(false);
+  let handle = tokio::spawn(run_prefetch_loops(
+    Arc::clone(&loop_store),
+    Arc::clone(&loop_pub),
+    Option::<Arc<CountingHeartbeat>>::None,
+    Duration::from_millis(10),
+    shutdown_rx,
+  ));
+
+  let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+  while loop_pub
+    .failed_notifications
+    .lock()
+    .unwrap_or_else(PoisonError::into_inner)
+    .is_empty()
+    && tokio::time::Instant::now() < deadline
+  {
+    tokio::time::sleep(Duration::from_millis(10)).await;
+  }
+
+  let _ = shutdown_tx.send(true);
+  assert!(matches!(
+    tokio::time::timeout(Duration::from_secs(2), handle).await,
+    Ok(Ok(()))
+  ));
+  assert_eq!(loop_pub.fail_next_notify.load(Ordering::Acquire), 0);
+  assert_eq!(
+    loop_pub
+      .failed_notifications
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner)
+      .as_slice(),
+    &[(
+      QueueKind::Scrape,
+      "corrupt-retry".to_owned(),
+      "chan-retry".to_owned()
     )]
   );
 }

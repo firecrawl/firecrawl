@@ -213,6 +213,7 @@ fn parse_basic_properties(header_payload: &[u8]) -> (Option<u8>, Option<String>,
 
 struct MockBrokerControls {
   drop_after_publish: AtomicUsize,
+  drop_before_confirm_budget: AtomicUsize,
   nack_budget: AtomicUsize,
   withhold_confirm_budget: AtomicUsize,
   dropped_notify: Notify,
@@ -412,6 +413,15 @@ async fn serve_mock_amqp_connection(
             guard.received_publishes = guard.received_publishes.saturating_add(1);
           }
 
+          let should_drop_before_confirm = controls
+            .drop_before_confirm_budget
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
+            .is_ok();
+          if should_drop_before_confirm {
+            drop(stream);
+            return;
+          }
+
           let should_withhold = controls
             .withhold_confirm_budget
             .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
@@ -450,13 +460,24 @@ async fn serve_mock_amqp_connection(
             break;
           }
 
-          // Simulate a broker connection drop right after acking the first publish.
+          // Simulate a broker restart right after acking the first publish by
+          // sending AMQP Connection.Close (10, 50) and awaiting Connection.CloseOk
+          // so the client deterministically marks the session closed before the next publish.
           if !should_nack
             && controls
               .drop_after_publish
               .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
               .is_ok()
           {
+            let mut close = Vec::new();
+            close.extend_from_slice(&10_u16.to_be_bytes());
+            close.extend_from_slice(&50_u16.to_be_bytes());
+            close.extend_from_slice(&320_u16.to_be_bytes());
+            push_short_str(&mut close, "broker restart");
+            close.extend_from_slice(&0_u16.to_be_bytes());
+            close.extend_from_slice(&0_u16.to_be_bytes());
+            let _ = write_frame(&mut stream, 1, 0, &close).await;
+            let _ = tokio::time::timeout(Duration::from_secs(2), read_frame(&mut stream)).await;
             drop(stream);
             controls.dropped_notify.notify_waiters();
             return;
@@ -497,6 +518,7 @@ async fn amqp_publisher_declares_quorum_queue_publishes_exact_wire_props_and_rec
   let captured = Arc::new(Mutex::new(CapturedAmqpWire::default()));
   let controls = Arc::new(MockBrokerControls {
     drop_after_publish: AtomicUsize::new(1),
+    drop_before_confirm_budget: AtomicUsize::new(0),
     nack_budget: AtomicUsize::new(0),
     withhold_confirm_budget: AtomicUsize::new(0),
     dropped_notify: Notify::new(),
@@ -596,6 +618,7 @@ async fn amqp_publisher_returns_error_on_broker_nack() {
   let captured = Arc::new(Mutex::new(CapturedAmqpWire::default()));
   let controls = Arc::new(MockBrokerControls {
     drop_after_publish: AtomicUsize::new(0),
+    drop_before_confirm_budget: AtomicUsize::new(0),
     nack_budget: AtomicUsize::new(1),
     withhold_confirm_budget: AtomicUsize::new(0),
     dropped_notify: Notify::new(),
@@ -639,6 +662,7 @@ async fn amqp_publisher_does_not_retry_on_publish_confirm_timeout() {
   let captured = Arc::new(Mutex::new(CapturedAmqpWire::default()));
   let controls = Arc::new(MockBrokerControls {
     drop_after_publish: AtomicUsize::new(0),
+    drop_before_confirm_budget: AtomicUsize::new(0),
     nack_budget: AtomicUsize::new(0),
     withhold_confirm_budget: AtomicUsize::new(0),
     dropped_notify: Notify::new(),
@@ -679,6 +703,71 @@ async fn amqp_publisher_does_not_retry_on_publish_confirm_timeout() {
   assert_eq!(wire.confirm_selects, 1);
   // Exactly 2 publishes (job1 + single job2 attempt): no duplicate retry after confirm timeout.
   assert_eq!(wire.received_publishes, 2);
+}
+
+#[tokio::test]
+async fn amqp_publisher_does_not_retry_on_confirm_transport_drop() {
+  let listener = TcpListener::bind("127.0.0.1:0").await;
+  assert!(listener.is_ok());
+  let Ok(listener) = listener else { return };
+  let addr = listener.local_addr();
+  assert!(addr.is_ok());
+  let Ok(addr) = addr else { return };
+
+  let captured = Arc::new(Mutex::new(CapturedAmqpWire::default()));
+  let controls = Arc::new(MockBrokerControls {
+    drop_after_publish: AtomicUsize::new(0),
+    drop_before_confirm_budget: AtomicUsize::new(0),
+    nack_budget: AtomicUsize::new(0),
+    withhold_confirm_budget: AtomicUsize::new(0),
+    dropped_notify: Notify::new(),
+  });
+  let server_state = Arc::clone(&captured);
+  let server_controls = Arc::clone(&controls);
+  let server = tokio::spawn(async move {
+    while let Ok((stream, _)) = listener.accept().await {
+      let s = Arc::clone(&server_state);
+      let c = Arc::clone(&server_controls);
+      tokio::spawn(serve_mock_amqp_connection(stream, s, c));
+    }
+  });
+
+  let publisher = AmqpPrefetchPublisher::new(Some(RedactedString::new(format!(
+    "amqp://guest:guest@{addr}/%2f"
+  ))));
+
+  let job1 = make_job("job-warm-2");
+  assert!(publisher.send_job(QueueKind::Scrape, &job1).await.is_ok());
+
+  // Drop the TCP socket after receiving job-2 frames without sending Basic.Ack.
+  controls
+    .drop_before_confirm_budget
+    .store(1, Ordering::Release);
+  let job2 = make_job("job-confirm-eof");
+  let res = publisher.send_job(QueueKind::Scrape, &job2).await;
+  assert!(matches!(res, Err(PublishError::ConfirmTransport(_))));
+  assert_eq!(
+    controls.drop_before_confirm_budget.load(Ordering::Acquire),
+    0
+  );
+
+  {
+    let wire = captured.lock().unwrap_or_else(PoisonError::into_inner);
+    // Confirm-stage transport failure must not retry job-2 on a fresh connection.
+    assert_eq!(wire.connections, 1);
+    assert_eq!(wire.received_publishes, 2);
+  }
+
+  // Subsequent job reconnects cleanly on a new connection and succeeds.
+  let job3 = make_job("job-after-drop");
+  assert!(publisher.send_job(QueueKind::Scrape, &job3).await.is_ok());
+
+  publisher.shutdown().await;
+  server.abort();
+
+  let wire = captured.lock().unwrap_or_else(PoisonError::into_inner);
+  assert_eq!(wire.connections, 2);
+  assert_eq!(wire.received_publishes, 3);
 }
 
 #[tokio::test]

@@ -64,6 +64,8 @@ pub enum PublishError {
   Timeout(&'static str),
   #[error("AMQP publish confirmation timed out; delivery outcome is ambiguous")]
   ConfirmTimeout,
+  #[error("AMQP transport failed while awaiting publish confirmation: {0}")]
+  ConfirmTransport(String),
   #[error("broker negatively acknowledged prefetch publish")]
   Nacked,
   #[error("AMQP operation failed: {0}")]
@@ -75,7 +77,10 @@ impl PublishError {
   /// so retrying on a fresh connection could enqueue a duplicate message.
   #[must_use]
   pub fn is_ambiguous_outcome(&self) -> bool {
-    matches!(self, Self::ConfirmTimeout | Self::Timeout("basic_publish"))
+    matches!(
+      self,
+      Self::ConfirmTimeout | Self::ConfirmTransport(_) | Self::Timeout("basic_publish")
+    )
   }
 }
 
@@ -444,7 +449,7 @@ async fn publish_once(
   let confirmation = tokio::time::timeout(op_timeout, confirm)
     .await
     .map_err(|_| PublishError::ConfirmTimeout)?
-    .map_err(|err| PublishError::Amqp(err.to_string()))?;
+    .map_err(|err| PublishError::ConfirmTransport(err.to_string()))?;
 
   match confirmation {
     Confirmation::Ack(_) => Ok(()),
@@ -486,6 +491,7 @@ mod tests {
   #[test]
   fn classifies_ambiguous_publish_timeouts_as_non_retryable() {
     assert!(PublishError::ConfirmTimeout.is_ambiguous_outcome());
+    assert!(PublishError::ConfirmTransport("eof".to_owned()).is_ambiguous_outcome());
     assert!(PublishError::Timeout("basic_publish").is_ambiguous_outcome());
     assert!(!PublishError::Timeout("connect").is_ambiguous_outcome());
     assert!(!PublishError::Nacked.is_ambiguous_outcome());
