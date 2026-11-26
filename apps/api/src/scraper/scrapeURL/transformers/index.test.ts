@@ -83,27 +83,43 @@ describe("executeTransformers", () => {
   });
 
   it("strips NUL characters from engine-delivered markdown and rawHtml", async () => {
-    const document = await executeTransformers(
-      {
+    const meta: Meta = {
+      id: "test-scrape-nul",
+      url: "https://example.com/form.pdf",
+      ctx: { teamId: "test-team", zeroDataRetention: false },
+      state: {},
+      options: {
+        ...applyScrapeOptionsDefaults(scrapeOptions.parse({})),
+        formats: [{ type: "markdown" }, { type: "rawHtml" }],
+        onlyMainContent: false,
+      },
+      internalOptions: { teamId: "test-team", orgId: null },
+      logger: createLogger({ silent: true }),
+      abort: new AbortManager(),
+      featureFlags: new Set(),
+      mock: null,
+      imageOcrEnabled: async () => false,
+      pdfPrefetch: undefined,
+      documentPrefetch: undefined,
+      imagePrefetch: undefined,
+      fetchPrefetch: undefined,
+      costTracking: new CostTracking(),
+      threatDecisions: [],
+    };
+
+    const inputDoc: Document = {
+      rawHtml: "<p>field: S\u0000c\u0000h</p>",
+      markdown: "field: S\u0000c\u0000h",
+      metadata: {
+        sourceURL: "https://example.com/form.pdf",
         url: "https://example.com/form.pdf",
-        options: {
-          formats: [{ type: "markdown" }, { type: "rawHtml" }],
-          onlyMainContent: false,
-        },
-        internalOptions: {},
-        logger: logger(),
-      } as any,
-      {
-        rawHtml: "<p>field: S\u0000c\u0000h</p>",
-        markdown: "field: S\u0000c\u0000h",
-        metadata: {
-          sourceURL: "https://example.com/form.pdf",
-          url: "https://example.com/form.pdf",
-          statusCode: 200,
-          contentType: "application/pdf",
-        },
-      } as any,
-    );
+        statusCode: 200,
+        contentType: "application/pdf",
+        proxyUsed: "basic",
+      },
+    };
+
+    const document = await executeTransformers(meta, inputDoc);
 
     expect(document.markdown).toBe("field: Sch");
     expect(document.rawHtml).toBe("<p>field: Sch</p>");
