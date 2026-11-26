@@ -1,6 +1,6 @@
 import { SearchV2Response, SearchResultType } from "../../lib/entities";
 import { Logger } from "winston";
-import { TransportableError } from "../../lib/error";
+import { isTransportableError } from "../../lib/error";
 import {
   SearchProviderUnavailableError,
   UsOnlyUnavailableError,
@@ -98,7 +98,7 @@ export async function search({
     return {};
   } catch (error) {
     logger.error(`Error in search function`, { error });
-    if (error instanceof TransportableError) throw error;
+    if (isTransportableError(error)) throw error;
     throw new SearchProviderUnavailableError(undefined, { cause: error });
   }
 }
