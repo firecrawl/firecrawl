@@ -11,7 +11,7 @@ vi.mock("./promptInjectionGuard", () => ({
 }));
 
 import type { Mock } from "vitest";
-import { extractData } from "./jsonExtract";
+import { extractData, schemaAsSent } from "./jsonExtract";
 import { generateCompletions } from "../transformers/llmExtract";
 import { checkForPromptInjection } from "./promptInjectionGuard";
 import { JsonExtractionContentTooLargeError } from "../error";
@@ -136,5 +136,136 @@ describe("extractData", () => {
         [{ name: "a" }, { name: "b" }],
       ]);
     });
+  });
+});
+
+describe("schemaAsSent", () => {
+  const bookWithDefs = {
+    type: "object",
+    properties: {
+      title: { type: "string" },
+      price: { $ref: "#/$defs/Money" },
+    },
+    required: ["title", "price"],
+    additionalProperties: false,
+    $defs: {
+      Money: {
+        type: "object",
+        properties: {
+          amount: { type: "number" },
+          currency: { type: "string" },
+        },
+        required: ["amount", "currency"],
+        additionalProperties: false,
+      },
+    },
+  };
+
+  const bookInlined = {
+    type: "object",
+    properties: {
+      title: { type: "string" },
+      price: {
+        type: "object",
+        properties: {
+          amount: { type: "number" },
+          currency: { type: "string" },
+        },
+        required: ["amount", "currency"],
+        additionalProperties: false,
+      },
+    },
+    required: ["title", "price"],
+    additionalProperties: false,
+  };
+
+  const recursiveComments = {
+    type: "object",
+    properties: {
+      body: { type: "string" },
+      replies: { type: "array", items: { $ref: "#/$defs/Comment" } },
+    },
+    required: ["body"],
+    $defs: {
+      Comment: {
+        type: "object",
+        properties: {
+          body: { type: "string" },
+          replies: { type: "array", items: { $ref: "#/$defs/Comment" } },
+        },
+        required: ["body"],
+      },
+    },
+  };
+
+  it("inlines resolvable refs and drops $defs", () => {
+    const sent = schemaAsSent(bookWithDefs, noopLogger);
+
+    expect(JSON.stringify(sent)).not.toContain("$defs");
+    expect(JSON.stringify(sent)).not.toContain("$ref");
+    expect(sent).toEqual(bookInlined);
+  });
+
+  it("preserves a recursive schema whose $ref survives inlining", () => {
+    const before = JSON.stringify(recursiveComments);
+    const sent = schemaAsSent(recursiveComments, noopLogger);
+
+    expect(JSON.stringify(sent)).toContain('"$ref"');
+    expect(JSON.stringify(sent)).toBe(before);
+  });
+
+  it("returns a schema without refs deep-equal to itself", () => {
+    expect(schemaAsSent(bookInlined, noopLogger)).toEqual(bookInlined);
+  });
+
+  it("drops unused $defs even when no property references them", () => {
+    const sent = schemaAsSent(
+      { ...bookInlined, $defs: { Money: bookInlined.properties.price } },
+      noopLogger,
+    );
+
+    expect(sent.$defs).toBeUndefined();
+    expect(JSON.stringify(sent)).not.toContain('"$ref"');
+  });
+
+  it("preserves legacy #/definitions refs it cannot resolve", () => {
+    const legacy = {
+      type: "object",
+      properties: { price: { $ref: "#/definitions/Money" } },
+      definitions: {
+        Money: {
+          type: "object",
+          properties: { amount: { type: "number" } },
+        },
+      },
+    };
+
+    const sent = schemaAsSent(legacy, noopLogger);
+
+    expect(JSON.stringify(sent)).toContain('"$ref"');
+    expect(sent).toEqual(legacy);
+  });
+
+  it("preserves an acyclic ref chain that exceeds the resolver's depth limit", () => {
+    const defs: Record<string, any> = {};
+    const depth = 12;
+    for (let i = 0; i < depth; i++) {
+      defs[`L${i}`] =
+        i === depth - 1 ? { type: "string" } : { $ref: `#/$defs/L${i + 1}` };
+    }
+    const chain = {
+      type: "object",
+      properties: { v: { $ref: "#/$defs/L0" } },
+      $defs: defs,
+    };
+
+    const sent = schemaAsSent(chain, noopLogger);
+
+    expect(JSON.stringify(sent)).toContain('"$ref"');
+    expect(sent).toEqual(chain);
+  });
+
+  it("passes undefined through", () => {
+    expect(schemaAsSent(undefined, noopLogger)).toBeUndefined();
   });
 });
