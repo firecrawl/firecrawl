@@ -25,11 +25,20 @@ pub const MAX_ERROR_BACKOFF: Duration = Duration::from_secs(5);
 const HEARTBEAT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const HEARTBEAT_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_PENDING_FAILURE_NOTIFICATIONS: usize = 1_024;
-const MAX_FAILURE_NOTIFY_ATTEMPTS: u8 = 5;
+/// Matches the 60s listen-queue `x-expires` TTL with margin so pending waiter
+/// notifications survive transient broker outages without lingering forever.
+const MAX_PENDING_FAILURE_AGE: Duration = Duration::from_secs(90);
+/// Per-entry retry cap applied only once another send proves the broker is up,
+/// so a broker outage does not evict healthy pending notifications.
+const MAX_POISON_NOTIFY_ATTEMPTS: u8 = 5;
+const FAILURE_NOTIFY_FLUSH_BUDGET: Duration = Duration::from_secs(5);
+const MAX_FAILURE_NOTIFY_ITEMS_PER_FLUSH: usize = 64;
+const MAX_CONSECUTIVE_NOTIFY_ERRORS_PER_FLUSH: usize = 4;
 
 struct PendingFailureNotification {
   notification: FailedJobNotification,
-  attempts: u8,
+  enqueued_at: Instant,
+  poison_attempts: u8,
 }
 
 /// Boxed `Send` future alias used by worker dependency traits.
@@ -196,7 +205,8 @@ fn enqueue_failure_notifications(
     }
     pending_failures.push_back(PendingFailureNotification {
       notification,
-      attempts: 0,
+      enqueued_at: Instant::now(),
+      poison_attempts: 0,
     });
   }
 }
@@ -205,49 +215,105 @@ async fn flush_pending_failure_notifications<P: PrefetchPublisher>(
   queue: QueueKind,
   publisher: &P,
   pending_failures: &mut VecDeque<PendingFailureNotification>,
+  broker_healthy_hint: bool,
 ) -> Result<(), String> {
-  let mut first_error: Option<String> = None;
-  let count = pending_failures.len();
-  for _ in 0..count {
-    let Some(mut entry) = pending_failures.pop_front() else {
-      break;
-    };
-    let Some(listen_channel_id) = entry.notification.listen_channel_id.as_deref() else {
-      continue;
-    };
-    if let Err(err) = publisher
-      .send_job_failed(queue, &entry.notification.id, listen_channel_id)
-      .await
-    {
-      entry.attempts = entry.attempts.saturating_add(1);
-      if entry.attempts < MAX_FAILURE_NOTIFY_ATTEMPTS {
+  // Prune expired entries at the front first so they never consume I/O budget.
+  while let Some(front) = pending_failures.front() {
+    if front.enqueued_at.elapsed() >= MAX_PENDING_FAILURE_AGE {
+      if let Some(expired) = pending_failures.pop_front() {
         tracing::warn!(
           module = "nuq/rabbitmq",
           queue = queue.table_name(),
-          attempt = entry.attempts,
-          max_attempts = MAX_FAILURE_NOTIFY_ATTEMPTS,
-          error = %err,
-          "Failed to publish NuQ job failure notification; retaining for retry"
-        );
-        // Rotate to the back so one poison entry cannot head-of-line block others.
-        pending_failures.push_back(entry);
-      } else {
-        tracing::error!(
-          module = "nuq/rabbitmq",
-          queue = queue.table_name(),
-          attempts = entry.attempts,
-          error = %err,
-          "Dropping NuQ job failure notification after max retry attempts"
+          age_secs = expired.enqueued_at.elapsed().as_secs(),
+          "Dropping expired NuQ job failure notification"
         );
       }
-      if first_error.is_none() {
-        first_error = Some(format!(
-          "failure notification failed for {}: {err}",
-          queue.table_name()
-        ));
+    } else {
+      break;
+    }
+  }
+
+  let flush_start = Instant::now();
+  let mut first_error: Option<String> = None;
+  let mut failed_this_flush: Vec<PendingFailureNotification> = Vec::new();
+  let mut any_succeeded = broker_healthy_hint;
+  let mut attempted = 0_usize;
+  let mut consecutive_errors = 0_usize;
+  let max_items = pending_failures
+    .len()
+    .min(MAX_FAILURE_NOTIFY_ITEMS_PER_FLUSH);
+
+  for _ in 0..max_items {
+    if attempted > 0 && flush_start.elapsed() >= FAILURE_NOTIFY_FLUSH_BUDGET {
+      break;
+    }
+    if consecutive_errors >= MAX_CONSECUTIVE_NOTIFY_ERRORS_PER_FLUSH {
+      break;
+    }
+    let Some(entry) = pending_failures.pop_front() else {
+      break;
+    };
+    if entry.enqueued_at.elapsed() >= MAX_PENDING_FAILURE_AGE {
+      tracing::warn!(
+        module = "nuq/rabbitmq",
+        queue = queue.table_name(),
+        age_secs = entry.enqueued_at.elapsed().as_secs(),
+        "Dropping expired NuQ job failure notification"
+      );
+      continue;
+    }
+    let Some(listen_channel_id) = entry.notification.listen_channel_id.as_deref() else {
+      continue;
+    };
+    attempted = attempted.saturating_add(1);
+    match publisher
+      .send_job_failed(queue, &entry.notification.id, listen_channel_id)
+      .await
+    {
+      Ok(()) => {
+        any_succeeded = true;
+        consecutive_errors = 0;
+      }
+      Err(err) => {
+        consecutive_errors = consecutive_errors.saturating_add(1);
+        if first_error.is_none() {
+          first_error = Some(format!(
+            "failure notification failed for {}: {err}",
+            queue.table_name()
+          ));
+        }
+        failed_this_flush.push(entry);
       }
     }
   }
+
+  for mut entry in failed_this_flush {
+    if any_succeeded {
+      entry.poison_attempts = entry.poison_attempts.saturating_add(1);
+    }
+    if entry.poison_attempts < MAX_POISON_NOTIFY_ATTEMPTS
+      && entry.enqueued_at.elapsed() < MAX_PENDING_FAILURE_AGE
+    {
+      tracing::warn!(
+        module = "nuq/rabbitmq",
+        queue = queue.table_name(),
+        poison_attempts = entry.poison_attempts,
+        max_poison_attempts = MAX_POISON_NOTIFY_ATTEMPTS,
+        "Failed to publish NuQ job failure notification; retaining for retry"
+      );
+      // Rotate to the back so one poison entry cannot head-of-line block others.
+      pending_failures.push_back(entry);
+    } else {
+      tracing::error!(
+        module = "nuq/rabbitmq",
+        queue = queue.table_name(),
+        poison_attempts = entry.poison_attempts,
+        age_secs = entry.enqueued_at.elapsed().as_secs(),
+        "Dropping NuQ job failure notification after exhausting retry policy"
+      );
+    }
+  }
+
   match first_error {
     Some(err) => Err(err),
     None => Ok(()),
@@ -281,7 +347,8 @@ where
         // Best-effort flush so carried-over waiter notifications still drain
         // during a Postgres outage without blocking future claims.
         if !pending_failures.is_empty() {
-          let _ = flush_pending_failure_notifications(queue, publisher, pending_failures).await;
+          let _ =
+            flush_pending_failure_notifications(queue, publisher, pending_failures, false).await;
         }
         return Err(format!(
           "prefetch query failed for {}: {err}",
@@ -326,9 +393,11 @@ where
     // Always attempt to deliver terminal failure notifications even when a
     // valid-job publish failed earlier in the batch; failures remain queued for
     // retry on subsequent loop iterations.
-    let notify_error = flush_pending_failure_notifications(queue, publisher, pending_failures)
-      .await
-      .err();
+    let broker_healthy_hint = sent > 0 && publish_error.is_none();
+    let notify_error =
+      flush_pending_failure_notifications(queue, publisher, pending_failures, broker_healthy_hint)
+        .await
+        .err();
 
     if let Some(err) = publish_error {
       return Err(err);
@@ -467,7 +536,8 @@ async fn run_single_queue_loop<S, P, H>(
   // Final best-effort flush for any unsent failure notifications before exit.
   if !pending_failures.is_empty() && publisher.is_configured() {
     let _ =
-      flush_pending_failure_notifications(queue, publisher.as_ref(), &mut pending_failures).await;
+      flush_pending_failure_notifications(queue, publisher.as_ref(), &mut pending_failures, false)
+        .await;
   }
 }
 

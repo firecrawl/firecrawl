@@ -551,10 +551,14 @@ async fn stuck_failure_notification_does_not_block_job_claims_or_other_notificat
       ],
       repair_error: None,
     }));
-    scrape.push(Ok(PrefetchBatch::from_jobs(vec![sample_job(
-      "valid-after-poison",
-      false,
-    )])));
+    // Subsequent valid jobs prove the broker stays healthy across retries so the
+    // poison entry is evicted while job claims keep flowing uninterrupted.
+    for i in 1..=4 {
+      scrape.push(Ok(PrefetchBatch::from_jobs(vec![sample_job(
+        &format!("valid-after-poison-{i}"),
+        false,
+      )])));
+    }
   }
 
   let publisher = Arc::new(RecordingPublisher::failing_notify_channel("chan-poison"));
@@ -572,7 +576,7 @@ async fn stuck_failure_notification_does_not_block_job_claims_or_other_notificat
     shutdown_rx,
   ));
 
-  // Wait until the poison notification has been dropped and a clean cycle fires heartbeat.
+  // Wait until the poison notification has been evicted and a clean cycle fires heartbeat.
   let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
   while heartbeat.pings.load(Ordering::Acquire) == 0 && tokio::time::Instant::now() < deadline {
     tokio::time::sleep(Duration::from_millis(10)).await;
@@ -591,7 +595,12 @@ async fn stuck_failure_notification_does_not_block_job_claims_or_other_notificat
       .lock()
       .unwrap_or_else(PoisonError::into_inner)
       .as_slice(),
-    &[(QueueKind::Scrape, "valid-after-poison".to_owned())]
+    &[
+      (QueueKind::Scrape, "valid-after-poison-1".to_owned()),
+      (QueueKind::Scrape, "valid-after-poison-2".to_owned()),
+      (QueueKind::Scrape, "valid-after-poison-3".to_owned()),
+      (QueueKind::Scrape, "valid-after-poison-4".to_owned()),
+    ]
   );
   // Healthy notification behind the poison entry still delivered without head-of-line blocking.
   assert_eq!(
@@ -606,9 +615,100 @@ async fn stuck_failure_notification_does_not_block_job_claims_or_other_notificat
       "chan-good".to_owned()
     )]
   );
-  // Poison notification was retried a bounded number of times (5) and then evicted.
+  // Poison notification was retried 5 times against a proven-healthy broker and then evicted.
   assert_eq!(publisher.failed_notify_attempts.load(Ordering::Acquire), 5);
   assert!(heartbeat.pings.load(Ordering::Acquire) >= 1);
+}
+
+#[tokio::test]
+async fn broker_outage_retains_failure_notifications_and_bounds_per_tick_flush_work() {
+  // Part 1: a multi-tick broker outage (> 5 failed cycles) must not drop healthy notifications.
+  let loop_store = Arc::new(MockStore::new());
+  {
+    let mut scrape = loop_store
+      .scrape_batches
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner);
+    scrape.push(Ok(PrefetchBatch {
+      jobs: Vec::new(),
+      failed_notifications: vec![FailedJobNotification {
+        id: "outage-survivor".to_owned(),
+        listen_channel_id: Some("chan-outage".to_owned()),
+      }],
+      repair_error: None,
+    }));
+  }
+  let loop_pub = Arc::new(RecordingPublisher::new(Duration::ZERO));
+  loop_pub.fail_next_notify.store(7, Ordering::Release);
+
+  let (shutdown_tx, shutdown_rx) = watch::channel(false);
+  let handle = tokio::spawn(run_prefetch_loops(
+    Arc::clone(&loop_store),
+    Arc::clone(&loop_pub),
+    Option::<Arc<CountingHeartbeat>>::None,
+    Duration::from_millis(5),
+    shutdown_rx,
+  ));
+
+  let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+  while loop_pub
+    .failed_notifications
+    .lock()
+    .unwrap_or_else(PoisonError::into_inner)
+    .is_empty()
+    && tokio::time::Instant::now() < deadline
+  {
+    tokio::time::sleep(Duration::from_millis(10)).await;
+  }
+
+  let _ = shutdown_tx.send(true);
+  assert!(matches!(
+    tokio::time::timeout(Duration::from_secs(2), handle).await,
+    Ok(Ok(()))
+  ));
+  assert_eq!(loop_pub.fail_next_notify.load(Ordering::Acquire), 0);
+  assert_eq!(
+    loop_pub
+      .failed_notifications
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner)
+      .as_slice(),
+    &[(
+      QueueKind::Scrape,
+      "outage-survivor".to_owned(),
+      "chan-outage".to_owned()
+    )]
+  );
+
+  // Part 2: when RabbitMQ is unavailable, one flush stops after the consecutive-error budget
+  // instead of attempting every queued entry.
+  let burst_store = MockStore::new();
+  {
+    let mut scrape = burst_store
+      .scrape_batches
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner);
+    let burst = (0..20)
+      .map(|i| FailedJobNotification {
+        id: format!("burst-{i}"),
+        listen_channel_id: Some(format!("chan-{i}")),
+      })
+      .collect();
+    scrape.push(Ok(PrefetchBatch {
+      jobs: Vec::new(),
+      failed_notifications: burst,
+      repair_error: None,
+    }));
+  }
+  let burst_pub = RecordingPublisher::new(Duration::ZERO);
+  burst_pub.fail_next_notify.store(100, Ordering::Release);
+  assert!(
+    run_prefetch_once(QueueKind::Scrape, &burst_store, &burst_pub)
+      .await
+      .is_err()
+  );
+  // Capped at 4 consecutive errors per flush instead of scanning all 20 entries.
+  assert_eq!(burst_pub.fail_next_notify.load(Ordering::Acquire), 96);
 }
 
 #[tokio::test]
