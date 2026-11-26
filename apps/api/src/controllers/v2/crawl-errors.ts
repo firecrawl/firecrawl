@@ -22,12 +22,18 @@ type CrawlErrorEntry = Extract<
 >["errors"][number];
 type RequiresAction = NonNullable<CrawlErrorEntry["requiresAction"]>;
 
+const nullishString = z
+  .string()
+  .nullable()
+  .transform(value => value ?? undefined)
+  .optional();
+
 const requiresActionSchema = z
   .object({
     type: z.string(),
-    terms: z.string().optional(),
-    version: z.string().optional(),
-    url: z.string().optional(),
+    terms: nullishString,
+    version: nullishString,
+    url: nullishString,
   })
   .catchall(jsonValueSchema.optional());
 

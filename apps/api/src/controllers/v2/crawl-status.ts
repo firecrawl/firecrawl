@@ -23,7 +23,6 @@ import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { storedZeroDataRetention } from "../../lib/request-context";
 import { service } from "../../service";
 import type { StoredJob } from "../../service";
-import { jsonRecordSchema } from "../../lib/json-types";
 configDotenv();
 
 export type PseudoJob<T> = {
@@ -45,8 +44,10 @@ interface CrawlStatusSummary {
   creditsUsed?: number;
 }
 
+const documentShapeSchema = z.looseObject({});
+
 const documentSchema = z.custom<Document>(
-  value => jsonRecordSchema.safeParse(value).success,
+  value => documentShapeSchema.safeParse(value).success,
 );
 
 const crawlEntireDomainSchema = z.object({

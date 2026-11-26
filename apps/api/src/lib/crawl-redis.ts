@@ -81,9 +81,9 @@ function toError(error: unknown): Error {
 const storedCrawlPayloadSchema = z.object({
   team_id: z.string(),
   crawlerOptions: jsonObjectSchema.nullish(),
-  scrapeOptions: jsonObjectSchema.optional(),
-  internalOptions: jsonObjectSchema.optional(),
-  createdAt: z.number().optional(),
+  scrapeOptions: jsonObjectSchema.nullish(),
+  internalOptions: jsonObjectSchema.nullish(),
+  createdAt: z.number().nullish(),
 });
 
 const storedCrawlSchema = z.custom<StoredCrawl>(

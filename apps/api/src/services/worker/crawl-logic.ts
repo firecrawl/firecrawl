@@ -50,9 +50,9 @@ const defaultStoredScrapeOptions: Omit<ScrapeOptions, "timeout"> = {
 };
 
 const jobCrawlerOptionsShapeSchema = z.looseObject({
-  limit: z.number().optional(),
-  maxDiscoveryDepth: z.number().optional(),
-  currentDiscoveryDepth: z.number().optional(),
+  limit: z.number().nullish(),
+  maxDiscoveryDepth: z.number().nullish(),
+  currentDiscoveryDepth: z.number().nullish(),
 });
 
 const jobCrawlerOptionsSchema = z.custom<JobCrawlerOptions>(
@@ -60,8 +60,8 @@ const jobCrawlerOptionsSchema = z.custom<JobCrawlerOptions>(
 );
 
 const v0DocumentMetadataShapeSchema = z.looseObject({
-  sourceURL: z.string().optional(),
-  creditsUsed: z.number().optional(),
+  sourceURL: z.string().nullish(),
+  creditsUsed: z.number().nullish(),
 });
 
 const v0DocumentMetadataSchema = z.custom<Partial<DocumentMetadata>>(

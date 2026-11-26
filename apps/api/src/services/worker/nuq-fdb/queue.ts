@@ -86,16 +86,21 @@ export type NuQJobStatusCompat = z.infer<typeof nuqJobStatusCompatSchema>;
 
 const nuqFdbDefaultWebhookSchema = z
   .object({
-    url: z.string().optional(),
+    url: z.string().nullish(),
   })
   .catchall(jsonValueSchema.optional());
 
 const nuqFdbDefaultJobDataSchema = z
   .object({
-    mode: z.string().optional(),
-    url: z.string().optional(),
-    v1: z.boolean().optional(),
-    webhook: nuqFdbDefaultWebhookSchema.optional(),
+    mode: z.string().nullish(),
+    url: z.string().nullish(),
+    v1: z.boolean().nullish(),
+    webhook: z
+      .union([
+        nuqFdbDefaultWebhookSchema,
+        z.string().transform(url => ({ url })),
+      ])
+      .nullish(),
   })
   .catchall(jsonValueSchema.optional());
 
@@ -103,7 +108,7 @@ type NuQFdbDefaultJobData = z.infer<typeof nuqFdbDefaultJobDataSchema>;
 
 const nuqFdbDefaultReturnValueSchema = z
   .object({
-    blob: z.string().optional(),
+    blob: z.string().nullish(),
   })
   .catchall(jsonValueSchema.optional())
   .nullable();
@@ -211,15 +216,14 @@ function decodeNullableJsonChunks<T>(
   if (parts.length === 0) {
     return null;
   }
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(
+    const parsed: unknown = JSON.parse(
       Buffer.concat(parts.map(([, v]) => v)).toString("utf8"),
     );
+    return parsed !== null ? decode(parsed) : null;
   } catch {
     return null;
   }
-  return parsed !== null ? decode(parsed) : null;
 }
 
 function decodeOptionalJsonChunks<T>(
@@ -229,15 +233,14 @@ function decodeOptionalJsonChunks<T>(
   if (parts.length === 0) {
     return decode(null);
   }
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(
+    const parsed: unknown = JSON.parse(
       Buffer.concat(parts.map(([, v]) => v)).toString("utf8"),
     );
+    return decode(parsed);
   } catch {
     return decode(null);
   }
-  return decode(parsed);
 }
 
 function decodeDefaultJobData(raw: unknown): NuQFdbDefaultJobData {

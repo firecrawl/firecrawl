@@ -107,10 +107,10 @@ type StoredCrawlerOptions = JobCrawlerOptions & {
 };
 
 const storedCrawlerOptionsShapeSchema = z.looseObject({
-  limit: z.number().optional(),
-  maxDepth: z.number().optional(),
-  sitemapOnly: z.boolean().optional(),
-  ignoreSitemap: z.boolean().optional(),
+  limit: z.number().nullish(),
+  maxDepth: z.number().nullish(),
+  sitemapOnly: z.boolean().nullish(),
+  ignoreSitemap: z.boolean().nullish(),
 });
 
 const storedCrawlerOptionsSchema = z.custom<StoredCrawlerOptions>(

@@ -23,51 +23,56 @@ const wikimediaRedirectResponseSchema = z.object({
     .object({
       redirects: z
         .array(z.object({ from: z.string(), to: z.string() }))
-        .optional(),
+        .nullish(),
       normalized: z
         .array(z.object({ from: z.string(), to: z.string() }))
-        .optional(),
+        .nullish(),
       pages: z
-        .array(z.object({ title: z.string(), missing: z.boolean().optional() }))
-        .optional(),
+        .array(z.object({ title: z.string(), missing: z.boolean().nullish() }))
+        .nullish(),
     })
-    .optional(),
+    .nullish(),
 });
 
 const wikimediaArticleSchema = z.object({
   name: z.string(),
-  abstract: z.string().optional(),
+  abstract: z.string().nullish(),
   article_body: z
     .object({
-      html: z.string().optional(),
-      wikitext: z.string().optional(),
+      html: z.string().nullish(),
+      wikitext: z.string().nullish(),
     })
-    .optional(),
-  url: z.string().optional(),
+    .nullish(),
+  url: z.string().nullish(),
   in_language: z
     .object({
-      identifier: z.string().optional(),
-      name: z.string().optional(),
+      identifier: z.string().nullish(),
+      name: z.string().nullish(),
     })
-    .optional(),
+    .nullish(),
   is_part_of: z
     .object({
-      identifier: z.string().optional(),
-      name: z.string().optional(),
+      identifier: z.string().nullish(),
+      name: z.string().nullish(),
     })
-    .optional(),
-  date_modified: z.string().optional(),
+    .nullish(),
+  date_modified: z.string().nullish(),
   categories: z
-    .array(z.object({ name: z.string(), url: z.string() }))
-    .optional(),
-  has_parts: z.array(z.object({ name: z.string() })).optional(),
+    .array(
+      z.object({
+        name: z.string().nullish(),
+        url: z.string().nullish(),
+      }),
+    )
+    .nullish(),
+  has_parts: z.array(z.object({ name: z.string().nullish() })).nullish(),
   image: z
     .object({
-      content_url: z.string(),
-      width: z.number().optional(),
-      height: z.number().optional(),
+      content_url: z.string().nullish(),
+      width: z.number().nullish(),
+      height: z.number().nullish(),
     })
-    .optional(),
+    .nullish(),
 });
 
 const wikimediaArticlesResponseSchema = z.array(wikimediaArticleSchema);
@@ -368,9 +373,16 @@ export async function scrapeURLWithWikipedia(
 
   // Build a full HTML document wrapping the article content with metadata
   const categories = (article.categories ?? [])
+    .filter(
+      (c): c is { name: string; url: string } =>
+        typeof c.name === "string" && typeof c.url === "string",
+    )
     .map(c => `<li><a href="${c.url}">${c.name}</a></li>`)
     .join("");
-  const toc = (article.has_parts ?? []).map(p => `<li>${p.name}</li>`).join("");
+  const toc = (article.has_parts ?? [])
+    .filter((p): p is { name: string } => typeof p.name === "string")
+    .map(p => `<li>${p.name}</li>`)
+    .join("");
 
   const fullHtml = `<!DOCTYPE html>
 <html lang="${lang}">

@@ -361,11 +361,19 @@ export interface TransportableErrorClass {
  */
 const scrapeTimeoutProcessingDetailsSchema = z.object({
   state: z.literal("processing_continues"),
-  documentPages: z.number().optional(),
+  documentPages: z
+    .number()
+    .nullable()
+    .transform(value => value ?? undefined)
+    .optional(),
   jobStatus: z.enum(["queued", "running"]),
   estimatedRemainingSeconds: z.number(),
   retryAfterSeconds: z.number(),
-  mayExceedProcessingWindow: z.boolean().optional(),
+  mayExceedProcessingWindow: z
+    .boolean()
+    .nullable()
+    .transform(value => value ?? undefined)
+    .optional(),
 });
 
 type ScrapeTimeoutProcessingDetails = z.infer<

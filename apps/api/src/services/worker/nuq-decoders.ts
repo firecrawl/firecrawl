@@ -3,27 +3,27 @@ import type { Document } from "../../controllers/v2/types";
 import type { ScrapeJobData } from "../../types";
 
 const storedWebhookSchema = z.looseObject({
-  url: z.string(),
+  url: z.string().nullish(),
 });
 
 const scrapeJobCommonShape = {
-  team_id: z.string().optional(),
-  zeroDataRetention: z.boolean().optional(),
-  v1: z.boolean().optional(),
-  webhook: z.union([storedWebhookSchema, z.string()]).optional(),
-  origin: z.string().optional(),
-  requestId: z.string().optional(),
-  skipNuq: z.boolean().optional(),
-  traceContext: z.looseObject({}).optional(),
+  team_id: z.string().nullish(),
+  zeroDataRetention: z.boolean().nullish(),
+  v1: z.boolean().nullish(),
+  webhook: z.union([storedWebhookSchema, z.string()]).nullish(),
+  origin: z.string().nullish(),
+  requestId: z.string().nullish(),
+  skipNuq: z.boolean().nullish(),
+  traceContext: z.looseObject({}).nullish(),
 };
 
 const scrapeJobSingleUrlsShapeSchema = z.looseObject({
   ...scrapeJobCommonShape,
   mode: z.literal("single_urls"),
   url: z.string(),
-  crawl_id: z.string().optional(),
-  crawlerOptions: z.looseObject({}).nullable().optional(),
-  scrapeOptions: z.looseObject({}).optional(),
+  crawl_id: z.string().nullish(),
+  crawlerOptions: z.looseObject({}).nullish(),
+  scrapeOptions: z.looseObject({}).nullish(),
 });
 
 const scrapeJobKickoffShapeSchema = z.looseObject({
@@ -31,8 +31,8 @@ const scrapeJobKickoffShapeSchema = z.looseObject({
   mode: z.literal("kickoff"),
   url: z.string(),
   crawl_id: z.string(),
-  crawlerOptions: z.looseObject({}).nullable().optional(),
-  scrapeOptions: z.looseObject({}).optional(),
+  crawlerOptions: z.looseObject({}).nullish(),
+  scrapeOptions: z.looseObject({}).nullish(),
 });
 
 const scrapeJobKickoffSitemapShapeSchema = z.looseObject({

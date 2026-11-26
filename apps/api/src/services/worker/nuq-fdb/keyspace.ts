@@ -43,14 +43,21 @@ const pendingLocSchema = z.discriminatedUnion("k", [
 
 export type PendingLoc = z.infer<typeof pendingLocSchema>;
 
+function nullishToUndefined<T extends z.ZodType>(schema: T) {
+  return schema
+    .nullable()
+    .transform(value => value ?? undefined)
+    .optional();
+}
+
 export const jobMetaSchema = z.object({
   c: z.number(), // createdAt ms
   p: z.number(), // priority
   o: z.string(), // ownerId (normalized uuid)
-  g: z.string().optional(), // groupId
-  k: z.string().optional(), // API key id (set only when key-gated)
+  g: nullishToUndefined(z.string()), // groupId
+  k: nullishToUndefined(z.string()), // API key id (set only when key-gated)
   f: z.number(), // flags
-  to: z.number().optional(), // backlog timesOutAt ms
+  to: nullishToUndefined(z.number()), // backlog timesOutAt ms
   dc: z.number(), // data chunk count
 });
 
@@ -58,11 +65,11 @@ export type JobMeta = z.infer<typeof jobMetaSchema>;
 
 export const jobStatusRecordSchema = z.object({
   s: nuqFdbJobStatusSchema,
-  l: z.string().optional(), // lock uuid while active
-  e: z.number().optional(), // lease expiry ms while active
+  l: nullishToUndefined(z.string()), // lock uuid while active
+  e: nullishToUndefined(z.number()), // lease expiry ms while active
   st: z.number(), // stall count
-  fa: z.number().optional(), // finishedAt ms
-  loc: pendingLocSchema.optional(),
+  fa: nullishToUndefined(z.number()), // finishedAt ms
+  loc: nullishToUndefined(pendingLocSchema),
 });
 
 export type JobStatusRecord = z.infer<typeof jobStatusRecordSchema>;
@@ -71,12 +78,12 @@ export type JobStatusRecord = z.infer<typeof jobStatusRecordSchema>;
 export const queueEntrySchema = z.object({
   i: z.string(), // jobId
   o: z.string(), // ownerId
-  g: z.string().optional(), // groupId
-  k: z.string().optional(), // API key id (set only when key-gated)
+  g: nullishToUndefined(z.string()), // groupId
+  k: nullishToUndefined(z.string()), // API key id (set only when key-gated)
   p: z.number(), // priority
   f: z.number(), // flags
   c: z.number(), // createdAt ms
-  to: z.number().optional(), // backlog timesOutAt ms
+  to: nullishToUndefined(z.number()), // backlog timesOutAt ms
 });
 
 export type QueueEntry = z.infer<typeof queueEntrySchema>;
@@ -86,9 +93,9 @@ export const groupMetaSchema = z.object({
   c: z.number(), // createdAt ms
   t: z.number(), // ttl ms
   s: z.enum(["active", "completed", "cancelled"]),
-  m: z.number().optional(), // maxConcurrency
-  d: z.number().optional(), // delay seconds between job starts
-  x: z.number().optional(), // expiresAt ms
+  m: nullishToUndefined(z.number()), // maxConcurrency
+  d: nullishToUndefined(z.number()), // delay seconds between job starts
+  x: nullishToUndefined(z.number()), // expiresAt ms
 });
 
 export type GroupMeta = z.infer<typeof groupMetaSchema>;

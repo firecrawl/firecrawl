@@ -8,7 +8,7 @@ const nativeLogEntryFieldsSchema = z.object({
   level: z.string(),
   target: z.string(),
   message: z.string(),
-  fields: jsonObjectSchema,
+  fields: jsonObjectSchema.nullish().transform(value => value ?? {}),
 });
 
 // serde_json writes `timestamp_ms`, while NAPI object bindings expose `timestampMs`.

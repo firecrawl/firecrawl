@@ -129,9 +129,9 @@ export async function removeConcurrencyLimitedJobs(
 
 const scrapeJobCommonFields = {
   team_id: z.string(),
-  zeroDataRetention: z.boolean(),
-  origin: z.string(),
-  apiKeyId: z.number().nullable(),
+  zeroDataRetention: z.boolean().nullish(),
+  origin: z.string().nullish(),
+  apiKeyId: z.number().nullish(),
 };
 
 const scrapeJobDataSchema = z.discriminatedUnion("mode", [
@@ -139,32 +139,38 @@ const scrapeJobDataSchema = z.discriminatedUnion("mode", [
     ...scrapeJobCommonFields,
     mode: z.literal("single_urls"),
     url: z.string(),
-    scrapeOptions: jsonObjectSchema,
-    crawl_id: z.string().optional(),
-    crawlerOptions: jsonObjectSchema.nullable().optional(),
+    scrapeOptions: jsonObjectSchema.nullish(),
+    crawl_id: z.string().nullish(),
+    crawlerOptions: jsonObjectSchema.nullish(),
   }),
   z.object({
     ...scrapeJobCommonFields,
     mode: z.literal("kickoff"),
     url: z.string(),
     crawl_id: z.string(),
-    scrapeOptions: jsonObjectSchema,
-    v1: z.boolean(),
-    crawlerOptions: jsonObjectSchema.nullable().optional(),
+    scrapeOptions: jsonObjectSchema.nullish(),
+    v1: z.boolean().nullish(),
+    crawlerOptions: jsonObjectSchema.nullish(),
   }),
   z.object({
     ...scrapeJobCommonFields,
     mode: z.literal("kickoff_sitemap"),
     crawl_id: z.string(),
     sitemapUrl: z.string(),
-    v1: z.boolean(),
+    v1: z.boolean().nullish(),
   }),
 ]);
 
 const concurrencyLimitedJobSchema = z.object({
   id: z.string(),
-  priority: z.number(),
-  listenable: z.boolean(),
+  priority: z
+    .number()
+    .nullish()
+    .transform(value => value ?? 0),
+  listenable: z
+    .boolean()
+    .nullish()
+    .transform(value => value ?? false),
   data: z.custom<ScrapeJobData>(
     value => scrapeJobDataSchema.safeParse(value).success,
   ),
@@ -349,6 +355,12 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
       }
       const validated = concurrencyLimitedJobSchema.safeParse(parsedJob);
       if (!validated.success) {
+        logger.warn("Dropping invalid concurrency-limited job payload", {
+          module: "concurrency-limit",
+          teamId,
+          jobId: member,
+          issues: validated.error.issues,
+        });
         await redis.del(constructJobKey(member));
         continue;
       }
