@@ -23,6 +23,7 @@ import { getErrorHttpResponse, ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
 import { executeSearch } from "../../search/execute";
 import { applySearchPlanHook } from "../../search/plan-hook";
+import { SearchProviderError } from "../../search/v2";
 import type { BillingMetadata } from "../../lib/billing-types";
 import type { TeamPlanClass } from "../../service/search-providers";
 import {
@@ -513,6 +514,11 @@ async function searchControllerInner(
         errorBody.code = httpResponse.code;
       }
       return res.status(httpResponse.status).json(errorBody);
+    }
+
+    if (error instanceof SearchProviderError) {
+      setSpanAttributes(span, { "search.status_code": 502 });
+      return res.status(502).json({ success: false, error: error.message });
     }
 
     logger.error("Unhandled error occurred in search", {

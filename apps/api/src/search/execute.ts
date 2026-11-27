@@ -289,6 +289,7 @@ export async function executeSearch(
           ]),
           usOnly,
           teamPlanClass: context.teamPlanClass,
+          throwOnSelfHostedProviderError: context.apiVersion === "v2",
         });
 
   const searchResponse: SearchV2Response =

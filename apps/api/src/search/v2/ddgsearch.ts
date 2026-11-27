@@ -197,12 +197,20 @@ export async function ddgSearch(
           });
         }
 
-        if (response.status === 429) {
+        if (!response.ok) {
           await response.body?.cancel();
           if (results.length > 0) {
+            logger.warn("DuckDuckGo search returned partial results", {
+              status: response.status,
+            });
             break;
           }
-          throw new DDGRateLimitError(response.status, response.statusText);
+          if (response.status === 429) {
+            throw new DDGRateLimitError(response.status, response.statusText);
+          }
+          throw new Error(
+            `DuckDuckGo search failed with HTTP ${response.status}`,
+          );
         }
 
         const buf = Buffer.from(await response.arrayBuffer());

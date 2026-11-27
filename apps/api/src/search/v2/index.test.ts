@@ -269,29 +269,36 @@ describe("service.searchProviders dispatch in v2 search", () => {
     expect(mocks.ddgSearch).not.toHaveBeenCalled();
   });
 
-  it("catches provider errors, logs them, and returns an empty response", async () => {
-    const failure = new Error("upstream failed");
-    installSearchService([
-      {
-        name: "custom",
-        searchProviders: [
-          {
-            name: "searxng",
-            priority: 200,
-            enabled: () => true,
-            search: async () => {
-              throw failure;
+  it.each(["searxng", "duckduckgo"] as const)(
+    "returns an empty response when extension provider %s fails",
+    async name => {
+      const failure = new Error("upstream failed");
+      installSearchService([
+        {
+          name: "custom",
+          searchProviders: [
+            {
+              name,
+              priority: 200,
+              enabled: () => true,
+              search: async () => {
+                throw failure;
+              },
             },
-          },
-        ],
-      },
-    ]);
+          ],
+        },
+      ]);
 
-    const res = await search({ query: "firecrawl", logger });
+      const res = await search({
+        query: "firecrawl",
+        logger,
+        throwOnSelfHostedProviderError: true,
+      });
 
-    expect(res).toEqual({});
-    expect(loggerErrorSpy).toHaveBeenCalledWith("Error in search function", {
-      error: failure,
-    });
-  });
+      expect(res).toEqual({});
+      expect(loggerErrorSpy).toHaveBeenCalledWith("Error in search function", {
+        error: failure,
+      });
+    },
+  );
 });

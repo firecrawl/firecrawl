@@ -1,10 +1,17 @@
 import type { SearchV2Response, SearchResultType } from "../../lib/entities";
 import type { Logger } from "winston";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+import { coreSearchProviderNames } from "../../service/search-providers";
 import type { TeamPlanClass } from "../../service/search-providers";
 import { service } from "../../service";
 import type { SearchQuery } from "../../service";
 import { searchWithProvider } from "../../lib/search-metrics";
+
+export class SearchProviderError extends Error {
+  constructor(cause: unknown) {
+    super("Search provider request failed.", { cause });
+  }
+}
 
 export async function search({
   query,
@@ -27,6 +34,7 @@ export async function search({
   excludeDomains = undefined,
   usOnly = false,
   teamPlanClass = undefined,
+  throwOnSelfHostedProviderError = false,
 }: {
   query: string;
   logger: Logger;
@@ -49,6 +57,7 @@ export async function search({
   usOnly?: boolean;
   /** The team's plan class, when the caller knows it. Omitted, nothing is stated. */
   teamPlanClass?: TeamPlanClass;
+  throwOnSelfHostedProviderError?: boolean;
 }): Promise<SearchV2Response> {
   const enabledProviders = service.searchProviders.enabled();
   const providers = usOnly
@@ -84,18 +93,24 @@ export async function search({
     teamPlanClass,
   };
 
-  try {
-    for (const provider of providers) {
+  for (const provider of providers) {
+    try {
       const result = await searchWithProvider(provider, searchQuery);
       if (result !== null) {
         return result;
       }
+    } catch (error: unknown) {
+      logger.error(`Error in search function`, { error });
+      if (
+        throwOnSelfHostedProviderError &&
+        coreSearchProviderNames.includes(provider.name) &&
+        service.describe().searchProviders[provider.name]?.owner === "core"
+      ) {
+        throw new SearchProviderError(error);
+      }
+      return {};
     }
-
-    // Fallback to empty response
-    return {};
-  } catch (error: unknown) {
-    logger.error(`Error in search function`, { error });
-    return {};
   }
+
+  return {};
 }
