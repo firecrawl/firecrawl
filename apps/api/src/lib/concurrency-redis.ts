@@ -14,7 +14,7 @@ export function getTeamQueueLimit(concurrencyLimit: number): number {
 // column on `nuq.queue_scrape_backlog`, so the reaper can always evict
 // stale rows. A backlogged crawl job that outlives this window is
 // unrecoverable anyway — its StoredCrawl in Redis (24h TTL) is gone.
-export const MAX_BACKLOG_TIMEOUT_MS = 172800000; // 48h
+export const MAX_BACKLOG_TIMEOUT_MS = 172_800_000; // 48h
 
 export const constructConcurrencyLimitKey = (team_id: string) =>
   "concurrency-limiter:" + team_id;

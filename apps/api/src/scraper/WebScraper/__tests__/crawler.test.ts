@@ -1,4 +1,3 @@
-import type { Mocked, MockedFunction } from "vitest";
 // crawler.test.ts
 import { WebCrawler } from "../crawler";
 import axios from "axios";
@@ -9,12 +8,8 @@ vi.mock("robots-parser");
 
 describe("WebCrawler", () => {
   let crawler: WebCrawler;
-  const mockAxios = axios as Mocked<typeof axios>;
-  const mockRobotsParser = robotsParser as MockedFunction<
-    typeof robotsParser
-  >;
-
-  let maxCrawledDepth: number;
+  const mockAxios = vi.mocked(axios, true);
+  const mockRobotsParser = vi.mocked(robotsParser);
 
   beforeEach(() => {
     // Setup default mocks
@@ -43,10 +38,10 @@ describe("WebCrawler", () => {
 
     crawler = new WebCrawler({
       jobId: "TEST",
-      initialUrl: initialUrl,
+      initialUrl,
       includes: [],
       excludes: [],
-      limit: limit, // Apply the limit
+      limit, // Apply the limit
       maxCrawledDepth: 10,
     });
 
@@ -80,7 +75,7 @@ describe("WebCrawler", () => {
 
     crawler = new WebCrawler({
       jobId: "TEST",
-      initialUrl: initialUrl,
+      initialUrl,
       includes: ["^/pricing$"], // Only allow /pricing path
       excludes: [],
       limit: 10,
@@ -121,8 +116,8 @@ describe("WebCrawler", () => {
 
     crawler = new WebCrawler({
       jobId: "TEST",
-      initialUrl: initialUrl,
-      includes: ["^https://([a-z0-9-]+\\.)?example\\.com/pricing$"], // Full URL pattern
+      initialUrl,
+      includes: [String.raw`^https://([a-z0-9-]+\.)?example\.com/pricing$`], // Full URL pattern
       excludes: [],
       limit: 10,
       maxCrawledDepth: 10,

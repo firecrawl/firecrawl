@@ -1,11 +1,12 @@
 import crypto from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
+import { Counter } from "prom-client";
 import { config } from "../config";
 import { logAuthDenied } from "./auth-denied-log";
 import { logger } from "./logger";
 
 export function bearerToken(
-  value: string | string[] | undefined,
+  value: string | Array<string> | undefined,
 ): string | null {
   const header = Array.isArray(value) ? value[0] : value;
   return header?.slice(0, 7).toLowerCase() === "bearer "
@@ -17,13 +18,54 @@ export function secretsMatch(
   provided: string | null,
   expected?: string,
 ): boolean {
-  if (!provided || !expected?.trim()) return false;
+  if (!provided || !expected?.trim()) {
+    return false;
+  }
   const left = Buffer.from(provided);
   const right = Buffer.from(expected);
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
 export const ADMIN_KEY_HEADER = "x-firecrawl-admin-key";
+
+export type AdminKeySlot = "current" | "previous";
+
+// The one admin key check, shared by the header and path forms.
+function matchAdminKey(provided: string | null): AdminKeySlot | null {
+  if (secretsMatch(provided, config.BULL_AUTH_KEY)) {
+    return "current";
+  }
+  if (secretsMatch(provided, config.BULL_AUTH_KEY_PREVIOUS)) {
+    return "previous";
+  }
+  return null;
+}
+
+/** Replaces every path segment that is an admin key, so the path is safe to log. */
+export function redactAdminKey(path: string): string {
+  return path
+    .split("/")
+    .map(segment => {
+      let decoded = segment;
+      try {
+        decoded = decodeURIComponent(segment);
+      } catch {
+        // Keep the raw segment when percent-decoding fails.
+      }
+      return matchAdminKey(segment) || matchAdminKey(decoded)
+        ? ":bullAuthKey"
+        : segment;
+    })
+    .join("/");
+}
+
+function logAdminAuthenticated(req: Request, matchedKey: string) {
+  logger.info("Admin request authenticated", {
+    method: req.method,
+    path: redactAdminKey(`${req.baseUrl}${req.path}`),
+    matchedKey,
+  });
+}
 
 function authorizeAdminKey(
   provided: string | null,
@@ -32,10 +74,9 @@ function authorizeAdminKey(
   res: Response,
   next: NextFunction,
 ) {
-  const current = secretsMatch(provided, config.BULL_AUTH_KEY);
-  const previous = secretsMatch(provided, config.BULL_AUTH_KEY_PREVIOUS);
+  const matched = matchAdminKey(provided);
 
-  if (!current && !previous) {
+  if (!matched) {
     logAuthDenied(
       req,
       401,
@@ -48,11 +89,7 @@ function authorizeAdminKey(
     return res.status(401).json({ success: false, error: "Unauthorized" });
   }
 
-  logger.info("Admin request authenticated", {
-    method: req.method,
-    path: `${req.baseUrl}${req.path}`,
-    matchedKey: current ? "current" : "previous",
-  });
+  logAdminAuthenticated(req, matched);
   next();
 }
 
@@ -82,4 +119,63 @@ export function adminKeyHeaderAuth(
   const value = req.headers[ADMIN_KEY_HEADER];
   const provided = (Array.isArray(value) ? value[0] : value) || null;
   authorizeAdminKey(provided, !provided, req, res, next);
+}
+
+// Fixed, bounded labels only: never the key or the raw request path.
+const adminPathRouteRequests = new Counter({
+  name: "firecrawl_admin_path_route_requests_total",
+  help: "Requests to admin routes that take the key as a path segment",
+  labelNames: ["route", "caller"],
+});
+
+const ADMIN_PATH_ROUTE_NAMES: ReadonlySet<string> = new Set([
+  "redis-health",
+  "metrics",
+  "nuq-metrics",
+  "nuq-fdb-metrics",
+  "concurrency-queue-backfill",
+]);
+
+function callerOf(req: Request): string {
+  const agent = req.headers["user-agent"] ?? "";
+  if (/prometheus|victoriametrics|vmagent/i.test(agent)) {
+    return "prometheus";
+  }
+  if (/mozilla/i.test(agent)) {
+    return "browser";
+  }
+  if (/node|undici|axios/i.test(agent)) {
+    return "server";
+  }
+  return "other";
+}
+
+/**
+ * Checks the `:adminKey` path segment with the same check as the header forms
+ * and counts the use. A wrong key leaves the router, so it answers 404 like an
+ * unknown path. Use inside a router created with `mergeParams: true`.
+ *
+ * Pass a fixed, bounded `route` label when registering extension routes so
+ * Prometheus metric cardinality stays bounded.
+ */
+export function adminPathKeyAuth(route?: string) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const rawAdminKey = req.params.adminKey;
+    const adminKey = Array.isArray(rawAdminKey)
+      ? (rawAdminKey[0] ?? null)
+      : (rawAdminKey ?? null);
+    const matched = matchAdminKey(adminKey);
+    if (!matched) {
+      return next("router");
+    }
+
+    const segment = req.path.split("/")[1] ?? "";
+    adminPathRouteRequests.inc({
+      route: route ?? (ADMIN_PATH_ROUTE_NAMES.has(segment) ? segment : "other"),
+      caller: callerOf(req),
+    });
+    res.locals.adminKeySlot = matched;
+    logAdminAuthenticated(req, matched);
+    next();
+  };
 }

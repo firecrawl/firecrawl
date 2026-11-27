@@ -1,0 +1,34 @@
+[package]
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+name = "firecrawl-core"
+publish.workspace = true
+version.workspace = true
+
+[features]
+default = []
+napi = ["dep:napi", "dep:napi-derive", "dep:tokio", "dep:tracing-subscriber"]
+
+[dependencies]
+anydoc.workspace = true
+kuchikiki.workspace = true
+napi = { workspace = true, optional = true }
+napi-derive = { workspace = true, optional = true }
+nodesig.workspace = true
+pdf-inspector.workspace = true
+psl.workspace = true
+regex.workspace = true
+roxmltree.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+texting_robots.workspace = true
+tinyvec.workspace = true
+tokio = { workspace = true, optional = true }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, optional = true }
+url.workspace = true
+zip.workspace = true
+
+[lints]
+workspace = true

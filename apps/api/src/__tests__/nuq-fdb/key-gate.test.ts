@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { config } from "../../config";
 import {
   NuQFdbQueue,
@@ -18,7 +18,7 @@ const describeIf = config.FDB_CLUSTER_FILE ? describe : describe.skip;
 const RUN = randomUUID().slice(0, 8);
 const TEST_LEASE_MS = 1500;
 
-const createdQueueNames: string[] = [];
+const createdQueueNames: Array<string> = [];
 
 type Ctx = {
   queue: NuQFdbQueue;
@@ -44,11 +44,13 @@ async function makeCtx(name: string): Promise<Ctx> {
 async function takeAll(
   queue: NuQFdbQueue,
   maxJobs: number = 50,
-): Promise<any[]> {
-  const out: any[] = [];
+): Promise<Array<any>> {
+  const out: Array<any> = [];
   while (out.length < maxJobs) {
     const job = await queue.getJobToProcess();
-    if (job === null) break;
+    if (job === null) {
+      break;
+    }
     out.push(job);
   }
   return out;
@@ -97,9 +99,7 @@ describeIf("NuQ FDB API-key gate", () => {
     const db = getNuqFdbDatabase();
     for (const name of createdQueueNames) {
       const r = fdb.tuple.range(["nuq", name]);
-      await db.doTn(async tn =>
-        tn.clearRange(r.begin as Buffer, r.end as Buffer),
-      );
+      await db.doTn(async tn => tn.clearRange(r.begin, r.end));
     }
   });
 
@@ -123,7 +123,7 @@ describeIf("NuQ FDB API-key gate", () => {
     expect(taken.length).toBe(2);
 
     // finishing one job hands its key slot to exactly one backlogged job
-    await queue.jobFinish(taken[0].id, taken[0].lock!, null);
+    await queue.jobFinish(taken[0].id, taken[0].lock, null);
     expect(await keyActiveCount(queue, kid)).toBe(2);
     expect(await queue.getTeamActiveCount(owner)).toBe(2);
     expect(await queue.getTeamPendingCount(owner)).toBe(2);
@@ -134,7 +134,9 @@ describeIf("NuQ FDB API-key gate", () => {
     // drain everything; counters return to zero
     let inflight = [taken[1], ...next];
     while (inflight.length > 0) {
-      for (const j of inflight) await queue.jobFinish(j.id, j.lock!, null);
+      for (const j of inflight) {
+        await queue.jobFinish(j.id, j.lock, null);
+      }
       inflight = await takeAll(queue, 5);
     }
     expect(await queue.getTeamActiveCount(owner)).toBe(0);
@@ -166,7 +168,7 @@ describeIf("NuQ FDB API-key gate", () => {
     while (inflight.length > 0) {
       expect(inflight.length).toBeLessThanOrEqual(2);
       for (const j of inflight) {
-        await queue.jobFinish(j.id, j.lock!, null);
+        await queue.jobFinish(j.id, j.lock, null);
         finished++;
       }
       expect(await keyActiveCount(queue, kid)).toBeLessThanOrEqual(2);
@@ -209,7 +211,7 @@ describeIf("NuQ FDB API-key gate", () => {
     let total = 0;
     while (inflight.length > 0) {
       for (const j of inflight) {
-        await queue.jobFinish(j.id, j.lock!, null);
+        await queue.jobFinish(j.id, j.lock, null);
         total++;
       }
       inflight = await takeAll(queue, 4);
@@ -241,17 +243,19 @@ describeIf("NuQ FDB API-key gate", () => {
     expect(taken.length).toBe(2);
 
     // finishing one key's job promotes that key's backlog only
-    await queue.jobFinish(taken[0].id, taken[0].lock!, null);
+    await queue.jobFinish(taken[0].id, taken[0].lock, null);
     expect(await keyActiveCount(queue, kid1)).toBe(1);
     expect(await keyActiveCount(queue, kid2)).toBe(1);
     expect(await queue.getTeamPendingCount(owner)).toBe(1);
 
-    await queue.jobFinish(taken[1].id, taken[1].lock!, null);
+    await queue.jobFinish(taken[1].id, taken[1].lock, null);
     let inflight = await takeAll(queue, 4);
     let total = 2; // 2 taken initially
     while (inflight.length > 0) {
       total += inflight.length;
-      for (const j of inflight) await queue.jobFinish(j.id, j.lock!, null);
+      for (const j of inflight) {
+        await queue.jobFinish(j.id, j.lock, null);
+      }
       inflight = await takeAll(queue, 4);
     }
     expect(total).toBe(4);
@@ -283,11 +287,11 @@ describeIf("NuQ FDB API-key gate", () => {
 
     const [takenA] = await takeAll(queue, 2);
     expect(takenA.id).toBe(a.id);
-    await queue.jobFinish(takenA.id, takenA.lock!, null);
+    await queue.jobFinish(takenA.id, takenA.lock, null);
 
     const [takenC] = await takeAll(queue, 2);
     expect(takenC).toBeDefined();
-    await queue.jobFinish(takenC.id, takenC.lock!, null);
+    await queue.jobFinish(takenC.id, takenC.lock, null);
 
     expect(await queue.getTeamActiveCount(owner)).toBe(0);
     expect(await queue.getTeamPendingCount(owner)).toBe(0);
@@ -309,7 +313,9 @@ describeIf("NuQ FDB API-key gate", () => {
     const jobs = await queue.addJobs(inputs, kgate(10, kid, 1));
     expect(jobs.filter(j => j.status === "backlog").length).toBe(2);
 
-    await new Promise(resolve => setTimeout(resolve, 1200));
+    await new Promise<void>(resolve => {
+      setTimeout(resolve, 1200);
+    });
     await sweeper.sweepOnce();
 
     // the two key-pending jobs are gone; the running one is unaffected
@@ -321,7 +327,7 @@ describeIf("NuQ FDB API-key gate", () => {
 
     const taken = await takeAll(queue, 3);
     expect(taken.length).toBe(1);
-    await queue.jobFinish(taken[0].id, taken[0].lock!, null);
+    await queue.jobFinish(taken[0].id, taken[0].lock, null);
     expect(await keyActiveCount(queue, kid)).toBe(0);
   });
 
@@ -337,7 +343,7 @@ describeIf("NuQ FDB API-key gate", () => {
 
     const [first] = await takeAll(queue, 2);
     expect(first).toBeDefined();
-    await queue.jobFinish(first.id, first.lock!, null);
+    await queue.jobFinish(first.id, first.lock, null);
     // the second job is parked in the delay index holding only its crawl
     // slot; the finished job's key slot was released
     expect(await keyActiveCount(queue, kid)).toBe(0);
@@ -345,13 +351,15 @@ describeIf("NuQ FDB API-key gate", () => {
     await sweeper.sweepOnce();
     expect(await queue.getJobToProcess()).toBeNull();
 
-    await new Promise(resolve => setTimeout(resolve, 1200));
+    await new Promise<void>(resolve => {
+      setTimeout(resolve, 1200);
+    });
     await sweeper.sweepOnce();
     // the wake-up acquired the key slot again
     expect(await keyActiveCount(queue, kid)).toBe(1);
     const [second] = await takeAll(queue, 1);
     expect(second).toBeDefined();
-    await queue.jobFinish(second.id, second.lock!, null);
+    await queue.jobFinish(second.id, second.lock, null);
     expect(await keyActiveCount(queue, kid)).toBe(0);
 
     const g = await group.getGroup(gid);

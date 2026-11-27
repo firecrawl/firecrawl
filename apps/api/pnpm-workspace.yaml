@@ -113,8 +113,6 @@ overrides:
   # GHSA-j6r3-76f7-8jcv / GHSA-h3mg-xc3c-68pw: geoip-country@5 still asks for
   # ip-address@^6, but only its updatedb script loads it; lookup() never does.
   "geoip-country>ip-address": "10.7.4"
-patchedDependencies:
-  "node-fetch@2.7.0": "patches/node-fetch@2.7.0.patch"
 allowBuilds:
   "@mendable/firecrawl-rs": true
   bigint-buffer: true
@@ -122,10 +120,6 @@ allowBuilds:
   # @google-cloud/bigtable); the pure-JS fallback is fine for our payload
   # sizes, so no native compilation.
   sse4_crc32: false
-  # Optional native compressors for just-bash's archive commands, which the
-  # hosted shell (/v2/bash) does not expose.
-  "@mongodb-js/zstd": false
-  node-liblzma: false
   bufferutil: true
   esbuild: true
   foundationdb: true

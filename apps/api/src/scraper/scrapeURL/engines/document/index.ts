@@ -1,12 +1,11 @@
-import { Meta } from "../..";
-import { EngineScrapeResult } from "..";
+import type { Meta } from "../..";
+import type { EngineScrapeResult } from "..";
 import {
   fetchFileGuardingProxyFailure,
   fetchFileToBuffer,
 } from "../utils/downloadFile";
 import { convertDocumentToMarkdown } from "@mendable/firecrawl-rs";
 import { safeMarkdownToHtml } from "../pdf/markdownToHtml";
-import type { Response } from "undici";
 import {
   DocumentAntibotError,
   DocumentFetchProxyError,
@@ -18,30 +17,29 @@ import {
   documentExtensionFromUrlPath,
 } from "../../../../lib/document-formats";
 import { readFile, unlink } from "node:fs/promises";
-import { useFireEngine } from "../fire-engine/available";
+import { hasFilePrefetchEngine } from "../utils/specialtyHandler";
+
+interface DocumentResponseMeta {
+  url: string;
+  status: number;
+  headers: Pick<Headers, "get">;
+}
 
 export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
-  // With fire-engine available this engine never downloads files itself:
-  // buildFallbackList routes file URLs through the browser engines and the
-  // file arrives here via documentPrefetch. Reaching the direct download
-  // means either an explicit forceEngine pin (the escape hatch, kept
-  // working) or a browser handoff that came back empty
-  // (documentPrefetch === null) — signal antibot so the retry loop can give
-  // the browser another round trip. In self-hosted deployments (no
-  // fire-engine) the direct download stays the primary path. Ordinary
-  // pages (no "document" flag) keep declining via EngineUnsuccessfulError
-  // so the waterfall just moves on.
+  // When an enabled engine prefetches files via browser handoff, this engine
+  // parses prefetched files instead of downloading directly (except under an
+  // explicit forceEngine pin).
   if (
-    useFireEngine &&
+    hasFilePrefetchEngine() &&
     meta.internalOptions.forceEngine === undefined &&
-    meta.documentPrefetch == null
+    (meta.documentPrefetch === undefined || meta.documentPrefetch === null)
   ) {
     // A cross-type handoff (a .docx URL serving a PDF or an image) lands in
     // pdfPrefetch/imagePrefetch: the file is in hand, just not for this
-    // engine — decline so the waterfall reaches the engine that can parse it.
+    // engine, so decline so the waterfall reaches the engine that can parse it.
     if (
-      meta.pdfPrefetch != null ||
-      meta.imagePrefetch != null ||
+      (meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null) ||
+      (meta.imagePrefetch !== undefined && meta.imagePrefetch !== null) ||
       !meta.featureFlags.has("document")
     ) {
       throw new EngineUnsuccessfulError("document");
@@ -49,7 +47,7 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
     throw new DocumentAntibotError();
   }
 
-  let response: Response;
+  let response: DocumentResponseMeta;
   let buffer: Buffer;
   let proxyUsed: "basic" | "stealth" = "basic";
   let tempFilePath: string | null = null;
@@ -70,7 +68,7 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
         url: meta.documentPrefetch.url ?? meta.rewrittenUrl ?? meta.url,
         status: meta.documentPrefetch.status,
         headers,
-      } as Response;
+      };
 
       proxyUsed = meta.documentPrefetch.proxyUsed;
     } else {
@@ -137,7 +135,7 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
     if (tempFilePath) {
       try {
         await unlink(tempFilePath);
-      } catch (error) {
+      } catch (error: unknown) {
         // Ignore errors when cleaning up temp files
         meta.logger?.warn("Failed to clean up temporary document file", {
           error,
@@ -149,7 +147,7 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
 }
 
 export function documentMaxReasonableTime(meta: Meta): number {
-  return 15000;
+  return 15_000;
 }
 
 /**

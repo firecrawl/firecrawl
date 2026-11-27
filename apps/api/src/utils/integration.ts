@@ -22,12 +22,16 @@ enum IntegrationEnum {
   LOVABLE = "lovable",
 }
 
+const INTEGRATION_VALUES: ReadonlySet<string> = new Set(
+  Object.values(IntegrationEnum),
+);
+
 export const integrationSchema = z
   .string()
   .refine(
     val =>
       (typeof val === "string" && val.startsWith("_")) ||
-      Object.values(IntegrationEnum).includes(val as any),
+      INTEGRATION_VALUES.has(val),
     {
       message: `Invalid enum value. Expected ${Object.values(IntegrationEnum)
         .map(v => `'${v}'`)
@@ -37,7 +41,7 @@ export const integrationSchema = z
 
 /** The X-Integration header as an integration value, or undefined when it is missing or invalid. */
 export function integrationFromHeader(req: {
-  headers?: Record<string, string | string[] | undefined>;
+  headers?: Record<string, string | Array<string> | undefined>;
 }): string | undefined {
   const header = req.headers?.["x-integration"];
   const value =
@@ -53,8 +57,10 @@ export function integrationFromHeader(req: {
  */
 export function resolveIntegration<T>(
   explicit: T,
-  req: { headers?: Record<string, string | string[] | undefined> },
+  req: { headers?: Record<string, string | Array<string> | undefined> },
 ): T | string {
-  if (explicit != null && explicit !== "cli") return explicit;
+  if (explicit !== null && explicit !== undefined && explicit !== "cli") {
+    return explicit;
+  }
   return integrationFromHeader(req) ?? explicit;
 }

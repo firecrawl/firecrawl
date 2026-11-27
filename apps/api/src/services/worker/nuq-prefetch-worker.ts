@@ -11,6 +11,7 @@ import {
 import Express from "express";
 import { logger } from "../../lib/logger";
 import { startRole } from "../../main";
+import { runProcessStop } from "../../service/service";
 
 export async function start() {
   const app = Express();
@@ -43,20 +44,30 @@ export async function start() {
 
   async function shutdown() {
     server.close();
-    await nuqShutdown();
+    try {
+      await nuqShutdown();
+    } finally {
+      await runProcessStop("nuq-prefetch-worker");
+    }
     await shutdownTracing();
     process.exit(0);
   }
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", () => {
+    void shutdown();
+  });
+  process.on("SIGTERM", () => {
+    void shutdown();
+  });
 
   try {
     await Promise.all([
       (async () => {
         while (true) {
           await crawlFinishedQueue.prefetchJobs();
-          await new Promise(resolve => setTimeout(resolve, 250));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, 250);
+          });
         }
       })(),
       (async () => {
@@ -65,11 +76,13 @@ export async function start() {
             fetch(config.NUQ_PREFETCH_WORKER_HEARTBEAT_URL).catch(() => {});
           }
           await scrapeQueue.prefetchJobs();
-          await new Promise(resolve => setTimeout(resolve, 250));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, 250);
+          });
         }
       })(),
     ]);
-  } catch (error) {
+  } catch (error: unknown) {
     logger.error("Error in prefetch worker", { error });
     process.exit(1);
   }

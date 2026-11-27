@@ -82,27 +82,24 @@ other variables in the API container's environment.
 | --- | --- | --- |
 | `BULL_AUTH_KEY` | unset | Turns on the key-protected admin routes. Routes under `/admin/ops/` accept `Authorization: Bearer <BULL_AUTH_KEY>`. |
 | `BULL_AUTH_KEY_PREVIOUS` | unset | A second accepted bearer value, so callers can move to a new key without downtime. Clear it once every caller sends the new key. |
-| `BULL_AUTH_KEY_PATH_ROUTES` | `true` | Keeps the routes that take the key as a path segment, `/admin/<key>/...`, including the queue UI at `/admin/<key>/queues`. Set `false` once callers use `/admin/ops/` or the internal listener. |
+| `BULL_AUTH_KEY_PATH_ROUTES` | `false` | Set `true` to keep the old routes that take the key as a path segment, `/admin/<key>/...`, including the queue UI at `/admin/<key>/queues`, for callers not yet on `/admin/ops/` or the internal listener. |
 | `ADMIN_INTERNAL_PORT` | unset | Starts a second listener on this port that serves the routes below with no key. Never publish this port. |
 | `ADMIN_INTERNAL_HOST` | `localhost` | Address the internal listener binds to. Bind a wider address only behind a network policy that limits who can reach the port. |
 
 Header-authenticated routes: `GET /admin/ops/redis-health`,
-`POST /admin/ops/acuc-cache-clear`,
-`POST /admin/ops/ip-restriction-cache-clear`,
-`POST /admin/ops/key-restriction-cache-clear` and
-`POST /admin/ops/concurrency-queue-backfill`.
+`POST /admin/ops/concurrency-queue-backfill`, `GET /admin/ops/metrics`,
+`GET /admin/ops/nuq-metrics`, `GET /admin/ops/nuq-fdb-metrics`, and the queue
+UI at `/admin/ops/queues`. Each `/admin/<key>/...` route serves the same
+handler through the same key check.
 
 Internal listener routes, none of which need a key: the queue UI at
 `/admin/queues`; metrics at `GET /admin/metrics`, `GET /admin/nuq-metrics`,
-`GET /admin/nuq-fdb-metrics` and `GET /admin/index-queue-prometheus`; and
-`GET /admin/redis-health`, `GET /admin/feng-check`,
-`GET /admin/precrawl` (queues a precrawl run), `POST /admin/fsearch` (runs a
-search) and `POST /admin/crawl-monitor` (still requires an API key and credits).
-Anyone who can reach the port can use them.
+and `GET /admin/nuq-fdb-metrics`; and `GET /admin/redis-health`. Anyone who
+can reach the port can use them.
 
 The `firecrawl_admin_path_route_requests_total` metric counts requests to the
-`/admin/<key>/...` routes, so you can confirm nothing still uses them before
-turning them off.
+`/admin/<key>/...` routes by `route` and `caller` (never the key), so you can
+confirm nothing still uses them before turning them off.
 
 Stuck? Open a
 [self-host issue template](https://github.com/firecrawl/firecrawl/issues/new?template=self_host_issue.md)

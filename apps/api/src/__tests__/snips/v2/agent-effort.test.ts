@@ -1,9 +1,9 @@
 import request from "supertest";
-import { config } from "../../../config";
+import type { JsonObject } from "../../../lib/json-types";
+import type { Identity } from "../lib";
 import {
   describeIf,
   HAS_AI,
-  Identity,
   idmux,
   scrapeTimeout,
   TEST_API_URL,
@@ -18,29 +18,37 @@ import {
 // service, so that URL must be configured too.
 const REQUIRES_FIRE_ENGINE = TEST_PRODUCTION;
 const REQUIRES_AI = TEST_PRODUCTION || HAS_AI;
-const HAS_AGENT_BETA = !!config.EXTRACT_V3_BETA_URL;
+const HAS_AGENT_BETA = !!process.env.EXTRACT_V3_BETA_URL;
 
 let identity: Identity;
 
 beforeAll(async () => {
   identity = await idmux({
     name: "agent-effort",
-    credits: 1000000,
+    credits: 1_000_000,
   });
 }, scrapeTimeout);
 
-const agentRaw = (body: Record<string, unknown>) =>
+const agentRaw = (body: JsonObject) =>
   request(TEST_API_URL)
     .post("/v2/agent")
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .set("Content-Type", "application/json")
     .send(body);
 
-// agentRequestSchema.parse runs at the top of agentController, before the
-// controller touches the agent service, a browser or a model. A rejected
-// request therefore needs only the API server and an authenticated team, so
-// these cases run everywhere instead of skipping with the live runs below.
-describe("Agent effort parameter validation", () => {
+const cancel = (jobId: string) =>
+  request(TEST_API_URL)
+    .delete(`/v2/agent/${jobId}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+
+const statusOf = (jobId: string) =>
+  request(TEST_API_URL)
+    .get(`/v2/agent/${jobId}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+
+// The /v2/agent route is not mounted in self-hosted mode, so skip these
+// parameter validation checks when running against a self-hosted server.
+describeIf(TEST_PRODUCTION)("Agent effort parameter validation", () => {
   it(
     "rejects an unknown model name",
     async () => {
@@ -77,16 +85,6 @@ describeIf(REQUIRES_FIRE_ENGINE && REQUIRES_AI && HAS_AGENT_BETA)(
   () => {
     // Each accepted request starts a real run. Cancel it so the test does not
     // pay for work nobody reads.
-    const cancel = (jobId: string) =>
-      request(TEST_API_URL)
-        .delete(`/v2/agent/${jobId}`)
-        .set("Authorization", `Bearer ${identity.apiKey}`);
-
-    const statusOf = (jobId: string) =>
-      request(TEST_API_URL)
-        .get(`/v2/agent/${jobId}`)
-        .set("Authorization", `Bearer ${identity.apiKey}`);
-
     it(
       "accepts effort alone and runs spark-2",
       async () => {

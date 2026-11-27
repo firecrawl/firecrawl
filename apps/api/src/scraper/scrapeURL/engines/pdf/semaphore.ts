@@ -39,7 +39,8 @@ const holdSeconds = new Histogram({
 
 class PdfExtractionSemaphore {
   private inFlight = 0;
-  private readonly queue: { resolve: () => void; enqueuedAt: number }[] = [];
+  private readonly queue: Array<{ resolve: () => void; enqueuedAt: number }> =
+    [];
 
   constructor(private readonly max: number) {}
 
@@ -65,7 +66,9 @@ class PdfExtractionSemaphore {
     const acquiredAt = Date.now();
     let released = false;
     return () => {
-      if (released) return;
+      if (released) {
+        return;
+      }
       released = true;
       holdSeconds.observe((Date.now() - acquiredAt) / 1000);
 

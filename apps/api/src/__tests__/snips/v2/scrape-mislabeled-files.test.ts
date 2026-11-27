@@ -1,31 +1,49 @@
+import request from "supertest";
+import { z } from "zod";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
-  itIf,
+  TEST_API_URL,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { config } from "../../../config";
-import {
-  idmux,
-  Identity,
-  scrape,
-  scrapeTimeout,
-  scrapeWithFailure,
-} from "./lib";
+import type { Identity } from "./lib";
+import { idmux, scrape, scrapeTimeout, scrapeWithFailure } from "./lib";
+
+const parseFormatsResponseSchema = z.object({
+  data: z.object({
+    formats: z.array(
+      z.object({
+        kind: z.string().optional(),
+        available: z.boolean().optional(),
+      }),
+    ),
+  }),
+});
 
 let identity: Identity;
+let imageOcrOn = false;
 
 beforeAll(async () => {
   identity = await idmux({
     name: "scrape-mislabeled-files",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000 + scrapeTimeout);
 
-// Mirrors the API's image OCR switch (the harness shares its environment
-// with the server under test).
-const IMAGE_OCR_ON = !!config.FIRE_PDF_BASE_URL && config.IMAGE_OCR_ENABLED;
+  const formatsResponse = await request(TEST_API_URL)
+    .get("/v2/parse/formats")
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+  if (formatsResponse.statusCode === 200) {
+    const parsedFormats = parseFormatsResponseSchema.safeParse(
+      formatsResponse.body,
+    );
+    if (parsedFormats.success) {
+      imageOcrOn = parsedFormats.data.data.formats.some(
+        format => format.kind === "image" && format.available === true,
+      );
+    }
+  }
+}, 10_000 + scrapeTimeout);
 
 // The browser engine hands files it cannot render back to the API, which
 // routes them to a parser by content type — and servers mislabel. Static
@@ -58,26 +76,23 @@ describeIf(!process.env.TEST_SUITE_SELF_HOSTED && ALLOW_TEST_SUITE_WEBSITE)(
       scrapeTimeout,
     );
 
-    itIf(!IMAGE_OCR_ON)(
-      "keeps rejecting a real JPEG 2000 image while image OCR is off",
+    it(
+      "handles a real JPEG 2000 image according to active image OCR capability",
       async () => {
-        const response = await scrapeWithFailure(
-          {
-            url: `${TEST_SUITE_WEBSITE}/tiny-image.jp2`,
-            formats: ["markdown"],
-          },
-          identity,
-        );
+        if (!imageOcrOn) {
+          const response = await scrapeWithFailure(
+            {
+              url: `${TEST_SUITE_WEBSITE}/tiny-image.jp2`,
+              formats: ["markdown"],
+            },
+            identity,
+          );
 
-        expect(response.error).toContain("cannot process");
-        expect(response.error).toContain("image/jp2");
-      },
-      scrapeTimeout,
-    );
+          expect(response.error).toContain("cannot process");
+          expect(response.error).toContain("image/jp2");
+          return;
+        }
 
-    itIf(IMAGE_OCR_ON)(
-      "OCRs a real JPEG 2000 image while image OCR is on",
-      async () => {
         const response = await scrape(
           {
             url: `${TEST_SUITE_WEBSITE}/tiny-image.jp2`,

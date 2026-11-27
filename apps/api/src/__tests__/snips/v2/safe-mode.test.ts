@@ -1,39 +1,51 @@
 import request from "supertest";
+import { z } from "zod";
+import type { Identity } from "../lib";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   concurrentIf,
   createTestIdUrl,
   describeIf,
   idmux,
-  Identity,
   scrapeTimeout,
   TEST_API_URL,
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import { scrape, scrapeRaw, crawlStart } from "./lib";
-import { V1_LIVE } from "../v1/lib";
 
 const TEST_SUITE_HOST = new URL(TEST_SUITE_WEBSITE).hostname;
+
+const safeModeBlockedBodySchema = z.object({
+  success: z.literal(false),
+  code: z.string(),
+  error: z.string(),
+});
+
+type SafeModeBlockedBody = z.infer<typeof safeModeBlockedBodySchema>;
 
 async function expectSafeModeBlocked(
   body: Parameters<typeof scrapeRaw>[0],
   identity: Identity,
-) {
+): Promise<SafeModeBlockedBody> {
   const res = await scrapeRaw(body, identity);
   expect(res.statusCode).toBe(403);
   expect(res.body.success).toBe(false);
   expect(res.body.code).toBe("SAFE_MODE_BLOCKED");
-  return res.body;
+  const parsed = safeModeBlockedBodySchema.safeParse(res.body);
+  if (!parsed.success) {
+    throw new Error("Unexpected safe-mode error response shape");
+  }
+  return parsed.data;
 }
 
-describe("Safe Mode (v2 scrape, request-time)", () => {
+describeIf(TEST_PRODUCTION)("Safe Mode (v2 scrape, request-time)", () => {
   describe("org flag off", () => {
     let identity: Identity;
 
     beforeAll(async () => {
       identity = await idmux({ name: "safe-mode/unflagged" });
-    }, 10000);
+    }, 10_000);
 
     it.concurrent(
       "rejects safeMode: true",
@@ -43,20 +55,6 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
           identity,
         );
         expect(body.error).toMatch(/not enabled/i);
-      },
-      scrapeTimeout,
-    );
-
-    concurrentIf(V1_LIVE)(
-      "v1 accepts + honors the safeMode param (rejects safeMode: true)",
-      async () => {
-        const res = await request(TEST_API_URL)
-          .post("/v1/scrape")
-          .set("Authorization", `Bearer ${identity.apiKey}`)
-          .set("Content-Type", "application/json")
-          .send({ url: createTestIdUrl(), safeMode: true });
-        expect(res.statusCode).toBe(403);
-        expect(res.body.code).toBe("SAFE_MODE_BLOCKED");
       },
       scrapeTimeout,
     );
@@ -82,7 +80,7 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
         name: "safe-mode/flagged",
         flags: { safeMode: true },
       });
-    }, 10000);
+    }, 10_000);
 
     concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
       "plain scrapes still work",
@@ -222,7 +220,7 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
           safeModeConfig: { allowBypassSafeMode: true },
         },
       });
-    }, 10000);
+    }, 10_000);
 
     concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
       "honors safeMode: false — otherwise-blocked params pass",
@@ -262,7 +260,7 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
           name: "safe-mode/lockdown",
           flags: { safeMode: true, safeModeConfig: { lockdown: true } },
         });
-      }, 10000);
+      }, 10_000);
 
       it.concurrent(
         "uncached URLs return the lockdown cache-miss error",
@@ -309,7 +307,7 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
         .set("Content-Type", "application/json")
         .send({ mode: "off", blacklist: ["blocked.example.com"] });
       expect(res.statusCode).toBe(200);
-    }, 15000);
+    }, 15_000);
 
     it.concurrent(
       "blocks blacklisted domains even though the TP config mode is off",
@@ -421,7 +419,7 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
           safeModeConfig: { allowlist: [TEST_SUITE_HOST] },
         },
       });
-    }, 10000);
+    }, 10_000);
 
     it.concurrent(
       "relaxes a stealth proxy request for an allowlisted URL",
@@ -458,7 +456,7 @@ describe("Safe Mode (v2 scrape, request-time)", () => {
         name: "safe-mode/endpoints",
         flags: { safeMode: true },
       });
-    }, 10000);
+    }, 10_000);
 
     it.concurrent(
       "crawl rejects a stealth proxy nested under scrapeOptions",

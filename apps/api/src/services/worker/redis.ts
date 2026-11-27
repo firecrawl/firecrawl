@@ -1,4 +1,5 @@
-import IORedis, { Redis } from "ioredis";
+import type { Redis } from "ioredis";
+import IORedis from "ioredis";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 
@@ -56,77 +57,124 @@ type ScriptHashes = {
   };
 };
 
-const scripts: ScriptHashes = {} as ScriptHashes;
+const scripts: ScriptHashes = {
+  semaphore: {
+    acquire: "",
+    release: "",
+    heartbeat: "",
+  },
+};
 
-const redis = new IORedis(config.REDIS_URL!, {
+const SEMAPHORE_SCRIPT_NAMES = ["acquire", "release", "heartbeat"] as const;
+
+const redisOptions = {
   lazyConnect: true,
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
   enableAutoPipelining: true,
-});
+};
+
+const redis = config.REDIS_URL
+  ? new IORedis(config.REDIS_URL, redisOptions)
+  : new IORedis(redisOptions);
 
 let initPromise: Promise<void> | null = null;
 
+async function loadScript(source: string): Promise<string> {
+  const hash = await redis.script("LOAD", source);
+  if (typeof hash !== "string") {
+    throw new Error("Redis SCRIPT LOAD did not return a hash string");
+  }
+  return hash;
+}
+
+async function loadSemaphoreScripts(onlyMissing: boolean): Promise<void> {
+  for (const name of SEMAPHORE_SCRIPT_NAMES) {
+    if (!onlyMissing || !scripts.semaphore[name]) {
+      scripts.semaphore[name] = await loadScript(luaScripts.semaphore[name]);
+    }
+  }
+}
+
+async function ensureConnected(): Promise<void> {
+  if (redis.status === "ready") {
+    return;
+  }
+  // Only call connect if in 'wait' state (not yet connected)
+  if (redis.status === "wait") {
+    await redis.connect();
+  } else if (redis.status === "connecting") {
+    // Already connecting, wait for it to complete
+    await new Promise<void>((resolve, reject) => {
+      const onReady = () => {
+        redis.off("error", onError);
+        resolve();
+      };
+      const onError = (err: Error) => {
+        redis.off("ready", onReady);
+        reject(err);
+      };
+      redis.once("ready", onReady);
+      redis.once("error", onError);
+    });
+  } else {
+    throw new Error(`Redis in unexpected state: ${redis.status}`);
+  }
+}
+
 export const ensureRedis = async () => {
-  if (initPromise) return initPromise;
+  if (initPromise) {
+    return initPromise;
+  }
 
   // If Redis is already connected/ready, just load scripts if needed
   if (redis.status === "ready") {
-    initPromise = (async () => {
-      for (const [k, v] of Object.entries(luaScripts)) {
-        if (!scripts[k]) scripts[k] = {};
-        for (const [k2, v2] of Object.entries(v)) {
-          if (!scripts[k][k2]) {
-            const h = await redis.script("LOAD", v2);
-            scripts[k][k2] = h as string;
-          }
-        }
-      }
-    })();
+    initPromise = loadSemaphoreScripts(true).catch((error: unknown) => {
+      initPromise = null;
+      throw error;
+    });
     return initPromise;
   }
 
   initPromise = (async () => {
-    // Only call connect if in 'wait' state (not yet connected)
-    if (redis.status === "wait") {
-      await redis.connect();
-    } else if (redis.status === "connecting") {
-      // Already connecting, wait for it to complete
-      await new Promise<void>((resolve, reject) => {
-        const onReady = () => {
-          redis.off("error", onError);
-          resolve();
-        };
-        const onError = (err: Error) => {
-          redis.off("ready", onReady);
-          reject(err);
-        };
-        redis.once("ready", onReady);
-        redis.once("error", onError);
-      });
-    } else if (redis.status !== "ready") {
-      throw new Error(`Redis in unexpected state: ${redis.status}`);
-    }
-
-    for (const [k, v] of Object.entries(luaScripts)) {
-      scripts[k] = {};
-      for (const [k2, v2] of Object.entries(v)) {
-        const h = await redis.script("LOAD", v2);
-        scripts[k][k2] = h as string;
-      }
-    }
+    await ensureConnected();
+    await loadSemaphoreScripts(false);
     logger.info("Redis connected and scripts loaded");
-  })().catch(err => {
+  })().catch((error: unknown) => {
     initPromise = null;
-    throw err;
+    throw error;
   });
   return initPromise;
 };
 
+let reloadPromise: Promise<void> | null = null;
+
+function reloadSemaphoreScripts(): Promise<void> {
+  if (reloadPromise) {
+    return reloadPromise;
+  }
+  initPromise = (async () => {
+    await ensureConnected();
+    await loadSemaphoreScripts(false);
+  })().catch((error: unknown) => {
+    initPromise = null;
+    throw error;
+  });
+  reloadPromise = initPromise.finally(() => {
+    reloadPromise = null;
+  });
+  return reloadPromise;
+}
+
+function isNoScriptError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("NOSCRIPT");
+}
+
 export const shutdownRedis = async () => {
   initPromise = null;
-  for (const key of Object.keys(scripts) as (keyof ScriptHashes)[]) {
-    scripts[key] = {} as ScriptHashes[typeof key];
+  reloadPromise = null;
+  for (const name of SEMAPHORE_SCRIPT_NAMES) {
+    scripts.semaphore[name] = "";
   }
 
   if (redis.status === "wait" || redis.status === "end") {
@@ -135,8 +183,8 @@ export const shutdownRedis = async () => {
 
   try {
     await redis.quit();
-  } catch (err) {
-    logger.warn("Error while closing NuQ Redis connection", { err });
+  } catch (error: unknown) {
+    logger.warn("Error while closing NuQ Redis connection", { err: error });
     redis.disconnect();
   }
 };
@@ -149,16 +197,26 @@ export const semaphoreKeys = (teamId: string) => {
 
 async function runScript<T>(
   hash: string,
-  keys: string[],
-  args?: (string | number)[],
+  keys: Array<string>,
+  args: Array<string | number> | undefined,
+  parse: (result: unknown) => T,
 ): Promise<T> {
   await ensureRedis();
-  return (await redis.evalsha(
-    hash,
-    keys.length,
-    ...keys,
-    ...(args || []),
-  )) as T;
+  const scriptName = SEMAPHORE_SCRIPT_NAMES.find(
+    name => scripts.semaphore[name] === hash,
+  );
+  const exec = (scriptHash: string) =>
+    redis.evalsha(scriptHash, keys.length, ...keys, ...(args || []));
+  try {
+    return parse(await exec(hash));
+  } catch (error: unknown) {
+    if (!isNoScriptError(error)) {
+      throw error;
+    }
+    await reloadSemaphoreScripts();
+    const reloadedHash = scriptName ? scripts.semaphore[scriptName] : hash;
+    return parse(await exec(reloadedHash));
+  }
 }
 
 type NuQRedis = Redis & {

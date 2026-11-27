@@ -1,28 +1,35 @@
+import type { SpanKind } from "@opentelemetry/api";
 import {
   context,
   createContextKey,
+  diag,
   isSpanContextValid,
   propagation,
-  SpanKind,
   SpanStatusCode,
   trace,
-  type Attributes,
-  type AttributeValue,
-  type Context,
-  type Link,
-  type Span,
+} from "@opentelemetry/api";
+import type {
+  Attributes,
+  AttributeValue,
+  Context,
+  Link,
+  Span,
 } from "@opentelemetry/api";
 import {
+  AlwaysOffSampler,
   AlwaysOnSampler,
   BatchSpanProcessor,
   NodeTracerProvider,
   ParentBasedSampler,
   SamplingDecision,
-  type ReadableSpan,
-  type Sampler,
-  type SamplingResult,
-  type SpanExporter,
-  type SpanProcessor,
+  TraceIdRatioBasedSampler,
+} from "@opentelemetry/sdk-trace-node";
+import type {
+  ReadableSpan,
+  Sampler,
+  SamplingResult,
+  SpanExporter,
+  SpanProcessor,
 } from "@opentelemetry/sdk-trace-node";
 import {
   defaultResource,
@@ -93,9 +100,9 @@ function markTraceZeroDataRetention(traceId: string): void {
 
   zeroDataRetentionTraces.add(traceId);
   if (zeroDataRetentionTraces.size > ZERO_DATA_RETENTION_TRACE_LIMIT) {
-    const oldest = zeroDataRetentionTraces.values().next().value;
-    if (oldest !== undefined) {
-      zeroDataRetentionTraces.delete(oldest);
+    const oldest = zeroDataRetentionTraces.values().next();
+    if (!oldest.done) {
+      zeroDataRetentionTraces.delete(oldest.value);
     }
   }
 }
@@ -122,7 +129,7 @@ class ZeroDataRetentionSampler implements Sampler {
     spanName: string,
     spanKind: SpanKind,
     attributes: Attributes,
-    links: Link[],
+    links: Array<Link>,
   ): SamplingResult {
     if (hasZeroDataRetentionAttribute(attributes)) {
       markTraceZeroDataRetention(traceId);
@@ -184,36 +191,74 @@ class ZeroDataRetentionSpanProcessor implements SpanProcessor {
   }
 }
 
+/**
+ * The sampler named by the standard `OTEL_TRACES_SAMPLER` and
+ * `OTEL_TRACES_SAMPLER_ARG` values. Unset or unknown names fall back to
+ * `parentbased_always_on`; a missing or invalid ratio means 1.
+ */
+export function samplerFromEnv(name?: string, arg?: string): Sampler {
+  const hasArg = arg !== undefined && arg.trim() !== "";
+  const parsedRatio = hasArg ? Number(arg) : Number.NaN;
+  const validRatio =
+    Number.isFinite(parsedRatio) && parsedRatio >= 0 && parsedRatio <= 1;
+  if (hasArg && !validRatio) {
+    diag.warn(`Invalid OTEL_TRACES_SAMPLER_ARG "${arg}", using 1`);
+  }
+  const ratio = validRatio ? parsedRatio : 1;
+
+  const normalized = name?.trim().toLowerCase();
+  switch (normalized) {
+    case "always_on":
+      return new AlwaysOnSampler();
+    case "always_off":
+      return new AlwaysOffSampler();
+    case "traceidratio":
+      return new TraceIdRatioBasedSampler(ratio);
+    case "parentbased_always_off":
+      return new ParentBasedSampler({ root: new AlwaysOffSampler() });
+    case "parentbased_traceidratio":
+      return new ParentBasedSampler({
+        root: new TraceIdRatioBasedSampler(ratio),
+      });
+    default:
+      if (normalized && normalized !== "parentbased_always_on") {
+        diag.warn(
+          `Unknown OTEL_TRACES_SAMPLER "${name}", using parentbased_always_on`,
+        );
+      }
+      return new ParentBasedSampler({ root: new AlwaysOnSampler() });
+  }
+}
+
 interface TracerProviderOptions {
   exporter: SpanExporter;
   serviceName: string;
   serviceInstanceId?: string;
+  /** Defaults to `parentbased_always_on`. */
+  sampler?: Sampler;
 }
 
 /**
- * Builds the tracer provider used by every Firecrawl process: 100% sampling
- * (respecting the sampled flag of a remote parent), ZDR filtering, and batched
- * export. Callers decide whether to `register()` it globally.
+ * Builds the tracer provider used by every Firecrawl process: the given
+ * sampler, ZDR filtering, and batched export. Callers decide whether to
+ * `register()` it globally.
  */
 export function createTracerProvider(
   options: TracerProviderOptions,
 ): NodeTracerProvider {
+  const serviceAttributes: Attributes = {
+    [ATTR_SERVICE_NAME]: options.serviceName,
+  };
+  if (options.serviceInstanceId) {
+    serviceAttributes["service.instance.id"] = options.serviceInstanceId;
+  }
   const resource = defaultResource()
     .merge(detectResources({ detectors: [envDetector] }))
-    .merge(
-      resourceFromAttributes({
-        [ATTR_SERVICE_NAME]: options.serviceName,
-        ...(options.serviceInstanceId
-          ? { "service.instance.id": options.serviceInstanceId }
-          : {}),
-      }),
-    );
+    .merge(resourceFromAttributes(serviceAttributes));
 
   return new NodeTracerProvider({
     resource,
-    sampler: new ZeroDataRetentionSampler(
-      new ParentBasedSampler({ root: new AlwaysOnSampler() }),
-    ),
+    sampler: new ZeroDataRetentionSampler(options.sampler ?? samplerFromEnv()),
     spanProcessors: [
       new ZeroDataRetentionSpanProcessor(
         new BatchSpanProcessor(options.exporter),
@@ -237,9 +282,15 @@ export function serializeTraceContext(): SerializedTraceContext {
   propagation.inject(context.active(), carrier);
 
   const serialized: SerializedTraceContext = {};
-  if (carrier.traceparent) serialized.traceparent = carrier.traceparent;
-  if (carrier.tracestate) serialized.tracestate = carrier.tracestate;
-  if (carrier.baggage) serialized.baggage = carrier.baggage;
+  if (carrier.traceparent) {
+    serialized.traceparent = carrier.traceparent;
+  }
+  if (carrier.tracestate) {
+    serialized.tracestate = carrier.tracestate;
+  }
+  if (carrier.baggage) {
+    serialized.baggage = carrier.baggage;
+  }
   return serialized;
 }
 
@@ -251,7 +302,7 @@ export async function withTraceContextAsync<T>(
     return fn();
   }
 
-  const carrier: Record<string, string> = {
+  const carrier: SerializedTraceContext = {
     traceparent: serializedContext.traceparent,
   };
   if (serializedContext.tracestate) {
