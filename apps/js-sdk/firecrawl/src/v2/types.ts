@@ -1216,6 +1216,7 @@ export interface MapOptions {
   sitemap?: "only" | "include" | "skip";
   includeSubdomains?: boolean;
   ignoreQueryParameters?: boolean;
+  ignoreCache?: boolean;
   limit?: number;
   timeout?: number;
   integration?: string;
