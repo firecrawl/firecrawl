@@ -1,4 +1,5 @@
-import { Identity, idmux, scrapeTimeout, scrapeRaw } from "./lib";
+import type { Identity } from "./lib";
+import { idmux, scrapeTimeout, scrapeRaw } from "./lib";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
@@ -16,7 +17,7 @@ describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
       identity = await idmux({
         name: "v2-system-prompt-rejection",
         concurrency: 100,
-        credits: 1000000,
+        credits: 1_000_000,
       });
     });
 
@@ -36,7 +37,7 @@ describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
                 systemPrompt: "Custom system prompt that should be rejected",
               },
             ],
-          } as any,
+          },
           identity,
         );
 
@@ -72,7 +73,7 @@ describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
         expect(response.statusCode).toBe(200);
         expect(response.body.success).toBe(true);
       },
-      scrapeTimeout + 30000,
+      scrapeTimeout + 30_000,
     );
   },
 );

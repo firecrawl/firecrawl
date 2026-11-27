@@ -1,10 +1,11 @@
 import { stopsCrawlRetry } from "../lib/error";
-import { ScrapeJobSingleUrls, RunWebScraperParams } from "../types";
+import type { ScrapeJobSingleUrls, RunWebScraperParams } from "../types";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
-import { scrapeURL, ScrapeUrlResponse } from "../scraper/scrapeURL";
+import type { ScrapeUrlResponse } from "../scraper/scrapeURL";
+import { scrapeURL } from "../scraper/scrapeURL";
 import type { NuQJob } from "../services/worker/nuq";
-import { CostTracking } from "../lib/cost-tracking";
+import type { CostTracking } from "../lib/cost-tracking";
 import { jobContext } from "../lib/request-context";
 configDotenv();
 
@@ -16,18 +17,15 @@ export async function startWebScraperPipeline({
   costTracking: CostTracking;
 }) {
   const ctx = jobContext(job.data);
+  const scrapeOptions = { ...job.data.scrapeOptions };
+  if (job.data.crawl_id) {
+    scrapeOptions.formats = job.data.scrapeOptions.formats.concat([
+      { type: "rawHtml" },
+    ]);
+  }
   return await runWebScraper({
     url: job.data.url,
-    scrapeOptions: {
-      ...job.data.scrapeOptions,
-      ...(job.data.crawl_id
-        ? {
-            formats: job.data.scrapeOptions.formats.concat([
-              { type: "rawHtml" },
-            ]),
-          }
-        : {}),
-    },
+    scrapeOptions,
     internalOptions: {
       crawlId: job.data.crawl_id,
       teamId: job.data.team_id,
@@ -71,14 +69,16 @@ async function runWebScraper({
   logger.info("runWebScraper called");
 
   let response: ScrapeUrlResponse | undefined = undefined;
-  let error: any = undefined;
+  let error: unknown = undefined;
 
   for (let i = 0; i < tries; i++) {
     if (i > 0) {
       logger.debug("Retrying scrape...", {
         tries,
         i,
-        previousStatusCode: (response as any)?.document?.metadata?.statusCode,
+        previousStatusCode: response?.success
+          ? response.document.metadata.statusCode
+          : undefined,
         previousError: error,
       });
     }
@@ -124,9 +124,11 @@ async function runWebScraper({
         // status code is good -- do not attempt retry
         break;
       }
-    } catch (_error) {
+    } catch (_error: unknown) {
       error = _error;
-      if (stopsCrawlRetry(_error)) break;
+      if (stopsCrawlRetry(_error)) {
+        break;
+      }
     }
   }
 

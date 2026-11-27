@@ -4,18 +4,22 @@ export type AbortInstance = {
   signal: AbortSignal;
   timesOutAt?: Date;
   tier: "external" | "scrape" | "engine";
-  throwable: () => any;
+  throwable: () => Error;
 };
 
+function isAbortInstance(
+  value: AbortInstance | undefined | null,
+): value is AbortInstance {
+  return value !== undefined && value !== null;
+}
+
 export class AbortManager {
-  private aborts: AbortInstance[] = [];
+  private aborts: Array<AbortInstance> = [];
   private mappedController: AbortController | null = null;
   private listeners: Array<{ signal: AbortSignal; handler: () => void }> = [];
 
-  constructor(...instances: (AbortInstance | undefined | null)[]) {
-    this.aborts = instances.filter(
-      x => x !== undefined && x !== null,
-    ) as AbortInstance[];
+  constructor(...instances: Array<AbortInstance | undefined | null>) {
+    this.aborts = instances.filter(isAbortInstance);
   }
 
   dispose() {
@@ -28,11 +32,11 @@ export class AbortManager {
     this.mappedController = null;
   }
 
-  private resolveInner(abort: AbortInstance): any {
+  private resolveInner(abort: AbortInstance) {
     try {
       return abort.throwable();
-    } catch (err) {
-      return err;
+    } catch (error: unknown) {
+      return error;
     }
   }
 
@@ -49,7 +53,9 @@ export class AbortManager {
     }
 
     const handler = () => {
-      if (!this.mappedController) return;
+      if (!this.mappedController) {
+        return;
+      }
 
       const inner = this.resolveInner(abort);
       const reason = new AbortManagerThrownError(abort.tier, inner);
@@ -61,10 +67,8 @@ export class AbortManager {
     this.listeners.push({ signal: abort.signal, handler });
   }
 
-  add(...instances: (AbortInstance | undefined | null)[]) {
-    const pureInstances = instances.filter(
-      x => x !== undefined && x !== null,
-    ) as AbortInstance[];
+  add(...instances: Array<AbortInstance | undefined | null>) {
+    const pureInstances = instances.filter(isAbortInstance);
     this.aborts.push(...pureInstances);
 
     if (this.mappedController !== null) {
@@ -74,12 +78,10 @@ export class AbortManager {
     }
   }
 
-  child(...instances: (AbortInstance | undefined | null)[]): AbortManager {
+  child(...instances: Array<AbortInstance | undefined | null>): AbortManager {
     const manager = new AbortManager(
       ...this.aborts,
-      ...(instances.filter(
-        x => x !== undefined && x !== null,
-      ) as AbortInstance[]),
+      ...instances.filter(isAbortInstance),
     );
     return manager;
   }
@@ -97,20 +99,20 @@ export class AbortManager {
     }
   }
 
-  private _mapController() {
-    this.mappedController = new AbortController();
+  private _mapController(): AbortController {
+    const controller = new AbortController();
+    this.mappedController = controller;
 
     for (const abort of this.aborts) {
       this.register(abort);
     }
+
+    return controller;
   }
 
   asSignal(): AbortSignal {
-    if (this.mappedController === null) {
-      this._mapController();
-    }
-
-    return this.mappedController!.signal;
+    const controller = this.mappedController ?? this._mapController();
+    return controller.signal;
   }
 
   scrapeTimeout(): number | undefined {
@@ -141,8 +143,8 @@ export class AbortManagerThrownError extends Error {
   // A deadline the request or an engine ran into, not a defect.
   [EXPECTED_ERROR] = true;
   public tier: AbortInstance["tier"];
-  public inner: any;
-  constructor(tier: AbortInstance["tier"], inner: any) {
+  public inner: unknown;
+  constructor(tier: AbortInstance["tier"], inner: unknown) {
     super("AbortManagerThrownError: " + tier);
     this.tier = tier;
     this.inner = inner;

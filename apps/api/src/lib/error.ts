@@ -1,3 +1,6 @@
+import { z } from "zod";
+import { inMemoryJsonValueSchema, jsonRecordSchema } from "./json-types";
+import type { JsonObject, LogMeta } from "./json-types";
 import { EXPECTED_ERROR, isExpectedError } from "./expected-error";
 import { UNSUPPORTED_SITE_MESSAGE } from "./strings";
 
@@ -128,7 +131,7 @@ export class TransportableError extends Error {
   }
 
   /** Optional extra top-level fields merged into HTTP JSON error responses. */
-  get httpResponseFields(): Record<string, unknown> | undefined {
+  get httpResponseFields(): JsonObject | undefined {
     return undefined;
   }
 
@@ -164,11 +167,16 @@ export class TransportableError extends Error {
 export function isTransportableError(
   error: unknown,
 ): error is TransportableError {
+  if (!(error instanceof Error)) {
+    return false;
+  }
   return (
-    error instanceof Error &&
-    (error as Partial<TransportableError>)[transportableErrorBrand] === true &&
-    typeof (error as Partial<TransportableError>).code === "string" &&
-    typeof (error as Partial<TransportableError>).serialize === "function"
+    transportableErrorBrand in error &&
+    error[transportableErrorBrand] === true &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    "serialize" in error &&
+    typeof error.serialize === "function"
   );
 }
 
@@ -202,11 +210,16 @@ export abstract class FormatUnavailableError extends TransportableError {
 export function isFormatUnavailable(
   error: unknown,
 ): error is FormatUnavailableError {
+  if (!isTransportableError(error)) {
+    return false;
+  }
+  if (!("format" in error) || !("warning" in error)) {
+    return false;
+  }
   return (
-    isTransportableError(error) &&
-    typeof (error as Partial<FormatUnavailableError>).format === "string" &&
-    (error as Partial<FormatUnavailableError>).format!.length > 0 &&
-    typeof (error as Partial<FormatUnavailableError>).warning === "string"
+    typeof error.format === "string" &&
+    error.format.length > 0 &&
+    typeof error.warning === "string"
   );
 }
 
@@ -214,7 +227,8 @@ export function isFormatUnavailable(
 export function endsEngineLoop(error: unknown): boolean {
   return (
     error instanceof Error &&
-    (error as { endsEngineLoop?: unknown }).endsEngineLoop === true
+    "endsEngineLoop" in error &&
+    error.endsEngineLoop === true
   );
 }
 
@@ -222,7 +236,8 @@ export function endsEngineLoop(error: unknown): boolean {
 export function abortsEngineRace(error: unknown): boolean {
   return (
     error instanceof Error &&
-    (error as { abortsEngineRace?: unknown }).abortsEngineRace === true
+    "abortsEngineRace" in error &&
+    error.abortsEngineRace === true
   );
 }
 
@@ -230,7 +245,8 @@ export function abortsEngineRace(error: unknown): boolean {
 export function stopsCrawlRetry(error: unknown): boolean {
   return (
     error instanceof Error &&
-    (error as { stopsCrawlRetry?: unknown }).stopsCrawlRetry === true
+    "stopsCrawlRetry" in error &&
+    error.stopsCrawlRetry === true
   );
 }
 
@@ -238,8 +254,8 @@ export function stopsCrawlRetry(error: unknown): boolean {
 export function shouldPropagateFromExtraction(error: unknown): boolean {
   return (
     error instanceof Error &&
-    (error as { propagateFromExtraction?: unknown }).propagateFromExtraction ===
-      true
+    "propagateFromExtraction" in error &&
+    error.propagateFromExtraction === true
   );
 }
 
@@ -247,8 +263,29 @@ interface ErrorHttpResponse {
   status: number;
   code?: ErrorCode;
   message: string;
-  extraFields?: Record<string, unknown>;
+  extraFields?: JsonObject;
 }
+
+const errorHttpMetaSchema = z.object({
+  httpStatus: z.number().int().min(100).max(599),
+});
+
+// ErrorCodes is open via declaration merging, so extension errors may carry
+// codes outside core's ErrorCodes interface.
+const errorCodeSchema = z.custom<ErrorCode>(
+  value => typeof value === "string" && value.length > 0,
+);
+
+const logMetaSchema = z.record(
+  z.string(),
+  z.union([inMemoryJsonValueSchema, z.instanceof(Error), z.instanceof(Date)]),
+);
+
+const rawScrapeLogSchema = z.object({
+  errorType: z.string().min(1),
+  message: z.string().min(1),
+  context: z.unknown().optional(),
+});
 
 /**
  * Reads HTTP response metadata from any Error declaring an integer `httpStatus`.
@@ -259,83 +296,62 @@ export function getErrorHttpResponse(
   if (!(error instanceof Error)) {
     return undefined;
   }
-  const candidate = error as Error & {
-    httpStatus?: unknown;
-    code?: unknown;
-    httpResponseFields?: unknown;
-  };
-  if (
-    typeof candidate.httpStatus !== "number" ||
-    !Number.isInteger(candidate.httpStatus) ||
-    candidate.httpStatus < 100 ||
-    candidate.httpStatus > 599
-  ) {
+  const meta = errorHttpMetaSchema.safeParse(error);
+  if (!meta.success) {
     return undefined;
   }
-  const extraFields =
-    candidate.httpResponseFields &&
-    typeof candidate.httpResponseFields === "object" &&
-    !Array.isArray(candidate.httpResponseFields)
-      ? (candidate.httpResponseFields as Record<string, unknown>)
-      : undefined;
-  return {
-    status: candidate.httpStatus,
-    ...(typeof candidate.code === "string"
-      ? { code: candidate.code as ErrorCode }
-      : {}),
+  const response: ErrorHttpResponse = {
+    status: meta.data.httpStatus,
     message: error.message,
-    ...(extraFields ? { extraFields } : {}),
   };
+  if ("code" in error) {
+    const parsedCode = errorCodeSchema.safeParse(error.code);
+    if (parsedCode.success) {
+      response.code = parsedCode.data;
+    }
+  }
+  if ("httpResponseFields" in error) {
+    const parsedFields = jsonRecordSchema.safeParse(error.httpResponseFields);
+    if (parsedFields.success) {
+      response.extraFields = parsedFields.data;
+    }
+  }
+  return response;
 }
 
 export interface ErrorScrapeLog {
   errorType: string;
   message: string;
-  context?: Record<string, unknown>;
+  context?: LogMeta;
 }
 
 /**
  * Reads custom scrapeURL warning log metadata from an error, when declared.
  */
 export function getErrorScrapeLog(error: unknown): ErrorScrapeLog | undefined {
-  if (!(error instanceof Error)) {
+  if (!(error instanceof Error) || !("scrapeLog" in error)) {
     return undefined;
   }
-  const raw = (error as { scrapeLog?: unknown }).scrapeLog;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+  const parsed = rawScrapeLogSchema.safeParse(error.scrapeLog);
+  if (!parsed.success) {
     return undefined;
   }
-  const candidate = raw as {
-    errorType?: unknown;
-    message?: unknown;
-    context?: unknown;
+  const log: ErrorScrapeLog = {
+    errorType: parsed.data.errorType,
+    message: parsed.data.message,
   };
-  if (
-    typeof candidate.errorType !== "string" ||
-    candidate.errorType.length === 0 ||
-    typeof candidate.message !== "string" ||
-    candidate.message.length === 0
-  ) {
-    return undefined;
+  const parsedContext = logMetaSchema.safeParse(parsed.data.context);
+  if (parsedContext.success) {
+    log.context = parsedContext.data;
   }
-  const context =
-    candidate.context &&
-    typeof candidate.context === "object" &&
-    !Array.isArray(candidate.context)
-      ? (candidate.context as Record<string, unknown>)
-      : undefined;
-  return {
-    errorType: candidate.errorType,
-    message: candidate.message,
-    ...(context ? { context } : {}),
-  };
+  return log;
 }
 
 /** A class of transportable error, registered under the codes it carries. */
 export interface TransportableErrorClass {
-  readonly codes: readonly ErrorCode[];
+  readonly codes: ReadonlyArray<ErrorCode>;
   /** Rebuilds an error from the parsed payload its `serialize()` wrote. */
-  deserialize(code: ErrorCode, data: any): TransportableError;
+  deserialize(code: ErrorCode, data: unknown): TransportableError;
 }
 
 /**
@@ -346,16 +362,26 @@ export interface TransportableErrorClass {
  * `Retry-After` header, so a retry of the same URL is a deliberate,
  * timed action instead of a blind loop.
  */
-type ScrapeTimeoutProcessingDetails = {
-  state: "processing_continues";
-  documentPages?: number;
-  jobStatus: "queued" | "running";
-  estimatedRemainingSeconds: number;
-  retryAfterSeconds: number;
-  /** Set when the document may not finish within the server-side
-   * processing ceiling even across retries. */
-  mayExceedProcessingWindow?: boolean;
-};
+const scrapeTimeoutProcessingDetailsSchema = z.object({
+  state: z.literal("processing_continues"),
+  documentPages: z
+    .number()
+    .nullable()
+    .transform(value => value ?? undefined)
+    .optional(),
+  jobStatus: z.enum(["queued", "running"]),
+  estimatedRemainingSeconds: z.number(),
+  retryAfterSeconds: z.number(),
+  mayExceedProcessingWindow: z
+    .boolean()
+    .nullable()
+    .transform(value => value ?? undefined)
+    .optional(),
+});
+
+type ScrapeTimeoutProcessingDetails = z.infer<
+  typeof scrapeTimeoutProcessingDetailsSchema
+>;
 
 /** Matches BY_REFERENCE_DEADLINE_PER_PAGE_MS (fire-pdf/utils.ts) — the
  * conservative worst-case processing rate the job deadline is built
@@ -363,10 +389,15 @@ type ScrapeTimeoutProcessingDetails = {
  * median). Kept as a default parameter here so lib/error stays free of
  * scraper imports; keep the two constants in lockstep or the retry
  * hints understate what the deadline actually allows. */
-const PROCESSING_ESTIMATE_PER_PAGE_MS = 1_250;
+const PROCESSING_ESTIMATE_PER_PAGE_MS = 1250;
 /** Fixed overhead the estimate grants beyond pure page work: queue
  * pickup, render bootstrap, result assembly. */
 const PROCESSING_ESTIMATE_BASE_MS = 60_000;
+
+interface TimeoutProcessingOutcome {
+  message: string;
+  details: ScrapeTimeoutProcessingDetails;
+}
 
 /**
  * Compose the customer-facing "we're still working on it" message and
@@ -387,7 +418,7 @@ export function composeTimeoutProcessing(args: {
    * server sees measured lane throughput and real queue depth, which
    * the static formula cannot. */
   serverEstimate?: { remainingMs: number; observedAtMs: number };
-}): { message: string; details: ScrapeTimeoutProcessingDetails } {
+}): TimeoutProcessingOutcome {
   const perPageMs = args.perPageMs ?? PROCESSING_ESTIMATE_PER_PAGE_MS;
   const pages = args.pagesEstimate;
   const totalMs =
@@ -444,15 +475,21 @@ export function composeTimeoutProcessing(args: {
 export function getTimeoutProcessingDetails(
   e: unknown,
 ): ScrapeTimeoutProcessingDetails | undefined {
-  if (isTransportableError(e) && e.code === "SCRAPE_TIMEOUT") {
-    const p = (e as ScrapeJobTimeoutError).processing;
-    if (p && p.state === "processing_continues") return p;
+  if (
+    isTransportableError(e) &&
+    e.code === "SCRAPE_TIMEOUT" &&
+    "processing" in e
+  ) {
+    const parsed = scrapeTimeoutProcessingDetailsSchema.safeParse(e.processing);
+    if (parsed.success) {
+      return parsed.data;
+    }
   }
   return undefined;
 }
 
 export class ScrapeJobTimeoutError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_TIMEOUT"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["SCRAPE_TIMEOUT"];
 
   constructor(
     message: string = "The scrape operation timed out before completing. This happens when a page takes too long to load, render, or process. Possible causes: (1) The website is slow or unresponsive, (2) The page has heavy JavaScript that takes time to execute, (3) The page is very large or has many resources to load, (4) Network latency is high. To fix this, try increasing the timeout parameter in your scrape request, or if using actions, ensure your selectors are correct and the page is ready before actions are executed.",
@@ -479,7 +516,9 @@ export class ScrapeJobTimeoutError extends TransportableError {
 }
 
 export class ConcurrencyQueueTimeoutError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["CONCURRENCY_QUEUE_TIMEOUT"];
+  static readonly codes: ReadonlyArray<ErrorCode> = [
+    "CONCURRENCY_QUEUE_TIMEOUT",
+  ];
 
   constructor(
     message: string = "The operation timed out while waiting for a concurrency slot to become available. This means that your requests are exhausting your concurrent browsers limit. Consider using batch endpoints which wait for concurrency slots to become available indefinitely, or consider upgrading your plan to incrase your concurrency limit at https://firecrawl.dev/pricing.",
@@ -502,7 +541,7 @@ export class ConcurrencyQueueTimeoutError extends TransportableError {
 }
 
 export class UnknownError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["UNKNOWN_ERROR"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["UNKNOWN_ERROR"];
   #expected = false;
 
   constructor(inner: unknown) {
@@ -526,10 +565,13 @@ export class UnknownError extends TransportableError {
     // travels explicitly; otherwise a cancelled job revived on the API side
     // would look like a defect.
     // The flag is only written when set, so a defect's wire form is unchanged.
-    return {
-      ...super.serialize(),
-      ...(this.#expected ? { expected: true as const } : {}),
-    };
+    const data: ReturnType<TransportableError["serialize"]> & {
+      expected?: true;
+    } = super.serialize();
+    if (this.#expected) {
+      data.expected = true;
+    }
+    return data;
   }
 
   static deserialize(
@@ -549,7 +591,7 @@ export class UnknownError extends TransportableError {
 }
 
 export class MapTimeoutError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["MAP_TIMEOUT"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["MAP_TIMEOUT"];
 
   constructor() {
     super(
@@ -573,7 +615,7 @@ export class MapTimeoutError extends TransportableError {
 }
 
 export class MapFailedError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["MAP_FAILED"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["MAP_FAILED"];
 
   constructor(message: string) {
     super("MAP_FAILED", message);
@@ -594,7 +636,9 @@ export class MapFailedError extends TransportableError {
 }
 
 export class RacedRedirectError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_RACED_REDIRECT_ERROR"];
+  static readonly codes: ReadonlyArray<ErrorCode> = [
+    "SCRAPE_RACED_REDIRECT_ERROR",
+  ];
 
   constructor() {
     super(
@@ -618,7 +662,7 @@ export class RacedRedirectError extends TransportableError {
 }
 
 export class SitemapError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_SITEMAP_ERROR"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["SCRAPE_SITEMAP_ERROR"];
 
   constructor(message: string, cause?: unknown) {
     super("SCRAPE_SITEMAP_ERROR", message, { cause });
@@ -639,7 +683,7 @@ export class SitemapError extends TransportableError {
 }
 
 export class CrawlDenialError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["CRAWL_DENIAL"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["CRAWL_DENIAL"];
 
   /** The URL robots.txt disallows, or null when robots.txt did not cause the denial. */
   public robotsBlockedUrl: string | null;
@@ -673,7 +717,7 @@ export class CrawlDenialError extends TransportableError {
 }
 
 export class UnsupportedSiteError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["UNSUPPORTED_SITE"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["UNSUPPORTED_SITE"];
 
   constructor() {
     super("UNSUPPORTED_SITE", UNSUPPORTED_SITE_MESSAGE);
@@ -694,7 +738,7 @@ export class UnsupportedSiteError extends TransportableError {
 }
 
 export class ActionsNotSupportedError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = [
+  static readonly codes: ReadonlyArray<ErrorCode> = [
     "SCRAPE_ACTIONS_NOT_SUPPORTED",
   ];
 

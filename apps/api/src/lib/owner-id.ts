@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 
 // mirrors the uuid package's validate(): RFC 9562 plus the nil/max specials
 const UUID_RE =
@@ -6,7 +6,7 @@ const UUID_RE =
 
 // RFC 4122 v5 (namespaced SHA-1), matching the uuid package's v5()
 function uuidv5(name: string, namespace: string): string {
-  const ns = Buffer.from(namespace.replace(/-/g, ""), "hex");
+  const ns = Buffer.from(namespace.replaceAll("-", ""), "hex");
   const hash = createHash("sha1")
     .update(ns)
     .update(Buffer.from(name, "utf8"))
@@ -27,7 +27,11 @@ const normalizedUUIDNamespace = "0f38e00e-d7ee-4b77-8a7a-a787a3537ca2";
 export function normalizeOwnerId(
   ownerId: string | undefined | null,
 ): string | null {
-  if (typeof ownerId !== "string") return null;
-  if (UUID_RE.test(ownerId)) return ownerId;
+  if (typeof ownerId !== "string") {
+    return null;
+  }
+  if (UUID_RE.test(ownerId)) {
+    return ownerId;
+  }
   return uuidv5(ownerId, normalizedUUIDNamespace);
 }

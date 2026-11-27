@@ -4,53 +4,43 @@
  */
 import type { TransportableErrorClass } from "../lib/error";
 import { defaultModules } from "./defaults";
-import {
-  buildEngineRegistry,
-  type DescribedEngineFeature,
-  type Engine,
-  type EngineFeatureMap,
-  type EngineRegistry,
+import { buildEngineRegistry } from "./engines";
+import type {
+  DescribedEngineFeature,
+  Engine,
+  EngineFeatureMap,
+  EngineRegistry,
 } from "./engines";
 import { assertEnv, describeEnv } from "./env";
-import { buildHookRegistry, type HookHandlers, type Hooks } from "./hooks";
-import {
-  buildLlmProviderRegistry,
-  type LlmProvider,
-  type LlmProviderRegistry,
-} from "./llm-providers";
-import { freezeModules, type Modules } from "./modules";
+import { buildHookRegistry } from "./hooks";
+import type { HookHandlers, Hooks } from "./hooks";
+import { buildLlmProviderRegistry } from "./llm-providers";
+import type { LlmProvider, LlmProviderRegistry } from "./llm-providers";
+import { freezeModules } from "./modules";
+import type { Modules } from "./modules";
 import type {
   BaseCaller,
   BaseRequestContext,
   Caller,
   RequestContext,
 } from "./request-context";
-import {
-  buildRequestSchemaRegistry,
-  type DescribedRequestSchemas,
-  type RequestContributions,
-  type RequestSchemaBuilder,
-  type RequestSchemas,
+import { buildRequestSchemaRegistry } from "./request";
+import type {
+  DescribedRequestSchemas,
+  RequestContributions,
+  RequestSchemaBuilder,
+  RequestSchemas,
 } from "./request";
-import {
-  buildRouteRegistry,
-  type DescribedRoute,
-  type RouteRegistrar,
-  type RouterName,
-  type Routers,
-} from "./routes";
-import {
-  buildSearchProviderRegistry,
-  type DescribedSearchProvider,
-  type SearchProvider,
-  type SearchProviderRegistry,
+import { buildRouteRegistry } from "./routes";
+import type { DescribedRoute, RouteRegistrar, Routers } from "./routes";
+import { buildSearchProviderRegistry } from "./search-providers";
+import type {
+  DescribedSearchProvider,
+  SearchProvider,
+  SearchProviderRegistry,
 } from "./search-providers";
-import {
-  buildWorkerRegistry,
-  type RoleRegistry,
-  type Worker,
-  type WorkerRunEnv,
-} from "./workers";
+import { buildWorkerRegistry } from "./workers";
+import type { RoleRegistry, Worker, WorkerRunEnv } from "./workers";
 
 export type { Modules } from "./modules";
 export type {
@@ -75,12 +65,14 @@ export interface Extension {
    * time the service looks an error up, so that listing classes does not load
    * them when the service is built.
    */
-  errors?: TransportableErrorClass[] | (() => TransportableErrorClass[]);
+  errors?:
+    | Array<TransportableErrorClass>
+    | (() => Array<TransportableErrorClass>);
   /**
    * Scrape engines contributed by this extension. A later engine of the same
    * name replaces an earlier one.
    */
-  engines?: readonly Engine[];
+  engines?: ReadonlyArray<Engine>;
   /**
    * Scrape engine feature priorities contributed by this extension. A later
    * definition of the same feature name replaces an earlier one.
@@ -90,12 +82,12 @@ export interface Extension {
    * Search providers contributed by this extension. A later provider of the
    * same name replaces an earlier one.
    */
-  searchProviders?: readonly SearchProvider[];
+  searchProviders?: ReadonlyArray<SearchProvider>;
   /**
    * LLM providers contributed by this extension. A later provider of the same
    * name replaces an earlier one.
    */
-  llmProviders?: readonly LlmProvider[];
+  llmProviders?: ReadonlyArray<LlmProvider>;
   /**
    * Request-schema fields, formats, and cross-field scrape-option rules
    * contributed by this extension.
@@ -111,11 +103,11 @@ export interface Extension {
   workers?: Record<string, Worker>;
 }
 
-type RequiredAuthSlot = BaseCaller extends Caller ? never : "auth";
-type RequiredPolicySlot = BaseRequestContext extends RequestContext
-  ? never
-  : "policy";
-type RequiredModuleSlots = RequiredAuthSlot | RequiredPolicySlot;
+type RequiredSlotsMap = {
+  auth: BaseCaller extends Caller ? never : "auth";
+  policy: BaseRequestContext extends RequestContext ? never : "policy";
+};
+type RequiredModuleSlots = RequiredSlotsMap[keyof RequiredSlotsMap];
 
 /**
  * Module slot configuration. When `Caller` is widened with required fields,
@@ -139,14 +131,20 @@ export type ServiceConfig = ([RequiredModuleSlots] extends [never]
       modules: ModulesConfig;
     }) & {
   /** Applied in list order, after the service's own extension. */
-  extensions?: Extension[];
+  extensions?: Array<Extension>;
 };
+
+/** Structured metadata passed to `CoreParts.logger.error`. */
+export interface ServiceLogMeta {
+  hook?: string;
+  error?: unknown;
+}
 
 export interface CoreParts {
   /** The service's own extension, applied first. */
   core: Extension;
   /** Where the service reports a failure it does not pass on to a caller. */
-  logger: { error(message: string, meta: Record<string, unknown>): void };
+  logger: { error(message: string, meta: ServiceLogMeta): void };
   /** Builds compiled request schemas lazily on first `service.schemas` access. */
   buildRequestSchemas?: RequestSchemaBuilder;
 }
@@ -154,11 +152,11 @@ export interface CoreParts {
 /** What a service is made of, as plain data that can be compared between builds. */
 export interface ServiceDescription {
   /** Extension names, in the order they apply. */
-  extensions: string[];
+  extensions: Array<string>;
   /** The slots that have an implementation. */
-  modules: string[];
+  modules: Array<string>;
   /** For each hook point with a handler, the owner of each handler, in the order they run. */
-  hooks: Record<string, string[]>;
+  hooks: Record<string, Array<string>>;
   /** For each error code with a class, the extension the class comes from. */
   errors: Record<string, string>;
   /** For each registered scrape engine, the extension it comes from. */
@@ -172,14 +170,14 @@ export interface ServiceDescription {
   /** Contributed request fields, formats, and rules, by owner. */
   request: DescribedRequestSchemas;
   /** Express routes registered by extensions, in mount order. */
-  routes: DescribedRoute[];
+  routes: Array<DescribedRoute>;
   /** For each process role, the extension it comes from. */
   roles: Record<string, string>;
   /**
    * For each owner of environment variables, the variables it declares. The
    * owners are those defined in this process so far, whichever service asks.
    */
-  env: Record<string, string[]>;
+  env: Record<string, Array<string>>;
 }
 
 /** The error classes of a service, by the code each carries across the job queue. */
@@ -245,9 +243,7 @@ export function createService(
   const defaults = defaultModules();
   const modules = freezeModules({
     auth:
-      config.modules?.auth === undefined
-        ? (defaults.auth as Modules["auth"])
-        : config.modules.auth,
+      config.modules?.auth === undefined ? defaults.auth : config.modules.auth,
     billing:
       config.modules?.billing === undefined
         ? defaults.billing
@@ -266,7 +262,7 @@ export function createService(
         : config.modules.messages,
     policy:
       config.modules?.policy === undefined
-        ? (defaults.policy as Modules["policy"])
+        ? defaults.policy
         : config.modules.policy,
     uploads:
       config.modules?.uploads === undefined
@@ -292,13 +288,15 @@ export function createService(
     })),
   );
 
-  const { mountRoutes, describeRoutes } = buildRouteRegistry(
+  const routeRegistry = buildRouteRegistry(
     extensions.map((extension, index) => ({
       owner: extension.name,
       isCore: index === 0,
       routes: extension.routes,
     })),
   );
+  const mountRoutes = (routers: Routers) => routeRegistry.mountRoutes(routers);
+  const describeRoutes = () => routeRegistry.describeRoutes();
 
   const { hooks, describedHooks } = buildHookRegistry(
     extensions.map(extension => ({
@@ -358,7 +356,9 @@ export function createService(
   type RegisteredError = { owner: string; errorClass: TransportableErrorClass };
   let errorsByCode: Map<string, RegisteredError> | undefined;
   const registeredErrors = () => {
-    if (errorsByCode) return errorsByCode;
+    if (errorsByCode) {
+      return errorsByCode;
+    }
     const byCode = new Map<string, RegisteredError>();
     for (const source of errorSources) {
       const listed =

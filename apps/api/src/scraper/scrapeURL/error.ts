@@ -1,4 +1,7 @@
-import { ErrorCode, ErrorScrapeLog, TransportableError } from "../../lib/error";
+import { z } from "zod";
+import type { ErrorCode, ErrorScrapeLog } from "../../lib/error";
+import type { JsonObject } from "../../lib/json-types";
+import { TransportableError } from "../../lib/error";
 import { logsMessages } from "../../service/defaults";
 import { installedService } from "../../service/service";
 import type { Meta } from ".";
@@ -22,7 +25,7 @@ export class EngineError extends Error {
 
 /** A route the team's US-only restriction rules out, because no US-based vendor serves it. */
 export class UsOnlyUnavailableError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["US_ONLY_UNAVAILABLE"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["US_ONLY_UNAVAILABLE"];
 
   constructor(message: string) {
     super("US_ONLY_UNAVAILABLE", message);
@@ -52,7 +55,7 @@ export class UsOnlyUnavailableError extends TransportableError {
 
 /** Parsing the team's reserved capacity restriction rules out, because the PDF service could not run, or did not confirm running, it there. */
 export class ReservedCapacityUnavailableError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = [
+  static readonly codes: ReadonlyArray<ErrorCode> = [
     "RESERVED_CAPACITY_UNAVAILABLE",
   ];
 
@@ -81,11 +84,13 @@ export class ReservedCapacityUnavailableError extends TransportableError {
 }
 
 export class NoEnginesLeftError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_ALL_ENGINES_FAILED"];
+  static readonly codes: ReadonlyArray<ErrorCode> = [
+    "SCRAPE_ALL_ENGINES_FAILED",
+  ];
 
-  public fallbackList: Engine[];
+  public fallbackList: Array<Engine>;
 
-  constructor(fallbackList: Engine[]) {
+  constructor(fallbackList: Array<Engine>) {
     const enginesTriedStr = fallbackList.join(", ");
     const message = `All scraping engines failed to retrieve content from this URL. Engines tried: [${enginesTriedStr}]. This usually happens when: (1) The URL is invalid or the page doesn't exist (404), (2) The website is blocking automated access, (3) The website is down or unreachable, (4) The page requires authentication. Double check the URL is correct and accessible in a browser. ${messages().allEnginesFailedContact()}`;
 
@@ -112,13 +117,13 @@ export class NoEnginesLeftError extends TransportableError {
 
 export class AddFeatureError extends Error {
   [EXPECTED_ERROR] = true;
-  public featureFlags: FeatureFlag[];
+  public featureFlags: Array<FeatureFlag>;
   public pdfPrefetch: Meta["pdfPrefetch"];
   public documentPrefetch: Meta["documentPrefetch"];
   public imagePrefetch: Meta["imagePrefetch"];
 
   constructor(
-    featureFlags: FeatureFlag[],
+    featureFlags: Array<FeatureFlag>,
     pdfPrefetch?: Meta["pdfPrefetch"],
     documentPrefetch?: Meta["documentPrefetch"],
     imagePrefetch?: Meta["imagePrefetch"],
@@ -137,9 +142,9 @@ export class AddFeatureError extends Error {
 
 export class RemoveFeatureError extends Error {
   [EXPECTED_ERROR] = true;
-  public featureFlags: FeatureFlag[];
+  public featureFlags: Array<FeatureFlag>;
 
-  constructor(featureFlags: FeatureFlag[]) {
+  constructor(featureFlags: Array<FeatureFlag>) {
     super(
       "Incorrect feature flags have been discovered: " +
         featureFlags.join(", "),
@@ -153,7 +158,7 @@ export class RemoveFeatureError extends Error {
 }
 
 export class SSLError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_SSL_ERROR"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["SCRAPE_SSL_ERROR"];
 
   get endsEngineLoop(): boolean {
     return true;
@@ -192,26 +197,28 @@ export class SSLError extends TransportableError {
   }
 }
 
-type ExchangeRefusalCode =
-  | "THIRD_PARTY_DATA_NOT_FOUND"
-  | "THIRD_PARTY_DATA_UNSUPPORTED_URL"
-  | "THIRD_PARTY_DATA_NOT_ENABLED"
-  | "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED";
+const exchangeRefusalCodeSchema = z.enum([
+  "THIRD_PARTY_DATA_NOT_FOUND",
+  "THIRD_PARTY_DATA_UNSUPPORTED_URL",
+  "THIRD_PARTY_DATA_NOT_ENABLED",
+  "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED",
+]);
+
+type ExchangeRefusalCode = z.infer<typeof exchangeRefusalCodeSchema>;
 
 // A definitive answer from the Exchange about this URL: the provider holds no
 // record for it, does not serve it, or the team is not entitled to the
 // provider. Another attempt cannot change it, so it surfaces as-is instead of
 // as an engine failure.
 export class ExchangeRefusedError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = [
-    "THIRD_PARTY_DATA_NOT_FOUND",
-    "THIRD_PARTY_DATA_UNSUPPORTED_URL",
-    "THIRD_PARTY_DATA_NOT_ENABLED",
-    "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED",
-  ];
+  static readonly codes: ReadonlyArray<ErrorCode> =
+    exchangeRefusalCodeSchema.options;
+
+  public override readonly code: ExchangeRefusalCode;
 
   constructor(code: ExchangeRefusalCode, message: string) {
     super(code, message);
+    this.code = code;
   }
 
   get endsEngineLoop(): boolean {
@@ -219,7 +226,7 @@ export class ExchangeRefusedError extends TransportableError {
   }
 
   get httpStatus(): number {
-    switch (this.code as ExchangeRefusalCode) {
+    switch (this.code) {
       case "THIRD_PARTY_DATA_NOT_FOUND":
         return 404;
       case "THIRD_PARTY_DATA_UNSUPPORTED_URL":
@@ -234,50 +241,69 @@ export class ExchangeRefusedError extends TransportableError {
     code: ErrorCode,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
-    const x = new ExchangeRefusedError(
-      code as ExchangeRefusalCode,
-      data.message,
-    );
+    const parsed = exchangeRefusalCodeSchema.safeParse(code);
+    if (!parsed.success) {
+      throw new Error(`Unexpected ExchangeRefusedError code: ${code}`);
+    }
+    const x = new ExchangeRefusedError(parsed.data, data.message);
     x.stack = data.stack;
     return x;
   }
 }
 
 export class SiteError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_SITE_ERROR"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["SCRAPE_SITE_ERROR"];
 
   get endsEngineLoop(): boolean {
     return true;
   }
 
   constructor(public errorCode: string) {
-    const errorExplanations: Record<string, string> = {
-      ERR_TUNNEL_CONNECTION_FAILED:
+    const errorExplanations = new Map<string, string>([
+      [
+        "ERR_TUNNEL_CONNECTION_FAILED",
         "Firecrawl encountered an internal proxy error while establishing the tunnel.",
-      ERR_TIMED_OUT:
+      ],
+      [
+        "ERR_TIMED_OUT",
         "The connection timed out. The server is not responding or is too slow.",
-      ERR_BLOCKED_BY_CLIENT:
+      ],
+      [
+        "ERR_BLOCKED_BY_CLIENT",
         "The request was blocked by the client, possibly due to an ad blocker or network policy.",
-      ERR_CONNECTION_CLOSED:
+      ],
+      [
+        "ERR_CONNECTION_CLOSED",
         "The connection was closed unexpectedly by the server.",
-      ERR_HTTP2_PROTOCOL_ERROR:
+      ],
+      [
+        "ERR_HTTP2_PROTOCOL_ERROR",
         "An HTTP/2 protocol error occurred. The server may have misconfigured HTTP/2.",
-      ERR_EMPTY_RESPONSE:
+      ],
+      [
+        "ERR_EMPTY_RESPONSE",
         "The server closed the connection without sending any response.",
-      ERR_PROXY_CONNECTION_FAILED:
+      ],
+      [
+        "ERR_PROXY_CONNECTION_FAILED",
         "Firecrawl encountered an internal proxy error while connecting to the proxy.",
-      ERR_CONNECTION_RESET:
+      ],
+      [
+        "ERR_CONNECTION_RESET",
         "The connection was reset by the peer. The server may have dropped the connection.",
-      ERR_TOO_MANY_REDIRECTS:
+      ],
+      [
+        "ERR_TOO_MANY_REDIRECTS",
         "The page has too many redirects. The website may be misconfigured.",
-    };
+      ],
+    ]);
 
     const isProxyError =
       errorCode === "ERR_TUNNEL_CONNECTION_FAILED" ||
       errorCode === "ERR_PROXY_CONNECTION_FAILED";
 
     const explanation =
-      errorExplanations[errorCode] ||
+      errorExplanations.get(errorCode) ||
       "The website returned an error or could not be loaded properly.";
 
     const followUp = isProxyError
@@ -308,7 +334,7 @@ export class SiteError extends TransportableError {
 }
 
 export class ProxySelectionError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = [
+  static readonly codes: ReadonlyArray<ErrorCode> = [
     "SCRAPE_PROXY_SELECTION_ERROR",
   ];
 
@@ -340,7 +366,7 @@ export class ProxySelectionError extends TransportableError {
 }
 
 export class SiteRestrictionError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = [
+  static readonly codes: ReadonlyArray<ErrorCode> = [
     "SCRAPE_SITE_RESTRICTION_BLOCKED",
   ];
 
@@ -415,7 +441,7 @@ export function isNoRetrySiteBlock(
 }
 
 export class ActionError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_ACTION_ERROR"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["SCRAPE_ACTION_ERROR"];
 
   get endsEngineLoop(): boolean {
     return true;
@@ -446,7 +472,7 @@ export class ActionError extends TransportableError {
 }
 
 export class UnsupportedFileError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = [
+  static readonly codes: ReadonlyArray<ErrorCode> = [
     "SCRAPE_UNSUPPORTED_FILE_ERROR",
   ];
 
@@ -479,7 +505,9 @@ export class UnsupportedFileError extends TransportableError {
 }
 
 export class PDFAntibotError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_PDF_ANTIBOT_ERROR"];
+  static readonly codes: ReadonlyArray<ErrorCode> = [
+    "SCRAPE_PDF_ANTIBOT_ERROR",
+  ];
 
   get endsEngineLoop(): boolean {
     return true;
@@ -504,7 +532,7 @@ export class PDFAntibotError extends TransportableError {
 }
 
 export class PDFFetchProxyError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = [
+  static readonly codes: ReadonlyArray<ErrorCode> = [
     "SCRAPE_PDF_FETCH_PROXY_ERROR",
   ];
 
@@ -534,7 +562,7 @@ export class PDFFetchProxyError extends TransportableError {
 }
 
 export class PDFInsufficientTimeError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = [
+  static readonly codes: ReadonlyArray<ErrorCode> = [
     "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR",
   ];
 
@@ -571,7 +599,9 @@ export class PDFInsufficientTimeError extends TransportableError {
 }
 
 export class DNSResolutionError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_DNS_RESOLUTION_ERROR"];
+  static readonly codes: ReadonlyArray<ErrorCode> = [
+    "SCRAPE_DNS_RESOLUTION_ERROR",
+  ];
 
   get endsEngineLoop(): boolean {
     return true;
@@ -613,7 +643,7 @@ export class IndexMissError extends EngineError {
 }
 
 export class NoCachedDataError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_NO_CACHED_DATA"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["SCRAPE_NO_CACHED_DATA"];
 
   get endsEngineLoop(): boolean {
     return true;
@@ -645,7 +675,9 @@ export class NoCachedDataError extends TransportableError {
 }
 
 export class LockdownMissError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_LOCKDOWN_CACHE_MISS"];
+  static readonly codes: ReadonlyArray<ErrorCode> = [
+    "SCRAPE_LOCKDOWN_CACHE_MISS",
+  ];
 
   get httpStatus(): number {
     return 404;
@@ -673,7 +705,9 @@ export class LockdownMissError extends TransportableError {
 }
 
 export class ZDRViolationError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_ZDR_VIOLATION_ERROR"];
+  static readonly codes: ReadonlyArray<ErrorCode> = [
+    "SCRAPE_ZDR_VIOLATION_ERROR",
+  ];
 
   constructor(public feature: string) {
     super(
@@ -700,7 +734,7 @@ export class ZDRViolationError extends TransportableError {
 }
 
 export class PDFOCRRequiredError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_PDF_OCR_REQUIRED"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["SCRAPE_PDF_OCR_REQUIRED"];
 
   get endsEngineLoop(): boolean {
     return true;
@@ -731,7 +765,9 @@ export class PDFOCRRequiredError extends TransportableError {
 }
 
 export class PDFPrefetchFailed extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_PDF_PREFETCH_FAILED"];
+  static readonly codes: ReadonlyArray<ErrorCode> = [
+    "SCRAPE_PDF_PREFETCH_FAILED",
+  ];
 
   constructor() {
     const message = `Failed to prefetch the PDF file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the PDF is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. ${messages().filePrefetchFailedContact()}`;
@@ -754,7 +790,7 @@ export class PDFPrefetchFailed extends TransportableError {
 }
 
 export class DocumentAntibotError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = [
+  static readonly codes: ReadonlyArray<ErrorCode> = [
     "SCRAPE_DOCUMENT_ANTIBOT_ERROR",
   ];
 
@@ -784,7 +820,7 @@ export class DocumentAntibotError extends TransportableError {
 }
 
 export class DocumentFetchProxyError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = [
+  static readonly codes: ReadonlyArray<ErrorCode> = [
     "SCRAPE_DOCUMENT_FETCH_PROXY_ERROR",
   ];
 
@@ -814,7 +850,7 @@ export class DocumentFetchProxyError extends TransportableError {
 }
 
 export class DocumentPrefetchFailed extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = [
+  static readonly codes: ReadonlyArray<ErrorCode> = [
     "SCRAPE_DOCUMENT_PREFETCH_FAILED",
   ];
 
@@ -839,7 +875,7 @@ export class DocumentPrefetchFailed extends TransportableError {
 }
 
 export class AgentIndexOnlyError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["AGENT_INDEX_ONLY"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["AGENT_INDEX_ONLY"];
 
   get endsEngineLoop(): boolean {
     return true;
@@ -849,7 +885,7 @@ export class AgentIndexOnlyError extends TransportableError {
     return 403;
   }
 
-  get httpResponseFields(): Record<string, unknown> {
+  get httpResponseFields(): JsonObject {
     return {
       sponsor_status: "pending",
       login_url: "https://firecrawl.dev/signin",
@@ -878,7 +914,7 @@ export class AgentIndexOnlyError extends TransportableError {
 }
 
 export class PromptInjectionDetectedError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = [
+  static readonly codes: ReadonlyArray<ErrorCode> = [
     "SCRAPE_PROMPT_INJECTION_DETECTED",
   ];
 
@@ -905,7 +941,9 @@ export class PromptInjectionDetectedError extends TransportableError {
 }
 
 export class PaywalledContentError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_PAYWALLED_CONTENT"];
+  static readonly codes: ReadonlyArray<ErrorCode> = [
+    "SCRAPE_PAYWALLED_CONTENT",
+  ];
 
   get stopsCrawlRetry(): boolean {
     return true;
@@ -945,7 +983,7 @@ export class PaywalledContentError extends TransportableError {
 }
 
 export class JsonExtractionContentTooLargeError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = [
+  static readonly codes: ReadonlyArray<ErrorCode> = [
     "SCRAPE_JSON_CONTENT_TOO_LARGE",
   ];
 
@@ -1012,7 +1050,7 @@ export class WaterfallNextEngineSignal extends Error {
 }
 
 export class ScrapeJobCancelledError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_JOB_CANCELLED"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["SCRAPE_JOB_CANCELLED"];
 
   constructor() {
     super(
@@ -1055,7 +1093,7 @@ export type ScrapeRetryStats = {
 };
 
 export class ScrapeRetryLimitError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SCRAPE_RETRY_LIMIT"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["SCRAPE_RETRY_LIMIT"];
 
   constructor(
     public reason: ScrapeRetryLimitReason,

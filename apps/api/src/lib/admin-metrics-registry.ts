@@ -1,6 +1,6 @@
 export type AdminMetricsCollector = () => string | Promise<string>;
 
-const extraMetricsCollectors: AdminMetricsCollector[] = [];
+const extraMetricsCollectors: Array<AdminMetricsCollector> = [];
 
 /** Registers an additional Prometheus text collector appended to /metrics. */
 export function registerAdminMetricsCollector(
@@ -12,6 +12,6 @@ export function registerAdminMetricsCollector(
 }
 
 /** Returns registered admin metrics collectors. */
-export function getAdminMetricsCollectors(): readonly AdminMetricsCollector[] {
+export function getAdminMetricsCollectors(): ReadonlyArray<AdminMetricsCollector> {
   return extraMetricsCollectors;
 }

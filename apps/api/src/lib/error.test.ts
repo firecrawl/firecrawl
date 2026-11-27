@@ -90,6 +90,9 @@ describe("isTransportableError", () => {
   });
 });
 
+const revive = (error: UnknownError) =>
+  deserializeTransportableError(serializeTransportableError(error));
+
 describe("error classification for tracing", () => {
   // Reading an error back from a job asks the service for the class that
   // carries its code.
@@ -116,9 +119,6 @@ describe("error classification for tracing", () => {
   });
 
   it("keeps an unknown error's classification across the queue", () => {
-    const revive = (error: UnknownError) =>
-      deserializeTransportableError(serializeTransportableError(error));
-
     expect(
       isExpectedError(revive(new UnknownError(new JobCancelledError()))),
     ).toBe(true);

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildWorkerRegistry, type Worker } from "./workers";
+import { buildWorkerRegistry } from "./workers";
+import type { Worker } from "./workers";
 
 const worker = (): Worker => ({ run: vi.fn() });
 
@@ -74,7 +75,7 @@ describe("buildWorkerRegistry", () => {
 
   it("snapshots extension worker maps so later mutations have no effect", () => {
     const initial = worker();
-    const map: Record<string, Worker> = { api: initial };
+    const map = Object.fromEntries<Worker>([["api", initial]]);
 
     const { roles, workers } = buildWorkerRegistry([
       { owner: "core", workers: map },
@@ -92,13 +93,15 @@ describe("buildWorkerRegistry", () => {
   it("rejects non-plain workers objects, blank role names, and invalid workers", () => {
     expect(() =>
       buildWorkerRegistry([
-        { owner: "bad", workers: null as unknown as Record<string, Worker> },
+        // @ts-expect-error: verifying runtime rejection of null workers map
+        { owner: "bad", workers: null },
       ]),
     ).toThrow('Extension "bad" workers must be a plain object');
 
     expect(() =>
       buildWorkerRegistry([
-        { owner: "bad", workers: [] as unknown as Record<string, Worker> },
+        // @ts-expect-error: verifying runtime rejection of array workers map
+        { owner: "bad", workers: [] },
       ]),
     ).toThrow('Extension "bad" workers must be a plain object');
 
@@ -114,7 +117,8 @@ describe("buildWorkerRegistry", () => {
       buildWorkerRegistry([
         {
           owner: "bad",
-          workers: { broken: null as unknown as Worker },
+          // @ts-expect-error: verifying runtime rejection of null worker entry
+          workers: { broken: null },
         },
       ]),
     ).toThrow(
@@ -125,7 +129,8 @@ describe("buildWorkerRegistry", () => {
       buildWorkerRegistry([
         {
           owner: "bad",
-          workers: { broken: { run: "nope" } as unknown as Worker },
+          // @ts-expect-error: verifying runtime rejection of non-function worker.run
+          workers: { broken: { run: "nope" } },
         },
       ]),
     ).toThrow(

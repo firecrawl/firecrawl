@@ -12,6 +12,8 @@ export function reconcilePageCountWithPdfParse(
   pdfParseResult: { pagesProcessed?: number } | null | undefined,
 ): number {
   const parsed = pdfParseResult?.pagesProcessed;
-  if (parsed === undefined || current <= 0) return current;
+  if (parsed === undefined || current <= 0) {
+    return current;
+  }
   return Math.min(current, parsed);
 }

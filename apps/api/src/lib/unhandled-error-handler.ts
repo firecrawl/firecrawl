@@ -1,5 +1,6 @@
-import type { NextFunction, Response } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { v7 as uuidv7 } from "uuid";
+import { z } from "zod";
 import type {
   ErrorResponse,
   RequestWithMaybeACUC,
@@ -10,6 +11,10 @@ import { logger } from "./logger";
 import { recordUnhandledException } from "./otel-tracer";
 import { service } from "../service";
 
+const payloadTooLargeErrorSchema = z.object({
+  status: z.literal(413),
+});
+
 /**
  * Terminal Express error handler: answers 500 with an error id, logs the
  * failure, and records it as an exception on the request's span (or on a
@@ -18,7 +23,7 @@ import { service } from "../service";
  */
 export function unhandledErrorHandler(
   err: unknown,
-  req: RequestWithMaybeACUC<{}, ErrorResponse, undefined>,
+  req: RequestWithMaybeACUC<Request["params"], ErrorResponse, undefined>,
   res: Response<ErrorResponse>,
   _next: NextFunction,
 ): void {
@@ -35,12 +40,7 @@ export function unhandledErrorHandler(
     });
     return;
   }
-  if (
-    typeof err === "object" &&
-    err !== null &&
-    "status" in err &&
-    (err as { status?: number }).status === 413
-  ) {
+  if (payloadTooLargeErrorSchema.safeParse(err).success) {
     res.status(413).json({
       success: false,
       error: "Request body is too large",
@@ -70,7 +70,7 @@ export function unhandledErrorHandler(
         enterprise?: unknown;
       }
     | undefined;
-  const enterprise: unknown[] = Array.isArray(body?.enterprise)
+  const enterprise: Array<unknown> = Array.isArray(body?.enterprise)
     ? body.enterprise
     : [];
   const zeroDataRetention =

@@ -1,8 +1,6 @@
 import { context, propagation, trace } from "@opentelemetry/api";
-import {
-  InMemorySpanExporter,
-  type NodeTracerProvider,
-} from "@opentelemetry/sdk-trace-node";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-node";
+import type { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import express from "express";
 import request from "supertest";
 import type { RequestContext } from "../service/request-context";
@@ -26,7 +24,7 @@ function appUnderTest(
     // Stands in for the auth middleware, which attaches the team and the
     // terms the request runs under.
     v2.use((req, _res, next) => {
-      (req as unknown as { acuc: typeof team }).acuc = team;
+      Object.assign(req, { acuc: team });
       req.ctx = {
         teamId: team.team_id,
         zeroDataRetention: false,
@@ -94,8 +92,11 @@ describe("unhandledErrorHandler", () => {
     context.disable();
     propagation.disable();
     for (const [key, value] of Object.entries(savedEnv)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
     }
   });
 

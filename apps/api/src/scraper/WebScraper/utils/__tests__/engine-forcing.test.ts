@@ -97,9 +97,8 @@ describe("Engine Forcing", () => {
       delete config.FORCED_ENGINE_DOMAINS;
       // Re-import a fresh, uninitialized module instance.
       vi.resetModules();
-      const { getEngineForUrl: freshGetEngineForUrl } = await import(
-        "../engine-forcing.js"
-      );
+      const { getEngineForUrl: freshGetEngineForUrl } =
+        await import("../engine-forcing.js");
       expect(freshGetEngineForUrl("https://example.com")).toBeUndefined();
     });
   });

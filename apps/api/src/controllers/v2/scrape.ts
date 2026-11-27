@@ -1,26 +1,27 @@
-import { Response } from "express";
+import type { Response } from "express";
+import { z } from "zod";
 
 import { logger as _logger } from "../../lib/logger";
-import {
+import type {
+  DefaultRequestParams,
   Document,
   FormatObject,
-  getV2RequestSchemas,
   RequestWithAuth,
   ScrapeRequest,
   ScrapeResponse,
 } from "./types";
+import { getV2RequestSchemas } from "./types";
 import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
 import {
   getErrorHttpResponse,
   getTimeoutProcessingDetails,
   isTransportableError,
-  TransportableError,
 } from "../../lib/error";
-import { NuQJob } from "../../services/worker/nuq";
+import type { NuQJob } from "../../services/worker/nuq";
 import { withSpan, setSpanAttributes, SpanKind } from "../../lib/otel-tracer";
 import { processJobInternal } from "../../services/worker/scrape-worker";
-import { ScrapeJobData } from "../../types";
+import type { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { currentLimits, resolveJobPriority } from "../../lib/limits";
 import {
@@ -28,40 +29,52 @@ import {
   requestContext,
 } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import {
-  finalizeResponse,
-  service,
-  type RequestContext,
-  type SettleOutcome,
+import { finalizeResponse, service } from "../../service";
+import type {
+  RequestContext,
+  ResponsePayload,
+  SettleOutcome,
 } from "../../service";
 import type { BillingMetadata } from "../../lib/billing-types";
+import { jsonRecordSchema } from "../../lib/json-types";
+import type { InternalOptions } from "../../scraper/scrapeURL";
+import { readAgentInterop, readBooleanField } from "./agent-interop";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
+type ScrapeOptionsWithCache = ScrapeRequest & {
+  maxAge?: number;
+};
+
+const rawUrlBodySchema = z.object({ url: z.string() });
+const maxAgeBodySchema = z.object({ maxAge: z.number() });
+
 export async function scrapeController(
-  req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
-  res: Response<ScrapeResponse>,
+  req: RequestWithAuth<DefaultRequestParams, ScrapeResponse, ScrapeRequest>,
+  res: Response<ScrapeResponse | ResponsePayload>,
 ) {
-  const rawBody = req.body as Record<string, any> | undefined;
   const zeroDataRetentionTrace =
     req.ctx?.zeroDataRetention === true ||
     req.body?.zeroDataRetention === true ||
-    rawBody?.lockdown === true;
+    readBooleanField(req.body, "lockdown");
 
   return withSpan(
     "api.scrape.request",
     async span => {
       // Get timing data from middleware (includes all middleware processing time)
       const middlewareStartTime =
-        (req as any).requestTiming?.startTime || new Date().getTime();
+        req.requestTiming?.startTime || new Date().getTime();
       const controllerStartTime = new Date().getTime();
 
       const jobId = req.requestId ?? uuidv7();
-      const preNormalizedBody = (req.rawRequestBody as
-        | Partial<ScrapeRequest>
-        | undefined) ?? {
-        ...req.body,
-      };
+      const parsedRawBody = jsonRecordSchema.safeParse(req.rawRequestBody);
+      const preNormalizedBody = parsedRawBody.success
+        ? parsedRawBody.data
+        : { ...req.body };
+      const parsedRawUrl = rawUrlBodySchema.safeParse(req.rawRequestBody);
+      const unnormalizedSourceURL = parsedRawUrl.success
+        ? parsedRawUrl.data.url
+        : req.body.url;
 
       // Set initial span attributes
       setSpanAttributes(span, {
@@ -80,13 +93,14 @@ export async function scrapeController(
           });
         });
       }
-      const extBody = req.body as Record<string, any>;
+      const agentInterop = readAgentInterop(req.body);
 
       const zeroDataRetention =
         req.ctx?.zeroDataRetention ??
-        ((req.body.zeroDataRetention ?? false) || (extBody.lockdown ?? false));
+        ((req.body.zeroDataRetention ?? false) ||
+          readBooleanField(req.body, "lockdown"));
       const billing: BillingMetadata = req.ctx?.billing ?? {
-        ...(extBody.__agentInterop
+        ...(agentInterop
           ? { endpoint: "agent" as const, jobId }
           : { endpoint: "scrape" as const, jobId }),
         hostedMcp: req.auth.hostedMcp,
@@ -107,10 +121,9 @@ export async function scrapeController(
           });
       req.ctx = ctx;
 
-      const shouldBill = extBody.__agentInterop?.shouldBill ?? true;
-      const agentRequestId = extBody.__agentInterop?.requestId ?? null;
-      const boostConcurrency =
-        extBody.__agentInterop?.boostConcurrency ?? false;
+      const shouldBill = agentInterop?.shouldBill ?? true;
+      const agentRequestId = agentInterop?.requestId ?? null;
+      const boostConcurrency = agentInterop?.boostConcurrency ?? false;
       const reservation = await service.modules.billing.authorize({
         caller: req.caller ?? { teamId: req.auth.team_id },
         operation: "scrape",
@@ -133,7 +146,7 @@ export async function scrapeController(
         }
         return res
           .status(reservation.refusal.status)
-          .json(reservation.refusal.body as ScrapeResponse);
+          .json(reservation.refusal.body);
       }
       const billingHandle = reservation.handle;
       let settledBilling = false;
@@ -149,13 +162,15 @@ export async function scrapeController(
       });
 
       const settleBilling = async (outcome: SettleOutcome) => {
-        if (billingHandle === undefined || settledBilling) return;
+        if (billingHandle === undefined || settledBilling) {
+          return;
+        }
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
             await service.modules.billing.settle?.(billingHandle, outcome);
             settledBilling = true;
             return;
-          } catch (settleError) {
+          } catch (settleError: unknown) {
             if (attempt === 1) {
               logger.error("Failed to settle billing reservation", {
                 teamId: req.auth.team_id,
@@ -178,7 +193,7 @@ export async function scrapeController(
         account: req.account,
       });
 
-      let logRequestPromise: Promise<any> | undefined = undefined;
+      let logRequestPromise: Promise<void> | undefined;
 
       if (!agentRequestId) {
         logRequestPromise = service.modules.jobStore
@@ -188,12 +203,12 @@ export async function scrapeController(
             ctx,
             clientOrigin: req.body.origin ?? "api",
           })
-          .catch(err =>
+          .catch((error: unknown) => {
             logger.error("Background job registration failed", {
-              error: err,
+              error,
               jobId,
-            }),
-          );
+            });
+          });
       }
 
       setSpanAttributes(span, {
@@ -268,6 +283,34 @@ export async function scrapeController(
                 });
 
                 const threatProtection = contextThreatProtection(ctx);
+                const jobScrapeOptions: ScrapeOptionsWithCache = {
+                  ...req.body,
+                };
+                if (readBooleanField(req.body, "__experimental_cache")) {
+                  const parsedMaxAge = maxAgeBodySchema.safeParse(req.body);
+                  jobScrapeOptions.maxAge = parsedMaxAge.success
+                    ? parsedMaxAge.data.maxAge
+                    : 4 * 60 * 60 * 1000; // 4 hours
+                }
+                const internalOptions: InternalOptions = {
+                  ctx,
+                  teamId: req.auth.team_id,
+                  unnormalizedSourceURL,
+                  bypassBilling:
+                    reservation.bypassBilling === true || !shouldBill,
+                  zeroDataRetention,
+                  teamFlags: req.acuc?.flags ?? null,
+                  orgId: req.acuc?.org_id ?? null,
+                  teamConcurrency: baseConcurrency,
+                  agentIndexOnly: readBooleanField(req, "agentIndexOnly"),
+                };
+                if (req.headers["x-firecrawl-work-contact-only"] === "true") {
+                  internalOptions.workContactOnly = true;
+                }
+                if (threatProtection !== undefined) {
+                  // Rolling-deploy compatibility dual-write alongside the ctx fallback.
+                  internalOptions.threatProtection = threatProtection;
+                }
                 const job: NuQJob<ScrapeJobData> = {
                   id: jobId,
 
@@ -279,34 +322,8 @@ export async function scrapeController(
                     mode: "single_urls",
                     ctx,
                     team_id: req.auth.team_id,
-                    scrapeOptions: {
-                      ...req.body,
-                      ...((req.body as any).__experimental_cache
-                        ? {
-                            maxAge: extBody.maxAge ?? 4 * 60 * 60 * 1000, // 4 hours
-                          }
-                        : {}),
-                    },
-                    internalOptions: {
-                      ctx,
-                      teamId: req.auth.team_id,
-                      unnormalizedSourceURL: preNormalizedBody.url,
-                      bypassBilling:
-                        reservation.bypassBilling === true || !shouldBill,
-                      zeroDataRetention,
-                      ...(req.headers["x-firecrawl-work-contact-only"] ===
-                      "true"
-                        ? { workContactOnly: true }
-                        : {}),
-                      teamFlags: req.acuc?.flags ?? null,
-                      orgId: req.acuc?.org_id ?? null,
-                      teamConcurrency: baseConcurrency,
-                      agentIndexOnly: (req as any).agentIndexOnly ?? false,
-                      // Rolling-deploy compatibility dual-write alongside the ctx fallback.
-                      ...(threatProtection !== undefined
-                        ? { threatProtection }
-                        : {}),
-                    },
+                    scrapeOptions: jobScrapeOptions,
+                    internalOptions,
                     skipNuq: true,
                     origin,
                     integration: req.body.integration,
@@ -317,7 +334,7 @@ export async function scrapeController(
                     concurrencyLimited: limited,
                     keylessReserved: billingHandle !== undefined,
                     requestId: agentRequestId ?? undefined,
-                    logRequestPromise: logRequestPromise,
+                    logRequestPromise,
                   },
                 };
 
@@ -335,29 +352,32 @@ export async function scrapeController(
           },
           ctx,
         );
-      } catch (e) {
+      } catch (error: unknown) {
         void settleBilling({ ok: false });
 
         const timeoutErr =
-          isTransportableError(e) &&
-          (e.code === "SCRAPE_TIMEOUT" ||
-            e.code === "CONCURRENCY_QUEUE_TIMEOUT");
+          isTransportableError(error) &&
+          (error.code === "SCRAPE_TIMEOUT" ||
+            error.code === "CONCURRENCY_QUEUE_TIMEOUT");
 
         setSpanAttributes(span, {
-          "scrape.error": e instanceof Error ? e.message : String(e),
-          "scrape.error_type": isTransportableError(e) ? e.code : "unknown",
+          "scrape.error":
+            error instanceof Error ? error.message : String(error),
+          "scrape.error_type": isTransportableError(error)
+            ? error.code
+            : "unknown",
         });
 
         const jobIdField = agentRequestId ? {} : { jobId };
 
-        if (isTransportableError(e)) {
+        if (isTransportableError(error)) {
           if (!timeoutErr) {
             logger.error(`Error in scrapeController`, {
               version: "v2",
-              error: e,
+              error,
             });
           }
-          const httpResponse = getErrorHttpResponse(e);
+          const httpResponse = getErrorHttpResponse(error);
           if (httpResponse) {
             setSpanAttributes(span, {
               "scrape.status_code": httpResponse.status,
@@ -365,69 +385,69 @@ export async function scrapeController(
             return res.status(httpResponse.status).json({
               ...httpResponse.extraFields,
               success: false,
-              code: e.code,
-              error: e.message,
+              code: error.code,
+              error: error.message,
               ...jobIdField,
             });
           }
 
           // DNS resolution errors should return 200 with success: false
-          if (e.code === "SCRAPE_DNS_RESOLUTION_ERROR") {
+          if (error.code === "SCRAPE_DNS_RESOLUTION_ERROR") {
             setSpanAttributes(span, {
               "scrape.status_code": 200,
             });
             return res.status(200).json({
               success: false,
-              code: e.code,
-              error: e.message,
+              code: error.code,
+              error: error.message,
               ...jobIdField,
             });
           }
 
-          if (e.code === "SCRAPE_ACTIONS_NOT_SUPPORTED") {
+          if (error.code === "SCRAPE_ACTIONS_NOT_SUPPORTED") {
             setSpanAttributes(span, {
               "scrape.status_code": 400,
             });
             return res.status(400).json({
               success: false,
-              code: e.code,
-              error: e.message,
+              code: error.code,
+              error: error.message,
               ...jobIdField,
             });
           }
 
-          if (e.code === "UNSUPPORTED_SITE") {
+          if (error.code === "UNSUPPORTED_SITE") {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });
             return res.status(403).json({
               success: false,
-              code: e.code,
-              error: e.message,
+              code: error.code,
+              error: error.message,
               ...jobIdField,
             });
           }
 
-          if (e.code === "SCRAPE_PROMPT_INJECTION_DETECTED") {
+          if (error.code === "SCRAPE_PROMPT_INJECTION_DETECTED") {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });
             return res.status(403).json({
               success: false,
-              code: e.code,
-              error: e.message,
+              code: error.code,
+              error: error.message,
               ...jobIdField,
             });
           }
 
-          if (e.code === "SCRAPE_JSON_CONTENT_TOO_LARGE") {
+          if (error.code === "SCRAPE_JSON_CONTENT_TOO_LARGE") {
             setSpanAttributes(span, {
               "scrape.status_code": 400,
             });
             return res.status(400).json({
               success: false,
-              code: e.code,
-              error: e.message,
+              code: error.code,
+              error: error.message,
               ...jobIdField,
             });
           }
@@ -441,14 +461,14 @@ export async function scrapeController(
           // `details` plus a standard Retry-After header so clients (and
           // retry libraries) know a timed retry returns the finished
           // result instead of restarting the work.
-          const processing = getTimeoutProcessingDetails(e);
+          const processing = getTimeoutProcessingDetails(error);
           if (processing) {
             res.setHeader("Retry-After", String(processing.retryAfterSeconds));
           }
           return res.status(statusCode).json({
             success: false,
-            code: e.code,
-            error: e.message,
+            code: error.code,
+            error: error.message,
             ...jobIdField,
             ...(processing && { details: processing }),
           });
@@ -456,7 +476,7 @@ export async function scrapeController(
           const id = uuidv7();
           logger.error(`Error in scrapeController`, {
             version: "v2",
-            error: e,
+            error,
             errorId: id,
             path: req.path,
             teamId: req.auth.team_id,
@@ -478,15 +498,37 @@ export async function scrapeController(
         }
       }
 
+      if (!doc) {
+        await settleBilling({ ok: false });
+        const id = uuidv7();
+        logger.error("Scrape completed without document", {
+          version: "v2",
+          scrapeId: jobId,
+          errorId: id,
+          teamId: req.auth.team_id,
+        });
+        setSpanAttributes(span, {
+          "scrape.status_code": 500,
+          "scrape.error_id": id,
+        });
+        const jobIdField = agentRequestId ? {} : { jobId };
+        return res.status(500).json({
+          success: false,
+          code: "UNKNOWN_ERROR",
+          error: service.modules.messages.errorContact(id),
+          ...jobIdField,
+        });
+      }
+
       if (!hasFormatOfType(req.body.formats, "rawHtml")) {
-        if (doc && doc.rawHtml) {
+        if (doc.rawHtml) {
           delete doc.rawHtml;
         }
       }
 
       await settleBilling({
         ok: true,
-        charged: doc?.metadata?.creditsUsed,
+        charged: doc.metadata?.creditsUsed,
       });
 
       const totalRequestTime = new Date().getTime() - middlewareStartTime;
@@ -499,14 +541,14 @@ export async function scrapeController(
         "scrape.total_request_time_ms": totalRequestTime,
         "scrape.controller_time_ms": controllerTime,
         "scrape.total_wait_time_ms": totalWait,
-        "scrape.document.status_code": doc?.metadata?.statusCode,
-        "scrape.document.content_type": doc?.metadata?.contentType,
-        "scrape.document.error": doc?.metadata?.error,
+        "scrape.document.status_code": doc.metadata?.statusCode,
+        "scrape.document.content_type": doc.metadata?.contentType,
+        "scrape.document.error": doc.metadata?.error,
       });
 
       const rawFormats = (req.body.formats ?? []) as Array<{
         type: string;
-        modes?: string[];
+        modes?: Array<string>;
       }>;
       let usedLlm =
         rawFormats.some(
@@ -527,7 +569,7 @@ export async function scrapeController(
         }
       }
 
-      const formats: string[] =
+      const formats: Array<string> =
         req.body.formats?.map((f: FormatObject) => f?.type) ?? [];
 
       logger.info("Request metrics", {
@@ -547,9 +589,9 @@ export async function scrapeController(
       });
 
       const responseDocument: Document = {
-        ...doc!,
+        ...doc,
         metadata: {
-          ...doc!.metadata,
+          ...doc.metadata,
           concurrencyLimited,
           concurrencyQueueDurationMs: concurrencyLimited
             ? lockTime || 0
@@ -566,7 +608,7 @@ export async function scrapeController(
         },
         [responseDocument],
       );
-      return res.status(200).json(payload as ScrapeResponse);
+      return res.status(200).json(payload);
     },
     {
       attributes: {

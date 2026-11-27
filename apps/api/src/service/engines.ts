@@ -72,10 +72,10 @@ export interface Engine {
   /** Features this engine supports. Absent or false means unsupported. */
   readonly features: { readonly [F in EngineFeatureName]?: boolean };
   /** Whether this engine is active in the current deployment. Evaluated at call time. */
-  enabled(): boolean;
-  scrape(meta: Meta): Promise<EngineScrapeResult>;
+  readonly enabled: () => boolean;
+  readonly scrape: (meta: Meta) => Promise<EngineScrapeResult>;
   /** Upper bound in milliseconds before waterfalling to the next engine. Defaults to 30000. */
-  maxReasonableTime?(meta: Meta): number;
+  readonly maxReasonableTime?: (meta: Meta) => number;
   /** When true, omitted from automatic fallback selection and only run when chosen explicitly. */
   readonly explicitOnly?: boolean;
   /** When true, serves cached scrape results (lockdown, index-only, cache state). */
@@ -99,9 +99,9 @@ export interface DescribedEngineFeature {
 /** The scrape engines and feature priorities registered on a service. */
 export interface EngineRegistry {
   /** Every registered engine in registration order, without calling `enabled()`. */
-  all(): readonly Engine[];
+  all(): ReadonlyArray<Engine>;
   /** Engines whose `enabled()` returns true at call time, in registration order. */
-  enabled(): readonly Engine[];
+  enabled(): ReadonlyArray<Engine>;
   /** The registered engine for `name`, whether currently enabled or not. */
   get(name: EngineName | (string & {})): Engine | undefined;
   /** The registered definition for `name`, or undefined if unregistered. */
@@ -115,7 +115,7 @@ export interface EngineRegistry {
 /** @internal */
 export interface EngineRegistrySource {
   owner: string;
-  engines?: readonly Engine[];
+  engines?: ReadonlyArray<Engine>;
   engineFeatures?: EngineFeatureMap;
 }
 
@@ -123,6 +123,8 @@ const sortedByKey = <T>(record: Record<string, T>): Record<string, T> =>
   Object.fromEntries(
     Object.entries(record).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
   );
+
+type MutableEngine = { -readonly [K in keyof Engine]: Engine[K] };
 
 function snapshotEngine(engine: Engine): Engine {
   if (typeof engine.name !== "string" || engine.name.length === 0) {
@@ -154,23 +156,41 @@ function snapshotEngine(engine: Engine): Engine {
     ),
   ) as { readonly [F in EngineFeatureName]?: boolean };
 
-  const frozen: Engine = {
+  const frozen: MutableEngine = {
     name: engine.name,
     quality: engine.quality,
     features,
     enabled: engine.enabled,
     scrape: engine.scrape,
-    ...(engine.maxReasonableTime !== undefined
-      ? { maxReasonableTime: engine.maxReasonableTime }
-      : {}),
-    ...(engine.explicitOnly ? { explicitOnly: true } : {}),
-    ...(engine.cache ? { cache: true } : {}),
-    ...(engine.fileOnly ? { fileOnly: true } : {}),
-    ...(engine.supportsProfile ? { supportsProfile: true } : {}),
-    ...(engine.prefetchesFiles ? { prefetchesFiles: true } : {}),
-    ...(engine.allowEmptyContent ? { allowEmptyContent: true } : {}),
   };
+  if (engine.maxReasonableTime !== undefined) {
+    frozen.maxReasonableTime = engine.maxReasonableTime;
+  }
+  if (engine.explicitOnly) {
+    frozen.explicitOnly = true;
+  }
+  if (engine.cache) {
+    frozen.cache = true;
+  }
+  if (engine.fileOnly) {
+    frozen.fileOnly = true;
+  }
+  if (engine.supportsProfile) {
+    frozen.supportsProfile = true;
+  }
+  if (engine.prefetchesFiles) {
+    frozen.prefetchesFiles = true;
+  }
+  if (engine.allowEmptyContent) {
+    frozen.allowEmptyContent = true;
+  }
   return Object.freeze(frozen);
+}
+
+interface BuiltEngineRegistry {
+  registry: EngineRegistry;
+  describedEngines: Record<string, string>;
+  describedFeatures: Record<string, DescribedEngineFeature>;
 }
 
 /**
@@ -180,11 +200,9 @@ function snapshotEngine(engine: Engine): Engine {
  *
  * @internal
  */
-export function buildEngineRegistry(sources: readonly EngineRegistrySource[]): {
-  registry: EngineRegistry;
-  describedEngines: Record<string, string>;
-  describedFeatures: Record<string, DescribedEngineFeature>;
-} {
+export function buildEngineRegistry(
+  sources: ReadonlyArray<EngineRegistrySource>,
+): BuiltEngineRegistry {
   const enginesByName = new Map<string, { owner: string; engine: Engine }>();
   const featuresByName = new Map<
     string,
@@ -200,7 +218,9 @@ export function buildEngineRegistry(sources: readonly EngineRegistrySource[]): {
     }
 
     for (const [name, feature] of Object.entries(source.engineFeatures ?? {})) {
-      if (feature === undefined) continue;
+      if (feature === undefined) {
+        continue;
+      }
       if (
         typeof feature.priority !== "number" ||
         !Number.isFinite(feature.priority) ||
@@ -245,8 +265,8 @@ export function buildEngineRegistry(sources: readonly EngineRegistrySource[]): {
   const registry: EngineRegistry = Object.freeze({
     all: () => allEngines,
     enabled: () => Object.freeze(allEngines.filter(engine => engine.enabled())),
-    get: name => enginesByName.get(name)?.engine,
-    feature: name => featuresByName.get(name)?.feature,
+    get: (name: string) => enginesByName.get(name)?.engine,
+    feature: (name: string) => featuresByName.get(name)?.feature,
     features: () => allFeatures,
   });
 

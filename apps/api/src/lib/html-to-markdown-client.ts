@@ -5,14 +5,21 @@
  * to avoid blocking Node.js event loop with heavy conversions.
  */
 
-import axios, { AxiosInstance, AxiosError } from "axios";
-import { config } from "../config";
-import { logger } from "./logger";
+import axios from "axios";
 import type { Logger } from "winston";
+import { config } from "../config";
+import type { LogMeta } from "./json-types";
+import { logger } from "./logger";
 
 interface ConvertRequest {
   html: string;
 }
+
+type ConvertRequestHeaders = {
+  "Content-Type": string;
+  "X-Request-ID"?: string;
+  "X-Zero-Data-Retention"?: string;
+};
 
 interface ConvertResponse {
   markdown: string;
@@ -50,15 +57,16 @@ export async function convertHTMLToMarkdownWithHttpService(
   const url = config.HTML_TO_MARKDOWN_SERVICE_URL;
   const startTime = Date.now();
 
+  let failureMessage: string;
   try {
     const request: ConvertRequest = { html };
 
-    const headers: Record<string, string> = {
+    const headers: ConvertRequestHeaders = {
       "Content-Type": "application/json",
     };
 
-    // Add request ID header if available, but never for ZDR — it would
-    // let the downstream service correlate logs back to a customer scrape.
+    // Add request ID header if available, but never for ZDR, so the
+    // downstream service cannot correlate logs back to a customer scrape.
     if (requestId && !zeroDataRetention) {
       headers["X-Request-ID"] = requestId;
     }
@@ -83,25 +91,25 @@ export async function convertHTMLToMarkdownWithHttpService(
     }
 
     if (!zeroDataRetention) {
-      contextLogger.debug("HTML to Markdown conversion successful", {
+      const debugMeta: LogMeta = {
         duration_ms: duration,
         input_size: html.length,
         output_size: response.data.markdown.length,
-        ...(requestId ? { request_id: requestId } : {}),
-      });
+      };
+      if (requestId) {
+        debugMeta.request_id = requestId;
+      }
+      contextLogger.debug("HTML to Markdown conversion successful", debugMeta);
     }
 
     return response.data.markdown;
-  } catch (error) {
+  } catch (error: unknown) {
     const duration = Date.now() - startTime;
 
-    if (axios.isAxiosError(error)) {
-      const axiosError = error as AxiosError<ErrorResponse>;
-
-      const errorMessage =
-        axiosError.response?.data?.error || axiosError.message;
-      const errorDetails = axiosError.response?.data?.details;
-      const statusCode = axiosError.response?.status;
+    if (axios.isAxiosError<ErrorResponse>(error)) {
+      const errorMessage = error.response?.data?.error || error.message;
+      const errorDetails = error.response?.data?.details;
+      const statusCode = error.response?.status;
 
       contextLogger.error("HTML to Markdown conversion failed", {
         error: errorMessage,
@@ -112,11 +120,9 @@ export async function convertHTMLToMarkdownWithHttpService(
       });
 
       // Include details in error message if available
-      const fullErrorMessage = errorDetails
+      failureMessage = errorDetails
         ? `HTML to Markdown conversion failed: ${errorMessage} - ${errorDetails}`
         : `HTML to Markdown conversion failed: ${errorMessage}`;
-
-      throw new Error(fullErrorMessage);
     } else {
       contextLogger.error(
         "Unexpected error during HTML to Markdown conversion",
@@ -127,4 +133,6 @@ export async function convertHTMLToMarkdownWithHttpService(
       throw error;
     }
   }
+
+  throw new Error(failureMessage);
 }

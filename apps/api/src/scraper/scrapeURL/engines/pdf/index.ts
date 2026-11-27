@@ -1,6 +1,6 @@
-import { Meta } from "../..";
+import type { Meta } from "../..";
 import { config } from "../../../../config";
-import { EngineScrapeResult } from "..";
+import type { EngineScrapeResult } from "..";
 import {
   downloadFile,
   fetchFileGuardingProxyFailure,
@@ -52,11 +52,18 @@ export {
 export function getIneligibleReason(
   result: Awaited<ReturnType<typeof processPdf>>,
 ): string | null {
-  if (result.pdfType !== "TextBased") return `pdfType=${result.pdfType}`;
-  if (result.confidence < 0.95) return `confidence=${result.confidence}`;
-  if (result.isComplex) return "complex layout (tables/columns)";
-  if (!result.markdown?.length)
+  if (result.pdfType !== "TextBased") {
+    return `pdfType=${result.pdfType}`;
+  }
+  if (result.confidence < 0.95) {
+    return `confidence=${result.confidence}`;
+  }
+  if (result.isComplex) {
+    return "complex layout (tables/columns)";
+  }
+  if (!result.markdown?.length) {
     return "empty markdown (unexpected for TextBased)";
+  }
   return null;
 }
 
@@ -85,11 +92,11 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   if (
     hasFilePrefetchEngine() &&
     meta.internalOptions.forceEngine === undefined &&
-    meta.pdfPrefetch == null
+    (meta.pdfPrefetch === undefined || meta.pdfPrefetch === null)
   ) {
     if (
-      meta.documentPrefetch != null ||
-      meta.imagePrefetch != null ||
+      (meta.documentPrefetch !== undefined && meta.documentPrefetch !== null) ||
+      (meta.imagePrefetch !== undefined && meta.imagePrefetch !== null) ||
       !meta.featureFlags.has("pdf")
     ) {
       throw new EngineUnsuccessfulError("pdf");
@@ -102,7 +109,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   const mode: PDFMode = getPDFMode(meta.options.parsers);
 
   const prefetch =
-    meta.pdfPrefetch != null
+    meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null
       ? await completeTruncatedHandoff(
           meta,
           meta.pdfPrefetch,
@@ -112,12 +119,14 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
   if (!shouldParse) {
     if (prefetch !== undefined && prefetch !== null) {
+      let consumed = false;
       try {
         const prefetchSize = (await stat(prefetch.filePath)).size;
         if (prefetchSize > PDF_DOWNLOAD_MAX_FILE_SIZE) {
           throw new UnsupportedFileError("File exceeds size limit");
         }
         const content = (await readFile(prefetch.filePath)).toString("base64");
+        consumed = true;
         return {
           url: prefetch.url ?? meta.rewrittenUrl ?? meta.url,
           statusCode: prefetch.status,
@@ -127,13 +136,15 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           proxyUsed: prefetch.proxyUsed,
         };
       } finally {
-        try {
-          await unlink(prefetch.filePath);
-        } catch (error) {
-          meta.logger?.warn("Failed to clean up temporary PDF file", {
-            error,
-            tempFilePath: prefetch.filePath,
-          });
+        if (consumed || prefetch !== meta.pdfPrefetch) {
+          try {
+            await unlink(prefetch.filePath);
+          } catch (error: unknown) {
+            meta.logger?.warn("Failed to clean up temporary PDF file", {
+              error,
+              tempFilePath: prefetch.filePath,
+            });
+          }
         }
       }
     }
@@ -151,7 +162,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     );
 
     if (!isPdfBuffer(file.buffer)) {
-      if (meta.pdfPrefetch == null) {
+      if (meta.pdfPrefetch === undefined || meta.pdfPrefetch === null) {
         if (!meta.featureFlags.has("pdf")) {
           throw new EngineUnsuccessfulError("pdf");
         }
@@ -203,7 +214,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     }
 
     if (!isPdfBuffer(header.subarray(0, headerBytesRead))) {
-      if (meta.pdfPrefetch == null) {
+      if (meta.pdfPrefetch === undefined || meta.pdfPrefetch === null) {
         if (!meta.featureFlags.has("pdf")) {
           throw new EngineUnsuccessfulError("pdf");
         }
@@ -262,7 +273,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         ) {
           throw new PDFOCRRequiredError(detection.pdfType);
         }
-      } catch (error) {
+      } catch (error: unknown) {
         if (error instanceof PDFOCRRequiredError) {
           throw error;
         }
@@ -339,7 +350,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           );
           result = { markdown: pdfResult.markdown, html };
         }
-      } catch (error) {
+      } catch (error: unknown) {
         if (error instanceof PDFOCRRequiredError) {
           throw error;
         }
@@ -399,7 +410,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   } finally {
     try {
       await unlink(tempFilePath);
-    } catch (error) {
+    } catch (error: unknown) {
       meta.logger?.warn("Failed to clean up temporary PDF file", {
         error,
         tempFilePath,
@@ -409,5 +420,5 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 }
 
 export function pdfMaxReasonableTime(_meta: Meta): number {
-  return 120000;
+  return 120_000;
 }

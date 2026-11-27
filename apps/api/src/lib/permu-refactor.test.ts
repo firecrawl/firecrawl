@@ -1,4 +1,4 @@
-function generateURLPermutations(url: string | URL): URL[] {
+function generateURLPermutations(url: string | URL): Array<URL> {
   const urlO = new URL(url);
 
   // Construct two versions, one with www., one without

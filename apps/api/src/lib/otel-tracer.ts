@@ -7,11 +7,13 @@ import {
   SpanKind,
   SpanStatusCode,
   trace,
-  type Attributes,
-  type AttributeValue,
-  type Context,
-  type Link,
-  type Span,
+} from "@opentelemetry/api";
+import type {
+  Attributes,
+  AttributeValue,
+  Context,
+  Link,
+  Span,
 } from "@opentelemetry/api";
 import {
   AlwaysOffSampler,
@@ -21,11 +23,13 @@ import {
   ParentBasedSampler,
   SamplingDecision,
   TraceIdRatioBasedSampler,
-  type ReadableSpan,
-  type Sampler,
-  type SamplingResult,
-  type SpanExporter,
-  type SpanProcessor,
+} from "@opentelemetry/sdk-trace-node";
+import type {
+  ReadableSpan,
+  Sampler,
+  SamplingResult,
+  SpanExporter,
+  SpanProcessor,
 } from "@opentelemetry/sdk-trace-node";
 import {
   defaultResource,
@@ -97,9 +101,9 @@ function markTraceZeroDataRetention(traceId: string): void {
 
   zeroDataRetentionTraces.add(traceId);
   if (zeroDataRetentionTraces.size > ZERO_DATA_RETENTION_TRACE_LIMIT) {
-    const oldest = zeroDataRetentionTraces.values().next().value;
-    if (oldest !== undefined) {
-      zeroDataRetentionTraces.delete(oldest);
+    const oldest = zeroDataRetentionTraces.values().next();
+    if (!oldest.done) {
+      zeroDataRetentionTraces.delete(oldest.value);
     }
   }
 }
@@ -126,7 +130,7 @@ class ZeroDataRetentionSampler implements Sampler {
     spanName: string,
     spanKind: SpanKind,
     attributes: Attributes,
-    links: Link[],
+    links: Array<Link>,
   ): SamplingResult {
     if (hasZeroDataRetentionAttribute(attributes)) {
       markTraceZeroDataRetention(traceId);
@@ -195,7 +199,7 @@ class ZeroDataRetentionSpanProcessor implements SpanProcessor {
  */
 export function samplerFromEnv(name?: string, arg?: string): Sampler {
   const hasArg = arg !== undefined && arg.trim() !== "";
-  const parsedRatio = hasArg ? Number(arg) : NaN;
+  const parsedRatio = hasArg ? Number(arg) : Number.NaN;
   const validRatio =
     Number.isFinite(parsedRatio) && parsedRatio >= 0 && parsedRatio <= 1;
   if (hasArg && !validRatio) {
@@ -243,16 +247,15 @@ interface TracerProviderOptions {
 export function createTracerProvider(
   options: TracerProviderOptions,
 ): NodeTracerProvider {
+  const serviceAttributes: Attributes = {
+    [ATTR_SERVICE_NAME]: options.serviceName,
+  };
+  if (options.serviceInstanceId) {
+    serviceAttributes["service.instance.id"] = options.serviceInstanceId;
+  }
   const resource = defaultResource()
     .merge(detectResources({ detectors: [envDetector] }))
-    .merge(
-      resourceFromAttributes({
-        [ATTR_SERVICE_NAME]: options.serviceName,
-        ...(options.serviceInstanceId
-          ? { "service.instance.id": options.serviceInstanceId }
-          : {}),
-      }),
-    );
+    .merge(resourceFromAttributes(serviceAttributes));
 
   return new NodeTracerProvider({
     resource,
@@ -280,9 +283,15 @@ export function serializeTraceContext(): SerializedTraceContext {
   propagation.inject(context.active(), carrier);
 
   const serialized: SerializedTraceContext = {};
-  if (carrier.traceparent) serialized.traceparent = carrier.traceparent;
-  if (carrier.tracestate) serialized.tracestate = carrier.tracestate;
-  if (carrier.baggage) serialized.baggage = carrier.baggage;
+  if (carrier.traceparent) {
+    serialized.traceparent = carrier.traceparent;
+  }
+  if (carrier.tracestate) {
+    serialized.tracestate = carrier.tracestate;
+  }
+  if (carrier.baggage) {
+    serialized.baggage = carrier.baggage;
+  }
   return serialized;
 }
 
@@ -294,7 +303,7 @@ export async function withTraceContextAsync<T>(
     return fn();
   }
 
-  const carrier: Record<string, string> = {
+  const carrier: SerializedTraceContext = {
     traceparent: serializedContext.traceparent,
   };
   if (serializedContext.tracestate) {
@@ -391,10 +400,10 @@ export function recordSpanException(span: Span, error: unknown): void {
     typeof error === "object" && error !== null && "code" in error
       ? (error as { code?: unknown }).code
       : undefined;
-  span.setAttributes({
-    "error.expected": isExpectedError(error),
-    ...(typeof code === "string" ? { "error.code": code } : {}),
-  });
+  span.setAttribute("error.expected", isExpectedError(error));
+  if (typeof code === "string") {
+    span.setAttribute("error.code", code);
+  }
 }
 
 /**
