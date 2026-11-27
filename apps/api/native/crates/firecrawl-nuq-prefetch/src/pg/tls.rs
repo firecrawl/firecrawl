@@ -24,8 +24,12 @@ use crate::pg::config::PgSslMode;
 pub enum PgTlsError {
   #[error("failed to read sslrootcert PEM file: {0}")]
   ReadRootCert(String),
-  #[error("no trusted CA certificates available for {0}")]
+  #[error(
+    "no trusted CA certificates available for {0}; set sslrootcert to a PEM file or use sslmode=verify-full with sslrootcert=system"
+  )]
   NoRootCertificates(&'static str),
+  #[error("sslrootcert=system requires sslmode=verify-full")]
+  SystemRootsRequireVerifyFull,
   #[error("failed to initialize rustls client config: {0}")]
   RustlsInit(String),
 }
@@ -83,10 +87,11 @@ fn load_root_store(
   ssl_mode: PgSslMode,
   ssl_root_cert: Option<&str>,
 ) -> Result<RootCertStore, PgTlsError> {
+  let source = ssl_root_cert.ok_or(PgTlsError::NoRootCertificates(ssl_mode.as_str()))?;
   let mut roots = RootCertStore::empty();
 
-  if let Some(path) = ssl_root_cert.filter(|p| *p != "system") {
-    let iter = CertificateDer::pem_file_iter(path)
+  if source != "system" {
+    let iter = CertificateDer::pem_file_iter(source)
       .map_err(|err| PgTlsError::ReadRootCert(err.to_string()))?;
     for cert_res in iter {
       let cert = cert_res.map_err(|err| PgTlsError::ReadRootCert(err.to_string()))?;
@@ -95,6 +100,9 @@ fn load_root_store(
         .map_err(|err| PgTlsError::ReadRootCert(err.to_string()))?;
     }
   } else {
+    if ssl_mode != PgSslMode::VerifyFull {
+      return Err(PgTlsError::SystemRootsRequireVerifyFull);
+    }
     let native = rustls_native_certs::load_native_certs();
     let (accepted, skipped) = roots.add_parsable_certificates(native.certs);
     if skipped > 0 || !native.errors.is_empty() {
@@ -285,6 +293,18 @@ KU4+dXlMQIaCnGyC1/e7iGb//FQGEEdY1gKZrDH8Jw==
       build_rustls_connector(PgSslMode::VerifyFull, Some("/nonexistent/ca-bundle.pem")),
       Err(PgTlsError::ReadRootCert(_))
     ));
+    for mode in [PgSslMode::VerifyCa, PgSslMode::VerifyFull] {
+      assert!(matches!(
+        build_rustls_connector(mode, None),
+        Err(PgTlsError::NoRootCertificates(actual)) if actual == mode.as_str()
+      ));
+    }
+    for mode in [PgSslMode::Require, PgSslMode::VerifyCa] {
+      assert!(matches!(
+        build_rustls_connector(mode, Some("system")),
+        Err(PgTlsError::SystemRootsRequireVerifyFull)
+      ));
+    }
   }
 
   #[test]

@@ -1,5 +1,7 @@
 //! Standalone `firecrawl-nuq-prefetch` worker binary.
 
+use std::fmt::Arguments;
+use std::io::{self, Write};
 use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -47,27 +49,23 @@ fn main() -> ExitCode {
   let cmd = match parse_cli_args(std::env::args_os().skip(1)) {
     Ok(cmd) => cmd,
     Err(err) => {
-      eprintln!("error: {err}");
+      let _ = writeln!(io::stderr().lock(), "error: {err}");
       return ExitCode::from(2);
     }
   };
 
   match cmd {
-    CliCommand::Help => {
-      print!("{USAGE}");
-      return ExitCode::SUCCESS;
-    }
+    CliCommand::Help => return write_cli_output(format_args!("{USAGE}")),
     CliCommand::Version => {
-      println!("firecrawl-nuq-prefetch {}", env!("CARGO_PKG_VERSION"));
-      return ExitCode::SUCCESS;
+      return write_cli_output(format_args!(
+        "firecrawl-nuq-prefetch {}\n",
+        env!("CARGO_PKG_VERSION")
+      ));
     }
     CliCommand::CheckConfig => match WorkerConfig::from_env() {
-      Ok(cfg) => {
-        println!("{}", cfg.redacted_summary());
-        return ExitCode::SUCCESS;
-      }
+      Ok(cfg) => return write_cli_output(format_args!("{}\n", cfg.redacted_summary())),
       Err(err) => {
-        eprintln!("config check failed: {err}");
+        let _ = writeln!(io::stderr().lock(), "config check failed: {err}");
         return ExitCode::FAILURE;
       }
     },
@@ -77,7 +75,7 @@ fn main() -> ExitCode {
   let config = match WorkerConfig::from_env() {
     Ok(cfg) => cfg,
     Err(err) => {
-      eprintln!("startup configuration error: {err}");
+      let _ = writeln!(io::stderr().lock(), "startup configuration error: {err}");
       return ExitCode::FAILURE;
     }
   };
@@ -102,6 +100,18 @@ fn main() -> ExitCode {
   let exit_code = runtime.block_on(run_worker(config));
   drop(runtime);
   exit_code
+}
+
+fn write_cli_output(args: Arguments<'_>) -> ExitCode {
+  let mut stdout = io::stdout().lock();
+  match stdout.write_fmt(args).and_then(|()| stdout.flush()) {
+    Ok(()) => ExitCode::SUCCESS,
+    Err(err) if err.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+    Err(err) => {
+      let _ = writeln!(io::stderr().lock(), "failed to write output: {err}");
+      ExitCode::FAILURE
+    }
+  }
 }
 
 async fn run_worker(config: WorkerConfig) -> ExitCode {
