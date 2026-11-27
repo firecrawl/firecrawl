@@ -70,7 +70,7 @@ async function crawlStatusWS(
     return close(ws, 3003, { type: "error", error: "Forbidden" });
   }
 
-  let doneJobIDs: string[] = [];
+  let doneJobIDs = new Set<string>();
   let finished = false;
 
   const loop = async () => {
@@ -78,11 +78,11 @@ async function crawlStatusWS(
 
     const jobIDs = await getCrawlJobs(req.params.jobId);
 
-    if (jobIDs.length === doneJobIDs.length) {
+    if (jobIDs.length === doneJobIDs.size) {
       return close(ws, 1000, { type: "done" });
     }
 
-    const notDoneJobIDs = jobIDs.filter(x => !doneJobIDs.includes(x));
+    const notDoneJobIDs = jobIDs.filter(x => !doneJobIDs.has(x));
 
     const newlyDoneJobIDs: string[] = (
       await scrapeQueue.getJobsWithStatuses(notDoneJobIDs, [
@@ -107,7 +107,7 @@ async function crawlStatusWS(
       }
     }
 
-    doneJobIDs.push(...newlyDoneJobIDs);
+    for (const id of newlyDoneJobIDs) doneJobIDs.add(id);
     setTimeout(loop, 1000);
   };
 
@@ -119,7 +119,7 @@ async function crawlStatusWS(
     getConcurrencyLimitedJobs(req.auth.team_id),
   ]);
 
-  doneJobIDs = _doneJobIDs;
+  doneJobIDs = new Set(_doneJobIDs);
   const jobs = new Map((await scrapeQueue.getJobs(jobIDs)).map(x => [x.id, x]));
 
   const validJobStatuses: [string, NuQJobStatus][] = [];
@@ -154,7 +154,7 @@ async function crawlStatusWS(
 
   jobIDs = validJobIDs; // Use validJobIDs instead of jobIDs for further processing
 
-  const doneJobs = await getJobs(doneJobIDs, logger);
+  const doneJobs = await getJobs([...doneJobIDs], logger);
   const data = doneJobs.map(x => x.returnvalue);
 
   if (status === "failed" && crawlError) {
@@ -181,7 +181,7 @@ async function crawlStatusWS(
       success: true,
       status,
       total: jobIDs.length,
-      completed: doneJobIDs.length,
+      completed: doneJobIDs.size,
       creditsUsed: jobIDs.length,
       expiresAt: (await getCrawlExpiry(req.params.jobId)).toISOString(),
       data: data,
