@@ -190,6 +190,7 @@ def interact(
     language: Literal["python", "node", "bash"] = "node",
     timeout: Optional[int] = None,
     origin: Optional[str] = None,
+    url: Optional[str] = None,
 ) -> BrowserExecuteResponse:
     """
     Interact with the scrape-bound browser session for a scrape job.
@@ -206,6 +207,7 @@ def interact(
         language: Programming language ("python", "node", or "bash")
         timeout: Execution timeout in seconds (1-300)
         origin: Optional request origin tag
+        url: Fallback URL used only when the original scrape's replay context is unavailable
 
     Returns:
         BrowserExecuteResponse with execution output
@@ -228,6 +230,8 @@ def interact(
         body["timeout"] = timeout
     if origin is not None:
         body["origin"] = origin
+    if url is not None:
+        body["url"] = url
 
     response = client.post(f"/v2/scrape/{job_id}/interact", body)
     if not response.ok:
@@ -297,6 +301,7 @@ def scrape_execute(
     language: Literal["python", "node", "bash"] = "node",
     timeout: Optional[int] = None,
     origin: Optional[str] = None,
+    url: Optional[str] = None,
 ) -> BrowserExecuteResponse:
     """Deprecated alias for interact()."""
     return interact(
@@ -307,6 +312,7 @@ def scrape_execute(
         language=language,
         timeout=timeout,
         origin=origin,
+        url=url,
     )
 
 
