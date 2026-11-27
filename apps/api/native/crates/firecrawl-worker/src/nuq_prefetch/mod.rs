@@ -6,6 +6,7 @@
 //! exposes `/health` and `/metrics` endpoints.
 
 pub mod amqp;
+mod command;
 pub mod config;
 pub mod http;
 pub mod job;
@@ -17,6 +18,7 @@ pub use amqp::{
   AMQP_DELIVERY_MODE_PERSISTENT, AmqpPrefetchPublisher, PREFETCH_MESSAGE_EXPIRATION_MS,
   PREFETCH_QUEUE_MAX_LENGTH, PublishError, prefetch_publish_properties, prefetch_queue_args,
 };
+pub use command::{run, run_cli};
 pub use config::{
   CliCommand, ConfigError, DEFAULT_PORT, RedactedString, WorkerConfig, parse_cli_args,
   redact_amqp_url, redact_http_url,

@@ -14,8 +14,8 @@ use deadpool_postgres::{Manager, ManagerConfig, Object, Pool, RecyclingMethod, R
 use thiserror::Error;
 use tokio_postgres::{NoTls, SimpleQueryMessage};
 
-use crate::job::{JobDecodeError, NuqJob, QueueKind};
-use crate::pg::tls::{PgTlsError, build_rustls_connector};
+use crate::nuq_prefetch::job::{JobDecodeError, NuqJob, QueueKind};
+use crate::nuq_prefetch::pg::tls::{PgTlsError, build_rustls_connector};
 
 pub use config::{PgConfigError, PgConnectionSettings, PgSslMode, parse_pg_connection_settings};
 

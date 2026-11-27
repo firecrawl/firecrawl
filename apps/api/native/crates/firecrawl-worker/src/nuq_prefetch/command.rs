@@ -1,5 +1,4 @@
-//! Standalone `firecrawl-nuq-prefetch` worker binary.
-
+use std::ffi::OsString;
 use std::fmt::Arguments;
 use std::io::{self, Write};
 use std::net::SocketAddr;
@@ -8,23 +7,16 @@ use std::sync::Arc;
 
 use tokio::sync::watch;
 
-use firecrawl_nuq_prefetch::{
+use super::{
   AmqpPrefetchPublisher, BoundHttpServer, CliCommand, DEFAULT_POLL_INTERVAL, PgStore,
   ReqwestHeartbeatClient, WorkerConfig, parse_cli_args, run_prefetch_loops,
 };
 
-// Install jemalloc ONLY in this standalone Linux binary, never in any cdylib.
-// `background_threads` returns unused pages to the OS instead of retaining
-// arena RSS across prefetch bursts.
-#[cfg(target_os = "linux")]
-#[global_allocator]
-static ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
-
 const USAGE: &str = "\
-firecrawl-nuq-prefetch - standalone Rust NuQ prefetch worker
+NuQ prefetch worker
 
 USAGE:
-  firecrawl-nuq-prefetch [OPTIONS]
+  firecrawl-worker nuq-prefetch [OPTIONS]
 
 OPTIONS:
   --check-config    Validate environment configuration, print a redacted summary, and exit
@@ -45,8 +37,10 @@ ENVIRONMENT:
   RUST_LOG                             Log filter directive (default: info)
 ";
 
-fn main() -> ExitCode {
-  let cmd = match parse_cli_args(std::env::args_os().skip(1)) {
+/// Handles NuQ prefetch arguments after the role name and runs the selected command.
+/// Call outside a Tokio runtime. Embedders with a runtime can call [`run`] instead.
+pub fn run_cli(args: impl IntoIterator<Item = impl Into<OsString>>) -> ExitCode {
+  let cmd = match parse_cli_args(args) {
     Ok(cmd) => cmd,
     Err(err) => {
       let _ = writeln!(io::stderr().lock(), "error: {err}");
@@ -58,7 +52,7 @@ fn main() -> ExitCode {
     CliCommand::Help => return write_cli_output(format_args!("{USAGE}")),
     CliCommand::Version => {
       return write_cli_output(format_args!(
-        "firecrawl-nuq-prefetch {}\n",
+        "firecrawl-worker nuq-prefetch {}\n",
         env!("CARGO_PKG_VERSION")
       ));
     }
@@ -76,6 +70,14 @@ fn main() -> ExitCode {
       }
     },
     CliCommand::Run => {}
+  }
+
+  if tokio::runtime::Handle::try_current().is_ok() {
+    let _ = writeln!(
+      io::stderr().lock(),
+      "cannot start the worker CLI inside a Tokio runtime; use the async worker entry point"
+    );
+    return ExitCode::FAILURE;
   }
 
   let config = match WorkerConfig::from_env() {
@@ -103,7 +105,7 @@ fn main() -> ExitCode {
     }
   };
 
-  let exit_code = runtime.block_on(run_worker(config));
+  let exit_code = runtime.block_on(run(config));
   drop(runtime);
   exit_code
 }
@@ -120,10 +122,12 @@ fn write_cli_output(args: Arguments<'_>) -> ExitCode {
   }
 }
 
-async fn run_worker(config: WorkerConfig) -> ExitCode {
+/// Runs the NuQ prefetch role until it shuts down or startup fails.
+/// The caller supplies a Tokio runtime with I/O and time enabled and manages telemetry.
+pub async fn run(config: WorkerConfig) -> ExitCode {
   tracing::info!(
     config = %config.redacted_summary(),
-    "firecrawl-nuq-prefetch starting"
+    "NuQ prefetch worker starting"
   );
 
   let store = match PgStore::new(&config.pg_settings) {

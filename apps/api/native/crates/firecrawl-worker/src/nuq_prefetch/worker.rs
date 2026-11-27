@@ -12,10 +12,12 @@ use tokio::sync::{Semaphore, watch};
 use tokio::time::Instant;
 use tracing::Instrument;
 
-use crate::amqp::{AmqpPrefetchPublisher, PublishError};
-use crate::config::{RedactedString, redact_http_url};
-use crate::job::{NuqJob, QueueKind};
-use crate::pg::{FailedJobNotification, PgStore, PoolMetrics, PrefetchBatch, StoreError};
+use crate::nuq_prefetch::amqp::{AmqpPrefetchPublisher, PublishError};
+use crate::nuq_prefetch::config::{RedactedString, redact_http_url};
+use crate::nuq_prefetch::job::{NuqJob, QueueKind};
+use crate::nuq_prefetch::pg::{
+  FailedJobNotification, PgStore, PoolMetrics, PrefetchBatch, StoreError,
+};
 
 /// Default polling interval matching `setTimeout(resolve, 250)` in `nuq-prefetch-worker.ts`.
 pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_millis(250);

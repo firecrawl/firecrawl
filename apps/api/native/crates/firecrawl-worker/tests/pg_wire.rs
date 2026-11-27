@@ -10,7 +10,7 @@ use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-use firecrawl_nuq_prefetch::{
+use firecrawl_worker::nuq_prefetch::{
   FailedJobNotification, PgStore, QueueKind, StoreError, parse_pg_connection_settings,
 };
 

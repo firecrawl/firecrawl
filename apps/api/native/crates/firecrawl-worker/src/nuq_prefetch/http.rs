@@ -19,8 +19,8 @@ use tokio::net::TcpListener;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
 use tokio::task::JoinSet;
 
-use crate::pg::format_pool_metrics;
-use crate::worker::PrefetchStore;
+use crate::nuq_prefetch::pg::format_pool_metrics;
+use crate::nuq_prefetch::worker::PrefetchStore;
 
 const TEXT_PLAIN_UTF8: &str = "text/plain; charset=utf-8";
 const SHUTDOWN_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);

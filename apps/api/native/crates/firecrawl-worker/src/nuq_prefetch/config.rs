@@ -7,7 +7,7 @@ use std::fmt;
 use thiserror::Error;
 use url::Url;
 
-use crate::pg::{PgConnectionSettings, parse_pg_connection_settings};
+use crate::nuq_prefetch::pg::{PgConnectionSettings, parse_pg_connection_settings};
 
 /// Default HTTP port for `/health` and `/metrics`, matching `apps/api/src/config.ts`.
 pub const DEFAULT_PORT: u16 = 3011;
@@ -99,7 +99,7 @@ where
   Ok(command)
 }
 
-/// Runtime configuration for `firecrawl-nuq-prefetch`.
+/// Runtime configuration for the NuQ prefetch role.
 #[derive(Debug, Clone)]
 pub struct WorkerConfig {
   pub pg_settings: PgConnectionSettings,
@@ -164,7 +164,7 @@ impl WorkerConfig {
       None => None,
     };
 
-    // Match `firecrawl_telemetry::resource_from_process_env()`: omit when unset/blank.
+    // Match `firecrawl_core::telemetry::resource_from_process_env()`: omit when unset/blank.
     let pod_name = lookup("NUQ_POD_NAME")
       .map(|v| v.trim().to_owned())
       .filter(|v| !v.is_empty());

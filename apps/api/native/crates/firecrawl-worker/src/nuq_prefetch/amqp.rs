@@ -11,8 +11,8 @@ use lapin::{BasicProperties, Channel, Confirmation, Connection, ConnectionProper
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-use crate::config::{RedactedString, redact_amqp_url};
-use crate::job::{NuqJob, QueueKind};
+use crate::nuq_prefetch::config::{RedactedString, redact_amqp_url};
+use crate::nuq_prefetch::job::{NuqJob, QueueKind};
 
 /// RabbitMQ quorum queue `x-max-length` matching `nuq.ts`.
 pub const PREFETCH_QUEUE_MAX_LENGTH: i32 = 20_000;
@@ -144,14 +144,13 @@ impl AmqpPrefetchPublisher {
   /// Creates a publisher for an optional `NUQ_RABBITMQ_URL` with the default operation timeout.
   #[must_use]
   pub fn new(rabbitmq_url: Option<RedactedString>) -> Self {
-    firecrawl_core::telemetry::ensure_crypto_provider();
     Self::with_op_timeout(rabbitmq_url, AMQP_OP_TIMEOUT)
   }
 
   /// Creates a publisher with an explicit per-operation AMQP timeout.
   #[must_use]
   pub fn with_op_timeout(rabbitmq_url: Option<RedactedString>, op_timeout: Duration) -> Self {
-    firecrawl_telemetry::ensure_crypto_provider();
+    firecrawl_core::telemetry::ensure_crypto_provider();
     Self {
       rabbitmq_url,
       op_timeout,

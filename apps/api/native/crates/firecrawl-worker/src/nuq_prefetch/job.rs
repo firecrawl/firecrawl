@@ -7,7 +7,7 @@ use firecrawl_core::telemetry::is_zdr_json_value;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::timestamp::{TimestampError, parse_pg_timestamp_to_iso_utc};
+use crate::nuq_prefetch::timestamp::{TimestampError, parse_pg_timestamp_to_iso_utc};
 
 /// Number of columns selected by the NuQ prefetch `RETURNING` clause.
 pub const PREFETCH_RETURNING_COLUMNS: usize = 12;

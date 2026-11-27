@@ -14,7 +14,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Notify;
 
-use firecrawl_nuq_prefetch::{
+use firecrawl_worker::nuq_prefetch::{
   AmqpPrefetchPublisher, NuqJob, PublishError, QueueKind, RedactedString,
 };
 

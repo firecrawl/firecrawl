@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use hegel::{TestCase, generators as gs};
 use serde_json::{Map, Value, json};
 
-use firecrawl_nuq_prefetch::{
+use firecrawl_worker::nuq_prefetch::{
   NuqJob, PgSslMode, WorkerConfig, format_epoch_millis_iso_utc, parse_pg_connection_settings,
   parse_pg_timestamp_to_epoch_millis, parse_pg_timestamp_to_iso_utc, stored_zero_data_retention,
 };

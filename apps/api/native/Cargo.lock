@@ -1178,7 +1178,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "firecrawl-nuq-prefetch"
+name = "firecrawl-worker"
 version = "0.1.0"
 dependencies = [
  "bytes",

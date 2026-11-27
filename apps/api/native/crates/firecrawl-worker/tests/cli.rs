@@ -1,6 +1,6 @@
 use std::process::Command;
 
-const BIN_PATH: &str = env!("CARGO_BIN_EXE_firecrawl-nuq-prefetch");
+const BIN_PATH: &str = env!("CARGO_BIN_EXE_firecrawl-worker");
 
 #[test]
 fn cli_help_and_version_exit_zero() {
@@ -9,7 +9,7 @@ fn cli_help_and_version_exit_zero() {
   if let Ok(out) = version {
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.starts_with("firecrawl-nuq-prefetch "));
+    assert!(stdout.starts_with("firecrawl-worker "));
   }
 
   let help = Command::new(BIN_PATH).arg("--help").output();
@@ -17,6 +17,18 @@ fn cli_help_and_version_exit_zero() {
   if let Ok(out) = help {
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("firecrawl-worker <ROLE>"));
+    assert!(stdout.contains("nuq-prefetch"));
+  }
+
+  let role_help = Command::new(BIN_PATH)
+    .args(["nuq-prefetch", "--help"])
+    .output();
+  assert!(role_help.is_ok());
+  if let Ok(out) = role_help {
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("firecrawl-worker nuq-prefetch"));
     assert!(stdout.contains("--check-config"));
     assert!(stdout.contains("NUQ_DATABASE_URL"));
   }
@@ -24,6 +36,23 @@ fn cli_help_and_version_exit_zero() {
 
 #[test]
 fn cli_rejects_unknown_argument_with_exit_code_2_without_leaking_values() {
+  for (args, expected) in [
+    (&[][..], "a worker role is required"),
+    (
+      &["postgres://u:supersecretpg@host/db"][..],
+      "unknown worker role",
+    ),
+  ] {
+    let res = Command::new(BIN_PATH).args(args).output();
+    assert!(res.is_ok());
+    if let Ok(out) = res {
+      assert_eq!(out.status.code(), Some(2));
+      let stderr = String::from_utf8_lossy(&out.stderr);
+      assert!(stderr.contains(expected));
+      assert!(!stderr.contains("supersecretpg"));
+    }
+  }
+
   for (arg, expected) in [
     (
       "--database-url=postgres://u:supersecretpg@host/db",
@@ -34,7 +63,7 @@ fn cli_rejects_unknown_argument_with_exit_code_2_without_leaking_values() {
       "<positional>",
     ),
   ] {
-    let res = Command::new(BIN_PATH).arg(arg).output();
+    let res = Command::new(BIN_PATH).args(["nuq-prefetch", arg]).output();
     assert!(res.is_ok());
     if let Ok(out) = res {
       assert_eq!(out.status.code(), Some(2));
@@ -48,7 +77,7 @@ fn cli_rejects_unknown_argument_with_exit_code_2_without_leaking_values() {
 #[test]
 fn cli_check_config_validates_and_redacts_secrets() {
   let missing = Command::new(BIN_PATH)
-    .arg("--check-config")
+    .args(["nuq-prefetch", "--check-config"])
     .env_clear()
     .output();
   assert!(missing.is_ok());
@@ -59,7 +88,7 @@ fn cli_check_config_validates_and_redacts_secrets() {
   }
 
   let invalid_ca = Command::new(BIN_PATH)
-    .arg("--check-config")
+    .args(["nuq-prefetch", "--check-config"])
     .env_clear()
     .env(
       "NUQ_DATABASE_URL",
@@ -74,7 +103,7 @@ fn cli_check_config_validates_and_redacts_secrets() {
   }
 
   let ok = Command::new(BIN_PATH)
-    .arg("--check-config")
+    .args(["nuq-prefetch", "--check-config"])
     .env_clear()
     .env(
       "NUQ_DATABASE_URL",

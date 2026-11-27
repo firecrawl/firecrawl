@@ -17,7 +17,7 @@ use rustls::{
 use thiserror::Error;
 use tokio_postgres_rustls::MakeRustlsConnect;
 
-use crate::pg::config::PgSslMode;
+use crate::nuq_prefetch::pg::config::PgSslMode;
 
 /// Errors returned when constructing the PostgreSQL TLS configuration.
 #[derive(Debug, Error)]
@@ -309,7 +309,7 @@ KU4+dXlMQIaCnGyC1/e7iGb//FQGEEdY1gKZrDH8Jw==
 
   #[test]
   fn verify_ca_and_verify_full_enforce_issuer_and_hostname_rules() {
-    firecrawl_telemetry::ensure_crypto_provider();
+    firecrawl_core::telemetry::ensure_crypto_provider();
     let provider = Arc::new(rustls::crypto::ring::default_provider());
 
     let ca_cert = parse_cert(TRUSTED_CA_PEM);

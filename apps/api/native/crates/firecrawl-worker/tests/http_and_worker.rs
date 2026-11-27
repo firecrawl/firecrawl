@@ -10,7 +10,7 @@ use tracing::field::{Field, Visit};
 use tracing_subscriber::layer::{Context as LayerContext, SubscriberExt};
 use tracing_subscriber::{EnvFilter, Layer};
 
-use firecrawl_nuq_prefetch::{
+use firecrawl_worker::nuq_prefetch::{
   BoundHttpServer, BoxFuture, FailedJobNotification, HeartbeatClient, NuqJob, PoolMetrics,
   PrefetchBatch, PrefetchPublisher, PrefetchStore, PublishError, QueueKind, StoreError,
   format_pool_metrics, run_prefetch_loops, run_prefetch_once,
