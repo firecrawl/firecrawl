@@ -11,10 +11,7 @@ version = "0.1.0"
 
 [workspace.dependencies]
 anydoc = "0.2.5"
-firecrawl-crawler = { path = "crates/firecrawl-crawler" }
-firecrawl-html = { path = "crates/firecrawl-html" }
-firecrawl-napi-exports = { path = "crates/firecrawl-napi-exports" }
-firecrawl-parsers = { path = "crates/firecrawl-parsers" }
+firecrawl-core = { path = "crates/firecrawl-core" }
 kuchikiki = "0.8.9-speedreader"
 napi = { version = "3.0.0", features = ["serde-json", "tokio_rt"] }
 napi-build = "2"
@@ -60,7 +57,7 @@ version.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-firecrawl-napi-exports.workspace = true
+firecrawl-core = { workspace = true, features = ["napi"] }
 napi.workspace = true
 napi-derive.workspace = true
 serde.workspace = true

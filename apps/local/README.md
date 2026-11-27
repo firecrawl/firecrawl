@@ -242,10 +242,10 @@ cd apps/local
 cargo test
 ```
 
-Firecrawl Local depends directly on the pure-Rust workspace crates under `apps/api/native/crates`, so a change there changes both the API and Firecrawl Local.
+Firecrawl Local shares the `firecrawl-core` crate with the API and builds it without Node bindings.
 
 ### Releases
 
 `.github/workflows/publish-local.yml` publishes the crate to crates.io when the version in `Cargo.toml` on `main` is newer than the published one, so a release is a version bump. It uses trusted publishing, and the publish step waits for approval in the `release` environment.
 
-A crate on crates.io cannot depend on unpublished workspace path crates, so `scripts/vendor-native.sh` copies the shared pure-Rust modules into `src/native` and swaps the path dependencies in place before packaging. `build.rs` uses that copy only when `src/native/html.rs` is present, so a normal repository build always compiles against the workspace crates. If you run `scripts/vendor-native.sh` in a local checkout, restore it afterwards with `rm -rf src/native && git checkout -- Cargo.toml Cargo.lock`.
+A crate on crates.io cannot depend on the unpublished `firecrawl-core` crate, so `scripts/vendor-native.sh` copies the shared modules into `src/native` and replaces the path dependency in place before packaging. Run the script in a disposable checkout to avoid changing normal repository builds.

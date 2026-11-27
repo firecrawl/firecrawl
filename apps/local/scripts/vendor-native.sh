@@ -1,25 +1,16 @@
 #!/usr/bin/env bash
-# Copy the shared pure-Rust modules from apps/api/native/crates into src/native
-# and replace the unpublished workspace path dependencies in Cargo.toml with
-# their crates.io dependencies so `cargo package` / `cargo publish` produces a
-# self-contained crate.
-#
-# This mutates Cargo.toml, Cargo.lock, and src/native in place for the follow-on
-# packaging steps in CI; after a local run, restore with:
-#   rm -rf src/native && git checkout -- Cargo.toml Cargo.lock
+# Stage a self-contained crate for publishing. Run in a disposable checkout:
+# this rewrites Cargo.toml, Cargo.lock, and src/native in place.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-crates="../api/native/crates"
+core_src="../api/native/crates/firecrawl-core/src"
 workspace_manifest="../api/native/Cargo.toml"
 
 rm -rf src/native
 mkdir -p src/native
 
-cp "$crates/firecrawl-crawler/src/xml.rs" "src/native/xml.rs"
-cp "$crates/firecrawl-html/src/html.rs" "src/native/html.rs"
-cp "$crates/firecrawl-crawler/src/crawler.rs" "src/native/crawler.rs"
-cp "$crates/firecrawl-parsers/src/document.rs" "src/native/document.rs"
+cp "$core_src/xml.rs" "$core_src/html.rs" "$core_src/crawler.rs" "$core_src/parsers/document.rs" src/native/
 
 expected=$(sed -nE 's/.*#\[path = "native\/([^"]+)"\].*/\1/p' src/lib.rs | sort)
 actual=$(ls -1 src/native | sort)
@@ -43,8 +34,8 @@ if [ -z "$nodesig_ver" ] || [ -z "$roxmltree_ver" ]; then
   exit 1
 fi
 
-start_marker='^# --- shared workspace crates'
-end_marker='^# --- end shared workspace crates ---$'
+start_marker='^# --- shared workspace crate '
+end_marker='^# --- end shared workspace crate ---$'
 has_start=0
 has_end=0
 has_path_deps=0
@@ -54,18 +45,18 @@ grep -q 'path = "../api/native/crates/' Cargo.toml && has_path_deps=1
 
 if [ "$has_start" -eq 1 ] || [ "$has_end" -eq 1 ] || [ "$has_path_deps" -eq 1 ]; then
   if [ "$has_start" -ne 1 ] || [ "$has_end" -ne 1 ]; then
-    echo "vendor-native: missing or unbalanced shared workspace crates markers in Cargo.toml" >&2
+    echo "vendor-native: missing or unbalanced shared workspace crate markers in Cargo.toml" >&2
     exit 1
   fi
   if ! awk -v nodesig_ver="$nodesig_ver" -v roxmltree_ver="$roxmltree_ver" '
-    /^# --- shared workspace crates/ {
+    /^# --- shared workspace crate / {
       if (in_block || replaced) { exit 2 }
       print "nodesig = \"" nodesig_ver "\""
       print "roxmltree = \"" roxmltree_ver "\""
       in_block = 1
       next
     }
-    /^# --- end shared workspace crates ---$/ {
+    /^# --- end shared workspace crate ---$/ {
       if (!in_block) { exit 3 }
       in_block = 0
       replaced = 1
@@ -77,7 +68,7 @@ if [ "$has_start" -eq 1 ] || [ "$has_end" -eq 1 ] || [ "$has_path_deps" -eq 1 ];
     }
   ' Cargo.toml > Cargo.toml.tmp; then
     rm -f Cargo.toml.tmp
-    echo "vendor-native: invalid shared workspace crates marker block in Cargo.toml" >&2
+    echo "vendor-native: invalid shared workspace crate marker block in Cargo.toml" >&2
     exit 1
   fi
   mv Cargo.toml.tmp Cargo.toml

@@ -45,11 +45,14 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all --check
 
+      - name: Check firecrawl-core without Node bindings
+        run: cargo check --locked -p firecrawl-core --no-default-features
+
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
       - name: Workspace tests
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --all-features --locked
         env:
           HEGEL_DEFAULT_PROFILE: ci
 
@@ -83,5 +86,5 @@ jobs:
 
       - name: Check dependencies
         run: |
-          cargo deny --locked check
+          cargo deny --locked --all-features check
           cargo deny --locked --manifest-path ../../local/Cargo.toml check advisories licenses sources

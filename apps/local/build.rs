@@ -1,7 +1,4 @@
-//! Switches between the in-repo workspace crates (`firecrawl-html`,
-//! `firecrawl-crawler`, `firecrawl-parsers`) and the vendored copies in
-//! `src/native` created by `scripts/vendor-native.sh` when packaging for
-//! crates.io.
+//! Selects the vendored modules in crates.io builds.
 
 use std::path::Path;
 

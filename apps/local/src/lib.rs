@@ -1,8 +1,7 @@
 //! Firecrawl Local: the local primitive behind `firecrawl scrape|crawl|map`.
 //!
 //! The HTML cleaning, link extraction, metadata, crawl-filter, and document
-//! conversion modules come directly from the pure-Rust workspace crates under
-//! `apps/api/native/crates`, sharing one source of truth with the API.
+//! conversion modules come directly from `firecrawl-core` without Node bindings.
 //!
 //! A published crate carries a vendored copy of those modules in `src/native`
 //! (see `build.rs` and `scripts/vendor-native.sh`).
@@ -10,11 +9,11 @@
 #![allow(dead_code)]
 
 #[cfg(not(vendored_native))]
-pub use firecrawl_crawler::crawler;
+pub use firecrawl_core::crawler;
 #[cfg(not(vendored_native))]
-pub use firecrawl_html::html;
+pub use firecrawl_core::html;
 #[cfg(not(vendored_native))]
-pub use firecrawl_parsers::document;
+pub use firecrawl_core::parsers::document;
 
 // Declared through a macro so `cargo fmt` does not try to load the gitignored
 // `src/native/*.rs` files when they are absent in normal repository checkouts.

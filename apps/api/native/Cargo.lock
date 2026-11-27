@@ -609,55 +609,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
-name = "firecrawl-crawler"
+name = "firecrawl-core"
 version = "0.1.0"
 dependencies = [
+ "anydoc",
+ "kuchikiki",
+ "napi",
+ "napi-derive",
+ "nodesig",
+ "pdf-inspector",
  "psl",
  "regex",
  "roxmltree",
  "serde",
+ "serde_json",
  "texting_robots",
- "url",
-]
-
-[[package]]
-name = "firecrawl-html"
-version = "0.1.0"
-dependencies = [
- "kuchikiki",
- "nodesig",
- "regex",
- "serde",
- "serde_json",
- "url",
-]
-
-[[package]]
-name = "firecrawl-napi-exports"
-version = "0.1.0"
-dependencies = [
- "firecrawl-crawler",
- "firecrawl-html",
- "firecrawl-parsers",
- "napi",
- "napi-derive",
- "serde",
- "serde_json",
+ "tinyvec",
  "tokio",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "firecrawl-parsers"
-version = "0.1.0"
-dependencies = [
- "anydoc",
- "firecrawl-crawler",
- "pdf-inspector",
- "roxmltree",
- "tinyvec",
- "tracing",
+ "url",
  "zip",
 ]
 
@@ -665,7 +636,7 @@ dependencies = [
 name = "firecrawl_rs"
 version = "0.1.0"
 dependencies = [
- "firecrawl-napi-exports",
+ "firecrawl-core",
  "napi",
  "napi-build",
  "napi-derive",

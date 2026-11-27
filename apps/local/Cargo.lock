@@ -902,27 +902,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
-name = "firecrawl-crawler"
+name = "firecrawl-core"
 version = "0.1.0"
 dependencies = [
+ "anydoc",
+ "kuchikiki",
+ "nodesig",
+ "pdf-inspector",
  "psl",
  "regex",
  "roxmltree",
  "serde",
- "texting_robots",
- "url",
-]
-
-[[package]]
-name = "firecrawl-html"
-version = "0.1.0"
-dependencies = [
- "kuchikiki",
- "nodesig",
- "regex",
- "serde",
  "serde_json",
+ "texting_robots",
+ "tinyvec",
+ "tracing",
  "url",
+ "zip",
 ]
 
 [[package]]
@@ -937,9 +933,7 @@ dependencies = [
  "chrono",
  "clap",
  "encoding_rs",
- "firecrawl-crawler",
- "firecrawl-html",
- "firecrawl-parsers",
+ "firecrawl-core",
  "futures",
  "getrandom 0.3.4",
  "kuchikiki",
@@ -959,19 +953,6 @@ dependencies = [
  "tokio",
  "url",
  "uuid",
- "zip",
-]
-
-[[package]]
-name = "firecrawl-parsers"
-version = "0.1.0"
-dependencies = [
- "anydoc",
- "firecrawl-crawler",
- "pdf-inspector",
- "roxmltree",
- "tinyvec",
- "tracing",
  "zip",
 ]
 

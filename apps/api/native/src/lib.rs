@@ -1,1 +1,1 @@
-firecrawl_napi_exports::export_oss_napi!();
+firecrawl_core::export_oss_napi!();

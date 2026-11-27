@@ -1,17 +1,20 @@
 use std::collections::HashMap;
 
-use firecrawl_crawler::{
+use crate::crawler::{
   FilterLinksCall, FilterLinksResult, FilterUrlCall, FilterUrlResult, ParsedSitemap,
   RegexValidationError, SitemapProcessingResult,
 };
-use firecrawl_html::{ExtractAttributesOptions, ExtractedAttributeResult, TransformHtmlOptions};
-use firecrawl_parsers::{PdfProcessOutput, convert_document_bytes_to_markdown};
+use crate::html::{ExtractAttributesOptions, ExtractedAttributeResult, TransformHtmlOptions};
+use crate::parsers::{
+  document::convert_document_bytes_to_markdown,
+  pdf::{self, PdfProcessOutput},
+};
 use napi::bindgen_prelude::{Error, Result, Status, Uint8Array};
 use serde_json::Value;
 use tokio::task;
 
-use crate::logging::{NativeContext, NativeLogEntry, embed_logs_in_error, with_native_tracing};
-use crate::utils::to_napi_err;
+use super::logging::{NativeContext, NativeLogEntry, embed_logs_in_error, with_native_tracing};
+use super::utils::to_napi_err;
 
 #[derive(Debug, Clone)]
 pub struct TracedPdfOutput {
@@ -20,7 +23,7 @@ pub struct TracedPdfOutput {
 }
 
 pub async fn extract_base_href(html: String, url: String) -> Result<String> {
-  let res = task::spawn_blocking(move || firecrawl_html::extract_base_href(&html, &url))
+  let res = task::spawn_blocking(move || crate::html::extract_base_href(&html, &url))
     .await
     .map_err(|e| {
       Error::new(
@@ -37,7 +40,7 @@ pub async fn extract_links(html: Option<String>) -> Result<Vec<String>> {
     let Some(html) = html else {
       return Ok(Vec::new());
     };
-    firecrawl_html::extract_links(&html).map_err(to_napi_err)
+    crate::html::extract_links(&html).map_err(to_napi_err)
   })
   .await
   .map_err(|e| {
@@ -53,7 +56,7 @@ pub async fn extract_metadata(html: Option<String>) -> Result<HashMap<String, Va
     let Some(html) = html else {
       return Ok(HashMap::new());
     };
-    firecrawl_html::extract_metadata(&html).map_err(to_napi_err)
+    crate::html::extract_metadata(&html).map_err(to_napi_err)
   })
   .await
   .map_err(|e| {
@@ -65,7 +68,7 @@ pub async fn extract_metadata(html: Option<String>) -> Result<HashMap<String, Va
 }
 
 pub async fn transform_html(opts: TransformHtmlOptions) -> Result<String> {
-  let res = task::spawn_blocking(move || firecrawl_html::transform_html(opts))
+  let res = task::spawn_blocking(move || crate::html::transform_html(opts))
     .await
     .map_err(|e| {
       Error::new(
@@ -78,7 +81,7 @@ pub async fn transform_html(opts: TransformHtmlOptions) -> Result<String> {
 }
 
 pub async fn get_inner_json(html: String) -> Result<String> {
-  let res = task::spawn_blocking(move || firecrawl_html::get_inner_json(&html))
+  let res = task::spawn_blocking(move || crate::html::get_inner_json(&html))
     .await
     .map_err(|e| {
       Error::new(
@@ -94,7 +97,7 @@ pub async fn extract_attributes(
   html: String,
   options: ExtractAttributesOptions,
 ) -> Result<Vec<ExtractedAttributeResult>> {
-  let res = task::spawn_blocking(move || firecrawl_html::extract_attributes(&html, &options))
+  let res = task::spawn_blocking(move || crate::html::extract_attributes(&html, &options))
     .await
     .map_err(|e| {
       Error::new(
@@ -107,7 +110,7 @@ pub async fn extract_attributes(
 }
 
 pub async fn extract_images(html: String, base_url: String) -> Result<Vec<String>> {
-  let res = task::spawn_blocking(move || firecrawl_html::extract_images(&html, &base_url))
+  let res = task::spawn_blocking(move || crate::html::extract_images(&html, &base_url))
     .await
     .map_err(|e| {
       Error::new(
@@ -120,7 +123,7 @@ pub async fn extract_images(html: String, base_url: String) -> Result<Vec<String
 }
 
 pub async fn post_process_markdown(markdown: String) -> Result<String> {
-  task::spawn_blocking(move || firecrawl_html::post_process_markdown_text(&markdown))
+  task::spawn_blocking(move || crate::html::post_process_markdown_text(&markdown))
     .await
     .map_err(|e| {
       Error::new(
@@ -131,7 +134,7 @@ pub async fn post_process_markdown(markdown: String) -> Result<String> {
 }
 
 pub async fn filter_links(data: FilterLinksCall) -> Result<FilterLinksResult> {
-  let res = task::spawn_blocking(move || firecrawl_crawler::filter_links(data))
+  let res = task::spawn_blocking(move || crate::crawler::filter_links(data))
     .await
     .map_err(|e| {
       Error::new(
@@ -144,11 +147,11 @@ pub async fn filter_links(data: FilterLinksCall) -> Result<FilterLinksResult> {
 }
 
 pub fn validate_regexes(patterns: Vec<String>) -> Vec<RegexValidationError> {
-  firecrawl_crawler::validate_regexes(patterns)
+  crate::crawler::validate_regexes(patterns)
 }
 
 pub async fn filter_url(data: FilterUrlCall) -> Result<FilterUrlResult> {
-  let res = task::spawn_blocking(move || firecrawl_crawler::filter_url(data))
+  let res = task::spawn_blocking(move || crate::crawler::filter_url(data))
     .await
     .map_err(|e| {
       Error::new(
@@ -161,7 +164,7 @@ pub async fn filter_url(data: FilterUrlCall) -> Result<FilterUrlResult> {
 }
 
 pub async fn parse_sitemap_xml(xml_content: String) -> Result<ParsedSitemap> {
-  let res = task::spawn_blocking(move || firecrawl_crawler::parse_sitemap_xml(&xml_content))
+  let res = task::spawn_blocking(move || crate::crawler::parse_sitemap_xml(&xml_content))
     .await
     .map_err(|e| {
       Error::new(
@@ -179,7 +182,7 @@ pub async fn parse_sitemap_xml(xml_content: String) -> Result<ParsedSitemap> {
 }
 
 pub async fn process_sitemap(xml_content: String) -> Result<SitemapProcessingResult> {
-  let res = task::spawn_blocking(move || firecrawl_crawler::process_sitemap(&xml_content))
+  let res = task::spawn_blocking(move || crate::crawler::process_sitemap(&xml_content))
     .await
     .map_err(|e| {
       Error::new(
@@ -215,7 +218,7 @@ pub async fn process_pdf(
 ) -> Result<TracedPdfOutput> {
   task::spawn_blocking(move || {
     let traced = with_native_tracing(ctx.as_ref(), "pdf", || {
-      firecrawl_parsers::process_pdf_file(&path, max_pages).map_err(to_napi_err)
+      pdf::process_pdf_file(&path, max_pages).map_err(to_napi_err)
     });
 
     match traced.value {
@@ -238,7 +241,7 @@ pub async fn process_pdf(
 pub async fn detect_pdf(path: String, ctx: Option<NativeContext>) -> Result<TracedPdfOutput> {
   task::spawn_blocking(move || {
     let traced = with_native_tracing(ctx.as_ref(), "pdf", || {
-      firecrawl_parsers::detect_pdf_file(&path).map_err(to_napi_err)
+      pdf::detect_pdf_file(&path).map_err(to_napi_err)
     });
 
     match traced.value {
@@ -432,7 +435,9 @@ macro_rules! export_oss_napi {
       pub logs: Vec<NativeLogEntry>,
     }
 
-    fn _convert_pdf_result(res: $crate::wrappers::TracedPdfOutput) -> PdfProcessResult {
+    fn _convert_pdf_result(
+      res: $crate::napi_exports::wrappers::TracedPdfOutput,
+    ) -> PdfProcessResult {
       PdfProcessResult {
         pdf_type: res.output.pdf_type,
         markdown: res.output.markdown,
@@ -459,13 +464,13 @@ macro_rules! export_oss_napi {
     /// Extract the base href from HTML document.
     #[napi_derive::napi]
     pub async fn extract_base_href(html: String, url: String) -> napi::Result<String> {
-      $crate::wrappers::extract_base_href(html, url).await
+      $crate::napi_exports::wrappers::extract_base_href(html, url).await
     }
 
     /// Extract all links from HTML document.
     #[napi_derive::napi]
     pub async fn extract_links(html: Option<String>) -> napi::Result<Vec<String>> {
-      $crate::wrappers::extract_links(html).await
+      $crate::napi_exports::wrappers::extract_links(html).await
     }
 
     /// Extract metadata from HTML document.
@@ -473,13 +478,13 @@ macro_rules! export_oss_napi {
     pub async fn extract_metadata(
       html: Option<String>,
     ) -> napi::Result<std::collections::HashMap<String, serde_json::Value>> {
-      $crate::wrappers::extract_metadata(html).await
+      $crate::napi_exports::wrappers::extract_metadata(html).await
     }
 
     /// Transform and clean HTML content based on provided options.
     #[napi_derive::napi]
     pub async fn transform_html(opts: TransformHtmlOptions) -> napi::Result<String> {
-      $crate::wrappers::transform_html($crate::__deps::firecrawl_html::TransformHtmlOptions {
+      $crate::napi_exports::wrappers::transform_html($crate::html::TransformHtmlOptions {
         html: opts.html,
         url: opts.url,
         include_tags: opts.include_tags,
@@ -493,7 +498,7 @@ macro_rules! export_oss_napi {
     /// Extract inner text content from HTML body.
     #[napi_derive::napi]
     pub async fn get_inner_json(html: String) -> napi::Result<String> {
-      $crate::wrappers::get_inner_json(html).await
+      $crate::napi_exports::wrappers::get_inner_json(html).await
     }
 
     /// Extract specified attributes from HTML elements matching selectors.
@@ -502,13 +507,13 @@ macro_rules! export_oss_napi {
       html: String,
       options: ExtractAttributesOptions,
     ) -> napi::Result<Vec<ExtractedAttributeResult>> {
-      let res = $crate::wrappers::extract_attributes(
+      let res = $crate::napi_exports::wrappers::extract_attributes(
         html,
-        $crate::__deps::firecrawl_html::ExtractAttributesOptions {
+        $crate::html::ExtractAttributesOptions {
           selectors: options
             .selectors
             .into_iter()
-            .map(|s| $crate::__deps::firecrawl_html::AttributeSelector {
+            .map(|s| $crate::html::AttributeSelector {
               selector: s.selector,
               attribute: s.attribute,
             })
@@ -532,36 +537,35 @@ macro_rules! export_oss_napi {
     /// Extract all image URLs from HTML document.
     #[napi_derive::napi]
     pub async fn extract_images(html: String, base_url: String) -> napi::Result<Vec<String>> {
-      $crate::wrappers::extract_images(html, base_url).await
+      $crate::napi_exports::wrappers::extract_images(html, base_url).await
     }
 
     /// Process multi-line links in markdown.
     #[napi_derive::napi]
     pub async fn post_process_markdown(markdown: String) -> napi::Result<String> {
-      $crate::wrappers::post_process_markdown(markdown).await
+      $crate::napi_exports::wrappers::post_process_markdown(markdown).await
     }
 
     /// Filter links based on crawling rules and constraints.
     #[napi_derive::napi]
     pub async fn filter_links(data: FilterLinksCall) -> napi::Result<FilterLinksResult> {
-      let res =
-        $crate::wrappers::filter_links($crate::__deps::firecrawl_crawler::FilterLinksCall {
-          links: data.links,
-          limit: data.limit,
-          max_depth: data.max_depth,
-          base_url: data.base_url,
-          initial_url: data.initial_url,
-          regex_on_full_url: data.regex_on_full_url,
-          excludes: data.excludes,
-          includes: data.includes,
-          allow_backward_crawling: data.allow_backward_crawling,
-          ignore_robots_txt: data.ignore_robots_txt,
-          robots_txt: data.robots_txt,
-          robots_user_agent: data.robots_user_agent,
-          allow_external_content_links: data.allow_external_content_links,
-          allow_subdomains: data.allow_subdomains,
-        })
-        .await?;
+      let res = $crate::napi_exports::wrappers::filter_links($crate::crawler::FilterLinksCall {
+        links: data.links,
+        limit: data.limit,
+        max_depth: data.max_depth,
+        base_url: data.base_url,
+        initial_url: data.initial_url,
+        regex_on_full_url: data.regex_on_full_url,
+        excludes: data.excludes,
+        includes: data.includes,
+        allow_backward_crawling: data.allow_backward_crawling,
+        ignore_robots_txt: data.ignore_robots_txt,
+        robots_txt: data.robots_txt,
+        robots_user_agent: data.robots_user_agent,
+        allow_external_content_links: data.allow_external_content_links,
+        allow_subdomains: data.allow_subdomains,
+      })
+      .await?;
 
       Ok(FilterLinksResult {
         links: res.links,
@@ -575,7 +579,7 @@ macro_rules! export_oss_napi {
     /// (e.g. look-around, backreferences) instead of silently ignoring it.
     #[napi_derive::napi]
     pub fn validate_regexes(patterns: Vec<String>) -> Vec<RegexValidationError> {
-      $crate::wrappers::validate_regexes(patterns)
+      $crate::napi_exports::wrappers::validate_regexes(patterns)
         .into_iter()
         .map(|e| RegexValidationError {
           pattern: e.pattern,
@@ -587,7 +591,7 @@ macro_rules! export_oss_napi {
     /// Filter a single URL based on crawling rules and constraints.
     #[napi_derive::napi]
     pub async fn filter_url(data: FilterUrlCall) -> napi::Result<FilterUrlResult> {
-      let res = $crate::wrappers::filter_url($crate::__deps::firecrawl_crawler::FilterUrlCall {
+      let res = $crate::napi_exports::wrappers::filter_url($crate::crawler::FilterUrlCall {
         href: data.href,
         url: data.url,
         base_url: data.base_url,
@@ -610,7 +614,7 @@ macro_rules! export_oss_napi {
     /// Parse XML sitemap content into structured data.
     #[napi_derive::napi]
     pub async fn parse_sitemap_xml(xml_content: String) -> napi::Result<ParsedSitemap> {
-      let res = $crate::wrappers::parse_sitemap_xml(xml_content).await?;
+      let res = $crate::napi_exports::wrappers::parse_sitemap_xml(xml_content).await?;
 
       Ok(ParsedSitemap {
         urlset: res.urlset.map(|u| SitemapUrlset {
@@ -633,7 +637,7 @@ macro_rules! export_oss_napi {
     /// Process sitemap XML and extract crawling instructions.
     #[napi_derive::napi]
     pub async fn process_sitemap(xml_content: String) -> napi::Result<SitemapProcessingResult> {
-      let res = $crate::wrappers::process_sitemap(xml_content).await?;
+      let res = $crate::napi_exports::wrappers::process_sitemap(xml_content).await?;
 
       Ok(SitemapProcessingResult {
         instructions: res
@@ -661,7 +665,7 @@ macro_rules! export_oss_napi {
       data: napi::bindgen_prelude::Uint8Array,
       extension_hint: Option<String>,
     ) -> napi::Result<String> {
-      $crate::wrappers::convert_document_to_markdown(data, extension_hint).await
+      $crate::napi_exports::wrappers::convert_document_to_markdown(data, extension_hint).await
     }
 
     /// Process a PDF file: detect type, extract text + markdown if text-based.
@@ -677,11 +681,11 @@ macro_rules! export_oss_napi {
       max_pages: Option<u32>,
       ctx: Option<NativeContext>,
     ) -> napi::Result<PdfProcessResult> {
-      let ctx = ctx.map(|c| $crate::logging::NativeContext {
+      let ctx = ctx.map(|c| $crate::napi_exports::logging::NativeContext {
         scrape_id: c.scrape_id,
         url: c.url,
       });
-      let res = $crate::wrappers::process_pdf(path, max_pages, ctx).await?;
+      let res = $crate::napi_exports::wrappers::process_pdf(path, max_pages, ctx).await?;
       Ok(_convert_pdf_result(res))
     }
 
@@ -696,11 +700,11 @@ macro_rules! export_oss_napi {
       path: String,
       ctx: Option<NativeContext>,
     ) -> napi::Result<PdfProcessResult> {
-      let ctx = ctx.map(|c| $crate::logging::NativeContext {
+      let ctx = ctx.map(|c| $crate::napi_exports::logging::NativeContext {
         scrape_id: c.scrape_id,
         url: c.url,
       });
-      let res = $crate::wrappers::detect_pdf(path, ctx).await?;
+      let res = $crate::napi_exports::wrappers::detect_pdf(path, ctx).await?;
       Ok(_convert_pdf_result(res))
     }
   };

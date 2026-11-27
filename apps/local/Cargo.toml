@@ -22,11 +22,9 @@ name = "firecrawl-local"
 path = "src/main.rs"
 
 [dependencies]
-# --- shared workspace crates (replaced by scripts/vendor-native.sh for packaging) ---
-firecrawl-crawler = { path = "../api/native/crates/firecrawl-crawler" }
-firecrawl-html = { path = "../api/native/crates/firecrawl-html" }
-firecrawl-parsers = { path = "../api/native/crates/firecrawl-parsers" }
-# --- end shared workspace crates ---
+# --- shared workspace crate (replaced by scripts/vendor-native.sh for packaging) ---
+firecrawl-core = { path = "../api/native/crates/firecrawl-core", default-features = false }
+# --- end shared workspace crate ---
 kuchikiki = "0.8.9-speedreader"
 psl = "2.1.140"
 regex = "1.11.2"
