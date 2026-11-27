@@ -285,7 +285,8 @@ fn build_robot(
     .or_else(|| Robot::new("FirecrawlAgent", robots_txt.as_bytes()).ok())
 }
 
-fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult, String> {
+/// Filter links based on crawling rules and constraints.
+pub fn filter_links(data: FilterLinksCall) -> Result<FilterLinksResult, String> {
   let limit = data.limit.map_or(usize::MAX, |x| x.max(0) as usize);
   if limit == 0 {
     return Ok(FilterLinksResult {
@@ -450,11 +451,6 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
   })
 }
 
-/// Filter links based on crawling rules and constraints.
-pub fn filter_links(data: FilterLinksCall) -> Result<FilterLinksResult, String> {
-  _filter_links(data)
-}
-
 /// Compiled form of a client-supplied includePaths/excludePaths pattern.
 ///
 /// Path patterns are compiled with Unicode mode disabled, over bytes. Every
@@ -513,7 +509,8 @@ pub fn validate_regexes(patterns: Vec<String>) -> Vec<RegexValidationError> {
     .collect()
 }
 
-fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, String> {
+/// Filter a single URL based on crawling rules and constraints.
+pub fn filter_url(data: FilterUrlCall) -> Result<FilterUrlResult, String> {
   let mut full_url = data.href.clone();
 
   // Handle relative URLs
@@ -685,15 +682,11 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
   }
 }
 
-/// Filter a single URL based on crawling rules and constraints.
-pub fn filter_url(data: FilterUrlCall) -> Result<FilterUrlResult, String> {
-  _filter_url(data)
-}
-
 /// Sitemaps nest a handful of levels; anything deeper is malformed.
 const MAX_SITEMAP_DEPTH: usize = 32;
 
-fn _parse_sitemap_xml(xml_content: &str) -> std::result::Result<ParsedSitemap, String> {
+/// Parse XML sitemap content into structured data.
+pub fn parse_sitemap_xml(xml_content: &str) -> Result<ParsedSitemap, String> {
   if exceeds_element_depth(xml_content, MAX_SITEMAP_DEPTH) {
     return Err(format!(
       "XML parsing error: elements nested deeper than {MAX_SITEMAP_DEPTH} levels"
@@ -759,13 +752,9 @@ fn _parse_sitemap_xml(xml_content: &str) -> std::result::Result<ParsedSitemap, S
   }
 }
 
-/// Parse XML sitemap content into structured data.
-pub fn parse_sitemap_xml(xml_content: &str) -> Result<ParsedSitemap, String> {
-  _parse_sitemap_xml(xml_content)
-}
-
-fn _process_sitemap(xml_content: &str) -> std::result::Result<SitemapProcessingResult, String> {
-  let parsed = _parse_sitemap_xml(xml_content)?;
+/// Process sitemap XML and extract crawling instructions.
+pub fn process_sitemap(xml_content: &str) -> Result<SitemapProcessingResult, String> {
+  let parsed = parse_sitemap_xml(xml_content)?;
   let mut instructions = Vec::new();
   let mut total_count: u32 = 0;
 
@@ -837,11 +826,6 @@ fn _process_sitemap(xml_content: &str) -> std::result::Result<SitemapProcessingR
   })
 }
 
-/// Process sitemap XML and extract crawling instructions.
-pub fn process_sitemap(xml_content: &str) -> Result<SitemapProcessingResult, String> {
-  _process_sitemap(xml_content)
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -906,7 +890,7 @@ mod tests {
   </url>
 </urlset>"#;
 
-    let result = _parse_sitemap_xml(xml_content).unwrap();
+    let result = parse_sitemap_xml(xml_content).unwrap();
     assert!(result.urlset.is_some());
     let urlset = result.urlset.unwrap();
     assert_eq!(urlset.url.len(), 2);
@@ -926,7 +910,7 @@ mod tests {
   </sitemap>
 </sitemapindex>"#;
 
-    let result = _parse_sitemap_xml(xml_content).unwrap();
+    let result = parse_sitemap_xml(xml_content).unwrap();
     assert!(result.sitemapindex.is_some());
     let sitemapindex = result.sitemapindex.unwrap();
     assert_eq!(sitemapindex.sitemap.len(), 2);
@@ -949,7 +933,7 @@ mod tests {
   </url>
 </invalid>"#;
 
-    let result = _parse_sitemap_xml(xml_content);
+    let result = parse_sitemap_xml(xml_content);
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Invalid sitemap format"));
   }
@@ -963,7 +947,7 @@ mod tests {
   </url>
 </urlset"#; // Missing closing >
 
-    let result = _parse_sitemap_xml(xml_content);
+    let result = parse_sitemap_xml(xml_content);
     assert!(result.is_err());
   }
 
@@ -974,7 +958,7 @@ mod tests {
       "<url><loc>https://example.com/page%3C%2Floc%3E".repeat(50_000)
     );
 
-    let result = _parse_sitemap_xml(&xml_content);
+    let result = parse_sitemap_xml(&xml_content);
     assert!(result.unwrap_err().contains("nested deeper than"));
   }
 
@@ -985,7 +969,7 @@ mod tests {
       r#"<url data="x/>" other='y>'>"#.repeat(100_000)
     );
 
-    let result = _parse_sitemap_xml(&xml_content);
+    let result = parse_sitemap_xml(&xml_content);
     assert!(result.unwrap_err().contains("nested deeper than"));
   }
 
@@ -996,7 +980,7 @@ mod tests {
       "<url>".repeat(100_000)
     );
 
-    let result = _parse_sitemap_xml(&xml_content);
+    let result = parse_sitemap_xml(&xml_content);
     assert!(result.unwrap_err().contains("entity declarations"));
   }
 
@@ -1006,7 +990,7 @@ mod tests {
 <!DOCTYPE urlset>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://example.com/page1</loc></url></urlset>"#;
 
-    let urlset = _parse_sitemap_xml(xml_content).unwrap().urlset.unwrap();
+    let urlset = parse_sitemap_xml(xml_content).unwrap().urlset.unwrap();
     assert_eq!(urlset.url[0].loc[0], "https://example.com/page1");
   }
 
@@ -1023,7 +1007,7 @@ mod tests {
   <url><loc>https://example.com/page2</loc></url>
 </urlset>"#;
 
-    let urlset = _parse_sitemap_xml(xml_content).unwrap().urlset.unwrap();
+    let urlset = parse_sitemap_xml(xml_content).unwrap().urlset.unwrap();
     assert_eq!(urlset.url.len(), 2);
     assert_eq!(urlset.url[0].loc[0], "https://example.com/page1");
     assert_eq!(urlset.url[1].loc[0], "https://example.com/page2");
@@ -1044,7 +1028,7 @@ mod tests {
   </url>
 </urlset>"#;
 
-    let result = _process_sitemap(xml_content).unwrap();
+    let result = process_sitemap(xml_content).unwrap();
     assert_eq!(result.instructions.len(), 2);
 
     let recurse_instruction = result
@@ -1079,7 +1063,7 @@ mod tests {
   </sitemap>
 </sitemapindex>"#;
 
-    let result = _process_sitemap(xml_content).unwrap();
+    let result = process_sitemap(xml_content).unwrap();
     assert_eq!(result.instructions.len(), 1);
     assert_eq!(result.instructions[0].action, "recurse");
     assert_eq!(result.instructions[0].urls.len(), 2);
@@ -1115,7 +1099,7 @@ mod tests {
       robots_user_agent: None,
     };
 
-    let result = _filter_links(data).unwrap();
+    let result = filter_links(data).unwrap();
     assert_eq!(result.links.len(), 1);
     assert_eq!(result.links[0], "https://example.com/allowed");
     assert!(
@@ -1152,7 +1136,7 @@ mod tests {
       robots_user_agent: None,
     };
 
-    let result = _filter_links(data);
+    let result = filter_links(data);
     assert!(result.is_ok());
     let result = result.unwrap();
     assert_eq!(result.links.len(), 1);
@@ -1182,7 +1166,7 @@ mod tests {
       robots_user_agent: None,
     };
 
-    let result = _filter_links(data);
+    let result = filter_links(data);
     assert!(result.is_ok());
     let result = result.unwrap();
     assert_eq!(result.links.len(), 1);
@@ -1210,7 +1194,7 @@ mod tests {
       robots_user_agent: None,
     };
 
-    let result = _filter_links(data);
+    let result = filter_links(data);
     assert!(result.is_ok());
     let result = result.unwrap();
     assert_eq!(result.links.len(), 1);
@@ -1241,7 +1225,7 @@ mod tests {
       robots_user_agent: None,
     };
 
-    let result = _filter_links(data).unwrap();
+    let result = filter_links(data).unwrap();
     // Should include only paths matching include on base or subdomains
     assert_eq!(result.links.len(), 3);
     assert!(
@@ -1298,10 +1282,10 @@ mod tests {
       robots_user_agent: ua,
     };
 
-    let default_result = _filter_links(base_call(None)).unwrap();
+    let default_result = filter_links(base_call(None)).unwrap();
     assert_eq!(default_result.links, vec!["https://example.com/page"]);
 
-    let custom_result = _filter_links(base_call(Some("CustomBot".to_string()))).unwrap();
+    let custom_result = filter_links(base_call(Some("CustomBot".to_string()))).unwrap();
     assert!(custom_result.links.is_empty());
     assert_eq!(
       custom_result
@@ -1340,7 +1324,7 @@ mod tests {
   // seed) must be allowed under allowExternalLinks. Regression test for #4315.
   #[test]
   fn test_filter_url_allows_external_link_redirect_same_domain() {
-    let result = _filter_url(filter_url_call(
+    let result = filter_url(filter_url_call(
       "http://www.iana.org/help/example-domains",
       "https://iana.org/domains/example",
       "https://example.org",
@@ -1354,7 +1338,7 @@ mod tests {
   // a real subdomain must be allowed (PSL-based, not just stripping "www.").
   #[test]
   fn test_filter_url_allows_external_link_redirect_to_subdomain() {
-    let result = _filter_url(filter_url_call(
+    let result = filter_url(filter_url_call(
       "https://blog.example.com/post",
       "https://example.com/link",
       "https://crawlseed.org",
@@ -1367,7 +1351,7 @@ mod tests {
   // path (the london.gov.uk case from #4315).
   #[test]
   fn test_filter_url_allows_external_link_redirect_same_host_path_change() {
-    let result = _filter_url(filter_url_call(
+    let result = filter_url(filter_url_call(
       "https://www.london.gov.uk/programmes-strategies/planning/london-plan",
       "https://www.london.gov.uk/what-we-do/planning/london-plan",
       "https://example.org",
@@ -1380,7 +1364,7 @@ mod tests {
   // denied — the external-main-page exclusion is intentional (#4316).
   #[test]
   fn test_filter_url_denies_redirect_to_external_homepage() {
-    let result = _filter_url(filter_url_call(
+    let result = filter_url(filter_url_call(
       "https://www.peoplefirstinfo.org.uk/",
       "https://www.westminster.gov.uk/node/21229",
       "https://www.westminster.gov.uk",
@@ -1394,7 +1378,7 @@ mod tests {
   // domain, not in scope) remains denied.
   #[test]
   fn test_filter_url_denies_redirect_to_unrelated_external_domain() {
-    let result = _filter_url(filter_url_call(
+    let result = filter_url(filter_url_call(
       "https://unrelated.com/article",
       "https://iana.org/domains/example",
       "https://example.org",

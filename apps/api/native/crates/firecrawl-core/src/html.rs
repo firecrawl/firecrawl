@@ -23,7 +23,7 @@ static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
   Regex::new(r#"url\(['"]?([^'")]+)['"]?\)"#).expect("URL_REGEX is a valid static regex pattern")
 });
 
-fn _extract_base_href_from_document(
+fn extract_base_href_from_document(
   document: &NodeRef,
   url: &Url,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -44,7 +44,7 @@ fn _extract_base_href_from_document(
 /// Base URL of an already-parsed document: its `<base href>` if it has one,
 /// otherwise the page URL.
 pub fn base_href_of_document(document: &NodeRef, url: &Url) -> String {
-  _extract_base_href_from_document(document, url).unwrap_or_else(|_| url.to_string())
+  extract_base_href_from_document(document, url).unwrap_or_else(|_| url.to_string())
 }
 
 /// Extract the base href from an HTML document.
@@ -54,7 +54,7 @@ pub fn extract_base_href(
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
   let document = parse_html().one(html).document_node;
   let url = Url::parse(url)?;
-  _extract_base_href_from_document(&document, &url)
+  extract_base_href_from_document(&document, &url)
 }
 
 /// Raw `href` of every link in an already-parsed document.
@@ -413,7 +413,7 @@ pub fn transform_document(
   mut document: NodeRef,
   opts: &TransformHtmlOptions,
 ) -> Result<NodeRef, Box<dyn std::error::Error + Send + Sync>> {
-  let url = Url::parse(&_extract_base_href_from_document(
+  let url = Url::parse(&extract_base_href_from_document(
     &document,
     &Url::parse(&opts.url)?,
   )?)?;
@@ -750,7 +750,7 @@ pub fn extract_images(
 ) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
   let document = parse_html().one(html).document_node;
   let base_url = Url::parse(base_url)?;
-  let base_href = _extract_base_href_from_document(&document, &base_url)?;
+  let base_href = extract_base_href_from_document(&document, &base_url)?;
   let base_href_url = Url::parse(&base_href)?;
   let mut images = HashSet::<String>::new();
 
