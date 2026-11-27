@@ -13,7 +13,9 @@ import pytest
 import firecrawl.v2.client_async as client_async_module
 from firecrawl.v2.client_async import AsyncFirecrawlClient
 from firecrawl.v2.methods import crawl as crawl_module
+from firecrawl.v2.methods import batch as batch_module
 from firecrawl.v2.methods.aio import crawl as async_crawl_module
+from firecrawl.v2.methods.aio import batch as async_batch_module
 from firecrawl.v2.utils.error_handler import FirecrawlError
 
 JOB_ID = "crawl-job-123"
@@ -278,3 +280,56 @@ class TestAsyncCrawlCancellation:
             await task
 
         client.async_http_client.delete.assert_not_called()
+
+
+class TestSyncCancelBatchScrape:
+    def test_returns_true_when_cancelled(self):
+        client = Mock()
+        client.delete.return_value = _sync_response({"status": "cancelled"})
+
+        assert batch_module.cancel_batch_scrape(client, JOB_ID) is True
+        client.delete.assert_called_once_with(f"/v2/batch/scrape/{JOB_ID}")
+
+    def test_returns_false_when_batch_already_completed(self):
+        client = Mock()
+        client.delete.return_value = _sync_response(ALREADY_COMPLETED, status_code=409)
+
+        assert batch_module.cancel_batch_scrape(client, JOB_ID) is False
+
+    @pytest.mark.parametrize("status_code", [401, 404, 500])
+    def test_other_errors_still_raise(self, status_code):
+        client = Mock()
+        client.delete.return_value = _sync_response({"success": False, "error": "nope"}, status_code=status_code)
+
+        with pytest.raises(FirecrawlError) as exc_info:
+            batch_module.cancel_batch_scrape(client, JOB_ID)
+
+        assert exc_info.value.status_code == status_code
+
+
+class TestAsyncCancelBatchScrape:
+    @pytest.mark.asyncio
+    async def test_returns_true_when_cancelled(self):
+        client = AsyncMock()
+        client.delete.return_value = _async_response({"status": "cancelled"})
+
+        assert await async_batch_module.cancel_batch_scrape(client, JOB_ID) is True
+        client.delete.assert_awaited_once_with(f"/v2/batch/scrape/{JOB_ID}")
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_batch_already_completed(self):
+        client = AsyncMock()
+        client.delete.return_value = _async_response(ALREADY_COMPLETED, status_code=409)
+
+        assert await async_batch_module.cancel_batch_scrape(client, JOB_ID) is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status_code", [401, 404, 500])
+    async def test_other_errors_still_raise(self, status_code):
+        client = AsyncMock()
+        client.delete.return_value = _async_response({"success": False, "error": "nope"}, status_code=status_code)
+
+        with pytest.raises(FirecrawlError) as exc_info:
+            await async_batch_module.cancel_batch_scrape(client, JOB_ID)
+
+        assert exc_info.value.status_code == status_code
