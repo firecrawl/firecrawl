@@ -54,7 +54,7 @@ const schemaWithDefsSchema = z.object({
 const arraySchemaTypeSchema = z.object({ type: z.literal("array") });
 const itemsExtractSchema = z.object({ items: jsonValueSchema.optional() });
 const cleanedContentExtractSchema = z.object({
-  cleanedContent: z.string().min(1),
+  cleanedContent: z.string(),
 });
 const summaryExtractSchema = z.object({ summary: z.string() });
 
@@ -1483,7 +1483,7 @@ Return the cleaned markdown content preserving the original markdown formatting.
       extract,
       "llm-extract.cleanedContent",
     );
-    if (parsedCleaned.success) {
+    if (parsedCleaned.success && parsedCleaned.data.cleanedContent.length > 0) {
       document.markdown = parsedCleaned.data.cleanedContent;
     }
   }
