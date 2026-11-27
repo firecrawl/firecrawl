@@ -423,6 +423,407 @@ const FORCE_INCLUDE_MAIN_TAGS: [&str; 13] = [
   ".swoogo-agenda",
 ];
 
+fn lang_from_url(url: &Url) -> &'static str {
+  let filename = url
+    .path()
+    .rsplit('/')
+    .next()
+    .unwrap_or("")
+    .to_ascii_lowercase();
+  if filename == "dockerfile" || filename.starts_with("dockerfile.") {
+    return "dockerfile";
+  }
+  let ext = filename.rsplit_once('.').map(|(_, e)| e).unwrap_or("");
+  match ext {
+    "rs" => "rust",
+    "py" => "python",
+    "ts" | "mts" | "cts" => "typescript",
+    "tsx" => "tsx",
+    "js" | "mjs" | "cjs" => "javascript",
+    "jsx" => "jsx",
+    "go" => "go",
+    "java" => "java",
+    "kt" | "kts" => "kotlin",
+    "swift" => "swift",
+    "c" | "h" => "c",
+    "cc" | "cpp" | "cxx" | "hpp" | "hh" => "cpp",
+    "cs" => "csharp",
+    "rb" => "ruby",
+    "php" => "php",
+    "sh" | "bash" | "zsh" => "bash",
+    "json" | "jsonc" => "json",
+    "yaml" | "yml" => "yaml",
+    "toml" => "toml",
+    "xml" | "plist" => "xml",
+    "html" | "htm" => "html",
+    "css" => "css",
+    "scss" => "scss",
+    "sql" => "sql",
+    "proto" => "protobuf",
+    "tf" | "hcl" => "hcl",
+    "dockerfile" => "dockerfile",
+    _ => "",
+  }
+}
+
+fn lang_from_class(class_str: &str) -> Option<String> {
+  for part in class_str.split_whitespace() {
+    let lower = part.to_ascii_lowercase();
+    if let Some(lang) = lower.strip_prefix("language-") {
+      if !lang.is_empty()
+        && lang
+          .chars()
+          .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+      {
+        return Some(lang.to_string());
+      }
+    }
+    if let Some(lang) = lower.strip_prefix("lang-") {
+      if !lang.is_empty()
+        && lang
+          .chars()
+          .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+      {
+        return Some(lang.to_string());
+      }
+    }
+    if let Some(lang) = lower.strip_prefix("brush:") {
+      let lang = lang.trim_matches(';');
+      if !lang.is_empty()
+        && lang
+          .chars()
+          .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+      {
+        return Some(lang.to_string());
+      }
+    }
+  }
+  None
+}
+
+fn build_pre_code(code_text: &str, lang: &str, is_viewer: bool) -> Option<NodeRef> {
+  let clean_lang: String = lang
+    .chars()
+    .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+    .collect();
+  let html = if clean_lang.is_empty() {
+    if is_viewer {
+      "<pre data-fc-code-viewer=\"1\"><code></code></pre>".to_string()
+    } else {
+      "<pre><code></code></pre>".to_string()
+    }
+  } else if is_viewer {
+    format!("<pre data-fc-code-viewer=\"1\"><code class=\"language-{clean_lang}\"></code></pre>")
+  } else {
+    format!("<pre><code class=\"language-{clean_lang}\"></code></pre>")
+  };
+  let frag = parse_html().one(html.as_str()).document_node;
+  let pre = frag.select_first("pre").ok()?.as_node().clone();
+  let code = pre.select_first("code").ok()?.as_node().clone();
+  let normalized = code_text.replace('\u{00a0}', " ");
+  code.append(NodeRef::new_text(normalized));
+  pre.detach();
+  Some(pre)
+}
+
+fn has_gutter_class(class_str: &str) -> bool {
+  let lower = class_str.to_ascii_lowercase();
+  lower.split_whitespace().any(|tok| {
+    tok == "gutter"
+      || tok == "linenos"
+      || tok == "blob-num"
+      || tok == "hljs-ln-numbers"
+      || tok == "hljs-ln-n"
+      || tok.contains("linenum")
+      || tok.contains("line-num")
+      || tok.contains("line-gutter")
+  })
+}
+
+fn has_code_cell_class(class_str: &str) -> bool {
+  let lower = class_str.to_ascii_lowercase();
+  lower.split_whitespace().any(|tok| {
+    tok == "code"
+      || tok == "source"
+      || tok == "blob-code"
+      || tok == "blob-code-inner"
+      || tok == "js-file-line"
+      || tok == "hljs-ln-code"
+      || tok.contains("linecontents")
+      || tok.contains("line-content")
+  })
+}
+
+fn has_ancestor_tag(node: &NodeRef, tag_name: &str) -> bool {
+  let mut cur = node.parent();
+  while let Some(p) = cur {
+    if let Some(el) = p.as_element() {
+      if el.name.local.as_ref().eq_ignore_ascii_case(tag_name) {
+        return true;
+      }
+    }
+    cur = p.parent();
+  }
+  false
+}
+
+fn normalize_code_blocks(document: &NodeRef, url: &Url) {
+  if let Ok(origins) = document.select("pre.enlighter-origin, pre.EnlighterJSRAW") {
+    let origins: Vec<_> = origins.collect();
+    if !origins.is_empty() {
+      for origin in origins {
+        let lang = origin
+          .attributes
+          .borrow()
+          .get("data-enlighter-language")
+          .map(|s| s.trim().to_ascii_lowercase())
+          .filter(|s| !s.is_empty() && s != "generic" && s != "null" && s != "raw");
+        if let Some(l) = lang {
+          let mut attrs = origin.attributes.borrow_mut();
+          let existing = attrs.get("class").unwrap_or("").to_string();
+          if !existing.contains("language-") {
+            attrs.insert("class", format!("{existing} language-{l}"));
+          }
+        }
+      }
+      if let Ok(dups) = document.select(".enlighter-default") {
+        let dups: Vec<_> = dups.collect();
+        for d in dups {
+          d.as_node().detach();
+        }
+      }
+    }
+  }
+
+  // Strip `line-numbers` from <pre> because Go's RobustCodeBlock treats any node
+  // whose class contains "line-numbers" as a gutter and drops the entire code block.
+  if let Ok(pres) = document.select("pre") {
+    let pres: Vec<_> = pres.collect();
+    for pre in pres {
+      let node = pre.as_node();
+      for sel in [
+        ".line-numbers-rows",
+        "button",
+        "svg",
+        "[role=\"button\"]",
+        "[class*=\"copy-btn\" i]",
+        "[class*=\"copy-button\" i]",
+        ".highlight__panel",
+      ] {
+        if let Ok(junk) = node.select(sel) {
+          let junk: Vec<_> = junk.collect();
+          for j in junk {
+            j.as_node().detach();
+          }
+        }
+      }
+      let new_class = {
+        let attrs = pre.attributes.borrow();
+        attrs.get("class").and_then(|cls| {
+          let parts: Vec<&str> = cls.split_whitespace().collect();
+          if parts.iter().any(|p| p.eq_ignore_ascii_case("line-numbers")) {
+            Some(
+              parts
+                .into_iter()
+                .filter(|p| !p.eq_ignore_ascii_case("line-numbers"))
+                .collect::<Vec<_>>()
+                .join(" "),
+            )
+          } else {
+            None
+          }
+        })
+      };
+      if let Some(new_cls) = new_class {
+        pre.attributes.borrow_mut().insert("class", new_cls);
+      }
+    }
+  }
+
+  if let Ok(textareas) = document.select(
+    "textarea#read-only-cursor-text-area, textarea[data-testid=\"read-only-cursor-text-area\"]",
+  ) {
+    let textareas: Vec<_> = textareas.collect();
+    for ta in textareas {
+      let code_text = ta.as_node().text_contents();
+      if code_text.trim().is_empty() {
+        continue;
+      }
+      let lang = lang_from_url(url);
+      if let Some(pre) = build_pre_code(&code_text, lang, true) {
+        ta.as_node().insert_before(pre);
+        ta.as_node().detach();
+      }
+    }
+  }
+
+  if let Ok(tables) = document.select("table") {
+    let tables: Vec<_> = tables.collect();
+    for tbl in tables {
+      let tbl_node = tbl.as_node();
+      if has_ancestor_tag(tbl_node, "pre") || tbl_node.parent().is_none() {
+        continue;
+      }
+      if tbl_node
+        .select("th")
+        .is_ok_and(|mut it| it.next().is_some())
+      {
+        continue;
+      }
+
+      let trs: Vec<_> = match tbl_node.select("tr") {
+        Ok(it) => it
+          .filter(|tr| {
+            let mut cur = tr.as_node().parent();
+            while let Some(p) = cur {
+              if p == *tbl_node {
+                return true;
+              }
+              if let Some(el) = p.as_element() {
+                if el.name.local.as_ref().eq_ignore_ascii_case("table") {
+                  return false;
+                }
+              }
+              cur = p.parent();
+            }
+            false
+          })
+          .collect(),
+        Err(_) => continue,
+      };
+      if trs.is_empty() {
+        continue;
+      }
+
+      let mut lang = tbl
+        .attributes
+        .borrow()
+        .get("class")
+        .and_then(lang_from_class)
+        .unwrap_or_default();
+      if lang.is_empty() {
+        if let Some(parent) = tbl_node.parent().and_then(|p| p.into_element_ref()) {
+          if let Some(l) = parent
+            .attributes
+            .borrow()
+            .get("class")
+            .and_then(lang_from_class)
+          {
+            lang = l;
+          }
+        }
+      }
+
+      if trs.len() == 1 {
+        let tds: Vec<_> = trs[0]
+          .as_node()
+          .children()
+          .filter_map(|c| c.into_element_ref())
+          .filter(|e| e.name.local.as_ref().eq_ignore_ascii_case("td"))
+          .collect();
+        if tds.len() == 2 {
+          let c0_cls = tds[0]
+            .attributes
+            .borrow()
+            .get("class")
+            .unwrap_or("")
+            .to_string();
+          let c1_cls = tds[1]
+            .attributes
+            .borrow()
+            .get("class")
+            .unwrap_or("")
+            .to_string();
+          if has_gutter_class(&c0_cls)
+            && (has_code_cell_class(&c1_cls)
+              || tds[1]
+                .as_node()
+                .select("pre, .line")
+                .is_ok_and(|mut it| it.next().is_some()))
+          {
+            let code_text = if let Ok(pre_el) = tds[1].as_node().select_first("pre") {
+              if lang.is_empty() {
+                if let Some(l) = pre_el
+                  .attributes
+                  .borrow()
+                  .get("class")
+                  .and_then(lang_from_class)
+                {
+                  lang = l;
+                }
+              }
+              pre_el.as_node().text_contents()
+            } else if let Ok(line_els) = tds[1].as_node().select(".line") {
+              let lines: Vec<String> = line_els
+                .map(|l| l.as_node().text_contents().replace('\r', ""))
+                .collect();
+              if !lines.is_empty() {
+                lines.join("\n")
+              } else {
+                tds[1].as_node().text_contents()
+              }
+            } else {
+              tds[1].as_node().text_contents()
+            };
+
+            if !code_text.trim().is_empty() {
+              if let Some(pre) = build_pre_code(&code_text, &lang, false) {
+                tbl_node.insert_before(pre);
+                tbl_node.detach();
+              }
+            }
+          }
+        }
+        continue;
+      }
+
+      let mut matched_rows = 0usize;
+      let mut lines: Vec<String> = Vec::with_capacity(trs.len());
+      for tr in &trs {
+        let tds: Vec<_> = tr
+          .as_node()
+          .children()
+          .filter_map(|c| c.into_element_ref())
+          .filter(|e| e.name.local.as_ref().eq_ignore_ascii_case("td"))
+          .collect();
+        if tds.len() != 2 {
+          continue;
+        }
+        let c0_is_gutter = {
+          let attrs = tds[0].attributes.borrow();
+          attrs.get("data-line-number").is_some()
+            || attrs.get("class").is_some_and(has_gutter_class)
+        };
+        let c1_is_code = tds[1]
+          .attributes
+          .borrow()
+          .get("class")
+          .is_some_and(has_code_cell_class);
+        if c0_is_gutter
+          && (c1_is_code || tds[0].attributes.borrow().get("data-line-number").is_some())
+        {
+          matched_rows += 1;
+          let raw = tds[1].as_node().text_contents().replace('\r', "");
+          let line = raw.strip_prefix('\n').unwrap_or(&raw);
+          let line = line.strip_suffix('\n').unwrap_or(line);
+          lines.push(line.to_string());
+        }
+      }
+
+      if matched_rows >= 2 && matched_rows * 10 >= trs.len() * 7 {
+        if lang.is_empty() {
+          lang = lang_from_url(url).to_string();
+        }
+        let code_text = lines.join("\n");
+        if let Some(pre) = build_pre_code(&code_text, &lang, false) {
+          tbl_node.insert_before(pre);
+          tbl_node.detach();
+        }
+      }
+    }
+  }
+}
+
 #[derive(Deserialize, Serialize)]
 #[napi(object)]
 pub struct TransformHtmlOptions {
@@ -494,6 +895,8 @@ pub fn transform_document(
   while let Ok(x) = document.select_first("script") {
     x.as_node().detach();
   }
+
+  normalize_code_blocks(&document, &url);
 
   // OMCE first
   if opts.only_main_content {
@@ -1017,32 +1420,240 @@ pub async fn extract_images(html: String, base_url: String) -> napi::Result<Vec<
   res.map_err(to_napi_err)
 }
 
-/// The synchronous body of `post_process_markdown`.
-pub fn post_process_markdown_text(markdown: &str) -> String {
-  let mut link_open_count = 0usize;
-  let mut out = String::with_capacity(markdown.len());
+fn parse_fence_line(line: &str) -> Option<(u8, usize, &str)> {
+  let bytes = line.as_bytes();
+  let mut i = 0;
+  while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+    i += 1;
+  }
+  if i >= bytes.len() || (bytes[i] != b'`' && bytes[i] != b'~') {
+    return None;
+  }
+  let ch = bytes[i];
+  let start = i;
+  while i < bytes.len() && bytes[i] == ch {
+    i += 1;
+  }
+  let count = i - start;
+  if count >= 3 {
+    Some((ch, count, &line[i..]))
+  } else {
+    None
+  }
+}
 
-  for ch in markdown.chars() {
-    match ch {
-      '[' => {
-        link_open_count += 1;
+fn find_link_dest_end(s: &str, open_paren: usize) -> Option<usize> {
+  let bytes = s.as_bytes();
+  if open_paren >= bytes.len() || bytes[open_paren] != b'(' {
+    return None;
+  }
+  let mut depth = 1usize;
+  let mut i = open_paren + 1;
+  while i < bytes.len() {
+    match bytes[i] {
+      b'\\' if i + 1 < bytes.len() => {
+        i += 2;
+        continue;
       }
-      ']' => {
-        link_open_count = link_open_count.saturating_sub(1);
+      b'(' => depth += 1,
+      b')' => {
+        depth -= 1;
+        if depth == 0 {
+          return Some(i + 1);
+        }
       }
+      b'\n' => return None,
       _ => {}
     }
+    i += 1;
+  }
+  None
+}
 
-    let inside_link_content = link_open_count > 0;
-    if inside_link_content && ch == '\n' {
-      out.push('\\');
-      out.push('\n');
+fn find_matching_bracket(s: &str, open_bracket: usize) -> Option<usize> {
+  let bytes = s.as_bytes();
+  if open_bracket >= bytes.len() || bytes[open_bracket] != b'[' {
+    return None;
+  }
+  let mut depth = 1usize;
+  let mut i = open_bracket + 1;
+  let mut code_ticks = 0usize;
+  while i < bytes.len() {
+    if bytes[i] == b'\\' && code_ticks == 0 && i + 1 < bytes.len() {
+      i += 2;
+      continue;
+    }
+    if bytes[i] == b'`' {
+      let start = i;
+      while i < bytes.len() && bytes[i] == b'`' {
+        i += 1;
+      }
+      let ticks = i - start;
+      if code_ticks == 0 {
+        code_ticks = ticks;
+      } else if code_ticks == ticks {
+        code_ticks = 0;
+      }
+      continue;
+    }
+    if code_ticks == 0 {
+      if bytes[i] == b'[' {
+        depth += 1;
+      } else if bytes[i] == b']' {
+        depth -= 1;
+        if depth == 0 {
+          return Some(i);
+        }
+      }
+    }
+    i += 1;
+  }
+  None
+}
+
+fn is_skip_link_label(label: &str) -> bool {
+  let trimmed = label.trim();
+  trimmed.eq_ignore_ascii_case("skip to content")
+    || trimmed.eq_ignore_ascii_case("skip to main content")
+    || trimmed.eq_ignore_ascii_case("skip navigation")
+    || trimmed.eq_ignore_ascii_case("skip to main")
+}
+
+fn is_permalink_noise_label(label: &str) -> bool {
+  let trimmed = label.trim();
+  trimmed.is_empty()
+    || matches!(
+      trimmed,
+      "#" | "¶" | "§" | "🔗" | "Permalink" | "Direct link to heading"
+    )
+}
+
+fn process_prose_segment(input: &str) -> String {
+  let bytes = input.as_bytes();
+  let len = bytes.len();
+  let mut out = String::with_capacity(len);
+  let mut i = 0usize;
+
+  while i < len {
+    if bytes[i] == b'`' {
+      let start = i;
+      while i < len && bytes[i] == b'`' {
+        i += 1;
+      }
+      let ticks = i - start;
+      let mut j = i;
+      let mut found_end = None;
+      while j < len {
+        if bytes[j] == b'`' {
+          let cs = j;
+          while j < len && bytes[j] == b'`' {
+            j += 1;
+          }
+          if j - cs == ticks {
+            found_end = Some(j);
+            break;
+          }
+        } else {
+          j += 1;
+        }
+      }
+      let end = found_end.unwrap_or(i);
+      out.push_str(&input[start..end]);
+      i = end;
+      continue;
+    }
+
+    if bytes[i] == b'!' && i + 1 < len && bytes[i + 1] == b'[' {
+      if let Some(close_b) = find_matching_bracket(input, i + 1) {
+        if close_b + 1 < len && bytes[close_b + 1] == b'(' {
+          if let Some(end_p) = find_link_dest_end(input, close_b + 1) {
+            out.push_str(&input[i..end_p]);
+            i = end_p;
+            continue;
+          }
+        }
+      }
+    }
+
+    if bytes[i] == b'[' {
+      if let Some(close_b) = find_matching_bracket(input, i) {
+        if close_b + 1 < len && bytes[close_b + 1] == b'(' {
+          if let Some(end_p) = find_link_dest_end(input, close_b + 1) {
+            let label = &input[i + 1..close_b];
+            let dest = &input[close_b + 2..end_p - 1];
+
+            if is_skip_link_label(label) && dest.contains('#') {
+              i = end_p;
+              continue;
+            }
+
+            if is_permalink_noise_label(label) {
+              i = end_p;
+              continue;
+            }
+
+            out.push('[');
+            for ch in label.chars() {
+              if ch == '\n' {
+                out.push('\\');
+                out.push('\n');
+              } else {
+                out.push(ch);
+              }
+            }
+            out.push_str(&input[close_b..end_p]);
+            i = end_p;
+            continue;
+          }
+        }
+      }
+    }
+
+    let ch = input[i..].chars().next().unwrap();
+    out.push(ch);
+    i += ch.len_utf8();
+  }
+
+  out
+}
+
+/// The synchronous body of `post_process_markdown`.
+pub fn post_process_markdown_text(markdown: &str) -> String {
+  let mut out = String::with_capacity(markdown.len());
+  let mut prose_buf = String::new();
+  let mut active_fence: Option<(u8, usize)> = None;
+
+  for segment in markdown.split_inclusive('\n') {
+    let line_no_nl = segment.trim_end_matches(['\r', '\n']);
+
+    if let Some((f_char, f_len)) = active_fence {
+      out.push_str(segment);
+      if let Some((c, n, rest)) = parse_fence_line(line_no_nl) {
+        if c == f_char && n >= f_len && rest.trim().is_empty() {
+          active_fence = None;
+        }
+      }
+    } else if let Some((c, n, rest)) = parse_fence_line(line_no_nl) {
+      if c == b'`' && rest.contains('`') {
+        prose_buf.push_str(segment);
+      } else {
+        if !prose_buf.is_empty() {
+          out.push_str(&process_prose_segment(&prose_buf));
+          prose_buf.clear();
+        }
+        active_fence = Some((c, n));
+        out.push_str(segment);
+      }
     } else {
-      out.push(ch);
+      prose_buf.push_str(segment);
     }
   }
 
-  remove_skip_to_content_links(&out)
+  if !prose_buf.is_empty() {
+    out.push_str(&process_prose_segment(&prose_buf));
+  }
+
+  out
 }
 
 /// Process multi-line links in markdown.
@@ -1060,45 +1671,103 @@ pub async fn post_process_markdown(markdown: String) -> napi::Result<String> {
   Ok(res)
 }
 
-fn remove_skip_to_content_links(input: &str) -> String {
-  const LABEL: &str = "Skip to Content";
-  let bytes = input.as_bytes();
-  let len = bytes.len();
-  let mut out = String::with_capacity(len);
-  let mut i = 0;
+#[cfg(test)]
+mod tests {
+  use super::*;
 
-  'outer: while i < len {
-    if bytes[i] == b'[' {
-      let label_start = i + 1;
-      let label_end = label_start + LABEL.len();
-
-      if label_end <= len && bytes[label_start..label_end].iter().all(|b| b.is_ascii()) {
-        let label_slice = &input[label_start..label_end];
-
-        if label_slice.eq_ignore_ascii_case(LABEL)
-          && label_end + 3 <= len
-          && bytes[label_end] == b']'
-          && bytes[label_end + 1] == b'('
-          && bytes[label_end + 2] == b'#'
-        {
-          let mut j = label_end + 3;
-
-          while j < len {
-            let ch = input[j..].chars().next().unwrap();
-            if ch == ')' {
-              i = j + ch.len_utf8();
-              continue 'outer;
-            }
-            j += ch.len_utf8();
-          }
-        }
-      }
-    }
-
-    let ch = input[i..].chars().next().unwrap();
-    out.push(ch);
-    i += ch.len_utf8();
+  fn run_transform(html: &str, url: &str, only_main_content: bool) -> String {
+    _transform_html_inner(TransformHtmlOptions {
+      html: html.to_string(),
+      url: url.to_string(),
+      include_tags: vec![],
+      exclude_tags: vec![],
+      only_main_content,
+      omce_signatures: None,
+    })
+    .expect("transform_html should succeed")
   }
 
-  out
+  #[test]
+  fn post_process_preserves_multiline_brackets_in_fenced_and_inline_code() {
+    let md = "Intro [multi\nline](https://example.com) and `[a\nb]`.\n\n```json\n{\n  \"items\": [\n    \"one\",\n    \"two\"\n  ]\n}\n```\n\n1. Nested in list:\n\n    ```json\n    {\n      \"nested\": [\n        \"a\",\n        \"b\"\n      ]\n    }\n    ```\n";
+    let out = post_process_markdown_text(md);
+    assert!(out.contains("[multi\\\nline](https://example.com)"));
+    assert!(out.contains("```json\n{\n  \"items\": [\n    \"one\",\n    \"two\"\n  ]\n}\n```"));
+    assert!(!out.contains("\"one\",\\"));
+    assert!(out.contains("    ```json\n    {\n      \"nested\": [\n        \"a\",\n        \"b\"\n      ]\n    }\n    ```"));
+    assert!(!out.contains("\"a\",\\"));
+  }
+
+  #[test]
+  fn post_process_removes_resolved_skip_links_and_permalinks() {
+    let md = "[Skip to content](https://example.com/page#main)\n\n## API [#](https://example.com/page#api)\n\nSee [`foo`](https://example.com/foo) and ![icon](https://example.com/i.png).\n";
+    let out = post_process_markdown_text(md);
+    assert!(!out.contains("Skip to content"));
+    assert!(!out.contains("[#]"));
+    assert!(out.contains("[`foo`](https://example.com/foo)"));
+    assert!(out.contains("![icon](https://example.com/i.png)"));
+  }
+
+  #[test]
+  fn converts_gitiles_and_syntaxhighlighter_code_tables_to_pre_code() {
+    let gitiles = r#"<html><body><table class="FileContents">
+      <tr class="FileContents-line"><td class="FileContents-lineNum" data-line-number="1"></td><td class="FileContents-lineContents"><span>void</span> <span>Foo()</span> {</td></tr>
+      <tr class="FileContents-line"><td class="FileContents-lineNum" data-line-number="2"></td><td class="FileContents-lineContents">  return;</td></tr>
+      <tr class="FileContents-line"><td class="FileContents-lineNum" data-line-number="3"></td><td class="FileContents-lineContents">}</td></tr>
+    </table></body></html>"#;
+    let out = run_transform(gitiles, "https://example.googlesource.com/src/foo.cc", true);
+    assert!(
+      out.contains("<pre><code class=\"language-cpp\">void Foo() {\n  return;\n}</code></pre>")
+    );
+    assert!(!out.contains("<table"));
+
+    let sh = r#"<html><body><table><tr>
+      <td class="gutter"><div class="line">01</div><div class="line">02</div></td>
+      <td class="code"><div class="line">let x = 1;</div><div class="line">&nbsp;&nbsp;return x;</div></td>
+    </tr></table></body></html>"#;
+    let out_sh = run_transform(sh, "https://example.com/post", true);
+    assert!(out_sh.contains("<pre><code>let x = 1;\n  return x;</code></pre>"));
+    assert!(!out_sh.contains("01"));
+
+    let line_gutter = r#"<html><body><table>
+      <tr><td class="code-block-line-gutter">1</td><td class="code">const a = 1;</td></tr>
+      <tr><td class="code-block-line-gutter">2</td><td class="code">const b = 2;</td></tr>
+    </table></body></html>"#;
+    let out_lg = run_transform(line_gutter, "https://example.com/app.ts", true);
+    assert!(out_lg.contains(
+      "<pre><code class=\"language-typescript\">const a = 1;\nconst b = 2;</code></pre>"
+    ));
+    assert!(!out_lg.contains("<table"));
+  }
+
+  #[test]
+  fn normalizes_prism_line_numbers_enlighter_and_blob_viewer_textarea() {
+    let prism = r#"<html><body>
+      <pre class="line-numbers language-ts"><button>Copy</button><code>const a = 1;</code><span class="line-numbers-rows"><span></span></span></pre>
+    </body></html>"#;
+    let out_prism = run_transform(prism, "https://example.com/guide", true);
+    assert!(out_prism.contains("class=\"language-ts\""));
+    assert!(!out_prism.contains("line-numbers"));
+    assert!(!out_prism.contains("Copy"));
+
+    let enlighter = r#"<html><body>
+      <pre class="EnlighterJSRAW" data-enlighter-language="python">def greet():
+    return "hi"</pre>
+      <div class="enlighter-default"><span>def greet():</span></div>
+    </body></html>"#;
+    let out_enlighter = run_transform(enlighter, "https://example.com/py", true);
+    assert!(out_enlighter.contains("language-python"));
+    assert!(!out_enlighter.contains("enlighter-default"));
+
+    let blob = r#"<html><body>
+      <textarea id="read-only-cursor-text-area">FROM alpine:3.20</textarea>
+    </body></html>"#;
+    let out_blob = run_transform(
+      blob,
+      "https://github.com/org/repo/blob/main/Dockerfile",
+      true,
+    );
+    assert!(out_blob.contains("<pre data-fc-code-viewer=\"1\"><code class=\"language-dockerfile\">FROM alpine:3.20</code></pre>"));
+    assert!(!out_blob.contains("<textarea"));
+  }
 }
