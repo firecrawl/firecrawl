@@ -801,7 +801,7 @@ fn tidy(md: &str) -> String {
 }
 
 pub fn html_to_markdown(html: &str) -> String {
-  document_to_markdown(&parse_html().one(html))
+  document_to_markdown(&parse_html().one(html).document_node)
 }
 
 /// Markdown for an already-parsed document.

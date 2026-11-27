@@ -1,12 +1,8 @@
 import express from "express";
 import request from "supertest";
-
-vi.mock("../../controllers/auth", () => ({
-  authenticateUser: vi.fn(),
-}));
-
-import { authenticateUser } from "../../controllers/auth";
 import { authMiddleware } from "../../routes/shared";
+import { coreParts, type AuthModule } from "../../service";
+import { testService, withService } from "../../service/testing";
 import { RateLimiterMode } from "../../types";
 
 function appWithAuth() {
@@ -17,41 +13,90 @@ function appWithAuth() {
   return app;
 }
 
-describe("authMiddleware 429s", () => {
-  afterEach(() => {
-    vi.clearAllMocks();
+describe("authMiddleware refusals", () => {
+  it("sends Retry-After and retry_after_seconds when auth refuses with a reset", async () => {
+    const auth: AuthModule = {
+      authenticate: async () => ({
+        ok: false,
+        refusal: {
+          status: 429,
+          headers: { "Retry-After": "42" },
+          body: {
+            success: false,
+            error: "Rate limit exceeded. Please retry after 42s",
+            retry_after_seconds: 42,
+          },
+        },
+      }),
+    };
+
+    await withService(testService({}, coreParts(), { auth }), async () => {
+      const response = await request(appWithAuth()).get("/v2/scrape");
+
+      expect(response.status).toBe(429);
+      expect(response.headers["retry-after"]).toBe("42");
+      expect(response.body).toEqual({
+        success: false,
+        error: "Rate limit exceeded. Please retry after 42s",
+        retry_after_seconds: 42,
+      });
+    });
   });
 
-  it("sends Retry-After and retry_after_seconds when auth reports a reset", async () => {
-    vi.mocked(authenticateUser).mockResolvedValue({
-      success: false,
-      error: "Rate limit exceeded. Please retry after 42s",
-      status: 429,
-      retryAfterSeconds: 42,
-    });
+  it("omits Retry-After when auth refusal carries no reset header", async () => {
+    const auth: AuthModule = {
+      authenticate: async () => ({
+        ok: false,
+        refusal: {
+          status: 401,
+          body: {
+            success: false,
+            error: "Unauthorized: Invalid token",
+          },
+        },
+      }),
+    };
 
-    const response = await request(appWithAuth()).get("/v2/scrape");
+    await withService(testService({}, coreParts(), { auth }), async () => {
+      const response = await request(appWithAuth()).get("/v2/scrape");
 
-    expect(response.status).toBe(429);
-    expect(response.headers["retry-after"]).toBe("42");
-    expect(response.body).toEqual({
-      success: false,
-      error: "Rate limit exceeded. Please retry after 42s",
-      retry_after_seconds: 42,
+      expect(response.status).toBe(401);
+      expect(response.headers["retry-after"]).toBeUndefined();
+      expect(response.body.retry_after_seconds).toBeUndefined();
     });
   });
 
-  it("omits Retry-After when auth reports no reset", async () => {
-    vi.mocked(authenticateUser).mockResolvedValue({
-      success: false,
-      error: "Unauthorized: Invalid token",
-      status: 401,
+  it("passes WWW-Authenticate and refusal fields through verbatim", async () => {
+    const auth: AuthModule = {
+      authenticate: async () => ({
+        ok: false,
+        refusal: {
+          status: 401,
+          headers: {
+            "WWW-Authenticate":
+              'Bearer resource_metadata="https://example.test/.well-known"',
+          },
+          body: {
+            success: false,
+            error: "Unauthorized",
+            signup_url: "https://example.test/signup",
+          },
+        },
+      }),
+    };
+
+    await withService(testService({}, coreParts(), { auth }), async () => {
+      const response = await request(appWithAuth()).get("/v2/scrape");
+
+      expect(response.status).toBe(401);
+      expect(response.headers["www-authenticate"]).toBe(
+        'Bearer resource_metadata="https://example.test/.well-known"',
+      );
+      expect(response.body).toEqual({
+        success: false,
+        error: "Unauthorized",
+        signup_url: "https://example.test/signup",
+      });
     });
-
-    const response = await request(appWithAuth()).get("/v2/scrape");
-
-    expect(response.status).toBe(401);
-    expect(response.headers["retry-after"]).toBeUndefined();
-    expect(response.body.retry_after_seconds).toBeUndefined();
   });
 });

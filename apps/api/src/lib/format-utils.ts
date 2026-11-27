@@ -1,4 +1,4 @@
-import { FormatObject } from "../controllers/v2/types";
+import type { FormatObject } from "../controllers/v2/types";
 
 /**
  * Checks if a format of a specific type exists in the formats array.
@@ -11,16 +11,31 @@ import { FormatObject } from "../controllers/v2/types";
  * @param type - The format type to search for
  * @returns The format object if found, undefined otherwise
  */
-export function hasFormatOfType<T extends FormatObject["type"]>(
-  formats: FormatObject[] | undefined,
+export function hasFormatOfType<
+  F extends { type: string } = FormatObject,
+  T extends F["type"] = F["type"],
+>(
+  formats: readonly F[] | undefined,
   type: T,
-): Extract<FormatObject, { type: T }> | undefined {
+):
+  | (F extends { type: infer FT extends string }
+      ? T extends FT
+        ? F
+        : never
+      : never)
+  | undefined {
   if (!formats) {
     return undefined;
   }
 
   const found = formats.find(f => f.type === type);
-  return found as Extract<FormatObject, { type: T }> | undefined;
+  return found as
+    | (F extends { type: infer FT extends string }
+        ? T extends FT
+          ? F
+          : never
+        : never)
+    | undefined;
 }
 
 /**

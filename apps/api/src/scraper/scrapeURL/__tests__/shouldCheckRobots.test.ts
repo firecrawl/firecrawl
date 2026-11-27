@@ -1,36 +1,38 @@
 import { shouldCheckRobots } from "../shouldCheckRobots";
 
 describe("shouldCheckRobots", () => {
-  it("returns false when lockdown is true, even if the team flag is set", () => {
+  it("returns false when lockdown is true, even if checkRobotsOnScrape is set", () => {
     expect(
-      shouldCheckRobots(
-        { lockdown: true },
-        { teamFlags: { checkRobotsOnScrape: true } as any },
-      ),
+      shouldCheckRobots({ lockdown: true }, { checkRobotsOnScrape: true }),
     ).toBe(false);
-  });
-
-  it("returns false when the team flag is off, regardless of lockdown", () => {
     expect(
       shouldCheckRobots(
         { lockdown: false },
-        { teamFlags: { checkRobotsOnScrape: false } as any },
+        { checkRobotsOnScrape: true, lockdown: true },
       ),
-    ).toBe(false);
-    expect(
-      shouldCheckRobots({ lockdown: true }, { teamFlags: {} as any }),
     ).toBe(false);
   });
 
-  it("returns false when teamFlags is missing", () => {
+  it("returns false when checkRobotsOnScrape is off, regardless of lockdown", () => {
+    expect(
+      shouldCheckRobots({ lockdown: false }, { checkRobotsOnScrape: false }),
+    ).toBe(false);
+    expect(shouldCheckRobots({ lockdown: true }, {})).toBe(false);
+  });
+
+  it("returns false when ctx is missing or empty", () => {
     expect(shouldCheckRobots({ lockdown: false }, {})).toBe(false);
+    expect(shouldCheckRobots({ lockdown: false })).toBe(false);
   });
 
-  it("returns true only when the team flag is on and lockdown is off", () => {
+  it("returns true only when checkRobotsOnScrape is on and lockdown is off", () => {
+    expect(
+      shouldCheckRobots({ lockdown: false }, { checkRobotsOnScrape: true }),
+    ).toBe(true);
     expect(
       shouldCheckRobots(
         { lockdown: false },
-        { teamFlags: { checkRobotsOnScrape: true } as any },
+        { flags: { checkRobotsOnScrape: true } },
       ),
     ).toBe(true);
   });

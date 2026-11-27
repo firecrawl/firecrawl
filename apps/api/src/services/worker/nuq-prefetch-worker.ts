@@ -10,8 +10,10 @@ import {
 } from "./nuq";
 import Express from "express";
 import { logger } from "../../lib/logger";
+import { startRole } from "../../main";
+import { runProcessStop } from "../../service/service";
 
-(async () => {
+export async function start() {
   const app = Express();
 
   app.get("/metrics", (_, res) =>
@@ -42,15 +44,17 @@ import { logger } from "../../lib/logger";
 
   async function shutdown() {
     server.close();
-    await nuqShutdown();
+    try {
+      await nuqShutdown();
+    } finally {
+      await runProcessStop("nuq-prefetch-worker");
+    }
     await shutdownTracing();
     process.exit(0);
   }
 
-  if (require.main === module) {
-    process.on("SIGINT", shutdown);
-    process.on("SIGTERM", shutdown);
-  }
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 
   try {
     await Promise.all([
@@ -77,4 +81,8 @@ import { logger } from "../../lib/logger";
 
   logger.info("All prefetch workers exited. Shutting down...");
   await shutdown();
-})();
+}
+
+if (require.main === module) {
+  void startRole("nuq-prefetch-worker");
+}
