@@ -1,4 +1,9 @@
-import { generateObject, LoadAPIKeyError } from "ai";
+import { createLogger } from "winston";
+import type {
+  LoadAPIKeyError as LoadAPIKeyErrorCtor,
+  NoObjectGeneratedError as NoObjectGeneratedErrorCtor,
+} from "ai";
+import { LoadAPIKeyError } from "ai";
 import {
   chunkByChars,
   checkForPromptInjection,
@@ -7,9 +12,33 @@ import {
 import { CostTracking } from "../../../lib/cost-tracking";
 import { PromptInjectionDetectedError } from "../error";
 
+type MockGenerateObjectResult = {
+  object: { isInjection: boolean; reason: string };
+  usage: { inputTokens: number; outputTokens: number };
+};
+
+type MockGenerateObjectArgs = {
+  telemetry?: {
+    isEnabled?: boolean;
+    recordInputs?: boolean;
+    functionId?: string;
+    metadata?: Record<string, string | undefined>;
+  };
+};
+
+const mocks = vi.hoisted(() => ({
+  generateObject:
+    vi.fn<
+      (args: MockGenerateObjectArgs) => Promise<MockGenerateObjectResult>
+    >(),
+}));
+
 vi.mock("ai", async importOriginal => ({
-  ...(await importOriginal<typeof import("ai")>()),
-  generateObject: vi.fn(),
+  ...(await importOriginal<{
+    LoadAPIKeyError: typeof LoadAPIKeyErrorCtor;
+    NoObjectGeneratedError: typeof NoObjectGeneratedErrorCtor;
+  }>()),
+  generateObject: mocks.generateObject,
 }));
 vi.mock("../../../lib/ai-telemetry", () => ({
   aiTelemetry: (options: unknown) => options,
@@ -17,6 +46,20 @@ vi.mock("../../../lib/ai-telemetry", () => ({
 vi.mock("../../../lib/generic-ai", () => ({
   getModel: vi.fn().mockReturnValue({ modelId: "gpt-4o-mini" }),
 }));
+
+const noopLogger = createLogger({ silent: true });
+
+const verdict = (isInjection: boolean): MockGenerateObjectResult => ({
+  object: { isInjection, reason: "test" },
+  usage: { inputTokens: 100, outputTokens: 10 },
+});
+
+const guardVerdicts = (costTracking: CostTracking): Array<string> =>
+  costTracking.calls
+    .filter(call => call.metadata.method === "checkForPromptInjection")
+    .map(call =>
+      typeof call.metadata.verdict === "string" ? call.metadata.verdict : "",
+    );
 
 describe("chunkByChars", () => {
   it("returns the whole text as a single chunk if within the limit", () => {
@@ -37,7 +80,7 @@ describe("chunkByChars", () => {
   });
 
   it("keeps every chunk within the char limit", () => {
-    const text = "x".repeat(10000);
+    const text = "x".repeat(10_000);
 
     const chunks = chunkByChars(text, 300);
 
@@ -50,7 +93,7 @@ describe("chunkByChars", () => {
     const huge = "A".repeat(10_000_000);
 
     const start = Date.now();
-    chunkByChars(huge, 100000);
+    chunkByChars(huge, 100_000);
     const durationMs = Date.now() - start;
 
     expect(durationMs).toBeLessThan(1000);
@@ -69,7 +112,7 @@ describe("chunkByChars", () => {
   });
 
   it("still respects the char limit per chunk when overlapping", () => {
-    const text = "x".repeat(10000);
+    const text = "x".repeat(10_000);
 
     const chunks = chunkByChars(text, 300, 50);
 
@@ -81,18 +124,6 @@ describe("chunkByChars", () => {
 });
 
 describe("checkForPromptInjection", () => {
-  const noopLogger = {
-    warn: () => {},
-    info: () => {},
-    error: () => {},
-    debug: () => {},
-  } as any;
-
-  const verdict = (isInjection: boolean) => ({
-    object: { isInjection, reason: "test" },
-    usage: { inputTokens: 100, outputTokens: 10 },
-  });
-
   // Three chunks at the guard's 32k chunk size with 2k overlap.
   const threeChunkMarkdown = "x".repeat(80_000);
 
@@ -105,17 +136,12 @@ describe("checkForPromptInjection", () => {
       zeroDataRetention: false,
     });
 
-  const guardVerdicts = (costTracking: CostTracking) =>
-    costTracking.calls
-      .filter(call => call.metadata.method === "checkForPromptInjection")
-      .map(call => call.metadata.verdict);
-
   beforeEach(() => {
-    vi.mocked(generateObject).mockReset();
+    mocks.generateObject.mockReset();
   });
 
   it("resolves true and records a clean verdict per chunk when every chunk scans", async () => {
-    vi.mocked(generateObject).mockResolvedValue(verdict(false) as any);
+    mocks.generateObject.mockResolvedValue(verdict(false));
     const costTracking = new CostTracking();
 
     await expect(run(costTracking)).resolves.toBe(true);
@@ -123,22 +149,20 @@ describe("checkForPromptInjection", () => {
   });
 
   it("fails open and resolves false when one chunk's classifier call errors", async () => {
-    vi.mocked(generateObject)
-      .mockResolvedValueOnce(verdict(false) as any)
+    mocks.generateObject
+      .mockResolvedValueOnce(verdict(false))
       .mockRejectedValueOnce(new Error("timeout"))
-      .mockResolvedValueOnce(verdict(false) as any);
+      .mockResolvedValueOnce(verdict(false));
     const costTracking = new CostTracking();
 
     await expect(run(costTracking)).resolves.toBe(false);
-    expect(guardVerdicts(costTracking).sort()).toEqual([
-      "clean",
-      "clean",
-      "none",
-    ]);
+    expect(
+      guardVerdicts(costTracking).sort((a, b) => a.localeCompare(b)),
+    ).toEqual(["clean", "clean", "none"]);
   });
 
   it("records a no-verdict call when the request was never dispatched", async () => {
-    vi.mocked(generateObject).mockRejectedValue(
+    mocks.generateObject.mockRejectedValue(
       new LoadAPIKeyError({ message: "missing key" }),
     );
     const costTracking = new CostTracking();
@@ -149,7 +173,7 @@ describe("checkForPromptInjection", () => {
   });
 
   it("throws and records an injection verdict on a detection", async () => {
-    vi.mocked(generateObject).mockResolvedValue(verdict(true) as any);
+    mocks.generateObject.mockResolvedValue(verdict(true));
     const costTracking = new CostTracking();
 
     await expect(run(costTracking, "short page")).rejects.toBeInstanceOf(
@@ -161,13 +185,15 @@ describe("checkForPromptInjection", () => {
   it("keeps concurrent scans sharing a limiter within one guard's concurrency limit", async () => {
     let inFlight = 0;
     let maxInFlight = 0;
-    vi.mocked(generateObject).mockImplementation((async () => {
+    mocks.generateObject.mockImplementation(async () => {
       inFlight++;
       maxInFlight = Math.max(maxInFlight, inFlight);
-      await new Promise(resolve => setTimeout(resolve, 5));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 5);
+      });
       inFlight--;
       return verdict(false);
-    }) as any);
+    });
     const costTracking = new CostTracking();
     const limiter = createPromptInjectionGuardLimiter();
 
@@ -186,12 +212,12 @@ describe("checkForPromptInjection", () => {
     );
 
     expect(results).toEqual([true, true, true, true]);
-    expect(generateObject).toHaveBeenCalledTimes(12);
+    expect(mocks.generateObject).toHaveBeenCalledTimes(12);
     expect(maxInFlight).toBe(5);
   });
 
   it("tags every classifier span with the scrape and extract ids", async () => {
-    vi.mocked(generateObject).mockResolvedValue(verdict(false) as any);
+    mocks.generateObject.mockResolvedValue(verdict(false));
 
     await checkForPromptInjection({
       markdown: threeChunkMarkdown,
@@ -205,9 +231,9 @@ describe("checkForPromptInjection", () => {
       zeroDataRetention: false,
     });
 
-    const telemetry = vi
-      .mocked(generateObject)
-      .mock.calls.map(([args]) => args.telemetry as any);
+    const telemetry = mocks.generateObject.mock.calls.map(
+      ([args]) => args.telemetry,
+    );
     expect(telemetry).toHaveLength(3);
     for (const t of telemetry) {
       expect(t?.recordInputs).toBe(false);
@@ -220,12 +246,12 @@ describe("checkForPromptInjection", () => {
   });
 
   it("leaves job ids out of span metadata when the caller has none", async () => {
-    vi.mocked(generateObject).mockResolvedValue(verdict(false) as any);
+    mocks.generateObject.mockResolvedValue(verdict(false));
 
     await run(new CostTracking(), "short page");
 
-    const [[args]] = vi.mocked(generateObject).mock.calls;
-    expect((args.telemetry as any)?.metadata).toEqual({
+    const [[args]] = mocks.generateObject.mock.calls;
+    expect(args.telemetry?.metadata).toEqual({
       teamId: "test-team",
     });
   });
@@ -234,6 +260,6 @@ describe("checkForPromptInjection", () => {
     const costTracking = new CostTracking();
 
     await expect(run(costTracking, "   ")).resolves.toBe(true);
-    expect(generateObject).not.toHaveBeenCalled();
+    expect(mocks.generateObject).not.toHaveBeenCalled();
   });
 });

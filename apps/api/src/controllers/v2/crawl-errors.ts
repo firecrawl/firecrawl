@@ -1,5 +1,6 @@
-import { Response } from "express";
-import {
+import type { Response } from "express";
+import { z } from "zod";
+import type {
   CrawlErrorsResponse,
   CrawlStatusParams,
   RequestWithAuth,
@@ -9,10 +10,41 @@ import { configDotenv } from "dotenv";
 import { storedZeroDataRetention } from "../../lib/request-context";
 import { logger as _logger } from "../../lib/logger";
 import { deserializeTransportableError } from "../../lib/error-serde";
-import { TransportableError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq-router";
 import { service } from "../../service";
+import type { JobOwner } from "../../service";
+import { jsonValueSchema } from "../../lib/json-types";
 configDotenv();
+
+type CrawlErrorEntry = Extract<
+  CrawlErrorsResponse,
+  { errors: unknown }
+>["errors"][number];
+type RequiresAction = NonNullable<CrawlErrorEntry["requiresAction"]>;
+
+const nullishString = z
+  .string()
+  .nullable()
+  .transform(value => value ?? undefined)
+  .optional();
+
+const requiresActionSchema = z
+  .object({
+    type: z.string(),
+    terms: nullishString,
+    version: nullishString,
+    url: nullishString,
+  })
+  .catchall(jsonValueSchema.optional());
+
+const errorWithRequiresActionSchema = z.object({
+  requiresAction: requiresActionSchema,
+});
+
+function readRequiresAction(error: unknown): RequiresAction | undefined {
+  const parsed = errorWithRequiresActionSchema.safeParse(error);
+  return parsed.success ? parsed.data.requiresAction : undefined;
+}
 
 export async function crawlErrorsController(
   req: RequestWithAuth<CrawlStatusParams, undefined, CrawlErrorsResponse>,
@@ -30,10 +62,10 @@ export async function crawlErrorsController(
     )
       ? "batchScrape"
       : "crawl";
-    let owner;
+    let owner: JobOwner | null;
     try {
       owner = await service.modules.jobStore.owner(req.params.jobId, jobKind);
-    } catch (requestError) {
+    } catch (requestError: unknown) {
       _logger.error("Error getting request", { error: requestError });
       throw requestError;
     }
@@ -72,58 +104,38 @@ export async function crawlErrorsController(
       0,
       logger,
     )
-  ).filter(x => x.failedReason);
+  ).filter(
+    (x): x is typeof x & { failedReason: string } =>
+      typeof x.failedReason === "string" && x.failedReason.length > 0,
+  );
 
   return res.status(200).json({
-    errors: failedJobs
-      .map(x => {
-        const error = deserializeTransportableError(
-          x.failedReason!,
-        ) as TransportableError | null;
-        if (error?.code === "SCRAPE_RACED_REDIRECT_ERROR") {
-          return null;
+    errors: failedJobs.flatMap((x): Array<CrawlErrorEntry> => {
+      const error = deserializeTransportableError(x.failedReason);
+      if (error?.code === "SCRAPE_RACED_REDIRECT_ERROR") {
+        return [];
+      }
+      const entry: CrawlErrorEntry = {
+        id: x.id,
+        timestamp:
+          x.finishedAt !== undefined
+            ? new Date(x.finishedAt).toISOString()
+            : undefined,
+        url:
+          x.data && "url" in x.data
+            ? x.data.url
+            : "<redacted due to zero data retention>",
+        error: error ? error.message : x.failedReason,
+      };
+      if (error) {
+        entry.code = error.code;
+        const requiresAction = readRequiresAction(error);
+        if (requiresAction !== undefined) {
+          entry.requiresAction = requiresAction;
         }
-        return {
-          id: x.id,
-          timestamp:
-            x.finishedAt !== undefined
-              ? new Date(x.finishedAt).toISOString()
-              : undefined,
-          url:
-            x.data && "url" in x.data
-              ? x.data.url
-              : "<redacted due to zero data retention>",
-          ...(error
-            ? {
-                code: error.code,
-                error: error.message,
-                ...("requiresAction" in error &&
-                (
-                  error as {
-                    requiresAction?: Extract<
-                      CrawlErrorsResponse,
-                      { errors: unknown }
-                    >["errors"][number]["requiresAction"];
-                  }
-                ).requiresAction !== undefined
-                  ? {
-                      requiresAction: (
-                        error as {
-                          requiresAction?: Extract<
-                            CrawlErrorsResponse,
-                            { errors: unknown }
-                          >["errors"][number]["requiresAction"];
-                        }
-                      ).requiresAction,
-                    }
-                  : {}),
-              }
-            : {
-                error: x.failedReason!,
-              }),
-        };
-      })
-      .filter(x => x !== null),
+      }
+      return [entry];
+    }),
     robotsBlocked: await getCrawlRobotsBlocked(req.params.jobId),
   });
 }

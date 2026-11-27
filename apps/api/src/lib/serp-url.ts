@@ -17,10 +17,12 @@ type SerpPage = { engine: SerpEngine; query: string };
 
 const MAX_QUERY_CHARS = 200;
 
-function queryParam(params: URLSearchParams, ...names: string[]): string {
+function queryParam(params: URLSearchParams, ...names: Array<string>): string {
   for (const name of names) {
     const value = (params.get(name) ?? "").trim();
-    if (value) return value.slice(0, MAX_QUERY_CHARS);
+    if (value) {
+      return value.slice(0, MAX_QUERY_CHARS);
+    }
   }
   return "";
 }
@@ -34,7 +36,11 @@ function engineAndQuery(url: URL): SerpPage | null {
   const path = url.pathname.replace(/\/+$/, "") || "/";
   const params = url.searchParams;
   const bareOrWww = subdomain === "" || subdomain === "www";
-  const page = (engine: SerpEngine, matches: boolean, ...names: string[]) => {
+  const page = (
+    engine: SerpEngine,
+    matches: boolean,
+    ...names: Array<string>
+  ) => {
     const query = matches ? queryParam(params, ...names) : "";
     return query ? { engine, query } : null;
   };
@@ -95,7 +101,9 @@ export function detectSerpPage(url: string): SerpPage | null {
   } catch {
     return null;
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return null;
+  }
   return engineAndQuery(parsed);
 }
 
@@ -109,7 +117,11 @@ export function serpScrapeWarning(engine: SerpEngine): string {
  * SERP_SCRAPE_WARNING_ROLLOUT_PERCENT for a stable share of teams.
  */
 export function serpScrapeWarningEnabled(teamId: string): boolean {
-  if (config.SERP_SCRAPE_WARNING) return true;
-  if (config.SERP_SCRAPE_WARNING_TEAM_IDS?.includes(teamId)) return true;
+  if (config.SERP_SCRAPE_WARNING) {
+    return true;
+  }
+  if (config.SERP_SCRAPE_WARNING_TEAM_IDS?.includes(teamId)) {
+    return true;
+  }
   return sampled(`team:${teamId}`, config.SERP_SCRAPE_WARNING_ROLLOUT_PERCENT);
 }

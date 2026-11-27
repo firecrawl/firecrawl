@@ -16,10 +16,14 @@ const pinned = new Map<string, IORedis>();
  */
 export async function crawlStateStore(id: string): Promise<IORedis> {
   const fallback = redisCrawlStateFallbackConnection;
-  if (!fallback) return redisCrawlStateConnection;
+  if (!fallback) {
+    return redisCrawlStateConnection;
+  }
 
   const cached = pinned.get(id);
-  if (cached) return cached;
+  if (cached) {
+    return cached;
+  }
 
   const store =
     (await redisCrawlStateConnection.exists("crawl:" + id)) === 0 &&
@@ -28,14 +32,17 @@ export async function crawlStateStore(id: string): Promise<IORedis> {
       : redisCrawlStateConnection;
 
   if (pinned.size >= PINNED_MAX) {
-    pinned.delete(pinned.keys().next().value!);
+    const oldest = pinned.keys().next();
+    if (!oldest.done) {
+      pinned.delete(oldest.value);
+    }
   }
   pinned.set(id, store);
   return store;
 }
 
 /** Every configured crawl state store, primary first. */
-export function crawlStateStores(): IORedis[] {
+export function crawlStateStores(): Array<IORedis> {
   return redisCrawlStateFallbackConnection
     ? [redisCrawlStateConnection, redisCrawlStateFallbackConnection]
     : [redisCrawlStateConnection];

@@ -6,7 +6,7 @@ import { logAuthDenied } from "./auth-denied-log";
 import { logger } from "./logger";
 
 export function bearerToken(
-  value: string | string[] | undefined,
+  value: string | Array<string> | undefined,
 ): string | null {
   const header = Array.isArray(value) ? value[0] : value;
   return header?.slice(0, 7).toLowerCase() === "bearer "
@@ -18,7 +18,9 @@ export function secretsMatch(
   provided: string | null,
   expected?: string,
 ): boolean {
-  if (!provided || !expected?.trim()) return false;
+  if (!provided || !expected?.trim()) {
+    return false;
+  }
   const left = Buffer.from(provided);
   const right = Buffer.from(expected);
   return left.length === right.length && crypto.timingSafeEqual(left, right);
@@ -30,8 +32,12 @@ export type AdminKeySlot = "current" | "previous";
 
 // The one admin key check, shared by the header and path forms.
 function matchAdminKey(provided: string | null): AdminKeySlot | null {
-  if (secretsMatch(provided, config.BULL_AUTH_KEY)) return "current";
-  if (secretsMatch(provided, config.BULL_AUTH_KEY_PREVIOUS)) return "previous";
+  if (secretsMatch(provided, config.BULL_AUTH_KEY)) {
+    return "current";
+  }
+  if (secretsMatch(provided, config.BULL_AUTH_KEY_PREVIOUS)) {
+    return "previous";
+  }
   return null;
 }
 
@@ -43,7 +49,9 @@ export function redactAdminKey(path: string): string {
       let decoded = segment;
       try {
         decoded = decodeURIComponent(segment);
-      } catch {}
+      } catch {
+        // Keep the raw segment when percent-decoding fails.
+      }
       return matchAdminKey(segment) || matchAdminKey(decoded)
         ? ":bullAuthKey"
         : segment;
@@ -130,9 +138,15 @@ const ADMIN_PATH_ROUTE_NAMES: ReadonlySet<string> = new Set([
 
 function callerOf(req: Request): string {
   const agent = req.headers["user-agent"] ?? "";
-  if (/prometheus|victoriametrics|vmagent/i.test(agent)) return "prometheus";
-  if (/mozilla/i.test(agent)) return "browser";
-  if (/node|undici|axios/i.test(agent)) return "server";
+  if (/prometheus|victoriametrics|vmagent/i.test(agent)) {
+    return "prometheus";
+  }
+  if (/mozilla/i.test(agent)) {
+    return "browser";
+  }
+  if (/node|undici|axios/i.test(agent)) {
+    return "server";
+  }
   return "other";
 }
 
@@ -146,9 +160,14 @@ function callerOf(req: Request): string {
  */
 export function adminPathKeyAuth(route?: string) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const params = req.params as Record<string, string | undefined>;
-    const matched = matchAdminKey(params.adminKey ?? null);
-    if (!matched) return next("router");
+    const rawAdminKey = req.params.adminKey;
+    const adminKey = Array.isArray(rawAdminKey)
+      ? (rawAdminKey[0] ?? null)
+      : (rawAdminKey ?? null);
+    const matched = matchAdminKey(adminKey);
+    if (!matched) {
+      return next("router");
+    }
 
     const segment = req.path.split("/")[1] ?? "";
     adminPathRouteRequests.inc({

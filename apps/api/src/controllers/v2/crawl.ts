@@ -1,13 +1,15 @@
-import { Response } from "express";
+import type { Response } from "express";
 import { v7 as uuidv7 } from "uuid";
-import {
+import type {
   CrawlRequest,
   CrawlResponse,
-  getV2RequestSchemas,
+  DefaultRequestParams,
+  ErrorResponse,
   RequestWithAuth,
-  toV0CrawlerOptions,
 } from "./types";
-import { crawlToCrawler, saveCrawl, StoredCrawl } from "../../lib/crawl-redis";
+import { getV2RequestSchemas, toV0CrawlerOptions } from "./types";
+import type { StoredCrawl } from "../../lib/crawl-redis";
+import { crawlToCrawler, saveCrawl } from "../../lib/crawl-redis";
 import { _addScrapeJobToBullMQ } from "../../services/queue-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
@@ -23,19 +25,42 @@ import {
   requestContext,
 } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import { finalizeResponse, service, type RequestContext } from "../../service";
+import { finalizeResponse, service } from "../../service";
+import type { RequestContext, ResponsePayload } from "../../service";
 import type { BillingMetadata } from "../../lib/billing-types";
 import { withZeroDataRetention } from "../../lib/otel-tracer";
 import { getErrorHttpResponse } from "../../lib/error";
 import { currentLimits } from "../../lib/limits";
 import { withWebhookSummaryForLog } from "../../services/webhook/log";
+import { jsonRecordSchema } from "../../lib/json-types";
+import type { JsonObject } from "../../lib/json-types";
+import type { InternalOptions } from "../../scraper/scrapeURL";
+import { readBooleanField } from "./agent-interop";
+import {
+  applyPromptCrawlerOptions,
+  shouldApplyPromptOption,
+} from "./crawl-prompt-options";
+
+type FinalCrawlerOptions = Omit<
+  CrawlRequest,
+  "url" | "scrapeOptions" | "prompt"
+> & {
+  url: undefined;
+  scrapeOptions: undefined;
+  prompt: undefined;
+  maxDepth?: number;
+};
+
+function toJsonObject(value: unknown): JsonObject {
+  const parsed = jsonRecordSchema.safeParse(value);
+  return parsed.success ? parsed.data : {};
+}
 
 export async function crawlController(
-  req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
-  res: Response<CrawlResponse>,
+  req: RequestWithAuth<DefaultRequestParams, CrawlResponse, CrawlRequest>,
+  res: Response<CrawlResponse | ResponsePayload>,
 ) {
-  const preNormalizedBody =
-    (req.rawRequestBody as Partial<CrawlRequest> | undefined) ?? req.body;
+  const preNormalizedBody = toJsonObject(req.rawRequestBody ?? req.body);
   if (!req.ctx) {
     req.body = getV2RequestSchemas().crawl.parse(req.body);
   }
@@ -82,7 +107,7 @@ export async function crawlController(
   // Default to no cap when unset.
   const remainingCredits = req.account?.remainingCredits ?? Infinity;
 
-  const crawlerOptions = {
+  const crawlerOptions: FinalCrawlerOptions = {
     ...req.body,
     url: undefined,
     scrapeOptions: undefined,
@@ -90,13 +115,13 @@ export async function crawlController(
   };
   const scrapeOptions = req.body.scrapeOptions;
 
-  let promptGeneratedOptions = {};
+  let promptGeneratedOptions: JsonObject = {};
   if (req.body.prompt) {
     const basePrompt = req.body.prompt;
     try {
       // The prompt and the discovered URLs end up in LLM telemetry, so keep
       // this whole step out of traces for zero data retention crawls.
-      const { extract } = await withZeroDataRetention(
+      const extracted = await withZeroDataRetention(
         zeroDataRetention,
         async () => {
           // Enhance prompt with discovered site URLs (up to 120) to improve option generation
@@ -116,7 +141,7 @@ export async function crawlController(
               zeroDataRetention,
               ctx,
             });
-          return generateCrawlerOptionsFromPrompt(
+          const generated = await generateCrawlerOptionsFromPrompt(
             enhancedPrompt,
             logger,
             new CostTracking(),
@@ -124,28 +149,33 @@ export async function crawlController(
             zeroDataRetention,
             req.acuc?.flags,
           );
+          const rawExtract: unknown = generated.extract;
+          return rawExtract;
         },
       );
-      promptGeneratedOptions = extract || {};
+      promptGeneratedOptions = toJsonObject(extracted);
       logger.debug("Generated crawler options from prompt", {
         prompt: req.body.prompt,
         generatedOptions: promptGeneratedOptions,
       });
       logger.debug(JSON.stringify(promptGeneratedOptions, null, 2));
-    } catch (error) {
+    } catch (error: unknown) {
       logger.error("Failed to generate crawler options from prompt", {
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         prompt: req.body.prompt,
       });
       const httpResponse = getErrorHttpResponse(error);
       if (httpResponse) {
-        return res.status(httpResponse.status).json({
+        const errorBody: ErrorResponse = {
           ...httpResponse.extraFields,
           success: false,
-          ...(httpResponse.code ? { code: httpResponse.code } : {}),
           error: httpResponse.message,
           jobId: id,
-        });
+        };
+        if (httpResponse.code) {
+          errorBody.code = httpResponse.code;
+        }
+        return res.status(httpResponse.status).json(errorBody);
       }
       return res.status(400).json({
         success: false,
@@ -156,31 +186,26 @@ export async function crawlController(
     }
   }
 
-  // Merge behavior:
-  // - Start with parsed crawlerOptions (which contains schema defaults)
-  // - Overlay promptGeneratedOptions ONLY for fields the user did not explicitly provide
-  //   in the original request (preNormalizedBody) or provided as null/undefined.
-  // This prevents empty defaults like [] from overwriting meaningful prompt-generated values.
-  const finalCrawlerOptions: any = { ...crawlerOptions };
-  for (const [key, value] of Object.entries(promptGeneratedOptions)) {
-    const userProvided = Object.prototype.hasOwnProperty.call(
-      preNormalizedBody,
-      key,
-    );
-    if (
-      !userProvided ||
-      preNormalizedBody[key] === undefined ||
-      preNormalizedBody[key] === null
-    ) {
-      finalCrawlerOptions[key] = value;
-    }
-  }
-
   // The request schema already validated user-supplied includePaths /
   // excludePaths. Options generated from a prompt bypass the schema, so hold
   // the merged result to the same caps, budget, and engine syntax.
   if (req.body.prompt) {
-    const pathPatternIssues = collectPathPatternIssues(finalCrawlerOptions);
+    const pathPatternIssues = collectPathPatternIssues({
+      includePaths: shouldApplyPromptOption(
+        promptGeneratedOptions,
+        preNormalizedBody,
+        "includePaths",
+      )
+        ? promptGeneratedOptions.includePaths
+        : crawlerOptions.includePaths,
+      excludePaths: shouldApplyPromptOption(
+        promptGeneratedOptions,
+        preNormalizedBody,
+        "excludePaths",
+      )
+        ? promptGeneratedOptions.excludePaths
+        : crawlerOptions.excludePaths,
+    });
     if (pathPatternIssues.length > 0) {
       return res.status(400).json({
         success: false,
@@ -188,7 +213,36 @@ export async function crawlController(
         jobId: id,
       });
     }
+    if (
+      shouldApplyPromptOption(
+        promptGeneratedOptions,
+        preNormalizedBody,
+        "delay",
+      )
+    ) {
+      const generatedDelay = promptGeneratedOptions.delay;
+      if (typeof generatedDelay === "number" && generatedDelay > 60) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "The delay parameter is measured in seconds and cannot exceed 60 seconds.",
+          jobId: id,
+        });
+      }
+    }
   }
+
+  // Merge behavior:
+  // - Start with parsed crawlerOptions (which contains schema defaults)
+  // - Overlay promptGeneratedOptions ONLY for fields the user did not explicitly provide
+  //   in the original request (preNormalizedBody) or provided as null/undefined.
+  // This prevents empty defaults like [] from overwriting meaningful prompt-generated values.
+  const finalCrawlerOptions: FinalCrawlerOptions = { ...crawlerOptions };
+  applyPromptCrawlerOptions(
+    finalCrawlerOptions,
+    promptGeneratedOptions,
+    preNormalizedBody,
+  );
 
   const originalLimit = finalCrawlerOptions.limit;
   finalCrawlerOptions.limit = Math.min(
@@ -211,7 +265,7 @@ export async function crawlController(
       clientOrigin: req.body.origin ?? "api",
       estimatedJobs: finalCrawlerOptions.limit,
     })
-    .catch(error => {
+    .catch((error: unknown) => {
       logger.error("Failed to register crawl job", {
         error,
         estimatedJobs: finalCrawlerOptions.limit,
@@ -220,22 +274,26 @@ export async function crawlController(
 
   const effectiveConcurrency = await currentLimits().concurrency(ctx);
   const threatProtection = contextThreatProtection(ctx);
+  const v0CrawlerOptions = toV0CrawlerOptions(finalCrawlerOptions);
+  const internalOptions: InternalOptions = {
+    ctx,
+    disableSmartWaitCache: true,
+    teamId: req.auth.team_id,
+    orgId: req.acuc?.org_id ?? null,
+    zeroDataRetention,
+    agentIndexOnly: readBooleanField(req, "agentIndexOnly"),
+    teamFlags: req.acuc?.flags ?? null,
+  };
+  if (threatProtection !== undefined) {
+    // Rolling-deploy compatibility dual-write alongside the ctx fallback.
+    internalOptions.threatProtection = threatProtection;
+  }
   const sc: StoredCrawl = {
     ctx,
     originUrl: req.body.url,
-    crawlerOptions: toV0CrawlerOptions(finalCrawlerOptions),
+    crawlerOptions: v0CrawlerOptions,
     scrapeOptions,
-    internalOptions: {
-      ctx,
-      disableSmartWaitCache: true,
-      teamId: req.auth.team_id,
-      orgId: req.acuc?.org_id ?? null,
-      zeroDataRetention,
-      agentIndexOnly: (req as any).agentIndexOnly ?? false,
-      teamFlags: req.acuc?.flags ?? null,
-      // Rolling-deploy compatibility dual-write alongside the ctx fallback.
-      ...(threatProtection !== undefined ? { threatProtection } : {}),
-    },
+    internalOptions,
     team_id: req.auth.team_id,
     createdAt: Date.now(),
     maxConcurrency:
@@ -254,13 +312,9 @@ export async function crawlController(
 
   try {
     sc.robots = await crawler.getRobotsTxt(scrapeOptions.skipTlsVerification);
-    // const robotsCrawlDelay = crawler.getRobotsCrawlDelay();
-    // if (robotsCrawlDelay !== null && !sc.crawlerOptions.delay) {
-    //   sc.crawlerOptions.delay = robotsCrawlDelay;
-    // }
-  } catch (e) {
+  } catch (error: unknown) {
     logger.debug("Failed to get robots.txt (this is probably fine!)", {
-      error: e,
+      error,
     });
   }
 
@@ -268,7 +322,7 @@ export async function crawlController(
   await crawlGroup.addGroup(id, sc.team_id, crawlTtlHours * 60 * 60 * 1000, {
     backend: sc.queueBackend,
     maxConcurrency: sc.maxConcurrency,
-    delaySeconds: sc.crawlerOptions?.delay,
+    delaySeconds: v0CrawlerOptions.delay,
   });
 
   await saveCrawl(id, sc);
@@ -296,14 +350,15 @@ export async function crawlController(
 
   const protocol = req.protocol;
 
-  const payload = await finalizeResponse(req, "crawl", {
+  const responsePayload: ResponsePayload = {
     success: true,
     id,
     url: `${protocol}://${req.host}/v2/crawl/${id}`,
-    ...(req.body.prompt && {
-      promptGeneratedOptions: promptGeneratedOptions,
-      finalCrawlerOptions: finalCrawlerOptions,
-    }),
-  });
-  return res.status(200).json(payload as CrawlResponse);
+  };
+  if (req.body.prompt) {
+    responsePayload.promptGeneratedOptions = promptGeneratedOptions;
+    responsePayload.finalCrawlerOptions = toJsonObject(finalCrawlerOptions);
+  }
+  const payload = await finalizeResponse(req, "crawl", responsePayload);
+  return res.status(200).json(payload);
 }

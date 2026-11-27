@@ -1,7 +1,12 @@
 import { vi } from "vitest";
+import type { extractData as extractDataFn } from "../lib/jsonExtract";
+import type { encoding_for_model as encodingForModelFn } from "@dqbd/tiktoken";
+import { createLogger } from "winston";
 
 vi.mock("../lib/jsonExtract", async importOriginal => {
-  const actual = await importOriginal<typeof import("../lib/jsonExtract")>();
+  const actual = await importOriginal<{
+    extractData: typeof extractDataFn;
+  }>();
   return {
     ...actual,
     extractData: vi.fn(async () => ({
@@ -10,19 +15,116 @@ vi.mock("../lib/jsonExtract", async importOriginal => {
     })),
   };
 });
-import { performLLMExtract, removeDefaultProperty } from "./llmExtract";
+
+import {
+  performCleanContent,
+  performLLMExtract,
+  performSummary,
+  removeDefaultProperty,
+  trimToTokenLimit,
+} from "./llmExtract";
 import { extractData } from "../lib/jsonExtract";
-import { trimToTokenLimit } from "./llmExtract";
-import { performSummary } from "./llmExtract";
-import { performCleanContent } from "./llmExtract";
 import { encoding_for_model } from "@dqbd/tiktoken";
-import type { Mock } from "vitest";
+import type { Tiktoken } from "@dqbd/tiktoken";
+import type { InternalOptions, Meta } from "..";
+import type { Document } from "../../../controllers/v2/types";
+import {
+  applyScrapeOptionsDefaults,
+  scrapeOptions,
+} from "../../../controllers/v2/types";
+import { CostTracking } from "../../../lib/cost-tracking";
 import { coreLlmProviders } from "../../../lib/generic-ai";
+import { AbortManager } from "../lib/abortManager";
 import { createService, replaceService } from "../../../service/service";
 
 vi.mock("@dqbd/tiktoken", () => ({
   encoding_for_model: vi.fn(),
 }));
+
+function makeBaseMeta(overrides: {
+  url?: string;
+  options?: Partial<Meta["options"]>;
+  internalOptions?: Partial<InternalOptions>;
+  logger?: Meta["logger"];
+}): Meta {
+  return {
+    id: "test-id",
+    url: overrides.url ?? "https://example.com",
+    ctx: { teamId: "test-team", zeroDataRetention: false },
+    state: {},
+    options: {
+      ...applyScrapeOptionsDefaults(scrapeOptions.parse({})),
+      ...overrides.options,
+    },
+    internalOptions: {
+      zeroDataRetention: false,
+      teamId: "test-team",
+      orgId: null,
+      ...overrides.internalOptions,
+    },
+    logger: overrides.logger ?? createLogger({ silent: true }),
+    abort: new AbortManager(),
+    featureFlags: new Set(),
+    mock: null,
+    imageOcrEnabled: async () => false,
+    pdfPrefetch: undefined,
+    documentPrefetch: undefined,
+    imagePrefetch: undefined,
+    fetchPrefetch: undefined,
+    costTracking: new CostTracking(),
+    threatDecisions: [],
+  };
+}
+
+function makeDocument(markdown: string): Document {
+  return {
+    markdown,
+    metadata: { statusCode: 200, proxyUsed: "basic" },
+  };
+}
+
+function makeCleanContentMeta(
+  onlyCleanContent: boolean,
+  logger?: Meta["logger"],
+): Meta {
+  return makeBaseMeta({
+    options: { onlyCleanContent },
+    logger,
+  });
+}
+
+function makeSummaryMeta(): Meta {
+  return makeBaseMeta({
+    options: { formats: [{ type: "summary" }] },
+  });
+}
+
+function makeJsonMeta(
+  internalOptions: Partial<InternalOptions> = {},
+  url = "https://example.com",
+): Meta {
+  return makeBaseMeta({
+    url,
+    options: {
+      formats: [
+        {
+          type: "json",
+          schema: {
+            type: "object",
+            properties: { rows: { type: "array" } },
+          },
+        },
+      ],
+    },
+    internalOptions,
+  });
+}
+
+function extractDataArgs() {
+  const calls = vi.mocked(extractData).mock.calls;
+  expect(calls).toHaveLength(1);
+  return calls[0][0];
+}
 
 beforeAll(() => {
   replaceService(
@@ -85,34 +187,35 @@ describe("trimToTokenLimit", () => {
   // correctness (and the event-loop-freeze regression it guards against) depends on
   // the real encode -> slice -> decode round-trip, which a hand-rolled mock cannot
   // model faithfully.
-  let realEncodingForModel: typeof import("@dqbd/tiktoken").encoding_for_model;
+  let realEncodingForModel: typeof encodingForModelFn;
 
   beforeAll(async () => {
-    ({ encoding_for_model: realEncodingForModel } =
-      await vi.importActual<typeof import("@dqbd/tiktoken")>("@dqbd/tiktoken"));
+    ({ encoding_for_model: realEncodingForModel } = await vi.importActual<{
+      encoding_for_model: typeof encodingForModelFn;
+    }>("@dqbd/tiktoken"));
   });
 
   // Records the length of every string handed to encode(), so we can prove the
   // synchronous tokenizer never has to chew through an unbounded input.
-  let encodeInputLengths: number[];
+  let encodeInputLengths: Array<number>;
   let freeCalls: number;
 
   beforeEach(() => {
     vi.clearAllMocks();
     encodeInputLengths = [];
     freeCalls = 0;
-    (encoding_for_model as Mock).mockImplementation((model: any) => {
+    vi.mocked(encoding_for_model).mockImplementation(model => {
       const encoder = realEncodingForModel(model);
       const realEncode = encoder.encode.bind(encoder);
       const realFree = encoder.free.bind(encoder);
-      encoder.encode = ((input: string) => {
+      encoder.encode = (input: string) => {
         encodeInputLengths.push(input.length);
         return realEncode(input);
-      }) as typeof encoder.encode;
-      encoder.free = (() => {
+      };
+      encoder.free = () => {
         freeCalls++;
         return realFree();
-      }) as typeof encoder.free;
+      };
       return encoder;
     });
   });
@@ -178,7 +281,7 @@ describe("trimToTokenLimit", () => {
 
   it("should use fallback approach when encoder initialization throws", () => {
     const text = "This is some text to test fallback";
-    (encoding_for_model as Mock).mockImplementationOnce(() => {
+    vi.mocked(encoding_for_model).mockImplementationOnce(() => {
       throw new Error("Encoder error");
     });
 
@@ -227,23 +330,7 @@ describe("trimToTokenLimit", () => {
 
 describe("performSummary", () => {
   it("should skip summary generation and add warning when markdown is empty", async () => {
-    const mockMeta = {
-      options: { formats: [{ type: "summary" }] },
-      internalOptions: { zeroDataRetention: false, teamId: "test-team" },
-      logger: {
-        child: vi.fn(() => ({
-          info: vi.fn(),
-        })),
-      },
-      costTracking: {},
-      id: "test-id",
-    } as any;
-
-    const document = {
-      markdown: "",
-    } as any;
-
-    const result = await performSummary(mockMeta, document);
+    const result = await performSummary(makeSummaryMeta(), makeDocument(""));
 
     expect(result.summary).toBeUndefined();
     expect(result.warning).toContain(
@@ -252,23 +339,10 @@ describe("performSummary", () => {
   });
 
   it("should skip summary generation when markdown is whitespace-only", async () => {
-    const mockMeta = {
-      options: { formats: [{ type: "summary" }] },
-      internalOptions: { zeroDataRetention: false, teamId: "test-team" },
-      logger: {
-        child: vi.fn(() => ({
-          info: vi.fn(),
-        })),
-      },
-      costTracking: {},
-      id: "test-id",
-    } as any;
-
-    const document = {
-      markdown: "   \n\t  ",
-    } as any;
-
-    const result = await performSummary(mockMeta, document);
+    const result = await performSummary(
+      makeSummaryMeta(),
+      makeDocument("   \n\t  "),
+    );
 
     expect(result.summary).toBeUndefined();
     expect(result.warning).toContain(
@@ -278,37 +352,35 @@ describe("performSummary", () => {
 });
 
 describe("performCleanContent", () => {
-  const mockEncode = vi.fn();
-  const mockFree = vi.fn();
-  const mockEncoder = {
+  const mockEncode = vi.fn<Tiktoken["encode"]>();
+  const mockFree = vi.fn<Tiktoken["free"]>();
+  const mockEncoder: Tiktoken = {
     encode: mockEncode,
     free: mockFree,
+    encode_ordinary: vi.fn<Tiktoken["encode_ordinary"]>(),
+    encode_with_unstable: vi.fn<Tiktoken["encode_with_unstable"]>(),
+    encode_single_token: vi.fn<Tiktoken["encode_single_token"]>(),
+    decode: vi.fn<Tiktoken["decode"]>(),
+    decode_single_token_bytes: vi.fn<Tiktoken["decode_single_token_bytes"]>(),
+    token_byte_values: vi.fn<Tiktoken["token_byte_values"]>(),
+    name: "mock",
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (encoding_for_model as Mock).mockReturnValue(mockEncoder);
+    vi.mocked(encoding_for_model).mockReturnValue(mockEncoder);
   });
 
-  const makeMeta = (onlyCleanContent: boolean) =>
-    ({
-      options: { onlyCleanContent },
-      internalOptions: { zeroDataRetention: false, teamId: "test-team" },
-      logger: {
-        child: vi.fn(() => ({ info: vi.fn() })),
-        info: vi.fn(),
-      },
-      costTracking: {},
-      id: "test-id",
-    }) as any;
-
   it("should skip cleaning when input tokens exceed model max output tokens", async () => {
-    const longMarkdown = "A".repeat(200000); // simulate a very long document
-    // Simulate 80,000 tokens — well above gpt-4o-mini's 16,384 output limit
-    mockEncode.mockReturnValue(new Array(80000));
+    const longMarkdown = "A".repeat(200_000); // simulate a very long document
+    // Simulate 80,000 tokens - well above gpt-4o-mini's 16,384 output limit
+    mockEncode.mockReturnValue(new Uint32Array(80_000));
 
-    const document = { markdown: longMarkdown } as any;
-    const result = await performCleanContent(makeMeta(true), document);
+    const document = makeDocument(longMarkdown);
+    const result = await performCleanContent(
+      makeCleanContentMeta(true),
+      document,
+    );
 
     // Should preserve original markdown
     expect(result.markdown).toBe(longMarkdown);
@@ -320,33 +392,23 @@ describe("performCleanContent", () => {
   });
 
   it("should not skip cleaning when input tokens are within model output limit", async () => {
-    // Simulate 5,000 tokens — well within gpt-4o-mini's 16,384 output limit
-    mockEncode.mockReturnValue(new Array(5000));
+    // Simulate 5,000 tokens - well within gpt-4o-mini's 16,384 output limit
+    mockEncode.mockReturnValue(new Uint32Array(5000));
 
-    const document = { markdown: "Short content for cleaning" } as any;
+    const document = makeDocument("Short content for cleaning");
 
     // Track whether logger.child was called with the generateCompletions method,
-    // which only happens after the guard passes (line 1180 in llmExtract.ts).
-    const childLogger = { info: vi.fn(), error: vi.fn(), warn: vi.fn() };
-    const loggerChild = vi.fn(() => childLogger);
-    const meta = {
-      options: { onlyCleanContent: true },
-      internalOptions: { zeroDataRetention: false, teamId: "test-team" },
-      logger: {
-        child: loggerChild,
-        info: vi.fn(),
-        error: vi.fn(),
-      },
-      costTracking: {},
-      id: "test-id",
-    } as any;
+    // which only happens after the guard passes.
+    const testLogger = createLogger({ silent: true });
+    const loggerChild = vi.spyOn(testLogger, "child");
+    const meta = makeCleanContentMeta(true, testLogger);
 
     // The call will fail inside generateCompletions (no LLM provider configured),
     // but if it gets that far, it proves the guard didn't fire.
     try {
       await performCleanContent(meta, document);
-    } catch (_e) {
-      // Expected — no LLM available in test
+    } catch {
+      // Expected - no LLM available in test
     }
 
     // Verify the guard did NOT skip: logger.child should have been called with
@@ -362,64 +424,24 @@ describe("performCleanContent", () => {
   });
 
   it("should return document unchanged when onlyCleanContent is false", async () => {
-    const document = { markdown: "Some content" } as any;
-    const result = await performCleanContent(makeMeta(false), document);
+    const document = makeDocument("Some content");
+    const result = await performCleanContent(
+      makeCleanContentMeta(false),
+      document,
+    );
 
     expect(result.markdown).toBe("Some content");
     expect(result.warning).toBeUndefined();
   });
 });
 
-function makeJsonMeta(internalOptions: Record<string, unknown> = {}) {
-  return {
-    options: {
-      formats: [
-        {
-          type: "json",
-          schema: {
-            type: "object",
-            properties: { rows: { type: "array" } },
-          },
-        },
-      ],
-    },
-    internalOptions: {
-      zeroDataRetention: false,
-      teamId: "test-team",
-      ...internalOptions,
-    },
-    logger: {
-      child: vi.fn(() => ({
-        info: vi.fn(),
-        debug: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn(),
-      })),
-      debug: vi.fn(),
-      info: vi.fn(),
-    },
-    costTracking: {},
-    id: "test-id",
-    url: "https://example.com",
-  } as any;
-}
-
 describe("performLLMExtract telemetry attribution", () => {
   beforeEach(() => {
-    (extractData as Mock).mockClear();
+    vi.mocked(extractData).mockClear();
   });
 
-  function extractDataArgs() {
-    const calls = (extractData as Mock).mock.calls;
-    expect(calls).toHaveLength(1);
-    return calls[0][0];
-  }
-
   it("traces plain JSON extraction as performLLMExtract", async () => {
-    await performLLMExtract(makeJsonMeta(), {
-      markdown: "# page",
-      metadata: {},
-    } as any);
+    await performLLMExtract(makeJsonMeta(), makeDocument("# page"));
 
     const args = extractDataArgs();
     expect(args.extractOptions.metadata).toEqual({
@@ -443,7 +465,7 @@ describe("performLLMExtract telemetry attribution", () => {
       makeJsonMeta({
         llmTelemetry: { functionId: "monitor/searchJudge", metadata },
       }),
-      { markdown: "# page", metadata: {} } as any,
+      makeDocument("# page"),
     );
 
     const args = extractDataArgs();
@@ -459,35 +481,8 @@ describe("performLLMExtract telemetry attribution", () => {
 
 describe("performLLMExtract empty-result handling", () => {
   it("keeps the json key (null) and adds a warning when extraction produces nothing", async () => {
-    const mockMeta = {
-      options: {
-        formats: [
-          {
-            type: "json",
-            schema: {
-              type: "object",
-              properties: { rows: { type: "array" } },
-            },
-          },
-        ],
-      },
-      internalOptions: { zeroDataRetention: false, teamId: "test-team" },
-      logger: {
-        child: vi.fn(() => ({
-          info: vi.fn(),
-          debug: vi.fn(),
-          warn: vi.fn(),
-          error: vi.fn(),
-        })),
-        debug: vi.fn(),
-        info: vi.fn(),
-      },
-      costTracking: {},
-      id: "test-id",
-      url: "https://example.com/doc.pdf",
-    } as any;
-
-    const document = { markdown: "# some content", metadata: {} } as any;
+    const mockMeta = makeJsonMeta({}, "https://example.com/doc.pdf");
+    const document = makeDocument("# some content");
 
     const result = await performLLMExtract(mockMeta, document);
 

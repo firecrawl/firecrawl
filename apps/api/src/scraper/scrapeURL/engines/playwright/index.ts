@@ -1,15 +1,20 @@
 import { z } from "zod";
 import { config } from "../../../../config";
-import { EngineScrapeResult } from "..";
-import { Meta } from "../..";
+import type { EngineScrapeResult } from "..";
+import type { Meta } from "../..";
 import { robustFetch } from "../../lib/fetch";
 import { getInnerJson } from "@mendable/firecrawl-rs";
 
 export async function scrapeURLWithPlaywright(
   meta: Meta,
 ): Promise<EngineScrapeResult> {
+  const microserviceUrl = config.PLAYWRIGHT_MICROSERVICE_URL;
+  if (!microserviceUrl) {
+    throw new Error("PLAYWRIGHT_MICROSERVICE_URL is not configured");
+  }
+
   const response = await robustFetch({
-    url: config.PLAYWRIGHT_MICROSERVICE_URL!,
+    url: microserviceUrl,
     headers: {
       "Content-Type": "application/json",
     },
@@ -53,7 +58,9 @@ export async function scrapeURLWithPlaywright(
 }
 
 function landedHttpUrl(url: string | undefined): string | undefined {
-  if (!url) return undefined;
+  if (!url) {
+    return undefined;
+  }
   try {
     const { protocol } = new URL(url);
     return protocol === "http:" || protocol === "https:" ? url : undefined;
@@ -63,5 +70,5 @@ function landedHttpUrl(url: string | undefined): string | undefined {
 }
 
 export function playwrightMaxReasonableTime(meta: Meta): number {
-  return (meta.options.waitFor ?? 0) + 30000;
+  return (meta.options.waitFor ?? 0) + 30_000;
 }

@@ -1,7 +1,12 @@
+import express from "express";
+import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { executeSearch } from "../search/execute";
+
+type ExecuteSearchResult = Awaited<ReturnType<typeof executeSearch>>;
 
 const mocks = vi.hoisted(() => ({
-  executeSearch: vi.fn(),
+  executeSearch: vi.fn<typeof executeSearch>(),
   logRequest: vi.fn().mockResolvedValue(undefined),
   logSearch: vi.fn().mockResolvedValue(undefined),
   logResearchEndpoint: vi.fn().mockResolvedValue(undefined),
@@ -9,7 +14,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../search/execute", () => ({
-  executeSearch: (...args: any[]) => mocks.executeSearch(...args),
+  executeSearch: (...args: Parameters<typeof executeSearch>) =>
+    mocks.executeSearch(...args),
 }));
 
 vi.mock("../lib/logger", () => ({
@@ -23,42 +29,46 @@ vi.mock("../lib/logger", () => ({
 }));
 
 import { searchController } from "../controllers/v2/search";
+import { scrapeOptions } from "../controllers/v2/types";
 import { CostTracking } from "../lib/cost-tracking";
 import { defaultModules, unmeteredBilling } from "./defaults";
 import type { BillingModule } from "./modules";
-import { replaceService, type CoreParts } from "./service";
+import { replaceService } from "./service";
+import type { CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
 const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 
-function makeRes() {
-  const headers: Record<string, string> = {};
-  const res: any = {
-    headers,
-    setHeader: vi.fn((name: string, value: string) => {
-      headers[name] = value;
-      return res;
-    }),
-    status: vi.fn(),
-    json: vi.fn(),
-  };
-  res.status.mockReturnValue(res);
-  res.json.mockReturnValue(res);
-  return res;
+async function postSearch(
+  body: { query: string; limit?: number } = { query: "firecrawl" },
+) {
+  const app = express();
+  app.use(express.json());
+  app.post("/search", async (req, res) => {
+    const authedReq = Object.assign(req, {
+      auth: { team_id: TEAM_ID },
+      acuc: {
+        api_key: "test-key",
+        api_key_id: 7,
+        team_id: TEAM_ID,
+        org_id: "test-org",
+        flags: {},
+        concurrency_limit: 10,
+        rate_limit_multiplier: 1,
+        is_paid_plan: false,
+      },
+    });
+    await searchController(authedReq, res);
+  });
+  return request(app).post("/search").send(body);
 }
 
-function makeSearchReq(body: Record<string, unknown> = { query: "firecrawl" }) {
+function searchResult(
+  overrides: Partial<ExecuteSearchResult> = {},
+): ExecuteSearchResult {
   return {
-    body,
-    headers: {},
-    auth: { team_id: TEAM_ID },
-    acuc: { api_key_id: 7, flags: {} },
-  } as any;
-}
-
-function searchResult(overrides: Record<string, unknown> = {}) {
-  return {
+    toolFusion: false,
     response: {
       web: [
         {
@@ -70,6 +80,8 @@ function searchResult(overrides: Record<string, unknown> = {}) {
     },
     totalResultsCount: 1,
     billableResultsCount: 1,
+    resultCountsBySource: { web: 1, images: 0, news: 0 },
+    resultCategories: {},
     indexResultsCount: 0,
     threatDecisions: [],
     scrapedDocuments: [],
@@ -117,7 +129,7 @@ describe("unmeteredBilling", () => {
         kind: "scrape",
         ctx,
         jobId: "job-1",
-        options: {} as any,
+        options: scrapeOptions.parse({}),
         document: null,
         costTracking: new CostTracking(),
         state: {},
@@ -156,14 +168,12 @@ describe("unmeteredBilling", () => {
   });
 
   it("leaves creditsUsed unset on v2 search responses", async () => {
-    const res = makeRes();
+    const res = await withService(testService(defaultModules(), parts), () =>
+      postSearch(),
+    );
 
-    await withService(testService(defaultModules(), parts), async () => {
-      await searchController(makeSearchReq(), res);
-    });
-
-    expect(res.status).toHaveBeenCalledWith(200);
-    const body = res.json.mock.calls[0][0];
+    expect(res.status).toBe(200);
+    const body = res.body;
     expect(body.success).toBe(true);
     expect("creditsUsed" in body).toBe(false);
     expect(body.creditsUsed).toBeUndefined();
@@ -187,13 +197,10 @@ describe("custom BillingModule in v2 searchController", () => {
     const charge = vi.fn();
     const settle = vi.fn();
     const billing: BillingModule = { authorize, charge, settle };
-    const res = makeRes();
 
-    await withService(
+    const res = await withService(
       testService(defaultModules(), parts, { billing }),
-      async () => {
-        await searchController(makeSearchReq({ query: "docs", limit: 5 }), res);
-      },
+      () => postSearch({ query: "docs", limit: 5 }),
     );
 
     expect(authorize).toHaveBeenCalledWith(
@@ -204,9 +211,9 @@ describe("custom BillingModule in v2 searchController", () => {
         requestedUnits: 5,
       }),
     );
-    expect(res.headers["Retry-After"]).toBe("60");
-    expect(res.status).toHaveBeenCalledWith(429);
-    expect(res.json).toHaveBeenCalledWith({
+    expect(res.headers["retry-after"]).toBe("60");
+    expect(res.status).toBe(429);
+    expect(res.body).toEqual({
       success: false,
       code: "RATE_LIMIT",
       error: "Daily allowance exhausted.",
@@ -232,19 +239,16 @@ describe("custom BillingModule in v2 searchController", () => {
         ],
       }),
     );
-    const res = makeRes();
     const searchFinished = vi.fn();
 
-    await withService(
+    const res = await withService(
       testService(defaultModules(), parts, { billing }, [
         {
           name: "observer",
           hooks: { "search.finished": searchFinished },
         },
       ]),
-      async () => {
-        await searchController(makeSearchReq({ query: "docs" }), res);
-      },
+      () => postSearch({ query: "docs" }),
     );
 
     expect(charge).toHaveBeenCalledWith(
@@ -254,8 +258,8 @@ describe("custom BillingModule in v2 searchController", () => {
       }),
     );
     expect(settle).toHaveBeenCalledWith(handle, { ok: true, charged: 8 });
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json.mock.calls[0][0].creditsUsed).toBe(8);
+    expect(res.status).toBe(200);
+    expect(res.body.creditsUsed).toBe(8);
     expect(searchFinished).toHaveBeenCalledWith(
       expect.objectContaining({
         charged: 2,
@@ -272,18 +276,15 @@ describe("custom BillingModule in v2 searchController", () => {
     const settle = vi.fn().mockResolvedValue(undefined);
     const billing: BillingModule = { authorize, charge, settle };
     mocks.executeSearch.mockRejectedValue(new Error("upstream failure"));
-    const res = makeRes();
 
-    await withService(
+    const res = await withService(
       testService(defaultModules(), parts, { billing }),
-      async () => {
-        await searchController(makeSearchReq({ query: "docs" }), res);
-      },
+      () => postSearch({ query: "docs" }),
     );
 
     expect(charge).not.toHaveBeenCalled();
     expect(settle).toHaveBeenCalledWith(handle, { ok: false });
-    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.status).toBe(500);
   });
 
   it("retries transient settlement failures and keeps the 200 response when settlement succeeds on retry", async () => {
@@ -295,19 +296,16 @@ describe("custom BillingModule in v2 searchController", () => {
       .mockRejectedValueOnce(new Error("redis timeout"))
       .mockResolvedValueOnce(undefined);
     const billing: BillingModule = { authorize, charge, settle };
-    const res = makeRes();
 
-    await withService(
+    const res = await withService(
       testService(defaultModules(), parts, { billing }),
-      async () => {
-        await searchController(makeSearchReq({ query: "docs" }), res);
-      },
+      () => postSearch({ query: "docs" }),
     );
 
     expect(settle).toHaveBeenCalledTimes(2);
     expect(settle).toHaveBeenLastCalledWith(handle, { ok: true, charged: 2 });
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json.mock.calls[0][0].creditsUsed).toBe(2);
+    expect(res.status).toBe(200);
+    expect(res.body.creditsUsed).toBe(2);
   });
 
   it("keeps the 200 response when settlement fails on every retry attempt", async () => {
@@ -316,17 +314,14 @@ describe("custom BillingModule in v2 searchController", () => {
     const charge = vi.fn().mockResolvedValue(2);
     const settle = vi.fn().mockRejectedValue(new Error("redis down"));
     const billing: BillingModule = { authorize, charge, settle };
-    const res = makeRes();
 
-    await withService(
+    const res = await withService(
       testService(defaultModules(), parts, { billing }),
-      async () => {
-        await searchController(makeSearchReq({ query: "docs" }), res);
-      },
+      () => postSearch({ query: "docs" }),
     );
 
     expect(settle).toHaveBeenCalledTimes(2);
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json.mock.calls[0][0].creditsUsed).toBe(2);
+    expect(res.status).toBe(200);
+    expect(res.body.creditsUsed).toBe(2);
   });
 });

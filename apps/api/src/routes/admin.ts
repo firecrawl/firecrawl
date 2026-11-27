@@ -1,4 +1,5 @@
-import express, { RequestHandler } from "express";
+import type { RequestHandler } from "express";
+import express from "express";
 import { config } from "../config";
 import { concurrencyQueueBackfillController } from "../controllers/admin/concurrency-queue-backfill";
 import {

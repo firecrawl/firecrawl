@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import { createLogger } from "winston";
 
 vi.mock("../transformers/llmExtract", () => ({
   generateCompletions: vi.fn(),
@@ -10,19 +11,50 @@ vi.mock("./promptInjectionGuard", () => ({
   createPromptInjectionGuardLimiter: vi.fn(),
 }));
 
-import type { Mock } from "vitest";
+import { z } from "zod";
+import { jsonRecordSchema, jsonValueSchema } from "../../../lib/json-types";
+import type { JsonObject, JsonValue } from "../../../lib/json-types";
 import { extractData } from "./jsonExtract";
 import { generateCompletions } from "../transformers/llmExtract";
 import { checkForPromptInjection } from "./promptInjectionGuard";
 import { JsonExtractionContentTooLargeError } from "../error";
 import { CostTracking } from "../../../lib/cost-tracking";
 
-const noopLogger = {
-  warn: () => {},
-  info: () => {},
-  error: () => {},
-  debug: () => {},
-} as any;
+const noopLogger = createLogger({ silent: true });
+const jsonOrRecordSchema = z.union([jsonValueSchema, jsonRecordSchema]);
+
+function runExtract(schema: JsonObject | undefined) {
+  return extractData({
+    extractOptions: {
+      logger: noopLogger,
+      options: { schema },
+      markdown: "page",
+      costTrackingOptions: {
+        costTracking: new CostTracking(),
+        metadata: {},
+      },
+      metadata: { teamId: "test-team" },
+    },
+    metadata: { teamId: "test-team" },
+  });
+}
+
+function sentSchema(): JsonValue | undefined {
+  const calls = vi.mocked(generateCompletions).mock.calls;
+  const lastCall = calls.at(-1);
+  const parsed = jsonOrRecordSchema.safeParse(lastCall?.[0].options.schema);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function mockExtract(extract: JsonValue | undefined) {
+  vi.mocked(generateCompletions).mockResolvedValueOnce({
+    extract,
+    numTokens: 0,
+    warning: undefined,
+    totalUsage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+    model: "gpt-4o-mini",
+  });
+}
 
 describe("extractData", () => {
   it("rejects markdown over the size cap before any extraction call", async () => {
@@ -39,7 +71,7 @@ describe("extractData", () => {
             metadata: {},
           },
           metadata: { teamId: "test-team" },
-        } as any,
+        },
         metadata: { teamId: "test-team" },
       }),
     ).rejects.toBeInstanceOf(JsonExtractionContentTooLargeError);
@@ -47,12 +79,8 @@ describe("extractData", () => {
 
   describe("prompt injection guard", () => {
     it("leaves the page itself to the scrape-level guard", async () => {
-      (checkForPromptInjection as Mock).mockClear();
-      (generateCompletions as Mock).mockResolvedValueOnce({
-        extract: { ok: true },
-        warning: undefined,
-        totalUsage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
-      });
+      vi.mocked(checkForPromptInjection).mockClear();
+      mockExtract({ ok: true });
 
       await extractData({
         extractOptions: {
@@ -64,7 +92,7 @@ describe("extractData", () => {
             metadata: {},
           },
           metadata: { teamId: "test-team" },
-        } as any,
+        },
         scrapeId: "test-scrape",
         metadata: { teamId: "test-team" },
       });
@@ -74,42 +102,13 @@ describe("extractData", () => {
   });
 
   describe("schema handling", () => {
-    function run(schema: any) {
-      return extractData({
-        extractOptions: {
-          logger: noopLogger,
-          options: { schema },
-          markdown: "page",
-          costTrackingOptions: {
-            costTracking: new CostTracking(),
-            metadata: {},
-          },
-          metadata: { teamId: "test-team" },
-        } as any,
-        metadata: { teamId: "test-team" },
-      });
-    }
-
-    function sentSchema() {
-      const calls = (generateCompletions as Mock).mock.calls;
-      return calls[calls.length - 1][0].options.schema;
-    }
-
-    function mockExtract(extract: any) {
-      (generateCompletions as Mock).mockResolvedValueOnce({
-        extract,
-        warning: undefined,
-        totalUsage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
-      });
-    }
-
     it("sends the user's schema as-is", async () => {
       const schema = {
         judgments: { type: "array", items: { type: "string" } },
       };
       mockExtract({ judgments: ["a"] });
 
-      const result = await run(schema);
+      const result = await runExtract(schema);
 
       expect(sentSchema()).toEqual(schema);
       expect(result.extractedDataArray).toEqual([{ judgments: ["a"] }]);
@@ -118,7 +117,7 @@ describe("extractData", () => {
     it("extracts without a schema when none was given", async () => {
       mockExtract({ anything: 1 });
 
-      const result = await run(undefined);
+      const result = await runExtract(undefined);
 
       expect(sentSchema()).toBeUndefined();
       expect(result.extractedDataArray).toEqual([{ anything: 1 }]);
@@ -127,7 +126,7 @@ describe("extractData", () => {
     it("returns root array results as the array itself", async () => {
       mockExtract({ items: [{ name: "a" }, { name: "b" }] });
 
-      const result = await run({
+      const result = await runExtract({
         type: "Array",
         items: { type: "object", properties: { name: { type: "string" } } },
       });

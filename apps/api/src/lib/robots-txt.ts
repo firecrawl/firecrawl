@@ -1,12 +1,13 @@
-import robotsParser, { Robot } from "robots-parser";
-import { Logger } from "winston";
+import type { Robot } from "robots-parser";
+import robotsParser from "robots-parser";
+import type { Logger } from "winston";
+import type { ScrapeOptions } from "../controllers/v2/types";
 import {
   getV2RequestSchemas,
-  ScrapeOptions,
   scrapeOptionsAcceptsMaxAge,
 } from "../controllers/v2/types";
 import { scrapeURL } from "../scraper/scrapeURL";
-import { Engine } from "../scraper/scrapeURL/engines";
+import type { Engine } from "../scraper/scrapeURL/engines";
 import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
 import { CostTracking } from "./cost-tracking";
@@ -17,6 +18,15 @@ interface RobotsTxtChecker {
   robotsTxtUrl: string;
   robotsTxt: string;
   robots: Robot;
+}
+
+interface RobotsScrapeOptionsInput {
+  formats: Array<string>;
+  timeout: number;
+  maxAge?: number;
+  location?: ScrapeOptions["location"];
+  headers?: Record<string, string>;
+  skipTlsVerification?: boolean;
 }
 
 export async function fetchRobotsTxt(
@@ -44,33 +54,40 @@ export async function fetchRobotsTxt(
   const urlObj = new URL(url);
   const robotsTxtUrl = `${urlObj.protocol}//${urlObj.host}/robots.txt`;
 
-  const forceEngine: Engine[] = ["fetch"];
+  const forceEngine: Array<Engine> = ["fetch"];
   const parentCtx: RequestContext = {
     teamId: "robots-txt",
     zeroDataRetention,
-    ...(usOnly ? { usOnly: true } : {}),
   };
+  if (usOnly) {
+    parentCtx.usOnly = true;
+  }
   const systemCtx =
     installedService()?.modules.policy.system("robots-txt", parentCtx) ??
     parentCtx;
 
-  let content: string = "";
+  const schema = getV2RequestSchemas().scrapeOptions;
+  const rawScrapeOptions: RobotsScrapeOptionsInput = {
+    formats: ["rawHtml"],
+    timeout: 8000,
+  };
+  if (scrapeOptionsAcceptsMaxAge(schema)) {
+    rawScrapeOptions.maxAge = skipCache ? 0 : ROBOTS_MAX_AGE;
+  }
+  if (location) {
+    rawScrapeOptions.location = location;
+  }
+  if (headers) {
+    rawScrapeOptions.headers = headers;
+  }
+  if (skipTlsVerification) {
+    rawScrapeOptions.skipTlsVerification = skipTlsVerification;
+  }
+
   const response = await scrapeURL(
     "robots-txt;" + scrapeId,
     robotsTxtUrl,
-    (() => {
-      const schema = getV2RequestSchemas().scrapeOptions;
-      return schema.parse({
-        formats: ["rawHtml"],
-        timeout: 8000,
-        ...(scrapeOptionsAcceptsMaxAge(schema)
-          ? { maxAge: skipCache ? 0 : ROBOTS_MAX_AGE }
-          : {}),
-        ...(location ? { location } : {}),
-        ...(headers ? { headers } : {}),
-        ...(skipTlsVerification ? { skipTlsVerification } : {}),
-      });
-    })(),
+    schema.parse(rawScrapeOptions),
     {
       ctx: systemCtx,
       forceEngine,
@@ -96,28 +113,26 @@ export async function fetchRobotsTxt(
     response.document.metadata.statusCode >= 200 &&
     response.document.metadata.statusCode < 300
   ) {
-    content = response.document.rawHtml!;
-  } else {
-    if (response.success && response.document.metadata.statusCode === 404) {
-      logger.warn("Robots.txt not found", { robotsTxtUrl }); // should probably index 404 robots.txt
-      return { content: "", url: robotsTxtUrl };
-    }
+    return {
+      content: response.document.rawHtml ?? "",
+      url: response.document.metadata.url || robotsTxtUrl,
+    };
+  }
 
-    logger.error(`Request failed for robots.txt fetch`, {
-      method: "fetchRobotsTxt",
-      robotsTxtUrl,
-      error: response.success
-        ? response.document.metadata.statusCode
-        : response.error,
-    });
+  if (response.success && response.document.metadata.statusCode === 404) {
+    // A missing robots.txt is expected; return empty content without logging.
     return { content: "", url: robotsTxtUrl };
   }
 
-  // return URL in case we've been redirected
-  return {
-    content: content,
-    url: response.document.metadata.url || robotsTxtUrl,
-  };
+  const fetchError: unknown = response.success
+    ? response.document.metadata.statusCode
+    : response.error;
+  logger.error(`Request failed for robots.txt fetch`, {
+    method: "fetchRobotsTxt",
+    robotsTxtUrl,
+    error: fetchError,
+  });
+  return { content: "", url: robotsTxtUrl };
 }
 
 export function createRobotsChecker(
@@ -137,9 +152,11 @@ export function createRobotsChecker(
 export function isUrlAllowedByRobots(
   url: string,
   robots: Robot | null,
-  userAgents: string[] = ["FireCrawlAgent", "FirecrawlAgent"],
+  userAgents: Array<string> = ["FireCrawlAgent", "FirecrawlAgent"],
 ): boolean {
-  if (!robots) return true;
+  if (!robots) {
+    return true;
+  }
 
   for (const userAgent of userAgents) {
     let isAllowed = robots.isAllowed(url, userAgent);
@@ -149,17 +166,13 @@ export function isUrlAllowedByRobots(
       isAllowed = true;
     }
 
-    if (isAllowed == null) {
-      isAllowed = true;
-    }
-
     // Also check with trailing slash if URL doesn't have one
     // This catches cases like "Disallow: /path/" when user requests "/path"
     if (isAllowed && !url.endsWith("/")) {
       const urlWithSlash = url + "/";
       let isAllowedWithSlash = robots.isAllowed(urlWithSlash, userAgent);
 
-      if (isAllowedWithSlash == null) {
+      if (isAllowedWithSlash === null || isAllowedWithSlash === undefined) {
         isAllowedWithSlash = true;
       }
 

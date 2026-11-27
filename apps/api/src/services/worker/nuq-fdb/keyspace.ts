@@ -1,4 +1,7 @@
+import type { TupleItem } from "foundationdb";
+import { z } from "zod";
 import { config } from "../../../config";
+import { safeParseLogged } from "../../../lib/zod-log";
 import { getFdb } from "./client";
 
 export { normalizeOwnerId } from "../../../lib/owner-id";
@@ -10,13 +13,16 @@ export const READY_SHARDS = config.NUQ_FDB_READY_SHARDS;
 export const TEAM_PENDING_SHARDS = config.NUQ_FDB_TEAM_PENDING_SHARDS;
 export const TIME_BUCKETS = config.NUQ_FDB_TIME_BUCKETS;
 
-export type NuqFdbJobStatus =
-  | "pending" // waiting for a concurrency slot (externally: "backlog")
-  | "queued" // holds its slots, in a ready shard
-  | "active"
-  | "completed"
-  | "failed"
-  | "cancelled";
+const nuqFdbJobStatusSchema = z.enum([
+  "pending", // waiting for a concurrency slot (externally: "backlog")
+  "queued", // holds its slots, in a ready shard
+  "active",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export type NuqFdbJobStatus = z.infer<typeof nuqFdbJobStatusSchema>;
 
 // Job flags (bitmask on job meta and queue entries)
 export const F_GATED = 1; // holds a team slot while queued/active
@@ -29,53 +35,96 @@ export const F_KEY_GATED = 64; // holds an API-key slot while team-pending/queue
 
 // Where a pending job's queue entry lives, stored on its status record so
 // sweepers and removers can clear the exact key without scanning.
-export type PendingLoc =
-  | { k: "tq"; s: number; p: number; c: number } // team-pending: shard, priority, createdAtMs
-  | { k: "kq"; p: number; c: number } // key-pending: priority, createdAtMs
-  | { k: "gq"; p: number; c: number } // crawl-pending: priority, createdAtMs
-  | { k: "dl"; at: number }; // delay index: notBeforeMs
+const pendingLocSchema = z.discriminatedUnion("k", [
+  z.object({ k: z.literal("tq"), s: z.number(), p: z.number(), c: z.number() }), // team-pending: shard, priority, createdAtMs
+  z.object({ k: z.literal("kq"), p: z.number(), c: z.number() }), // key-pending: priority, createdAtMs
+  z.object({ k: z.literal("gq"), p: z.number(), c: z.number() }), // crawl-pending: priority, createdAtMs
+  z.object({ k: z.literal("dl"), at: z.number() }), // delay index: notBeforeMs
+]);
 
-export type JobMeta = {
-  c: number; // createdAt ms
-  p: number; // priority
-  o: string; // ownerId (normalized uuid)
-  g?: string; // groupId
-  k?: string; // API key id (set only when key-gated)
-  f: number; // flags
-  to?: number; // backlog timesOutAt ms
-  dc: number; // data chunk count
-};
+export type PendingLoc = z.infer<typeof pendingLocSchema>;
 
-export type JobStatusRecord = {
-  s: NuqFdbJobStatus;
-  l?: string; // lock uuid while active
-  e?: number; // lease expiry ms while active
-  st: number; // stall count
-  fa?: number; // finishedAt ms
-  loc?: PendingLoc;
-};
+function nullishToUndefined<T extends z.ZodType>(schema: T) {
+  return schema
+    .nullable()
+    .transform(value => value ?? undefined)
+    .optional();
+}
+
+export const jobMetaSchema = z.object({
+  c: z.number(), // createdAt ms
+  p: z.number(), // priority
+  o: z.string(), // ownerId (normalized uuid)
+  g: nullishToUndefined(z.string()), // groupId
+  k: nullishToUndefined(z.string()), // API key id (set only when key-gated)
+  f: z.number(), // flags
+  to: nullishToUndefined(z.number()), // backlog timesOutAt ms
+  dc: z.number(), // data chunk count
+});
+
+export type JobMeta = z.infer<typeof jobMetaSchema>;
+
+export const jobStatusRecordSchema = z.object({
+  s: nuqFdbJobStatusSchema,
+  l: nullishToUndefined(z.string()), // lock uuid while active
+  e: nullishToUndefined(z.number()), // lease expiry ms while active
+  st: z.number(), // stall count
+  fa: nullishToUndefined(z.number()), // finishedAt ms
+  loc: nullishToUndefined(pendingLocSchema),
+});
+
+export type JobStatusRecord = z.infer<typeof jobStatusRecordSchema>;
 
 // Entry stored in ready shards, pending queues and the delay index.
-export type QueueEntry = {
-  i: string; // jobId
-  o: string; // ownerId
-  g?: string; // groupId
-  k?: string; // API key id (set only when key-gated)
-  p: number; // priority
-  f: number; // flags
-  c: number; // createdAt ms
-  to?: number; // backlog timesOutAt ms
-};
+export const queueEntrySchema = z.object({
+  i: z.string(), // jobId
+  o: z.string(), // ownerId
+  g: nullishToUndefined(z.string()), // groupId
+  k: nullishToUndefined(z.string()), // API key id (set only when key-gated)
+  p: z.number(), // priority
+  f: z.number(), // flags
+  c: z.number(), // createdAt ms
+  to: nullishToUndefined(z.number()), // backlog timesOutAt ms
+});
 
-export type GroupMeta = {
-  o: string; // ownerId
-  c: number; // createdAt ms
-  t: number; // ttl ms
-  s: "active" | "completed" | "cancelled";
-  m?: number; // maxConcurrency
-  d?: number; // delay seconds between job starts
-  x?: number; // expiresAt ms
-};
+export type QueueEntry = z.infer<typeof queueEntrySchema>;
+
+export function normalizeFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+const wireFiniteNumberSchema = z.preprocess(value => {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === "string" && value.trim().length === 0) {
+    return undefined;
+  }
+  return normalizeFiniteNumber(value) ?? value;
+}, z.number().finite().optional());
+
+export const groupMetaSchema = z.object({
+  o: z.string(), // ownerId
+  c: z.number(), // createdAt ms
+  t: z.number(), // ttl ms
+  s: z.enum(["active", "completed", "cancelled"]),
+  m: wireFiniteNumberSchema, // maxConcurrency
+  d: wireFiniteNumberSchema, // delay seconds between job starts
+  x: nullishToUndefined(z.number()), // expiresAt ms
+});
+
+export type GroupMeta = z.infer<typeof groupMetaSchema>;
 
 export function encodeI64(n: number): Buffer {
   const buf = Buffer.alloc(8);
@@ -84,24 +133,42 @@ export function encodeI64(n: number): Buffer {
 }
 
 export function decodeI64(buf: Buffer | undefined | null): number {
-  if (!buf || buf.length < 8) return 0;
+  if (!buf || buf.length < 8) {
+    return 0;
+  }
   return Number(buf.readBigInt64LE());
 }
 
-export function encodeJson(v: any): Buffer {
+export function encodeJson(v: unknown): Buffer {
   return Buffer.from(JSON.stringify(v), "utf8");
 }
 
-export function decodeJson<T = any>(buf: Buffer | undefined | null): T | null {
-  if (!buf) return null;
-  return JSON.parse(buf.toString("utf8")) as T;
+export function decodeJson<T>(
+  buf: Buffer | undefined | null,
+  schema: z.ZodType<T>,
+  schemaTag: string | null,
+): T | null {
+  if (!buf) {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(buf.toString("utf8"));
+  } catch {
+    return null;
+  }
+  const result =
+    schemaTag !== null
+      ? safeParseLogged(schema, parsed, schemaTag)
+      : schema.safeParse(parsed);
+  return result.success ? result.data : null;
 }
 
 export function fnv1a(str: string): number {
-  let hash = 0x811c9dc5;
+  let hash = 0x81_1c_9d_c5;
   for (let i = 0; i < str.length; i++) {
     hash ^= str.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
+    hash = Math.imul(hash, 0x01_00_01_93);
   }
   return hash >>> 0;
 }
@@ -129,16 +196,16 @@ export function teamPendingShard(jobId: string): number {
 export class NuqFdbKeyspace {
   constructor(public readonly queueName: string) {}
 
-  pack(parts: any[]): Buffer {
-    return getFdb().tuple.pack(["nuq", this.queueName, ...parts]) as Buffer;
+  pack(parts: Array<TupleItem>): Buffer {
+    return getFdb().tuple.pack(["nuq", this.queueName, ...parts]);
   }
 
-  private packRange(parts: any[]): { begin: Buffer; end: Buffer } {
+  private packRange(parts: Array<TupleItem>) {
     const begin = this.pack(parts);
     return { begin, end: prefixEnd(begin) };
   }
 
-  unpack(key: Buffer): unknown[] {
+  unpack(key: Buffer): Array<unknown> {
     return getFdb().tuple.unpack(key);
   }
 

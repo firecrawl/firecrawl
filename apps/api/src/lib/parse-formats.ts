@@ -12,8 +12,8 @@ export const HTML_CONTENT_TYPES = ["text/html", "application/xhtml+xml"];
 export type ParseFormat = {
   format: string;
   kind: "document" | "image";
-  extensions: string[];
-  mimeTypes: string[];
+  extensions: Array<string>;
+  mimeTypes: Array<string>;
   available: boolean;
 };
 
@@ -22,7 +22,7 @@ function groupByExtension(
   available: boolean,
   contentTypeToExtension: ReadonlyMap<string, string>,
   aliases: ReadonlyMap<string, string> = new Map(),
-): ParseFormat[] {
+): Array<ParseFormat> {
   const formats = new Map<string, ParseFormat>();
   for (const [mimeType, extension] of contentTypeToExtension) {
     const format = formats.get(extension) ?? {
@@ -46,7 +46,7 @@ function groupByExtension(
  * detectUploadedFileKind validates against. Image formats are only
  * `available` where image OCR is enabled.
  */
-export function listParseFormats(imageOcrEnabled: boolean): ParseFormat[] {
+export function listParseFormats(imageOcrEnabled: boolean): Array<ParseFormat> {
   return [
     {
       format: "html",

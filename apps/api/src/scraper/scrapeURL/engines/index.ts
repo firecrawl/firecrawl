@@ -1,6 +1,7 @@
-import { ScrapeActionContent } from "../../../lib/entities";
+import type { ScrapeActionContent } from "../../../lib/entities";
 import { config } from "../../../config";
-import type { BrowserCookie, Meta } from "..";
+import type { JsonObject } from "../../../lib/json-types";
+import type { Meta } from "..";
 import { documentMaxReasonableTime, scrapeDocument } from "./document";
 import { pdfMaxReasonableTime, scrapePDF } from "./pdf";
 import { fetchMaxReasonableTime, scrapeURLWithFetch } from "./fetch";
@@ -23,11 +24,8 @@ import type {
   EngineFeatureName,
   EngineName,
 } from "../../../service/engines";
-import {
-  coreEngineFeatures,
-  coreEngineSpecs,
-  type CoreEngineName,
-} from "./metadata";
+import { coreEngineFeatures, coreEngineSpecs } from "./metadata";
+import type { CoreEngineName } from "./metadata";
 import { scrapeHooks, toScrapeMeta } from "../hooks";
 
 export { coreEngineFeatures };
@@ -47,13 +45,13 @@ export interface EngineScrapeResult {
 
   screenshot?: string;
   actions?: {
-    screenshots: string[];
-    scrapes: ScrapeActionContent[];
-    javascriptReturns: {
+    screenshots: Array<string>;
+    scrapes: Array<ScrapeActionContent>;
+    javascriptReturns: Array<{
       type: string;
       value: unknown;
-    }[];
-    pdfs: string[];
+    }>;
+    pdfs: Array<string>;
   };
 
   pdfMetadata?: PdfMetadata;
@@ -64,12 +62,12 @@ export interface EngineScrapeResult {
 
   contentType?: string;
 
-  postprocessorsUsed?: string[];
+  postprocessorsUsed?: Array<string>;
   warning?: string;
 
   proxyUsed: "basic" | "stealth";
   timezone?: string;
-  exchange?: Record<string, unknown>;
+  exchange?: JsonObject;
 }
 
 const coreEngineRuntime: Record<
@@ -113,24 +111,41 @@ const coreEngineRuntime: Record<
   },
 };
 
+type MutableRegisteredEngine = {
+  -readonly [K in keyof RegisteredEngine]: RegisteredEngine[K];
+};
+
 /** Built-in scrape engine registrations, in default fallback tie-break order. */
-export const coreEngines: readonly RegisteredEngine[] = coreEngineSpecs.map(
+export const coreEngines: ReadonlyArray<RegisteredEngine> = coreEngineSpecs.map(
   spec => {
     const runtime = coreEngineRuntime[spec.name];
-    return {
+    const engine: MutableRegisteredEngine = {
       name: spec.name,
       quality: spec.quality,
       features: spec.features,
-      ...(spec.explicitOnly ? { explicitOnly: true } : {}),
-      ...(spec.cache ? { cache: true } : {}),
-      ...(spec.fileOnly ? { fileOnly: true } : {}),
-      ...(spec.supportsProfile ? { supportsProfile: true } : {}),
-      ...(spec.prefetchesFiles ? { prefetchesFiles: true } : {}),
-      ...(spec.allowEmptyContent ? { allowEmptyContent: true } : {}),
       enabled: runtime.enabled,
       scrape: runtime.scrape,
       maxReasonableTime: runtime.maxReasonableTime,
     };
+    if (spec.explicitOnly) {
+      engine.explicitOnly = true;
+    }
+    if (spec.cache) {
+      engine.cache = true;
+    }
+    if (spec.fileOnly) {
+      engine.fileOnly = true;
+    }
+    if (spec.supportsProfile) {
+      engine.supportsProfile = true;
+    }
+    if (spec.prefetchesFiles) {
+      engine.prefetchesFiles = true;
+    }
+    if (spec.allowEmptyContent) {
+      engine.allowEmptyContent = true;
+    }
+    return engine;
   },
 );
 
@@ -228,13 +243,13 @@ export type FallbackEngineEntry = {
 
 export function resolveCandidateEngines(
   meta: Meta,
-  candidates: readonly Engine[],
+  candidates: ReadonlyArray<Engine>,
   existing: ReadonlyMap<Engine, FallbackEngineEntry>,
   options?: { suppressUnsupportedWarnings?: boolean },
-): FallbackEngineEntry[] {
+): Array<FallbackEngineEntry> {
   const suppressUnsupportedWarnings =
     options?.suppressUnsupportedWarnings === true;
-  const resolved: FallbackEngineEntry[] = [];
+  const resolved: Array<FallbackEngineEntry> = [];
   for (const engine of new Set(candidates)) {
     if (!isEngineAllowedByPolicy(meta, engine)) {
       continue;
@@ -271,7 +286,7 @@ export function resolveCandidateEngines(
 
 export async function buildFallbackList(
   meta: Meta,
-): Promise<FallbackEngineEntry[]> {
+): Promise<Array<FallbackEngineEntry>> {
   let selected = await selectFallbackList(meta);
   const hooks = scrapeHooks();
   if (hooks?.has("scrape.engines.select")) {
@@ -293,7 +308,9 @@ export async function buildFallbackList(
   return selected;
 }
 
-async function selectFallbackList(meta: Meta): Promise<FallbackEngineEntry[]> {
+async function selectFallbackList(
+  meta: Meta,
+): Promise<Array<FallbackEngineEntry>> {
   const extOptions = meta.options as Meta["options"] & {
     minAge?: number;
     lockdown?: boolean;
@@ -311,10 +328,10 @@ async function selectFallbackList(meta: Meta): Promise<FallbackEngineEntry[]> {
   }
 
   const enabled = service.engines.enabled();
-  const _engines: Engine[] = enabled
+  const _engines: Array<Engine> = enabled
     .filter(engine => !engine.explicitOnly)
     .map(engine => engine.name);
-  const cacheEngines: Engine[] = enabled
+  const cacheEngines: Array<Engine> = enabled
     .filter(engine => engine.cache === true)
     .map(engine => engine.name);
 
@@ -367,14 +384,16 @@ async function selectFallbackList(meta: Meta): Promise<FallbackEngineEntry[]> {
     .filter(isScoredFlag)
     .reduce((a, x) => a + getFeaturePriority(x), 0);
   const priorityThreshold = Math.floor(prioritySum / 2);
-  let selectedEngines: {
+  let selectedEngines: Array<{
     engine: Engine;
     supportScore: number;
     unsupportedFeatures: Set<FeatureFlag>;
-  }[] = [];
+  }> = [];
 
   for (const engine of currentEngines) {
-    if (!isEngineAllowedByPolicy(meta, engine)) continue;
+    if (!isEngineAllowedByPolicy(meta, engine)) {
+      continue;
+    }
 
     const registered = service.engines.get(engine);
     if (!registered) {
@@ -382,7 +401,7 @@ async function selectFallbackList(meta: Meta): Promise<FallbackEngineEntry[]> {
       continue;
     }
 
-    const supportedFlags: FeatureFlag[] = [];
+    const supportedFlags: Array<FeatureFlag> = [];
     const unsupportedFeatures = new Set<FeatureFlag>();
     for (const flag of meta.featureFlags) {
       if (hasFeature(registered.features, flag)) {
@@ -437,9 +456,8 @@ export async function scrapeURLWithEngine(
   engine: Engine,
 ): Promise<EngineScrapeResult> {
   const registered = requireEngine(engine);
-  const fn = registered.scrape;
   const logger = meta.logger.child({
-    method: fn.name || "scrapeURLWithEngine",
+    method: registered.scrape.name || "scrapeURLWithEngine",
     engine,
   });
 
@@ -454,15 +472,15 @@ export async function scrapeURLWithEngine(
     featureFlags,
   };
 
-  return await fn(_meta);
+  return await registered.scrape(_meta);
 }
 
 export function getEngineMaxReasonableTime(meta: Meta, engine: Engine): number {
-  const mrt = service.engines.get(engine)?.maxReasonableTime;
+  const registered = service.engines.get(engine);
   // shan't happen - mogery
-  if (mrt === undefined) {
+  if (registered?.maxReasonableTime === undefined) {
     meta.logger.warn("No MRT for engine", { engine });
-    return 30000;
+    return 30_000;
   }
-  return mrt(meta);
+  return registered.maxReasonableTime(meta);
 }

@@ -1,13 +1,45 @@
 import { createHmac } from "node:crypto";
+import type undici from "undici";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  getSecureDispatcherNoCookies,
+  isIPPrivate,
+} from "../../scraper/scrapeURL/engines/utils/safeFetch";
+
+type SafeFetchModule = {
+  getSecureDispatcherNoCookies: typeof getSecureDispatcherNoCookies;
+  isIPPrivate: typeof isIPPrivate;
+};
+
+type MockFetchInit = {
+  method: string;
+  headers: Record<string, string>;
+  body: string;
+  dispatcher: unknown;
+  signal: AbortSignal;
+};
+
+interface MockLogger {
+  info: ReturnType<typeof vi.fn>;
+  warn: ReturnType<typeof vi.fn>;
+  error: ReturnType<typeof vi.fn>;
+  debug: ReturnType<typeof vi.fn>;
+  child: () => MockLogger;
+}
 
 const mocks = vi.hoisted(() => ({
-  fetch: vi.fn(),
+  fetch:
+    vi.fn<
+      (
+        url: string,
+        init: MockFetchInit,
+      ) => Promise<{ ok: boolean; status: number }>
+    >(),
   dispatcher: {},
 }));
 
 vi.mock("undici", async importOriginal => {
-  const actual = await importOriginal<typeof import("undici")>();
+  const actual = await importOriginal<typeof undici>();
   return {
     ...actual,
     default: { ...actual, fetch: mocks.fetch },
@@ -18,10 +50,7 @@ vi.mock("undici", async importOriginal => {
 vi.mock(
   "../../scraper/scrapeURL/engines/utils/safeFetch",
   async importOriginal => {
-    const actual =
-      await importOriginal<
-        typeof import("../../scraper/scrapeURL/engines/utils/safeFetch")
-      >();
+    const actual = await importOriginal<SafeFetchModule>();
     return {
       ...actual,
       getSecureDispatcherNoCookies: () => mocks.dispatcher,
@@ -30,7 +59,7 @@ vi.mock(
 );
 
 vi.mock("../../lib/logger", () => {
-  const mk = (): Record<string, unknown> => ({
+  const mk = (): MockLogger => ({
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
@@ -41,13 +70,12 @@ vi.mock("../../lib/logger", () => {
 });
 
 import { config } from "../../config";
-import {
-  defaultModules,
-  directWebhooks,
-  type CoreParts,
-  type WebhookContext,
-  type WebhookDelivery,
-  type WebhooksModule,
+import { defaultModules, directWebhooks } from "../../service";
+import type {
+  CoreParts,
+  WebhookContext,
+  WebhookDelivery,
+  WebhooksModule,
 } from "../../service";
 import { testService, withService } from "../../service/testing";
 import { createWebhookSender } from "./index";
@@ -137,7 +165,7 @@ describe("webhook delivery", () => {
           statusCode: 200,
         });
         expect(mocks.fetch).toHaveBeenCalledTimes(1);
-        const [url, init] = mocks.fetch.mock.calls[0] as [string, any];
+        const [url, init] = mocks.fetch.mock.calls[0];
         expect(url).toBe("https://hooks.example.com/events");
         expect(init.method).toBe("POST");
         expect(init.dispatcher).toBe(mocks.dispatcher);
@@ -154,7 +182,7 @@ describe("webhook delivery", () => {
     });
 
     it("routes signingSecret and deliver through a custom webhooks module with ZDR context", async () => {
-      const secretCalls: WebhookContext[] = [];
+      const secretCalls: Array<WebhookContext> = [];
       const deliverCalls: Array<{
         ctx: WebhookContext;
         delivery: WebhookDelivery;
@@ -248,7 +276,7 @@ describe("webhook delivery", () => {
           statusCode: 204,
         });
 
-        const [url, init] = mocks.fetch.mock.calls[0] as [string, any];
+        const [url, init] = mocks.fetch.mock.calls[0];
         expect(url).toBe("https://hooks.example.com/job-77");
         const parsed = JSON.parse(init.body);
         expect(parsed.jobId).toBe("job-77");

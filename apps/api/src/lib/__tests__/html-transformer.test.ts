@@ -1,8 +1,8 @@
+import type { TransformHtmlOptions } from "@mendable/firecrawl-rs";
 import {
   extractLinks,
   extractMetadata,
   transformHtml,
-  TransformHtmlOptions,
 } from "@mendable/firecrawl-rs";
 
 describe("HTML Transformer", () => {

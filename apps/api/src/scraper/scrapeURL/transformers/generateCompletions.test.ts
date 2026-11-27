@@ -1,55 +1,109 @@
 import { vi } from "vitest";
+import type { generateObject as generateObjectFn } from "ai";
+import { MockLanguageModelV3 } from "ai/test";
+import { createLogger } from "winston";
+
+type GenerateObjectArgs = Parameters<typeof generateObjectFn>[0];
+type MockGenerateObjectResult = {
+  object: JsonObject;
+  usage: { inputTokens: number; outputTokens: number };
+};
+
+const mocks = vi.hoisted(() => ({
+  generateObject: vi.fn<
+    (args: GenerateObjectArgs) => Promise<MockGenerateObjectResult>
+  >(async () => ({
+    object: { ok: true },
+    usage: { inputTokens: 1, outputTokens: 1 },
+  })),
+}));
 
 vi.mock("../../../lib/ai-telemetry", () => ({
   aiTelemetry: (options: unknown) => options,
 }));
 vi.mock("ai", async importOriginal => {
-  const actual = await importOriginal<typeof import("ai")>();
+  const actual = await importOriginal<{
+    generateObject: typeof generateObjectFn;
+  }>();
   return {
     ...actual,
-    generateObject: vi.fn(async () => ({
-      object: { ok: true },
-      usage: { inputTokens: 1, outputTokens: 1 },
-    })),
+    generateObject: mocks.generateObject,
   };
 });
 
-import { generateObject } from "ai";
 import { encoding_for_model } from "@dqbd/tiktoken";
-import type { Mock } from "vitest";
+import { z } from "zod";
 import {
   generateCompletions,
   generateCrawlerOptionsFromPrompt,
 } from "./llmExtract";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { coreLlmProviders } from "../../../lib/generic-ai";
+import { jsonRecordSchema } from "../../../lib/json-types";
+import type { JsonObject } from "../../../lib/json-types";
 import { modelPrices } from "../../../lib/model-prices";
 import { createService, replaceService } from "../../../service/service";
 
-const noopLogger = {
-  warn: () => {},
-  info: () => {},
-  error: () => {},
-  debug: () => {},
-  child: () => noopLogger,
-} as any;
+const noopLogger = createLogger({ silent: true });
 
-function run(markdown: string, modelId: string, schema?: any) {
+const wrappedJsonSchema = z.object({
+  schema: z.object({
+    jsonSchema: jsonRecordSchema,
+  }),
+});
+
+const telemetrySchema = z.object({
+  functionId: z.string().optional(),
+  metadata: jsonRecordSchema.optional(),
+});
+
+const schemaWithPropertiesSchema = z.object({
+  properties: jsonRecordSchema,
+});
+
+function run(markdown: string, modelId: string, schema?: unknown) {
   return generateCompletions({
     logger: noopLogger,
     options: { schema },
     markdown,
-    model: { modelId } as any,
-    retryModel: { modelId } as any,
+    model: new MockLanguageModelV3({ modelId }),
+    retryModel: new MockLanguageModelV3({ modelId }),
     costTrackingOptions: { costTracking: new CostTracking(), metadata: {} },
     metadata: { teamId: "test-team" },
   });
 }
 
-function lastCall() {
-  const calls = (generateObject as Mock).mock.calls;
+function lastCall(): GenerateObjectArgs {
+  const calls = mocks.generateObject.mock.calls;
   expect(calls).toHaveLength(1);
   return calls[0][0];
+}
+
+function lastCallPrompt(): string {
+  const prompt = lastCall().prompt;
+  if (typeof prompt !== "string") {
+    throw new Error("Expected string prompt");
+  }
+  return prompt;
+}
+
+function lastCallJsonSchema(): JsonObject {
+  const parsed = wrappedJsonSchema.safeParse(lastCall());
+  if (!parsed.success) {
+    throw new Error("Expected schema.jsonSchema object");
+  }
+  return parsed.data.schema.jsonSchema;
+}
+
+function lastCallTelemetry() {
+  const parsed = telemetrySchema.safeParse(lastCall().telemetry);
+  if (!parsed.success) {
+    throw new Error("Expected telemetry object");
+  }
+  return {
+    functionId: parsed.data.functionId,
+    metadata: parsed.data.metadata,
+  };
 }
 
 function countTokens(text: string): number {
@@ -78,7 +132,7 @@ afterAll(() => {
 });
 
 beforeEach(() => {
-  (generateObject as Mock).mockClear();
+  mocks.generateObject.mockClear();
 });
 
 describe("generateCompletions content trimming", () => {
@@ -100,7 +154,7 @@ describe("generateCompletions content trimming", () => {
     const budget = Math.floor(
       modelPrices["gpt-4o-mini"].max_input_tokens * 0.8,
     );
-    const promptTokens = countTokens(lastCall().prompt);
+    const promptTokens = countTokens(lastCallPrompt());
     expect(promptTokens).toBeGreaterThan(budget);
     expect(promptTokens).toBeLessThanOrEqual(budget + 100);
   });
@@ -110,14 +164,14 @@ describe("generateCompletions content trimming", () => {
     const result = await run(markdown, "gpt-4o-mini");
 
     expect(result.warning).toBeUndefined();
-    expect(lastCall().prompt).toContain(markdown);
+    expect(lastCallPrompt()).toContain(markdown);
   });
 
   it("does not trim for models without known limits", async () => {
     const result = await run(hugeMarkdown, "some-unlisted-model");
 
     expect(result.warning).toBeUndefined();
-    expect(lastCall().prompt).toContain(hugeMarkdown);
+    expect(lastCallPrompt()).toContain(hugeMarkdown);
   });
 });
 
@@ -134,7 +188,7 @@ describe("generateCompletions schema normalization", () => {
       },
     });
 
-    expect(lastCall().schema.jsonSchema).toEqual({
+    expect(lastCallJsonSchema()).toEqual({
       type: "object",
       properties: {
         judgments: {
@@ -158,7 +212,7 @@ describe("generateCompletions schema normalization", () => {
       items: { type: "string" },
     });
 
-    expect(lastCall().schema.jsonSchema).toEqual({
+    expect(lastCallJsonSchema()).toEqual({
       type: "object",
       properties: {
         items: { type: ["array", "null"], items: { type: "string" } },
@@ -179,7 +233,11 @@ describe("generateCompletions schema normalization", () => {
       },
     });
 
-    expect(lastCall().schema.jsonSchema.properties.address).toEqual({
+    const parsedSchema =
+      schemaWithPropertiesSchema.safeParse(lastCallJsonSchema());
+    expect(
+      parsedSchema.success ? parsedSchema.data.properties.address : undefined,
+    ).toEqual({
       type: ["object", "null"],
       properties: { city: { type: "string" } },
       required: ["city"],
@@ -197,7 +255,7 @@ describe("generateCompletions telemetry metadata", () => {
       { teamId: "test-team", crawlId: "test-crawl" },
     );
 
-    const telemetry = lastCall().telemetry;
+    const telemetry = lastCallTelemetry();
     expect(telemetry.functionId).toBe("generateCrawlerOptionsFromPrompt");
     expect(telemetry.metadata).toMatchObject({
       teamId: "test-team",
@@ -213,7 +271,7 @@ describe("generateCompletions telemetry metadata", () => {
       { teamId: "test-team" },
     );
 
-    expect(lastCall().telemetry.metadata).toEqual({
+    expect(lastCallTelemetry().metadata).toEqual({
       teamId: "test-team",
     });
   });
@@ -227,7 +285,7 @@ describe("generateCompletions telemetry metadata", () => {
       metadata: { teamId: "test-team", scrapeId: "test-scrape" },
     });
 
-    expect(lastCall().telemetry.metadata).toMatchObject({
+    expect(lastCallTelemetry().metadata).toMatchObject({
       teamId: "test-team",
       scrapeId: "test-scrape",
     });
@@ -252,7 +310,7 @@ describe("generateCompletions telemetry metadata", () => {
       },
     });
 
-    const telemetry = lastCall().telemetry;
+    const telemetry = lastCallTelemetry();
     expect(telemetry.functionId).toBe("monitor/searchJudge");
     expect(telemetry.metadata).toMatchObject({
       teamId: "test-team",
