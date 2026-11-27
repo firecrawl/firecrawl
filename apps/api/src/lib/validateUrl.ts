@@ -1,6 +1,7 @@
 import { fetch as undiciFetch } from "undici";
 import { getSecureDispatcher } from "../scraper/scrapeURL/engines/utils/safeFetch";
 import { loadMock } from "../scraper/scrapeURL/lib/mock";
+import { parseHostname } from "./url-utils";
 
 export const protocolIncluded = (url: string) => {
   // if :// not in the start of the url assume http (maybe https?)
@@ -77,14 +78,14 @@ export function isSameDomain(url: string, baseUrl: string) {
     return false;
   }
 
-  const domain1 = cleanHostname(parsed1.urlObj.hostname)
-    .split(".")
-    .slice(-2)
-    .join(".");
-  const domain2 = cleanHostname(parsed2.urlObj.hostname)
-    .split(".")
-    .slice(-2)
-    .join(".");
+  const stripWww = (hostname: string) =>
+    hostname.startsWith("www.") ? hostname.slice(4) : hostname;
+  const domain1 =
+    parseHostname(parsed1.urlObj.hostname).domain ??
+    stripWww(parsed1.urlObj.hostname);
+  const domain2 =
+    parseHostname(parsed2.urlObj.hostname).domain ??
+    stripWww(parsed2.urlObj.hostname);
 
   return domain1 === domain2;
 }
