@@ -4,6 +4,9 @@
  * This file imports only module types so constructing default modules or
  * describing a service never loads configuration, queues, or storage clients.
  */
+import type { z as Zod } from "zod";
+import type { Document } from "../controllers/v2/types";
+import type { safeParseLogged as SafeParseLogged } from "../lib/zod-log";
 import type { JobKind } from "./hooks";
 import type {
   AuthModule,
@@ -25,6 +28,7 @@ import type {
   UploadsModule,
   WebhooksModule,
 } from "./modules";
+import type { Redis } from "ioredis";
 import type { BaseCaller, BaseRequestContext } from "./request-context";
 
 /**
@@ -189,6 +193,48 @@ export function memoryUploads(): UploadsModule {
   return { driver: () => driver };
 }
 
+function buildQueueJobStoreSchemas(
+  z: typeof Zod,
+  safeParseLogged: typeof SafeParseLogged,
+) {
+  const storedDocumentShapeSchema = z.looseObject({});
+  return {
+    safeParseLogged,
+    singleUrlJobDataSchema: z.object({
+      mode: z.literal("single_urls"),
+      team_id: z
+        .string()
+        .nullish()
+        .transform(value => value ?? undefined),
+    }),
+    singleUrlModeSchema: z.object({
+      mode: z.literal("single_urls"),
+    }),
+    storedDocumentSchema: z.custom<Document>(
+      value =>
+        safeParseLogged(
+          storedDocumentShapeSchema,
+          value,
+          "queue-job-store.document",
+        ).success,
+    ),
+  };
+}
+
+let queueJobStoreSchemasPromise: Promise<
+  ReturnType<typeof buildQueueJobStoreSchemas>
+> | null = null;
+
+function getQueueJobStoreSchemas() {
+  queueJobStoreSchemasPromise ??= Promise.all([
+    import("zod"),
+    import("../lib/zod-log.js"),
+  ]).then(([{ z }, { safeParseLogged }]) =>
+    buildQueueJobStoreSchemas(z, safeParseLogged),
+  );
+  return queueJobStoreSchemasPromise;
+}
+
 /**
  * Default open-source job store backed by the job queue and Redis crawl state.
  * Registration, terminal recording, and removal are no-ops because finished
@@ -204,27 +250,39 @@ export function queueJobStore(): JobStoreModule {
 
     async owner(id: string, kind: JobKind): Promise<JobOwner | null> {
       if (kind === "scrape") {
-        const [{ scrapeQueue }, { normalizeOwnerId }] = await Promise.all([
+        const [
+          { scrapeQueue },
+          { normalizeOwnerId },
+          { safeParseLogged, singleUrlModeSchema, singleUrlJobDataSchema },
+        ] = await Promise.all([
           import("../services/worker/nuq-router.js"),
           import("../lib/owner-id.js"),
+          getQueueJobStoreSchemas(),
         ]);
         const job = await scrapeQueue.getJob(id);
-        if (!job) return null;
-        if (
-          job.data != null &&
-          (typeof job.data !== "object" ||
-            (job.data as { mode?: unknown }).mode !== "single_urls")
-        ) {
+        if (!job) {
           return null;
         }
-        const rawTeamId =
-          job.data &&
-          typeof job.data === "object" &&
-          typeof (job.data as { team_id?: unknown }).team_id === "string"
-            ? (job.data as { team_id: string }).team_id
-            : undefined;
+        const jobData: unknown = job.data;
+        let rawTeamId: string | undefined;
+        if (jobData !== null && jobData !== undefined) {
+          if (!singleUrlModeSchema.safeParse(jobData).success) {
+            return null;
+          }
+          const parsedData = safeParseLogged(
+            singleUrlJobDataSchema,
+            jobData,
+            "queue-job-store.singleUrlJobData",
+          );
+          if (!parsedData.success) {
+            return null;
+          }
+          rawTeamId = parsedData.data.team_id;
+        }
         const teamId = rawTeamId ?? job.ownerId;
-        if (!teamId) return null;
+        if (!teamId) {
+          return null;
+        }
         return {
           teamId,
           matchesTeam(candidate: string): boolean {
@@ -238,39 +296,59 @@ export function queueJobStore(): JobStoreModule {
 
       const { getCrawl } = await import("../lib/crawl-redis.js");
       const crawl = await getCrawl(id);
-      if (!crawl?.team_id) return null;
+      if (!crawl?.team_id) {
+        return null;
+      }
       return { teamId: crawl.team_id };
     },
 
     async read(id: string, kind: JobKind): Promise<StoredJob | null> {
-      if (kind !== "scrape") return null;
-      const { scrapeQueue } = await import("../services/worker/nuq-router.js");
+      if (kind !== "scrape") {
+        return null;
+      }
+      const [{ scrapeQueue }, { singleUrlModeSchema, storedDocumentSchema }] =
+        await Promise.all([
+          import("../services/worker/nuq-router.js"),
+          getQueueJobStoreSchemas(),
+        ]);
       const job = await scrapeQueue.getJob(id);
-      if (!job) return null;
+      if (!job) {
+        return null;
+      }
+      const jobData: unknown = job.data;
       if (
-        job.data != null &&
-        (typeof job.data !== "object" ||
-          (job.data as { mode?: unknown }).mode !== "single_urls")
+        jobData !== null &&
+        jobData !== undefined &&
+        !singleUrlModeSchema.safeParse(jobData).success
       ) {
         return null;
       }
       const completedAtMs =
         job.finishedAt !== undefined ? job.finishedAt.valueOf() : undefined;
       if (job.status === "completed") {
-        const raw = job.returnvalue;
-        const document = Array.isArray(raw) ? raw[0] : raw;
-        return {
-          state: "completed",
-          ...(document ? { document } : {}),
-          ...(completedAtMs !== undefined ? { completedAtMs } : {}),
-        };
+        const raw: unknown = job.returnvalue;
+        const doc: unknown = Array.isArray(raw) ? raw[0] : raw;
+        const stored: StoredJob = { state: "completed" };
+        if (doc !== null && doc !== undefined) {
+          const parsedDoc = storedDocumentSchema.safeParse(doc);
+          if (parsedDoc.success) {
+            stored.document = parsedDoc.data;
+          }
+        }
+        if (completedAtMs !== undefined) {
+          stored.completedAtMs = completedAtMs;
+        }
+        return stored;
       }
       if (job.status === "failed") {
-        return {
-          state: "failed",
-          ...(job.failedReason ? { error: job.failedReason } : {}),
-          ...(completedAtMs !== undefined ? { completedAtMs } : {}),
-        };
+        const stored: StoredJob = { state: "failed" };
+        if (job.failedReason) {
+          stored.error = job.failedReason;
+        }
+        if (completedAtMs !== undefined) {
+          stored.completedAtMs = completedAtMs;
+        }
+        return stored;
       }
       return null;
     },
@@ -289,11 +367,11 @@ export function queueJobStore(): JobStoreModule {
 }
 
 const DEFAULT_IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60;
-const DEFAULT_IDEMPOTENCY_TIMEOUT_MS = 5_000;
+const DEFAULT_IDEMPOTENCY_TIMEOUT_MS = 5000;
 
-let idempotencyRedisPromise: Promise<import("ioredis").Redis> | undefined;
+let idempotencyRedisPromise: Promise<Redis> | undefined;
 
-function getIdempotencyRedis(): Promise<import("ioredis").Redis> {
+function getIdempotencyRedis(): Promise<Redis> {
   if (!idempotencyRedisPromise) {
     idempotencyRedisPromise = (async () => {
       const [{ Redis }, { config }, { logger }] = await Promise.all([
@@ -313,7 +391,7 @@ function getIdempotencyRedis(): Promise<import("ioredis").Redis> {
         logger.warn("Idempotency Redis error", { error });
       });
       return client;
-    })().catch(error => {
+    })().catch((error: unknown) => {
       idempotencyRedisPromise = undefined;
       throw error;
     });
@@ -385,11 +463,13 @@ export function directWebhooks(
     throw new Error("Invalid webhooks secret");
   }
   const hasExplicitSecret = Object.hasOwn(options, "secret");
+  const explicitSecret =
+    typeof options.secret === "string" ? options.secret : undefined;
   const resolveSecret: () => Promise<string | undefined> | string | undefined =
     typeof options.secret === "function"
       ? options.secret
       : hasExplicitSecret
-        ? () => options.secret as string | undefined
+        ? () => explicitSecret
         : async () =>
             (await import("../config.js")).config
               .SELF_HOSTED_WEBHOOK_HMAC_SECRET;
@@ -414,48 +494,54 @@ export function directWebhooks(
 export function unrestrictedPolicy(): PolicyModule<BaseRequestContext> {
   return {
     async admit({ kind, caller, body }) {
-      const record = body as {
-        zeroDataRetention?: unknown;
-        ignoreRobotsTxt?: unknown;
-        robotsUserAgent?: unknown;
-        lockdown?: unknown;
-        enterprise?: unknown;
-      };
-      const enterprise = Array.isArray(record.enterprise)
-        ? record.enterprise
-        : [];
+      const enterprise =
+        "enterprise" in body && Array.isArray(body.enterprise)
+          ? body.enterprise
+          : [];
+      const bodyZdr =
+        "zeroDataRetention" in body && body.zeroDataRetention === true;
+      const bodyLockdown = "lockdown" in body && body.lockdown === true;
       const zeroDataRetention =
-        record.zeroDataRetention === true ||
-        record.lockdown === true ||
+        bodyZdr ||
+        bodyLockdown ||
         (kind === "search" &&
           (enterprise.includes("zdr") || enterprise.includes("anon")));
       const ignoreRobotsTxt =
-        typeof record.ignoreRobotsTxt === "boolean"
-          ? record.ignoreRobotsTxt
+        "ignoreRobotsTxt" in body && typeof body.ignoreRobotsTxt === "boolean"
+          ? body.ignoreRobotsTxt
           : undefined;
       const robotsUserAgent =
-        typeof record.robotsUserAgent === "string"
-          ? record.robotsUserAgent
+        "robotsUserAgent" in body && typeof body.robotsUserAgent === "string"
+          ? body.robotsUserAgent
           : undefined;
-      const lockdown = record.lockdown === true;
+      const ctx: BaseRequestContext = {
+        teamId: caller.teamId,
+        zeroDataRetention,
+      };
+      if (ignoreRobotsTxt !== undefined) {
+        ctx.ignoreRobotsTxt = ignoreRobotsTxt;
+      }
+      if (robotsUserAgent !== undefined) {
+        ctx.robotsUserAgent = robotsUserAgent;
+      }
+      if (bodyLockdown) {
+        ctx.lockdown = true;
+      }
       return {
         ok: true,
-        ctx: {
-          teamId: caller.teamId,
-          zeroDataRetention,
-          ...(ignoreRobotsTxt !== undefined ? { ignoreRobotsTxt } : {}),
-          ...(robotsUserAgent !== undefined ? { robotsUserAgent } : {}),
-          ...(lockdown ? { lockdown: true } : {}),
-        },
+        ctx,
         body,
       };
     },
     system(purpose, parent) {
-      return {
+      const ctx: BaseRequestContext = {
         teamId: purpose,
         zeroDataRetention: parent?.zeroDataRetention ?? false,
-        ...(parent?.usOnly ? { usOnly: true } : {}),
       };
+      if (parent?.usOnly) {
+        ctx.usOnly = true;
+      }
+      return ctx;
     },
     async context({ caller }) {
       return {

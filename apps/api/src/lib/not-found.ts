@@ -10,7 +10,7 @@ const NOT_FOUND_DOCUMENTATION_URL =
 type LayerMatch = { path: string } | false;
 type Matcher = (path: string) => LayerMatch;
 type Layer = {
-  matchers?: Matcher[];
+  matchers?: Array<Matcher>;
   // Set by Express for a router mounted with no path (`app.use(router)`).
   // Express short-circuits on this flag and never consults `matchers`, whose
   // patterns only match "/" for such a layer.
@@ -18,16 +18,16 @@ type Layer = {
   route?: { methods?: Record<string, boolean> };
   handle?: unknown;
 };
-type StackHolder = { stack?: Layer[] };
+type StackHolder = { stack?: Array<Layer> };
 
-function hasStack(value: unknown): value is { stack: Layer[] } {
+function hasStack(value: unknown): value is { stack: Array<Layer> } {
   if (typeof value !== "function" && typeof value !== "object") {
     return false;
   }
   return value !== null && Array.isArray((value as StackHolder).stack);
 }
 
-function walk(stack: Layer[], path: string, found: Set<string>): void {
+function walk(stack: Array<Layer>, path: string, found: Set<string>): void {
   for (const layer of stack) {
     const matchers = layer.matchers;
     if (!Array.isArray(matchers)) {
@@ -37,7 +37,7 @@ function walk(stack: Layer[], path: string, found: Set<string>): void {
     // A root-mounted layer matches every path and consumes no prefix, so the
     // full path is passed down. Reading the flag keeps the walk pure;
     // `layer.match()` would assign `params`/`path` on the shared layer.
-    const matches: Exclude<LayerMatch, false>[] =
+    const matches: Array<Exclude<LayerMatch, false>> =
       layer.slash === true
         ? [{ path: "" }]
         : matchers
@@ -78,9 +78,13 @@ function walk(stack: Layer[], path: string, found: Set<string>): void {
 function allowedMethodsForPath(app: unknown, path: string): Set<string> {
   const found = new Set<string>();
   try {
-    const router = (app as { router?: StackHolder }).router;
-    if (router && Array.isArray(router.stack)) {
-      walk(router.stack, path, found);
+    if (
+      (typeof app === "function" || typeof app === "object") &&
+      app !== null &&
+      "router" in app &&
+      hasStack(app.router)
+    ) {
+      walk(app.router.stack, path, found);
     }
   } catch {
     // Router internals are not part of Express's public API. If they ever move,

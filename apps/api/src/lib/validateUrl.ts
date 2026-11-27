@@ -1,4 +1,4 @@
-import * as undici from "undici";
+import { fetch as undiciFetch } from "undici";
 import { getSecureDispatcher } from "../scraper/scrapeURL/engines/utils/safeFetch";
 import { loadMock } from "../scraper/scrapeURL/lib/mock";
 
@@ -8,16 +8,19 @@ export const protocolIncluded = (url: string) => {
   return /^([^.:]+:\/\/)/i.test(url);
 };
 
-const getURLobj = (s: string) => {
+const cleanHostname = (hostname: string) => {
+  return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
+};
+
+const getURLobj = (
+  s: string,
+): { error: false; urlObj: URL } | { error: true; urlObj: null } => {
   // URL fails if we dont include the protocol ie google.com
-  let error = false;
-  let urlObj = {};
   try {
-    urlObj = new URL(s);
-  } catch (err) {
-    error = true;
+    return { error: false, urlObj: new URL(s) };
+  } catch {
+    return { error: true, urlObj: null };
   }
-  return { error, urlObj };
 };
 
 export const checkAndUpdateURL = (url: string) => {
@@ -25,27 +28,27 @@ export const checkAndUpdateURL = (url: string) => {
     url = `http://${url}`;
   }
 
-  const { error, urlObj } = getURLobj(url);
-  if (error) {
+  const parsed = getURLobj(url);
+  if (parsed.error) {
     throw new Error("Invalid URL");
   }
 
-  const typedUrlObj = urlObj as URL;
+  const typedUrlObj = parsed.urlObj;
 
   if (typedUrlObj.protocol !== "http:" && typedUrlObj.protocol !== "https:") {
     throw new Error("Invalid URL");
   }
 
-  return { urlObj: typedUrlObj, url: url };
+  return { urlObj: typedUrlObj, url };
 };
 
 export const checkUrl = (url: string) => {
-  const { error, urlObj } = getURLobj(url);
-  if (error) {
+  const parsed = getURLobj(url);
+  if (parsed.error) {
     throw new Error("Invalid URL");
   }
 
-  const typedUrlObj = urlObj as URL;
+  const typedUrlObj = parsed.urlObj;
 
   if (typedUrlObj.protocol !== "http:" && typedUrlObj.protocol !== "https:") {
     throw new Error("Invalid URL");
@@ -67,25 +70,18 @@ export const checkUrl = (url: string) => {
  * @returns
  */
 export function isSameDomain(url: string, baseUrl: string) {
-  const { urlObj: urlObj1, error: error1 } = getURLobj(url);
-  const { urlObj: urlObj2, error: error2 } = getURLobj(baseUrl);
+  const parsed1 = getURLobj(url);
+  const parsed2 = getURLobj(baseUrl);
 
-  if (error1 || error2) {
+  if (parsed1.error || parsed2.error) {
     return false;
   }
 
-  const typedUrlObj1 = urlObj1 as URL;
-  const typedUrlObj2 = urlObj2 as URL;
-
-  const cleanHostname = (hostname: string) => {
-    return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
-  };
-
-  const domain1 = cleanHostname(typedUrlObj1.hostname)
+  const domain1 = cleanHostname(parsed1.urlObj.hostname)
     .split(".")
     .slice(-2)
     .join(".");
-  const domain2 = cleanHostname(typedUrlObj2.hostname)
+  const domain2 = cleanHostname(parsed2.urlObj.hostname)
     .split(".")
     .slice(-2)
     .join(".");
@@ -94,34 +90,27 @@ export function isSameDomain(url: string, baseUrl: string) {
 }
 
 export function isSameSubdomain(url: string, baseUrl: string) {
-  const { urlObj: urlObj1, error: error1 } = getURLobj(url);
-  const { urlObj: urlObj2, error: error2 } = getURLobj(baseUrl);
+  const parsed1 = getURLobj(url);
+  const parsed2 = getURLobj(baseUrl);
 
-  if (error1 || error2) {
+  if (parsed1.error || parsed2.error) {
     return false;
   }
 
-  const typedUrlObj1 = urlObj1 as URL;
-  const typedUrlObj2 = urlObj2 as URL;
-
-  const cleanHostname = (hostname: string) => {
-    return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
-  };
-
-  const domain1 = cleanHostname(typedUrlObj1.hostname)
+  const domain1 = cleanHostname(parsed1.urlObj.hostname)
     .split(".")
     .slice(-2)
     .join(".");
-  const domain2 = cleanHostname(typedUrlObj2.hostname)
+  const domain2 = cleanHostname(parsed2.urlObj.hostname)
     .split(".")
     .slice(-2)
     .join(".");
 
-  const subdomain1 = cleanHostname(typedUrlObj1.hostname)
+  const subdomain1 = cleanHostname(parsed1.urlObj.hostname)
     .split(".")
     .slice(0, -2)
     .join(".");
-  const subdomain2 = cleanHostname(typedUrlObj2.hostname)
+  const subdomain2 = cleanHostname(parsed2.urlObj.hostname)
     .split(".")
     .slice(0, -2)
     .join(".");
@@ -142,12 +131,12 @@ export const checkAndUpdateURLForMap = (
     url = url.slice(0, -1);
   }
 
-  const { error, urlObj } = getURLobj(url);
-  if (error) {
+  const parsed = getURLobj(url);
+  if (parsed.error) {
     throw new Error("Invalid URL");
   }
 
-  const typedUrlObj = urlObj as URL;
+  const typedUrlObj = parsed.urlObj;
 
   if (typedUrlObj.protocol !== "http:" && typedUrlObj.protocol !== "https:") {
     throw new Error("Invalid URL");
@@ -159,10 +148,10 @@ export const checkAndUpdateURLForMap = (
     typedUrlObj.search = "";
   }
 
-  return { urlObj: typedUrlObj, url: url };
+  return { urlObj: typedUrlObj, url };
 };
 
-export function removeDuplicateUrls(urls: string[]): string[] {
+export function removeDuplicateUrls(urls: Array<string>): Array<string> {
   const urlMap = new Map<string, string>();
 
   for (const url of urls) {
@@ -172,11 +161,12 @@ export function removeDuplicateUrls(urls: string[]): string[] {
     const path = parsedUrl.pathname + parsedUrl.search + parsedUrl.hash;
 
     const key = `${hostname}${path}`;
+    const existing = urlMap.get(key);
 
-    if (!urlMap.has(key)) {
+    if (existing === undefined) {
       urlMap.set(key, url);
     } else {
-      const existingUrl = new URL(urlMap.get(key)!);
+      const existingUrl = new URL(existing);
       const existingProtocol = existingUrl.protocol;
 
       if (protocol === "https:" && existingProtocol === "http:") {
@@ -206,7 +196,7 @@ export async function resolveRedirects(
       x => x.options.url === targetUrl && x.options.method === "HEAD",
     );
     if (mocked) {
-      return mocked.result.url;
+      return mocked.result.url ?? targetUrl;
     }
   }
 
@@ -219,7 +209,7 @@ export async function resolveRedirects(
       : AbortSignal.timeout(2000);
 
     try {
-      const response = await undici.fetch(targetUrl, {
+      const response = await undiciFetch(targetUrl, {
         method,
         redirect: "follow",
         dispatcher,

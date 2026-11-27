@@ -80,7 +80,9 @@ describe("image-formats", () => {
     expect(sniffImageContentType(Buffer.from([0x4d, 0x4d, 0x00, 0x2a]))).toBe(
       "image/tiff",
     );
-    expect(sniffImageContentType(Buffer.from("BM\x36\x00"))).toBe("image/bmp");
+    expect(sniffImageContentType(Buffer.from("BM\u0036\u0000"))).toBe(
+      "image/bmp",
+    );
   });
 
   it("sniffs JPEG 2000 containers and raw codestreams", () => {
@@ -88,7 +90,7 @@ describe("image-formats", () => {
     // write it.
     const jp2 = Buffer.concat([
       Buffer.from(JP2_SIGNATURE),
-      Buffer.from("\x00\x00\x00\x14ftyp", "latin1"),
+      Buffer.from("\u0000\u0000\u0000\u0014ftyp", "latin1"),
     ]);
     expect(sniffImageContentType(jp2)).toBe("image/jp2");
     // Raw codestream: SOC marker then SIZ marker.
@@ -104,18 +106,24 @@ describe("image-formats", () => {
   it("sniffs WebP and AVIF containers through their length fields", () => {
     // RIFF header, a chunk size that differs per file, then the WEBP tag.
     expect(
-      sniffImageContentType(Buffer.from("RIFF\x76\x11\x00\x00WEBPVP8L")),
+      sniffImageContentType(
+        Buffer.from("RIFF\u0076\u0011\u0000\u0000WEBPVP8L"),
+      ),
     ).toBe("image/webp");
     expect(
-      sniffImageContentType(Buffer.from("RIFF\x00\x00\x00\x00WEBPVP8 ")),
+      sniffImageContentType(
+        Buffer.from("RIFF\u0000\u0000\u0000\u0000WEBPVP8 "),
+      ),
     ).toBe("image/webp");
     // ftyp box of any size, still-image and image-sequence brands.
     expect(
-      sniffImageContentType(Buffer.from("\x00\x00\x00\x20ftypavif\x00\x00")),
+      sniffImageContentType(
+        Buffer.from("\u0000\u0000\u0000\u0020ftypavif\u0000\u0000"),
+      ),
     ).toBe("image/avif");
-    expect(sniffImageContentType(Buffer.from("\x00\x00\x00\x1cftypavis"))).toBe(
-      "image/avif",
-    );
+    expect(
+      sniffImageContentType(Buffer.from("\u0000\u0000\u0000\u001cftypavis")),
+    ).toBe("image/avif");
     // The tag alone, without its container header, is not a match.
     expect(sniffImageContentType(Buffer.from("WEBPVP8 "))).toBeNull();
     expect(sniffImageContentType(Buffer.from("ftypavif"))).toBeNull();
@@ -126,11 +134,13 @@ describe("image-formats", () => {
     expect(sniffImageContentType(Buffer.from("%PDF-1.7"))).toBeNull();
     // A RIFF container that is not WebP (WAVE audio).
     expect(
-      sniffImageContentType(Buffer.from("RIFF\x24\x00\x00\x00WAVEfmt ")),
+      sniffImageContentType(
+        Buffer.from("RIFF\u0024\u0000\u0000\u0000WAVEfmt "),
+      ),
     ).toBeNull();
     // An ISO media file that is not AVIF (MP4 video).
     expect(
-      sniffImageContentType(Buffer.from("\x00\x00\x00\x18ftypisom")),
+      sniffImageContentType(Buffer.from("\u0000\u0000\u0000\u0018ftypisom")),
     ).toBeNull();
     expect(sniffImageContentType(Buffer.from([0x89, 0x50]))).toBeNull();
     // Only the first six PNG bytes: not a file mupdf-style loaders accept.

@@ -1,8 +1,8 @@
-const MARKDOWN_CONTENT_TYPES = [
+const MARKDOWN_CONTENT_TYPES = new Set([
   "text/plain",
   "text/markdown",
   "text/x-markdown",
-];
+]);
 
 /** Bodies served as text but authored as markdown, e.g. llms.txt. */
 export function isMarkdownContentType(contentType?: string): boolean {
@@ -11,7 +11,7 @@ export function isMarkdownContentType(contentType?: string): boolean {
   }
   // Media types are case-insensitive and may carry parameters ("; charset=").
   const mediaType = contentType.split(";")[0].trim().toLowerCase();
-  return MARKDOWN_CONTENT_TYPES.includes(mediaType);
+  return MARKDOWN_CONTENT_TYPES.has(mediaType);
 }
 
 const IMAGE = /!\[[^\]]*\]\([^)]*\)/g;
@@ -24,7 +24,7 @@ const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
 
 /** Blanks out fenced blocks and inline code spans. */
 function stripCode(text: string): string {
-  const out: string[] = [];
+  const out: Array<string> = [];
   let fence: string | null = null;
 
   for (const line of text.split("\n")) {
@@ -53,7 +53,7 @@ function stripCode(text: string): string {
 
     // Code spans are delimited by a run of backticks of matching length, so a
     // shorter run inside a longer span must not terminate it.
-    out.push(line.replace(/(`+)(?:(?!\1)[^\n])*\1/g, " "));
+    out.push(line.replaceAll(/(`+)(?:(?!\1)[^\n])*\1/g, " "));
   }
 
   return out.join("\n");
@@ -90,9 +90,9 @@ function resolve(
 export function extractLinksFromMarkdown(
   text: string,
   baseUrl: string,
-): string[] {
-  const body = stripCode(text).replace(IMAGE, " ");
-  const links: string[] = [];
+): Array<string> {
+  const body = stripCode(text).replaceAll(IMAGE, " ");
+  const links: Array<string> = [];
 
   const push = (href: string, trimPunctuation = false) => {
     const resolved = resolve(href, baseUrl, trimPunctuation);

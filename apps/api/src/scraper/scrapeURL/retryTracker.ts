@@ -1,9 +1,6 @@
 import type { Logger } from "winston";
-import {
-  ScrapeRetryLimitError,
-  ScrapeRetryLimitReason,
-  ScrapeRetryStats,
-} from "./error";
+import type { ScrapeRetryLimitReason, ScrapeRetryStats } from "./error";
+import { ScrapeRetryLimitError } from "./error";
 
 type RetryReason = Exclude<ScrapeRetryLimitReason, "global">;
 

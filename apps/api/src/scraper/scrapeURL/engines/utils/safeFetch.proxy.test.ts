@@ -1,7 +1,10 @@
 import { once } from "node:events";
-import { createServer, type Server } from "node:http";
-import { connect, type Socket } from "node:net";
-import { Agent, fetch, interceptors, request, type Dispatcher } from "undici";
+import { createServer } from "node:http";
+import type { Server } from "node:http";
+import { connect } from "node:net";
+import type { Socket } from "node:net";
+import { Agent, fetch, interceptors, request } from "undici";
+import type { Dispatcher } from "undici";
 import {
   afterAll,
   afterEach,
@@ -25,6 +28,12 @@ import {
   InsecureConnectionError,
   rejectPrivateIPLiteralTargets,
 } from "./safeFetch";
+import type { getSecureDispatcher } from "./safeFetch";
+
+interface SafeFetchModule {
+  getSecureDispatcher: typeof getSecureDispatcher;
+  InsecureConnectionError: typeof InsecureConnectionError;
+}
 
 const previousAllowLocalWebhooks = config.ALLOW_LOCAL_WEBHOOKS;
 
@@ -33,7 +42,7 @@ afterEach(() => {
 });
 
 function invoke(origin: string) {
-  const inner = vi.fn(() => true) as unknown as Dispatcher.Dispatch;
+  const inner = vi.fn<Dispatcher.Dispatch>(() => true);
   const onError = vi.fn();
   const dispatch = rejectPrivateIPLiteralTargets(inner);
 
@@ -43,7 +52,7 @@ function invoke(origin: string) {
       path: "/",
       method: "GET",
     },
-    { onError } as unknown as Dispatcher.DispatchHandler,
+    { onError },
   );
 
   return { accepted, inner, onError };
@@ -224,7 +233,7 @@ describe("getSecureDispatcher with PROXY_SERVER configured", () => {
   const target = createTarget();
   const proxy = createConnectProxy();
   let targetUrl: string;
-  let safeFetch: typeof import("./safeFetch.js");
+  let safeFetch: SafeFetchModule;
 
   beforeAll(async () => {
     targetUrl = `http://127.0.0.1:${await listen(target.server, "127.0.0.1")}/secret`;
@@ -246,9 +255,12 @@ describe("getSecureDispatcher with PROXY_SERVER configured", () => {
 
     const error = await fetch(targetUrl, {
       dispatcher: safeFetch.getSecureDispatcher(),
-    }).catch(e => e);
+    }).catch((error_: unknown) => error_);
 
     expect(error).toBeInstanceOf(TypeError);
+    if (!(error instanceof TypeError)) {
+      throw new Error("Expected TypeError");
+    }
     expect(error.cause).toBeInstanceOf(safeFetch.InsecureConnectionError);
     expect(proxy.connections).toBe(proxyConnections);
     expect(target.hits).toBe(targetHits);

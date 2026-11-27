@@ -1,24 +1,26 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import type { Transaction } from "foundationdb";
-import { Logger } from "winston";
+import type { Logger } from "winston";
 import { logger as _logger } from "../../../lib/logger";
 import { getNuqFdbDatabase } from "./client";
-import {
+import type {
   NuqFdbKeyspace,
   GroupMeta,
   JobMeta,
   QueueEntry,
+} from "./keyspace";
+import {
   encodeJson,
   decodeJson,
   decodeI64,
+  groupMetaSchema,
+  normalizeFiniteNumber,
   normalizeOwnerId,
 } from "./keyspace";
+import type { TxContext } from "./ops";
 import {
-  ONE,
   MINUS_ONE,
   EMPTY,
-  TxContext,
-  newTxContext,
   uvSuffix,
   pushReady,
   setStatusQueued,
@@ -39,7 +41,7 @@ export type NuQFdbJobGroupInstance = {
   delaySeconds?: number;
 };
 
-const DEFAULT_GROUP_TTL_MS = 86400000;
+const DEFAULT_GROUP_TTL_MS = 86_400_000;
 
 export class NuqFdbGroupOps {
   constructor(
@@ -100,7 +102,11 @@ export class NuqFdbGroupOps {
     now: number,
     txc: TxContext,
   ): Promise<boolean> {
-    const gMeta = decodeJson<GroupMeta>(await tn.get(this.ks.groupMeta(gid)));
+    const gMeta = decodeJson(
+      await tn.get(this.ks.groupMeta(gid)),
+      groupMetaSchema,
+      "nuq-fdb.groupMeta",
+    );
     if (!gMeta || gMeta.s === "completed") {
       tn.clear(this.ks.taskGroupFinish(gid));
       return false;
@@ -165,19 +171,34 @@ export class NuQFdbJobGroup {
     logger: Logger = _logger,
   ): Promise<NuQFdbJobGroupInstance> {
     const owner = normalizeOwnerId(ownerId);
-    if (owner === null) throw new Error("Group owner is required");
+    if (owner === null) {
+      throw new Error("Group owner is required");
+    }
     return await this.db.doTn(async tn => {
       const existingBuf = await tn.get(this.ks.groupMeta(id));
-      const existing = decodeJson<GroupMeta>(existingBuf);
-      if (existing) return this.toInstance(id, existing);
+      if (existingBuf !== undefined && existingBuf !== null) {
+        const existing = decodeJson(
+          existingBuf,
+          groupMetaSchema,
+          "nuq-fdb.groupMeta",
+        );
+        if (!existing) {
+          logger.error("Corrupt NuQ FDB group metadata record", {
+            queueName: this.ks.queueName,
+            groupId: id,
+          });
+          throw new Error(`Corrupt NuQ FDB group metadata for group ${id}`);
+        }
+        return this.toInstance(id, existing);
+      }
       const now = Date.now();
       const g: GroupMeta = {
         o: owner,
         c: now,
         t: ttl ?? DEFAULT_GROUP_TTL_MS,
         s: "active",
-        m: opts?.maxConcurrency,
-        d: opts?.delaySeconds,
+        m: normalizeFiniteNumber(opts?.maxConcurrency),
+        d: normalizeFiniteNumber(opts?.delaySeconds),
       };
       tn.set(this.ks.groupMeta(id), encodeJson(g));
       tn.set(this.ks.ongoingGroup(owner, id), encodeJson({ c: now }));
@@ -190,7 +211,11 @@ export class NuQFdbJobGroup {
     logger: Logger = _logger,
   ): Promise<NuQFdbJobGroupInstance | null> {
     return await this.db.doTn(async tn => {
-      const g = decodeJson<GroupMeta>(await tn.get(this.ks.groupMeta(id)));
+      const g = decodeJson(
+        await tn.get(this.ks.groupMeta(id)),
+        groupMetaSchema,
+        "nuq-fdb.groupMeta",
+      );
       return g ? this.toInstance(id, g) : null;
     });
   }
@@ -198,19 +223,25 @@ export class NuQFdbJobGroup {
   public async getOngoingByOwner(
     ownerId: string,
     logger: Logger = _logger,
-  ): Promise<NuQFdbJobGroupInstance[]> {
+  ): Promise<Array<NuQFdbJobGroupInstance>> {
     const owner = normalizeOwnerId(ownerId);
-    if (owner === null) return [];
+    if (owner === null) {
+      return [];
+    }
     return await this.db.doTn(async tn => {
       const r = this.ks.ongoingGroupRange(owner);
       const rows = await tn.snapshot().getRangeAll(r.begin, r.end);
-      const out: NuQFdbJobGroupInstance[] = [];
+      const out: Array<NuQFdbJobGroupInstance> = [];
       for (const [key] of rows) {
-        const gid = this.ks.unpackId(key as Buffer);
-        const g = decodeJson<GroupMeta>(
+        const gid = this.ks.unpackId(key);
+        const g = decodeJson(
           await tn.snapshot().get(this.ks.groupMeta(gid)),
+          groupMetaSchema,
+          "nuq-fdb.groupMeta",
         );
-        if (g && g.s === "active") out.push(this.toInstance(gid, g));
+        if (g && g.s === "active") {
+          out.push(this.toInstance(gid, g));
+        }
       }
       return out;
     });
@@ -223,8 +254,14 @@ export class NuQFdbJobGroup {
     logger: Logger = _logger,
   ): Promise<boolean> {
     return await this.db.doTn(async tn => {
-      const g = decodeJson<GroupMeta>(await tn.get(this.ks.groupMeta(id)));
-      if (!g || g.s !== "active") return false;
+      const g = decodeJson(
+        await tn.get(this.ks.groupMeta(id)),
+        groupMetaSchema,
+        "nuq-fdb.groupMeta",
+      );
+      if (!g || g.s !== "active") {
+        return false;
+      }
       tn.set(
         this.ks.groupMeta(id),
         encodeJson({ ...g, s: "cancelled" } satisfies GroupMeta),

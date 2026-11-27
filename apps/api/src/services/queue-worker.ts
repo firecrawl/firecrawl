@@ -4,12 +4,16 @@ import { shutdownTracing } from "../otel";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
 import Express from "express";
+import { register } from "prom-client";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
 import { service } from "../service";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
-import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
+import type { NuQJob } from "./worker/nuq";
+import { crawlFinishedQueue, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
 import { getCrawl } from "../lib/crawl-redis";
+import { recordCrawlStateMissing } from "../lib/crawl-state-metrics";
+import { storedZeroDataRetention } from "../lib/request-context";
 import { startRole } from "../main";
 import { runProcessStop } from "../service/service";
 
@@ -30,15 +34,15 @@ async function processFinishCrawlJobInternal(_job: NuQJob) {
     throw new Error("crawlFinish job with no ownerId");
   }
 
-  const sc = await getCrawl(job.groupId);
-
-  if (!sc) {
-    throw new Error("crawlFinish job with sc expired");
-  }
-
   const anyJob = await scrapeQueue.getGroupAnyJob(job.groupId, job.ownerId);
 
   if (!anyJob) {
+    if (!(await getCrawl(job.groupId))) {
+      recordCrawlStateMissing("finalizer", job.groupId, _logger, {
+        jobId: job.id,
+        recoverable: false,
+      });
+    }
     throw new Error("crawlFinish couldn't find anyJob");
   }
 
@@ -60,45 +64,76 @@ const crawlFinishWorker = async () => {
 
     if (job === null) {
       __logger.info("No jobs to process", { module: "nuq/metrics" });
-      await new Promise(resolve => setTimeout(resolve, noJobTimeout));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, noJobTimeout);
+      });
       if (!config.NUQ_RABBITMQ_URL) {
-        noJobTimeout = Math.min(noJobTimeout * 2, 10000);
+        noJobTimeout = Math.min(noJobTimeout * 2, 10_000);
       }
       continue;
     }
 
     noJobTimeout = 500;
 
+    const jobData: unknown = job.data;
     const logger = __logger.child({
-      zeroDataRetention: job.data?.zeroDataRetention ?? false,
+      zeroDataRetention: storedZeroDataRetention(jobData) ?? false,
       crawlId: job.groupId,
     });
 
     logger.info("Acquired job");
 
-    const lockRenewInterval = setInterval(async () => {
-      logger.info("Renewing lock");
-      if (!(await crawlFinishedQueue.renewLock(job.id, job.lock!, logger))) {
-        logger.warn("Failed to renew lock");
-        clearInterval(lockRenewInterval);
-        return;
+    let jobLock = job.lock;
+    if (!jobLock) {
+      const reclaimedLock = await crawlFinishedQueue.reclaimLock(
+        job.id,
+        logger,
+      );
+      if (reclaimedLock) {
+        logger.warn("Acquired job without lock; reclaimed lock from database", {
+          jobId: job.id,
+        });
+        jobLock = reclaimedLock;
+      } else {
+        logger.warn("Acquired job without lock; no active database row found", {
+          jobId: job.id,
+        });
+        continue;
       }
-      logger.info("Renewed lock");
-    }, 15000);
+    }
+
+    const activeLock = jobLock;
+    const lockRenewInterval = setInterval(() => {
+      void (async () => {
+        try {
+          logger.info("Renewing lock");
+          if (
+            !(await crawlFinishedQueue.renewLock(job.id, activeLock, logger))
+          ) {
+            logger.warn("Failed to renew lock");
+            clearInterval(lockRenewInterval);
+            return;
+          }
+          logger.info("Renewed lock");
+        } catch (error: unknown) {
+          logger.warn("Failed to renew lock", { error });
+        }
+      })();
+    }, 15_000);
 
     let processResult:
       | {
           ok: true;
           data: Awaited<ReturnType<typeof processFinishCrawlJobInternal>>;
         }
-      | { ok: false; error: any };
+      | { ok: false; error: unknown };
 
     try {
       processResult = {
         ok: true,
         data: await processFinishCrawlJobInternal(job),
       };
-    } catch (error) {
+    } catch (error: unknown) {
       processResult = { ok: false, error };
     }
 
@@ -108,7 +143,7 @@ const crawlFinishWorker = async () => {
       if (
         !(await crawlFinishedQueue.jobFinish(
           job.id,
-          job.lock!,
+          jobLock,
           processResult.data,
           logger,
         ))
@@ -119,7 +154,7 @@ const crawlFinishWorker = async () => {
       if (
         !(await crawlFinishedQueue.jobFail(
           job.id,
-          job.lock!,
+          jobLock,
           processResult.error instanceof Error
             ? processResult.error.message
             : typeof processResult.error === "string"
@@ -136,7 +171,9 @@ const crawlFinishWorker = async () => {
 
 const app = Express();
 
-let currentLiveness: boolean = true;
+app.get("/metrics", async (_, res) => {
+  res.contentType("text/plain").send(await register.metrics());
+});
 
 app.get("/liveness", (req, res) => {
   _logger.info("Liveness endpoint hit");
@@ -156,16 +193,13 @@ app.get("/liveness", (req, res) => {
       useCacheableLookup: false,
     })
       .then(() => {
-        currentLiveness = true;
         res.status(200).json({ ok: true });
       })
-      .catch(e => {
-        _logger.error("WORKER NETWORKING CHECK FAILED", { error: e });
-        currentLiveness = false;
+      .catch((error: unknown) => {
+        _logger.error("WORKER NETWORKING CHECK FAILED", { error });
         res.status(500).json({ ok: false });
       });
   } else {
-    currentLiveness = true;
     res.status(200).json({ ok: true });
   }
 });
@@ -194,8 +228,8 @@ export async function start() {
     isShuttingDown = true;
   });
 
-  await service.modules.blocklist.init().catch(e => {
-    _logger.error("Failed to initialize blocklist", { error: e });
+  await service.modules.blocklist.init().catch((error: unknown) => {
+    _logger.error("Failed to initialize blocklist", { error });
     process.exit(1);
   });
 

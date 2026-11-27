@@ -6,19 +6,20 @@ vi.mock("../../scrapeURL", () => ({
 
 import { scrapeURL } from "../../scrapeURL";
 import { crawlToCrawler } from "../../../lib/crawl-redis";
+import type { StoredCrawl } from "../../../lib/crawl-redis";
+import { scrapeOptions } from "../../../controllers/v2/types";
 import { getLinksFromSitemap } from "../sitemap";
 import { scrapeSitemap } from "../../crawler/sitemap";
 import { logger } from "../../../lib/logger";
 
-const storedCrawl = (teamFlags?: { usOnly?: boolean }) =>
-  ({
-    originUrl: "https://example.com/",
-    crawlerOptions: {},
-    scrapeOptions: {},
-    internalOptions: { teamId: "team-a", orgId: null, teamFlags },
-    team_id: "team-a",
-    createdAt: 0,
-  }) as any;
+const storedCrawl = (teamFlags?: { usOnly?: boolean }): StoredCrawl => ({
+  originUrl: "https://example.com/",
+  crawlerOptions: {},
+  scrapeOptions: scrapeOptions.parse({}),
+  internalOptions: { teamId: "team-a", orgId: null, teamFlags },
+  team_id: "team-a",
+  createdAt: 0,
+});
 
 const internalOptionsSent = () =>
   vi
@@ -66,9 +67,9 @@ describe("crawl discovery for US-only teams", () => {
       document: {
         rawHtml:
           '<?xml version="1.0" encoding="UTF-8"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><sitemap><loc>https://example.com/sitemap-posts.xml</loc></sitemap></sitemapindex>',
-        metadata: { statusCode: 200 },
+        metadata: { statusCode: 200, proxyUsed: "basic" },
       },
-    } as any);
+    });
     await getLinksFromSitemap(
       {
         sitemapUrl: "https://example.com/sitemap.xml",
@@ -131,10 +132,10 @@ describe("crawl discovery for US-only teams", () => {
   });
 
   it("prefers live teamFlags over stored context flags and enforces Safe Mode robots default", async () => {
-    const sc = {
+    const sc: StoredCrawl = {
       originUrl: "https://example.com/",
       crawlerOptions: { ignoreRobotsTxt: true },
-      scrapeOptions: {},
+      scrapeOptions: scrapeOptions.parse({}),
       ctx: {
         teamId: "team-a",
         zeroDataRetention: false,
@@ -143,13 +144,13 @@ describe("crawl discovery for US-only teams", () => {
       internalOptions: { teamId: "team-a", orgId: null },
       team_id: "team-a",
       createdAt: 0,
-    } as any;
+    };
 
     const strictCrawler = crawlToCrawler("crawl-safe-default", sc, {
       safeMode: true,
       ignoreRobots: "forced",
       scrapeZDR: "forced",
-    } as any);
+    });
     strictCrawler.importRobotsTxt("User-agent: *\nDisallow: /\n");
     expect(strictCrawler.isRobotsAllowed("https://example.com/blocked")).toBe(
       false,
@@ -165,7 +166,7 @@ describe("crawl discovery for US-only teams", () => {
       safeMode: true,
       safeModeConfig: { enforceRobots: false },
       ignoreRobots: "forced",
-    } as any);
+    });
     optOutCrawler.importRobotsTxt("User-agent: *\nDisallow: /\n");
     expect(optOutCrawler.isRobotsAllowed("https://example.com/blocked")).toBe(
       true,

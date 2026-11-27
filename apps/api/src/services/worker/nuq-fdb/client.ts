@@ -1,17 +1,41 @@
-import type * as FDBModule from "foundationdb";
-import type { Database } from "foundationdb";
+import type { Database, open, setAPIVersion, tuple } from "foundationdb";
+import { z } from "zod";
 import { config } from "../../../config";
+
+interface FdbClientModule {
+  setAPIVersion: typeof setAPIVersion;
+  open: typeof open;
+  tuple: typeof tuple;
+}
+
+const fdbClientModuleShapeSchema = z.object({
+  setAPIVersion: z.function(),
+  open: z.function(),
+  tuple: z.object({
+    pack: z.function(),
+    unpack: z.function(),
+    range: z.function(),
+  }),
+});
+
+const fdbClientModuleSchema = z.custom<FdbClientModule>(
+  value => fdbClientModuleShapeSchema.safeParse(value).success,
+);
 
 // The foundationdb package loads libfdb_c at require-time. Keep the require
 // lazy so processes that never touch the FDB backend (PG-only deploys, unit
 // tests, environments without the client library) can still boot.
-let fdbModule: typeof FDBModule | null = null;
+let fdbModule: FdbClientModule | null = null;
 
-export function getFdb(): typeof FDBModule {
+export function getFdb(): FdbClientModule {
   if (fdbModule === null) {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    fdbModule = require("foundationdb") as typeof FDBModule;
-    fdbModule.setAPIVersion(720);
+    const loaded: unknown = require("foundationdb");
+    const parsed = fdbClientModuleSchema.safeParse(loaded);
+    if (!parsed.success) {
+      throw new Error("Failed to load foundationdb module");
+    }
+    parsed.data.setAPIVersion(720);
+    fdbModule = parsed.data;
   }
   return fdbModule;
 }
@@ -43,7 +67,7 @@ function timeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
         clearTimeout(timer);
         resolve(value);
       },
-      error => {
+      (error: unknown) => {
         clearTimeout(timer);
         reject(error);
       },

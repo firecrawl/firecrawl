@@ -10,7 +10,9 @@ const searchProviderTotal = new Counter({
 });
 
 function outcomeOf(result: SearchV2Response | null) {
-  if (result == null) return "skipped";
+  if (result === null) {
+    return "skipped";
+  }
   const hasResults = Object.values(result).some(
     group => Array.isArray(group) && group.length > 0,
   );

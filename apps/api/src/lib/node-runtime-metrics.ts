@@ -16,7 +16,9 @@ let started = false;
  * after a successful registration so a failed attempt can be retried.
  */
 export function startNodeRuntimeMetrics(): void {
-  if (started) return;
+  if (started) {
+    return;
+  }
   collectDefaultMetrics({ register });
   started = true;
 }

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { coreParts, defaultModules } from "../service";
-import type { Engine, EngineName } from "../service/engines";
+import type { Engine } from "../service/engines";
 import { testService, withService } from "../service/testing";
 import { imageOcrGate, isImageOcrEnabled } from "./image-ocr-gate";
 
 function makeImageEngine(enabled: boolean, cache = false): Engine {
   return {
-    name: (cache ? "image-cache-test" : "image-test") as EngineName,
+    name: cache ? "pdf" : "document",
     quality: 1,
     fileOnly: true,
     cache,
