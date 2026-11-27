@@ -121,13 +121,10 @@ fn verify_w3c_and_zdr() -> Result<(), String> {
       }
 
       let blocking_saw_zdr = rt
-        .block_on(async {
-          spawn_blocking_with_span(|| {
-            tracing::error!("zdr-blocking-secret-must-be-suppressed");
-            in_zdr_span()
-          })
-          .await
-        })
+        .block_on(spawn_blocking_with_span(rt.handle(), || {
+          tracing::error!("zdr-blocking-secret-must-be-suppressed");
+          in_zdr_span()
+        }))
         .map_err(|e| format!("spawn_blocking join failed: {e}"))?;
       if !blocking_saw_zdr {
         return Err("in_zdr_span() was false inside spawn_blocking_with_span".to_string());
@@ -227,6 +224,21 @@ fn verify_w3c_and_zdr() -> Result<(), String> {
 
 #[allow(clippy::panic)]
 fn run_zdr_panic_hook_worker() -> Result<(), String> {
+  struct InstallOnDrop;
+  impl Drop for InstallOnDrop {
+    fn drop(&mut self) {
+      install_zdr_panic_hook();
+    }
+  }
+
+  if std::panic::catch_unwind(|| {
+    let _install = InstallOnDrop;
+    std::panic::panic_any("verify first installation during unwind");
+  })
+  .is_ok()
+  {
+    return Err("expected panic before hook installation".to_string());
+  }
   install_zdr_panic_hook();
 
   let rt = tokio::runtime::Builder::new_multi_thread()
@@ -250,12 +262,9 @@ fn run_zdr_panic_hook_worker() -> Result<(), String> {
     }
 
     let blocking_result = zdr_span.in_scope(|| {
-      rt.block_on(async {
-        spawn_blocking_with_span(|| {
-          std::panic::panic_any("SUPER_SECRET_BLOCKING_ZDR_PAYLOAD");
-        })
-        .await
-      })
+      rt.block_on(spawn_blocking_with_span(rt.handle(), || {
+        std::panic::panic_any("SUPER_SECRET_BLOCKING_ZDR_PAYLOAD");
+      }))
     });
     match blocking_result {
       Err(err) if err.is_panic() => {}

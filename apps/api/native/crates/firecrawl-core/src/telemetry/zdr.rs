@@ -212,8 +212,12 @@ pub fn in_zdr_span() -> bool {
 }
 
 /// Installs the process panic hook (once) that withholds panic payloads written
-/// to stderr when the panicking thread is inside a ZDR span.
+/// to stderr when the panicking thread is inside a ZDR span. Calls during a
+/// panic leave installation to a later call.
 pub fn install_zdr_panic_hook() {
+  if std::thread::panicking() {
+    return;
+  }
   PANIC_HOOK_INIT.call_once(|| {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {

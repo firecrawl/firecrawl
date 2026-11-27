@@ -171,6 +171,9 @@ fn env_filter() -> EnvFilter {
 /// Lazily initializes the global tracing subscriber, ZDR panic hook, and
 /// (when an OTLP endpoint is configured) the OTLP/HTTP trace exporter.
 pub fn init_telemetry() {
+  if std::thread::panicking() {
+    return;
+  }
   INIT.call_once(|| {
     ensure_crypto_provider();
     install_zdr_panic_hook();

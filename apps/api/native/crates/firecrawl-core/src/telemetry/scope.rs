@@ -2,27 +2,28 @@
 //! scoped `rayon` pools, and OS threads so `ZdrLayer` and `in_zdr_span()`
 //! remain intact across thread boundaries.
 
+use tokio::{runtime::Handle, task::JoinHandle};
 use tracing::{Dispatch, Span};
 
-/// Spawns `f` on Tokio's blocking pool with the caller's active `tracing`
+/// Spawns `f` on the supplied runtime's blocking pool with the caller's active `tracing`
 /// subscriber and current [`Span`] entered on the worker thread.
-pub fn spawn_blocking_with_span<F, R>(f: F) -> tokio::task::JoinHandle<R>
+pub fn spawn_blocking_with_span<F, R>(runtime: &Handle, f: F) -> JoinHandle<R>
 where
   F: FnOnce() -> R + Send + 'static,
   R: Send + 'static,
 {
-  spawn_blocking_in_span(Span::current(), f)
+  spawn_blocking_in_span(runtime, Span::current(), f)
 }
 
-/// Spawns `f` on Tokio's blocking pool with the caller's active `tracing`
+/// Spawns `f` on the supplied runtime's blocking pool with the caller's active `tracing`
 /// subscriber and the supplied `span` entered on the worker thread.
-pub fn spawn_blocking_in_span<F, R>(span: Span, f: F) -> tokio::task::JoinHandle<R>
+pub fn spawn_blocking_in_span<F, R>(runtime: &Handle, span: Span, f: F) -> JoinHandle<R>
 where
   F: FnOnce() -> R + Send + 'static,
   R: Send + 'static,
 {
   let dispatch = tracing::dispatcher::get_default(Dispatch::clone);
-  tokio::task::spawn_blocking(move || {
+  runtime.spawn_blocking(move || {
     tracing::dispatcher::with_default(&dispatch, || {
       let _guard = span.enter();
       f()
