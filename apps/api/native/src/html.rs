@@ -387,7 +387,6 @@ const EXCLUDE_NON_MAIN_TAGS: [&str; 48] = [
   "#breadcrumbs",
   ".share",
   "#share",
-  ".widget",
   "#widget",
   ".cookie",
   "#cookie",
