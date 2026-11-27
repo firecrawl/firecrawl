@@ -7,6 +7,7 @@ import baseConfig from "./vitest.config";
 const outsideCoreSuite = [
   // Need a running API, a queue database, credentials or the public internet.
   "src/__tests__/e2e_*/**",
+  "src/__tests__/kickoff-sitemap.test.ts",
   "src/__tests__/nuq-fdb/**",
   "src/__tests__/nuq-postgres.test.ts",
   "src/__tests__/snips/v*/**",
