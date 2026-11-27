@@ -1352,13 +1352,11 @@ export type TeamFlags = {
   skipCountryCheck?: boolean;
   bypassCreditChecks?: boolean;
   debugBranding?: boolean;
-  maxBrowserSessions?: number;
   // grants the privileged large-PDF size cap
   largePdfs?: boolean;
   // POST /v2/search/:jobId/feedback returns 403 TEAM_OPTED_OUT when true.
   searchFeedbackOptOut?: boolean;
   menuBeta?: boolean;
-  enrichBeta?: boolean;
   labsSearch?: boolean;
   freshFeed?: boolean;
   freshFeedCreditsPerRecord?: number;
