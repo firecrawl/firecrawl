@@ -290,9 +290,11 @@ describe("service.searchProviders dispatch in v2 search", () => {
       },
     ]);
 
-    const error = await search({ query: "firecrawl", logger }).catch(e => e);
-    expect(error).toBeInstanceOf(SearchProviderUnavailableError);
-    expect(error.cause).toBe(failure);
+    const pending = search({ query: "firecrawl", logger });
+    await expect(pending).rejects.toBeInstanceOf(
+      SearchProviderUnavailableError,
+    );
+    await expect(pending).rejects.toHaveProperty("cause", failure);
   });
 
   it("rethrows a TransportableError from a provider unchanged", async () => {
@@ -302,7 +304,7 @@ describe("service.searchProviders dispatch in v2 search", () => {
         name: "custom",
         searchProviders: [
           {
-            name: "broken" as SearchProvider["name"],
+            name: "searxng",
             priority: 200,
             enabled: () => true,
             search: async () => {

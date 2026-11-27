@@ -99,7 +99,9 @@ export async function search({
     return {};
   } catch (error: unknown) {
     logger.error(`Error in search function`, { error });
-    if (isTransportableError(error)) throw error;
+    if (isTransportableError(error)) {
+      throw error;
+    }
     throw new SearchProviderUnavailableError(undefined, { cause: error });
   }
 }
