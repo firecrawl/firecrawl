@@ -5,7 +5,7 @@ use opentelemetry::trace::{
   SpanContext, SpanId, TraceContextExt, TraceFlags, TraceId, TraceState, TracerProvider as _,
 };
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SimpleSpanProcessor};
-use tracing_subscriber::layer::{Context as LayerContext, SubscriberExt};
+use tracing_subscriber::layer::{Context as LayerContext, Identity, SubscriberExt};
 use tracing_subscriber::{EnvFilter, Layer};
 
 use super::zdr_otel::ZdrTraceRegistry;
@@ -182,8 +182,9 @@ fn pre_parse_zdr_handles_escaped_keys_and_fails_closed_on_malformed_json() {
 fn zdr_layer_vetoes_direct_event_fields_and_suffix_filtered_spans() {
   let counter = EventCounter::default();
   let subscriber = tracing_subscriber::registry()
-    .with(ZdrLayer.with_filter(zdr_span_filter(EnvFilter::new("error"))))
-    .with(counter.clone());
+    .with(Identity::new().with_filter(zdr_span_filter(EnvFilter::new("error"))))
+    .with(counter.clone().with_filter(EnvFilter::new("info")))
+    .with(ZdrLayer);
 
   tracing::subscriber::with_default(subscriber, || {
     tracing::info!(zero_data_retention = true, "direct-zdr-event");
@@ -198,6 +199,7 @@ fn zdr_layer_vetoes_direct_event_fields_and_suffix_filtered_spans() {
     suffixed_span.in_scope(|| {
       assert!(in_zdr_span());
       tracing::error!("suppressed-inside-suffixed-span");
+      tracing::info!("suppressed-even-when-only-the-output-layer-enables-it");
     });
   });
 

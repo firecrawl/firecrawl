@@ -108,9 +108,8 @@ impl Visit for ZdrFieldVisitor {
   }
 }
 
-/// Propagates the `zero_data_retention` marker down the span tree and vetoes
-/// every log event emitted within a ZDR scope or carrying a ZDR field across
-/// all subscriber layers.
+/// Marks ZDR spans and vetoes events carrying a ZDR field or emitted in a ZDR
+/// scope. Install this layer unfiltered, outside all output layers.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ZdrLayer;
 
@@ -164,9 +163,8 @@ where
   }
 }
 
-/// Filter for [`ZdrLayer`] that keeps `scrape_url` spans and any span or event
-/// carrying a `zero_data_retention` (or `*.zero_data_retention`) field active
-/// regardless of `RUST_LOG`.
+/// Keeps ZDR callsites active regardless of `RUST_LOG`. Apply it to a separate
+/// identity layer, leaving [`ZdrLayer`] unfiltered so its veto always runs.
 pub fn zdr_span_filter<S>(env_filter: EnvFilter) -> impl tracing_subscriber::layer::Filter<S> {
   env_filter.or(filter_fn(|meta| {
     (meta.is_span() && meta.name() == "scrape_url")

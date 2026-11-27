@@ -10,8 +10,8 @@ use opentelemetry::trace::{SpanId, TraceContextExt as _, TraceId, TracerProvider
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 use tracing::field::Visit;
 use tracing_opentelemetry::OpenTelemetrySpanExt as _;
-use tracing_subscriber::layer::{Context as LayerContext, SubscriberExt};
-use tracing_subscriber::{EnvFilter, Layer};
+use tracing_subscriber::layer::{Context as LayerContext, Identity, SubscriberExt};
+use tracing_subscriber::{EnvFilter, Layer, fmt};
 
 use firecrawl_core::telemetry::{
   TraceContext, ZdrLayer, attach_parent_context, build_resource, build_zdr_tracer_provider,
@@ -249,10 +249,18 @@ fn run_zdr_panic_hook_worker() -> Result<(), String> {
 
   // Even under RUST_LOG=error, zdr_span_filter keeps ZDR info_span! active.
   let subscriber = tracing_subscriber::registry()
-    .with(ZdrLayer.with_filter(zdr_span_filter(EnvFilter::new("error"))));
+    .with(Identity::new().with_filter(zdr_span_filter(EnvFilter::new("error"))))
+    .with(
+      fmt::layer()
+        .with_writer(std::io::stderr)
+        .with_filter(EnvFilter::new("error")),
+    )
+    .with(ZdrLayer);
   tracing::subscriber::with_default(subscriber, || -> Result<(), String> {
     let zdr_span = tracing::info_span!("derive_core_html", zero_data_retention = true);
+    tracing::error!(zero_data_retention = true, "SUPER_SECRET_DIRECT_ZDR_LOG");
     let direct_panic = zdr_span.in_scope(|| {
+      tracing::error!("SUPER_SECRET_SCOPED_ZDR_LOG");
       std::panic::catch_unwind(|| {
         std::panic::panic_any("SUPER_SECRET_ZDR_CUSTOMER_PAYLOAD");
       })
@@ -298,6 +306,7 @@ fn run_zdr_panic_hook_worker() -> Result<(), String> {
 
     let non_zdr_span = tracing::info_span!("derive_core_html", zero_data_retention = false);
     let non_zdr_panic = non_zdr_span.in_scope(|| {
+      tracing::error!("NON_ZDR_VISIBLE_LOG");
       std::panic::catch_unwind(|| {
         std::panic::panic_any("NON_ZDR_DIAGNOSTIC_PAYLOAD");
       })
@@ -343,6 +352,9 @@ fn verify_zdr_panic_hook() -> Result<(), String> {
     return Err(format!(
       "expected non-ZDR diagnostic payload in stderr:\n{stderr}"
     ));
+  }
+  if !stderr.contains("NON_ZDR_VISIBLE_LOG") {
+    return Err("expected non-ZDR log in stderr".to_string());
   }
 
   println!(

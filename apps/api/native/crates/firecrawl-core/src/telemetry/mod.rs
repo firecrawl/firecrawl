@@ -17,7 +17,7 @@ use opentelemetry_sdk::trace::{
   BatchSpanProcessor, Sampler, SdkTracerProvider, SimpleSpanProcessor, SpanExporter as SdkExporter,
   SpanProcessor,
 };
-use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::layer::{Identity, SubscriberExt};
 use tracing_subscriber::{EnvFilter, Layer, fmt};
 
 mod propagation;
@@ -198,15 +198,16 @@ pub fn init_telemetry() {
 
     let zdr_filter = zdr_span_filter(env_filter());
 
-    // Installed even without an exporter so ZdrLayer marks spans for the panic hook.
+    // Keep ZDR spans active without filtering the subscriber-wide event veto.
     let subscriber = tracing_subscriber::registry()
-      .with(ZdrLayer.with_filter(zdr_filter))
+      .with(Identity::new().with_filter(zdr_filter))
       .with(
         fmt::layer()
           .with_writer(std::io::stderr)
           .with_filter(env_filter()),
       )
-      .with(otel_layer);
+      .with(otel_layer)
+      .with(ZdrLayer);
     if let Err(err) = tracing::subscriber::set_global_default(subscriber) {
       let _ = writeln!(
         std::io::stderr(),
