@@ -550,12 +550,7 @@ results.data.web.forEach(result => {
 
 #### Agent skills marketplace
 
-This repo ships an agent-agnostic skills marketplace at [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json). It packages the build skills under [`skills/`](./skills) (onboarding, scrape, search, interact, and the parent `firecrawl-build` skill) and the official Firecrawl MCP server from [`.mcp.json`](.mcp.json). Set `FIRECRAWL_API_KEY` in your environment; do not commit a real key.
-
-```sh
-# Point any agent that reads .agents/plugins/marketplace.json at this repo,
-# then install firecrawl@firecrawl
-```
+This repo ships an agent-agnostic skills marketplace at [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json). It packages the build skills under [`skills/`](./skills) (onboarding, scrape, search, interact, and the parent `firecrawl-build` skill) and the official Firecrawl MCP server from [`.mcp.json`](.mcp.json). Set `FIRECRAWL_API_KEY` in your environment; do not commit a real key. Point any agent that reads `.agents/plugins/marketplace.json` at this repo, then install with the agent-specific commands below.
 
 Claude Code and Codex can use the same plugin via their own manifests (secondary):
 
