@@ -466,8 +466,10 @@ type DeveloperSearchResponse struct {
 
 // CrawlResponse is returned when starting an async crawl.
 type CrawlResponse struct {
-	ID  string `json:"id"`
-	URL string `json:"url,omitempty"`
+	Success *bool  `json:"success,omitempty"`
+	ID      string `json:"id"`
+	URL     string `json:"url,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // CrawlJob represents the status and results of a crawl job.
@@ -489,8 +491,10 @@ func (c *CrawlJob) IsDone() bool {
 
 // BatchScrapeResponse is returned when starting an async batch scrape.
 type BatchScrapeResponse struct {
+	Success     *bool    `json:"success,omitempty"`
 	ID          string   `json:"id"`
 	URL         string   `json:"url,omitempty"`
+	Error       string   `json:"error,omitempty"`
 	InvalidURLs []string `json:"invalidURLs,omitempty"`
 }
 
