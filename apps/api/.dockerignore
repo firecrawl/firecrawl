@@ -1,5 +1,8 @@
 **/node_modules/
 **/dist/
 **/target/
+**/*.node
+native/index.js
+native/index.d.ts
 .env
 *.csv
