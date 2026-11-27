@@ -52,7 +52,6 @@ interface Services {
   nuqWorkers: Array<ProcessResult>;
   nuqPrefetchWorker?: ProcessResult;
   nuqReconcilerWorker?: ProcessResult;
-  extractWorker?: ProcessResult;
   indexWorker?: ProcessResult;
   command?: ProcessResult;
   nuqPostgres?: {
@@ -916,24 +915,6 @@ async function startServices(command?: Array<string>): Promise<Services> {
     ? "pnpm exec tsx"
     : "node";
 
-  const extractWorker =
-    roleEntry && installedService()?.roles.has("extract-worker")
-      ? execForward(
-          "extract-worker",
-          `${roleRunner} ${shellEscape(roleEntry)} extract-worker`,
-          process.env.EXTRACT_WORKER_PORT
-            ? {
-                NUQ_REDUCE_NOISE: "true",
-                NUQ_POD_NAME: "extract-worker",
-                EXTRACT_WORKER_PORT: process.env.EXTRACT_WORKER_PORT,
-              }
-            : {
-                NUQ_REDUCE_NOISE: "true",
-                NUQ_POD_NAME: "extract-worker",
-              },
-        )
-      : undefined;
-
   const nuqWorkers = Array.from({ length: NUQ_WORKER_COUNT }, (_, i) =>
     execForward(
       `${nuqWorkerRole}-${i}`,
@@ -1010,7 +991,6 @@ async function startServices(command?: Array<string>): Promise<Services> {
     nuqPrefetchWorker,
     nuqReconcilerWorker,
     indexWorker,
-    extractWorker,
     command: commandProcess,
     nuqPostgres,
     nuqRabbitMQ,
@@ -1028,7 +1008,6 @@ async function stopDevelopmentServices(services: Services) {
     services.nuqPrefetchWorker?.process,
     services.nuqReconcilerWorker?.process,
     services.indexWorker?.process,
-    services.extractWorker?.process,
     services.command?.process,
   ].filter((p): p is ChildProcess => !!p);
 
@@ -1208,9 +1187,6 @@ async function waitForTermination(services: Services): Promise<void> {
   }
   if (services.indexWorker) {
     promises.push(services.indexWorker.promise);
-  }
-  if (services.extractWorker) {
-    promises.push(services.extractWorker.promise);
   }
   if (services.nuqPrefetchWorker) {
     promises.push(services.nuqPrefetchWorker.promise);

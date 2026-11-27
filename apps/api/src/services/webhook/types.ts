@@ -2,21 +2,6 @@ import type { z } from "zod";
 import type { webhookSchema } from "./schema";
 import type { Document, DocumentMetadata } from "../../controllers/v2/types";
 
-interface ExtractWebhookResult {
-  success: boolean;
-  data?: unknown;
-  extractId: string;
-  warning?: string;
-  urlTrace?: Array<unknown>;
-  error?: string;
-  tokenUsageBreakdown?: Array<unknown>;
-  llmUsage?: number;
-  totalUrlsScraped?: number;
-  sources?: Record<string, Array<string>>;
-  tokensBilled?: number;
-  creditsBilled?: number;
-}
-
 export enum WebhookEvent {
   CRAWL_STARTED = "crawl.started",
   CRAWL_PAGE = "crawl.page",
@@ -24,9 +9,6 @@ export enum WebhookEvent {
   BATCH_SCRAPE_STARTED = "batch_scrape.started",
   BATCH_SCRAPE_PAGE = "batch_scrape.page",
   BATCH_SCRAPE_COMPLETED = "batch_scrape.completed",
-  EXTRACT_STARTED = "extract.started",
-  EXTRACT_COMPLETED = "extract.completed",
-  EXTRACT_FAILED = "extract.failed",
   MONITOR_PAGE = "monitor.page",
   MONITOR_CHECK_COMPLETED = "monitor.check.completed",
 }
@@ -38,9 +20,6 @@ export type WebhookEventDataMap = {
   [WebhookEvent.BATCH_SCRAPE_STARTED]: BatchScrapeStartedData;
   [WebhookEvent.BATCH_SCRAPE_PAGE]: BatchScrapePageData;
   [WebhookEvent.BATCH_SCRAPE_COMPLETED]: BatchScrapeCompletedData;
-  [WebhookEvent.EXTRACT_STARTED]: ExtractStartedData;
-  [WebhookEvent.EXTRACT_COMPLETED]: ExtractCompletedData;
-  [WebhookEvent.EXTRACT_FAILED]: ExtractFailedData;
   [WebhookEvent.MONITOR_PAGE]: MonitorPageData;
   [WebhookEvent.MONITOR_CHECK_COMPLETED]: MonitorCheckCompletedData;
 };
@@ -102,21 +81,6 @@ interface BatchScrapePageData extends BaseWebhookData {
 interface BatchScrapeCompletedData extends BaseWebhookData {
   success: true;
   data: Array<WebhookDocumentLink>;
-}
-
-// extract
-interface ExtractStartedData extends BaseWebhookData {
-  success: true;
-}
-
-interface ExtractCompletedData extends BaseWebhookData {
-  success: true;
-  data: Array<ExtractWebhookResult>;
-}
-
-interface ExtractFailedData extends BaseWebhookData {
-  success: false;
-  error: string;
 }
 
 // monitor

@@ -87,7 +87,6 @@ The system is initialized at startup in:
 
 - `apps/api/src/index.ts` - Main API server
 - `apps/api/src/services/queue-worker.ts` - Queue worker
-- `apps/api/src/services/extract-worker.ts` - Extract worker
 - `apps/api/src/services/worker/nuq-worker.ts` - NuQ worker
 
 ## Precedence
