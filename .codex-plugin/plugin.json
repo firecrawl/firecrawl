@@ -1,0 +1,41 @@
+{
+  "name": "firecrawl",
+  "version": "0.1.0",
+  "description": "Firecrawl agent skills for integrating scrape, search, interact, and related APIs into product code, plus the official Firecrawl MCP server.",
+  "author": {
+    "name": "Firecrawl",
+    "url": "https://www.firecrawl.dev"
+  },
+  "homepage": "https://www.firecrawl.dev",
+  "repository": "https://github.com/firecrawl/firecrawl",
+  "license": "AGPL-3.0",
+  "keywords": [
+    "firecrawl",
+    "scrape",
+    "crawl",
+    "search",
+    "extract",
+    "mcp",
+    "agent-skills"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Firecrawl",
+    "shortDescription": "Scrape, search, and interact",
+    "longDescription": "Agent skills that teach coding agents how to integrate Firecrawl into application code (SDK and REST), covering onboarding, scrape, search, interact, and endpoint selection. Bundles the official firecrawl-mcp server so agents can also call Firecrawl tools directly when FIRECRAWL_API_KEY is set.",
+    "category": "Coding",
+    "developerName": "Firecrawl",
+    "websiteURL": "https://www.firecrawl.dev",
+    "supportURL": "https://docs.firecrawl.dev",
+    "privacyPolicyURL": "https://www.firecrawl.dev/privacy-policy",
+    "termsOfServiceURL": "https://www.firecrawl.dev/terms-of-service",
+    "capabilities": [],
+    "logo": "./img/firecrawl_logo.png",
+    "defaultPrompt": [
+      "Add Firecrawl scrape to this project and verify a sample URL returns markdown.",
+      "Wire Firecrawl search into this app so it can discover pages before scraping.",
+      "Set up FIRECRAWL_API_KEY and install the Firecrawl SDK for this stack."
+    ]
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "firecrawl",
+  "version": "0.1.0",
+  "description": "Firecrawl agent skills for integrating scrape, search, interact, and related APIs into product code, plus the official Firecrawl MCP server.",
+  "author": {
+    "name": "Firecrawl",
+    "url": "https://www.firecrawl.dev"
+  },
+  "homepage": "https://www.firecrawl.dev",
+  "repository": "https://github.com/firecrawl/firecrawl",
+  "license": "AGPL-3.0",
+  "keywords": [
+    "firecrawl",
+    "scrape",
+    "crawl",
+    "search",
+    "extract",
+    "mcp",
+    "agent-skills"
+  ],
+  "mcpServers": "./.mcp.json"
+}

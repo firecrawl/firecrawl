@@ -1,0 +1,25 @@
+{
+  "name": "firecrawl",
+  "description": "Agent skills marketplace for Firecrawl",
+  "owner": {
+    "name": "Firecrawl",
+    "url": "https://www.firecrawl.dev"
+  },
+  "plugins": [
+    {
+      "name": "firecrawl",
+      "source": "./",
+      "description": "Integrate Firecrawl scrape, search, interact, and related APIs into product code, with the official Firecrawl MCP server.",
+      "category": "development",
+      "keywords": [
+        "firecrawl",
+        "scrape",
+        "crawl",
+        "search",
+        "extract",
+        "mcp",
+        "agent-skills"
+      ]
+    }
+  ]
+}
