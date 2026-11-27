@@ -22,6 +22,7 @@ import {
   ProxySelectionError,
   RemoveFeatureError,
   ReservedCapacityUnavailableError,
+  SearchModeUnavailableError,
   SiteBlockNoRetryError,
   SiteError,
   SiteRestrictionError,
@@ -106,7 +107,7 @@ describe("behavioral error traits", () => {
     });
   });
 
-  it("marks all 21 engine-loop-terminal errors and excludes non-terminal errors", () => {
+  it("marks all 22 engine-loop-terminal errors and excludes non-terminal errors", () => {
     const terminalErrors: Array<Error> = [
       new AddFeatureError(["stealthProxy"]),
       new RemoveFeatureError(["pdf"]),
@@ -126,6 +127,7 @@ describe("behavioral error traits", () => {
       new NoCachedDataError(),
       new AgentIndexOnlyError(),
       new UsOnlyUnavailableError("us-only"),
+      new SearchModeUnavailableError(),
       new ReservedCapacityUnavailableError(),
       new ExchangeRefusedError("THIRD_PARTY_DATA_NOT_FOUND", "missing"),
     ];
@@ -239,6 +241,11 @@ describe("HTTP response metadata", () => {
         label: "UsOnlyUnavailableError",
         error: new UsOnlyUnavailableError("us-only refusal"),
         expected: { status: 403, code: "US_ONLY_UNAVAILABLE" },
+      },
+      {
+        label: "SearchModeUnavailableError",
+        error: new SearchModeUnavailableError(),
+        expected: { status: 503, code: "SEARCH_MODE_UNAVAILABLE" },
       },
       {
         label: "ReservedCapacityUnavailableError",

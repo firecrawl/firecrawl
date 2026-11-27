@@ -50,6 +50,42 @@ export class UsOnlyUnavailableError extends TransportableError {
   }
 }
 
+/** A search whose enterprise modes no enabled search provider declares support for. */
+export class SearchModeUnavailableError extends TransportableError {
+  static readonly codes: ReadonlyArray<ErrorCode> = ["SEARCH_MODE_UNAVAILABLE"];
+
+  constructor(
+    message = "Search with this data retention mode is temporarily unavailable.",
+  ) {
+    super("SEARCH_MODE_UNAVAILABLE", message);
+  }
+
+  get endsEngineLoop(): boolean {
+    return true;
+  }
+
+  get propagateFromExtraction(): boolean {
+    return true;
+  }
+
+  get httpStatus(): number {
+    return 503;
+  }
+
+  get retryAfterSeconds(): number {
+    return 60;
+  }
+
+  static deserialize(
+    _: ErrorCode,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new SearchModeUnavailableError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 /** Parsing the team's reserved capacity restriction rules out, because the PDF service could not run, or did not confirm running, it there. */
 export class ReservedCapacityUnavailableError extends TransportableError {
   static readonly codes: ReadonlyArray<ErrorCode> = [

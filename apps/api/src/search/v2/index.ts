@@ -1,6 +1,10 @@
 import type { SearchV2Response, SearchResultType } from "../../lib/entities";
 import type { Logger } from "winston";
-import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+import {
+  SearchModeUnavailableError,
+  UsOnlyUnavailableError,
+} from "../../scraper/scrapeURL/error";
+import { logger as baseLogger } from "../../lib/logger";
 import type { TeamPlanClass } from "../../service/search-providers";
 import { service } from "../../service";
 import type { SearchQuery } from "../../service";
@@ -51,14 +55,37 @@ export async function search({
   teamPlanClass?: TeamPlanClass;
 }): Promise<SearchV2Response> {
   const enabledProviders = service.searchProviders.enabled();
-  const providers = usOnly
+  const usProviders = usOnly
     ? enabledProviders.filter(provider => provider.supportsUsOnly === true)
     : enabledProviders;
 
-  if (usOnly && providers.length === 0) {
+  if (usOnly && usProviders.length === 0) {
     throw new UsOnlyUnavailableError(
       "Search is not available for teams restricted to US-only processing on this deployment.",
     );
+  }
+
+  const needsZdr = enterprise?.includes("zdr") === true;
+  const needsAnon = enterprise?.includes("anon") === true;
+  const providers = usProviders.filter(
+    provider =>
+      (!needsZdr || provider.supportsZdr === true) &&
+      (!needsAnon || provider.supportsAnon === true),
+  );
+
+  if ((needsZdr || needsAnon) && providers.length === 0) {
+    baseLogger.warn(
+      "Search refused: no enabled provider supports the requested modes",
+      {
+        module: "search",
+        method: "search",
+        requestId,
+        modes: [needsZdr && "zdr", needsAnon && "anon"].filter(Boolean),
+        usOnly,
+        enabledProviders: enabledProviders.map(provider => provider.name),
+      },
+    );
+    throw new SearchModeUnavailableError();
   }
 
   const searchQuery: SearchQuery = {

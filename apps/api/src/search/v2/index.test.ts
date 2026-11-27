@@ -1,6 +1,17 @@
 const mocks = vi.hoisted(() => ({
   searxngSearch: vi.fn(),
   ddgSearch: vi.fn(),
+  baseLoggerWarn: vi.fn(),
+}));
+
+vi.mock("../../lib/logger", () => ({
+  logger: {
+    info: vi.fn(),
+    warn: mocks.baseLoggerWarn,
+    error: vi.fn(),
+    debug: vi.fn(),
+    child: vi.fn().mockReturnThis(),
+  },
 }));
 
 vi.mock("./searxng", () => ({ searxng_search: mocks.searxngSearch }));
@@ -9,8 +20,12 @@ vi.mock("./ddgsearch", () => ({ ddgSearch: mocks.ddgSearch }));
 import { createLogger } from "winston";
 import { config } from "../../config";
 import type { SearchV2Response } from "../../lib/entities";
-import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+import {
+  SearchModeUnavailableError,
+  UsOnlyUnavailableError,
+} from "../../scraper/scrapeURL/error";
 import type { SearchProvider } from "../../service";
+import type { SearchProviderName } from "../../service/search-providers";
 import { createService, replaceService } from "../../service/service";
 import { coreSearchProviders } from "../providers";
 import { search } from "./index";
@@ -50,6 +65,21 @@ afterEach(() => {
   replaceService(undefined);
   config.SEARXNG_ENDPOINT = originalSearxngEndpoint;
 });
+
+function provider(
+  name: SearchProviderName,
+  flags: Partial<
+    Pick<SearchProvider, "supportsUsOnly" | "supportsZdr" | "supportsAnon">
+  >,
+  search = vi.fn<SearchProvider["search"]>(async () => ({
+    web: [{ url: `https://${name}.test`, title: name, description: "" }],
+  })),
+) {
+  return {
+    provider: { name, priority: 200, ...flags, enabled: () => true, search },
+    search,
+  };
+}
 
 describe("domain filters on the SearXNG and DuckDuckGo results", () => {
   beforeEach(() => {
@@ -189,6 +219,7 @@ describe("service.searchProviders dispatch in v2 search", () => {
           {
             name: "searxng",
             priority: 100,
+            supportsZdr: true,
             enabled: () => true,
             search: providerSearch,
           },
@@ -267,6 +298,152 @@ describe("service.searchProviders dispatch in v2 search", () => {
     expect(res).toEqual({});
     expect(usProvider).toHaveBeenCalledTimes(1);
     expect(mocks.ddgSearch).not.toHaveBeenCalled();
+  });
+
+  describe("enterprise modes", () => {
+    it.each([["zdr"], ["anon"]] as const)(
+      "refuses %s search when no enabled provider supports it",
+      async mode => {
+        config.SEARXNG_ENDPOINT = "http://searxng.test";
+        const other = provider("duckduckgo", { supportsUsOnly: true });
+        installSearchService([
+          { name: "custom", searchProviders: [other.provider] },
+        ]);
+
+        await expect(
+          search({
+            query: "firecrawl",
+            logger,
+            requestId: "req-1",
+            enterprise: [mode],
+          }),
+        ).rejects.toThrow(SearchModeUnavailableError);
+        expect(mocks.baseLoggerWarn).toHaveBeenCalledTimes(1);
+        const [, meta] = mocks.baseLoggerWarn.mock.calls[0];
+        expect(meta).toEqual({
+          module: "search",
+          method: "search",
+          requestId: "req-1",
+          modes: [mode],
+          usOnly: false,
+          enabledProviders: expect.any(Array),
+        });
+        expect(JSON.stringify(mocks.baseLoggerWarn.mock.calls)).not.toContain(
+          "firecrawl",
+        );
+        expect(other.search).not.toHaveBeenCalled();
+        expect(mocks.searxngSearch).not.toHaveBeenCalled();
+        expect(mocks.ddgSearch).not.toHaveBeenCalled();
+      },
+    );
+
+    it("routes zdr search only to providers that support it", async () => {
+      const capable = provider("searxng", { supportsZdr: true });
+      const other = provider("duckduckgo", { supportsAnon: true });
+      installSearchService([
+        {
+          name: "custom",
+          searchProviders: [
+            other.provider,
+            { ...capable.provider, priority: 100 },
+          ],
+        },
+      ]);
+
+      const res = await search({
+        query: "firecrawl",
+        logger,
+        enterprise: ["zdr"],
+      });
+
+      expect(res.web?.[0]?.url).toBe("https://searxng.test");
+      expect(other.search).not.toHaveBeenCalled();
+      expect(mocks.ddgSearch).not.toHaveBeenCalled();
+    });
+
+    it("does not move on to a non-capable provider when the capable one returns null", async () => {
+      const capable = provider(
+        "searxng",
+        { supportsZdr: true, supportsAnon: true },
+        vi.fn(async () => null),
+      );
+      const other = provider("duckduckgo", { supportsZdr: true });
+      installSearchService([
+        {
+          name: "custom",
+          searchProviders: [
+            capable.provider,
+            { ...other.provider, priority: 100 },
+          ],
+        },
+      ]);
+
+      const res = await search({
+        query: "firecrawl",
+        logger,
+        enterprise: ["anon"],
+      });
+
+      expect(res).toEqual({});
+      expect(capable.search).toHaveBeenCalledTimes(1);
+      expect(other.search).not.toHaveBeenCalled();
+      expect(mocks.ddgSearch).not.toHaveBeenCalled();
+    });
+
+    it("requires every requested mode on the same provider", async () => {
+      const zdrOnly = provider("searxng", { supportsZdr: true });
+      const anonOnly = provider("duckduckgo", { supportsAnon: true });
+      installSearchService([
+        {
+          name: "custom",
+          searchProviders: [zdrOnly.provider, anonOnly.provider],
+        },
+      ]);
+
+      await expect(
+        search({ query: "firecrawl", logger, enterprise: ["zdr", "anon"] }),
+      ).rejects.toThrow(SearchModeUnavailableError);
+      expect(zdrOnly.search).not.toHaveBeenCalled();
+      expect(anonOnly.search).not.toHaveBeenCalled();
+    });
+
+    it("requires US-only support alongside zdr support", async () => {
+      const zdrOnly = provider("searxng", { supportsZdr: true });
+      const usOnly = provider("duckduckgo", { supportsUsOnly: true });
+      installSearchService([
+        {
+          name: "custom",
+          searchProviders: [zdrOnly.provider, usOnly.provider],
+        },
+      ]);
+
+      await expect(
+        search({
+          query: "firecrawl",
+          logger,
+          enterprise: ["zdr"],
+          usOnly: true,
+        }),
+      ).rejects.toThrow(SearchModeUnavailableError);
+      expect(zdrOnly.search).not.toHaveBeenCalled();
+      expect(usOnly.search).not.toHaveBeenCalled();
+    });
+
+    it("keeps the default mode on every enabled provider", async () => {
+      const plain = provider(
+        "searxng",
+        {},
+        vi.fn(async () => null),
+      );
+      installSearchService([
+        { name: "custom", searchProviders: [plain.provider] },
+      ]);
+
+      await search({ query: "firecrawl", logger, enterprise: ["default"] });
+
+      expect(plain.search).toHaveBeenCalledTimes(1);
+      expect(mocks.ddgSearch).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("catches provider errors, logs them, and returns an empty response", async () => {
