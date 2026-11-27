@@ -1350,7 +1350,6 @@ export type TeamFlags = {
   // gates the per-key scope/format lockdown (key_restriction_config table)
   keyRestriction?: boolean;
   skipCountryCheck?: boolean;
-  browserBeta?: boolean;
   bypassCreditChecks?: boolean;
   debugBranding?: boolean;
   maxBrowserSessions?: number;
@@ -1358,7 +1357,6 @@ export type TeamFlags = {
   largePdfs?: boolean;
   // POST /v2/search/:jobId/feedback returns 403 TEAM_OPTED_OUT when true.
   searchFeedbackOptOut?: boolean;
-  researchBeta?: boolean;
   menuBeta?: boolean;
   enrichBeta?: boolean;
   labsSearch?: boolean;
