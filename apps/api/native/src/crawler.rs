@@ -130,7 +130,6 @@ const ROBOTS_TXT: &str = "ROBOTS_TXT";
 const FILE_TYPE: &str = "FILE_TYPE";
 const SOCIAL_MEDIA: &str = "SOCIAL_MEDIA";
 const EXTERNAL_LINK: &str = "EXTERNAL_LINK";
-const SECTION_LINK: &str = "SECTION_LINK";
 const NON_WEB_PROTOCOL: &str = "NON_WEB_PROTOCOL";
 
 #[inline]
@@ -206,17 +205,17 @@ fn is_internal_link(url: &Url, base_url: &Url) -> bool {
   link_domain == base_domain
 }
 
+/// Drops an in-page anchor so the link resolves to its page, which the crawl
+/// dedupes like any other URL. Keeps route-like fragments such as `#/dashboard`.
+/// Returns whether a fragment was removed.
 #[inline]
-fn no_sections(url_str: &str) -> bool {
-  if !url_str.contains('#') {
-    return true;
-  }
-
-  // Check if the hash fragment looks like a route (contains forward slashes and has substantial content)
-  if let Some(hash_part) = url_str.split('#').nth(1) {
-    hash_part.len() > 1 && hash_part.contains('/')
-  } else {
-    false
+fn strip_section_fragment(url: &mut Url) -> bool {
+  match url.fragment() {
+    Some(hash) if !(hash.len() > 1 && hash.contains('/')) => {
+      url.set_fragment(None);
+      true
+    }
+    _ => false,
   }
 }
 
@@ -324,6 +323,7 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
   );
 
   let mut result_links = Vec::new();
+  let mut seen_links = HashSet::new();
   let mut denial_reasons = HashMap::new();
 
   for link in data.links {
@@ -331,13 +331,15 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
       break;
     }
 
-    let url = match base_url.join(&link) {
+    let mut url = match base_url.join(&link) {
       Ok(url) => url,
       Err(_) => {
         denial_reasons.insert(link, URL_PARSE_ERROR.to_string());
         continue;
       }
     };
+
+    let stripped_fragment = is_internal_link(&url, &base_url) && strip_section_fragment(&mut url);
 
     let path = url.path();
     let url_str = url.as_str();
@@ -359,11 +361,6 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
 
     if is_internal_link(&url, &base_url) {
       // INTERNAL LINKS
-      if !no_sections(url_str) {
-        denial_reasons.insert(link, SECTION_LINK.to_string());
-        continue;
-      }
-
       if !data.allow_backward_crawling && !is_within_crawl_scope(path, &scope) {
         denial_reasons.insert(link, BACKWARD_CRAWLING.to_string());
         continue;
@@ -400,7 +397,14 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
         }
       }
 
-      result_links.push(link);
+      let accepted = if stripped_fragment {
+        url_str.to_string()
+      } else {
+        link
+      };
+      if seen_links.insert(accepted.clone()) {
+        result_links.push(accepted);
+      }
     } else {
       // EXTERNAL LINKS
       if is_social_media_or_email(url_str) {
@@ -557,7 +561,7 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
     }
   }
 
-  let url = match Url::parse(&full_url) {
+  let mut url = match Url::parse(&full_url) {
     Ok(url) => url,
     Err(_) => {
       return Ok(FilterUrlResult {
@@ -578,6 +582,10 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
       });
     }
   };
+
+  if is_internal_link(&url, &base_url) && strip_section_fragment(&mut url) {
+    full_url = url.to_string();
+  }
 
   let path = url.path();
   let url_str = url.as_str();
@@ -604,14 +612,6 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
 
   if is_internal_link(&url, &base_url) {
     // INTERNAL LINKS
-    if !no_sections(url_str) {
-      return Ok(FilterUrlResult {
-        allowed: false,
-        url: None,
-        denial_reason: Some(SECTION_LINK.to_string()),
-      });
-    }
-
     if !excludes_regex.is_empty() && excludes_regex.iter().any(|r| r.is_match(path.as_bytes())) {
       return Ok(FilterUrlResult {
         allowed: false,
@@ -1445,5 +1445,124 @@ mod tests {
     .unwrap();
     assert!(!result.allowed);
     assert_eq!(result.denial_reason.unwrap(), "EXTERNAL_LINK");
+  }
+
+  #[test]
+  fn test_filter_url_strips_section_anchor() {
+    let result = _filter_url(filter_url_call(
+      "https://example.com/hc/sections/1?page=2#articles",
+      "https://example.com/hc/sections/1",
+      "https://example.com",
+    ))
+    .unwrap();
+    assert!(result.allowed);
+    assert_eq!(
+      result.url.unwrap(),
+      "https://example.com/hc/sections/1?page=2"
+    );
+  }
+
+  #[test]
+  fn test_filter_url_keeps_route_fragment() {
+    let result = _filter_url(filter_url_call(
+      "https://example.com/app#/dashboard",
+      "https://example.com/app",
+      "https://example.com",
+    ))
+    .unwrap();
+    assert!(result.allowed);
+    assert_eq!(result.url.unwrap(), "https://example.com/app#/dashboard");
+  }
+
+  #[test]
+  fn test_filter_links_follows_anchored_pagination_link() {
+    let data = FilterLinksCall {
+      links: vec!["https://example.com/hc/sections/1?page=2#articles".to_string()],
+      limit: Some(10),
+      includes: vec![],
+      excludes: vec![],
+      ignore_robots_txt: true,
+      robots_txt: "".to_string(),
+      max_depth: 10,
+      base_url: "https://example.com".to_string(),
+      initial_url: "https://example.com/hc/sections/1".to_string(),
+      regex_on_full_url: false,
+      allow_backward_crawling: false,
+      allow_external_content_links: false,
+      allow_subdomains: false,
+      robots_user_agent: None,
+    };
+
+    let result = _filter_links(data).unwrap();
+    assert_eq!(
+      result.links,
+      vec!["https://example.com/hc/sections/1?page=2".to_string()]
+    );
+  }
+
+  #[test]
+  fn test_filter_links_keys_denials_by_input_link() {
+    let data = FilterLinksCall {
+      links: vec![
+        "https://example.com/docs/a#intro".to_string(),
+        "https://example.com/docs/a#usage".to_string(),
+        "https://example.com/docs/b".to_string(),
+      ],
+      limit: Some(2),
+      includes: vec![],
+      excludes: vec!["^/docs/a$".to_string()],
+      ignore_robots_txt: true,
+      robots_txt: "".to_string(),
+      max_depth: 10,
+      base_url: "https://example.com".to_string(),
+      initial_url: "https://example.com/docs".to_string(),
+      regex_on_full_url: false,
+      allow_backward_crawling: false,
+      allow_external_content_links: false,
+      allow_subdomains: false,
+      robots_user_agent: None,
+    };
+
+    let result = _filter_links(data).unwrap();
+    assert_eq!(result.links, vec!["https://example.com/docs/b".to_string()]);
+    assert_eq!(
+      result
+        .denial_reasons
+        .get("https://example.com/docs/a#intro"),
+      Some(&"EXCLUDE_PATTERN".to_string())
+    );
+  }
+
+  #[test]
+  fn test_filter_links_dedupes_anchor_variants() {
+    let data = FilterLinksCall {
+      links: vec![
+        "https://example.com/docs/a#intro".to_string(),
+        "https://example.com/docs/a#usage".to_string(),
+        "https://example.com/docs/b".to_string(),
+      ],
+      limit: Some(2),
+      includes: vec![],
+      excludes: vec![],
+      ignore_robots_txt: true,
+      robots_txt: "".to_string(),
+      max_depth: 10,
+      base_url: "https://example.com".to_string(),
+      initial_url: "https://example.com/docs".to_string(),
+      regex_on_full_url: false,
+      allow_backward_crawling: false,
+      allow_external_content_links: false,
+      allow_subdomains: false,
+      robots_user_agent: None,
+    };
+
+    let result = _filter_links(data).unwrap();
+    assert_eq!(
+      result.links,
+      vec![
+        "https://example.com/docs/a".to_string(),
+        "https://example.com/docs/b".to_string(),
+      ]
+    );
   }
 }
