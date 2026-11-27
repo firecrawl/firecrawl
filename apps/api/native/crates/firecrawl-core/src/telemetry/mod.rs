@@ -3,7 +3,10 @@
 //! zero-data-retention (ZDR) suppression across logs, spans, worker threads,
 //! and panic hooks.
 
-use std::sync::{Once, OnceLock};
+use std::{
+  io::Write as _,
+  sync::{Once, OnceLock},
+};
 
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_otlp::{Protocol, RetryPolicy, SpanExporter, WithExportConfig, WithHttpConfig};
@@ -13,7 +16,6 @@ use opentelemetry_sdk::trace::{
   SpanProcessor,
 };
 use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer, fmt};
 
 mod propagation;
@@ -150,8 +152,11 @@ fn build_otlp_tracer_provider() -> Option<ZdrTracerProvider> {
     .build()
   {
     Ok(exporter) => exporter,
-    Err(err) => {
-      eprintln!("[telemetry] failed to build OTLP exporter ({endpoint}): {err}");
+    Err(_) => {
+      let _ = writeln!(
+        std::io::stderr(),
+        "[telemetry] failed to build OTLP exporter"
+      );
       return None;
     }
   };
@@ -178,27 +183,36 @@ pub fn init_telemetry() {
     ensure_crypto_provider();
     install_zdr_panic_hook();
 
-    let otel_layer = build_otlp_tracer_provider().map(|provider| {
-      let tracer = provider.tracer(TRACER_NAME);
-      opentelemetry::global::set_tracer_provider(provider.clone());
-      let _ = PROVIDER.set(provider);
+    let provider = build_otlp_tracer_provider();
+    let otel_layer = provider.as_ref().map(|provider| {
       tracing_opentelemetry::layer()
-        .with_tracer(tracer)
+        .with_tracer(provider.tracer(TRACER_NAME))
         .with_filter(env_filter())
     });
 
     let zdr_filter = zdr_span_filter(env_filter());
 
     // Installed even without an exporter so ZdrLayer marks spans for the panic hook.
-    let _ = tracing_subscriber::registry()
+    let subscriber = tracing_subscriber::registry()
       .with(ZdrLayer.with_filter(zdr_filter))
       .with(
         fmt::layer()
           .with_writer(std::io::stderr)
           .with_filter(env_filter()),
       )
-      .with(otel_layer)
-      .try_init();
+      .with(otel_layer);
+    if let Err(err) = tracing::subscriber::set_global_default(subscriber) {
+      let _ = writeln!(
+        std::io::stderr(),
+        "[telemetry] could not install tracing subscriber: {err}"
+      );
+      return;
+    }
+
+    if let Some(provider) = provider {
+      opentelemetry::global::set_tracer_provider(provider.clone());
+      let _ = PROVIDER.set(provider);
+    }
   });
 }
 
