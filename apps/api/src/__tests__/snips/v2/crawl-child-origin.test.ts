@@ -1,9 +1,11 @@
+import type * as ScrapeURLModule from "../../../scraper/scrapeURL";
+
 const mocks = vi.hoisted(() => ({
   scrapeURL: vi.fn(),
 }));
 
 vi.mock("../../../scraper/scrapeURL", async importOriginal => ({
-  ...(await importOriginal<typeof import("../../../scraper/scrapeURL")>()),
+  ...(await importOriginal<typeof ScrapeURLModule>()),
   scrapeURL: mocks.scrapeURL,
 }));
 
@@ -34,7 +36,7 @@ describe("crawl and batch child scrape origin", () => {
           crawlerOptions: { currentDiscoveryDepth: 1 },
           internalOptions: { teamId: "team-1" },
         },
-      } as any,
+      } as unknown as Parameters<typeof startWebScraperPipeline>[0]["job"],
       costTracking: new CostTracking(),
     }).catch(() => undefined);
 

@@ -1,28 +1,41 @@
+import type * as CrawlRedis from "../../../lib/crawl-redis";
+import type * as Limits from "../../../lib/limits";
+import type * as QueueJobs from "../../../services/queue-jobs";
+import type * as Redis from "../../../services/redis";
+import type { ScrapeJobData, ScrapeJobKickoffSitemap } from "../../../types";
+
 const mocks = vi.hoisted(() => ({
   addScrapeJob: vi.fn(),
   addScrapeJobs: vi.fn(),
-  addScrapeJobToBullMQ: vi.fn(),
+  addScrapeJobToBullMQ: vi.fn<typeof QueueJobs._addScrapeJobToBullMQ>(),
   getCrawl: vi.fn(),
   startWebScraperPipeline: vi.fn(),
+  redis: {
+    scard: vi.fn().mockResolvedValue(0),
+    sadd: vi.fn().mockResolvedValue(1),
+    srem: vi.fn(),
+    expire: vi.fn(),
+    set: vi.fn(),
+  },
   crawler: {
-    robots: { getSitemaps: () => [] as string[] },
+    robots: { getSitemaps: (): Array<string> => [] },
     usOnly: false,
     setBaseUrl: () => {},
     isRobotsAllowed: () => true,
     filterURL: async () => ({ allowed: true }),
-    extractLinksFromContent: async () => [] as string[],
+    extractLinksFromContent: async (): Promise<Array<string>> => [],
     filterLinks: vi.fn(),
   },
 }));
 
 vi.mock("../../../services/queue-jobs", async importOriginal => ({
-  ...(await importOriginal<typeof import("../../../services/queue-jobs")>()),
+  ...(await importOriginal<typeof QueueJobs>()),
   addScrapeJob: mocks.addScrapeJob,
   addScrapeJobs: mocks.addScrapeJobs,
   _addScrapeJobToBullMQ: mocks.addScrapeJobToBullMQ,
 }));
 vi.mock("../../../lib/crawl-redis", async importOriginal => ({
-  ...(await importOriginal<typeof import("../../../lib/crawl-redis")>()),
+  ...(await importOriginal<typeof CrawlRedis>()),
   getCrawl: mocks.getCrawl,
   crawlToCrawler: () => mocks.crawler,
   lockURL: vi.fn().mockResolvedValue(true),
@@ -39,19 +52,16 @@ vi.mock("../../../lib/crawl-redis", async importOriginal => ({
   finishCrawlKickoff: vi.fn(),
   getCrawlJobs: vi.fn().mockResolvedValue([]),
   getDoneJobsOrderedLength: vi.fn().mockResolvedValue(0),
+  isCrawlFinishMarked: vi.fn(async () => false),
 }));
 vi.mock("../../../services/redis", async importOriginal => ({
-  ...(await importOriginal<typeof import("../../../services/redis")>()),
-  redisEvictConnection: {
-    scard: vi.fn().mockResolvedValue(0),
-    sadd: vi.fn().mockResolvedValue(1),
-    srem: vi.fn(),
-    expire: vi.fn(),
-    set: vi.fn(),
-  },
+  ...(await importOriginal<typeof Redis>()),
+  redisEvictConnection: mocks.redis,
+  redisCrawlStateConnection: mocks.redis,
+  redisCrawlStateFallbackConnection: null,
 }));
 vi.mock("../../../lib/limits", async importOriginal => ({
-  ...(await importOriginal<typeof import("../../../lib/limits")>()),
+  ...(await importOriginal<typeof Limits>()),
   resolveJobPriority: vi.fn().mockResolvedValue(10),
 }));
 vi.mock("../../../main/runWebScraper", () => ({
@@ -139,7 +149,7 @@ describe("crawl enqueue origin", () => {
         crawlerOptions: { currentDiscoveryDepth: 0 },
         internalOptions: { teamId: "team-1" },
       },
-    } as any).then(
+    } as unknown as Parameters<typeof processJobInternal>[0]).then(
       () => "resolved",
       (error: unknown) => `rejected: ${error}`,
     );
@@ -168,14 +178,17 @@ describe("crawl enqueue origin", () => {
         scrapeOptions: {},
         crawlerOptions: {},
       },
-    } as any).then(
+    } as unknown as Parameters<typeof processJobInternal>[0]).then(
       () => "resolved",
       (error: unknown) => `rejected: ${error}`,
     );
 
     const sitemapJobs = mocks.addScrapeJobToBullMQ.mock.calls
       .map(([data]) => data)
-      .filter(data => data.mode === "kickoff_sitemap");
+      .filter(
+        (data: ScrapeJobData): data is ScrapeJobKickoffSitemap =>
+          data.mode === "kickoff_sitemap",
+      );
     expect(sitemapJobs, outcome).toHaveLength(1);
     expect(sitemapJobs[0].sitemapUrl).toBe("https://shop.test/sitemap.xml");
     expect(sitemapJobs[0].origin).toBe(SUBMITTER_ORIGIN);

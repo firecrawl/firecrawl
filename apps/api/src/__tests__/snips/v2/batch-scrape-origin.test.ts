@@ -1,14 +1,18 @@
+import type * as CrawlRedis from "../../../lib/crawl-redis";
+import type * as QueueJobs from "../../../services/queue-jobs";
+import type * as NuqRouter from "../../../services/worker/nuq-router";
+
 const mocks = vi.hoisted(() => ({
-  addScrapeJobs: vi.fn(),
+  addScrapeJobs: vi.fn<typeof QueueJobs.addScrapeJobs>(),
   getCrawl: vi.fn(),
 }));
 
 vi.mock("../../../services/queue-jobs", async importOriginal => ({
-  ...(await importOriginal<typeof import("../../../services/queue-jobs")>()),
+  ...(await importOriginal<typeof QueueJobs>()),
   addScrapeJobs: mocks.addScrapeJobs,
 }));
 vi.mock("../../../lib/crawl-redis", async importOriginal => ({
-  ...(await importOriginal<typeof import("../../../lib/crawl-redis")>()),
+  ...(await importOriginal<typeof CrawlRedis>()),
   getCrawl: mocks.getCrawl,
   saveCrawl: vi.fn(),
   markCrawlActive: vi.fn(),
@@ -17,15 +21,47 @@ vi.mock("../../../lib/crawl-redis", async importOriginal => ({
   addCrawlJobs: vi.fn(),
 }));
 vi.mock("../../../services/worker/nuq-router", async importOriginal => ({
-  ...(await importOriginal<
-    typeof import("../../../services/worker/nuq-router")
-  >()),
+  ...(await importOriginal<typeof NuqRouter>()),
   crawlGroup: { addGroup: vi.fn() },
   resolveNewGroupBackend: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { batchScrapeController } from "../../../controllers/v2/batch-scrape";
 import { createService, replaceService } from "../../../service/service";
+
+type FakeResponse = {
+  headersSent: boolean;
+  code?: number;
+  body?: unknown;
+  status: (code: number) => FakeResponse;
+  json: (body: unknown) => FakeResponse;
+};
+
+async function enqueuedOrigins(body: { origin?: string; appendToId?: string }) {
+  const res: FakeResponse = {
+    headersSent: false,
+    status: code => ((res.code = code), res),
+    json: payload => ((res.body = payload), res),
+  };
+  await batchScrapeController(
+    {
+      body: {
+        urls: ["https://open.example/a", "https://open.example/b"],
+        ...body,
+      },
+      headers: {},
+      protocol: "http",
+      host: "api.test",
+      auth: { team_id: "team-1" },
+      requestBlocklistChecked: true,
+      acuc: { flags: {}, team_id: "team-1", org_id: "org-1" },
+    } as unknown as Parameters<typeof batchScrapeController>[0],
+    res as unknown as Parameters<typeof batchScrapeController>[1],
+  );
+  return mocks.addScrapeJobs.mock.calls.flatMap(([jobs]) =>
+    jobs.map(job => job.data.origin),
+  );
+}
 
 describe("v2 batch scrape child job origin", () => {
   beforeAll(() => {
@@ -45,32 +81,6 @@ describe("v2 batch scrape child job origin", () => {
     mocks.addScrapeJobs.mockReset();
     mocks.getCrawl.mockReset();
   });
-
-  async function enqueuedOrigins(body: Record<string, unknown>) {
-    const res: any = {
-      headersSent: false,
-      status: (code: number) => ((res.code = code), res),
-      json: (body: unknown) => ((res.body = body), res),
-    };
-    await (batchScrapeController as any)(
-      {
-        body: {
-          urls: ["https://open.example/a", "https://open.example/b"],
-          ...body,
-        },
-        headers: {},
-        protocol: "http",
-        host: "api.test",
-        auth: { team_id: "team-1" },
-        requestBlocklistChecked: true,
-        acuc: { flags: {}, team_id: "team-1", org_id: "org-1" },
-      },
-      res,
-    );
-    return mocks.addScrapeJobs.mock.calls
-      .flat(2)
-      .map((job: any) => job.data.origin);
-  }
 
   it("keeps the submitter's origin", async () => {
     expect(await enqueuedOrigins({ origin: "python-sdk@4.57.0" })).toEqual([
