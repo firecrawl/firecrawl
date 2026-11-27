@@ -463,8 +463,21 @@ impl Engine {
         // A bot check (a 403 or 503, a "verifying your browser" page) often
         // clears in a real browser. Keep what the browser got only when it is
         // real content, so a page that stays blocked still reads as blocked.
-        let challenged = can_render
-          && (matches!(fetched.status, 403 | 503) || crate::cloud::looks_like_bot_check(&markdown));
+        // The first response's own challenge signals count too: a
+        // `cf-mitigated: challenge` header or a challenge script in the raw
+        // HTML means the plain fetch was a challenge page even when its
+        // status and wording look ordinary (#5963). A challenge is a
+        // challenge whether or not a browser exists to clear it: without
+        // one, the page reads as blocked instead of as a success.
+        let first_challenge = fetched
+          .headers
+          .get("cf-mitigated")
+          .and_then(|v| v.to_str().ok())
+          .is_some_and(|v| v.eq_ignore_ascii_case("challenge"))
+          || crate::cloud::looks_like_challenge_markup(&raw_html);
+        let challenged = matches!(fetched.status, 403 | 503)
+          || crate::cloud::looks_like_bot_check(&markdown)
+          || first_challenge;
         let nav_only = looks_like_nav_only_shell(&raw_html, &markdown);
         let needs_javascript =
           (200..400).contains(&fetched.status) && (needs_browser(&raw_html, &markdown) || nav_only);
@@ -475,9 +488,8 @@ impl Engine {
             .render_with_markdown(&parsed, opts, &formats, wait_for, timeout, false)
             .await
           {
-            Ok((doc, rendered_md))
-              if !crate::cloud::looks_like_bot_check(&rendered_md)
-                && visible_chars(&rendered_md) > visible_chars(&markdown).max(200) =>
+            Ok((doc, rendered_md, rendered_challenge))
+              if accept_challenged_render(&rendered_md, rendered_challenge, &markdown) =>
             {
               Some(doc)
             }
@@ -485,13 +497,16 @@ impl Engine {
           }
         } else if shell {
           // Keep the render unless it came back with clearly less text than
-          // the plain fetch had (a consent wall, a half-loaded page).
+          // the plain fetch had (a consent wall, a half-loaded page), or it
+          // is still a challenge page.
           match self
             .render_with_markdown(&parsed, opts, &formats, wait_for, timeout, false)
             .await
           {
-            Ok((doc, rendered_md))
-              if nav_only || visible_chars(&rendered_md) * 10 >= visible_chars(&markdown) * 8 =>
+            Ok((doc, rendered_md, rendered_challenge))
+              if !rendered_challenge
+                && (nav_only
+                  || visible_chars(&rendered_md) * 10 >= visible_chars(&markdown) * 8) =>
             {
               Some(doc)
             }
@@ -516,6 +531,13 @@ impl Engine {
               {
                 add_warning(&mut data, warning);
               }
+            }
+            if challenged {
+              // The plain fetch was a challenge page and no render could
+              // replace it (no browser, or the render stayed an
+              // interstitial): the page reads as blocked, so the cloud
+              // fallback can take it (#5963).
+              data.insert("blocked".into(), Value::Bool(true));
             }
             finish_metadata(
               &mut metadata,
@@ -578,7 +600,9 @@ impl Engine {
   }
 
   /// Load the page in the local browser and build the document from what it
-  /// rendered.
+  /// rendered. A render that is still a challenge interstitial is marked
+  /// blocked, so a forced-browser render is never mistaken for the real
+  /// page (#5963).
   async fn render_document(
     &self,
     requested: &Url,
@@ -588,14 +612,20 @@ impl Engine {
     timeout: Duration,
     screenshot: bool,
   ) -> Result<Map<String, Value>, ScrapeError> {
-    self
+    let (mut data, markdown, rendered_challenge) = self
       .render_with_markdown(requested, opts, formats, wait_for, timeout, screenshot)
-      .await
-      .map(|(data, _)| data)
+      .await?;
+    if render_is_challenge(&markdown, rendered_challenge) {
+      data.insert("blocked".into(), Value::Bool(true));
+    }
+    Ok(data)
   }
 
   /// `render_document`, plus the page's markdown even when markdown was not
   /// a requested format, so the caller can judge what the browser got.
+  /// Also reports whether the rendered HTML still carries a bot-protection
+  /// challenge script, so a render that is still an interstitial is not
+  /// mistaken for the real page (#5963).
   async fn render_with_markdown(
     &self,
     requested: &Url,
@@ -604,7 +634,7 @@ impl Engine {
     wait_for: Duration,
     timeout: Duration,
     screenshot: bool,
-  ) -> Result<(Map<String, Value>, String), ScrapeError> {
+  ) -> Result<(Map<String, Value>, String, bool), ScrapeError> {
     let browser = self
       .browser
       .as_ref()
@@ -625,6 +655,9 @@ impl Engine {
         }
       })?;
     let final_url = Url::parse(&rendered.final_url).unwrap_or_else(|_| requested.clone());
+    // Check the challenge markers before the HTML is consumed: the
+    // markdown conversion strips the challenge scripts.
+    let rendered_challenge = crate::cloud::looks_like_challenge_markup(&rendered.html);
     let (mut data, mut metadata, markdown) = self
       .html_parts(rendered.html, &final_url, opts, formats)
       .await?;
@@ -645,7 +678,7 @@ impl Engine {
       "local-browser",
     );
     data.insert("metadata".into(), Value::Object(metadata));
-    Ok((data, markdown))
+    Ok((data, markdown, rendered_challenge))
   }
 
   /// Turn one HTML document into the requested formats. Also returns the
@@ -1010,6 +1043,22 @@ fn visible_chars(markdown: &str) -> usize {
   markdown.chars().filter(|c| !c.is_whitespace()).count()
 }
 
+/// True when a browser render is still a bot-protection interstitial,
+/// not the real page: its HTML still carries a challenge script, or its
+/// markdown still reads like a bot check (#5963).
+fn render_is_challenge(rendered_md: &str, rendered_challenge: bool) -> bool {
+  rendered_challenge || crate::cloud::looks_like_bot_check(rendered_md)
+}
+
+/// True when a browser render may replace a challenged plain fetch: the
+/// render must not still be a bot check, must not still carry challenge
+/// markup in its HTML, and must have clearly more visible text than the
+/// plain fetch had (#5963).
+fn accept_challenged_render(rendered_md: &str, rendered_challenge: bool, plain_md: &str) -> bool {
+  !render_is_challenge(rendered_md, rendered_challenge)
+    && visible_chars(rendered_md) > visible_chars(plain_md).max(200)
+}
+
 pub fn parse_url(input: &str) -> Result<Url, ScrapeError> {
   let trimmed = input.trim();
   let candidate = if trimmed.contains("://") {
@@ -1167,5 +1216,179 @@ mod tests {
       "https://example.com/a"
     );
     assert!(parse_url("http://").is_err());
+  }
+
+  #[test]
+  fn render_is_challenge_catches_markup_only_interstitials() {
+    // #5963: the challenge script in the HTML is enough on its own —
+    // the markdown need not read like a bot check.
+    assert!(render_is_challenge("An ordinary article.", true));
+    assert!(render_is_challenge("Please verify you are human", false));
+    assert!(!render_is_challenge("An ordinary article.", false));
+  }
+
+  #[test]
+  fn challenged_render_rejected_when_still_an_interstitial() {
+    // #5963: the interstitial is longer than the plain fetch's challenge
+    // page, but it is still a bot check — it must not replace the fetch.
+    let interstitial = "# Additional Verification Required\n\nYour Ray ID for this request is 1234567890abcdef\n\nVerification successful. Waiting for www.indeed.com to respond\n\n[Return home →](https://www.indeed.com/)\n\n[Troubleshooting Cloudflare Errors](https://developers.cloudflare.com/support/troubleshooting/cloudflare-errors/)";
+    let plain = "Please verify you are human";
+    assert!(!accept_challenged_render(interstitial, true, plain));
+    assert!(!accept_challenged_render(interstitial, false, plain));
+    // Real content, longer than the plain fetch and free of challenge
+    // signs, still replaces the fetch.
+    let real = "The job listing page with many open roles and descriptions. ".repeat(20);
+    assert!(accept_challenged_render(&real, false, plain));
+    // A render whose HTML still carries a challenge script is rejected
+    // even when its markdown wording is new.
+    assert!(!accept_challenged_render(&real, true, plain));
+  }
+
+  /// Cloudflare's challenge interstitial, as the #5963 reporter saw it.
+  /// The visible text is injected by script, as on the real challenge
+  /// page: the plain fetch's markdown is nearly empty (scripts are
+  /// stripped), while the rendered page shows the interstitial text.
+  const CHALLENGE_HTML: &str = "<!doctype html><html><head><title>Just a moment...</title><script src=\"/cdn-cgi/challenge-platform/h/g/scripts/jsd/abc.js\"></script><script>document.addEventListener('DOMContentLoaded', function(){document.body.innerHTML = '<h1>Additional Verification Required</h1><p>Your Ray ID for this request is 1234567890abcdef</p><p>Verification successful. Waiting for www.example.com to respond</p><a href=\"https://www.example.com/\">Return home</a><a href=\"https://developers.cloudflare.com/support/troubleshooting/cloudflare-errors/\">Troubleshooting Cloudflare Errors</a>';});</script></head><body><p>Please wait...</p></body></html>";
+
+  /// A challenge interstitial whose visible text looks ordinary: the only
+  /// challenge signal is the challenge script in the HTML. The markdown
+  /// carries no bot-check wording, so only the markup check can catch it.
+  const MARKUP_ONLY_CHALLENGE_HTML: &str = "<!doctype html><html><head><title>Example Article</title><script src=\"/cdn-cgi/challenge-platform/h/g/scripts/jsd/abc.js\"></script><script>document.addEventListener('DOMContentLoaded', function(){document.body.innerHTML = '<h1>An ordinary article</h1><p>' + 'This is ordinary article text with nothing suspicious about it. '.repeat(12) + '</p>';});</script></head><body><p>Please wait...</p></body></html>";
+
+  /// A stand-in origin that answers every request with the challenge
+  /// interstitial. The first request (the plain fetch) is challenged with
+  /// 403 and `cf-mitigated: challenge`; later requests (the browser's load)
+  /// get the same interstitial with a 200, as the reporter saw: the render
+  /// then reports statusCode 200, so only the content check can catch it.
+  async fn challenge_server() -> String {
+    serve_challenge(CHALLENGE_HTML, true).await
+  }
+
+  /// A stand-in origin that answers every request with a 200 carrying the
+  /// markup-only interstitial. There is no refusal status to lean on: the
+  /// plain fetch reads 200, and a forced browser render gets the same 200
+  /// interstitial — both paths must read the page as blocked.
+  async fn markup_only_challenge_server() -> String {
+    serve_challenge(MARKUP_ONLY_CHALLENGE_HTML, false).await
+  }
+
+  async fn serve_challenge(html: &'static str, first_forbidden: bool) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+      .await
+      .unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let requests = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    tokio::spawn(async move {
+      while let Ok((mut socket, _)) = listener.accept().await {
+        let requests = requests.clone();
+        tokio::spawn(async move {
+          let mut buf = vec![0u8; 8192];
+          let mut seen = 0usize;
+          loop {
+            match socket.read(&mut buf[seen..]).await {
+              Ok(0) => return,
+              Ok(n) => {
+                seen += n;
+                if seen >= 4 && buf[..seen].windows(4).any(|w| w == b"\r\n\r\n") {
+                  break;
+                }
+                if seen == buf.len() {
+                  break;
+                }
+              }
+              Err(_) => return,
+            }
+          }
+          let first = requests.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0;
+          let status = if first_forbidden && first {
+            "403 Forbidden"
+          } else {
+            "200 OK"
+          };
+          let response = format!(
+            "HTTP/1.1 {status}\r\ncontent-type: text/html; charset=utf-8\r\ncf-mitigated: challenge\r\nserver: cloudflare\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            html.len(),
+            html
+          );
+          let _ = socket.write_all(response.as_bytes()).await;
+        });
+      }
+    });
+    base
+  }
+
+  #[tokio::test]
+  async fn challenged_render_is_not_kept_as_content() {
+    // #5963, end to end: the plain fetch is challenged, the browser render
+    // still shows the interstitial, so the page must read as blocked, not
+    // as a successful local scrape. Without a browser the plain 403 fetch
+    // is kept anyway, so the render path is not exercised.
+    if crate::browser::find_chrome().is_none() {
+      return;
+    }
+    let base = challenge_server().await;
+    let engine = Engine::new(EngineConfig {
+      policy: NetworkPolicy::AllowPrivate,
+      user_agent: None,
+      browser: BrowserMode::Auto,
+    })
+    .unwrap();
+    let cloud = crate::cloud::Cloud::new(base.clone(), None, crate::cloud::CloudMode::Off);
+    let doc = crate::cloud::scrape_with_fallback(&engine, &cloud, &base, &ScrapeOptions::default())
+      .await
+      .unwrap();
+    assert_eq!(doc["metadata"]["statusCode"], 403);
+    assert_eq!(doc["blocked"], true);
+    assert_eq!(doc["source"], "local");
+  }
+
+  #[tokio::test]
+  async fn challenge_without_a_browser_reads_blocked() {
+    // #5963 (P1b): the plain fetch is a 200 carrying `cf-mitigated:
+    // challenge` and challenge scripts, and there is no browser to clear
+    // it. The page must read as blocked, not as a successful local
+    // scrape — a 200 is not proof the page was served.
+    let base = markup_only_challenge_server().await;
+    let engine = Engine::new(EngineConfig {
+      policy: NetworkPolicy::AllowPrivate,
+      user_agent: None,
+      browser: BrowserMode::Never,
+    })
+    .unwrap();
+    let cloud = crate::cloud::Cloud::new(base.clone(), None, crate::cloud::CloudMode::Off);
+    let doc = crate::cloud::scrape_with_fallback(&engine, &cloud, &base, &ScrapeOptions::default())
+      .await
+      .unwrap();
+    assert_eq!(doc["metadata"]["statusCode"], 200);
+    assert_eq!(doc["blocked"], true);
+    assert_eq!(doc["source"], "local");
+  }
+
+  #[tokio::test]
+  async fn forced_render_of_challenge_reads_blocked() {
+    // #5963 (P1a): with the browser forced on, the render itself gets
+    // the 200 interstitial. The render must read as blocked, not as a
+    // successful local scrape — the forced path has no plain fetch to
+    // compare against, so the challenge flag on the render is the only
+    // signal. The interstitial's visible text is ordinary on purpose:
+    // only the challenge script in its HTML gives it away.
+    if crate::browser::find_chrome().is_none() {
+      return;
+    }
+    let base = markup_only_challenge_server().await;
+    let engine = Engine::new(EngineConfig {
+      policy: NetworkPolicy::AllowPrivate,
+      user_agent: None,
+      browser: BrowserMode::Always,
+    })
+    .unwrap();
+    let cloud = crate::cloud::Cloud::new(base.clone(), None, crate::cloud::CloudMode::Off);
+    let doc = crate::cloud::scrape_with_fallback(&engine, &cloud, &base, &ScrapeOptions::default())
+      .await
+      .unwrap();
+    assert_eq!(doc["metadata"]["statusCode"], 200);
+    assert_eq!(doc["blocked"], true);
+    assert_eq!(doc["source"], "local");
   }
 }
