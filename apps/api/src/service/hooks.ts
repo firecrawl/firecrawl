@@ -388,6 +388,9 @@ export interface HookPoints {
     error?: string;
     state?: SearchState;
   }>;
+  // outbound
+  /** Emitted before request data is sent to a third-party API. */
+  "vendor.request": Observe<{ vendor: string; ctx: RequestContext }>;
 }
 
 type Point = Observe<unknown> | Await<unknown> | Transform<unknown, unknown>;
@@ -534,6 +537,7 @@ const rawHookPoints = {
   "search.plan": Object.freeze({ kind: "transform" as const }),
   "search.results": Object.freeze({ kind: "transform" as const }),
   "search.finished": Object.freeze({ kind: "observe" as const }),
+  "vendor.request": Object.freeze({ kind: "observe" as const }),
 } satisfies {
   readonly [N in HookName]: HookPointSpec<HookPoints[N]["kind"]>;
 };

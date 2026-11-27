@@ -45,8 +45,8 @@ afterEach(() => {
 });
 
 describe("hookPoints", () => {
-  it("defines all 26 hook points with frozen null-prototype metadata", () => {
-    expect(hookPointNames).toHaveLength(26);
+  it("defines all 27 hook points with frozen null-prototype metadata", () => {
+    expect(hookPointNames).toHaveLength(27);
     expect(Object.isFrozen(hookPointNames)).toBe(true);
     expect(Object.isFrozen(hookPoints)).toBe(true);
     expect(Object.getPrototypeOf(hookPoints)).toBeNull();

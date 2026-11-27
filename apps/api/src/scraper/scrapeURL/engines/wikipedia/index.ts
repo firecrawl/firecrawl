@@ -6,6 +6,7 @@ import { config } from "../../../../config";
 import { EngineError } from "../../error";
 import { getRedisConnection } from "../../../../services/queue-service";
 import { redlock } from "../../../../services/redlock";
+import { installedService } from "../../../../service/service";
 
 const WIKIMEDIA_AUTH_URL = "https://auth.enterprise.wikimedia.com/v1/login";
 const WIKIMEDIA_API_BASE = "https://api.enterprise.wikimedia.com/v2";
@@ -309,6 +310,10 @@ export async function scrapeURLWithWikipedia(
   const token = await getAccessToken(meta.logger);
 
   const apiUrl = `${WIKIMEDIA_API_BASE}/articles/${encodeURIComponent(articleName)}`;
+  installedService()?.hooks.observe("vendor.request", {
+    vendor: "wikimedia-enterprise",
+    ctx: meta.ctx,
+  });
 
   const response = await undiciFetch(apiUrl, {
     method: "POST",
