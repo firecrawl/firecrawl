@@ -37,7 +37,9 @@ const configSchema = z.object({
   // Admin & AI Keys
   BULL_AUTH_KEY: z.string().optional(),
   BULL_AUTH_KEY_PREVIOUS: emptyStringAsUndefined(z.string()),
-  BULL_AUTH_KEY_PATH_ROUTES: emptyStringAsDefault(z.stringbool().default(false)),
+  BULL_AUTH_KEY_PATH_ROUTES: emptyStringAsDefault(
+    z.stringbool().default(false),
+  ),
   ADMIN_INTERNAL_PORT: emptyStringAsUndefined(
     z.coerce.number().int().positive().max(65_535),
   ),
