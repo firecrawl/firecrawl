@@ -31,12 +31,14 @@ public class ScrapeOptions {
     private String proxy;
     @JsonProperty("maxAge")
     private Long maxAge;
+    private Long minAge;
     private Boolean storeInCache;
     private Boolean lockdown;
     private Boolean checkPromptInjection;
     @JsonProperty("redactPII")
     private Boolean redactPII;
     private AuditMetadata auditMetadata;
+    private Boolean zeroDataRetention;
     private String integration;
 
     private ScrapeOptions() {}
@@ -57,6 +59,7 @@ public class ScrapeOptions {
     public Boolean getBlockAds() { return blockAds; }
     public String getProxy() { return proxy; }
     public Long getMaxAge() { return maxAge; }
+    public Long getMinAge() { return minAge; }
     public Boolean getStoreInCache() { return storeInCache; }
     public Boolean getLockdown() { return lockdown; }
     public Boolean getCheckPromptInjection() { return checkPromptInjection; }
@@ -64,6 +67,7 @@ public class ScrapeOptions {
     public Boolean getRedactPII() { return redactPII; }
     @JsonProperty("auditMetadata")
     public AuditMetadata getAuditMetadata() { return auditMetadata; }
+    public Boolean getZeroDataRetention() { return zeroDataRetention; }
     public String getIntegration() { return integration; }
 
     public static Builder builder() { return new Builder(); }
@@ -86,11 +90,13 @@ public class ScrapeOptions {
         b.blockAds = this.blockAds;
         b.proxy = this.proxy;
         b.maxAge = this.maxAge;
+        b.minAge = this.minAge;
         b.storeInCache = this.storeInCache;
         b.lockdown = this.lockdown;
         b.checkPromptInjection = this.checkPromptInjection;
         b.redactPII = this.redactPII;
         b.auditMetadata = this.auditMetadata;
+        b.zeroDataRetention = this.zeroDataRetention;
         b.integration = this.integration;
         return b;
     }
@@ -112,11 +118,13 @@ public class ScrapeOptions {
         private Boolean blockAds;
         private String proxy;
         private Long maxAge;
+        private Long minAge;
         private Boolean storeInCache;
         private Boolean lockdown;
         private Boolean checkPromptInjection;
         private Boolean redactPII;
         private AuditMetadata auditMetadata;
+        private Boolean zeroDataRetention;
         private String integration;
 
         private Builder() {}
@@ -173,6 +181,9 @@ public class ScrapeOptions {
         /** Use cached result if younger than this many milliseconds. */
         public Builder maxAge(Long maxAge) { this.maxAge = maxAge; return this; }
 
+        /** Serve only cached results older than this many milliseconds, never a fresh scrape. */
+        public Builder minAge(Long minAge) { this.minAge = minAge; return this; }
+
         /** Whether to cache the result. */
         public Builder storeInCache(Boolean storeInCache) { this.storeInCache = storeInCache; return this; }
 
@@ -190,6 +201,9 @@ public class ScrapeOptions {
 
         /** User attribution to include with SIEM logging events. */
         public Builder auditMetadata(AuditMetadata auditMetadata) { this.auditMetadata = auditMetadata; return this; }
+
+        /** Do not store any scraped data on Firecrawl servers. */
+        public Builder zeroDataRetention(Boolean zeroDataRetention) { this.zeroDataRetention = zeroDataRetention; return this; }
 
         /** Integration identifier. */
         public Builder integration(String integration) { this.integration = integration; return this; }
@@ -212,11 +226,13 @@ public class ScrapeOptions {
             o.blockAds = this.blockAds;
             o.proxy = this.proxy;
             o.maxAge = this.maxAge;
+            o.minAge = this.minAge;
             o.storeInCache = this.storeInCache;
             o.lockdown = this.lockdown;
             o.checkPromptInjection = this.checkPromptInjection;
             o.redactPII = this.redactPII;
             o.auditMetadata = this.auditMetadata;
+            o.zeroDataRetention = this.zeroDataRetention;
             o.integration = this.integration;
             return o;
         }
