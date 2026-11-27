@@ -1,13 +1,18 @@
-import type * as CrawlRedis from "../../../lib/crawl-redis";
-import type * as Limits from "../../../lib/limits";
-import type * as QueueJobs from "../../../services/queue-jobs";
-import type * as Redis from "../../../services/redis";
+import type { BaseScrapeOptions } from "../../../controllers/v2/types";
+import type { getCrawl } from "../../../lib/crawl-redis";
+import type { resolveJobPriority } from "../../../lib/limits";
+import type {
+  _addScrapeJobToBullMQ,
+  addScrapeJob,
+} from "../../../services/queue-jobs";
+import type { redisEvictConnection } from "../../../services/redis";
+import type { NuQJob } from "../../../services/worker/nuq";
 import type { ScrapeJobData, ScrapeJobKickoffSitemap } from "../../../types";
 
 const mocks = vi.hoisted(() => ({
-  addScrapeJob: vi.fn(),
+  addScrapeJob: vi.fn<typeof addScrapeJob>(),
   addScrapeJobs: vi.fn(),
-  addScrapeJobToBullMQ: vi.fn<typeof QueueJobs._addScrapeJobToBullMQ>(),
+  addScrapeJobToBullMQ: vi.fn<typeof _addScrapeJobToBullMQ>(),
   getCrawl: vi.fn(),
   startWebScraperPipeline: vi.fn(),
   redis: {
@@ -29,13 +34,13 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../services/queue-jobs", async importOriginal => ({
-  ...(await importOriginal<typeof QueueJobs>()),
+  ...(await importOriginal<{ addScrapeJob: typeof addScrapeJob }>()),
   addScrapeJob: mocks.addScrapeJob,
   addScrapeJobs: mocks.addScrapeJobs,
   _addScrapeJobToBullMQ: mocks.addScrapeJobToBullMQ,
 }));
 vi.mock("../../../lib/crawl-redis", async importOriginal => ({
-  ...(await importOriginal<typeof CrawlRedis>()),
+  ...(await importOriginal<{ getCrawl: typeof getCrawl }>()),
   getCrawl: mocks.getCrawl,
   crawlToCrawler: () => mocks.crawler,
   lockURL: vi.fn().mockResolvedValue(true),
@@ -55,13 +60,17 @@ vi.mock("../../../lib/crawl-redis", async importOriginal => ({
   isCrawlFinishMarked: vi.fn(async () => false),
 }));
 vi.mock("../../../services/redis", async importOriginal => ({
-  ...(await importOriginal<typeof Redis>()),
+  ...(await importOriginal<{
+    redisEvictConnection: typeof redisEvictConnection;
+  }>()),
   redisEvictConnection: mocks.redis,
   redisCrawlStateConnection: mocks.redis,
   redisCrawlStateFallbackConnection: null,
 }));
 vi.mock("../../../lib/limits", async importOriginal => ({
-  ...(await importOriginal<typeof Limits>()),
+  ...(await importOriginal<{
+    resolveJobPriority: typeof resolveJobPriority;
+  }>()),
   resolveJobPriority: vi.fn().mockResolvedValue(10),
 }));
 vi.mock("../../../main/runWebScraper", () => ({
@@ -74,6 +83,29 @@ import { processJobInternal } from "../../../services/worker/scrape-worker";
 
 const SUBMITTER_ORIGIN = "python-sdk@4.57.0";
 const ctx = requestContext({ teamId: "team-1", zeroDataRetention: false });
+
+const defaultScrapeOptions: BaseScrapeOptions = {
+  formats: [{ type: "markdown" }],
+  onlyMainContent: true,
+  onlyCleanContent: false,
+  waitFor: 0,
+  mobile: false,
+  removeBase64Images: true,
+  fastMode: false,
+  blockAds: true,
+  proxy: "auto",
+  checkPromptInjection: false,
+};
+
+function makeNuqJob<T extends ScrapeJobData>(id: string, data: T): NuQJob<T> {
+  return {
+    id,
+    status: "active",
+    createdAt: new Date(),
+    priority: 10,
+    data,
+  };
+}
 
 function storedCrawl() {
   return {
@@ -132,55 +164,56 @@ describe("crawl enqueue origin", () => {
       },
     });
 
-    const outcome = await processJobInternal({
-      id: "job-1",
-      priority: 10,
-      data: {
+    const outcome = await processJobInternal(
+      makeNuqJob("job-1", {
         url: "https://shop.test/p/1",
         mode: "single_urls",
         ctx,
         team_id: "team-1",
+        zeroDataRetention: false,
         crawl_id: "crawl-1",
         origin: SUBMITTER_ORIGIN,
         integration: "acme-integration",
+        apiKeyId: null,
         skipNuq: true,
         v1: true,
-        scrapeOptions: { formats: [{ type: "markdown" }] },
+        scrapeOptions: defaultScrapeOptions,
         crawlerOptions: { currentDiscoveryDepth: 0 },
-        internalOptions: { teamId: "team-1" },
-      },
-    } as unknown as Parameters<typeof processJobInternal>[0]).then(
+        internalOptions: { teamId: "team-1", orgId: null },
+      }),
+    ).then(
       () => "resolved",
-      (error: unknown) => `rejected: ${error}`,
+      (error: unknown) => `rejected: ${String(error)}`,
     );
 
     expect(mocks.addScrapeJob, outcome).toHaveBeenCalledTimes(1);
-    const [data] = mocks.addScrapeJob.mock.calls[0];
-    expect(data.url).toBe("https://shop.test/p/2");
-    expect(data.origin).toBe(SUBMITTER_ORIGIN);
-    expect(data.integration).toBe("acme-integration");
+    expect(mocks.addScrapeJob.mock.calls[0][0]).toMatchObject({
+      url: "https://shop.test/p/2",
+      origin: SUBMITTER_ORIGIN,
+      integration: "acme-integration",
+    });
   });
 
   it("enqueues the sitemap kickoff under the crawl job's origin", async () => {
-    const outcome = await processJobInternal({
-      id: "kickoff-1",
-      priority: 10,
-      data: {
+    const outcome = await processJobInternal(
+      makeNuqJob("kickoff-1", {
         url: "https://shop.test/sitemap.xml",
         mode: "kickoff",
         ctx,
         team_id: "team-1",
+        zeroDataRetention: false,
         crawl_id: "crawl-1",
         origin: SUBMITTER_ORIGIN,
         integration: "acme-integration",
+        apiKeyId: null,
         skipNuq: true,
         v1: true,
-        scrapeOptions: {},
+        scrapeOptions: defaultScrapeOptions,
         crawlerOptions: {},
-      },
-    } as unknown as Parameters<typeof processJobInternal>[0]).then(
+      }),
+    ).then(
       () => "resolved",
-      (error: unknown) => `rejected: ${error}`,
+      (error: unknown) => `rejected: ${String(error)}`,
     );
 
     const sitemapJobs = mocks.addScrapeJobToBullMQ.mock.calls

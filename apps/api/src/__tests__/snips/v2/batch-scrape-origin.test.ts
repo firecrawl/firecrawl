@@ -1,18 +1,20 @@
-import type * as CrawlRedis from "../../../lib/crawl-redis";
-import type * as QueueJobs from "../../../services/queue-jobs";
-import type * as NuqRouter from "../../../services/worker/nuq-router";
+import express from "express";
+import request from "supertest";
+import type { getCrawl } from "../../../lib/crawl-redis";
+import type { addScrapeJobs } from "../../../services/queue-jobs";
+import type { crawlGroup } from "../../../services/worker/nuq-router";
 
 const mocks = vi.hoisted(() => ({
-  addScrapeJobs: vi.fn<typeof QueueJobs.addScrapeJobs>(),
+  addScrapeJobs: vi.fn<typeof addScrapeJobs>(),
   getCrawl: vi.fn(),
 }));
 
 vi.mock("../../../services/queue-jobs", async importOriginal => ({
-  ...(await importOriginal<typeof QueueJobs>()),
+  ...(await importOriginal<{ addScrapeJobs: typeof addScrapeJobs }>()),
   addScrapeJobs: mocks.addScrapeJobs,
 }));
 vi.mock("../../../lib/crawl-redis", async importOriginal => ({
-  ...(await importOriginal<typeof CrawlRedis>()),
+  ...(await importOriginal<{ getCrawl: typeof getCrawl }>()),
   getCrawl: mocks.getCrawl,
   saveCrawl: vi.fn(),
   markCrawlActive: vi.fn(),
@@ -21,7 +23,7 @@ vi.mock("../../../lib/crawl-redis", async importOriginal => ({
   addCrawlJobs: vi.fn(),
 }));
 vi.mock("../../../services/worker/nuq-router", async importOriginal => ({
-  ...(await importOriginal<typeof NuqRouter>()),
+  ...(await importOriginal<{ crawlGroup: typeof crawlGroup }>()),
   crawlGroup: { addGroup: vi.fn() },
   resolveNewGroupBackend: vi.fn().mockResolvedValue(undefined),
 }));
@@ -29,35 +31,23 @@ vi.mock("../../../services/worker/nuq-router", async importOriginal => ({
 import { batchScrapeController } from "../../../controllers/v2/batch-scrape";
 import { createService, replaceService } from "../../../service/service";
 
-type FakeResponse = {
-  headersSent: boolean;
-  code?: number;
-  body?: unknown;
-  status: (code: number) => FakeResponse;
-  json: (body: unknown) => FakeResponse;
-};
-
 async function enqueuedOrigins(body: { origin?: string; appendToId?: string }) {
-  const res: FakeResponse = {
-    headersSent: false,
-    status: code => ((res.code = code), res),
-    json: payload => ((res.body = payload), res),
-  };
-  await batchScrapeController(
-    {
-      body: {
-        urls: ["https://open.example/a", "https://open.example/b"],
-        ...body,
-      },
-      headers: {},
-      protocol: "http",
-      host: "api.test",
+  const app = express();
+  app.use(express.json());
+  app.post("/v2/batch/scrape", async (req, res) => {
+    const authedReq = Object.assign(req, {
       auth: { team_id: "team-1" },
       requestBlocklistChecked: true,
-      acuc: { flags: {}, team_id: "team-1", org_id: "org-1" },
-    } as unknown as Parameters<typeof batchScrapeController>[0],
-    res as unknown as Parameters<typeof batchScrapeController>[1],
-  );
+    });
+    await batchScrapeController(authedReq, res);
+  });
+  await request(app)
+    .post("/v2/batch/scrape")
+    .set("Host", "api.test")
+    .send({
+      urls: ["https://open.example/a", "https://open.example/b"],
+      ...body,
+    });
   return mocks.addScrapeJobs.mock.calls.flatMap(([jobs]) =>
     jobs.map(job => job.data.origin),
   );
