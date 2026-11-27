@@ -4,9 +4,13 @@ import {
   TEST_API_URL,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { idmux, Identity, scrapeTimeout } from "./lib";
+import { jsonValueSchema } from "../../../lib/json-types";
+import type { JsonValue } from "../../../lib/json-types";
+import type { Identity } from "./lib";
+import { idmux, scrapeTimeout } from "./lib";
 import request from "supertest";
 import { describe, expect, beforeAll } from "vitest";
+import { z } from "zod";
 
 let identity: Identity;
 let lowConcurrencyIdentity: Identity;
@@ -15,33 +19,56 @@ beforeAll(async () => {
   identity = await idmux({
     name: "crawl-status-cursor",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
   lowConcurrencyIdentity = await idmux({
     name: "crawl-status-cursor-cancel",
     concurrency: 1,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000);
+}, 10_000);
 
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+const sleep = (ms: number) =>
+  new Promise<void>(r => {
+    setTimeout(r, ms);
+  });
 
-async function getStatus(path: string, apiKey: string) {
+const crawlStatusPageSchema = z.object({
+  status: z.string(),
+  completed: z.number(),
+  data: z.array(jsonValueSchema),
+  next: z.string().optional(),
+});
+
+type CrawlStatusPage = z.infer<typeof crawlStatusPageSchema>;
+
+const batchStartResponseSchema = z.object({
+  id: z.string(),
+});
+
+async function getStatus(
+  path: string,
+  apiKey: string,
+): Promise<CrawlStatusPage> {
   const res = await request(TEST_API_URL)
     .get(path)
     .set("Authorization", `Bearer ${apiKey}`)
     .send();
   expect(res.statusCode).toBe(200);
-  return res.body;
+  const parsed = crawlStatusPageSchema.safeParse(res.body);
+  if (!parsed.success) {
+    throw new Error("Unexpected batch scrape status response shape");
+  }
+  return parsed.data;
 }
 
 // Follows `next` like the SDKs do, with a hop cap so a cursor that never ends
 // fails the test instead of hanging it.
 async function followCursor(firstPath: string, apiKey: string) {
-  const docs: any[] = [];
+  const docs: Array<JsonValue | undefined> = [];
   let path: string | undefined = firstPath;
   let hops = 0;
-  let last: any;
+  let last: CrawlStatusPage | undefined;
   while (path !== undefined && hops < 20) {
     last = await getStatus(path, apiKey);
     docs.push(...last.data);
@@ -53,7 +80,7 @@ async function followCursor(firstPath: string, apiKey: string) {
   return { docs, hops, last, ended: path === undefined };
 }
 
-async function startBatch(urls: string[], apiKey: string) {
+async function startBatch(urls: Array<string>, apiKey: string) {
   const res = await request(TEST_API_URL)
     .post("/v2/batch/scrape")
     .set("Authorization", `Bearer ${apiKey}`)
@@ -61,7 +88,11 @@ async function startBatch(urls: string[], apiKey: string) {
     .send({ urls });
   expect(res.statusCode).toBe(200);
   expect(res.body.success).toBe(true);
-  return res.body.id as string;
+  const parsed = batchStartResponseSchema.safeParse(res.body);
+  if (!parsed.success) {
+    throw new Error("Expected batch scrape start response with id");
+  }
+  return parsed.data.id;
 }
 
 describe("Crawl status cursor", () => {
@@ -77,9 +108,11 @@ describe("Crawl status cursor", () => {
         apiKey,
       );
 
-      let status: any;
+      let status: CrawlStatusPage | undefined;
       do {
-        if (status) await sleep(250);
+        if (status) {
+          await sleep(250);
+        }
         status = await getStatus(`/v2/batch/scrape/${id}`, apiKey);
       } while (status.status === "scraping");
       expect(status.status).toBe("completed");
@@ -91,7 +124,7 @@ describe("Crawl status cursor", () => {
       expect(result.ended).toBe(true);
       expect(result.hops).toBe(Math.max(1, Math.ceil(status.completed / 2)));
       expect(result.docs).toHaveLength(status.completed);
-      expect(result.last.next).toBeUndefined();
+      expect(result.last?.next).toBeUndefined();
     },
     scrapeTimeout * 2,
   );
@@ -108,9 +141,11 @@ describe("Crawl status cursor", () => {
         apiKey,
       );
 
-      let status: any;
+      let status: CrawlStatusPage | undefined;
       do {
-        if (status) await sleep(100);
+        if (status) {
+          await sleep(100);
+        }
         status = await getStatus(`/v2/batch/scrape/${id}`, apiKey);
       } while (status.status === "scraping" && status.completed < 1);
       expect(status.status).toBe("scraping");
@@ -130,7 +165,7 @@ describe("Crawl status cursor", () => {
         apiKey,
       );
       expect(result.ended).toBe(true);
-      expect(result.last.next).toBeUndefined();
+      expect(result.last?.next).toBeUndefined();
       expect(result.docs.length).toBeGreaterThanOrEqual(completedBeforeCancel);
 
       // No more than 20 documents can ever exist, so this page is past the end.

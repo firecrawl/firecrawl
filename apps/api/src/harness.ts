@@ -1,8 +1,9 @@
 import { config } from "./config";
-import { type ChildProcess, spawn } from "child_process";
-import { existsSync } from "fs";
-import * as net from "net";
-import { basename, join } from "path";
+import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
+import { Socket } from "node:net";
+import { basename, join } from "node:path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
 import { startRole } from "./main";
 import { installedService, runProcessStop } from "./service/service";
@@ -48,7 +49,7 @@ interface ProcessResult {
 interface Services {
   api?: ProcessResult;
   worker?: ProcessResult;
-  nuqWorkers: ProcessResult[];
+  nuqWorkers: Array<ProcessResult>;
   nuqPrefetchWorker?: ProcessResult;
   nuqReconcilerWorker?: ProcessResult;
   indexWorker?: ProcessResult;
@@ -68,48 +69,56 @@ interface Services {
 }
 
 const colors = {
-  reset: "\x1b[0m",
-  bold: "\x1b[1m",
-  dim: "\x1b[2m",
-  red: "\x1b[31m",
-  green: "\x1b[32m",
-  yellow: "\x1b[33m",
-  blue: "\x1b[34m",
-  magenta: "\x1b[35m",
-  cyan: "\x1b[36m",
-  gray: "\x1b[90m",
-  white: "\x1b[37m",
+  reset: "\u001b[0m",
+  bold: "\u001b[1m",
+  dim: "\u001b[2m",
+  red: "\u001b[31m",
+  green: "\u001b[32m",
+  yellow: "\u001b[33m",
+  blue: "\u001b[34m",
+  magenta: "\u001b[35m",
+  cyan: "\u001b[36m",
+  gray: "\u001b[90m",
+  white: "\u001b[37m",
 };
 
-const processGroupColors: Record<string, string> = {
-  api: colors.green,
-  worker: colors.blue,
-  extract: colors.magenta,
-  nuq: colors.cyan,
-  index: colors.yellow,
-  go: colors.yellow,
-  command: colors.white,
-  docker: colors.blue,
-  podman: colors.blue,
-};
+const processGroupColors = new Map<string, string>([
+  ["api", colors.green],
+  ["worker", colors.blue],
+  ["extract", colors.magenta],
+  ["nuq", colors.cyan],
+  ["index", colors.yellow],
+  ["go", colors.yellow],
+  ["command", colors.white],
+  ["docker", colors.blue],
+  ["podman", colors.blue],
+]);
 
 function getProcessGroup(name: string): string {
   let group = name;
-  if (name.includes("@")) group = name.split("@")[0];
-  if (name.includes("-")) group = name.split("-")[0];
+  if (name.includes("@")) {
+    group = name.split("@")[0];
+  }
+  if (name.includes("-")) {
+    group = name.split("-")[0];
+  }
   return group;
 }
 
 function getProcessColor(name: string): string {
   const group = getProcessGroup(name);
-  return processGroupColors[group] || colors.gray;
+  return processGroupColors.get(group) || colors.gray;
 }
 
 function formatDuration(nanoseconds: bigint): string {
   const milliseconds = Number(nanoseconds) / 1e6;
-  if (milliseconds < 1000) return `${milliseconds.toFixed(0)}ms`;
+  if (milliseconds < 1000) {
+    return `${milliseconds.toFixed(0)}ms`;
+  }
   const seconds = milliseconds / 1000;
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)}s`;
+  }
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds - minutes * 60;
   return `${minutes}m ${remainingSeconds.toFixed(0)}s`;
@@ -132,7 +141,7 @@ const POSTGRES_PORT = config.POSTGRES_PORT;
 // Shell escape helper to prevent command injection
 function shellEscape(arg: string): string {
   // Wrap in single quotes and escape any single quotes within
-  return `'${arg.replace(/'/g, "'\\''")}'`;
+  return `'${arg.replaceAll("'", String.raw`'\''`)}'`;
 }
 
 const logger = {
@@ -150,7 +159,7 @@ const logger = {
   warn(message: string) {
     console.log(`${colors.yellow}!${colors.reset} ${message}`);
   },
-  error(message: string, error?: any) {
+  error(message: string, error?: unknown) {
     if (error) {
       console.error(`${colors.red}✗${colors.reset} ${message}`, error);
     } else {
@@ -183,6 +192,18 @@ const logger = {
   },
 };
 
+function createAbortError(): Error {
+  const error = new Error("Aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function waitForPort(
   port: number,
   host: string,
@@ -193,26 +214,33 @@ function waitForPort(
 
     let settled = false;
     let retryTimer: NodeJS.Timeout | null = null;
-    let socket: net.Socket | null = null;
+    let socket: Socket | null = null;
 
     const done = (err?: Error) => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
       settled = true;
 
-      if (retryTimer) clearTimeout(retryTimer);
-      if (socket) socket.destroy();
-      if (overallTimer) clearTimeout(overallTimer);
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+      }
+      if (socket) {
+        socket.destroy();
+      }
+      if (overallTimer) {
+        clearTimeout(overallTimer);
+      }
 
       signal?.removeEventListener("abort", onAbort);
-      err ? reject(err) : resolve();
+      if (err) {
+        reject(err);
+      } else {
+        resolve();
+      }
     };
 
-    const abortError = () => {
-      const e = new Error("Aborted");
-      (e as any).name = "AbortError";
-      return e;
-    };
-    const onAbort = () => done(abortError());
+    const onAbort = () => done(createAbortError());
 
     const overallTimer = setTimeout(
       () =>
@@ -224,15 +252,22 @@ function waitForPort(
       timeoutMs,
     );
 
-    if (signal?.aborted) return done(abortError());
+    if (signal?.aborted) {
+      done(createAbortError());
+      return;
+    }
     signal?.addEventListener("abort", onAbort, { once: true });
 
     const check = () => {
-      if (settled) return;
-      socket = new net.Socket();
+      if (settled) {
+        return;
+      }
+      socket = new Socket();
       const retry = () => {
         socket?.destroy();
-        if (!settled) retryTimer = setTimeout(check, 250);
+        if (!settled) {
+          retryTimer = setTimeout(check, 250);
+        }
       };
       socket.once("error", retry);
       socket.setTimeout(1000, retry);
@@ -245,11 +280,11 @@ function waitForPort(
 
 function execForward(
   name: string,
-  command: string | string[],
+  command: string | Array<string>,
   env: Record<string, string> = {},
 ): ProcessResult {
   let child: ChildProcess;
-  let displayCommand = "";
+  let displayCommand: string;
   const isWindows = process.platform === "win32";
 
   const isReduceNoise = env.NUQ_REDUCE_NOISE === "true";
@@ -291,21 +326,36 @@ function execForward(
     const processOutput = (data: string, isError = false) => {
       const buffer = isError ? stderrBuffer : stdoutBuffer;
       const newBuffer =
-        buffer + data.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+        buffer + data.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
       const lines = newBuffer.split("\n");
       const completeLines = lines.slice(0, -1);
-      const remainingBuffer = lines[lines.length - 1];
+      const remainingBuffer = lines.at(-1) ?? "";
 
       completeLines.forEach(line => {
-        if (line.trim()) logger.processOutput(name, line, isReduceNoise);
+        if (line.trim()) {
+          logger.processOutput(name, line, isReduceNoise);
+        }
       });
 
-      if (isError) stderrBuffer = remainingBuffer;
-      else stdoutBuffer = remainingBuffer;
+      if (isError) {
+        stderrBuffer = remainingBuffer;
+      } else {
+        stdoutBuffer = remainingBuffer;
+      }
     };
 
-    child.stdout?.on("data", data => processOutput(data.toString(), false));
-    child.stderr?.on("data", data => processOutput(data.toString(), true));
+    child.stdout?.on("data", (data: Buffer | string) =>
+      processOutput(
+        typeof data === "string" ? data : data.toString("utf8"),
+        false,
+      ),
+    );
+    child.stderr?.on("data", (data: Buffer | string) =>
+      processOutput(
+        typeof data === "string" ? data : data.toString("utf8"),
+        true,
+      ),
+    );
 
     child.on("close", code => {
       childProcesses.delete(child);
@@ -321,8 +371,11 @@ function execForward(
     child.on("error", error => {
       childProcesses.delete(child);
       logger.processEnd(name, -1, process.hrtime.bigint() - startTime);
-      if (stopping.has(child)) resolve();
-      else reject(new Error(`${name} failed to start: ${error.message}`));
+      if (stopping.has(child)) {
+        resolve();
+      } else {
+        reject(new Error(`${name} failed to start: ${error.message}`));
+      }
     });
   });
 
@@ -370,7 +423,7 @@ function terminateProcess(proc: ChildProcess, force: boolean): Promise<void> {
     } else if (proc.pid) {
       try {
         process.kill(-proc.pid, "SIGTERM");
-      } catch (e) {
+      } catch {
         proc.kill("SIGTERM");
       }
 
@@ -388,7 +441,9 @@ function terminateProcess(proc: ChildProcess, force: boolean): Promise<void> {
             } catch {
               try {
                 proc.kill("SIGKILL");
-              } catch {}
+              } catch {
+                // Process may have already exited.
+              }
             }
           }
         }, 5000);
@@ -440,7 +495,7 @@ async function stopAndRemoveContainer(
         `${runtime} stop ${containerName}`,
       );
       await stop.promise;
-    } catch (e) {
+    } catch {
       logger.warn(`Failed to stop container ${containerName}, continuing...`);
     }
   }
@@ -452,7 +507,7 @@ async function stopAndRemoveContainer(
       `${runtime} rm -f ${containerName}`,
     );
     await remove.promise;
-  } catch (e) {
+  } catch {
     // Container might not exist, that's fine
   }
 }
@@ -507,9 +562,9 @@ async function waitForPostgres(
 
       logger.success("PostgreSQL is ready");
       return;
-    } catch (e) {
+    } catch {
       // Not ready yet, wait and retry
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await sleep(500);
     }
   }
 
@@ -618,9 +673,9 @@ async function waitForRabbitMQ(
 
       logger.success("RabbitMQ is ready");
       return;
-    } catch (e) {
+    } catch {
       // Not ready yet, wait and retry
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await sleep(500);
     }
   }
 
@@ -705,8 +760,8 @@ async function waitForFdb(
       await check.promise;
       logger.success("FoundationDB is ready");
       return;
-    } catch (e) {
-      await new Promise(resolve => setTimeout(resolve, 500));
+    } catch {
+      await sleep(500);
     }
   }
 
@@ -756,8 +811,8 @@ async function setupFdb(): Promise<Services["fdb"]> {
   await configure.promise;
 
   // the host-side client needs a cluster file pointing at the published port
-  const { writeFileSync, mkdirSync } = await import("fs");
-  const { tmpdir } = await import("os");
+  const { writeFileSync, mkdirSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
   const clusterDir = join(tmpdir(), "firecrawl-fdb");
   mkdirSync(clusterDir, { recursive: true });
   const clusterFile = join(clusterDir, "fdb.cluster");
@@ -818,7 +873,7 @@ async function installDependencies() {
   logger.success("Dependencies installed");
 }
 
-async function startServices(command?: string[]): Promise<Services> {
+async function startServices(command?: Array<string>): Promise<Services> {
   // Setup NUQ PostgreSQL container if needed
   const nuqPostgres = await setupNuqPostgres();
 
@@ -946,7 +1001,7 @@ async function startServices(command?: string[]): Promise<Services> {
 async function stopDevelopmentServices(services: Services) {
   logger.section("Stopping services");
 
-  const processesToStop: ChildProcess[] = [
+  const processesToStop: Array<ChildProcess> = [
     services.api?.process,
     services.worker?.process,
     ...services.nuqWorkers.map(w => w.process),
@@ -956,13 +1011,11 @@ async function stopDevelopmentServices(services: Services) {
     services.command?.process,
   ].filter((p): p is ChildProcess => !!p);
 
-  await Promise.race([
-    await Promise.all(
-      processesToStop.map(proc => terminateProcess(proc, true)),
-    ).catch(e => {
-      logger.error("Error while stopping processes", e);
-    }),
-  ]);
+  await Promise.all(
+    processesToStop.map(proc => terminateProcess(proc, true)),
+  ).catch((error: unknown) => {
+    logger.error("Error while stopping processes", error);
+  });
 
   // Stop and remove NUQ PostgreSQL container if it was started by harness
   if (services.nuqPostgres) {
@@ -996,12 +1049,16 @@ async function runDevMode(): Promise<void> {
   const watch = new TscWatchClient();
 
   const restartServices = async () => {
-    if (shuttingDown) return;
+    if (shuttingDown) {
+      return;
+    }
 
     pending = true;
     restartSignal?.abort();
 
-    if (restarting) return;
+    if (restarting) {
+      return;
+    }
     restarting = true;
 
     try {
@@ -1013,7 +1070,9 @@ async function runDevMode(): Promise<void> {
           currentServices = null;
         }
 
-        if (shuttingDown) return;
+        if (shuttingDown) {
+          return;
+        }
 
         currentServices = await startServices();
 
@@ -1024,9 +1083,13 @@ async function runDevMode(): Promise<void> {
           await waitForPort(Number(PORT), "localhost", {
             signal: restartSignal?.signal,
           });
-        } catch (e) {
-          if (e?.name !== "AbortError") throw e;
-          if (shuttingDown) return;
+        } catch (error: unknown) {
+          if (!(error instanceof Error) || error.name !== "AbortError") {
+            throw error;
+          }
+          if (shuttingDown) {
+            return;
+          }
 
           logger.section(
             "Recompilation triggering during restart, trying again...",
@@ -1048,15 +1111,15 @@ async function runDevMode(): Promise<void> {
     restartSignal?.abort();
   });
 
-  watch.on("first_success", async () => {
+  watch.on("first_success", () => {
     logger.success("Initial compilation complete");
-    await restartServices();
+    void restartServices();
   });
 
-  watch.on("success", async () => {
+  watch.on("success", () => {
     if (started) {
       logger.info("Recompilation complete - restarting services");
-      await restartServices();
+      void restartServices();
     }
   });
 
@@ -1092,7 +1155,7 @@ async function runDevMode(): Promise<void> {
   watch.kill();
 }
 
-async function runProductionMode(command: string[]): Promise<void> {
+async function runProductionMode(command: Array<string>): Promise<void> {
   const services = await startServices(command);
 
   logger.info(`Waiting for API on localhost:${PORT}`);
@@ -1106,32 +1169,44 @@ let serviceError = false;
 async function waitForTermination(services: Services): Promise<void> {
   logger.info("All services running. Press Ctrl+C to stop");
 
-  const promises: Promise<void>[] = [
+  const promises: Array<Promise<void>> = [
     new Promise<void>(resolve => {
       process.on("SIGINT", resolve);
       process.on("SIGTERM", resolve);
     }),
   ];
 
-  if (services.command) promises.push(services.command.promise);
-  if (services.api) promises.push(services.api.promise);
-  if (services.worker) promises.push(services.worker.promise);
-  if (services.indexWorker) promises.push(services.indexWorker.promise);
-  if (services.nuqPrefetchWorker)
+  if (services.command) {
+    promises.push(services.command.promise);
+  }
+  if (services.api) {
+    promises.push(services.api.promise);
+  }
+  if (services.worker) {
+    promises.push(services.worker.promise);
+  }
+  if (services.indexWorker) {
+    promises.push(services.indexWorker.promise);
+  }
+  if (services.nuqPrefetchWorker) {
     promises.push(services.nuqPrefetchWorker.promise);
-  if (services.nuqReconcilerWorker)
+  }
+  if (services.nuqReconcilerWorker) {
     promises.push(services.nuqReconcilerWorker.promise);
+  }
 
   promises.push(...services.nuqWorkers.map(w => w.promise));
 
-  await Promise.race(promises).catch(error => {
+  await Promise.race(promises).catch((error: unknown) => {
     logger.error("A service has terminated unexpectedly", error);
     serviceError = true;
   });
 }
 
 function gracefulShutdown(): Promise<void> {
-  if (shutdownPromise) return shutdownPromise;
+  if (shutdownPromise) {
+    return shutdownPromise;
+  }
   shuttingDown = true;
   shutdownPromise = (async () => {
     restartSignal?.abort();
@@ -1194,9 +1269,22 @@ function printUsage() {
   console.error(`  --start-docker Start services (skip install, assume built)`);
 }
 
+function logFatalError(label: string, error: unknown): void {
+  logger.error(label);
+  if (error instanceof Error) {
+    console.error(error.stack || error.message);
+  } else {
+    console.error(error);
+  }
+}
+
+function handleShutdownSignal(): void {
+  void gracefulShutdown();
+}
+
 async function main() {
-  process.on("SIGINT", gracefulShutdown);
-  process.on("SIGTERM", gracefulShutdown);
+  process.on("SIGINT", handleShutdownSignal);
+  process.on("SIGTERM", handleShutdownSignal);
 
   try {
     if (process.argv.length < 3) {
@@ -1216,9 +1304,8 @@ async function main() {
     } else {
       await runProductionMode(command);
     }
-  } catch (error: any) {
-    logger.error("Fatal error occurred");
-    console.error(error?.stack || error?.message || error);
+  } catch (error: unknown) {
+    logFatalError("Fatal error occurred", error);
     process.exit(1);
   } finally {
     await gracefulShutdown();
@@ -1227,18 +1314,18 @@ async function main() {
   }
 }
 
-process.on("unhandledRejection", async (reason, promise) => {
+process.on("unhandledRejection", reason => {
   logger.error("Unhandled rejection");
   console.error(reason);
-  await gracefulShutdown();
-  process.exit(1);
+  void gracefulShutdown().finally(() => {
+    process.exit(1);
+  });
 });
 
 export async function start(env: { entry: string }) {
   roleEntry = env.entry;
-  await main().catch(async error => {
-    logger.error("Fatal error in main");
-    console.error(error?.stack || error?.message || error);
+  await main().catch(async (error: unknown) => {
+    logFatalError("Fatal error in main", error);
     await gracefulShutdown();
     process.exit(1);
   });

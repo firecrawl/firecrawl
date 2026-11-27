@@ -1,19 +1,21 @@
+import { MockLanguageModelV3 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  coreLlmProviderNames,
-  type LlmModel,
-  type LlmProvider,
+import { coreLlmProviderNames } from "../service/llm-providers";
+import type {
+  LlmModel,
+  LlmProvider,
+  LlmProviderName,
 } from "../service/llm-providers";
 
 const fakeModel = (modelId: string, provider = "custom"): LlmModel =>
-  ({
-    specificationVersion: "v4",
+  new MockLanguageModelV3({
     provider,
     modelId,
-    supportedUrls: {},
-    doGenerate: vi.fn(),
-    doStream: vi.fn(),
-  }) as unknown as LlmModel;
+  });
+
+function isExtensionProviderName(name: string): name is LlmProviderName {
+  return name.length > 0;
+}
 
 beforeEach(() => {
   vi.stubEnv("OPENAI_API_KEY", "");
@@ -28,16 +30,15 @@ afterEach(() => {
 });
 
 async function loadFresh(
-  providers?: readonly LlmProvider[],
+  providers?: ReadonlyArray<LlmProvider>,
   extensions: Array<{
     name: string;
-    llmProviders?: readonly LlmProvider[];
+    llmProviders?: ReadonlyArray<LlmProvider>;
   }> = [],
 ) {
   vi.resetModules();
-  const { createService, replaceService } = await import(
-    "../service/service.js"
-  );
+  const { createService, replaceService } =
+    await import("../service/service.js");
   const genericAi = await import("./generic-ai.js");
   replaceService(
     createService(
@@ -138,9 +139,8 @@ describe("coreLlmProviders and getModel", () => {
     vi.stubEnv("OPENAI_API_KEY", "test-openai-key");
     vi.stubEnv("OLLAMA_BASE_URL", "http://localhost:11434/api");
     const { getModel, cleanup } = await loadFresh();
-    const { UsOnlyUnavailableError } = await import(
-      "../scraper/scrapeURL/error.js"
-    );
+    const { UsOnlyUnavailableError } =
+      await import("../scraper/scrapeURL/error.js");
     try {
       expect(() =>
         getModel("gpt-4o-mini", "openai", {
@@ -197,11 +197,15 @@ describe("coreLlmProviders and getModel", () => {
 
   it("resolves extension-contributed non-core LLM providers via getModel", async () => {
     const customModelFn = vi.fn((id: string) => fakeModel(id, "custom-ext"));
-    const customProvider = {
-      name: "custom-ext",
+    const customName = "custom-ext";
+    if (!isExtensionProviderName(customName)) {
+      throw new Error("Expected non-empty provider name");
+    }
+    const customProvider: LlmProvider = {
+      name: customName,
       enabled: () => true,
       model: customModelFn,
-    } as unknown as LlmProvider;
+    };
 
     const { getModel, cleanup } = await loadFresh(undefined, [
       {

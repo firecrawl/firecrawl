@@ -13,8 +13,7 @@ import { URL as urlSchemaV2 } from "../v2/types";
  * these tests hold the order in place.
  */
 describe.each([["v2", urlSchemaV2]])("%s url schema", (_version, schema) => {
-  const parse = (value: unknown) =>
-    z.object({ url: schema as z.ZodType }).safeParse(value as object);
+  const parse = (value: unknown) => z.object({ url: schema }).safeParse(value);
 
   it("reports a missing url as a type error, not a TLD complaint", () => {
     const result = parse({});

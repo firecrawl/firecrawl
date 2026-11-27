@@ -3,11 +3,25 @@ vi.mock("uuid", () => ({
 }));
 
 import { describe, expect, it, vi } from "vitest";
+import { createLogger } from "winston";
+import { scrapeOptions } from "../controllers/v2/types";
 import { getItemsToScrape, scrapeSearchResults } from "./scrape";
 import { processJobInternal } from "../services/worker/scrape-worker";
 import { defaultModules, noBlocklist, noLimits } from "../service/defaults";
+import type { RequestContext } from "../service/request-context";
 import type { CoreParts } from "../service/service";
 import { testService, withService } from "../service/testing";
+
+interface PolicyRequestContext extends RequestContext {
+  policy: {
+    threatProtection: {
+      mode: string;
+    };
+  };
+}
+
+const defaultScrapeOptions = scrapeOptions.parse({});
+const logger = createLogger({ silent: true });
 
 vi.mock("../services/worker/scrape-worker", () => ({
   processJobInternal: vi.fn().mockResolvedValue({
@@ -42,13 +56,13 @@ describe("scrapeSearchResults", () => {
             teamId: "team-1",
             origin: "api",
             timeout: 60_000,
-            scrapeOptions: {} as any,
+            scrapeOptions: defaultScrapeOptions,
             apiKeyId: 123,
             requestId: "req-1",
             billing: { endpoint: "agent" },
           },
-          { debug: vi.fn(), info: vi.fn(), error: vi.fn() } as any,
-          null as any,
+          logger,
+          null,
         );
       },
     );
@@ -88,12 +102,12 @@ describe("scrapeSearchResults", () => {
         orgId: "org-1",
         origin: "api",
         timeout: 60_000,
-        scrapeOptions: {} as any,
+        scrapeOptions: defaultScrapeOptions,
         apiKeyId: 123,
         zeroDataRetention: true,
         billing: { endpoint: "search" },
       },
-      { debug: vi.fn(), info: vi.fn(), error: vi.fn() } as any,
+      logger,
       { checkRobotsOnScrape: true },
     );
 
@@ -122,15 +136,15 @@ describe("scrapeSearchResults", () => {
     );
   });
   it("enforces forced scrape ZDR and dual-writes threatProtection on child scrapes", async () => {
-    const parentCtx = {
+    const parentCtx: PolicyRequestContext = {
       teamId: "team-zdr",
       zeroDataRetention: false,
       flags: { scrapeZDR: "forced" },
       orgId: "org-zdr",
       apiKeyId: 55,
-      billing: { endpoint: "search" as const, jobId: "search-1" },
+      billing: { endpoint: "search", jobId: "search-1" },
       policy: { threatProtection: { mode: "block" } },
-    } as any;
+    };
 
     await scrapeSearchResults(
       [
@@ -145,14 +159,14 @@ describe("scrapeSearchResults", () => {
         orgId: "org-zdr",
         origin: "api",
         timeout: 60_000,
-        scrapeOptions: {} as any,
+        scrapeOptions: defaultScrapeOptions,
         apiKeyId: 55,
         zeroDataRetention: false,
         billing: { endpoint: "search", jobId: "search-1" },
         ctx: parentCtx,
       },
-      { debug: vi.fn(), info: vi.fn(), error: vi.fn() } as any,
-      { scrapeZDR: "forced" } as any,
+      logger,
+      { scrapeZDR: "forced" },
     );
 
     expect(processJobInternal).toHaveBeenLastCalledWith(
@@ -193,7 +207,7 @@ describe("getItemsToScrape", () => {
 
   it("keeps all items under noBlocklist()", async () => {
     await withService(testService(defaultModules(), parts), async () => {
-      const items = getItemsToScrape(sampleResults as any, null, {
+      const items = getItemsToScrape(sampleResults, null, {
         team_id: "team-1",
         org_id: "org-1",
         origin: "search",
@@ -219,7 +233,7 @@ describe("getItemsToScrape", () => {
         blocklist: { ...noBlocklist(), isBlocked },
       }),
       async () => {
-        const items = getItemsToScrape(sampleResults as any, null, {
+        const items = getItemsToScrape(sampleResults, null, {
           team_id: "team-1",
           org_id: "org-1",
           origin: "search",
@@ -238,8 +252,10 @@ describe("getItemsToScrape", () => {
         isBlocked.mockClear();
         getItemsToScrape(
           {
-            web: [{ url: "https://allowed.example/a", title: "A" }],
-          } as any,
+            web: [
+              { url: "https://allowed.example/a", title: "A", description: "" },
+            ],
+          },
           null,
         );
         expect(isBlocked).toHaveBeenCalledWith(

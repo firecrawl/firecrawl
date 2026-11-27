@@ -1,7 +1,8 @@
-import express, { type Request, type Response } from "express";
+import express from "express";
+import type { Request, Response } from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
-import { z } from "zod";
+import { buildV2RequestSchemas } from "../controllers/v2/types";
 import {
   authenticate,
   createService,
@@ -9,12 +10,13 @@ import {
   openAuth,
   openRequest,
   resolveRequestContext,
-  type AuthModule,
-  type BillingModule,
-  type BlocklistModule,
-  type CoreParts,
-  type PolicyModule,
-  type RequestSchemas,
+} from "./index";
+import type {
+  AuthModule,
+  BillingModule,
+  BlocklistModule,
+  CoreParts,
+  PolicyModule,
 } from "./index";
 import { testService, withService } from "./testing";
 
@@ -153,43 +155,9 @@ describe("authenticate", () => {
   });
 });
 
-function stubSchemas(): RequestSchemas {
-  const pass = z.object({}).passthrough();
-  return {
-    scrape: z
-      .object({
-        url: z.string().url(),
-        zeroDataRetention: z.boolean().optional(),
-      })
-      .passthrough(),
-    parse: pass,
-    crawl: z
-      .object({
-        url: z.string().url(),
-        limit: z.number().optional(),
-      })
-      .passthrough(),
-    batchScrape: z
-      .object({
-        urls: z.array(z.string().url()),
-        ignoreInvalidURLs: z.boolean().optional(),
-      })
-      .passthrough(),
-    batchScrapeNoURLValidation: z
-      .object({
-        urls: z.array(z.string()),
-        ignoreInvalidURLs: z.boolean().optional(),
-      })
-      .passthrough(),
-    map: z.object({ url: z.string().url() }).passthrough(),
-    search: z.object({ query: z.string() }).passthrough(),
-    scrapeOptions: pass,
-  } as unknown as RequestSchemas;
-}
-
 const schemaParts: CoreParts = {
   ...parts,
-  buildRequestSchemas: stubSchemas,
+  buildRequestSchemas: buildV2RequestSchemas,
 };
 
 describe("openRequest", () => {

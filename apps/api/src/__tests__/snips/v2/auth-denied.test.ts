@@ -8,7 +8,7 @@ describeIf(TEST_PRODUCTION)("Auth denial responses", () => {
     ["a malformed key", "Bearer not-a-real-key", "Unauthorized: Invalid token"],
     [
       "an unknown key",
-      `Bearer fc-${crypto.randomUUID().replace(/-/g, "")}`,
+      `Bearer fc-${crypto.randomUUID().replaceAll("-", "")}`,
       "Unauthorized: Invalid token",
     ],
   ])("returns the same 401 body for %s", async (_, authorization, error) => {

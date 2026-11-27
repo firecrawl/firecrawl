@@ -75,19 +75,19 @@ describe("composeTimeoutProcessing", () => {
 
     // Monster document: estimate is huge but Retry-After stays sane.
     const monster = composeTimeoutProcessing({
-      pagesEstimate: 6_000,
+      pagesEstimate: 6000,
       submittedAtMs: T0,
       lastStatus: "running",
       nowMs: T0,
     });
-    expect(monster.details.estimatedRemainingSeconds).toBe(7_560);
+    expect(monster.details.estimatedRemainingSeconds).toBe(7560);
     expect(monster.details.retryAfterSeconds).toBe(600);
   });
 
   it("flags documents that may exceed the job's processing window", () => {
     // 6000 pages ≈ 126min of work against a 30-minute job deadline.
     const { message, details } = composeTimeoutProcessing({
-      pagesEstimate: 6_000,
+      pagesEstimate: 6000,
       submittedAtMs: T0,
       jobDeadlineAtMs: T0 + 30 * 60_000,
       lastStatus: "running",

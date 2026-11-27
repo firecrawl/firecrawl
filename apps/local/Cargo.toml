@@ -22,26 +22,17 @@ name = "firecrawl-local"
 path = "src/main.rs"
 
 [dependencies]
-# --- shared with apps/api/native -------------------------------------------
-# The HTML cleaning, link, metadata and crawl-filter code is compiled straight
-# from apps/api/native/src (see src/lib.rs), so local and cloud output stay the
-# same. `noop` turns the N-API macros into plain Rust so no Node is needed.
-napi = { version = "3", default-features = false, features = ["noop", "napi4", "serde-json", "tokio_rt"] }
-napi-derive = { version = "3", default-features = false, features = ["noop"] }
-# Pinned to the commit in Cargo.lock so `cargo update` cannot change the
-# cleaning rules. Move it together with apps/api/native. The version is what
-# a published crate depends on, since crates.io does not take git sources.
-nodesig = { version = "2.0.0", git = "https://github.com/firecrawl/nodesig", rev = "b847d586d5eec33d9d6209c971ec9068c605657c" }
+# --- shared workspace crate (replaced by scripts/vendor-native.sh for packaging) ---
+firecrawl-core = { path = "../api/native/crates/firecrawl-core", default-features = false }
+# --- end shared workspace crate ---
 kuchikiki = "0.8.9-speedreader"
-lol_html = "2.6.0"
 psl = "2.1.140"
 regex = "1.11.2"
-roxmltree = "0.20.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.143", features = ["preserve_order"] }
 strsim = "0.11"
 texting_robots = "0.2.2"
-url = "2.5.7"
+url = "2.5.9"
 tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros", "net", "time", "sync", "fs", "io-util", "io-std", "process", "signal"] }
 
 # --- engine -----------------------------------------------------------------

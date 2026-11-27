@@ -1,6 +1,6 @@
-import { z } from "zod";
-import { webhookSchema } from "./schema";
-import { Document } from "../../controllers/v2/types";
+import type { z } from "zod";
+import type { webhookSchema } from "./schema";
+import type { Document, DocumentMetadata } from "../../controllers/v2/types";
 
 export enum WebhookEvent {
   CRAWL_STARTED = "crawl.started",
@@ -28,13 +28,17 @@ export type WebhookConfig = z.infer<typeof webhookSchema>;
 
 interface WebhookDocument {
   content?: string;
-  markdown: string;
-  metadata: Record<string, any>;
+  markdown?: string;
+  metadata: Partial<DocumentMetadata>;
 }
 
 interface WebhookDocumentLink {
   content: WebhookDocument;
   source: string;
+}
+
+interface FailedPageWebhookDocument {
+  metadata: Partial<DocumentMetadata>;
 }
 
 interface BaseWebhookData {
@@ -49,14 +53,17 @@ interface CrawlStartedData extends BaseWebhookData {
 
 interface CrawlPageData extends BaseWebhookData {
   success: boolean;
-  data: Document[] | WebhookDocumentLink[]; // links or documents (v0 compatible)
+  data:
+    | Array<Document>
+    | Array<WebhookDocumentLink>
+    | Array<FailedPageWebhookDocument>; // links or documents (v0 compatible)
   scrapeId: string;
   error?: string;
 }
 
 interface CrawlCompletedData extends BaseWebhookData {
   success: true;
-  data: Document[] | WebhookDocumentLink[]; // empty array or links (v0 compatible)
+  data: Array<Document> | Array<WebhookDocumentLink>; // empty array or links (v0 compatible)
 }
 
 // batch scrape
@@ -66,14 +73,14 @@ interface BatchScrapeStartedData extends BaseWebhookData {
 
 interface BatchScrapePageData extends BaseWebhookData {
   success: boolean;
-  data: Document[];
+  data: Array<Document> | Array<FailedPageWebhookDocument>;
   scrapeId: string;
   error?: string; // more v0 tomfoolery
 }
 
 interface BatchScrapeCompletedData extends BaseWebhookData {
   success: true;
-  data: WebhookDocumentLink[];
+  data: Array<WebhookDocumentLink>;
 }
 
 // monitor
@@ -96,7 +103,7 @@ interface MonitorPageDiff {
 
 interface MonitorPageData extends BaseWebhookData {
   success: boolean;
-  data: {
+  data: Array<{
     monitorId: string;
     checkId: string;
     url: string;
@@ -107,13 +114,13 @@ interface MonitorPageData extends BaseWebhookData {
     isMeaningful: boolean | null;
     judgment?: MonitorPageJudgment | null;
     diff?: MonitorPageDiff | null;
-  }[];
+  }>;
   error?: string;
 }
 
 interface MonitorCheckCompletedData extends BaseWebhookData {
   success: boolean;
-  data: {
+  data: Array<{
     monitorId: string;
     checkId: string;
     status: string;
@@ -125,6 +132,6 @@ interface MonitorCheckCompletedData extends BaseWebhookData {
       removed: number;
       error: number;
     };
-  }[];
+  }>;
   error?: string;
 }

@@ -45,11 +45,33 @@ function fdbForced(): boolean {
 }
 
 async function optionalFdbSlot<T>(operation: () => Promise<T>): Promise<T> {
-  if (fdbForced()) return operation();
+  if (fdbForced()) {
+    return operation();
+  }
   if (!(await nuqFdbHealthCheck(FDB_OPTIONAL_SLOT_TIMEOUT_MS))) {
     throw new Error("FDB health check failed before optional slot operation");
   }
   return await withFdbTimeout(operation(), FDB_OPTIONAL_SLOT_TIMEOUT_MS);
+}
+
+function parseAcquireResult(value: unknown): [number, number, number] {
+  if (
+    !Array.isArray(value) ||
+    value.length < 3 ||
+    typeof value[0] !== "number" ||
+    typeof value[1] !== "number" ||
+    typeof value[2] !== "number"
+  ) {
+    throw new Error("Unexpected semaphore acquire script result");
+  }
+  return [value[0], value[1], value[2]];
+}
+
+function parseNumberResult(value: unknown): number {
+  if (typeof value !== "number") {
+    throw new Error("Unexpected semaphore script number result");
+  }
+  return value;
 }
 
 async function acquire(
@@ -60,10 +82,11 @@ async function acquire(
   await ensure();
 
   const keys = semaphoreKeys(teamId);
-  const [granted, count, removed] = await runScript<[number, number, number]>(
+  const [granted, count, removed] = await runScript(
     scripts.semaphore.acquire,
     [keys.leases],
     [holderId, limit, SEMAPHORE_TTL],
+    parseAcquireResult,
   );
 
   return {
@@ -95,21 +118,12 @@ async function acquireBlocking(
 
   const endTimer = semaphoreAcquireDuration.startTimer();
 
-  do {
-    if (options.signal.aborted) {
-      throw new ConcurrencyQueueTimeoutError();
-    }
-
-    if (deadline < Date.now()) {
-      throw new ConcurrencyQueueTimeoutError();
-    }
-
-    const [granted, _count, _removed] = await runScript<
-      [number, number, number]
-    >(
+  while (!options.signal.aborted && deadline >= Date.now()) {
+    const [granted, _count, _removed] = await runScript(
       scripts.semaphore.acquire,
       [keys.leases],
       [holderId, limit, SEMAPHORE_TTL],
+      parseAcquireResult,
     );
 
     totalRemoved++;
@@ -124,10 +138,14 @@ async function acquireBlocking(
     const jitter = Math.floor(
       Math.random() * Math.max(1, Math.floor(delay / 4)),
     );
-    await new Promise(r => setTimeout(r, delay + jitter));
+    await new Promise<void>(r => {
+      setTimeout(r, delay + jitter);
+    });
 
     delay = Math.min(options.max_delay_ms, Math.floor(delay * 1.5));
-  } while (true);
+  }
+
+  throw new ConcurrencyQueueTimeoutError();
 }
 
 async function heartbeat(teamId: string, holderId: string): Promise<boolean> {
@@ -135,10 +153,11 @@ async function heartbeat(teamId: string, holderId: string): Promise<boolean> {
 
   const keys = semaphoreKeys(teamId);
   return (
-    (await runScript<number>(
+    (await runScript(
       scripts.semaphore.heartbeat,
       [keys.leases],
       [holderId, SEMAPHORE_TTL],
+      parseNumberResult,
     )) === 1
   );
 }
@@ -147,7 +166,12 @@ async function release(teamId: string, holderId: string): Promise<void> {
   await ensure();
 
   const keys = semaphoreKeys(teamId);
-  await runScript<number>(scripts.semaphore.release, [keys.leases], [holderId]);
+  await runScript(
+    scripts.semaphore.release,
+    [keys.leases],
+    [holderId],
+    parseNumberResult,
+  );
 }
 
 async function count(teamId: string): Promise<number> {
@@ -181,7 +205,7 @@ function startHeartbeat(
       };
     });
 
-  const promise = (async () => {
+  const promise = (async (): Promise<never> => {
     try {
       while (!stopped) {
         await mirrorSlotAcquire(teamId, holderId, mirrorState, ctx).catch(
@@ -192,24 +216,26 @@ function startHeartbeat(
             });
           },
         );
-        if (stopped) break;
+        if (stopped) {
+          break;
+        }
 
         const ok = await heartbeat(teamId, holderId);
         if (!ok) {
           throw new TransportableError("SCRAPE_TIMEOUT", "heartbeat_failed");
         }
-        if (stopped) break;
+        if (stopped) {
+          break;
+        }
         await sleep(intervalMs);
       }
-    } catch (error) {
+    } catch (error: unknown) {
       if (!stopped) {
         _logger.error("Error in semaphore heartbeat loop", { error });
       }
     }
 
-    return Promise.reject(
-      new Error("heartbeat loop stopped unexpectedly"),
-    ) as never;
+    throw new Error("heartbeat loop stopped unexpectedly");
   })();
 
   return {
@@ -229,8 +255,12 @@ async function resolveMirrorBackend(
   teamId: string,
   ctx: RequestContext,
 ): Promise<MirrorBackend> {
-  if (!(await isFdbTeam(teamId, ctx))) return "pg";
-  if (fdbForced()) return "fdb";
+  if (!(await isFdbTeam(teamId, ctx))) {
+    return "pg";
+  }
+  if (fdbForced()) {
+    return "fdb";
+  }
   return (await nuqFdbHealthCheck(FDB_OPTIONAL_SLOT_TIMEOUT_MS)) ? "fdb" : "pg";
 }
 

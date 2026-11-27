@@ -1,17 +1,26 @@
-import type { Mock } from "vitest";
+import { vi } from "vitest";
+import type { BaseScrapeOptions } from "../../controllers/v2/types";
 import { finishCrawlSuper } from "./crawl-logic";
-import { getCrawl, getDoneJobsOrderedLength } from "../../lib/crawl-redis";
 import { createWebhookSender } from "../webhook/index";
 import { queueJobStore } from "../../service/defaults";
 import type { CrawlFinished } from "../../service/hooks";
 import { createService, replaceService } from "../../service/service";
-import type { NuQJob } from "./nuq";
 
-vi.mock("../../lib/crawl-redis", () => ({
+const mocks = vi.hoisted(() => ({
   finishCrawl: vi.fn(async () => {}),
   getCrawl: vi.fn(),
   getCrawlJobs: vi.fn(async () => []),
   getDoneJobsOrderedLength: vi.fn(async () => 2),
+  isCrawlFinishMarked: vi.fn(async () => false),
+  createWebhookSender: vi.fn(),
+}));
+
+vi.mock("../../lib/crawl-redis", () => ({
+  finishCrawl: mocks.finishCrawl,
+  getCrawl: mocks.getCrawl,
+  getCrawlJobs: mocks.getCrawlJobs,
+  getDoneJobsOrderedLength: mocks.getDoneJobsOrderedLength,
+  isCrawlFinishMarked: mocks.isCrawlFinishMarked,
 }));
 
 vi.mock("../../controllers/v2/crawl-status", () => ({
@@ -19,7 +28,7 @@ vi.mock("../../controllers/v2/crawl-status", () => ({
 }));
 
 vi.mock("../webhook/index", () => ({
-  createWebhookSender: vi.fn(),
+  createWebhookSender: mocks.createWebhookSender,
   WebhookEvent: {
     CRAWL_COMPLETED: "crawl.completed",
     BATCH_SCRAPE_COMPLETED: "batch_scrape.completed",
@@ -27,6 +36,27 @@ vi.mock("../webhook/index", () => ({
 }));
 
 vi.mock("../redis", () => ({ redisEvictConnection: {} }));
+
+const defaultScrapeOptions: BaseScrapeOptions = {
+  formats: [{ type: "markdown" }],
+  onlyMainContent: true,
+  onlyCleanContent: false,
+  waitFor: 0,
+  mobile: false,
+  removeBase64Images: true,
+  fastMode: false,
+  blockAds: true,
+  proxy: "auto",
+  checkPromptInjection: false,
+};
+
+function makeShedJob(id: string) {
+  return {
+    id: `job-${id}`,
+    groupId: `crawl-${id}`,
+    data: null,
+  };
+}
 
 const baseSc = {
   originUrl: "https://example.com",
@@ -39,7 +69,7 @@ const baseSc = {
 };
 
 const jobStoreUsage = vi.fn(async () => 7);
-const crawlFinishedEvents: CrawlFinished[] = [];
+const crawlFinishedEvents: Array<CrawlFinished> = [];
 
 beforeAll(() => {
   replaceService(
@@ -82,8 +112,8 @@ beforeEach(() => {
 // team, and api version from the stored crawl.
 test("recovers crawl context from sc when job.data is shed (ZDR)", async () => {
   const sendMock = vi.fn();
-  (createWebhookSender as Mock).mockResolvedValue({ send: sendMock });
-  (getCrawl as Mock).mockResolvedValue({
+  mocks.createWebhookSender.mockResolvedValue({ send: sendMock });
+  mocks.getCrawl.mockResolvedValue({
     ...baseSc,
     v1: true,
     webhook: { url: "https://hook.example" },
@@ -92,9 +122,8 @@ test("recovers crawl context from sc when job.data is shed (ZDR)", async () => {
   const job = {
     id: "job-1",
     groupId: "crawl-1",
-    ownerId: "team-from-sc",
     data: null,
-  } as unknown as NuQJob<any>;
+  };
 
   await expect(finishCrawlSuper(job)).resolves.not.toThrow();
 
@@ -123,46 +152,37 @@ test("recovers crawl context from sc when job.data is shed (ZDR)", async () => {
 
 // With no webhook on the crawl and shed data, it still completes without firing.
 test("does not crash or fire a webhook when none is configured", async () => {
-  (getCrawl as Mock).mockResolvedValue({ ...baseSc, v1: true });
+  mocks.getCrawl.mockResolvedValue({ ...baseSc, v1: true });
 
   const job = {
     id: "job-2",
     groupId: "crawl-2",
-    ownerId: "team-from-sc",
     data: null,
-  } as unknown as NuQJob<any>;
+  };
 
   await expect(finishCrawlSuper(job)).resolves.not.toThrow();
   expect(createWebhookSender).not.toHaveBeenCalled();
 });
 
 test("emits crawl.finished metadata for crawls and batch scrapes", async () => {
-  const job = (id: string) =>
-    ({
-      id: `job-${id}`,
-      groupId: `crawl-${id}`,
-      ownerId: "team-from-sc",
-      data: null,
-    }) as unknown as NuQJob<any>;
-
-  (getCrawl as Mock).mockResolvedValueOnce({
+  mocks.getCrawl.mockResolvedValueOnce({
     ...baseSc,
     zeroDataRetention: false,
     internalOptions: {},
     v1: true,
     origin: "website",
   });
-  await finishCrawlSuper(job("dash"));
+  await finishCrawlSuper(makeShedJob("dash"));
 
-  (getCrawl as Mock).mockResolvedValueOnce({
+  mocks.getCrawl.mockResolvedValueOnce({
     ...baseSc,
     crawlerOptions: null,
     v1: true,
     origin: "website",
     cancelled: true,
   });
-  (getDoneJobsOrderedLength as Mock).mockResolvedValueOnce(0);
-  await finishCrawlSuper(job("batch"));
+  mocks.getDoneJobsOrderedLength.mockResolvedValueOnce(0);
+  await finishCrawlSuper(makeShedJob("batch"));
 
   expect(crawlFinishedEvents).toEqual([
     expect.objectContaining({
@@ -191,4 +211,73 @@ test("emits crawl.finished metadata for crawls and batch scrapes", async () => {
       }),
     }),
   ]);
+});
+
+// A missing stored crawl must not skip the finish: it recovers what it needs
+// from the member job and still sends the completion webhook.
+test("finishes from the member job when the stored crawl is missing", async () => {
+  const sendMock = vi.fn();
+  mocks.createWebhookSender.mockResolvedValue({ send: sendMock });
+  mocks.getCrawl.mockResolvedValue(null);
+
+  const webhook = {
+    url: "https://hook.example",
+    headers: {},
+    metadata: {},
+    events: ["completed" as const],
+  };
+
+  const job = {
+    id: "job-3",
+    groupId: "crawl-3",
+    data: {
+      mode: "single_urls" as const,
+      url: "https://example.com",
+      origin: "api",
+      apiKeyId: null,
+      team_id: "team-from-job",
+      crawlerOptions: null,
+      scrapeOptions: defaultScrapeOptions,
+      internalOptions: { teamId: "team-from-job", orgId: null },
+      zeroDataRetention: false,
+      v1: true,
+      webhook,
+      requestId: "req-3",
+    },
+  };
+
+  await finishCrawlSuper(job);
+
+  expect(crawlFinishedEvents).toEqual([
+    expect.objectContaining({
+      id: "crawl-3",
+      kind: "batchScrape",
+      requestId: "req-3",
+      ctx: expect.objectContaining({ teamId: "team-from-job" }),
+    }),
+  ]);
+  expect(createWebhookSender).toHaveBeenCalledWith({
+    teamId: "team-from-job",
+    jobId: "crawl-3",
+    webhook,
+    v0: false,
+  });
+  expect(sendMock).toHaveBeenCalledWith("batch_scrape.completed", {
+    success: true,
+    data: [],
+  });
+});
+
+test("fails visibly when the stored crawl and the member job data are both gone", async () => {
+  mocks.getCrawl.mockResolvedValue(null);
+
+  const job = {
+    id: "job-4",
+    groupId: "crawl-4",
+    data: null,
+  };
+
+  await expect(finishCrawlSuper(job)).rejects.toThrow(/Stored crawl missing/);
+  expect(crawlFinishedEvents).toHaveLength(0);
+  expect(createWebhookSender).not.toHaveBeenCalled();
 });

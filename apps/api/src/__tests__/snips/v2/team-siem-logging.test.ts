@@ -1,11 +1,7 @@
 import request from "supertest";
-import {
-  describeIf,
-  idmux,
-  type Identity,
-  TEST_API_URL,
-  TEST_PRODUCTION,
-} from "../lib";
+import type { JsonObject } from "../../../lib/json-types";
+import { describeIf, idmux, TEST_API_URL, TEST_PRODUCTION } from "../lib";
+import type { Identity } from "../lib";
 
 async function getConfig(identity: Identity) {
   return request(TEST_API_URL)
@@ -13,12 +9,12 @@ async function getConfig(identity: Identity) {
     .set("Authorization", `Bearer ${identity.apiKey}`);
 }
 
-async function putConfig(identity: Identity, body: unknown) {
+async function putConfig(identity: Identity, body: JsonObject) {
   return request(TEST_API_URL)
     .put("/v2/team/siem")
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .set("Content-Type", "application/json")
-    .send(body as object);
+    .send(body);
 }
 
 async function testConfig(identity: Identity) {

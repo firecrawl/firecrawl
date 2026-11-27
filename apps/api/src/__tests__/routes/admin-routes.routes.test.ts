@@ -1,12 +1,14 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import express from "express";
+import type { Response } from "express";
 import { register } from "prom-client";
 import request from "supertest";
 
 const { stub } = vi.hoisted(() => ({
-  stub: (route: string) => async (_req: unknown, res: any) =>
-    res.status(200).json({ route }),
+  stub: (route: string) => async (_req: unknown, res: Response) => {
+    res.status(200).json({ route });
+  },
 }));
 
 vi.mock("../../controllers/admin/redis-health", () => ({
@@ -48,9 +50,8 @@ async function adminApp(pathRoutes: boolean) {
   config.BULL_AUTH_KEY_PREVIOUS = PREVIOUS;
   config.BULL_AUTH_KEY_PATH_ROUTES = pathRoutes;
   const { logger } = await import("../../lib/logger.js");
-  const { adminInternalRouter, adminRouter } = await import(
-    "../../routes/admin.js"
-  );
+  const { adminInternalRouter, adminRouter } =
+    await import("../../routes/admin.js");
   const app = express();
   app.use(express.json());
   app.use(adminRouter);
@@ -70,9 +71,11 @@ describe("admin routes with the key in a header", () => {
     const { app } = await adminApp(false);
     for (const [method, route] of KEYED_ROUTES) {
       for (const key of [CURRENT, PREVIOUS]) {
-        const response = await request(app)
-          [method](`/admin/ops/${route}`)
-          .set("Authorization", `Bearer ${key}`);
+        const req = request(app);
+        const response = await req[method](`/admin/ops/${route}`).set(
+          "Authorization",
+          `Bearer ${key}`,
+        );
         expect(response.status, route).toBe(200);
         expect(response.body).toEqual({ route });
       }
@@ -122,9 +125,14 @@ it("keeps a path key out of metric route labels and not-found bodies", async () 
   const { getRoutePattern } = await import("../../lib/http-metrics.js");
   const { notFoundHandler } = await import("../../lib/not-found.js");
 
-  expect(
-    getRoutePattern({ path: `/admin/${PREVIOUS}/queues/api/queues` } as any),
-  ).toBe("/admin/:bullAuthKey/queues/api/queues");
+  let observedRoutePattern: string | undefined;
+  const probeApp = express();
+  probeApp.use((req, res) => {
+    observedRoutePattern = getRoutePattern(req);
+    res.status(200).end();
+  });
+  await request(probeApp).get(`/admin/${PREVIOUS}/queues/api/queues`);
+  expect(observedRoutePattern).toBe("/admin/:bullAuthKey/queues/api/queues");
 
   const app = express();
   app.use(notFoundHandler);
@@ -139,9 +147,11 @@ describe("admin routes with the key in the path", () => {
     const info = vi.spyOn(logger, "info");
 
     for (const [method, route] of KEYED_ROUTES) {
-      const response = await request(app)
-        [method](`/admin/${PREVIOUS}/${route}`)
-        .set("User-Agent", "Prometheus/3.0");
+      const req = request(app);
+      const response = await req[method](`/admin/${PREVIOUS}/${route}`).set(
+        "User-Agent",
+        "Prometheus/3.0",
+      );
       expect(response.status, route).toBe(200);
       expect(response.body).toEqual({ route });
     }
@@ -206,10 +216,12 @@ describe("admin routes with the key in the path", () => {
   });
 });
 
-function sourceFiles(dir: string): string[] {
+function sourceFiles(dir: string): Array<string> {
   return readdirSync(dir).flatMap(name => {
     const file = path.join(dir, name);
-    if (statSync(file).isDirectory()) return sourceFiles(file);
+    if (statSync(file).isDirectory()) {
+      return sourceFiles(file);
+    }
     return file.endsWith(".ts") ? [file] : [];
   });
 }
@@ -224,15 +236,22 @@ it("no caller puts the admin key in a URL", () => {
     /(?:\b(\w+)\s*=(?!=)[^;\n]*|\bBULL_AUTH_KEY(?:_PREVIOUS)?\s*:\s*(\w+)\b)/g;
 
   const offenders = sourceFiles(src).filter(file => {
-    if (allowed.has(file)) return false;
+    if (allowed.has(file)) {
+      return false;
+    }
     const text = readFileSync(file, "utf8");
     const names = new Set<string>();
     for (const line of text.split("\n")) {
-      if (!keyRef.test(line)) continue;
+      if (!keyRef.test(line)) {
+        continue;
+      }
       for (const match of line.matchAll(alias)) {
-        if (match[1] && /=[^;\n]*BULL_AUTH_KEY/.test(line.slice(match.index)))
+        if (match[1] && /=[^;\n]*BULL_AUTH_KEY/.test(line.slice(match.index))) {
           names.add(match[1]);
-        if (match[2]) names.add(match[2]);
+        }
+        if (match[2]) {
+          names.add(match[2]);
+        }
       }
     }
     const aliasRef = names.size

@@ -1,6 +1,7 @@
+// Pre-existing document parser exempt from strict arithmetic clippy deny.
+#![allow(clippy::arithmetic_side_effects)]
+
 use crate::xml::exceeds_element_depth;
-use napi::bindgen_prelude::*;
-use napi_derive::napi;
 use roxmltree::Document;
 use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read};
@@ -46,29 +47,10 @@ impl Default for ZipReadBudget {
 /// csv, ...) to GitHub-Flavored Markdown using anydoc. The format is detected
 /// from the file content; `extension_hint` (with or without a leading dot) is
 /// only consulted for signature-less formats like CSV.
-///
-/// Runs on tokio's blocking thread pool, like the PDF functions: conversion is
-/// CPU-bound and would otherwise hold the Node.js event loop for its duration.
-#[napi]
-pub async fn convert_document_to_markdown(
-  data: Uint8Array,
-  extension_hint: Option<String>,
-) -> Result<String> {
-  let bytes = data.to_vec();
-  tokio::task::spawn_blocking(move || convert_document_bytes_to_markdown(&bytes, extension_hint))
-    .await
-    .map_err(|e| {
-      Error::new(
-        Status::GenericFailure,
-        format!("Document conversion task failed: {e}"),
-      )
-    })?
-}
-
 pub fn convert_document_bytes_to_markdown(
   data: &[u8],
   extension_hint: Option<String>,
-) -> Result<String> {
+) -> Result<String, String> {
   let format = anydoc::Format::from_bytes(data).or_else(|| {
     extension_hint
       .as_deref()
@@ -76,8 +58,7 @@ pub fn convert_document_bytes_to_markdown(
       .and_then(anydoc::Format::from_extension)
   });
 
-  let markdown = anydoc::to_markdown_bytes(data, format)
-    .map_err(|e| Error::new(Status::GenericFailure, e.to_string()))?;
+  let markdown = anydoc::to_markdown_bytes(data, format).map_err(|e| e.to_string())?;
 
   if format != Some(anydoc::Format::Docx) {
     return Ok(markdown);
@@ -326,6 +307,7 @@ fn is_wordprocessing_node(node: roxmltree::Node<'_, '_>) -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
   use super::*;
   use std::io::Write;

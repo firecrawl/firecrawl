@@ -1,0 +1,69 @@
+# cargo deny check, run in CI. Keeps the native workspace dependency graph
+# reviewed: approved licenses only, no known vulnerabilities or yanked
+# versions, tracked multi-version exceptions, and crates.io as the only source.
+
+[graph]
+all-features = false
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+]
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+  { id = "RUSTSEC-2026-0543", reason = "chrono pulled transitively by lopdf via pdf-inspector; no upstream replacement yet" },
+  { id = "RUSTSEC-2026-0192", reason = "ttf-parser pulled transitively by pdf-inspector; no upstream replacement yet" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.93
+allow = [
+  "AGPL-3.0",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "MIT",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Zlib",
+]
+
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+skip = [
+  { crate = "block-buffer@0.10", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
+  { crate = "cpufeatures@0.2", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
+  { crate = "crypto-common@0.1", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
+  { crate = "digest@0.10", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
+  { crate = "getrandom@0.3", reason = "nodesig 2.0 pins rand 0.9 while lopdf 0.45 and zip 9 pull getrandom 0.4" },
+  { crate = "nom@7", reason = "texting_robots 0.2 pins nom 7 while lopdf 0.45 pulls nom 8" },
+  { crate = "rand@0.8", reason = "kuchikiki build-dep phf_generator 0.11 pins rand 0.8" },
+  { crate = "rand@0.9", reason = "nodesig 2.0 pins rand 0.9 while lopdf 0.45 pulls rand 0.10" },
+  { crate = "rand_core@0.6", reason = "kuchikiki build-dep phf_generator 0.11 pins rand 0.8" },
+  { crate = "rand_core@0.9", reason = "nodesig 2.0 pins rand 0.9 while lopdf 0.45 pulls rand 0.10" },
+  { crate = "regex-automata@0.1", reason = "texting_robots 0.2 pulls bstr 0.2 which pins regex-automata 0.1" },
+  { crate = "sha2@0.10", reason = "nodesig 2.0 pins sha2 0.10 while lopdf 0.45 pulls sha2 0.11" },
+  { crate = "syn@2", reason = "transitive proc macros mix syn 2 and syn 3" },
+  { crate = "thiserror@1", reason = "texting_robots 0.2 pins thiserror 1 while pdf-inspector pulls thiserror 2" },
+  { crate = "thiserror-impl@1", reason = "texting_robots 0.2 pins thiserror 1 while pdf-inspector pulls thiserror 2" },
+]
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

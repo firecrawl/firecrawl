@@ -1,15 +1,21 @@
-import * as undici from "undici";
+import { fetch as undiciFetch, Response as UndiciResponse } from "undici";
 import {
   isSameDomain,
+  isSameSubdomain,
   removeDuplicateUrls,
   resolveRedirects,
 } from "./validateUrl";
-import { isSameSubdomain } from "./validateUrl";
 
-vi.mock("undici", async importOriginal => ({
-  ...(await importOriginal<typeof import("undici")>()),
-  fetch: vi.fn(),
-}));
+vi.mock("undici", async importOriginal => {
+  const actual = await importOriginal();
+  if (typeof actual === "object" && actual !== null) {
+    return {
+      ...actual,
+      fetch: vi.fn(),
+    };
+  }
+  return { fetch: vi.fn() };
+});
 
 describe("isSameDomain", () => {
   it("should return true for a subdomain", () => {
@@ -162,7 +168,7 @@ describe("removeDuplicateUrls", () => {
   });
 
   it("should handle empty input", () => {
-    const urls: string[] = [];
+    const urls: Array<string> = [];
     const result = removeDuplicateUrls(urls);
     expect(result).toEqual([]);
   });
@@ -182,24 +188,26 @@ describe("removeDuplicateUrls", () => {
 
 describe("resolveRedirects", () => {
   beforeEach(() => {
-    vi.mocked(undici.fetch).mockReset();
+    vi.mocked(undiciFetch).mockReset();
   });
 
   it("should read the redirect target from the mock when one is given", async () => {
     await expect(
       resolveRedirects("http://firecrawl.com", undefined, "map-redirect"),
     ).resolves.toBe("https://www.firecrawl.dev/");
-    expect(undici.fetch).not.toHaveBeenCalled();
+    expect(undiciFetch).not.toHaveBeenCalled();
   });
 
   it("should make the request when the mock has no entry for the URL", async () => {
-    vi.mocked(undici.fetch).mockResolvedValueOnce({
-      url: "https://www.example.org/",
-    } as undici.Response);
+    const mockResponse = new UndiciResponse();
+    Object.defineProperty(mockResponse, "url", {
+      value: "https://www.example.org/",
+    });
+    vi.mocked(undiciFetch).mockResolvedValueOnce(mockResponse);
 
     await expect(
       resolveRedirects("http://example.com", undefined, "map-redirect"),
     ).resolves.toBe("https://www.example.org/");
-    expect(undici.fetch).toHaveBeenCalledTimes(1);
+    expect(undiciFetch).toHaveBeenCalledTimes(1);
   });
 });

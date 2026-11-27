@@ -1,21 +1,33 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
 import { logger } from "../../lib/logger";
 import { redisRateLimitClient } from "../../services/redis";
 import { getRedisConnection } from "../../services/queue-service";
 
-export async function redisHealthController(req: Request, res: Response) {
-  const retryOperation = async (operation, retries = 3) => {
-    for (let attempt = 1; attempt <= retries; attempt++) {
-      try {
-        return await operation();
-      } catch (error) {
-        if (attempt === retries) throw error;
-        logger.warn(`Attempt ${attempt} failed: ${error.message}. Retrying...`);
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retrying
+async function retryOperation<T>(
+  operation: () => Promise<T>,
+  retries = 3,
+): Promise<T> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await operation();
+    } catch (error: unknown) {
+      if (attempt === retries) {
+        throw error;
       }
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn("Redis operation failed; retrying", {
+        attempt,
+        error: message,
+      });
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 2000);
+      });
     }
-  };
+  }
+  throw new Error("Retry operation exhausted without result");
+}
 
+export async function redisHealthController(req: Request, res: Response) {
   try {
     const queueRedis = getRedisConnection();
 
@@ -23,26 +35,26 @@ export async function redisHealthController(req: Request, res: Response) {
     const testValue = "test";
 
     // Test queueRedis
-    let queueRedisHealth;
+    let queueRedisHealth: string | null;
     try {
       await retryOperation(() => queueRedis.set(testKey, testValue));
       queueRedisHealth = await retryOperation(() => queueRedis.get(testKey));
       await retryOperation(() => queueRedis.del(testKey));
-    } catch (error) {
-      logger.error(`queueRedis health check failed: ${error}`);
+    } catch (error: unknown) {
+      logger.error("queueRedis health check failed", { error });
       queueRedisHealth = null;
     }
 
     // Test redisRateLimitClient
-    let redisRateLimitHealth;
+    let redisRateLimitHealth: string | null;
     try {
       await retryOperation(() => redisRateLimitClient.set(testKey, testValue));
       redisRateLimitHealth = await retryOperation(() =>
         redisRateLimitClient.get(testKey),
       );
       await retryOperation(() => redisRateLimitClient.del(testKey));
-    } catch (error) {
-      logger.error(`redisRateLimitClient health check failed: ${error}`);
+    } catch (error: unknown) {
+      logger.error("redisRateLimitClient health check failed", { error });
       redisRateLimitHealth = null;
     }
 
@@ -59,27 +71,16 @@ export async function redisHealthController(req: Request, res: Response) {
       logger.info("Both Redis instances are healthy");
       return res.status(200).json({ status: "healthy", details: healthStatus });
     } else {
-      logger.info(
-        `Redis instances health check: ${JSON.stringify(healthStatus)}`,
-      );
-      // await sendSlackWebhook(
-      //   `[REDIS DOWN] Redis instances health check: ${JSON.stringify(
-      //     healthStatus
-      //   )}`,
-      //   true
-      // );
+      logger.warn("Redis instances health check", { details: healthStatus });
       return res
         .status(500)
         .json({ status: "unhealthy", details: healthStatus });
     }
-  } catch (error) {
-    logger.error(`Redis health check failed: ${error}`);
-    // await sendSlackWebhook(
-    //   `[REDIS DOWN] Redis instances health check: ${error.message}`,
-    //   true
-    // );
-    return res
-      .status(500)
-      .json({ status: "unhealthy", message: error.message });
+  } catch (error: unknown) {
+    logger.error("Redis health check failed", { error });
+    return res.status(500).json({
+      status: "unhealthy",
+      message: error instanceof Error ? error.message : String(error),
+    });
   }
 }
