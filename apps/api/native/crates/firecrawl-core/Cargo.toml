@@ -9,26 +9,74 @@ version.workspace = true
 [features]
 default = []
 napi = ["dep:napi", "dep:napi-derive", "dep:tokio", "dep:tracing-subscriber"]
+types = [
+  "dep:firecrawl-kinded-macro",
+  "dep:serde_path_to_error",
+  "dep:strum",
+  "dep:thiserror",
+  "dep:ts-rs",
+  "serde_json/float_roundtrip",
+]
+telemetry = [
+  "dep:opentelemetry",
+  "dep:opentelemetry-otlp",
+  "dep:opentelemetry_sdk",
+  "dep:rayon",
+  "dep:reqwest",
+  "dep:rustls",
+  "dep:tokio",
+  "dep:tracing-opentelemetry",
+  "dep:tracing-subscriber",
+  "tokio/rt",
+  "tracing-subscriber/env-filter",
+  "tracing-subscriber/fmt",
+]
 
 [dependencies]
 anydoc.workspace = true
+firecrawl-kinded-macro = { workspace = true, optional = true }
 kuchikiki.workspace = true
 napi = { workspace = true, optional = true }
 napi-derive = { workspace = true, optional = true }
 nodesig.workspace = true
+opentelemetry = { workspace = true, optional = true }
+opentelemetry-otlp = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
 pdf-inspector.workspace = true
 psl.workspace = true
+rayon = { workspace = true, optional = true }
 regex.workspace = true
+reqwest = { workspace = true, optional = true }
 roxmltree.workspace = true
+rustls = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
+serde_path_to_error = { workspace = true, optional = true }
+strum = { workspace = true, optional = true }
 texting_robots.workspace = true
+thiserror = { workspace = true, optional = true }
 tinyvec.workspace = true
 tokio = { workspace = true, optional = true }
 tracing.workspace = true
+tracing-opentelemetry = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
+ts-rs = { workspace = true, optional = true }
 url.workspace = true
 zip.workspace = true
+
+[dev-dependencies]
+hegeltest.workspace = true
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tracing-subscriber.workspace = true
+
+[[example]]
+name = "ts_bindings"
+required-features = ["types"]
+
+[[example]]
+name = "verify_telemetry"
+required-features = ["telemetry"]
 
 [lints]
 workspace = true

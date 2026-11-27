@@ -12,24 +12,40 @@ version = "0.1.0"
 [workspace.dependencies]
 anydoc = "0.2.5"
 firecrawl-core = { path = "crates/firecrawl-core" }
+firecrawl-kinded-macro = { path = "crates/firecrawl-kinded-macro" }
+hegeltest = { version = "0.54.2", features = ["serde_json"] }
 kuchikiki = "0.8.9-speedreader"
 napi = { version = "3.0.0", features = ["serde-json", "tokio_rt"] }
 napi-build = "2"
 napi-derive = "3.0.0"
 nodesig = "2.0.0"
+opentelemetry = { version = "0.33.1", default-features = false, features = ["trace"] }
+opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["trace", "http-proto", "reqwest-blocking-client"] }
+opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["trace"] }
 pdf-inspector = "1.21.0"
+proc-macro2 = "1"
 psl = "2.1.140"
+quote = "1"
+rayon = "1.12.0"
 regex = "1.11.2"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls-no-provider"] }
 roxmltree = "0.20.0"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
+serde_path_to_error = "0.1.20"
+strum = { version = "0.28", features = ["derive"] }
+syn = { version = "2", features = ["full"] }
 texting_robots = "0.2.2"
+thiserror = "2"
 # Transitive dep (pdf-inspector -> unicode-normalization -> tinyvec). Pinned because
 # tinyvec 1.13.0 fails to compile (https://github.com/Lokathor/tinyvec/issues/225).
 tinyvec = ">=1.12, <1.13"
 tokio = "1.48.0"
 tracing = "0.1"
+tracing-opentelemetry = { version = "0.34.0", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"] }
+ts-rs = { version = "12.0.1", features = ["serde-json-impl", "no-serde-warnings"] }
 url = "2.5.9"
 zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
 
