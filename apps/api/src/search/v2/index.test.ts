@@ -1,77 +1,59 @@
 const mocks = vi.hoisted(() => ({
-  attemptRequest: vi.fn(),
   searxngSearch: vi.fn(),
   ddgSearch: vi.fn(),
 }));
 
-vi.mock("../../lib/retry-utils", () => ({
-  attemptRequest: mocks.attemptRequest,
-  executeWithRetry: async (attempt: () => Promise<unknown>) => attempt(),
-}));
-vi.mock("../../scraper/scrapeURL/engines/fire-engine/available", () => ({
-  useFireEngine: true,
-}));
 vi.mock("./searxng", () => ({ searxng_search: mocks.searxngSearch }));
 vi.mock("./ddgsearch", () => ({ ddgSearch: mocks.ddgSearch }));
 
+import { createLogger } from "winston";
 import { config } from "../../config";
+import type { SearchV2Response } from "../../lib/entities";
+import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+import type { SearchProvider } from "../../service";
+import { createService, replaceService } from "../../service/service";
+import { coreSearchProviders } from "../providers";
 import { search } from "./index";
 
-const logger = {
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
-} as any;
+const logger = createLogger({ silent: true });
+const loggerErrorSpy = vi.spyOn(logger, "error");
 
-const originalFireEngineUrl = config.FIRE_ENGINE_BETA_URL;
+const result = (url: string) => ({ url, title: url, description: "" });
+
+const originalSearxngEndpoint = config.SEARXNG_ENDPOINT;
+
+function installSearchService(
+  extensions: Array<{
+    name: string;
+    searchProviders?: ReadonlyArray<SearchProvider>;
+  }> = [],
+) {
+  replaceService(
+    createService(
+      { modules: {}, extensions },
+      {
+        core: { name: "core", searchProviders: coreSearchProviders },
+        logger: { error: vi.fn() },
+      },
+    ),
+  );
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
-  config.FIRE_ENGINE_BETA_URL = "http://fire-engine.test";
-  mocks.attemptRequest.mockResolvedValue({ web: [] });
+  config.SEARXNG_ENDPOINT = undefined;
+  mocks.ddgSearch.mockResolvedValue({});
+  installSearchService();
 });
 
 afterEach(() => {
-  config.FIRE_ENGINE_BETA_URL = originalFireEngineUrl;
-});
-
-const sentBody = () => JSON.parse(mocks.attemptRequest.mock.calls[0][1]);
-
-describe("the team plan class on the fire engine search call", () => {
-  it.each(["free", "self_serve", "contract"] as const)(
-    "sends %s when the caller states it",
-    async teamPlanClass => {
-      await search({ query: "retries", logger, teamPlanClass });
-
-      expect(mocks.attemptRequest).toHaveBeenCalledTimes(1);
-      expect(mocks.attemptRequest.mock.calls[0][0]).toBe(
-        "http://fire-engine.test/v2/search",
-      );
-      expect(sentBody()).toMatchObject({ query: "retries", teamPlanClass });
-    },
-  );
-
-  it("sends no plan class when the caller states none", async () => {
-    await search({ query: "retries", logger });
-
-    expect(mocks.attemptRequest).toHaveBeenCalledTimes(1);
-    expect(sentBody()).not.toHaveProperty("teamPlanClass");
-  });
+  replaceService(undefined);
+  config.SEARXNG_ENDPOINT = originalSearxngEndpoint;
 });
 
 describe("domain filters on the SearXNG and DuckDuckGo results", () => {
-  const originalSearxngEndpoint = config.SEARXNG_ENDPOINT;
-  const result = (url: string) => ({ url, title: url, description: "" });
-
   beforeEach(() => {
-    config.FIRE_ENGINE_BETA_URL = undefined;
     config.SEARXNG_ENDPOINT = "http://searxng.test";
-    mocks.ddgSearch.mockResolvedValue({});
-  });
-
-  afterEach(() => {
-    config.SEARXNG_ENDPOINT = originalSearxngEndpoint;
   });
 
   it("keeps only results on an included domain or its subdomains", async () => {
@@ -143,5 +125,173 @@ describe("domain filters on the SearXNG and DuckDuckGo results", () => {
     const res = await search({ query: "firecrawl", logger });
 
     expect(res.web).toEqual(web);
+  });
+});
+
+describe("service.searchProviders dispatch in v2 search", () => {
+  it("tries enabled providers in priority order and stops on the first non-null response", async () => {
+    const highResult = {
+      web: [{ url: "https://high.test", title: "High", description: "" }],
+    };
+    const lowResult = {
+      web: [{ url: "https://low.test", title: "Low", description: "" }],
+    };
+    const high = vi.fn<() => Promise<SearchV2Response | null>>(
+      async () => highResult,
+    );
+    const low = vi.fn<() => Promise<SearchV2Response | null>>(
+      async () => lowResult,
+    );
+
+    installSearchService([
+      {
+        name: "custom",
+        searchProviders: [
+          {
+            name: "searxng",
+            priority: 10,
+            enabled: () => true,
+            search: low,
+          },
+          {
+            name: "duckduckgo",
+            priority: 200,
+            enabled: () => true,
+            search: high,
+          },
+        ],
+      },
+    ]);
+
+    const res = await search({ query: "firecrawl", logger });
+
+    expect(res).toEqual(highResult);
+    expect(high).toHaveBeenCalledTimes(1);
+    expect(low).not.toHaveBeenCalled();
+    expect(mocks.ddgSearch).not.toHaveBeenCalled();
+    expect(mocks.searxngSearch).not.toHaveBeenCalled();
+
+    high.mockResolvedValueOnce(null);
+    const fallbackRes = await search({ query: "firecrawl", logger });
+
+    expect(fallbackRes).toEqual(lowResult);
+    expect(high).toHaveBeenCalledTimes(2);
+    expect(low).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards teamPlanClass and query options to extension search providers", async () => {
+    const providerSearch = vi.fn(async () => ({ web: [] }));
+
+    installSearchService([
+      {
+        name: "custom",
+        searchProviders: [
+          {
+            name: "searxng",
+            priority: 100,
+            enabled: () => true,
+            search: providerSearch,
+          },
+        ],
+      },
+    ]);
+
+    await search({
+      query: "retries",
+      logger,
+      requestId: "req-1",
+      num_results: 8,
+      safe: true,
+      type: ["web", "news"],
+      enterprise: ["zdr"],
+      includeDomains: ["firecrawl.dev"],
+      excludeDomains: ["example.com"],
+      teamPlanClass: "contract",
+    });
+
+    expect(providerSearch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "retries",
+        requestId: "req-1",
+        numResults: 8,
+        safe: true,
+        type: ["web", "news"],
+        enterprise: ["zdr"],
+        includeDomains: ["firecrawl.dev"],
+        excludeDomains: ["example.com"],
+        teamPlanClass: "contract",
+      }),
+    );
+
+    providerSearch.mockClear();
+    await search({ query: "retries", logger });
+
+    expect(providerSearch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "retries",
+        teamPlanClass: undefined,
+      }),
+    );
+    expect(mocks.ddgSearch).not.toHaveBeenCalled();
+  });
+
+  it("refuses US-only search when no enabled provider supports US-only", async () => {
+    config.SEARXNG_ENDPOINT = "http://searxng.test";
+
+    await expect(
+      search({ query: "firecrawl", logger, usOnly: true }),
+    ).rejects.toThrow(UsOnlyUnavailableError);
+    expect(mocks.searxngSearch).not.toHaveBeenCalled();
+    expect(mocks.ddgSearch).not.toHaveBeenCalled();
+  });
+
+  it("routes US-only search only to providers that support US-only without falling back", async () => {
+    const usProvider = vi.fn(async () => null);
+    installSearchService([
+      {
+        name: "custom",
+        searchProviders: [
+          {
+            name: "searxng",
+            priority: 200,
+            supportsUsOnly: true,
+            enabled: () => true,
+            search: usProvider,
+          },
+        ],
+      },
+    ]);
+
+    const res = await search({ query: "firecrawl", logger, usOnly: true });
+
+    expect(res).toEqual({});
+    expect(usProvider).toHaveBeenCalledTimes(1);
+    expect(mocks.ddgSearch).not.toHaveBeenCalled();
+  });
+
+  it("catches provider errors, logs them, and returns an empty response", async () => {
+    const failure = new Error("upstream failed");
+    installSearchService([
+      {
+        name: "custom",
+        searchProviders: [
+          {
+            name: "searxng",
+            priority: 200,
+            enabled: () => true,
+            search: async () => {
+              throw failure;
+            },
+          },
+        ],
+      },
+    ]);
+
+    const res = await search({ query: "firecrawl", logger });
+
+    expect(res).toEqual({});
+    expect(loggerErrorSpy).toHaveBeenCalledWith("Error in search function", {
+      error: failure,
+    });
   });
 });

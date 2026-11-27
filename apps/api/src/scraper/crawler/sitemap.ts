@@ -1,21 +1,20 @@
 import type { Logger } from "winston";
-import { scrapeOptions, ScrapeOptions } from "../../controllers/v2/types";
+import type { ScrapeOptions } from "../../controllers/v2/types";
+import { getV2RequestSchemas, scrapeOptions } from "../../controllers/v2/types";
 import { logger as _logger } from "../../lib/logger";
-import { Engine } from "../scrapeURL/engines";
+import type { Engine } from "../scrapeURL/engines";
+import type { RequestContext } from "../../service/request-context";
+import { installedService } from "../../service/service";
 import { scrapeURL } from "../scrapeURL";
-import { useFireEngine } from "../scrapeURL/engines/fire-engine/available";
 import { CostTracking } from "../../lib/cost-tracking";
-import {
-  processSitemap,
-  SitemapProcessingResult,
-} from "@mendable/firecrawl-rs";
+import type { SitemapProcessingResult } from "@mendable/firecrawl-rs";
+import { processSitemap } from "@mendable/firecrawl-rs";
 import { fetchFileToBuffer } from "../scrapeURL/engines/utils/downloadFile";
 import {
   gunzipBounded,
   MAX_GUNZIPPED_FILE_SIZE,
 } from "../scrapeURL/engines/utils/gunzip";
 import { SitemapError } from "../../lib/error";
-import { useIndex } from "../../services";
 
 type SitemapScrapeOptions = {
   url: string;
@@ -29,9 +28,15 @@ type SitemapScrapeOptions = {
 };
 
 type SitemapData = {
-  urls: URL[];
-  sitemaps: URL[];
+  urls: Array<URL>;
+  sitemaps: Array<URL>;
 };
+
+interface SitemapScrapeOptionsInput {
+  formats: Array<string>;
+  maxAge?: number;
+  location?: ScrapeOptions["location"];
+}
 
 async function _getSitemapXMLGZ(
   options: SitemapScrapeOptions,
@@ -53,7 +58,7 @@ async function _getSitemapXMLGZ(
       error,
     );
   }
-  return decompressed.toString("utf-8");
+  return decompressed.toString("utf8");
 }
 
 async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
@@ -61,48 +66,42 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
     return await _getSitemapXMLGZ(options);
   }
 
-  const isLocationSpecified =
-    options.location && options.location.country !== "us-generic";
+  const forceEngine: Array<Engine> = ["fetch"];
+  const parentCtx: RequestContext = {
+    teamId: "sitemap",
+    zeroDataRetention: options.zeroDataRetention,
+  };
+  if (options.usOnly) {
+    parentCtx.usOnly = true;
+  }
+  const systemCtx =
+    installedService()?.modules.policy.system("sitemap", parentCtx) ??
+    parentCtx;
 
-  const forceEngine: Engine[] = [
-    ...(options.maxAge > 0 && useIndex ? ["index" as const] : []),
-    ...(isLocationSpecified && useFireEngine
-      ? [
-          "fire-engine;tlsclient" as const,
-          "fire-engine;tlsclient;stealth" as const,
-          // final fallback to chrome-cdp to fill the index
-          "fire-engine;chrome-cdp" as const,
-          "fire-engine;chrome-cdp;stealth" as const,
-        ]
-      : []),
-    "fetch",
-    ...(!isLocationSpecified && useFireEngine
-      ? [
-          "fire-engine;tlsclient" as const,
-          "fire-engine;tlsclient;stealth" as const,
-          // final fallback to chrome-cdp to fill the index
-          "fire-engine;chrome-cdp" as const,
-          "fire-engine;chrome-cdp;stealth" as const,
-        ]
-      : []),
-  ];
+  const schema = getV2RequestSchemas().scrapeOptions;
+  const rawScrapeOptions: SitemapScrapeOptionsInput = {
+    formats: ["rawHtml"],
+  };
+  if (schema !== scrapeOptions && options.maxAge !== undefined) {
+    rawScrapeOptions.maxAge = options.maxAge;
+  }
+  if (options.location) {
+    rawScrapeOptions.location = options.location;
+  }
 
   const response = await scrapeURL(
     "sitemap;" + options.crawlId,
     options.url,
-    scrapeOptions.parse({
-      formats: ["rawHtml"],
-      maxAge: options.maxAge,
-      ...(options.location ? { location: options.location } : {}),
-    }),
+    schema.parse(rawScrapeOptions),
     {
+      ctx: systemCtx,
       forceEngine,
+      sitemapFetch: "full",
       v0DisableJsDom: true,
       // externalAbort: options.abort,
-      teamId: "sitemap",
+      teamId: systemCtx.teamId,
       orgId: null,
-      zeroDataRetention: options.zeroDataRetention,
-      ...(options.usOnly ? { teamFlags: { usOnly: true } } : {}),
+      zeroDataRetention: systemCtx.zeroDataRetention,
       crawlId: options.crawlId,
       isPreCrawl: options.isPreCrawl,
     },
@@ -114,7 +113,12 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
     response.document.metadata.statusCode >= 200 &&
     response.document.metadata.statusCode < 300
   ) {
-    return response.document.rawHtml!;
+    if (response.document.rawHtml === undefined) {
+      throw new SitemapError(
+        "The sitemap fetch succeeded but returned no HTML body.",
+      );
+    }
+    return response.document.rawHtml;
   } else if (!response.success) {
     throw new SitemapError(
       `Failed to fetch the sitemap from the website. The request failed with an error. This usually happens when: (1) The sitemap URL is incorrect, (2) The website is blocking access to the sitemap, (3) The website is down or unreachable, or (4) The sitemap requires authentication. Error details: ${response.error}`,

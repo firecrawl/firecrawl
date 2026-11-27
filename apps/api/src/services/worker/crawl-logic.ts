@@ -1,42 +1,169 @@
+import { z } from "zod";
 import { logger as _logger } from "../../lib/logger";
 import {
   finishCrawl,
+  getCrawl,
   getCrawlJobs,
   getDoneJobsOrderedLength,
+  isCrawlFinishMarked,
 } from "../../lib/crawl-redis";
-import { getCrawl } from "../../lib/crawl-redis";
-import { readRequestCredits } from "../../lib/request-credits-store";
-import { getJobs } from "../../controllers/v1/crawl-status";
-import { logCrawl, logBatchScrape } from "../logging/log_job";
+import type { StoredCrawl } from "../../lib/crawl-redis";
+import { recordCrawlStateMissing } from "../../lib/crawl-state-metrics";
+import { getJobs } from "../../controllers/v2/crawl-status";
+import type {
+  DocumentMetadata,
+  ScrapeOptions,
+} from "../../controllers/v2/types";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import type { NuQJob } from "./nuq";
 import { crawlContext, jobContext } from "../../lib/request-context";
-import { readRequestCreditsFromAnalytics } from "../../lib/request-credits-analytics";
-import {
-  createInAppNotification,
-  isDashboardOrigin,
-} from "../notification/in_app";
+import { safeParseLogged, zCatchLogged } from "../../lib/zod-log";
+import type { RequestContext } from "../../service/request-context";
+import type { CrawlFinished } from "../../service/hooks";
+import { installedService } from "../../service/service";
+import { service } from "../../service";
+import type { JobCrawlerOptions, ScrapeJobData } from "../../types";
 
-/**
- * How often, and how long apart, finalization re-reads the ClickHouse credits
- * sum before believing an empty result. ClickPipes lands a child's row one to
- * two seconds after the worker logs it; five reads two seconds apart outwait
- * that with room to spare without holding the finalizer for long.
- */
-const FINALIZE_CREDITS_ATTEMPTS = 5;
-const FINALIZE_CREDITS_RETRY_MS = 2_000;
+type FinishCrawlJob = Pick<
+  NuQJob<ScrapeJobData | null>,
+  "id" | "groupId" | "data"
+>;
 
-export async function finishCrawlSuper(job: NuQJob<any>) {
+type V0CrawlDoc = {
+  content: string;
+  markdown?: string;
+  metadata: Partial<DocumentMetadata>;
+  source: string;
+  creditsUsed: number;
+};
+
+const defaultStoredScrapeOptions: Omit<ScrapeOptions, "timeout"> = {
+  formats: [{ type: "markdown" }],
+  onlyMainContent: true,
+  onlyCleanContent: false,
+  waitFor: 0,
+  mobile: false,
+  removeBase64Images: true,
+  fastMode: false,
+  blockAds: true,
+  proxy: "auto",
+  checkPromptInjection: false,
+};
+
+const jobCrawlerOptionsShapeSchema = z.looseObject({
+  limit: z.number().nullish(),
+  maxDiscoveryDepth: z.number().nullish(),
+  currentDiscoveryDepth: z.number().nullish(),
+});
+
+const jobCrawlerOptionsSchema = z.custom<JobCrawlerOptions>(
+  value =>
+    safeParseLogged(
+      jobCrawlerOptionsShapeSchema,
+      value,
+      "crawl-logic.crawlerOptions",
+    ).success,
+);
+
+const v0DocumentMetadataShapeSchema = z.looseObject({});
+
+const v0DocumentMetadataSchema = z.custom<Partial<DocumentMetadata>>(
+  value =>
+    safeParseLogged(
+      v0DocumentMetadataShapeSchema,
+      value,
+      "crawl-logic.v0DocumentMetadata",
+    ).success,
+);
+
+const stringSchema = z.string();
+const numberSchema = z.number();
+
+function softV0String(field: string) {
+  return zCatchLogged(
+    z
+      .string()
+      .nullable()
+      .transform(value => value ?? undefined)
+      .optional(),
+    undefined,
+    `crawl-logic.v0CrawlDoc.${field}`,
+  );
+}
+
+const v0CrawlDocRawSchema = z.object({
+  content: softV0String("content"),
+  rawHtml: softV0String("rawHtml"),
+  markdown: softV0String("markdown"),
+  url: softV0String("url"),
+  metadata: z.unknown().optional(),
+});
+
+function extractV0CrawlDoc(returnvalue: unknown): V0CrawlDoc | null {
+  const raw: unknown = Array.isArray(returnvalue)
+    ? returnvalue[0]
+    : returnvalue;
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+  const parsed = safeParseLogged(
+    v0CrawlDocRawSchema,
+    raw,
+    "crawl-logic.v0CrawlDoc",
+  );
+  if (!parsed.success) {
+    return null;
+  }
+  const rawMetadata = parsed.data.metadata;
+  const metadataParsed =
+    rawMetadata !== null && rawMetadata !== undefined
+      ? v0DocumentMetadataSchema.safeParse(rawMetadata)
+      : undefined;
+  const metadata: Partial<DocumentMetadata> = metadataParsed?.success
+    ? metadataParsed.data
+    : {};
+  const sourceURLParsed =
+    metadata.sourceURL !== null && metadata.sourceURL !== undefined
+      ? safeParseLogged(
+          stringSchema,
+          metadata.sourceURL,
+          "crawl-logic.v0DocumentMetadata.sourceURL",
+        )
+      : undefined;
+  const creditsUsedParsed =
+    metadata.creditsUsed !== null && metadata.creditsUsed !== undefined
+      ? safeParseLogged(
+          numberSchema,
+          metadata.creditsUsed,
+          "crawl-logic.v0DocumentMetadata.creditsUsed",
+        )
+      : undefined;
+  const markdown = parsed.data.markdown;
+  const content = parsed.data.content ?? parsed.data.rawHtml ?? markdown ?? "";
+  const source = sourceURLParsed?.success
+    ? sourceURLParsed.data
+    : (parsed.data.url ?? "");
+  const creditsUsed = creditsUsedParsed?.success ? creditsUsedParsed.data : 0;
+  return { content, markdown, metadata, source, creditsUsed };
+}
+
+export async function finishCrawlSuper(job: FinishCrawlJob) {
   const crawlId = job.groupId;
 
   if (!crawlId) {
     return;
   }
 
-  const sc = await getCrawl(crawlId);
-
+  let sc = await getCrawl(crawlId);
   if (!sc) {
-    return;
+    if (await isCrawlFinishMarked(crawlId)) {
+      _logger.info("Crawl already finished, skipping duplicate finish", {
+        crawlId,
+        jobId: job.id,
+      });
+      return;
+    }
+    sc = storedCrawlFromJob(crawlId, job);
   }
 
   const logger = _logger.child({
@@ -55,11 +182,23 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
   const isV1 = data ? !!data.v1 : (sc.v1 ?? true);
   const teamId = data?.team_id ?? sc.team_id;
   const requestId = data?.requestId ?? sc.requestId ?? crawlId;
+  const baseCtx = crawlContext(sc);
   const zeroDataRetention =
-    crawlContext(sc).zeroDataRetention ||
+    baseCtx.zeroDataRetention ||
     (data ? jobContext(data).zeroDataRetention : false);
+  const ctx: RequestContext =
+    zeroDataRetention && !baseCtx.zeroDataRetention
+      ? { ...baseCtx, zeroDataRetention: true }
+      : baseCtx;
   const webhook = data?.webhook ?? sc.webhook;
   const monitoring = data?.monitoring;
+  const parsedCrawlerOptions =
+    sc.crawlerOptions !== null && sc.crawlerOptions !== undefined
+      ? jobCrawlerOptionsSchema.safeParse(sc.crawlerOptions)
+      : undefined;
+  const crawlerOptions = parsedCrawlerOptions?.success
+    ? parsedCrawlerOptions.data
+    : null;
 
   logger.info("Finishing crawl");
   await finishCrawl(crawlId, logger);
@@ -70,51 +209,35 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
     const jobs = (await getJobs(jobIDs)).sort(
       (a, b) => a.timestamp - b.timestamp,
     );
-    // const jobStatuses = await Promise.all(jobs.map((x) => x.getState()));
-    const jobStatus = sc.cancelled // || jobStatuses.some((x) => x === "failed")
-      ? "failed"
-      : "completed";
 
     const fullDocs = jobs
-      .map(x =>
-        x.returnvalue
-          ? Array.isArray(x.returnvalue)
-            ? x.returnvalue[0]
-            : x.returnvalue
-          : null,
-      )
-      .filter(x => x !== null);
+      .map(x => extractV0CrawlDoc(x.returnvalue))
+      .filter((x): x is V0CrawlDoc => x !== null);
 
-    if (sc.crawlerOptions !== null) {
-      await logCrawl({
+    const totalCredits = fullDocs.reduce(
+      (acc, doc) => acc + doc.creditsUsed,
+      0,
+    );
+
+    const hooks = installedService()?.hooks;
+    if (hooks?.has("crawl.finished")) {
+      const event: CrawlFinished = {
         id: crawlId,
-        request_id: requestId,
-        url: sc.originUrl!,
-        team_id: teamId,
-        options: sc.crawlerOptions,
-        num_docs: fullDocs.length,
-        credits_cost: fullDocs.reduce(
-          (acc, doc) => acc + (doc?.metadata?.creditsUsed ?? 0),
-          0,
-        ),
-        zeroDataRetention,
+        kind: sc.crawlerOptions !== null ? "crawl" : "batchScrape",
+        ctx,
+        completed: fullDocs.length,
         cancelled: sc.cancelled ?? false,
-        monitor_id: monitoring?.monitorId,
-        monitor_check_id: monitoring?.checkId,
-      });
-    } else {
-      await logBatchScrape({
-        id: crawlId,
-        request_id: requestId,
-        team_id: teamId,
-        num_docs: fullDocs.length,
-        credits_cost: fullDocs.reduce(
-          (acc, doc) => acc + (doc?.metadata?.creditsUsed ?? 0),
-          0,
-        ),
-        zeroDataRetention,
-        cancelled: sc.cancelled ?? false,
-      });
+        requestId,
+        origin: sc.origin ?? data?.origin,
+        originUrl: sc.originUrl,
+        crawlerOptions,
+        charged: totalCredits,
+        isV1: false,
+      };
+      if (monitoring) {
+        event.metadata = { monitoring };
+      }
+      await hooks.run("crawl.finished", event);
     }
 
     // v0 web hooks, call when done with all the data
@@ -127,21 +250,21 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
         zeroDataRetention,
       });
       if (sender) {
-        const documents = fullDocs.map((doc: any) => ({
+        const documents = fullDocs.map(doc => ({
           content: {
-            content: doc?.content ?? doc?.rawHtml ?? doc?.markdown ?? "",
-            markdown: doc?.markdown,
-            metadata: doc?.metadata ?? {},
+            content: doc.content,
+            markdown: doc.markdown,
+            metadata: doc.metadata,
           },
-          source: doc?.metadata?.sourceURL ?? doc?.url ?? "",
+          source: doc.source,
         }));
         if (sc.crawlerOptions !== null) {
-          sender.send(WebhookEvent.CRAWL_COMPLETED, {
+          void sender.send(WebhookEvent.CRAWL_COMPLETED, {
             success: true,
             data: documents,
           });
         } else {
-          sender.send(WebhookEvent.BATCH_SCRAPE_COMPLETED, {
+          void sender.send(WebhookEvent.BATCH_SCRAPE_COMPLETED, {
             success: true,
             data: documents,
           });
@@ -151,95 +274,55 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
   } else {
     const num_docs = await getDoneJobsOrderedLength(crawlId);
 
+    const FINALIZE_USAGE_RETRY_ATTEMPTS = 3;
+    const FINALIZE_USAGE_RETRY_MS = 500;
     let credits_billed: number | null = null;
 
-    try {
-      credits_billed = await readRequestCredits(requestId);
-    } catch (error) {
-      logger.warn("Bigtable request credits read failed", { error });
-    }
-
-    if (credits_billed === null) {
-      // Requests from before the Bigtable credit rows existed: sum the scrape
-      // job log. Finalization records credits_cost for good, and ClickPipes
-      // lands the last children a second or two after they are logged, so an
-      // empty sum is retried before it is believed.
-      for (let attempt = 1; attempt <= FINALIZE_CREDITS_ATTEMPTS; attempt++) {
-        try {
-          credits_billed = await readRequestCreditsFromAnalytics(requestId, {
-            emptyAsZero: false,
+    for (let attempt = 1; attempt <= FINALIZE_USAGE_RETRY_ATTEMPTS; attempt++) {
+      try {
+        credits_billed = await service.modules.jobStore.usage(requestId, {
+          finalize: true,
+        });
+        break;
+      } catch (error: unknown) {
+        logger.warn("Job store usage read failed", {
+          error,
+          requestId,
+          attempt,
+        });
+        if (attempt < FINALIZE_USAGE_RETRY_ATTEMPTS) {
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, FINALIZE_USAGE_RETRY_MS);
           });
-        } catch (error) {
-          logger.warn("Analytics request credits read failed", {
+        } else {
+          logger.error("Failed to read crawl usage after retries", {
             error,
-            attempt,
+            requestId,
+            attempts: FINALIZE_USAGE_RETRY_ATTEMPTS,
           });
-        }
-        if (credits_billed !== null) break;
-        if (attempt < FINALIZE_CREDITS_ATTEMPTS) {
-          await new Promise(resolve =>
-            setTimeout(resolve, FINALIZE_CREDITS_RETRY_MS),
-          );
         }
       }
     }
 
-    if (credits_billed === null) {
-      // The row's credits_cost is NOT NULL, so the record has to carry a
-      // number; 0 is written and the gap is loud rather than silent.
-      logger.error(
-        "Credits billed unknown at crawl finalization; recording 0",
-        { requestId, attempts: FINALIZE_CREDITS_ATTEMPTS },
-      );
-    }
-
-    if (sc.crawlerOptions !== null) {
-      await logCrawl({
+    const hooks = installedService()?.hooks;
+    if (hooks?.has("crawl.finished")) {
+      const event: CrawlFinished = {
         id: crawlId,
-        request_id: requestId,
-        url: sc.originUrl!,
-        team_id: teamId,
-        options: sc.crawlerOptions,
-        num_docs: num_docs,
-        credits_cost: credits_billed ?? 0,
-        zeroDataRetention,
+        kind: sc.crawlerOptions !== null ? "crawl" : "batchScrape",
+        ctx,
+        completed: num_docs,
         cancelled: sc.cancelled ?? false,
-        monitor_id: monitoring?.monitorId,
-        monitor_check_id: monitoring?.checkId,
-      });
-    } else {
-      await logBatchScrape({
-        id: crawlId,
-        request_id: requestId,
-        team_id: teamId,
-        num_docs: num_docs,
-        credits_cost: credits_billed ?? 0,
-        zeroDataRetention,
-        cancelled: sc.cancelled ?? false,
-      });
-    }
-
-    // The origin is client-supplied, so this only scopes which of the caller's
-    // own jobs reach their team's feed. Runs with no successful page are not
-    // reported as completed.
-    if (
-      !sc.cancelled &&
-      num_docs > 0 &&
-      isDashboardOrigin(sc.origin ?? data?.origin)
-    ) {
-      const isCrawl = sc.crawlerOptions !== null;
-      await createInAppNotification(
-        teamId,
-        isCrawl ? "crawlCompleted" : "batchScrapeCompleted",
-        {
-          jobId: crawlId,
-          url: isCrawl && !zeroDataRetention ? (sc.originUrl ?? null) : null,
-          completed: num_docs,
-          creditsUsed: credits_billed,
-          link: `/app/logs?q=${encodeURIComponent(crawlId)}`,
-        },
-        { dedupeKey: crawlId },
-      );
+        requestId,
+        origin: sc.origin ?? data?.origin,
+        originUrl: sc.originUrl,
+        crawlerOptions,
+        charged: credits_billed,
+        isV1: true,
+      };
+      if (monitoring) {
+        event.metadata = { monitoring };
+      }
+      await hooks.run("crawl.finished", event);
     }
 
     // v1 web hooks, call when done with no data, but with event completed
@@ -252,12 +335,12 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       });
       if (sender) {
         if (sc.crawlerOptions !== null) {
-          sender.send(WebhookEvent.CRAWL_COMPLETED, {
+          void sender.send(WebhookEvent.CRAWL_COMPLETED, {
             success: true,
             data: [],
           });
         } else {
-          sender.send(WebhookEvent.BATCH_SCRAPE_COMPLETED, {
+          void sender.send(WebhookEvent.BATCH_SCRAPE_COMPLETED, {
             success: true,
             data: [],
           });
@@ -265,4 +348,47 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       }
     }
   }
+}
+
+/**
+ * Rebuilds what the finish path needs from a member job when the stored crawl
+ * is gone, so the crawl still finishes and sends its webhook. Lossy: member
+ * data has no cancel flag or origin URL. Throws when the member job's data was
+ * shed too, which fails the finish job visibly.
+ */
+function storedCrawlFromJob(crawlId: string, job: FinishCrawlJob): StoredCrawl {
+  const data = job.data;
+  recordCrawlStateMissing("finalizer", crawlId, _logger, {
+    module: "queue-worker",
+    method: "finishCrawl",
+    jobId: job.id,
+    recoverable: !!data,
+  });
+  if (!data) {
+    throw new Error(
+      "Stored crawl missing and member job data unavailable, cannot finish crawl",
+    );
+  }
+  const isSitemap = data.mode === "kickoff_sitemap";
+  const ctx = jobContext(data);
+  const fallbackInternalOptions = {
+    teamId: data.team_id,
+    orgId: ctx.orgId ?? null,
+    zeroDataRetention: ctx.zeroDataRetention,
+  };
+  return {
+    ctx,
+    crawlerOptions: isSitemap ? null : (data.crawlerOptions ?? null),
+    scrapeOptions: isSitemap ? defaultStoredScrapeOptions : data.scrapeOptions,
+    internalOptions: isSitemap
+      ? fallbackInternalOptions
+      : (data.internalOptions ?? fallbackInternalOptions),
+    team_id: data.team_id,
+    createdAt: Date.now(),
+    zeroDataRetention: data.zeroDataRetention,
+    v1: data.v1,
+    webhook: data.webhook,
+    requestId: data.requestId,
+    origin: data.origin,
+  };
 }

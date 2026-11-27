@@ -6,11 +6,14 @@
  * that starts work of the service's own, calls `requestContext` once, with
  * the facts it has resolved, and everything after that copies the value.
  */
+import { z } from "zod";
 import type { TeamFlags } from "../controllers/v2/types";
 import type { RequestContext } from "../service/request-context";
-import type { BillingMetadata } from "../services/billing/types";
+import type { BillingMetadata } from "./billing-types";
 import type { ScrapeJobData } from "../types";
 import type { StoredCrawl } from "./crawl-redis";
+import { jsonRecordSchema, jsonValueSchema } from "./json-types";
+import type { JsonValue } from "./json-types";
 
 declare module "../service/request-context" {
   interface RequestContext {
@@ -28,6 +31,10 @@ declare module "../service/request-context" {
     apiKeyId?: number | null;
     /** How the work of the request is billed. */
     billing?: BillingMetadata;
+    /** Request-scoped concurrency limit resolved during authentication, when present. */
+    concurrencyLimit?: number;
+    /** Team rate-limit multiplier resolved during authentication, when present. */
+    rateLimitMultiplier?: number;
   }
 }
 
@@ -38,8 +45,10 @@ export function requestContext(facts: {
   orgId?: string | null;
   apiKeyId?: number | null;
   billing?: BillingMetadata;
+  concurrencyLimit?: number;
+  rateLimitMultiplier?: number;
 }): RequestContext {
-  return {
+  const ctx: RequestContext = {
     teamId: facts.teamId,
     zeroDataRetention: facts.zeroDataRetention ?? false,
     flags: facts.flags,
@@ -47,6 +56,13 @@ export function requestContext(facts: {
     apiKeyId: facts.apiKeyId,
     billing: facts.billing,
   };
+  if (facts.concurrencyLimit !== undefined) {
+    ctx.concurrencyLimit = facts.concurrencyLimit;
+  }
+  if (facts.rateLimitMultiplier !== undefined) {
+    ctx.rateLimitMultiplier = facts.rateLimitMultiplier;
+  }
+  return ctx;
 }
 
 /**
@@ -70,17 +86,44 @@ export function jobContext(data: ScrapeJobData): RequestContext {
   );
 }
 
+const nestedZdrSchema = z.object({
+  ctx: z.object({ zeroDataRetention: z.boolean() }),
+});
+
+const topLevelZdrSchema = z.object({
+  zeroDataRetention: z.boolean(),
+});
+
+const policyThreatProtectionSchema = z.object({
+  policy: z.object({
+    threatProtection: z.union([jsonValueSchema, jsonRecordSchema]).optional(),
+  }),
+});
+
 /**
  * Whether a stored payload or crawl record is under zero data retention,
  * `undefined` when it does not say. For code that carries the payloads of
  * every queue, or that may be handed a job whose data is gone.
  */
 export function storedZeroDataRetention(stored: unknown): boolean | undefined {
-  const shape = stored as
-    | { ctx?: RequestContext; zeroDataRetention?: boolean }
-    | null
-    | undefined;
-  return shape?.ctx?.zeroDataRetention ?? shape?.zeroDataRetention;
+  const nested = nestedZdrSchema.safeParse(stored);
+  if (nested.success) {
+    return nested.data.ctx.zeroDataRetention;
+  }
+  const topLevel = topLevelZdrSchema.safeParse(stored);
+  return topLevel.success ? topLevel.data.zeroDataRetention : undefined;
+}
+
+/**
+ * Reads an optional threat protection policy attached to a request context by
+ * a policy module, without coupling core's base context type to a specific
+ * policy shape.
+ */
+export function contextThreatProtection(
+  ctx: RequestContext,
+): JsonValue | undefined {
+  const parsed = policyThreatProtectionSchema.safeParse(ctx);
+  return parsed.success ? parsed.data.policy.threatProtection : undefined;
 }
 
 /** The context a crawl runs under, with the same fallback as `jobContext`. */

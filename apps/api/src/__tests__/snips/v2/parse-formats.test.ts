@@ -1,13 +1,27 @@
+import { z } from "zod";
 import { describeIf, TEST_PRODUCTION } from "../lib";
-import request, { idmux, Identity, scrapeTimeout, TEST_API_URL } from "./lib";
+import type { Identity } from "./lib";
+import request, { idmux, scrapeTimeout, TEST_API_URL } from "./lib";
 
-type ParseFormat = {
-  format: string;
-  kind: "document" | "image";
-  extensions: string[];
-  mimeTypes: string[];
-  available: boolean;
-};
+const parseFormatSchema = z.object({
+  format: z.string(),
+  kind: z.enum(["document", "image"]),
+  extensions: z.array(z.string()),
+  mimeTypes: z.array(z.string()),
+  available: z.boolean(),
+});
+
+type ParseFormat = z.infer<typeof parseFormatSchema>;
+
+const parseFormatsBodySchema = z.object({
+  data: z.object({
+    formats: z.array(parseFormatSchema),
+  }),
+});
+
+const errorCodeBodySchema = z.object({
+  code: z.string(),
+});
 
 let identity: Identity;
 
@@ -15,11 +29,11 @@ beforeAll(async () => {
   identity = await idmux({
     name: "parse-formats",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000 + scrapeTimeout);
+}, 10_000 + scrapeTimeout);
 
-async function getParseFormats(): Promise<ParseFormat[]> {
+async function getParseFormats(): Promise<Array<ParseFormat>> {
   const response = await request(TEST_API_URL)
     .get("/v2/parse/formats")
     .set("Authorization", `Bearer ${identity.apiKey}`);
@@ -27,7 +41,11 @@ async function getParseFormats(): Promise<ParseFormat[]> {
   expect(response.statusCode, JSON.stringify(response.body)).toBe(200);
   expect(response.body.success).toBe(true);
   expect(response.headers["cache-control"]).toBe("private, max-age=3600");
-  return response.body.data.formats;
+  const parsed = parseFormatsBodySchema.safeParse(response.body);
+  if (!parsed.success) {
+    throw new Error("Unexpected /v2/parse/formats response shape");
+  }
+  return parsed.data.data.formats;
 }
 
 // screenshot output is rejected after the upload type is accepted, so a
@@ -41,7 +59,11 @@ async function parseValidationCode(filename: string, contentType: string) {
     .field("options", JSON.stringify({ formats: ["screenshot"] }));
 
   expect(response.statusCode, JSON.stringify(response.body)).toBe(400);
-  return response.body.code as string;
+  const parsed = errorCodeBodySchema.safeParse(response.body);
+  if (!parsed.success) {
+    throw new Error("Expected error code string in /v2/parse response");
+  }
+  return parsed.data.code;
 }
 
 describe("GET /v2/parse/formats", () => {
@@ -78,7 +100,9 @@ describe("GET /v2/parse/formats", () => {
         expect(format.extensions.length).toBeGreaterThan(0);
         expect(format.mimeTypes.length).toBeGreaterThan(0);
         expect(typeof format.available).toBe("boolean");
-        if (format.kind === "document") expect(format.available).toBe(true);
+        if (format.kind === "document") {
+          expect(format.available).toBe(true);
+        }
       }
     },
     scrapeTimeout,

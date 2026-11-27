@@ -1,6 +1,7 @@
-import { Response } from "express";
-import { config } from "../../config";
-import {
+import type { Response } from "express";
+import { z } from "zod";
+import type {
+  BaseScrapeOptions,
   CrawlStatusParams,
   CrawlStatusResponse,
   RequestWithAuth,
@@ -10,28 +11,19 @@ import {
   getCrawl,
   getCrawlError,
   getCrawlExpiry,
-  getCrawlQualifiedJobCount,
-  getDoneJobsOrderedLength,
-  getDoneJobsOrderedUntil,
   getLastDoneJobTimestamp,
-  isCrawlKickoffFinished,
+  getCrawlRobotsBlockedCount,
 } from "../../lib/crawl-redis";
 import { configDotenv } from "dotenv";
 import { logger } from "../../lib/logger";
-import { getJobFromGCS } from "../../lib/gcs-jobs";
-import {
-  scrapeQueue,
-  NuQJob,
-  NuQJobStatus,
-  crawlGroup,
-} from "../../services/worker/nuq-router";
-import { ScrapeJobSingleUrls } from "../../types";
-import { redisEvictConnection } from "../../../src/services/redis";
+import type { NuQJob, NuQJobStatus } from "../../services/worker/nuq-router";
+import { scrapeQueue, crawlGroup } from "../../services/worker/nuq-router";
+import type { ScrapeJobData } from "../../types";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
-import { readScrapeJobState } from "../../lib/job-state-store";
 import { storedZeroDataRetention } from "../../lib/request-context";
-import { readRequestCredits } from "../../lib/request-credits-store";
-import { readRequestCreditsFromAnalytics } from "../../lib/request-credits-analytics";
+import { safeParseLogged } from "../../lib/zod-log";
+import { service } from "../../service";
+import type { StoredJob } from "../../service";
 configDotenv();
 
 export type PseudoJob<T> = {
@@ -40,113 +32,226 @@ export type PseudoJob<T> = {
   returnvalue: T | null;
   timestamp: number;
   data: {
-    scrapeOptions: any;
+    scrapeOptions: BaseScrapeOptions | null;
     teamId?: string;
   };
   failedReason?: string;
 };
 
+interface CrawlStatusSummary {
+  status?: "completed" | "scraping" | "cancelled" | "failed";
+  completed?: number;
+  total?: number;
+  creditsUsed?: number;
+}
+
+const documentShapeSchema = z.looseObject({});
+
+const documentSchema = z.custom<Document>(
+  value =>
+    safeParseLogged(documentShapeSchema, value, "crawl-status.document")
+      .success,
+);
+
+const crawlEntireDomainSchema = z.object({
+  crawlEntireDomain: z.literal(true),
+});
+
+function extractDocument(
+  storedDoc: Document | undefined,
+  rawReturnValue: unknown,
+): Document | null {
+  if (storedDoc) {
+    return storedDoc;
+  }
+  const candidate: unknown = Array.isArray(rawReturnValue)
+    ? rawReturnValue[0]
+    : rawReturnValue;
+  if (candidate === null || candidate === undefined) {
+    return null;
+  }
+  const parsed = documentSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
+}
+
+function readCrawlEntireDomain(crawlerOptions: unknown): boolean {
+  return crawlEntireDomainSchema.safeParse(crawlerOptions).success;
+}
+
+const JOB_STORE_READ_CONCURRENCY = 20;
+
+async function readStoredJobs(
+  ids: ReadonlyArray<string>,
+): Promise<Map<string, StoredJob>> {
+  if (ids.length === 0) {
+    return new Map();
+  }
+  const store = service.modules.jobStore;
+  if (store.readMany) {
+    return store.readMany(ids, "scrape");
+  }
+  const result = new Map<string, StoredJob>();
+  for (let i = 0; i < ids.length; i += JOB_STORE_READ_CONCURRENCY) {
+    const batch = ids.slice(i, i + JOB_STORE_READ_CONCURRENCY);
+    const entries = await Promise.all(
+      batch.map(async id => [id, await store.read(id, "scrape")] as const),
+    );
+    for (const [id, job] of entries) {
+      if (job) {
+        result.set(id, job);
+      }
+    }
+  }
+  return result;
+}
+
 export async function getJob(
   id: string,
   _logger = logger,
-): Promise<PseudoJob<any> | null> {
-  let stateReadError: unknown = null;
-  const [nuqJob, scrapeState, gcsJob] = await Promise.all([
-    scrapeQueue.getJob(
-      id,
-      _logger,
-    ) as Promise<NuQJob<ScrapeJobSingleUrls> | null>,
-    readScrapeJobState(id).catch(error => {
-      _logger.warn("Bigtable scrape state read failed", {
+): Promise<PseudoJob<Document> | null> {
+  const store = service.modules.jobStore;
+  const externalStore = store.storesResultsExternally?.() ?? false;
+  const readStore = async (): Promise<{
+    stored: StoredJob | null;
+    error: Error | null;
+  }> => {
+    try {
+      return { stored: await store.read(id, "scrape"), error: null };
+    } catch (error: unknown) {
+      _logger.warn("Job store read failed", {
         error,
         scrapeId: id,
       });
-      stateReadError = error;
-      return null;
-    }),
-    (config.GCS_BUCKET_NAME ? getJobFromGCS(id) : null) as Promise<any | null>,
-  ]);
+      return {
+        stored: null,
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
+    }
+  };
 
-  if (!nuqJob && !scrapeState) {
-    // With no NuQ job, Bigtable is the only place a finished job's state
-    // lives. A failed read is an outage, not a missing job: surface it rather
-    // than answer 404 for a job that exists.
-    if (stateReadError) throw stateReadError;
+  let nuqJob: NuQJob<ScrapeJobData | null, Document | null> | null;
+  let stored: StoredJob | null = null;
+  let storeReadError: Error | null = null;
+  if (externalStore) {
+    let storeResult: { stored: StoredJob | null; error: Error | null };
+    [nuqJob, storeResult] = await Promise.all([
+      scrapeQueue.getJob(id, _logger),
+      readStore(),
+    ]);
+    stored = storeResult.stored;
+    storeReadError = storeResult.error;
+  } else {
+    nuqJob = await scrapeQueue.getJob(id, _logger);
+    if (!nuqJob) {
+      const storeResult = await readStore();
+      stored = storeResult.stored;
+      storeReadError = storeResult.error;
+    }
+  }
+
+  if (!nuqJob && !stored) {
+    if (storeReadError) {
+      throw storeReadError;
+    }
     return null;
   }
 
-  if (nuqJob && nuqJob.data.mode !== "single_urls") {
+  if (nuqJob && nuqJob.data && nuqJob.data.mode !== "single_urls") {
     return null;
   }
 
-  const data = gcsJob ?? nuqJob?.returnvalue;
-  if (gcsJob === null && data) {
-    _logger.warn("GCS Job not found", {
-      jobId: id,
-    });
+  if (
+    !stored?.document &&
+    storeReadError &&
+    service.modules.jobStore.storesResultsExternally?.() &&
+    nuqJob?.status === "completed" &&
+    !nuqJob.returnvalue
+  ) {
+    throw storeReadError;
   }
 
-  const job: PseudoJob<any> = {
+  const scrapeOptions =
+    nuqJob?.data && "scrapeOptions" in nuqJob.data
+      ? nuqJob.data.scrapeOptions
+      : null;
+  const status: NuQJobStatus = stored
+    ? stored.state
+    : nuqJob
+      ? nuqJob.status
+      : "failed";
+
+  const job: PseudoJob<Document> = {
     id,
-    status: scrapeState?.status ?? nuqJob!.status,
-    returnvalue: Array.isArray(data) ? data[0] : data,
+    status,
+    returnvalue: extractDocument(stored?.document, nuqJob?.returnvalue),
     data: {
-      scrapeOptions: nuqJob ? nuqJob.data.scrapeOptions : null,
+      scrapeOptions,
     },
-    timestamp: scrapeState?.completedAtMs ?? nuqJob!.createdAt.valueOf(),
-    failedReason: (scrapeState?.error ?? nuqJob?.failedReason) || undefined,
+    timestamp:
+      stored?.completedAtMs ?? nuqJob?.createdAt.valueOf() ?? Date.now(),
+    failedReason: (stored?.error ?? nuqJob?.failedReason) || undefined,
   };
 
   return job;
 }
 
 export async function getJobs(
-  ids: string[],
+  ids: Array<string>,
   _logger = logger,
-): Promise<PseudoJob<any>[]> {
-  const [nuqJobs, gcsJobs] = await Promise.all([
-    scrapeQueue.getJobs(ids, _logger) as Promise<NuQJob<ScrapeJobSingleUrls>[]>,
-    config.GCS_BUCKET_NAME
-      ? (Promise.all(
-          ids.map(async x => ({ id: x, job: await getJobFromGCS(x) })),
-        ).then(x => x.filter(x => x.job)) as Promise<
-          { id: string; job: any | null }[]
-        >)
-      : [],
+): Promise<Array<PseudoJob<Document>>> {
+  const fetchExternal = Boolean(
+    service.modules.jobStore.storesResultsExternally?.(),
+  );
+  const [nuqJobs, externalJobs] = await Promise.all([
+    scrapeQueue.getJobs(ids, _logger),
+    fetchExternal
+      ? readStoredJobs(ids)
+      : Promise.resolve(new Map<string, StoredJob>()),
   ]);
 
-  const nuqJobMap = new Map<string, NuQJob<any, any>>();
-  const gcsJobMap = new Map<string, any>();
-
+  const nuqJobMap = new Map<
+    string,
+    NuQJob<ScrapeJobData | null, Document | null>
+  >();
   for (const job of nuqJobs) {
     nuqJobMap.set(job.id, job);
   }
 
-  for (const job of gcsJobs) {
-    gcsJobMap.set(job.id, job.job);
+  let storedJobMap = externalJobs;
+  if (!fetchExternal) {
+    const missingIds = nuqJobs
+      .filter(
+        job =>
+          job.status === "completed" &&
+          (job.returnvalue === null || job.returnvalue === undefined),
+      )
+      .map(job => job.id);
+    if (missingIds.length > 0) {
+      storedJobMap = await readStoredJobs(missingIds);
+    }
   }
 
-  const jobs: PseudoJob<any>[] = [];
+  const jobs: Array<PseudoJob<Document>> = [];
 
   for (const id of ids) {
     const nuqJob = nuqJobMap.get(id);
-    const gcsJob = gcsJobMap.get(id);
+    const storedJob = storedJobMap.get(id);
 
-    if (!nuqJob) continue;
-
-    const data = gcsJob ?? nuqJob.returnvalue;
-    if (gcsJob === null && data) {
-      logger.warn("GCS Job not found", {
-        jobId: id,
-      });
+    if (!nuqJob) {
+      continue;
     }
 
-    const job: PseudoJob<any> = {
+    const scrapeOptions =
+      nuqJob.data && "scrapeOptions" in nuqJob.data
+        ? nuqJob.data.scrapeOptions
+        : null;
+
+    const job: PseudoJob<Document> = {
       id,
       status: nuqJob.status,
-      returnvalue: Array.isArray(data) ? data[0] : data,
+      returnvalue: extractDocument(storedJob?.document, nuqJob.returnvalue),
       data: {
-        scrapeOptions: nuqJob.data.scrapeOptions,
+        scrapeOptions,
       },
       timestamp: nuqJob.createdAt.valueOf(),
       failedReason: nuqJob.failedReason || undefined,
@@ -173,10 +278,12 @@ export async function crawlStatusController(
   }
 
   const start =
-    typeof req.query.skip === "string" ? parseInt(req.query.skip, 10) : 0;
+    typeof req.query.skip === "string"
+      ? Number.parseInt(req.query.skip, 10)
+      : 0;
   const end =
     typeof req.query.limit === "string"
-      ? start + parseInt(req.query.limit, 10) - 1
+      ? start + Number.parseInt(req.query.limit, 10) - 1
       : undefined;
 
   const group = await crawlGroup.getGroup(req.params.jobId);
@@ -199,32 +306,15 @@ export async function crawlStatusController(
     logger.child({ zeroDataRetention }),
   );
 
-  // A failed Bigtable read propagates: during an outage the analytics sum
-  // could be behind by a second of ClickPipes lag and under-report credits.
-  let creditsBilled = await readRequestCredits(
+  const creditsBilled = await service.modules.jobStore.usage(
     sc?.requestId ?? req.params.jobId,
+    { emptyAsZero: true },
   );
-  if (creditsBilled === null) {
-    // Requests from before the Bigtable credit rows existed: sum the scrape
-    // job log instead.
-    creditsBilled = await readRequestCreditsFromAnalytics(
-      sc?.requestId ?? req.params.jobId,
-      { emptyAsZero: true },
-    ).catch(error => {
-      logger.warn("Analytics request credits read failed", { error });
-      return null;
-    });
-  }
 
   // check if the crawl failed during kickoff (e.g. queue full)
   const crawlError = await getCrawlError(req.params.jobId);
 
-  let outputBulkA: {
-    status?: "completed" | "scraping" | "cancelled" | "failed";
-    completed?: number;
-    total?: number;
-    creditsUsed?: number;
-  } = {
+  const outputBulkA: CrawlStatusSummary = {
     status: sc?.cancelled
       ? "cancelled"
       : group.status === "active"
@@ -268,11 +358,6 @@ export async function crawlStatusController(
     });
   }
 
-  let outputBulkB: {
-    data: Document[];
-    next: string | undefined;
-  };
-
   const pageSize = end !== undefined ? end - start + 1 : 100;
   const doneJobs = await scrapeQueue.getGroupJobs(
     req.params.jobId,
@@ -282,16 +367,21 @@ export async function crawlStatusController(
     logger.child({ zeroDataRetention }),
   );
 
-  let scrapes: Document[] = [];
+  const scrapes: Array<Document> = [];
   let iteratedOver = 0;
   let bytes = 0;
-  const bytesLimit = 10485760; // 10 MiB in bytes
+  const bytesLimit = 10_485_760; // 10 MiB in bytes
 
-  const scrapeBlobs = await Promise.all(
-    doneJobs.map(
-      async x =>
-        [x.id, x.returnvalue ?? (await getJobFromGCS(x.id))?.[0]] as const,
-    ),
+  const missingIds = doneJobs
+    .filter(x => x.returnvalue === null || x.returnvalue === undefined)
+    .map(x => x.id);
+  const storedById = await readStoredJobs(missingIds);
+  const scrapeBlobs = doneJobs.map(
+    x =>
+      [
+        x.id,
+        extractDocument(storedById.get(x.id)?.document, x.returnvalue),
+      ] as const,
   );
 
   for (const [id, scrape] of scrapeBlobs) {
@@ -318,7 +408,7 @@ export async function crawlStatusController(
     iteratedOver--;
   }
 
-  outputBulkB = {
+  const outputBulkB = {
     data: scrapes,
     // Only completed documents are paged, so a finished job's cursor ends after
     // its last one. `completed` is read before this page, so a full or
@@ -337,15 +427,13 @@ export async function crawlStatusController(
   // Check for robots.txt blocked URLs and add warning if found
   let warning: string | undefined;
   try {
-    const rbCount = await redisEvictConnection.scard(
-      "crawl:" + req.params.jobId + ":robots_blocked",
-    );
+    const rbCount = await getCrawlRobotsBlockedCount(req.params.jobId);
     // Emit as separate simple logs so no meta is lost in sinks
     const statusNow = outputBulkA.status ?? "scraping";
     if (rbCount > 0 && statusNow !== "scraping") {
       warning = `One or more pages could not be crawled because the site's robots.txt disallows them. See the robotsBlocked list on GET /v2/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}/errors. Teams with the feature enabled can set ignoreRobotsTxt: true.`;
     }
-  } catch (error) {
+  } catch (error: unknown) {
     // If we can't check robots blocked URLs, continue without warning
     logger.debug("Failed to check robots blocked URLs", {
       error,
@@ -362,8 +450,9 @@ export async function crawlStatusController(
     const crawl = await getCrawl(req.params.jobId);
     if (crawl && crawl.originUrl && !isBaseDomain(crawl.originUrl)) {
       // Don't show warning if user is already using crawlEntireDomain
-      const isUsingCrawlEntireDomain =
-        crawl.crawlerOptions?.crawlEntireDomain === true;
+      const isUsingCrawlEntireDomain = readCrawlEntireDomain(
+        crawl.crawlerOptions,
+      );
       if (!isUsingCrawlEntireDomain) {
         const baseDomain = extractBaseDomain(crawl.originUrl);
         if (baseDomain) {

@@ -1,26 +1,29 @@
 /*
  * Helpers for tests that need a service.
  */
-import {
-  createService,
-  replaceService,
-  type CoreParts,
-  type Extension,
-  type Modules,
-  type Service,
+import { createService, replaceService } from "./service";
+import type {
+  CoreParts,
+  Extension,
+  Modules,
+  ModulesConfig,
+  Service,
 } from "./service";
 
-/** Builds a service from a full set of modules, with any of them replaced and any extension added. */
+/** Builds a service from module defaults or a base set, with any of them replaced and any extension added. */
 export function testService(
-  base: Modules,
+  base: ModulesConfig,
   parts: CoreParts,
   overrides: Partial<Modules> = {},
-  extensions: Extension[] = [],
+  extensions: Array<Extension> = [],
 ): Service {
-  return createService(
-    { modules: { ...base, ...overrides }, extensions },
-    parts,
-  );
+  const modules: Partial<Modules> = { ...base };
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value !== undefined) {
+      Object.assign(modules, { [key]: value });
+    }
+  }
+  return createService({ modules, extensions }, parts);
 }
 
 /**

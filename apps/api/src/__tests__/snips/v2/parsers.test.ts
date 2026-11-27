@@ -1,9 +1,11 @@
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
+  TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { scrape, scrapeRaw, scrapeTimeout, idmux, Identity } from "./lib";
+import type { Identity } from "./lib";
+import { scrape, scrapeRaw, scrapeTimeout, idmux } from "./lib";
 
 let identity: Identity;
 
@@ -11,9 +13,9 @@ beforeAll(async () => {
   identity = await idmux({
     name: "parsers",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000 + scrapeTimeout);
+}, 10_000 + scrapeTimeout);
 
 describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
   const pdfUrl = `${TEST_SUITE_WEBSITE}/example.pdf`;
@@ -134,7 +136,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const response = await scrape(
           {
             url: pdfUrl,
-            parsers: [{ type: "pdf", maxPages: 10000 }],
+            parsers: [{ type: "pdf", maxPages: 10_000 }],
           },
           identity,
         );
@@ -142,7 +144,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         expect(response.markdown).toBeDefined();
         expect(response.markdown).toContain("PDF Test File");
         expect(response.metadata.numPages).toBeGreaterThan(0);
-        expect(response.metadata.numPages).toBeLessThan(10000);
+        expect(response.metadata.numPages).toBeLessThan(10_000);
         // When the cap exceeds the real page count nothing is truncated, so
         // totalPages should be reported and equal numPages.
         expect(response.metadata.totalPages).toBe(response.metadata.numPages);
@@ -223,24 +225,6 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
     );
 
     it.concurrent(
-      "accepts mode: 'ocr' and parses PDF via OCR",
-      async () => {
-        const response = await scrape(
-          {
-            url: pdfUrl,
-            parsers: [{ type: "pdf", mode: "ocr" }],
-          },
-          identity,
-        );
-
-        expect(response.markdown).toBeDefined();
-        expect(response.markdown).toContain("PDF Test File");
-        expect(response.metadata.numPages).toBeGreaterThan(0);
-      },
-      scrapeTimeout * 2,
-    );
-
-    it.concurrent(
       "accepts mode with maxPages combined",
       async () => {
         const response = await scrape(
@@ -285,7 +269,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: ["invalid-parser" as any],
+            parsers: ["invalid-parser"],
           },
           identity,
         );
@@ -303,7 +287,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: "pdf" as any,
+            parsers: "pdf",
           },
           identity,
         );
@@ -321,7 +305,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: { pdf: true } as any,
+            parsers: { pdf: true },
           },
           identity,
         );
@@ -357,7 +341,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: [{ type: "pdf", maxPages: 10001 }],
+            parsers: [{ type: "pdf", maxPages: 10_001 }],
           },
           identity,
         );
@@ -375,7 +359,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: [{ type: "pdf", mode: "invalid" } as any],
+            parsers: [{ type: "pdf", mode: "invalid" }],
           },
           identity,
         );
@@ -393,14 +377,18 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: [{ type: "pdf", pages: "yes" } as any],
+            parsers: [{ type: "pdf", pages: "yes" }],
           },
           identity,
         );
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).toBe(
+          TEST_PRODUCTION
+            ? "Bad Request"
+            : "Unrecognized key in body -- please review the v2 API documentation for request body changes",
+        );
       },
       scrapeTimeout,
     );
@@ -411,7 +399,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: ["pdf:fast" as any],
+            parsers: ["pdf:fast"],
           },
           identity,
         );
@@ -436,10 +424,13 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
           identity,
         );
 
-        // Should bill based on number of pages when PDF parsing is enabled
-        expect(response.metadata.creditsUsed).toBeGreaterThanOrEqual(
-          response.metadata.numPages || 1,
-        );
+        if (TEST_PRODUCTION) {
+          expect(response.metadata.creditsUsed).toBeGreaterThanOrEqual(
+            response.metadata.numPages || 1,
+          );
+        } else {
+          expect(response.metadata.creditsUsed).toBeUndefined();
+        }
       },
       scrapeTimeout * 2,
     );
@@ -455,8 +446,11 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
           identity,
         );
 
-        // Should bill flat rate (1 credit) when PDF parsing is disabled
-        expect(response.metadata.creditsUsed).toBe(1);
+        if (TEST_PRODUCTION) {
+          expect(response.metadata.creditsUsed).toBe(1);
+        } else {
+          expect(response.metadata.creditsUsed).toBeUndefined();
+        }
       },
       scrapeTimeout * 2,
     );
@@ -472,8 +466,11 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
           identity,
         );
 
-        // Should bill based on limited pages (1 page = 1 credit)
-        expect(response.metadata.creditsUsed).toBe(1);
+        if (TEST_PRODUCTION) {
+          expect(response.metadata.creditsUsed).toBe(1);
+        } else {
+          expect(response.metadata.creditsUsed).toBeUndefined();
+        }
         expect(response.metadata.numPages).toBe(1);
       },
       scrapeTimeout * 2,

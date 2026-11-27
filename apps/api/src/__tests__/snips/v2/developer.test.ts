@@ -1,9 +1,8 @@
-import { config } from "../../../config";
 import { describeIf, TEST_PRODUCTION } from "../lib";
 import { creditUsage, idmux, researchPostRaw, researchRaw } from "./lib";
 import { HAS_JOB_LOG, jobLogJson, waitForJobLogRow } from "../job-log";
 
-const HAS_RESEARCH = !!config.RESEARCH_PROXY_URL;
+const HAS_RESEARCH = !!process.env.RESEARCH_PROXY_URL;
 const KEYLESS_ENABLED =
   process.env.KEYLESS_REQUESTS_PER_DAY !== undefined &&
   process.env.KEYLESS_CREDITS_PER_DAY !== undefined;
@@ -13,8 +12,11 @@ const CANONICAL_PATH = "/v2/search/developer";
 const LEGACY_PATH = "/v2/developer/search";
 const SERVING_PATHS = [CANONICAL_PATH, LEGACY_PATH];
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-const sleepForBilling = () => sleep(40000);
+const sleep = (ms: number) =>
+  new Promise<void>(resolve => {
+    setTimeout(resolve, ms);
+  });
+const sleepForBilling = () => sleep(40_000);
 
 describeIf(HAS_RESEARCH)("Developer Search API", () => {
   describe.each(SERVING_PATHS)("developer search on %s", path => {
@@ -40,7 +42,7 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
         expect(Array.isArray(result.passages)).toBe(true);
         expect(result.license).toBeUndefined();
       }
-    }, 120000);
+    }, 120_000);
 
     it("serves the same search from a POST body", async () => {
       const identity = await idmux({
@@ -57,7 +59,7 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.results)).toBe(true);
-    }, 120000);
+    }, 120_000);
   });
 
   it("keeps the upstream casing on repo enrollment status", async () => {
@@ -83,7 +85,7 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
       repo: "firecrawl/firecrawl",
       types: { pullRequest: expect.any(Boolean) },
     });
-  }, 120000);
+  }, 120_000);
 
   it("rejects unknown params and an out-of-bound k", async () => {
     const identity = await idmux({
@@ -91,10 +93,11 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
       credits: 100,
     });
 
-    for (const params of [
-      { query: "retries", magic: "true" } as any,
+    const invalidParams: Array<Record<string, string | number>> = [
+      { query: "retries", magic: "true" },
       { query: "retries", k: 101 },
-    ]) {
+    ];
+    for (const params of invalidParams) {
       const res = await researchRaw(CANONICAL_PATH, params, identity);
       expect(res.statusCode).toBe(400);
       expect(res.body.success).toBe(false);
@@ -102,7 +105,9 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
   });
 
   it("logs the developer search request kind with origin and integration", async () => {
-    if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
+    if (!TEST_PRODUCTION || !HAS_JOB_LOG) {
+      return;
+    }
 
     const identity = await idmux({
       name: "developer/logs metadata",
@@ -132,10 +137,12 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
     expect(requestLog).not.toBeNull();
     expect(requestLog?.origin).toBe("mcp");
     expect(requestLog?.integration).toBe("_research_test");
-  }, 120000);
+  }, 120_000);
 
   it("redacts stored payloads for a forced-ZDR team", async () => {
-    if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
+    if (!TEST_PRODUCTION || !HAS_JOB_LOG) {
+      return;
+    }
 
     const identity = await idmux({
       name: "developer/forced ZDR retention",
@@ -186,10 +193,12 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
       response: null,
       error: null,
     });
-  }, 120000);
+  }, 120_000);
 
   it("writes a usage row with the billed credits", async () => {
-    if (!config.USE_DB_AUTHENTICATION || !HAS_JOB_LOG) return;
+    if (!TEST_PRODUCTION || !HAS_JOB_LOG) {
+      return;
+    }
 
     const identity = await idmux({
       name: "developer/logs usage",
@@ -211,7 +220,7 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
     expect(usageLog?.is_successful).toBe(true);
     expect(usageLog?.num_results).toBe(res.body.results.length);
     expect(usageLog?.credits_cost).toBe(expected);
-  }, 120000);
+  }, 120_000);
 
   describeIf(KEYLESS_ENABLED)("keyless developer search", () => {
     it("permits keyless access on the canonical mount", async () => {
@@ -223,7 +232,7 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.results)).toBe(true);
-    }, 120000);
+    }, 120_000);
 
     it("refuses keyless access on the legacy mount", async () => {
       const res = await researchRaw(LEGACY_PATH, {
@@ -232,7 +241,7 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
       });
 
       expect(res.statusCode).toBe(401);
-    }, 120000);
+    }, 120_000);
   });
 
   describeIf(TEST_PRODUCTION)("developer search billing", () => {
@@ -255,6 +264,6 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
       await sleepForBilling();
       const after = (await creditUsage(identity)).remainingCredits;
       expect(before - after).toBe(expectedCredits);
-    }, 180000);
+    }, 180_000);
   });
 });

@@ -6,19 +6,20 @@ vi.mock("../../scrapeURL", () => ({
 
 import { scrapeURL } from "../../scrapeURL";
 import { crawlToCrawler } from "../../../lib/crawl-redis";
+import type { StoredCrawl } from "../../../lib/crawl-redis";
+import { scrapeOptions } from "../../../controllers/v2/types";
 import { getLinksFromSitemap } from "../sitemap";
 import { scrapeSitemap } from "../../crawler/sitemap";
 import { logger } from "../../../lib/logger";
 
-const storedCrawl = (teamFlags?: { usOnly?: boolean }) =>
-  ({
-    originUrl: "https://example.com/",
-    crawlerOptions: {},
-    scrapeOptions: {},
-    internalOptions: { teamId: "team-a", orgId: null, teamFlags },
-    team_id: "team-a",
-    createdAt: 0,
-  }) as any;
+const storedCrawl = (teamFlags?: { usOnly?: boolean }): StoredCrawl => ({
+  originUrl: "https://example.com/",
+  crawlerOptions: {},
+  scrapeOptions: scrapeOptions.parse({}),
+  internalOptions: { teamId: "team-a", orgId: null, teamFlags },
+  team_id: "team-a",
+  createdAt: 0,
+});
 
 const internalOptionsSent = () =>
   vi
@@ -49,15 +50,15 @@ describe("crawl discovery for US-only teams", () => {
     expect(internalOptionsSent()).toEqual([
       expect.objectContaining({
         teamId: "robots-txt",
-        teamFlags: { usOnly: true },
+        ctx: expect.objectContaining({ teamId: "robots-txt", usOnly: true }),
       }),
     ]);
   });
 
-  it("fetches other teams' robots.txt without team flags", async () => {
+  it("fetches other teams' robots.txt without usOnly", async () => {
     await crawlToCrawler("crawl-1", storedCrawl(), null).getRobotsTxt();
     expect(internalOptionsSent()).toHaveLength(1);
-    expect(internalOptionsSent()[0]).not.toHaveProperty("teamFlags");
+    expect(internalOptionsSent()[0]?.ctx?.usOnly).toBeUndefined();
   });
 
   it("fetches nested sitemaps as US-only", async () => {
@@ -66,9 +67,9 @@ describe("crawl discovery for US-only teams", () => {
       document: {
         rawHtml:
           '<?xml version="1.0" encoding="UTF-8"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><sitemap><loc>https://example.com/sitemap-posts.xml</loc></sitemap></sitemapindex>',
-        metadata: { statusCode: 200 },
+        metadata: { statusCode: 200, proxyUsed: "basic" },
       },
-    } as any);
+    });
     await getLinksFromSitemap(
       {
         sitemapUrl: "https://example.com/sitemap.xml",
@@ -86,8 +87,12 @@ describe("crawl discovery for US-only teams", () => {
       "https://example.com/sitemap-posts.xml",
     ]);
     expect(internalOptionsSent()).toEqual([
-      expect.objectContaining({ teamFlags: { usOnly: true } }),
-      expect.objectContaining({ teamFlags: { usOnly: true } }),
+      expect.objectContaining({
+        ctx: expect.objectContaining({ teamId: "sitemap", usOnly: true }),
+      }),
+      expect.objectContaining({
+        ctx: expect.objectContaining({ teamId: "sitemap", usOnly: true }),
+      }),
     ]);
   });
 
@@ -117,12 +122,54 @@ describe("crawl discovery for US-only teams", () => {
     expect(internalOptionsSent()).toEqual([
       expect.objectContaining({
         teamId: "sitemap",
-        teamFlags: { usOnly: true },
+        ctx: expect.objectContaining({ teamId: "sitemap", usOnly: true }),
       }),
       expect.objectContaining({
         teamId: "sitemap",
-        teamFlags: { usOnly: true },
+        ctx: expect.objectContaining({ teamId: "sitemap", usOnly: true }),
       }),
     ]);
+  });
+
+  it("prefers live teamFlags over stored context flags and enforces Safe Mode robots default", async () => {
+    const sc: StoredCrawl = {
+      originUrl: "https://example.com/",
+      crawlerOptions: { ignoreRobotsTxt: true },
+      scrapeOptions: scrapeOptions.parse({}),
+      ctx: {
+        teamId: "team-a",
+        zeroDataRetention: false,
+        flags: { ignoreRobots: "forced" },
+      },
+      internalOptions: { teamId: "team-a", orgId: null },
+      team_id: "team-a",
+      createdAt: 0,
+    };
+
+    const strictCrawler = crawlToCrawler("crawl-safe-default", sc, {
+      safeMode: true,
+      ignoreRobots: "forced",
+      scrapeZDR: "forced",
+    });
+    strictCrawler.importRobotsTxt("User-agent: *\nDisallow: /\n");
+    expect(strictCrawler.isRobotsAllowed("https://example.com/blocked")).toBe(
+      false,
+    );
+    await strictCrawler.getRobotsTxt();
+    expect(internalOptionsSent()).toEqual([
+      expect.objectContaining({
+        zeroDataRetention: true,
+      }),
+    ]);
+
+    const optOutCrawler = crawlToCrawler("crawl-safe-opt-out", sc, {
+      safeMode: true,
+      safeModeConfig: { enforceRobots: false },
+      ignoreRobots: "forced",
+    });
+    optOutCrawler.importRobotsTxt("User-agent: *\nDisallow: /\n");
+    expect(optOutCrawler.isRobotsAllowed("https://example.com/blocked")).toBe(
+      true,
+    );
   });
 });

@@ -1,10 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import type { Worker } from "./service";
+import type { assertEnv, defineEnv, describeEnv } from "./env";
+import type { createService, run, service, Worker } from "./service";
+
+interface EnvModule {
+  defineEnv: typeof defineEnv;
+  assertEnv: typeof assertEnv;
+  describeEnv: typeof describeEnv;
+}
+
+interface ServiceModule {
+  createService: typeof createService;
+  run: typeof run;
+  service: typeof service;
+}
 
 // The owners are kept for the process, so every test loads the files afresh.
-let env: typeof import("./env");
-let serviceModule: typeof import("./service");
+let env: EnvModule;
+let serviceModule: ServiceModule;
 
 beforeEach(async () => {
   vi.resetModules();
@@ -16,14 +29,24 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-const messageOf = (fn: () => unknown): string => {
+const messageOf = (fn: () => void): string => {
   try {
     fn();
   } catch (error) {
-    return (error as Error).message;
+    return error instanceof Error ? error.message : String(error);
   }
   return "did not throw";
 };
+
+const worker = (): Worker => ({ run: vi.fn() });
+const build = (api: Worker) =>
+  serviceModule.createService(
+    { modules: {} },
+    {
+      core: { name: "core", workers: { api } },
+      logger: { error: vi.fn() },
+    },
+  );
 
 const mail = () =>
   z.object({
@@ -114,7 +137,11 @@ describe("defineEnv", () => {
       "MAIL_PORT",
       "MAIL_SECURE",
     ]);
-    expect(messageOf(() => values.MAIL_SECURE)).toBe(
+    expect(
+      messageOf(() => {
+        void values.MAIL_SECURE;
+      }),
+    ).toBe(
       [
         "Invalid environment:",
         "  mail: MAIL_HOST: Invalid input: expected string, received undefined",
@@ -182,7 +209,11 @@ describe("defineEnv", () => {
     const problems =
       "Invalid environment:\n  mail: MAIL_HOST: Invalid input: expected string, received undefined";
     expect(messageOf(() => env.assertEnv())).toBe(problems);
-    expect(messageOf(() => earlier.MAIL_HOST)).toBe(problems);
+    expect(
+      messageOf(() => {
+        void earlier.MAIL_HOST;
+      }),
+    ).toBe(problems);
   });
 
   it("reports a problem that two definitions of one owner share once", () => {
@@ -199,7 +230,11 @@ describe("defineEnv", () => {
     env.assertEnv();
     vi.stubEnv("MAIL_HOST", undefined);
 
-    expect(messageOf(() => env.defineEnv("mail", mail()))).toBe(
+    expect(
+      messageOf(() => {
+        env.defineEnv("mail", mail());
+      }),
+    ).toBe(
       "Invalid environment:\n  mail: MAIL_HOST: Invalid input: expected string, received undefined",
     );
   });
@@ -237,16 +272,6 @@ describe("assertEnv", () => {
 });
 
 describe("the service and the environment", () => {
-  const worker = (): Worker => ({ run: vi.fn() });
-  const build = (api: Worker) =>
-    serviceModule.createService(
-      { modules: {} },
-      {
-        core: { name: "core", workers: { api } },
-        logger: { error: vi.fn() },
-      },
-    );
-
   it("describe() lists the variables of each owner, in a fixed order", () => {
     vi.stubEnv("MAIL_HOST", "mail.test");
     vi.stubEnv("QUEUE_URL", "amqp://queue.test");
@@ -280,7 +305,9 @@ describe("the service and the environment", () => {
     const api = worker();
 
     expect(
-      messageOf(() => serviceModule.run(build(api), "api", "/app/main.js")),
+      messageOf(() => {
+        void serviceModule.run(build(api), "api", "/app/main.js");
+      }),
     ).toBe(
       "Invalid environment:\n  mail: MAIL_HOST: Invalid input: expected string, received undefined",
     );
