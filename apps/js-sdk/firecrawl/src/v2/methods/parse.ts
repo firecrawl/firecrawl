@@ -6,7 +6,6 @@ import {
   throwForBadResponse,
   normalizeAxiosError,
 } from "../utils/errorHandler";
-import { getVersion } from "../utils/getVersion";
 
 function toUploadBlob(input: ParseFile["data"], contentType?: string): Blob {
   if (typeof Blob !== "undefined" && input instanceof Blob) {
@@ -57,13 +56,9 @@ export async function parse(
 
   if (options) ensureValidParseOptions(options);
 
-  const version = getVersion();
   const normalizedOptions: ParseOptions = {
     ...(options ?? {}),
-    origin:
-      typeof options?.origin === "string" && options.origin.includes("mcp")
-        ? options.origin
-        : (options?.origin ?? `js-sdk@${version}`),
+    origin: options?.origin || http.getOrigin(),
   };
 
   const formData = new FormData();

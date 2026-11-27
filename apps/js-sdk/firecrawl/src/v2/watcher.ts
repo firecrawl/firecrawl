@@ -1,48 +1,110 @@
-import { EventEmitter } from "events";
 import type { BatchScrapeJob, CrawlJob, Document } from "./types";
 import type { HttpClient } from "./utils/httpClient";
 import { getBatchScrapeStatus } from "./methods/batch";
 import { getCrawlStatus } from "./methods/crawl";
-// Note: browsers/Deno expose globalThis.WebSocket, but many Node runtimes (<22.4 or without
-// experimental flags) do not. We lazily fall back to node:undici.
 
 type WebSocketConstructor = new (url: string, protocols?: string | string[]) => WebSocket;
 
-const hasGlobalWebSocket = (): WebSocketConstructor | undefined => {
-  if (typeof globalThis === "undefined") return undefined;
+// Runtimes without a global WebSocket (Node before 22) poll instead.
+const getWebSocketCtor = (): WebSocketConstructor | undefined => {
   const candidate = (globalThis as any).WebSocket;
   return typeof candidate === "function" ? (candidate as WebSocketConstructor) : undefined;
 };
 
-const isNodeRuntime = () => typeof process !== "undefined" && !!process.versions?.node;
+type Listener = ((...args: any[]) => void) & { listener?: Listener };
 
-let cachedWebSocket: WebSocketConstructor | undefined;
-let loadPromise: Promise<WebSocketConstructor | undefined> | undefined;
+/** Node's EventEmitter API for the watcher, with no import of "events", so browser bundles load it. */
+class Emitter {
+  private readonly listenersByEvent = new Map<string | symbol, Listener[]>();
+  private maxListeners = 10;
 
-const loadNodeWebSocket = async (): Promise<WebSocketConstructor | undefined> => {
-  if (!isNodeRuntime()) return undefined;
-  try {
-    const undici = await import("node:undici");
-    const ctor = (undici as any).WebSocket ?? (undici as any).default?.WebSocket;
-    return typeof ctor === "function" ? (ctor as WebSocketConstructor) : undefined;
-  } catch {
-    return undefined;
+  on(event: string | symbol, listener: Listener): this {
+    this.listenersByEvent.set(event, [...(this.listenersByEvent.get(event) ?? []), listener]);
+    return this;
   }
-};
 
-const getWebSocketCtor = async (): Promise<WebSocketConstructor | undefined> => {
-  if (cachedWebSocket) return cachedWebSocket;
-  const globalWs = hasGlobalWebSocket();
-  if (globalWs) {
-    cachedWebSocket = globalWs;
-    return cachedWebSocket;
+  prependListener(event: string | symbol, listener: Listener): this {
+    this.listenersByEvent.set(event, [listener, ...(this.listenersByEvent.get(event) ?? [])]);
+    return this;
   }
-  if (!loadPromise) {
-    loadPromise = loadNodeWebSocket();
+
+  prependOnceListener(event: string | symbol, listener: Listener): this {
+    return this.prependListener(event, this.onceWrapper(event, listener));
   }
-  cachedWebSocket = await loadPromise;
-  return cachedWebSocket;
-};
+
+  listeners(event: string | symbol): Listener[] {
+    return (this.listenersByEvent.get(event) ?? []).map((entry) => entry.listener ?? entry);
+  }
+
+  rawListeners(event: string | symbol): Listener[] {
+    return [...(this.listenersByEvent.get(event) ?? [])];
+  }
+
+  eventNames(): (string | symbol)[] {
+    return [...this.listenersByEvent.keys()].filter((event) => this.listenerCount(event) > 0);
+  }
+
+  setMaxListeners(n: number): this {
+    this.maxListeners = n;
+    return this;
+  }
+
+  getMaxListeners(): number {
+    return this.maxListeners;
+  }
+
+  addListener(event: string | symbol, listener: Listener): this {
+    return this.on(event, listener);
+  }
+
+  once(event: string | symbol, listener: Listener): this {
+    return this.on(event, this.onceWrapper(event, listener));
+  }
+
+  private onceWrapper(event: string | symbol, listener: Listener): Listener {
+    const wrapped: Listener = (...args) => {
+      this.off(event, wrapped);
+      listener.apply(this, args);
+    };
+    wrapped.listener = listener;
+    return wrapped;
+  }
+
+  off(event: string | symbol, listener: Listener): this {
+    const current = this.listenersByEvent.get(event);
+    if (!current) return this;
+    for (let index = current.length - 1; index >= 0; index--) {
+      if (current[index] !== listener && current[index]!.listener !== listener) continue;
+      this.listenersByEvent.set(event, current.filter((_, i) => i !== index));
+      break;
+    }
+    return this;
+  }
+
+  removeListener(event: string | symbol, listener: Listener): this {
+    return this.off(event, listener);
+  }
+
+  removeAllListeners(event?: string | symbol): this {
+    if (event === undefined) this.listenersByEvent.clear();
+    else this.listenersByEvent.delete(event);
+    return this;
+  }
+
+  listenerCount(event: string | symbol): number {
+    return this.listenersByEvent.get(event)?.length ?? 0;
+  }
+
+  emit(event: string | symbol, ...args: any[]): boolean {
+    const current = this.listenersByEvent.get(event);
+    if (!current?.length) {
+      if (event === "error") throw args[0] instanceof Error ? args[0] : new Error(String(args[0]));
+      return false;
+    }
+    for (const listener of [...current]) listener.apply(this, args);
+    return true;
+  }
+}
 
 const decoder = typeof TextDecoder !== "undefined" ? new TextDecoder() : undefined;
 
@@ -81,7 +143,7 @@ export interface WatcherOptions {
 
 type Snapshot = CrawlJob | BatchScrapeJob;
 
-export class Watcher extends EventEmitter {
+export class Watcher extends Emitter {
   private readonly http: HttpClient;
   private readonly jobId: string;
   private readonly kind: JobKind;
@@ -122,7 +184,7 @@ export class Watcher extends EventEmitter {
       (async () => {
         try {
           const url = this.buildWsUrl();
-          const wsCtor = await getWebSocketCtor();
+          const wsCtor = getWebSocketCtor();
           if (!wsCtor) {
             this.pollLoop();
             return;

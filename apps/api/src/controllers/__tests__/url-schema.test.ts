@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { url as urlSchemaV1 } from "../v1/types";
 import { URL as urlSchemaV2 } from "../v2/types";
 
 /**
@@ -13,12 +12,8 @@ import { URL as urlSchemaV2 } from "../v2/types";
  * url had a bad TLD when they never sent one. Reordering reintroduces that, so
  * these tests hold the order in place.
  */
-describe.each([
-  ["v1", urlSchemaV1],
-  ["v2", urlSchemaV2],
-])("%s url schema", (_version, schema) => {
-  const parse = (value: unknown) =>
-    z.object({ url: schema as z.ZodType }).safeParse(value as object);
+describe.each([["v2", urlSchemaV2]])("%s url schema", (_version, schema) => {
+  const parse = (value: unknown) => z.object({ url: schema }).safeParse(value);
 
   it("reports a missing url as a type error, not a TLD complaint", () => {
     const result = parse({});

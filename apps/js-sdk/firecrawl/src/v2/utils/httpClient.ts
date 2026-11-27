@@ -6,12 +6,25 @@ import axios, {
 import { getVersion } from "./getVersion";
 import { pinToApiOrigin } from "../../utils/apiOrigin";
 
+// Runtimes such as Cloudflare Workers reject the Request `cache: "default"` that
+// axios's fetch adapter always sets; there axios calls fetch(url, init) without it.
+const rejectsDefaultCacheMode = (): boolean => {
+  if (typeof Request !== "function") return false;
+  try {
+    new Request("https://api.firecrawl.dev", { cache: "default" });
+    return false;
+  } catch {
+    return true;
+  }
+};
+
 export interface HttpClientOptions {
   apiKey: string;
   apiUrl: string;
   timeoutMs?: number;
   maxRetries?: number;
   backoffFactor?: number; // seconds factor for 0.5, 1, 2...
+  origin?: string;
 }
 
 export interface RequestOptions {
@@ -25,12 +38,14 @@ export class HttpClient {
   private readonly apiUrl: string;
   private readonly maxRetries: number;
   private readonly backoffFactor: number;
+  private readonly origin: string;
 
   constructor(options: HttpClientOptions) {
     this.apiKey = options.apiKey;
     this.apiUrl = options.apiUrl.replace(/\/$/, "");
     this.maxRetries = options.maxRetries ?? 3;
     this.backoffFactor = options.backoffFactor ?? 0.5;
+    this.origin = options.origin || `js-sdk@${getVersion()}`;
     this.instance = axios.create({
       baseURL: this.apiUrl,
       timeout: options.timeoutMs ?? 300000,
@@ -41,6 +56,7 @@ export class HttpClient {
         ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
       },
       transitional: { clarifyTimeoutError: true },
+      ...(rejectsDefaultCacheMode() ? { adapter: "fetch", env: { Request: null as any } } : {}),
     });
   }
 
@@ -52,6 +68,11 @@ export class HttpClient {
     return this.apiKey;
   }
 
+  /** The attribution origin stamped into requests that do not set their own. */
+  getOrigin(): string {
+    return this.origin;
+  }
+
   /** The client-wide default request timeout, for callers that need to
    * extend a specific request beyond it (e.g. scrape auto-resume). */
   getTimeoutMs(): number {
@@ -61,7 +82,6 @@ export class HttpClient {
   private async request<T = any>(
     config: AxiosRequestConfig,
   ): Promise<AxiosResponse<T>> {
-    const version = getVersion();
     config.headers = {
       ...(config.headers || {}),
     };
@@ -89,9 +109,9 @@ export class HttpClient {
           cfg.data = {
             ...data,
             origin:
-              typeof data.origin === "string" && data.origin.includes("mcp")
+              typeof data.origin === "string" && data.origin
                 ? data.origin
-                : `js-sdk@${version}`,
+                : this.origin,
           };
         }
 

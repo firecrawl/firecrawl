@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional
 from urllib.parse import urlparse, urljoin
 import requests
 from .api_origin import pin_to_api_origin
+from .caller_origin import default_origin
 from .get_version import get_version
 
 version = get_version()
@@ -29,7 +30,7 @@ class HttpClient:
         self.max_retries = max_retries
         self.backoff_factor = backoff_factor
         # Attribution string stamped into request payloads / research query params.
-        self.origin = origin or f"python-sdk@{version}"
+        self.origin = origin or default_origin(version)
 
     def _build_url(self, endpoint: str) -> str:
         if urlparse(endpoint).netloc:

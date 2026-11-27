@@ -1,4 +1,5 @@
-import * as marked from "marked";
+import { lexer } from "marked";
+import type { MarkedToken, Token } from "marked";
 import { decode as decodeHtmlEntities } from "he";
 
 // Shared candidate-span generation + structure-aware reassembly for the
@@ -19,37 +20,64 @@ interface Sentence {
   isHeader?: boolean;
 }
 
-function extractInlineText(tokens: marked.Token[]): string {
+const MARKED_TOKEN_TYPES = new Set([
+  "space",
+  "code",
+  "heading",
+  "table",
+  "hr",
+  "blockquote",
+  "list",
+  "list_item",
+  "paragraph",
+  "html",
+  "text",
+  "def",
+  "escape",
+  "tag",
+  "image",
+  "link",
+  "strong",
+  "em",
+  "codespan",
+  "br",
+  "del",
+]);
+
+function isMarkedToken(token: Token): token is MarkedToken {
+  return MARKED_TOKEN_TYPES.has(token.type);
+}
+
+function formatTableRow(text: string): string {
+  return "| " + text.split(" | ").join(" | ") + " |";
+}
+
+function extractInlineText(tokens: Array<Token>): string {
   let out = "";
   for (const t of tokens) {
+    if (!isMarkedToken(t)) {
+      continue;
+    }
     switch (t.type) {
       case "text":
-        out += (t as marked.Tokens.Text).tokens
-          ? extractInlineText((t as marked.Tokens.Text).tokens!)
-          : t.text;
+        out += "tokens" in t && t.tokens ? extractInlineText(t.tokens) : t.text;
         break;
       case "strong":
       case "em":
       case "del":
-        out += extractInlineText(
-          (t as marked.Tokens.Strong | marked.Tokens.Em | marked.Tokens.Del)
-            .tokens,
-        );
+        out += extractInlineText(t.tokens);
         break;
       case "link": {
-        const linkToken = t as marked.Tokens.Link;
-        const linkText = extractInlineText(linkToken.tokens);
-        if (
-          /^\[?\w{1,3}\]?$/.test(linkText) &&
-          linkToken.href.includes("cite_note")
-        )
+        const linkText = extractInlineText(t.tokens);
+        if (/^\[?\w{1,3}\]?$/.test(linkText) && t.href.includes("cite_note")) {
           break;
-        out += `[${linkText}](${linkToken.href})`;
+        }
+        out += `[${linkText}](${t.href})`;
         break;
       }
       case "image":
-        if ((t as marked.Tokens.Image).text) {
-          out += (t as marked.Tokens.Image).text;
+        if (t.text) {
+          out += t.text;
         }
         break;
       case "codespan":
@@ -58,6 +86,8 @@ function extractInlineText(tokens: marked.Token[]): string {
         break;
       case "br":
         out += " ";
+        break;
+      default:
         break;
     }
   }
@@ -70,88 +100,98 @@ function extractInlineText(tokens: marked.Token[]): string {
  * a blockId grouping spans from the same source block, and table/code metadata
  * so `assembleAnswer` can reconstruct structure from the selected spans.
  */
-export function parseMarkdownToSentences(markdown: string): Sentence[] {
-  const result: Sentence[] = [];
-  const tokens = marked.lexer(markdown);
+export function parseMarkdownToSentences(markdown: string): Array<Sentence> {
+  const result: Array<Sentence> = [];
+  const tokens = lexer(markdown);
   let blockId = 0;
 
   function pushSentences(text: string, source: SentenceSource, bid: number) {
-    const trimmed = text.replace(/\s+/g, " ").trim();
-    if (!trimmed) return;
+    const trimmed = text.replaceAll(/\s+/g, " ").trim();
+    if (!trimmed) {
+      return;
+    }
     for (const part of trimmed.split(/(?<=[.!?])\s+/)) {
       const s = part.trim();
-      if (s) result.push({ text: s, source, blockId: bid });
+      if (s) {
+        result.push({ text: s, source, blockId: bid });
+      }
     }
   }
 
-  function walkBlocks(tokens: marked.Token[]) {
+  function walkBlocks(tokens: Array<Token>) {
     for (const token of tokens) {
+      if (!isMarkedToken(token)) {
+        const bid = blockId++;
+        if (Array.isArray(token.tokens)) {
+          walkBlocks(token.tokens);
+        } else if (typeof token.text === "string") {
+          pushSentences(token.text, "text", bid);
+        }
+        continue;
+      }
       switch (token.type) {
         case "heading": {
           const bid = blockId++;
-          const text = extractInlineText(
-            (token as marked.Tokens.Heading).tokens,
-          ).trim();
-          if (text) result.push({ text, source: "heading", blockId: bid });
+          const text = extractInlineText(token.tokens).trim();
+          if (text) {
+            result.push({ text, source: "heading", blockId: bid });
+          }
           break;
         }
         case "paragraph": {
           const bid = blockId++;
-          pushSentences(
-            extractInlineText((token as marked.Tokens.Paragraph).tokens),
-            "text",
-            bid,
-          );
+          pushSentences(extractInlineText(token.tokens), "text", bid);
           break;
         }
         case "list": {
-          for (const item of (token as marked.Tokens.List).items) {
+          for (const item of token.items) {
             walkBlocks(item.tokens);
           }
           break;
         }
         case "blockquote": {
-          walkBlocks((token as marked.Tokens.Blockquote).tokens);
+          walkBlocks(token.tokens);
           break;
         }
         case "table": {
           const bid = blockId++;
-          const table = token as marked.Tokens.Table;
-          const headerText = table.header
+          const headerText = token.header
             .map(cell => extractInlineText(cell.tokens).trim())
             .filter(Boolean)
             .join(" | ");
-          if (headerText)
+          if (headerText) {
             result.push({
               text: headerText,
               source: "table",
               blockId: bid,
               isHeader: true,
             });
-          for (const row of table.rows) {
+          }
+          for (const row of token.rows) {
             const rowText = row
               .map(cell => extractInlineText(cell.tokens).trim())
               .filter(Boolean)
               .join(" | ");
-            if (rowText)
+            if (rowText) {
               result.push({ text: rowText, source: "table", blockId: bid });
+            }
           }
           break;
         }
         case "code": {
           const bid = blockId++;
-          const codeToken = token as marked.Tokens.Code;
-          const lang = codeToken.lang || undefined;
-          const lines = codeToken.text.split("\n");
+          const lang = token.lang || undefined;
+          const lines = token.text.split("\n");
           for (const line of lines) {
             const trimmed = line.trim();
-            if (trimmed)
+            if (trimmed) {
               result.push({
                 text: trimmed,
                 source: "code",
                 blockId: bid,
                 lang,
               });
+            }
           }
           break;
         }
@@ -183,8 +223,8 @@ export function parseMarkdownToSentences(markdown: string): Sentence[] {
  * spans rebuild a fenced block; same-block text spans rejoin into a paragraph.
  */
 export function assembleAnswer(
-  sentences: Sentence[],
-  indices: number[],
+  sentences: Array<Sentence>,
+  indices: Array<number>,
 ): string {
   const selectedIndices = new Set(
     indices.filter(i => i >= 0 && i < sentences.length),
@@ -212,29 +252,29 @@ export function assembleAnswer(
     .sort((a, b) => a - b)
     .map(i => ({ index: i, ...sentences[i] }));
 
-  const parts: string[] = [];
-  let codeRun: { texts: string[]; lang?: string } | null = null;
+  const parts: Array<string> = [];
+  let codeRun: { texts: Array<string>; lang?: string } | null = null;
 
   function flushCode() {
-    if (!codeRun) return;
+    if (!codeRun) {
+      return;
+    }
     const fence = codeRun.lang ? "```" + codeRun.lang : "```";
     parts.push(fence + "\n" + codeRun.texts.join("\n") + "\n```");
     codeRun = null;
   }
 
-  let tableRows: string[] | null = null;
-
-  function formatTableRow(text: string): string {
-    return "| " + text.split(" | ").join(" | ") + " |";
-  }
+  let tableRows: Array<string> | null = null;
 
   function startTable(cur: (typeof selected)[number]) {
     tableRows = [];
     if (cur.isHeader) {
       const cols = cur.text.split(" | ");
-      const escaped = cols.map(c => c.replace(/\*/g, "\\*"));
-      tableRows.push("| " + escaped.join(" | ") + " |");
-      tableRows.push("| " + cols.map(() => "---").join(" | ") + " |");
+      const escaped = cols.map(c => c.replaceAll("*", String.raw`\*`));
+      tableRows.push(
+        "| " + escaped.join(" | ") + " |",
+        "| " + cols.map(() => "---").join(" | ") + " |",
+      );
     } else {
       tableRows.push(formatTableRow(cur.text));
     }
@@ -247,7 +287,7 @@ export function assembleAnswer(
     }
     if (cur.isHeader) {
       const cols = cur.text.split(" | ");
-      const escaped = cols.map(c => c.replace(/\*/g, "\\*"));
+      const escaped = cols.map(c => c.replaceAll("*", String.raw`\*`));
       tableRows.unshift("| " + escaped.join(" | ") + " |");
       tableRows.splice(1, 0, "| " + cols.map(() => "---").join(" | ") + " |");
     } else {
@@ -256,7 +296,9 @@ export function assembleAnswer(
   }
 
   function flushTable() {
-    if (!tableRows) return;
+    if (!tableRows) {
+      return;
+    }
     parts.push(tableRows.join("\n"));
     tableRows = null;
   }

@@ -131,17 +131,42 @@ module Firecrawl
       @http.get("#{path}#{query(options.merge("intent" => intent, "origin" => "ruby-sdk@#{Firecrawl::VERSION}"))}")
     end
 
+    # Look up a protein's UniProt location, function and GO cellular-component terms.
+    # The response's "notice" is the UniProt credit and license. Show it with the results.
+    #
+    # @param protein [String] UniProt accession, entry name, gene symbol or protein name
+    # @param options [Hash] optional query parameters
+    # @return [Hash]
+    def lookup_protein(protein, options = {})
+      raise ArgumentError, "Protein is required" if protein.nil?
+      @http.get("/v2/search/research/proteins#{query(options.merge("protein" => protein, "origin" => "ruby-sdk@#{Firecrawl::VERSION}"))}")
+    end
+
     # Search GitHub research content.
     #
-    # @deprecated Stops responding after 2026-11-03. Use the developer index at
-    #   GET or POST /v2/search/developer, which this SDK does not wrap yet, so
-    #   call it directly. It does not carry over the score breakdown or the
-    #   web fallback results.
+    # @deprecated The research index GitHub search endpoint was removed after
+    #   2026-11-03. Use {#developer_search} instead.
     # @param query_text [String] GitHub query
     # @param options [Hash] optional query parameters
     # @return [Hash]
     def search_github(query_text, options = {})
       @http.get("/v2/search/research/github#{query(options.merge("query" => query_text, "origin" => "ruby-sdk@#{Firecrawl::VERSION}"))}")
+    end
+
+    # Searches the developer index: public repositories, GitHub issues, merged
+    # pull requests, READMEs and code documentation.
+    #
+    # @param query [String] the search query
+    # @param options [Models::DeveloperSearchOptions, nil] developer search filters
+    # @return [Models::DeveloperSearchResponse]
+    # @raise [ArgumentError] if the query is blank
+    def developer_search(query, options = nil)
+      raise ArgumentError, "Query is required" if query.nil? || query.to_s.strip.empty?
+
+      body = { "query" => query }
+      body.merge!(options.to_h) if options
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
+      Models::DeveloperSearchResponse.new(@http.post("/v2/search/developer", body))
     end
 
     # Interacts with the scrape-bound browser session for a scrape job.
@@ -222,6 +247,7 @@ module Firecrawl
 
       body = { "url" => url }
       body.merge!(options.to_h) if options
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
       raw = @http.post("/v2/crawl", body)
       Models::CrawlResponse.new(raw)
     end
@@ -296,6 +322,7 @@ module Firecrawl
         body.merge!(opts_hash)
         body.merge!(nested) if nested
       end
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
       raw = @http.post("/v2/batch/scrape", body, extra_headers: extra_headers)
       Models::BatchScrapeResponse.new(raw)
     end
@@ -347,6 +374,7 @@ module Firecrawl
 
       body = { "url" => url }
       body.merge!(options.to_h) if options
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
       raw = @http.post("/v2/map", body)
       data = raw["data"] || raw
       Models::MapData.new(data)

@@ -19,6 +19,9 @@ internal class FirecrawlHttpClient
     private readonly int _maxRetries;
     private readonly double _backoffFactor;
 
+    // Null when there is no timeout: infinite, or a caller-supplied HttpClient whose own Timeout applies.
+    private readonly TimeSpan? _timeout;
+
     internal static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -45,15 +48,19 @@ internal class FirecrawlHttpClient
         }
         else
         {
-            _httpClient = new HttpClient { Timeout = timeout };
+            _httpClient = new HttpClient { Timeout = System.Threading.Timeout.InfiniteTimeSpan };
+            _timeout = timeout == System.Threading.Timeout.InfiniteTimeSpan ? null : timeout;
         }
     }
 
+    /// <param name="minimumTimeout">Raises the configured timeout for this request when it is shorter.
+    /// Has no effect on a caller-supplied HttpClient.</param>
     internal async Task<T> PostAsync<T>(
         string path,
         object body,
         Dictionary<string, string>? extraHeaders = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        TimeSpan? minimumTimeout = null)
     {
         var url = _baseUrl + path;
         var json = JsonSerializer.Serialize(body, JsonOptions);
@@ -75,7 +82,7 @@ internal class FirecrawlHttpClient
             return request;
         }
 
-        return await ExecuteWithRetryAsync<T>(BuildRequest, cancellationToken);
+        return await ExecuteWithRetryAsync<T>(BuildRequest, cancellationToken, minimumTimeout);
     }
 
     internal async Task<T> PostMultipartAsync<T>(
@@ -207,8 +214,13 @@ internal class FirecrawlHttpClient
 
     private async Task<T> ExecuteWithRetryAsync<T>(
         Func<HttpRequestMessage> requestBuilder,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? minimumTimeout = null)
     {
+        TimeSpan? timeout = _timeout is { } configured && minimumTimeout > configured
+            ? minimumTimeout
+            : _timeout;
+
         var attempt = 0;
 
         while (true)
@@ -216,12 +228,15 @@ internal class FirecrawlHttpClient
             // Build a fresh request for each attempt (HttpRequestMessage can only be sent once,
             // and multipart content is not cheaply cloneable).
             using var request = requestBuilder();
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            if (timeout.HasValue)
+                timeoutCts.CancelAfter(timeout.Value);
 
             HttpResponseMessage? response = null;
             try
             {
-                response = await _httpClient.SendAsync(request, cancellationToken);
-                var bodyStr = await response.Content.ReadAsStringAsync(cancellationToken);
+                response = await _httpClient.SendAsync(request, timeoutCts.Token);
+                var bodyStr = await response.Content.ReadAsStringAsync(timeoutCts.Token);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -254,6 +269,12 @@ internal class FirecrawlHttpClient
             catch (FirecrawlException)
             {
                 throw;
+            }
+            catch (OperationCanceledException ex) when (timeout.HasValue && !cancellationToken.IsCancellationRequested)
+            {
+                throw new TaskCanceledException(
+                    $"The request was canceled due to the configured timeout of {timeout.Value.TotalSeconds} seconds elapsing.",
+                    new TimeoutException(ex.Message, ex));
             }
             catch (OperationCanceledException)
             {

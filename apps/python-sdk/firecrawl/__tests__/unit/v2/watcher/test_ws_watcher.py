@@ -330,3 +330,59 @@ def test_ws_watcher_uses_correct_ws_uri(monkeypatch, kind):
     assert captured_uri["uri"] is not None
     expected = "ws://localhost/v2/crawl/jid" if kind == "crawl" else "ws://localhost/v2/batch/scrape/jid"
     assert captured_uri["uri"] == expected
+
+
+class PollingClient(DummyClient):
+    def __init__(self, statuses):
+        super().__init__()
+        self._statuses = list(statuses)
+
+    def get_crawl_status(self, job_id):
+        from firecrawl.v2.types import CrawlJob
+
+        status = self._statuses.pop(0)
+        if isinstance(status, Exception):
+            raise status
+        return CrawlJob(status=status, total=1, completed=1 if status == "completed" else 0)
+
+
+def _run_until_done(watcher, seconds=3):
+    watcher.start()
+    deadline = time.time() + seconds
+    while watcher._thread and watcher._thread.is_alive() and time.time() < deadline:
+        time.sleep(0.01)
+    watcher.stop()
+
+
+def _failing_connect(uri, *args, **kwargs):
+    raise TypeError("connect() got an unexpected keyword argument 'additional_headers'")
+
+
+def test_ws_watcher_polls_http_when_connect_fails(monkeypatch):
+    import websockets
+    monkeypatch.setattr(websockets, "connect", _failing_connect)
+
+    watcher = Watcher(PollingClient(["scraping", "completed"]), job_id="jid", kind="crawl", poll_interval=0.01)
+    statuses = []
+    done = []
+    watcher.add_listener(lambda s: statuses.append(s.status))
+    watcher.add_event_listener("done", lambda d: done.append(d))
+
+    _run_until_done(watcher)
+
+    assert statuses == ["scraping", "completed"]
+    assert len(done) == 1
+
+
+def test_ws_watcher_reports_error_when_polling_keeps_failing(monkeypatch):
+    import websockets
+    monkeypatch.setattr(websockets, "connect", _failing_connect)
+
+    watcher = Watcher(PollingClient([RuntimeError("401")] * 10), job_id="jid", kind="crawl", poll_interval=0.01)
+    errors = []
+    watcher.add_event_listener("error", lambda d: errors.append(d))
+
+    _run_until_done(watcher)
+
+    assert len(errors) == 1
+    assert watcher._thread is not None and not watcher._thread.is_alive()

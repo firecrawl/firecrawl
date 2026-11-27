@@ -226,7 +226,7 @@ func (h *httpClient) postMultipart(
 		if fe, ok := lastErr.(*FirecrawlError); ok {
 			return nil, fe
 		}
-		return nil, &FirecrawlError{Message: fmt.Sprintf("request failed after %d retries: %v", h.maxRetries, lastErr)}
+		return nil, &FirecrawlError{Message: fmt.Sprintf("request failed after %d retries: %v", h.maxRetries, lastErr), cause: lastErr}
 	}
 	return nil, &FirecrawlError{Message: "request failed"}
 }
@@ -322,7 +322,7 @@ func (h *httpClient) doJSON(ctx context.Context, method, url string, body interf
 		if fe, ok := lastErr.(*FirecrawlError); ok {
 			return nil, fe
 		}
-		return nil, &FirecrawlError{Message: fmt.Sprintf("request failed after %d retries: %v", h.maxRetries, lastErr)}
+		return nil, &FirecrawlError{Message: fmt.Sprintf("request failed after %d retries: %v", h.maxRetries, lastErr), cause: lastErr}
 	}
 	return nil, &FirecrawlError{Message: "request failed"}
 }

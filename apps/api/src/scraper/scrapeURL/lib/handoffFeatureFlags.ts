@@ -23,7 +23,7 @@ const FILE_FEATURE_FLAGS: ReadonlySet<FeatureFlag> = new Set<FeatureFlag>([
  */
 export function applyHandoffFeatureFlags(
   current: ReadonlySet<FeatureFlag>,
-  added: readonly FeatureFlag[],
+  added: ReadonlyArray<FeatureFlag>,
 ): Set<FeatureFlag> {
   const handedOff = added.filter(flag => FILE_FEATURE_FLAGS.has(flag));
   const next = new Set<FeatureFlag>();

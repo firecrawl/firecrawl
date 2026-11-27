@@ -10,7 +10,7 @@ import {
   SdkError,
 } from "../types";
 import { HttpClient } from "../utils/httpClient";
-import { ensureValidScrapeOptions } from "../utils/validation";
+import { ensureNoV1Options, ensureValidScrapeOptions } from "../utils/validation";
 import { normalizeAxiosError, throwForBadResponse, isRetryableError } from "../utils/errorHandler";
 import type { HttpClient as _Http } from "../utils/httpClient";
 import { fetchAllPages } from "../utils/pagination";
@@ -21,6 +21,7 @@ export type CrawlRequest = CrawlOptions & {
 
 function prepareCrawlPayload(request: CrawlRequest): Record<string, unknown> {
   if (!request.url || !request.url.trim()) throw new Error("URL cannot be empty");
+  ensureNoV1Options(request, "crawl");
   const data: Record<string, unknown> = { url: request.url.trim() };
   if (request.prompt) data.prompt = request.prompt;
   if (request.excludePaths) data.excludePaths = request.excludePaths;

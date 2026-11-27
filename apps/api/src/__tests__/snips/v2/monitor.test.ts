@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   createTestIdUrl,
   describeIf,
@@ -5,9 +6,9 @@ import {
   TEST_SELF_HOST,
   TEST_SUITE_WEBSITE,
 } from "../lib";
+import type { Identity } from "./lib";
 import {
   idmux,
-  Identity,
   monitorCheckRaw,
   monitorCreateRaw,
   monitorDeleteRaw,
@@ -21,6 +22,28 @@ import {
   scrapeTimeout,
 } from "./lib";
 
+const monitorCheckDataSchema = z.object({
+  status: z.string(),
+  estimatedCredits: z.number().nullish(),
+  actualCredits: z.number().nullish(),
+  reservedCredits: z.number().nullish(),
+});
+
+type MonitorCheckData = z.infer<typeof monitorCheckDataSchema>;
+
+const monitorCheckEnvelopeSchema = z.object({
+  data: monitorCheckDataSchema,
+});
+
+const monitorListBodySchema = z.object({
+  data: z.array(z.object({ id: z.string().optional() })),
+});
+
+function externalRecipient(): string {
+  const id = Math.random().toString(36).slice(2, 10);
+  return `optin-${id}@external-test.example`;
+}
+
 describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
   let identity: Identity;
 
@@ -28,9 +51,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     identity = await idmux({
       name: "monitor",
       concurrency: 20,
-      credits: 1000000,
+      credits: 1_000_000,
     });
-  }, 10000);
+  }, 10_000);
 
   it(
     "reserves the known PDF page cost before a repeat monitor run",
@@ -54,21 +77,31 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
       );
       expect(create.statusCode).toBe(200);
       const monitorId = create.body.data.id;
-      const runToCompletion = async () => {
+      const runToCompletion = async (): Promise<MonitorCheckData> => {
         const run = await monitorRunRaw(monitorId, identity);
         expect(run.statusCode).toBe(200);
-        let check: any;
+        let check: MonitorCheckData | undefined;
         for (let i = 0; i < 90; i++) {
           const raw = await monitorCheckRaw(monitorId, run.body.id, identity);
           expect(raw.statusCode).toBe(200);
-          check = raw.body.data;
+          const parsed = monitorCheckEnvelopeSchema.safeParse(raw.body);
+          if (!parsed.success) {
+            throw new Error("Unexpected monitor check response shape");
+          }
+          check = parsed.data.data;
           if (
             ["completed", "partial", "failed", "skipped_no_credits"].includes(
               check.status,
             )
-          )
+          ) {
             break;
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, 1000);
+          });
+        }
+        if (!check) {
+          throw new Error("Expected monitor check result");
         }
         expect(check.status).toBe("completed");
         return check;
@@ -113,7 +146,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     const id = create.body.data.id;
     const list = await monitorListRaw(identity);
     expect(list.statusCode).toBe(200);
-    expect(list.body.data.some((x: any) => x.id === id)).toBe(true);
+    const parsedList = monitorListBodySchema.safeParse(list.body);
+    const listItems = parsedList.success ? parsedList.data.data : [];
+    expect(listItems.some(x => x.id === id)).toBe(true);
 
     const get = await monitorGetRaw(id, identity);
     expect(get.statusCode).toBe(200);
@@ -126,6 +161,143 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     const del = await monitorDeleteRaw(id, identity);
     expect(del.statusCode).toBe(200);
     expect(del.body.success).toBe(true);
+  });
+
+  describe("when the team requires zero data retention for search", () => {
+    let searchZdr: Identity;
+
+    beforeAll(async () => {
+      searchZdr = await idmux({
+        name: "monitor/search-zdr",
+        credits: 10_000,
+        flags: { searchZDR: "forced-zdr" },
+      });
+    }, 10_000);
+
+    it("refuses a search monitor", async () => {
+      const create = await monitorCreateRaw(
+        {
+          name: "search zdr monitor",
+          schedule: { cron: "0 * * * *", timezone: "UTC" },
+          goal: "New releases of the firecrawl SDK",
+          targets: [{ type: "search", queries: ["firecrawl sdk release"] }],
+          notification: { email: { enabled: false } },
+        },
+        searchZdr,
+      );
+
+      expect(create.statusCode).toBe(400);
+      expect(create.body.success).toBe(false);
+      expect(create.body.error).toContain("zero data retention");
+    });
+
+    it("keeps a scrape monitor and refuses adding a search target to it", async () => {
+      const create = await monitorCreateRaw(
+        {
+          name: "scrape monitor on a search zdr team",
+          schedule: { cron: "0 * * * *", timezone: "UTC" },
+          targets: [
+            {
+              type: "scrape",
+              urls: [createTestIdUrl()],
+              scrapeOptions: { formats: ["markdown"] },
+            },
+          ],
+          notification: { email: { enabled: false } },
+        },
+        searchZdr,
+      );
+      expect(create.statusCode).toBe(200);
+      const id = create.body.data.id;
+
+      try {
+        const addSearch = await monitorPatchRaw(
+          id,
+          {
+            goal: "New releases of the firecrawl SDK",
+            targets: [{ type: "search", queries: ["firecrawl sdk release"] }],
+          },
+          searchZdr,
+        );
+        expect(addSearch.statusCode).toBe(400);
+        expect(addSearch.body.error).toContain("zero data retention");
+
+        const pause = await monitorPatchRaw(
+          id,
+          { status: "paused" },
+          searchZdr,
+        );
+        expect(pause.statusCode).toBe(200);
+        expect(pause.body.data.status).toBe("paused");
+      } finally {
+        await monitorDeleteRaw(id, searchZdr);
+      }
+    });
+  });
+
+  describe("when the team is in Safe Mode lockdown", () => {
+    let lockdown: Identity;
+
+    beforeAll(async () => {
+      lockdown = await idmux({
+        name: "monitor/lockdown",
+        credits: 10_000,
+        flags: { safeMode: true, safeModeConfig: { lockdown: true } },
+      });
+    }, 10_000);
+
+    it("refuses a search monitor", async () => {
+      const create = await monitorCreateRaw(
+        {
+          name: "lockdown search monitor",
+          schedule: { cron: "0 * * * *", timezone: "UTC" },
+          goal: "New releases of the firecrawl SDK",
+          targets: [{ type: "search", queries: ["firecrawl sdk release"] }],
+          notification: { email: { enabled: false } },
+        },
+        lockdown,
+      );
+
+      expect(create.statusCode).toBe(400);
+      expect(create.body.success).toBe(false);
+      expect(create.body.error).toContain("zero data retention");
+    });
+
+    it("keeps a scrape monitor and refuses adding a search target to it", async () => {
+      const create = await monitorCreateRaw(
+        {
+          name: "scrape monitor on a lockdown team",
+          schedule: { cron: "0 * * * *", timezone: "UTC" },
+          targets: [
+            {
+              type: "scrape",
+              urls: [createTestIdUrl()],
+              scrapeOptions: { formats: ["markdown"] },
+            },
+          ],
+          notification: { email: { enabled: false } },
+        },
+        lockdown,
+      );
+      expect(create.statusCode).toBe(200);
+      expect(create.body.data.status).toBe("active");
+      const id = create.body.data.id;
+
+      try {
+        const addSearch = await monitorPatchRaw(
+          id,
+          {
+            goal: "New releases of the firecrawl SDK",
+            targets: [{ type: "search", queries: ["firecrawl sdk release"] }],
+          },
+          lockdown,
+        );
+        expect(addSearch.statusCode).toBe(400);
+        expect(addSearch.body.error).toContain("zero data retention");
+      } finally {
+        await monitorDeleteRaw(id, lockdown);
+      }
+    });
   });
 
   it("accepts an origin field in the create body", async () => {
@@ -161,9 +333,8 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
             urls: [createTestIdUrl()],
           },
         ],
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         nonsenseField: "value",
-      } as any,
+      },
       identity,
     );
 
@@ -220,8 +391,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         const raw = await monitorCheckRaw(monitorId, checkId, identity);
         expect(raw.statusCode).toBe(200);
         check = raw.body.data;
-        if (["completed", "partial", "failed"].includes(check.status)) break;
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (["completed", "partial", "failed"].includes(check.status)) {
+          break;
+        }
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
       }
 
       expect(["completed", "partial"]).toContain(check.status);
@@ -293,8 +468,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         const raw = await monitorCheckRaw(monitorId, checkId, identity);
         expect(raw.statusCode).toBe(200);
         check = raw.body.data;
-        if (["completed", "partial", "failed"].includes(check.status)) break;
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (["completed", "partial", "failed"].includes(check.status)) {
+          break;
+        }
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
       }
       expect(["completed", "partial"]).toContain(check.status);
       // First run: status is "new" (no previous scrape to diff against), no
@@ -359,8 +538,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         const raw = await monitorCheckRaw(monitorId, checkId, identity);
         expect(raw.statusCode).toBe(200);
         check = raw.body.data;
-        if (["completed", "partial", "failed"].includes(check.status)) break;
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (["completed", "partial", "failed"].includes(check.status)) {
+          break;
+        }
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
       }
       // Contract: deterministicJson is accepted, the reusable-json-mode extractor
       // populates document.json via the code-sandbox, and the check flows through
@@ -421,8 +604,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         const raw = await monitorCheckRaw(monitorId, checkId, identity);
         expect(raw.statusCode).toBe(200);
         check = raw.body.data;
-        if (["completed", "partial", "failed"].includes(check.status)) break;
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (["completed", "partial", "failed"].includes(check.status)) {
+          break;
+        }
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
       }
       expect(["completed", "partial"]).toContain(check.status);
       expect(check.pages[0].status).toBe("new");
@@ -433,11 +620,6 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
   );
 
   describe("email recipient opt-in", () => {
-    function externalRecipient(): string {
-      const id = Math.random().toString(36).slice(2, 10);
-      return `optin-${id}@external-test.example`;
-    }
-
     it("starts external recipients as pending without sending notifications", async () => {
       const recipient = externalRecipient();
       const create = await monitorCreateRaw(
@@ -598,8 +780,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         const raw = await monitorCheckRaw(monitorId, checkId, identity);
         expect(raw.statusCode).toBe(200);
         check = raw.body.data;
-        if (["completed", "partial", "failed"].includes(check.status)) break;
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (["completed", "partial", "failed"].includes(check.status)) {
+          break;
+        }
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
       }
       expect(["completed", "partial"]).toContain(check.status);
       // First run is always "new"; the assertion here is that mixed-mode

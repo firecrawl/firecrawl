@@ -891,5 +891,114 @@ class TestPaginationEdgeCases:
         assert self.mock_client.get.call_count == 2
 
 
+class TestRunningJobPagination:
+    """A status call on a running job must not re-poll a cursor that only waits for new documents."""
+
+    job_id = "running-job-123"
+    sample_doc = {"url": "https://example.com", "markdown": "# Test", "metadata": {"title": "Test"}}
+
+    def _page(self, status, data, next_url, *, async_client=False):
+        response = Mock()
+        if async_client:
+            response.status_code = 200
+        else:
+            response.ok = True
+        response.json.return_value = {
+            "success": True,
+            "status": status,
+            "completed": len(data),
+            "total": 1,
+            "creditsUsed": len(data),
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": next_url,
+            "data": data,
+        }
+        return response
+
+    def _running_responses(self, kind, *, async_client=False, first_page_docs=0):
+        url = f"https://api.firecrawl.dev/v2/{kind}/{self.job_id}?skip={first_page_docs}"
+        docs = [self.sample_doc] * first_page_docs
+        responses = [self._page("scraping", docs, url, async_client=async_client)]
+        responses += [self._page("scraping", [], url, async_client=async_client) for _ in range(50)]
+        responses.append(self._page("completed", [self.sample_doc], None, async_client=async_client))
+        return responses
+
+    @pytest.mark.parametrize(
+        "kind,get_status",
+        [("batch/scrape", get_batch_scrape_status), ("crawl", get_crawl_status)],
+    )
+    def test_running_job_with_empty_first_page_makes_one_request(self, kind, get_status):
+        client = Mock()
+        client.get.side_effect = self._running_responses(kind)
+
+        result = get_status(client, self.job_id)
+
+        assert client.get.call_count == 1
+        assert result.status == "scraping"
+        assert result.data == []
+
+    @pytest.mark.parametrize(
+        "kind,get_status",
+        [("batch/scrape", get_batch_scrape_status), ("crawl", get_crawl_status)],
+    )
+    def test_running_job_stops_when_cursor_repeats(self, kind, get_status):
+        client = Mock()
+        client.get.side_effect = self._running_responses(kind, first_page_docs=1)
+
+        result = get_status(client, self.job_id)
+
+        assert client.get.call_count == 2
+        assert result.status == "scraping"
+        assert len(result.data) == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "kind,get_status",
+        [("batch/scrape", get_batch_scrape_status_async), ("crawl", get_crawl_status_async)],
+    )
+    async def test_running_job_with_empty_first_page_makes_one_request_async(self, kind, get_status):
+        client = AsyncMock()
+        client.get.side_effect = self._running_responses(kind, async_client=True)
+
+        result = await get_status(client, self.job_id)
+
+        assert client.get.call_count == 1
+        assert result.status == "scraping"
+        assert result.data == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "kind,get_status",
+        [("batch/scrape", get_batch_scrape_status_async), ("crawl", get_crawl_status_async)],
+    )
+    async def test_running_job_stops_when_cursor_repeats_async(self, kind, get_status):
+        client = AsyncMock()
+        client.get.side_effect = self._running_responses(kind, async_client=True, first_page_docs=1)
+
+        result = await get_status(client, self.job_id)
+
+        assert client.get.call_count == 2
+        assert result.status == "scraping"
+        assert len(result.data) == 1
+
+    @pytest.mark.parametrize(
+        "kind,get_status",
+        [("batch/scrape", get_batch_scrape_status), ("crawl", get_crawl_status)],
+    )
+    def test_completed_job_follows_empty_page_while_cursor_advances(self, kind, get_status):
+        url = f"https://api.firecrawl.dev/v2/{kind}/{self.job_id}"
+        client = Mock()
+        client.get.side_effect = [
+            self._page("completed", [], f"{url}?skip=1"),
+            self._page("completed", [], f"{url}?skip=2"),
+            self._page("completed", [self.sample_doc], None),
+        ]
+
+        result = get_status(client, self.job_id)
+
+        assert client.get.call_count == 3
+        assert len(result.data) == 1
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -12,28 +12,33 @@ on:
       - .github/workflows/deploy-go-service.yaml
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   push-app-image:
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+      packages: write
     defaults:
       run:
         working-directory: "./apps/go-html-to-md-service"
     steps:
       - name: "Checkout GitHub Action"
-        uses: actions/checkout@main
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # main
 
       - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@v1
+        uses: useblacksmith/setup-docker-builder@e4c1c000c95f9cc255f72940e9c56bcbd1239436 # v1
 
       - name: "Login to GitHub Container Registry"
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{github.actor}}
           password: ${{secrets.GITHUB_TOKEN}}
 
       - name: "Build and Push Image"
-        uses: useblacksmith/build-push-action@v2
+        uses: useblacksmith/build-push-action@9b0579bbec7a6cad2f171596c57e7ac1e7658850 # v2
         with:
           context: ./apps/go-html-to-md-service
           push: true

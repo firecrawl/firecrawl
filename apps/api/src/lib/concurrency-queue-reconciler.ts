@@ -1,12 +1,14 @@
-import { Logger } from "winston";
+import type { Logger } from "winston";
 import { validate as isUUID } from "uuid";
 import { getRedisConnection } from "../services/queue-service";
-import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
-import { type ScrapeJobData } from "../types";
+import { scrapeQueue } from "../services/worker/nuq";
+import type { NuQJob } from "../services/worker/nuq";
+import type { ScrapeJobData } from "../types";
 import {
   getConcurrencyLimitActiveJobs,
   getNextConcurrentJob,
   MAX_BACKLOG_TIMEOUT_MS,
+  observeJobEnqueued,
   pushConcurrencyLimitActiveJob,
   pushConcurrencyLimitedJob,
   pushCrawlConcurrencyLimitActiveJob,
@@ -14,9 +16,10 @@ import {
   removeCrawlConcurrencyLimitActiveJob,
 } from "./concurrency-limit";
 import { getCrawl } from "./crawl-redis";
+import type { StoredCrawl } from "./crawl-redis";
+import { recordCrawlStateMissing } from "./crawl-state-metrics";
 import { logger as _logger } from "./logger";
-import { getACUCTeam } from "../controllers/auth";
-import { DEFAULT_TEAM_LIMITS } from "../services/autumn/autumn.service";
+import { currentLimits } from "./limits";
 
 interface ReconcileOptions {
   teamId?: string;
@@ -35,10 +38,13 @@ function isExtractJob(data: ScrapeJobData): boolean {
 }
 
 function getBacklogJobTimeout(jobData: ScrapeJobData): number {
-  if (jobData.crawl_id) return MAX_BACKLOG_TIMEOUT_MS;
+  if (jobData.crawl_id) {
+    return MAX_BACKLOG_TIMEOUT_MS;
+  }
 
-  if ("scrapeOptions" in jobData && jobData.scrapeOptions?.timeout)
+  if ("scrapeOptions" in jobData && jobData.scrapeOptions?.timeout) {
     return jobData.scrapeOptions.timeout;
+  }
 
   return 60 * 1000;
 }
@@ -107,16 +113,19 @@ async function reconcileTeam(
     return null;
   }
 
-  // Autumn's CONCURRENCY balance is a single per-team pool, so crawl and
-  // extract share the same effective limit.
-  // TODO: gate crawl + extract against one combined pool (sum of both active
-  // counts vs the single limit) instead of applying the same limit to each
-  // type independently.
-  const teamConcurrency =
-    (await getACUCTeam(ownerId))?.concurrency_limit ??
-    DEFAULT_TEAM_LIMITS.concurrency_limit;
-  const maxCrawlConcurrency = teamConcurrency;
-  const maxExtractConcurrency = teamConcurrency;
+  // Crawl and extract share the same per-team concurrency limit; null means unlimited.
+  let teamConcurrency: number | null;
+  try {
+    teamConcurrency = await currentLimits().teamConcurrency(ownerId);
+  } catch (error: unknown) {
+    teamLogger.warn(
+      "Failed to resolve team concurrency limit, skipping drift recovery for team",
+      { error },
+    );
+    return null;
+  }
+  const maxCrawlConcurrency = teamConcurrency ?? Infinity;
+  const maxExtractConcurrency = teamConcurrency ?? Infinity;
 
   // Split active count by type so one type's active jobs don't gate the other
   const activeJobIds = await getConcurrencyLimitActiveJobs(ownerId);
@@ -134,15 +143,35 @@ async function reconcileTeam(
   const jobsToStart: typeof jobsToRecover = [];
   const jobsToQueue: typeof jobsToRecover = [];
 
+  const crawls = new Map<string, StoredCrawl | null>();
   for (const job of jobsToRecover) {
+    const crawlId = job.data.crawl_id;
+    if (crawlId && !crawls.has(crawlId)) {
+      const sc = await getCrawl(crawlId);
+      crawls.set(crawlId, sc);
+      if (!sc) {
+        recordCrawlStateMissing("gate", crawlId, teamLogger, {
+          teamId: ownerId,
+        });
+      }
+    }
+    if (crawlId && crawls.get(crawlId) === null) {
+      // Back to the queue, where the gate caps a missing crawl at one job.
+      jobsToQueue.push(job);
+      continue;
+    }
+
     const isExtract = isExtractJob(job.data);
     const teamLimit = isExtract ? maxExtractConcurrency : maxCrawlConcurrency;
     const activeCount = isExtract ? activeExtractCount : activeCrawlCount;
 
     if (activeCount < teamLimit) {
       jobsToStart.push(job);
-      if (isExtract) activeExtractCount++;
-      else activeCrawlCount++;
+      if (isExtract) {
+        activeExtractCount++;
+      } else {
+        activeCrawlCount++;
+      }
     } else {
       jobsToQueue.push(job);
     }
@@ -172,7 +201,7 @@ async function reconcileTeam(
       await pushConcurrencyLimitActiveJob(ownerId, job.id, 60 * 1000);
 
       if (job.data.crawl_id) {
-        const sc = await getCrawl(job.data.crawl_id);
+        const sc = crawls.get(job.data.crawl_id);
         if (sc?.crawlerOptions?.delay || sc?.maxConcurrency) {
           await pushCrawlConcurrencyLimitActiveJob(
             job.data.crawl_id,
@@ -182,6 +211,7 @@ async function reconcileTeam(
         }
       }
 
+      observeJobEnqueued(job.id, job.data);
       jobsStarted++;
     } else {
       teamLogger.warn("Job promotion failed, re-queuing job", {
@@ -206,24 +236,30 @@ async function drainQueue(
   ownerId: string,
   teamLogger: Logger,
 ): Promise<{ jobsPromoted: number; staleSkipped: number }> {
-  // Autumn's CONCURRENCY balance is a single per-team pool, so crawl and
-  // extract share the same effective limit.
-  // TODO: gate crawl + extract against one combined pool (sum of both active
-  // counts vs the single limit) instead of applying the same limit to each
-  // type independently.
-  const teamConcurrency =
-    (await getACUCTeam(ownerId))?.concurrency_limit ??
-    DEFAULT_TEAM_LIMITS.concurrency_limit;
-  const maxCrawlConcurrency = teamConcurrency;
-  const maxExtractConcurrency = teamConcurrency;
+  // Crawl and extract share the same per-team concurrency limit; null means unlimited.
+  let teamConcurrency: number | null;
+  try {
+    teamConcurrency = await currentLimits().teamConcurrency(ownerId);
+  } catch (error: unknown) {
+    teamLogger.warn(
+      "Failed to resolve team concurrency limit, skipping queue drain for team",
+      { error },
+    );
+    return { jobsPromoted: 0, staleSkipped: 0 };
+  }
+  const maxCrawlConcurrency = teamConcurrency ?? Infinity;
+  const maxExtractConcurrency = teamConcurrency ?? Infinity;
 
   const activeIds = await getConcurrencyLimitActiveJobs(ownerId);
   const activeJobs = await scrapeQueue.getJobs(activeIds, teamLogger);
   let crawlCount = 0;
   let extractCount = 0;
   for (const aj of activeJobs) {
-    if (isExtractJob(aj.data)) extractCount++;
-    else crawlCount++;
+    if (isExtractJob(aj.data)) {
+      extractCount++;
+    } else {
+      crawlCount++;
+    }
   }
 
   let jobsPromoted = 0;
@@ -234,11 +270,14 @@ async function drainQueue(
     if (
       crawlCount >= maxCrawlConcurrency &&
       extractCount >= maxExtractConcurrency
-    )
+    ) {
       break;
+    }
 
     const nextJob = await getNextConcurrentJob(ownerId);
-    if (nextJob === null) break;
+    if (nextJob === null) {
+      break;
+    }
 
     const isExtract = isExtractJob(nextJob.job.data);
     const typeLimit = isExtract ? maxExtractConcurrency : maxCrawlConcurrency;
@@ -280,8 +319,12 @@ async function drainQueue(
     );
 
     if (promoted !== null) {
-      if (isExtract) extractCount++;
-      else crawlCount++;
+      observeJobEnqueued(nextJob.job.id, nextJob.job.data);
+      if (isExtract) {
+        extractCount++;
+      } else {
+        crawlCount++;
+      }
       jobsPromoted++;
     } else {
       await removeConcurrencyLimitActiveJob(ownerId, nextJob.job.id);
@@ -313,7 +356,7 @@ export async function reconcileConcurrencyQueue(
     scopedTeamId: options.teamId,
   });
 
-  let ownerIds: string[];
+  let ownerIds: Array<string>;
   if (options.teamId) {
     ownerIds = [options.teamId];
   } else {
@@ -355,7 +398,7 @@ export async function reconcileConcurrencyQueue(
           staleSkipped: drainResult.staleSkipped,
         });
       }
-    } catch (error) {
+    } catch (error: unknown) {
       teamLogger.error("Failed to reconcile team, skipping", { error });
     }
   }

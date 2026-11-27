@@ -70,6 +70,37 @@ security, availability, capacity, upgrades, data retention, and compliance.
 Treat the Kubernetes and Helm examples as versioned starting points, not as
 evidence that these production decisions have been made for you.
 
+## Admin routes
+
+The key-protected routes on the main API port, `/admin/ops/...` and
+`/admin/<key>/...`, exist only when `BULL_AUTH_KEY` is set. The
+internal listener is separate: it starts whenever `ADMIN_INTERNAL_PORT` is set
+and needs no key. The root Compose file passes `BULL_AUTH_KEY` alone; set the
+other variables in the API container's environment.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `BULL_AUTH_KEY` | unset | Turns on the key-protected admin routes. Routes under `/admin/ops/` accept `Authorization: Bearer <BULL_AUTH_KEY>`. |
+| `BULL_AUTH_KEY_PREVIOUS` | unset | A second accepted bearer value, so callers can move to a new key without downtime. Clear it once every caller sends the new key. |
+| `BULL_AUTH_KEY_PATH_ROUTES` | `false` | Set `true` to keep the old routes that take the key as a path segment, `/admin/<key>/...`, including the queue UI at `/admin/<key>/queues`, for callers not yet on `/admin/ops/` or the internal listener. |
+| `ADMIN_INTERNAL_PORT` | unset | Starts a second listener on this port that serves the routes below with no key. Never publish this port. |
+| `ADMIN_INTERNAL_HOST` | `localhost` | Address the internal listener binds to. Bind a wider address only behind a network policy that limits who can reach the port. |
+
+Header-authenticated routes: `GET /admin/ops/redis-health`,
+`POST /admin/ops/concurrency-queue-backfill`, `GET /admin/ops/metrics`,
+`GET /admin/ops/nuq-metrics`, `GET /admin/ops/nuq-fdb-metrics`, and the queue
+UI at `/admin/ops/queues`. Each `/admin/<key>/...` route serves the same
+handler through the same key check.
+
+Internal listener routes, none of which need a key: the queue UI at
+`/admin/queues`; metrics at `GET /admin/metrics`, `GET /admin/nuq-metrics`,
+and `GET /admin/nuq-fdb-metrics`; and `GET /admin/redis-health`. Anyone who
+can reach the port can use them.
+
+The `firecrawl_admin_path_route_requests_total` metric counts requests to the
+`/admin/<key>/...` routes by `route` and `caller` (never the key), so you can
+confirm nothing still uses them before turning them off.
+
 Stuck? Open a
 [self-host issue template](https://github.com/firecrawl/firecrawl/issues/new?template=self_host_issue.md)
 or join the [Firecrawl Discord community](https://discord.gg/firecrawl).

@@ -24,6 +24,8 @@ type FirecrawlError struct {
 	Message string
 	// RequiresAction is set when the API needs an out-of-band step first, such as accepting provider terms.
 	RequiresAction *RequiresAction
+
+	cause error
 }
 
 func (e *FirecrawlError) Error() string {
@@ -34,6 +36,12 @@ func (e *FirecrawlError) Error() string {
 		return fmt.Sprintf("firecrawl: HTTP %d: %s", e.StatusCode, e.Message)
 	}
 	return fmt.Sprintf("firecrawl: %s", e.Message)
+}
+
+// Unwrap returns the transport or body-read error that caused the request to fail, if any,
+// so callers can match it with errors.Is and errors.As.
+func (e *FirecrawlError) Unwrap() error {
+	return e.cause
 }
 
 // AuthenticationError is returned when the API key is invalid (HTTP 401).

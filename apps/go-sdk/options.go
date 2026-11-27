@@ -93,7 +93,7 @@ type ScrapeOptions struct {
 	RedactPII           *bool                    `json:"redactPII,omitempty"`
 	AuditMetadata       *AuditMetadata           `json:"auditMetadata,omitempty"`
 	Integration         *string                  `json:"integration,omitempty"`
-	JsonOptions         *JsonOptions             `json:"jsonOptions,omitempty"`
+	JsonOptions         *JsonOptions             `json:"-"`
 	DomainTools         *bool                    `json:"domainTools,omitempty"`
 	// CheckPromptInjection scans the page content for prompt injection with any
 	// format except rawBase64, before LLM-backed formats run. A detection fails
@@ -112,11 +112,7 @@ func (o ScrapeOptions) MarshalJSON() ([]byte, error) {
 		scrapeOptions: scrapeOptions(o),
 	}
 
-	if len(o.FormatOptions) > 0 {
-		payload.Formats = o.FormatOptions
-	} else if len(o.Formats) > 0 {
-		payload.Formats = o.Formats
-	}
+	payload.Formats = requestFormats(o.Formats, o.FormatOptions, o.JsonOptions)
 
 	return json.Marshal(payload)
 }
@@ -269,6 +265,46 @@ type JsonOptions struct {
 	Schema map[string]interface{} `json:"schema,omitempty"`
 	// Deprecated: Use ScrapeOptions.CheckPromptInjection or ParseOptions.CheckPromptInjection.
 	CheckPromptInjection *bool `json:"checkPromptInjection,omitempty"`
+}
+
+// requestFormats builds the request's formats array. JsonOptions travels as the
+// json format object, since /v2 rejects a top-level jsonOptions key. It replaces
+// a listed json format, or is appended when none is listed.
+func requestFormats(formats []string, formatOptions []interface{}, jsonOptions *JsonOptions) interface{} {
+	if jsonOptions == nil {
+		if len(formatOptions) > 0 {
+			return formatOptions
+		}
+		if len(formats) > 0 {
+			return formats
+		}
+		return nil
+	}
+
+	items := make([]interface{}, 0, len(formats)+len(formatOptions)+1)
+	if len(formatOptions) > 0 {
+		items = append(items, formatOptions...)
+	} else {
+		for _, format := range formats {
+			items = append(items, format)
+		}
+	}
+
+	jsonFormat := struct {
+		Type string `json:"type"`
+		*JsonOptions
+	}{Type: "json", JsonOptions: jsonOptions}
+	for i, item := range items {
+		isJSON := item == "json"
+		if format, ok := item.(map[string]interface{}); ok {
+			isJSON = format["type"] == "json"
+		}
+		if isJSON {
+			items[i] = jsonFormat
+			return items
+		}
+	}
+	return append(items, jsonFormat)
 }
 
 // Pointer helpers for optional fields.

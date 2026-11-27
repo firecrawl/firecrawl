@@ -1,10 +1,10 @@
 // TODO: refactor
 
-import { AnyNode, Cheerio, load } from "cheerio"; // rustified
-import { ScrapeOptions } from "../../../controllers/v2/types";
+import type { AnyNode, Cheerio } from "cheerio";
+import { load } from "cheerio"; // rustified
+import type { ScrapeOptions } from "../../../controllers/v2/types";
 import { transformHtml } from "@mendable/firecrawl-rs";
 import { logger } from "../../../lib/logger";
-import { queryOMCESignatures } from "../../../services/index";
 
 const excludeNonMainTags = [
   "header",
@@ -48,6 +48,19 @@ const excludeNonMainTags = [
   "#widget",
   ".cookie",
   "#cookie",
+  '[aria-label="Cookie consent" i]',
+  ".grecaptcha-badge",
+  '[data-original-tag="iframe"][src*="google.com/recaptcha/"]',
+  '[data-original-tag="iframe"][src*="recaptcha.net/recaptcha/"]',
+  '[data-original-tag="iframe"][src*="hcaptcha.com"]',
+  '[data-original-tag="iframe"][src*="challenges.cloudflare.com"]',
+];
+
+// Inlined documents of embedded players hold only player chrome, never page content.
+const emptyNonMainFrames = [
+  '[data-original-tag="iframe"][src*="player.vimeo.com/"]',
+  '[data-original-tag="iframe"][src*="youtube.com/embed/"]',
+  '[data-original-tag="iframe"][src*="youtube-nocookie.com/embed/"]',
 ];
 
 const forceIncludeMainTags = [
@@ -70,24 +83,12 @@ export const htmlTransform = async (
   html: string,
   url: string,
   scrapeOptions: ScrapeOptions,
+  dropSignatures?: Array<string>,
 ) => {
-  let omceSignatures: string[] | undefined = undefined;
-
-  if (scrapeOptions.__experimental_omce) {
-    try {
-      const hostname =
-        scrapeOptions.__experimental_omceDomain || new URL(url).hostname;
-      omceSignatures = await queryOMCESignatures(hostname);
-      logger.info("Got OMCE signatures", { signatures: omceSignatures.length });
-    } catch (error) {
-      logger.warn("Failed to get omce signatures.", {
-        error,
-        scrapeURL: url,
-        module: "scrapeURL",
-        method: "htmlTransform",
-      });
-    }
-  }
+  const omceSignatures: Array<string> | undefined =
+    dropSignatures && dropSignatures.length > 0
+      ? [...dropSignatures]
+      : undefined;
 
   try {
     return await transformHtml({
@@ -102,7 +103,7 @@ export const htmlTransform = async (
       onlyMainContent: scrapeOptions.onlyMainContent,
       omceSignatures,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     logger.warn("Failed to call html-transformer! Falling back to cheerio...", {
       error,
       module: "scrapeURL",
@@ -115,7 +116,7 @@ export const htmlTransform = async (
   // remove unwanted elements
   if (
     scrapeOptions.includeTags &&
-    scrapeOptions.includeTags.filter(x => x.trim().length !== 0).length > 0
+    scrapeOptions.includeTags.some(x => x.trim().length !== 0)
   ) {
     // Create a new root element to hold the tags to keep
     const newRoot = load("<div></div>")("div");
@@ -132,7 +133,7 @@ export const htmlTransform = async (
 
   if (
     scrapeOptions.excludeTags &&
-    scrapeOptions.excludeTags.filter(x => x.trim().length !== 0).length > 0
+    scrapeOptions.excludeTags.some(x => x.trim().length !== 0)
   ) {
     scrapeOptions.excludeTags.forEach(tag => {
       let elementsToRemove: Cheerio<AnyNode>;
@@ -171,6 +172,8 @@ export const htmlTransform = async (
 
       elementsToRemove.remove();
     });
+
+    soup(emptyNonMainFrames.join(",")).empty();
   }
 
   // always return biggest image
@@ -179,7 +182,7 @@ export const htmlTransform = async (
       const tok = x.trim().split(" ");
       return {
         url: tok[0],
-        size: parseInt((tok[1] ?? "1x").slice(0, -1), 10),
+        size: Number.parseInt((tok[1] ?? "1x").slice(0, -1), 10),
         isX: (tok[1] ?? "").endsWith("x"),
       };
     });
@@ -201,12 +204,16 @@ export const htmlTransform = async (
   soup("img[src]").each((_, el) => {
     try {
       el.attribs.src = new URL(el.attribs.src, url).href;
-    } catch (_) {}
+    } catch {
+      // Leave malformed src unchanged.
+    }
   });
   soup("a[href]").each((_, el) => {
     try {
       el.attribs.href = new URL(el.attribs.href, url).href;
-    } catch (_) {}
+    } catch {
+      // Leave malformed href unchanged.
+    }
   });
 
   const cleanedHtml = soup.html();

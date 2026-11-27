@@ -1,19 +1,23 @@
-import { z } from "zod";
-import {
+import type { z } from "zod";
+import type {
   BaseScrapeOptions,
+  CrawlerOptions,
   ScrapeOptions,
-  Document as V2Document,
-  TeamFlags,
 } from "./controllers/v2/types";
-import { AuthCreditUsageChunk } from "./controllers/v1/types";
-import { ExtractorOptions, Document } from "./lib/entities";
-import { InternalOptions } from "./scraper/scrapeURL";
+import type { InternalOptions } from "./scraper/scrapeURL";
 import type { CostTracking } from "./lib/cost-tracking";
-import type { BillingMetadata } from "./services/billing/types";
-import { webhookSchema } from "./services/webhook/schema";
+import type { BillingMetadata } from "./lib/billing-types";
+import type { RequestContext } from "./service/request-context";
+import type { webhookSchema } from "./services/webhook/schema";
 import type { SerializedTraceContext } from "./lib/otel-tracer";
 
 type ScrapeJobCommon = {
+  /**
+   * The context of the request this job belongs to. A job created from
+   * another job has its parent's, copied whole. Absent on a payload written
+   * before the context existed; read it with `jobContext`.
+   */
+  ctx?: RequestContext;
   concurrencyLimited?: boolean;
   team_id: string;
   zeroDataRetention: boolean;
@@ -22,6 +26,7 @@ type ScrapeJobCommon = {
   traceContext?: SerializedTraceContext;
   skipNuq?: boolean;
   requestId?: string;
+  backlogTimeoutMs?: number;
   monitoring?: {
     monitorId: string;
     checkId: string;
@@ -37,11 +42,17 @@ export type ScrapeJobData = ScrapeJobCommon &
     | ScrapeJobKickoffSitemapUnique
   );
 
+export type JobCrawlerOptions = Partial<CrawlerOptions> & {
+  allowBackwardCrawling?: boolean;
+  currentDiscoveryDepth?: number;
+  urlInvisibleInCurrentCrawl?: boolean;
+};
+
 type ScrapeJobSingleUrlsUnique = {
   mode: "single_urls";
 
   url: string;
-  crawlerOptions?: any;
+  crawlerOptions?: JobCrawlerOptions | null;
   scrapeOptions: BaseScrapeOptions;
   internalOptions?: InternalOptions;
   origin: string;
@@ -63,7 +74,7 @@ type ScrapeJobSingleUrlsUnique = {
   is_extract?: boolean;
   apiKeyId: number | null;
 
-  logRequestPromise?: Promise<any>;
+  logRequestPromise?: Promise<unknown>;
 };
 
 export type ScrapeJobSingleUrls = ScrapeJobCommon & ScrapeJobSingleUrlsUnique;
@@ -72,7 +83,7 @@ type ScrapeJobKickoffUnique = {
   mode: "kickoff";
 
   url: string;
-  crawlerOptions?: any;
+  crawlerOptions?: JobCrawlerOptions | null;
   scrapeOptions: BaseScrapeOptions;
   internalOptions?: InternalOptions;
   origin: string;
@@ -113,79 +124,28 @@ export interface RunWebScraperParams {
   costTracking: CostTracking;
 }
 
-export interface FirecrawlScrapeResponse {
-  statusCode: number;
-  body: {
-    status: string;
-    data: Document;
-  };
-  error?: string;
-}
-
-export interface FirecrawlCrawlResponse {
-  statusCode: number;
-  body: {
-    status: string;
-    jobId: string;
-  };
-  error?: string;
-}
-
-export interface FirecrawlCrawlStatusResponse {
-  statusCode: number;
-  body: {
-    status: string;
-    data: Document[];
-  };
-  error?: string;
-}
-
 export enum RateLimiterMode {
   Crawl = "crawl",
   CrawlStatus = "crawlStatus",
   Scrape = "scrape",
-  ScrapeAgentPreview = "scrapeAgentPreview",
   Preview = "preview",
   Search = "search",
   Map = "map",
   Extract = "extract",
   ExtractStatus = "extractStatus",
-  ExtractAgentPreview = "extractAgentPreview",
   Browser = "browser",
   BrowserExecute = "browserExecute",
   BrowserReplay = "browserReplay",
   Account = "account",
   SupportAsk = "supportAsk",
-  SupportDocsSearch = "supportDocsSearch",
   Research = "research",
   DeveloperSearch = "developerSearch",
   GovSearch = "govSearch",
   Labs = "labs",
   Exchange = "exchange",
   ExchangeDiscover = "exchangeDiscover",
+  FreshFeed = "freshFeed",
 }
-
-export type AuthResponse =
-  | {
-      success: true;
-      team_id: string;
-      org_id?: string | null;
-      api_key?: string;
-      chunk: AuthCreditUsageChunk | null;
-    }
-  | {
-      success: false;
-      error: string;
-      status: number;
-      // When true, send the agent OAuth-discovery WWW-Authenticate header even on
-      // non-401 responses (e.g. keyless cap 429s) so agents can find the key flow.
-      agentAuthDiscovery?: boolean;
-      // Machine-readable keyless quota details for trusted MCP recovery.
-      keylessReason?: "requests" | "credits";
-      retryAfterSeconds?: number;
-      // Keyless prompts: the signup link in `error`, for clients that relay it.
-      signupUrl?: string;
-    };
 
 export enum NotificationType {
   RATE_LIMIT_REACHED = "rateLimitReached",

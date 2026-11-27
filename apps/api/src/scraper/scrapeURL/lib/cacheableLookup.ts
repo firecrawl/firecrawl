@@ -1,5 +1,5 @@
 import CacheableLookup from "cacheable-lookup";
-import dns from "dns";
+import dns from "node:dns";
 
 import { config } from "../../../config";
 export const cacheableLookup =

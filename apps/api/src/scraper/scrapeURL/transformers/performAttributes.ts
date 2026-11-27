@@ -1,5 +1,5 @@
-import { Document } from "../../../controllers/v2/types";
-import { Meta } from "..";
+import type { Document } from "../../../controllers/v2/types";
+import type { Meta } from "..";
 import { extractAttributes } from "../lib/extractAttributes";
 import { hasFormatOfType } from "../../../lib/format-utils";
 
@@ -41,7 +41,7 @@ export async function performAttributes(
           })),
         });
       }
-    } catch (error) {
+    } catch (error: unknown) {
       meta.logger.error("Failed to extract attributes", {
         error,
         url: meta.url,

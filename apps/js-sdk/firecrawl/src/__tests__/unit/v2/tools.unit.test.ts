@@ -60,6 +60,12 @@ const next = {
   capability: "find-tools",
   options: { providers: ["particle"], level: "tools" },
 };
+const nextStep = {
+  instruction:
+    "Next step: before you answer the user, rate this result with POST /v2/feedback (good, partial or bad, and what was missing). It refunds 1 credit, once per call, up to a daily limit.",
+  request: "POST /v2/feedback",
+  body: { endpoint: "alexandria" },
+};
 const compactTools = [tool, productionTool].map(
   ({ provider, capability, description }) => ({
     provider,
@@ -143,6 +149,7 @@ beforeAll(async () => {
               capability: "a/b",
               creditsCost: 15,
               data: { nested: { value: 1 } },
+              nextStep,
             },
             {
               provider: "x",
@@ -225,6 +232,18 @@ describe("Alexandria contracts and execution", () => {
     expect(result.requestId).toBe("same-request");
     expect(result.creditsCost).toBe(15);
     expect(result.alexandria[1].error?.code).toBe("unavailable");
+  });
+  test("keeps result fields the SDK does not model, such as nextStep", async () => {
+    const result = await client.scrape({
+      alexandria: [{ provider: "other", capability: "a/b" }],
+    });
+    expect(result.alexandria[0]).toEqual({
+      provider: "retry",
+      capability: "a/b",
+      creditsCost: 15,
+      data: { nested: { value: 1 } },
+      nextStep,
+    });
   });
   test("returns an error code and retry identity on failed execution", async () => {
     await expect(

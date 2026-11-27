@@ -1,6 +1,9 @@
-import type { MockedFunction } from "vitest";
-import type { NextFunction } from "express";
-import { logger } from "../../lib/logger";
+import express from "express";
+import request from "supertest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import type { RequestWithAuth } from "../../controllers/v2/types";
+import type { JsonObject } from "../../lib/json-types";
 
 vi.mock("../../lib/logger", () => ({
   logger: {
@@ -12,50 +15,39 @@ vi.mock("../../lib/logger", () => ({
   },
 }));
 
-vi.mock("../../services/autumn/autumn.service", () => ({
-  autumnService: {
-    checkCredits: vi.fn(),
-  },
-  CREDITS_FEATURE_ID: "CREDITS",
-}));
-
-vi.mock("../../services/autumn/usage", () => ({
-  getTeamBalance: vi.fn(),
-}));
-
 vi.mock("../../lib/http-metrics", () => ({
   httpRequestDurationSeconds: { observe: vi.fn() },
-  getRoutePattern: vi.fn(() => "/v1/crawl"),
-}));
-
-vi.mock("../../controllers/auth", () => ({
-  authenticateUser: vi.fn(),
-}));
-
-vi.mock("../../services/idempotency/create", () => ({
-  createIdempotencyKey: vi.fn(),
-}));
-
-vi.mock("../../services/idempotency/validate", () => ({
-  validateIdempotencyKey: vi.fn(),
+  getRoutePattern: vi.fn(() => "/v2/crawl"),
 }));
 
 vi.mock("geoip-country", () => ({ lookup: vi.fn(() => null) }));
 
 import { checkCreditsMiddleware } from "../../routes/shared";
-import { autumnService } from "../../services/autumn/autumn.service";
-import { getTeamBalance } from "../../services/autumn/usage";
+import { defaultModules } from "../../service/defaults";
+import type { BillingModule } from "../../service/modules";
+import { replaceService } from "../../service/service";
+import type { CoreParts } from "../../service/service";
+import { testService, withService } from "../../service/testing";
 
-const checkCreditsMock = autumnService.checkCredits as MockedFunction<
-  typeof autumnService.checkCredits
->;
-const getTeamBalanceMock = getTeamBalance as MockedFunction<
-  typeof getTeamBalance
->;
+const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
 
-function buildReq(overrides: any = {}): any {
+type MockReq = {
+  path: string;
+  body: {
+    limit?: number;
+    url?: string;
+    urls?: Array<string>;
+    query?: string;
+    prompt?: string;
+  };
+  auth: { team_id: string; org_id: string };
+  acuc: JsonObject;
+  account?: { remainingCredits: number };
+};
+
+function buildReq(overrides: Partial<MockReq> = {}): MockReq {
   return {
-    path: "/v1/crawl",
+    path: "/crawl",
     body: { limit: 100 },
     auth: { team_id: "team_test", org_id: "org_test" },
     acuc: {},
@@ -63,296 +55,220 @@ function buildReq(overrides: any = {}): any {
   };
 }
 
-function runMiddleware(
-  req: any,
-): Promise<{ res: any; nextErr?: any; nextCalled: boolean }> {
-  return new Promise(resolve => {
-    let settled = false;
-    let nextCalled = false;
-    const settle = (payload: { res: any; nextErr?: any }) => {
-      if (settled) return;
-      settled = true;
-      resolve({ ...payload, nextCalled });
-    };
+const limitBodySchema = z.object({ limit: z.number() });
 
-    const res: any = {
-      locals: {},
-      status: vi.fn((..._args: any[]) => {
-        // 402 / 403 paths terminate via res.status(...).json(...) without next()
-        setImmediate(() => settle({ res }));
-        return res;
-      }),
-      json: vi.fn().mockReturnThis(),
-      headersSent: false,
-    };
+async function runMiddleware(
+  reqSpec: MockReq,
+  middleware = checkCreditsMiddleware(),
+) {
+  let nextCalled = false;
+  let nextErr: unknown;
+  const headers: Record<string, string> = {};
+  const statusSpy = vi.fn();
+  const jsonSpy = vi.fn();
 
-    const next: NextFunction = (err?: any) => {
-      nextCalled = true;
-      settle({ res, nextErr: err });
-    };
-    checkCreditsMiddleware()(req, res, next);
-  });
+  const app = express();
+  app.use(express.json());
+  app.post<Record<string, string>, undefined, undefined>(
+    reqSpec.path,
+    (req, res, next) => {
+      const authReq: RequestWithAuth = Object.assign(req, {
+        auth: reqSpec.auth,
+      });
+      const origSetHeader = res.setHeader.bind(res);
+      vi.spyOn(res, "setHeader").mockImplementation((name, value) => {
+        headers[name] = String(value);
+        return origSetHeader(name, value);
+      });
+      const origStatus = res.status.bind(res);
+      vi.spyOn(res, "status").mockImplementation(code => {
+        statusSpy(code);
+        return origStatus(code);
+      });
+      const origJson = res.json.bind(res);
+      vi.spyOn(res, "json").mockImplementation(body => {
+        jsonSpy(body);
+        return origJson(body);
+      });
+      middleware(authReq, res, err => {
+        nextCalled = true;
+        nextErr = err;
+        reqSpec.account = authReq.account;
+        const parsedBody = limitBodySchema.safeParse(authReq.body);
+        if (parsedBody.success) {
+          reqSpec.body.limit = parsedBody.data.limit;
+        }
+        if (err) {
+          next(err);
+          return;
+        }
+        res.statusCode = 204;
+        res.end();
+      });
+    },
+  );
+
+  await request(app).post(reqSpec.path).send(reqSpec.body);
+
+  return {
+    res: { headers, status: statusSpy, json: jsonSpy },
+    nextErr,
+    nextCalled,
+  };
 }
 
-describe("checkCreditsMiddleware – Autumn overage handling", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
-  it("does not clamp the crawl limit when Autumn allows overage with 0 remaining", async () => {
-    checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 0 });
+afterEach(() => {
+  replaceService(undefined);
+});
 
-    const req = buildReq();
-    const { res } = await runMiddleware(req);
+describe("checkCreditsMiddleware", () => {
+  it("allows requests with unlimited remainingCredits under unmeteredBilling", async () => {
+    const req = buildReq({ path: "/crawl", body: { limit: 100 } });
 
-    expect(res.status).not.toHaveBeenCalled();
-    expect(req.account.remainingCredits).toBe(Infinity);
-    // request body limit must NOT have been clamped down to 0
-    expect(req.body.limit).toBe(100);
-  });
-
-  it("blocks with 402 when Autumn denies and no remaining credits", async () => {
-    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 0 });
-
-    const req = buildReq();
-    const { res } = await runMiddleware(req);
-
-    expect(res.status).toHaveBeenCalledWith(402);
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.not.objectContaining({ request: expect.anything() }),
+    const { res, nextCalled } = await withService(
+      testService(defaultModules(), parts),
+      () => runMiddleware(req),
     );
-  });
 
-  it("adjusts crawl limit down when Autumn denies but some credits remain", async () => {
-    checkCreditsMock
-      .mockResolvedValueOnce({ allowed: false, remaining: 5 })
-      .mockResolvedValueOnce({ allowed: true, remaining: 5 });
-
-    const req = buildReq({ body: { limit: 100 } });
-    const { res } = await runMiddleware(req);
-
-    expect(res.status).not.toHaveBeenCalled();
-    expect(req.body.limit).toBe(5);
-    expect(logger.warn).toHaveBeenCalledWith(
-      "Adjusting limit to remaining credits",
-      expect.not.objectContaining({ request: expect.anything() }),
-    );
-    expect(checkCreditsMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        value: 5,
-        properties: expect.objectContaining({
-          source: "checkCreditsMiddleware:clamp",
-          apiKeyId: null,
-        }),
-      }),
-    );
-  });
-
-  it("blocks with 402 when a per-key spend limit denies but the team balance is healthy", async () => {
-    // A per-API-key spend limit does not lower the team balance, so both the
-    // initial check and the clamped re-check deny with credits still remaining.
-    checkCreditsMock.mockResolvedValue({ allowed: false, remaining: 5000 });
-
-    const req = buildReq({ body: { limit: 100 } });
-    const { res, nextCalled } = await runMiddleware(req);
-
-    expect(res.status).toHaveBeenCalledWith(402);
-    expect(nextCalled).toBe(false);
-    // A request that ends in a 402 keeps the caller's original limit.
-    expect(req.body.limit).toBe(100);
-  });
-
-  it("clamps the crawl limit down only, never up to the remaining balance", async () => {
-    checkCreditsMock
-      .mockResolvedValueOnce({ allowed: false, remaining: 5000 })
-      .mockResolvedValueOnce({ allowed: true, remaining: 5000 });
-
-    const req = buildReq({ body: { limit: 5 } });
-    const { res } = await runMiddleware(req);
-
-    expect(res.status).not.toHaveBeenCalled();
-    expect(req.body.limit).toBe(5);
-  });
-
-  it("fails open when the clamped re-check finds Autumn unavailable", async () => {
-    checkCreditsMock
-      .mockResolvedValueOnce({ allowed: false, remaining: 5 })
-      .mockResolvedValueOnce(null);
-
-    const req = buildReq({ body: { limit: 100 } });
-    const { res, nextCalled } = await runMiddleware(req);
-
-    expect(res.status).not.toHaveBeenCalled();
     expect(nextCalled).toBe(true);
-    expect(req.body.limit).toBe(5);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(req.account).toEqual({ remainingCredits: Infinity });
+    expect(req.body.limit).toBe(100);
   });
 
-  it("forwards the API key id in the check properties so Autumn can enforce per-key limits", async () => {
-    checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
+  it("derives operation and requestedUnits from path, explicit minimum, and body", async () => {
+    const authorize = vi.fn().mockResolvedValue({ ok: true as const });
+    const billing: BillingModule = {
+      authorize,
+      charge: vi.fn().mockResolvedValue(undefined),
+    };
 
-    const req = buildReq({
-      acuc: { api_key_id: 4242 },
-    });
-    await runMiddleware(req);
+    await withService(
+      testService(defaultModules(), parts, { billing }),
+      async () => {
+        await runMiddleware(
+          buildReq({ path: "/scrape", body: { url: "https://example.com" } }),
+          checkCreditsMiddleware(1, undefined, { mcpCredits: true }),
+        );
+        await runMiddleware(
+          buildReq({ path: "/batch/scrape", body: { urls: ["a", "b", "c"] } }),
+          checkCreditsMiddleware(),
+        );
+        await runMiddleware(
+          buildReq({ path: "/search", body: { query: "test", limit: 15 } }),
+          checkCreditsMiddleware(undefined, "search_credits", {
+            mcpCredits: true,
+          }),
+        );
+      },
+    );
 
-    expect(checkCreditsMock).toHaveBeenCalledWith(
+    expect(authorize).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({
-        properties: expect.objectContaining({ apiKeyId: 4242 }),
+        caller: { teamId: "team_test" },
+        operation: "scrape",
+        stage: "preflight",
+        requestedUnits: 1,
+      }),
+    );
+    expect(authorize).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        operation: "batchScrape",
+        stage: "preflight",
+        requestedUnits: 3,
+      }),
+    );
+    expect(authorize).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        operation: "search",
+        stage: "preflight",
+        requestedUnits: 15,
       }),
     );
   });
 
-  it("hands the ACUC's org to both checks, so neither reads teams.org_id", async () => {
-    checkCreditsMock
-      .mockResolvedValueOnce({ allowed: false, remaining: 5 })
-      .mockResolvedValueOnce({ allowed: true, remaining: 5 });
+  it("applies maxUnits to req.account and writes back clampedLimit to req.body.limit", async () => {
+    const billing: BillingModule = {
+      authorize: vi.fn().mockResolvedValue({
+        ok: true as const,
+        maxUnits: 25,
+        clampedLimit: 25,
+      }),
+      charge: vi.fn().mockResolvedValue(undefined),
+    };
+    const req = buildReq({ path: "/crawl", body: { limit: 100 } });
 
-    const req = buildReq({ body: { limit: 100 } });
-    await runMiddleware(req);
+    const { nextCalled } = await withService(
+      testService(defaultModules(), parts, { billing }),
+      () => runMiddleware(req),
+    );
 
-    expect(checkCreditsMock).toHaveBeenCalledTimes(2);
-    for (const [params] of checkCreditsMock.mock.calls) {
-      expect(params).toEqual(
-        expect.objectContaining({ orgId: "org_test", teamId: "team_test" }),
-      );
-    }
+    expect(nextCalled).toBe(true);
+    expect(req.account).toEqual({ remainingCredits: 25 });
+    expect(req.body.limit).toBe(25);
   });
 
-  // Keyless and preview identities carry no org, and neither does the DB-auth
-  // bypass. checkCredits answered null for all of them, so the middleware takes
-  // that fail-open answer itself rather than asking with an org it hasn't got.
-  it.each([null, undefined])(
-    "fails open without asking Autumn when org_id is %s",
-    async orgId => {
-      const req = buildReq({
-        auth: { team_id: "preview_1.2.3.4", org_id: orgId },
-      });
-      const { res, nextCalled } = await runMiddleware(req);
+  it("runs billing.authorize preflight on /agent routes", async () => {
+    const authorize = vi.fn().mockResolvedValue({ ok: true as const });
+    const billing: BillingModule = {
+      authorize,
+      charge: vi.fn().mockResolvedValue(undefined),
+    };
+    const req = buildReq({ path: "/agent", body: { prompt: "find pricing" } });
 
-      expect(checkCreditsMock).not.toHaveBeenCalled();
-      expect(res.status).not.toHaveBeenCalled();
-      expect(nextCalled).toBe(true);
-      expect(req.account.remainingCredits).toBe(Infinity);
-      expect(req.body.limit).toBe(100);
-    },
-  );
+    const { nextCalled } = await withService(
+      testService(defaultModules(), parts, { billing }),
+      () => runMiddleware(req),
+    );
 
-  it("sends a null apiKeyId when the request has no resolved api key id", async () => {
-    checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
-
-    const req = buildReq();
-    await runMiddleware(req);
-
-    expect(checkCreditsMock).toHaveBeenCalledWith(
+    expect(nextCalled).toBe(true);
+    expect(authorize).toHaveBeenCalledWith(
       expect.objectContaining({
-        properties: expect.objectContaining({ apiKeyId: null }),
+        operation: "other",
+        stage: "preflight",
       }),
     );
   });
-});
 
-describe("checkCreditsMiddleware – agent-key denials", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  function buildSponsoredReq(status: "blocked" | "pending") {
-    return buildReq({
-      acuc: {
-        team_id: "team_test",
-        api_key_id: 42,
-        _agentSponsor: {
-          status,
-          verification_deadline: new Date(Date.now() - 1000).toISOString(),
-          email: "owner@example.com",
+  it("returns the billing module refusal status, headers, and body without calling next", async () => {
+    const billing: BillingModule = {
+      authorize: vi.fn().mockResolvedValue({
+        ok: false as const,
+        refusal: {
+          status: 402,
+          headers: { "X-Billing-Reason": "quota" },
+          body: {
+            success: false as const,
+            code: "insufficient_credits",
+            error: "Insufficient credits.",
+            remaining_credits: 0,
+          },
         },
-      },
-    });
-  }
+      }),
+      charge: vi.fn().mockResolvedValue(undefined),
+    };
+    const req = buildReq({ path: "/crawl", body: { limit: 100 } });
 
-  it.each([
-    ["blocked", "agent_key_blocked"],
-    ["pending", "agent_key_verification_expired"],
-  ] as const)(
-    "logs a %s agent key as auth/denied before the 403",
-    async (status, reason) => {
-      const { res } = await runMiddleware(buildSponsoredReq(status));
+    const { res, nextCalled } = await withService(
+      testService(defaultModules(), parts, { billing }),
+      () => runMiddleware(req),
+    );
 
-      expect(res.status).toHaveBeenCalledWith(403);
-      expect(logger.warn).toHaveBeenCalledTimes(1);
-      expect(logger.warn).toHaveBeenCalledWith("Request denied", {
-        canonicalLog: "auth/denied",
-        reason,
-        status: 403,
-        method: undefined,
-        route: "/v1/crawl",
-        teamId: "team_test",
-        apiKeyId: 42,
-      });
-      expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toContain(
-        "owner@example.com",
-      );
-      expect(checkCreditsMock).not.toHaveBeenCalled();
-    },
-  );
-});
-
-describe("checkCreditsMiddleware – unverified agent-key 50-credit cap", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  function buildUnverifiedReq(overrides: any = {}) {
-    return buildReq({
-      acuc: {
-        _agentSponsor: {
-          status: "pending",
-          verification_deadline: new Date(
-            Date.now() + 86_400_000,
-          ).toISOString(),
-        },
-      },
-      ...overrides,
-    });
-  }
-
-  it("blocks with 402 when Autumn usage has reached the 50-credit cap", async () => {
-    getTeamBalanceMock.mockResolvedValue({ usage: 50 } as any);
-
-    const req = buildUnverifiedReq();
-    const { res } = await runMiddleware(req);
-
+    expect(nextCalled).toBe(false);
+    expect(res.headers["X-Billing-Reason"]).toBe("quota");
     expect(res.status).toHaveBeenCalledWith(402);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        error: "unverified_credit_limit_reached",
-        credits_used: 50,
-      }),
-    );
-    // The main Autumn credit check must not run once the cap is hit.
-    expect(checkCreditsMock).not.toHaveBeenCalled();
-  });
-
-  it("allows the request when Autumn usage is under the cap", async () => {
-    getTeamBalanceMock.mockResolvedValue({ usage: 10 } as any);
-    checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
-
-    const req = buildUnverifiedReq();
-    const { res, nextErr } = await runMiddleware(req);
-
-    expect(res.status).not.toHaveBeenCalled();
-    expect(nextErr).toBeUndefined();
-    expect(req.agentIndexOnly).toBe(true);
-  });
-
-  it("fails open (does not block) when the Autumn balance lookup throws", async () => {
-    getTeamBalanceMock.mockRejectedValue(new Error("autumn down"));
-    checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
-
-    const req = buildUnverifiedReq();
-    const { res } = await runMiddleware(req);
-
-    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      code: "insufficient_credits",
+      error: "Insufficient credits.",
+      remaining_credits: 0,
+    });
   });
 });

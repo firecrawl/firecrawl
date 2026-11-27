@@ -61,3 +61,25 @@ class TestSearchDeveloperResults:
         assert isinstance(result.web[0], SearchResultWeb)
         assert result.web[0].category == "developer"
         assert not hasattr(result, "developer")
+
+class TestSearchTransportErrors:
+    """A transport error without a response is raised as itself, not as an AttributeError."""
+
+    def test_sync_timeout_is_reraised(self):
+        import requests
+
+        client = Mock()
+        client.post.side_effect = requests.exceptions.ReadTimeout("read timed out")
+
+        with pytest.raises(requests.exceptions.ReadTimeout):
+            search(client, SearchRequest(query="test"))
+
+    @pytest.mark.asyncio
+    async def test_async_timeout_is_reraised(self):
+        import httpx
+
+        client = Mock()
+        client.post = AsyncMock(side_effect=httpx.ReadTimeout("read timed out"))
+
+        with pytest.raises(httpx.ReadTimeout):
+            await search_async(client, SearchRequest(query="test"))

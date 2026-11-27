@@ -1,19 +1,14 @@
-import { trace, type Attributes, type Span } from "@opentelemetry/api";
-import { wrapLanguageModel, type LanguageModelMiddleware } from "ai";
+import { trace } from "@opentelemetry/api";
+import type { Attributes, Span } from "@opentelemetry/api";
+import { wrapLanguageModel } from "ai";
+import type { LanguageModelMiddleware } from "ai";
 import { xSearchUsageFromResponseBody } from "./xai-x-search";
 
 type ProviderModel = Parameters<typeof wrapLanguageModel>[0]["model"];
 type ProviderResult = Awaited<ReturnType<ProviderModel["doGenerate"]>>;
-type ProviderUsage = ProviderResult["usage"];
 
-// The AI SDK's `ai.generateObject.doGenerate` and `ai.generateText.doGenerate`
-// spans only record prompt and completion token totals, so cache reads and
-// reasoning tokens reported by the provider never reach the trace. This
-// middleware runs inside those spans (the SDK calls `model.doGenerate` with
-// the span active) and adds the missing usage breakdown under the attribute
-// names newer SDK versions use for `generateText`. Streaming spans
-// (`ai.*.doStream`) already carry `ai.usage.cachedInputTokens` and
-// `ai.usage.reasoningTokens`.
+// Runs inside the AI SDK's `ai.generateText.doGenerate` span (the SDK calls
+// `model.doGenerate` with the span active) to record what the SDK does not.
 const DO_GENERATE_SPAN_NAME = /^ai\.[A-Za-z]+\.doGenerate$/;
 
 // With telemetry disabled the SDK uses a no-op tracer that does not set an
@@ -24,25 +19,10 @@ function activeDoGenerateSpan(): Span | undefined {
   if (!span?.isRecording()) {
     return undefined;
   }
-  const name = (span as { name?: unknown }).name;
+  const name = "name" in span ? span.name : undefined;
   return typeof name === "string" && DO_GENERATE_SPAN_NAME.test(name)
     ? span
     : undefined;
-}
-
-function usageTelemetryAttributes(usage: ProviderUsage): Attributes {
-  const attributes: Record<string, number | undefined> = {
-    "ai.usage.cachedInputTokens": usage.inputTokens.cacheRead,
-    "ai.usage.reasoningTokens": usage.outputTokens.reasoning,
-    "ai.usage.inputTokenDetails.noCacheTokens": usage.inputTokens.noCache,
-    "ai.usage.inputTokenDetails.cacheReadTokens": usage.inputTokens.cacheRead,
-    "ai.usage.inputTokenDetails.cacheWriteTokens": usage.inputTokens.cacheWrite,
-    "ai.usage.outputTokenDetails.textTokens": usage.outputTokens.text,
-    "ai.usage.outputTokenDetails.reasoningTokens": usage.outputTokens.reasoning,
-  };
-  return Object.fromEntries(
-    Object.entries(attributes).filter(([, value]) => value !== undefined),
-  );
 }
 
 // Server-side tool fees the provider bills per item, which token counts
@@ -59,14 +39,11 @@ function toolUsageTelemetryAttributes(result: ProviderResult): Attributes {
 }
 
 const usageTelemetryMiddleware: LanguageModelMiddleware = {
-  specificationVersion: "v3",
+  specificationVersion: "v4",
   wrapGenerate: async ({ doGenerate }) => {
     const span = activeDoGenerateSpan();
     const result = await doGenerate();
-    span?.setAttributes({
-      ...usageTelemetryAttributes(result.usage),
-      ...toolUsageTelemetryAttributes(result),
-    });
+    span?.setAttributes(toolUsageTelemetryAttributes(result));
     return result;
   },
 };

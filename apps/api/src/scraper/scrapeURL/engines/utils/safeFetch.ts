@@ -1,11 +1,35 @@
-import type { Socket } from "net";
+import { Socket } from "node:net";
 import { config } from "../../../../config";
-import type { TLSSocket } from "tls";
-import * as undici from "undici";
-import { interceptors } from "undici";
+import { Agent, interceptors, ProxyAgent } from "undici";
+import type { Dispatcher } from "undici";
 import { CookieJar } from "tough-cookie";
 import { cookie } from "http-cookie-agent/undici";
 import IPAddr from "ipaddr.js";
+
+// Node's certificate verification errors, which rejectUnauthorized: false
+// suppresses. CRL and OpenSSL hostname codes are omitted: Node never checks those.
+export const TLS_CERT_ERROR_CODES = new Set([
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UNABLE_TO_DECRYPT_CERT_SIGNATURE",
+  "UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY",
+  "CERT_SIGNATURE_FAILURE",
+  "CERT_NOT_YET_VALID",
+  "CERT_HAS_EXPIRED",
+  "ERROR_IN_CERT_NOT_BEFORE_FIELD",
+  "ERROR_IN_CERT_NOT_AFTER_FIELD",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "CERT_CHAIN_TOO_LONG",
+  "INVALID_CA",
+  "PATH_LENGTH_EXCEEDED",
+  "INVALID_PURPOSE",
+  "CERT_UNTRUSTED",
+  "CERT_REJECTED",
+  "UNSPECIFIED",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+]);
 export class InsecureConnectionError extends Error {
   constructor() {
     super("Connection violated security rules.");
@@ -13,7 +37,9 @@ export class InsecureConnectionError extends Error {
 }
 
 export function isIPPrivate(address: string): boolean {
-  if (!IPAddr.isValid(address)) return false;
+  if (!IPAddr.isValid(address)) {
+    return false;
+  }
 
   const addr = IPAddr.parse(address);
   return addr.range() !== "unicast";
@@ -25,7 +51,7 @@ export function isIPPrivate(address: string): boolean {
  * check below never sees the destination, so this is the only local guard.
  * Other hostnames are resolved proxy-side and must be filtered by the proxy.
  */
-export const rejectPrivateIPLiteralTargets: undici.Dispatcher.DispatcherComposeInterceptor =
+export const rejectPrivateIPLiteralTargets: Dispatcher.DispatcherComposeInterceptor =
   dispatch => (options, handler) => {
     if (config.ALLOW_LOCAL_WEBHOOKS === true || options.origin === undefined) {
       return dispatch(options, handler);
@@ -38,7 +64,7 @@ export const rejectPrivateIPLiteralTargets: undici.Dispatcher.DispatcherComposeI
         options.origin instanceof URL
           ? options.origin
           : new URL(options.origin.toString());
-      const hostname = origin.hostname.replace(/^\[|\]$/g, "");
+      const hostname = origin.hostname.replaceAll(/^\[|\]$/g, "");
       privateTarget =
         isIPPrivate(hostname) || /(^|\.)localhost\.?$/.test(hostname);
     } catch {
@@ -67,7 +93,7 @@ export const rejectPrivateIPLiteralTargets: undici.Dispatcher.DispatcherComposeI
 
 function createBaseAgent(skipTlsVerification: boolean) {
   const baseAgent = config.PROXY_SERVER
-    ? new undici.ProxyAgent({
+    ? new ProxyAgent({
         uri: config.PROXY_SERVER.includes("://")
           ? config.PROXY_SERVER
           : "http://" + config.PROXY_SERVER,
@@ -78,7 +104,7 @@ function createBaseAgent(skipTlsVerification: boolean) {
           rejectUnauthorized: !skipTlsVerification, // Only bypass SSL verification if explicitly requested
         },
       })
-    : new undici.Agent({
+    : new Agent({
         connect: {
           rejectUnauthorized: !skipTlsVerification, // Only bypass SSL verification if explicitly requested
         },
@@ -91,13 +117,22 @@ function createBaseAgent(skipTlsVerification: boolean) {
   );
 }
 
-function attachSecurityCheck(agent: undici.Dispatcher) {
+function attachSecurityCheck(agent: Dispatcher) {
   agent.on("connect", (_, targets) => {
-    const client: undici.Client = targets.slice(-1)[0] as undici.Client;
+    const client = targets.at(-1);
+    if (!client) {
+      return;
+    }
     const socketSymbol = Object.getOwnPropertySymbols(client).find(
       x => x.description === "socket",
-    )!;
-    const socket: Socket | TLSSocket = (client as any)[socketSymbol];
+    );
+    const socket: unknown = socketSymbol
+      ? Object.getOwnPropertyDescriptor(client, socketSymbol)?.value
+      : undefined;
+    if (!(socket instanceof Socket)) {
+      void client.destroy(new InsecureConnectionError()).catch(() => {});
+      return;
+    }
 
     if (
       socket.remoteAddress &&

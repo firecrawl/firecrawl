@@ -3,58 +3,109 @@
   "version": "1.0.0",
   "description": "",
   "main": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/service/index.ts",
+      "default": "./dist/src/service/index.js"
+    },
+    "./config": {
+      "types": "./src/exports/config.ts",
+      "default": "./dist/src/exports/config.js"
+    },
+    "./crawl": {
+      "types": "./src/exports/crawl.ts",
+      "default": "./dist/src/exports/crawl.js"
+    },
+    "./errors": {
+      "types": "./src/exports/errors.ts",
+      "default": "./dist/src/exports/errors.js"
+    },
+    "./http": {
+      "types": "./src/exports/http.ts",
+      "default": "./dist/src/exports/http.js"
+    },
+    "./llm": {
+      "types": "./src/exports/llm.ts",
+      "default": "./dist/src/exports/llm.js"
+    },
+    "./logger": {
+      "types": "./src/exports/logger.ts",
+      "default": "./dist/src/exports/logger.js"
+    },
+    "./queue": {
+      "types": "./src/exports/queue.ts",
+      "default": "./dist/src/exports/queue.js"
+    },
+    "./redis": {
+      "types": "./src/exports/redis.ts",
+      "default": "./dist/src/exports/redis.js"
+    },
+    "./scrape": {
+      "types": "./src/exports/scrape.ts",
+      "default": "./dist/src/exports/scrape.js"
+    },
+    "./search": {
+      "types": "./src/exports/search.ts",
+      "default": "./dist/src/exports/search.js"
+    },
+    "./telemetry": {
+      "types": "./src/exports/telemetry.ts",
+      "default": "./dist/src/exports/telemetry.js"
+    },
+    "./testing": {
+      "types": "./src/service/testing.ts",
+      "default": "./dist/src/service/testing.js"
+    },
+    "./types": {
+      "types": "./src/exports/types.ts",
+      "default": "./dist/src/exports/types.js"
+    },
+    "./util": {
+      "types": "./src/exports/util.ts",
+      "default": "./dist/src/exports/util.js"
+    }
+  },
   "scripts": {
-    "start": "tsc && node dist/src/harness.js --start-built",
-    "dev": "tsx src/harness.ts --start",
-    "server": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/index.js\"",
-    "server:production": "tsc && node dist/src/index.js",
-    "server:production:nobuild": "node dist/src/index.js",
-    "format": "prettier --write \"src/**/*.(js|ts)\"",
-    "flyio": "node dist/src/index.js",
-    "start:dev": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/index.js\"",
+    "start": "tsc && node dist/src/main.js harness --start-built",
+    "dev": "tsx src/main.ts harness --start",
+    "server": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js api\"",
+    "server:production": "tsc && node dist/src/main.js api",
+    "server:production:nobuild": "node dist/src/main.js api",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "flyio": "node dist/src/main.js api",
+    "start:dev": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js api\"",
     "build": "tsc",
-    "branding:print": "node src/scraper/scrapeURL/engines/fire-engine/branding-script/print-script.js",
-    "test": "vitest run --exclude='**/__tests__/e2e_noAuth/**'",
-    "test:local-no-auth": "vitest run --exclude='**/__tests__/e2e_withAuth/**'",
-    "test:full": "vitest run --exclude='**/__tests__/e2e_noAuth/**' --exclude='**/__tests__/e2e_withAuth/**'",
-    "test:prod": "vitest run --exclude='**/__tests__/e2e_noAuth/**' --exclude='**/__tests__/e2e_full_withAuth/**' --exclude='**/scraper/scrapeURL/**'",
-    "test:snips": "vitest run src/__tests__/snips/v1 src/__tests__/snips/v2",
-    "harness": "tsx src/harness.ts",
-    "workers": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/services/queue-worker.js\"",
-    "worker:production": "node dist/src/services/queue-worker.js",
-    "nuq-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/services/worker/nuq-worker.js\"",
-    "nuq-worker:production": "node dist/src/services/worker/nuq-worker.js",
-    "nuq-fdb-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/services/worker/nuq-fdb-worker.js\"",
-    "nuq-fdb-worker:production": "node dist/src/services/worker/nuq-fdb-worker.js",
-    "nuq-prefetch-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/services/worker/nuq-prefetch-worker.js\"",
-    "nuq-prefetch-worker:production": "node dist/src/services/worker/nuq-prefetch-worker.js",
-    "nuq-reconciler-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/services/worker/nuq-reconciler-worker.js\"",
-    "nuq-reconciler-worker:production": "node dist/src/services/worker/nuq-reconciler-worker.js",
-    "cclog-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/services/cclog-worker.js\"",
-    "cclog-worker:production": "node dist/src/services/cclog-worker.js",
-    "extract-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/services/extract-worker.js\"",
-    "extract-worker:production": "node dist/src/services/extract-worker.js",
-    "index-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/services/indexing/index-worker.js\"",
-    "index-worker:production": "node dist/src/services/indexing/index-worker.js",
-    "zdr-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/services/zdr-worker.js\"",
-    "zdr-worker:production": "node dist/src/services/zdr-worker.js",
-    "mongo-docker": "docker run -d -p 2717:27017 -v ./mongo-data:/data/db --name mongodb mongo:latest",
-    "mongo-docker-console": "docker exec -it mongodb mongosh",
+    "lint": "oxlint .",
+    "test": "vitest run",
+    "test:prod": "vitest run --exclude='**/scraper/scrapeURL/**'",
+    "test:snips": "vitest run src/__tests__/snips/v2",
+    "test:core": "vitest run --config vitest.core.config.ts",
+    "harness": "tsx src/main.ts harness",
+    "workers": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js queue-worker\"",
+    "worker:production": "node dist/src/main.js queue-worker",
+    "nuq-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js nuq-worker\"",
+    "nuq-worker:production": "node dist/src/main.js nuq-worker",
+    "nuq-fdb-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js nuq-fdb-worker\"",
+    "nuq-fdb-worker:production": "node dist/src/main.js nuq-fdb-worker",
+    "nuq-prefetch-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js nuq-prefetch-worker\"",
+    "nuq-prefetch-worker:production": "node dist/src/main.js nuq-prefetch-worker",
+    "nuq-reconciler-worker": "tsc-watch --compiler ./node_modules/typescript-7/bin/tsc --onSuccess \"node dist/src/main.js nuq-reconciler-worker\"",
+    "nuq-reconciler-worker:production": "node dist/src/main.js nuq-reconciler-worker",
     "prepare": "cd ../.. && husky ./apps/api/.husky",
     "knip": "knip"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@cloudflare/oxlint-config": "^0.2.0",
     "@types/amqplib": "^0.10.7",
     "@types/body-parser": "^1.19.2",
     "@types/cors": "^2.8.13",
-    "@types/culori": "^4.0.1",
     "@types/escape-html": "^1.0.4",
     "@types/express": "^5.0.6",
     "@types/express-ws": "^3.0.6",
     "@types/he": "^1.2.3",
-    "@types/lodash": "^4.17.14",
     "@types/multer": "^2.1.0",
     "@types/node": "^22.19.1",
     "@types/pdf-parse": "^1.1.4",
@@ -64,54 +115,39 @@
     "husky": "^9.1.7",
     "knip": "^6.40.0",
     "lint-staged": "^16.4.0",
+    "oxfmt": "^0.80.0",
+    "oxlint": "^1.95.0",
     "supertest": "^6.3.3",
     "tsc-watch": "^7.1.1",
+    "tsrs": "^7.1.0-beta.tsrs5",
     "tsx": "^4.20.3",
     "undici-types": "^7.16.0",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.84",
-    "@ai-sdk/deepinfra": "^2.0.54",
-    "@ai-sdk/fireworks": "^2.0.56",
-    "@ai-sdk/google": "^3.0.29",
-    "@ai-sdk/google-vertex": "^4.0.165",
-    "@ai-sdk/groq": "^3.0.41",
-    "@ai-sdk/openai": "3.0.124",
-    "@ai-sdk/xai": "^3.0.83",
+    "@ai-sdk/openai": "4.0.118",
+    "@ai-sdk/otel": "^1.0.173",
+    "@ai-sdk/xai": "^5.0.46",
     "@bull-board/api": "^6.21.3",
     "@bull-board/express": "^6.21.3",
-    "@clickhouse/client": "^1.8.1",
     "@dqbd/tiktoken": "^1.0.22",
-    "@google-cloud/bigtable": "^7.2.0",
-    "@google-cloud/pubsub": "^6.0.1",
-    "@google-cloud/storage": "^7.21.0",
     "@mendable/firecrawl-rs": "workspace:*",
-    "@openrouter/ai-sdk-provider": "^2.9.1",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.222.0",
     "@opentelemetry/resources": "^2.11.0",
     "@opentelemetry/sdk-trace-node": "^2.11.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "@types/ws": "^8.5.12",
-    "@typesafe-ai/sdk": "^0.6.0",
-    "ai": "6.0.86",
-    "ajv": "^8.18.0",
-    "ajv-formats": "^3.0.1",
+    "ai": "7.0.173",
     "amqplib": "^0.10.9",
     "async-mutex": "^0.5.0",
-    "autumn-js": "1.2.55",
     "axios": "^1.20.0",
-    "body-parser": "^1.20.6",
+    "body-parser": "^1.20.9",
     "bullmq": "^5.56.7",
     "cacheable-lookup": "^6.1.0",
     "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
-    "culori": "^4.0.2",
-    "diff": "^8.0.3",
     "dotenv": "^16.3.1",
-    "drizzle-orm": "1.0.0-rc.3",
-    "esbuild": "^0.28.1",
     "escape-html": "^1.0.3",
     "express": "5.2.1",
     "express-ws": "^5.0.2",
@@ -123,36 +159,27 @@
     "ipaddr.js": "^2.2.0",
     "joplin-turndown-plugin-gfm": "^1.0.12",
     "jsdom": "^29.1.1",
-    "jsonrepair": "^3.14.0",
     "koffi": "^2.9.0",
-    "langsmith": "^0.6.0",
-    "lodash": "^4.18.0",
     "marked": "^14.1.2",
-    "multer": "^2.4.0",
-    "ollama-ai-provider-v2": "^3.6.0",
-    "parse-diff": "^0.11.1",
+    "multer": "^2.5.0",
+    "ollama-ai-provider-v2": "^4.1.0",
     "pdf-parse": "^1.1.1",
     "pg": "^8.16.3",
-    "prettier": "^3.6.2",
     "prom-client": "^15.1.3",
-    "rate-limiter-flexible": "2.4.2",
     "redlock": "5.0.0-beta.2",
-    "resend": "^3.5.0",
     "response-time": "^2.3.4",
     "robots-parser": "^3.0.1",
-    "stripe": "^16.1.0",
-    "systeminformation": "^5.31.17",
     "tldts": "^7.4.10",
     "tough-cookie": "^4.1.4",
     "turndown": "^7.1.3",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "typescript-7": "npm:typescript@7.0.2",
-    "undici": "7.30.0",
+    "undici": "7.30.1",
     "uuid": "^13.0.1",
     "winston": "^3.14.2",
     "ws": "^8.21.0",
     "xml2js": "^0.6.2",
-    "zod": "4.1.12"
+    "zod": "4.6.7"
   },
   "nodemonConfig": {
     "ignore": [
@@ -162,7 +189,7 @@
     ]
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx,json,css,md}": "prettier --write"
+    "*.{js,jsx,ts,tsx,json,css,md}": "oxfmt --no-error-on-unmatched-pattern"
   },
   "packageManager": "pnpm@11.4.0"
 }

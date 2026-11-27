@@ -1,17 +1,22 @@
 import { createXai } from "@ai-sdk/xai";
 import { context, propagation, trace } from "@opentelemetry/api";
-import {
-  InMemorySpanExporter,
-  type NodeTracerProvider,
-  type ReadableSpan,
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-node";
+import type {
+  NodeTracerProvider,
+  ReadableSpan,
 } from "@opentelemetry/sdk-trace-node";
 import { APICallError, generateObject, generateText, streamText } from "ai";
 import { convertArrayToReadableStream, MockLanguageModelV3 } from "ai/test";
 import { z } from "zod";
+import { aiTelemetry } from "./ai-telemetry";
 import { withUsageTelemetry } from "./ai-usage-telemetry";
+import type { JsonObject } from "./json-types";
 import { createTracerProvider } from "./otel-tracer";
 
-const telemetry = { isEnabled: true, functionId: "usage-telemetry-test" };
+const telemetry = aiTelemetry({
+  isEnabled: true,
+  functionId: "usage-telemetry-test",
+});
 
 function mockUsage(details: {
   cacheRead?: number;
@@ -78,7 +83,7 @@ const openAIResponsesBody = {
 
 // Responses API body as returned by xAI for a request that ran X Search.
 // Trimmed to the fields `@ai-sdk/xai` validates plus the usage block.
-function xaiResponsesBody(usage: Record<string, unknown>) {
+function xaiResponsesBody(usage: JsonObject) {
   return {
     id: "resp_xai_test",
     object: "response",
@@ -124,9 +129,9 @@ async function generateWithXaiResponses(body: unknown) {
   });
   await generateText({
     model: withUsageTelemetry(xai.responses("grok-4-1-fast-non-reasoning")),
-    tools: { x_search: xai.tools.xSearch() } as any,
+    tools: { x_search: xai.tools.xSearch() },
     prompt: "hello",
-    experimental_telemetry: telemetry,
+    telemetry,
   });
 }
 
@@ -177,9 +182,22 @@ describe("usage telemetry middleware", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
+    let resetService: (() => void) | undefined;
     try {
       vi.resetModules();
-      const { getModel } = await import("./generic-ai.js");
+      const { createService, replaceService } =
+        await import("../service/service.js");
+      const { coreLlmProviders, getModel } = await import("./generic-ai.js");
+      replaceService(
+        createService(
+          { modules: {} },
+          {
+            core: { name: "core", llmProviders: coreLlmProviders },
+            logger: { error: vi.fn() },
+          },
+        ),
+      );
+      resetService = () => replaceService(undefined);
       expect(getModel("gpt-4o-mini", "openai").modelId).toBe(
         "global-model-override",
       );
@@ -188,13 +206,17 @@ describe("usage telemetry middleware", () => {
         model: getModel("gpt-4o-mini", "openai", { ignoreModelOverride: true }),
         schema: z.object({ answer: z.string() }),
         prompt: "hello",
-        experimental_telemetry: telemetry,
+        telemetry,
       });
     } finally {
+      resetService?.();
       vi.unstubAllGlobals();
       for (const [key, value] of Object.entries(savedEnv)) {
-        if (value === undefined) delete process.env[key];
-        else process.env[key] = value;
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
       }
       // Drop the generic-ai/config instances bound to the test env above.
       vi.resetModules();
@@ -210,10 +232,6 @@ describe("usage telemetry middleware", () => {
       "ai.usage.completionTokens": 50,
       "ai.usage.cachedInputTokens": 1024,
       "ai.usage.reasoningTokens": 20,
-      "ai.usage.inputTokenDetails.noCacheTokens": 176,
-      "ai.usage.inputTokenDetails.cacheReadTokens": 1024,
-      "ai.usage.outputTokenDetails.textTokens": 30,
-      "ai.usage.outputTokenDetails.reasoningTokens": 20,
     });
   });
 
@@ -265,7 +283,7 @@ describe("usage telemetry middleware", () => {
         mockModel(mockUsage({ cacheRead: 0, cacheWrite: 900 })),
       ),
       prompt: "hello",
-      experimental_telemetry: telemetry,
+      telemetry,
     });
 
     const span = await spanNamed("ai.generateText.doGenerate");
@@ -276,7 +294,7 @@ describe("usage telemetry middleware", () => {
     });
   });
 
-  it("records one span per attempt when the SDK retries", async () => {
+  it("records a retried call on one span", async () => {
     let calls = 0;
     const model = new MockLanguageModelV3({
       doGenerate: async () => {
@@ -303,25 +321,22 @@ describe("usage telemetry middleware", () => {
       model: withUsageTelemetry(model),
       prompt: "hello",
       maxRetries: 1,
-      experimental_telemetry: telemetry,
+      telemetry,
     });
 
     await provider.forceFlush();
     const spans = exporter
       .getFinishedSpans()
       .filter(s => s.name === "ai.generateText.doGenerate");
-    expect(spans).toHaveLength(2);
-    expect(spans.map(s => s.attributes["ai.usage.cachedInputTokens"])).toEqual([
-      undefined,
-      512,
-    ]);
+    expect(spans).toHaveLength(1);
+    expect(spans[0].attributes["ai.usage.cachedInputTokens"]).toBe(512);
   });
 
   it("omits usage details the provider does not report", async () => {
     await generateText({
       model: withUsageTelemetry(mockModel(mockUsage({}))),
       prompt: "hello",
-      experimental_telemetry: telemetry,
+      telemetry,
     });
 
     const span = await spanNamed("ai.generateText.doGenerate");
@@ -371,7 +386,7 @@ describe("usage telemetry middleware", () => {
     const result = streamText({
       model: withUsageTelemetry(model),
       prompt: "hello",
-      experimental_telemetry: telemetry,
+      telemetry,
     });
     await result.consumeStream();
 

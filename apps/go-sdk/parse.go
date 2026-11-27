@@ -91,7 +91,7 @@ type ParseOptions struct {
 	Integration         *string           `json:"integration,omitempty"`
 	RedactPII           *bool             `json:"redactPII,omitempty"`
 	AuditMetadata       *AuditMetadata    `json:"auditMetadata,omitempty"`
-	JsonOptions         *JsonOptions      `json:"jsonOptions,omitempty"`
+	JsonOptions         *JsonOptions      `json:"-"`
 	// CheckPromptInjection scans the parsed content for prompt injection before
 	// LLM-backed formats run. A detection fails the parse with
 	// SCRAPE_PROMPT_INJECTION_DETECTED. Adds 4 credits when the check scans the
@@ -109,11 +109,7 @@ func (o ParseOptions) MarshalJSON() ([]byte, error) {
 		parseOptions: parseOptions(o),
 	}
 
-	if len(o.FormatOptions) > 0 {
-		payload.Formats = o.FormatOptions
-	} else if len(o.Formats) > 0 {
-		payload.Formats = o.Formats
-	}
+	payload.Formats = requestFormats(o.Formats, o.FormatOptions, o.JsonOptions)
 
 	return json.Marshal(payload)
 }
