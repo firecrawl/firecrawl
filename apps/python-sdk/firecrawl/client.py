@@ -128,7 +128,9 @@ class V2Proxy:
             self.get_monitor_check = client_instance.get_monitor_check
             self.get_concurrency = client_instance.get_concurrency
             self.get_credit_usage = client_instance.get_credit_usage
+            self.get_credit_usage_historical = client_instance.get_credit_usage_historical
             self.get_token_usage = client_instance.get_token_usage
+            self.get_token_usage_historical = client_instance.get_token_usage_historical
             self.get_queue_status = client_instance.get_queue_status
 
             self.browser = client_instance.browser
@@ -225,7 +227,9 @@ class AsyncV2Proxy:
             self.get_monitor_check = client_instance.get_monitor_check
             self.get_concurrency = client_instance.get_concurrency
             self.get_credit_usage = client_instance.get_credit_usage
+            self.get_credit_usage_historical = client_instance.get_credit_usage_historical
             self.get_token_usage = client_instance.get_token_usage
+            self.get_token_usage_historical = client_instance.get_token_usage_historical
             self.get_queue_status = client_instance.get_queue_status
 
             self.browser = client_instance.browser
@@ -350,7 +354,9 @@ class Firecrawl:
 
         self.get_concurrency = self._v2_client.get_concurrency
         self.get_credit_usage = self._v2_client.get_credit_usage
+        self.get_credit_usage_historical = self._v2_client.get_credit_usage_historical
         self.get_token_usage = self._v2_client.get_token_usage
+        self.get_token_usage_historical = self._v2_client.get_token_usage_historical
         self.get_queue_status = self._v2_client.get_queue_status
 
         self.browser = self._v2_client.browser
@@ -515,7 +521,9 @@ class AsyncFirecrawl:
 
         self.get_concurrency = self._v2_client.get_concurrency
         self.get_credit_usage = self._v2_client.get_credit_usage
+        self.get_credit_usage_historical = self._v2_client.get_credit_usage_historical
         self.get_token_usage = self._v2_client.get_token_usage
+        self.get_token_usage_historical = self._v2_client.get_token_usage_historical
         self.get_queue_status = self._v2_client.get_queue_status
 
         self.browser = self._v2_client.browser
