@@ -141,6 +141,8 @@ impl<T: Kinded> Default for KindedSet<T> {
   }
 }
 
+/// Keeps the last member of each kind, like repeated calls to
+/// [`KindedSet::insert`]. Deserialization instead rejects duplicate kinds.
 impl<T: Kinded> FromIterator<T> for KindedSet<T> {
   fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
     Self(iter.into_iter().map(|x| (x.kind(), x)).collect())

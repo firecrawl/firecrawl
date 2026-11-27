@@ -6,9 +6,10 @@
 use std::process::Command;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use opentelemetry::trace::{SpanId, TraceId, TracerProvider as _};
+use opentelemetry::trace::{SpanId, TraceContextExt as _, TraceId, TracerProvider as _};
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 use tracing::field::Visit;
+use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 use tracing_subscriber::layer::{Context as LayerContext, SubscriberExt};
 use tracing_subscriber::{EnvFilter, Layer};
 
@@ -56,6 +57,8 @@ impl<S: tracing::Subscriber> Layer<S> for EventCapture {
 fn verify_w3c_and_zdr() -> Result<(), String> {
   let trace_hex = "4bf92f3577b34da6a3ce929d0e0e4736";
   let parent_span_hex = "00f067aa0ba902b7";
+  let expected_trace = TraceId::from_hex(trace_hex).map_err(|e| format!("trace hex: {e}"))?;
+  let expected_parent = SpanId::from_hex(parent_span_hex).map_err(|e| format!("span hex: {e}"))?;
   let traceparent = format!("00-{trace_hex}-{parent_span_hex}-01");
   let tracestate = "firecrawl=test".to_string();
 
@@ -105,6 +108,12 @@ fn verify_w3c_and_zdr() -> Result<(), String> {
     }
     let zdr_span = tracing::info_span!("derive_core_html", zero_data_retention = pre_parsed_zdr);
     attach_parent_context(&zdr_span, Some(&trace_ctx), pre_parsed_zdr);
+    let zdr_context = zdr_span.context();
+    let zdr_otel_span = zdr_context.span();
+    let zdr_span_context = zdr_otel_span.span_context();
+    if zdr_span_context.is_sampled() || zdr_span_context.trace_id() == expected_trace {
+      return Err("ZDR span inherited the sampled remote trace".to_string());
+    }
     zdr_span.in_scope(|| -> Result<(), String> {
       tracing::error!("zdr-secret-event-must-be-suppressed");
       if !in_zdr_span() {
@@ -147,6 +156,10 @@ fn verify_w3c_and_zdr() -> Result<(), String> {
       Ok(())
     })?;
     drop(zdr_span);
+
+    let control = tracing::info_span!("non_zdr_after_override", zero_data_retention = false);
+    attach_parent_context(&control, Some(&trace_ctx), false);
+    drop(control);
     Ok(())
   })?;
 
@@ -157,11 +170,17 @@ fn verify_w3c_and_zdr() -> Result<(), String> {
     .get_finished_spans()
     .map_err(|e| format!("failed to read finished spans: {e}"))?;
 
-  let expected_trace = TraceId::from_hex(trace_hex).map_err(|e| format!("trace hex: {e}"))?;
-  let expected_parent = SpanId::from_hex(parent_span_hex).map_err(|e| format!("span hex: {e}"))?;
+  if spans.len() != 3 {
+    return Err(format!("expected 3 non-ZDR spans, got {}", spans.len()));
+  }
 
-  if spans.len() != 2 {
-    return Err(format!("expected 2 non-ZDR spans, got {}", spans.len()));
+  let control = spans
+    .iter()
+    .find(|s| s.name == "non_zdr_after_override")
+    .ok_or_else(|| "missing non-ZDR control span after ZDR override".to_string())?;
+  if control.span_context.trace_id() != expected_trace || control.parent_span_id != expected_parent
+  {
+    return Err("non-ZDR control span did not retain the remote parent".to_string());
   }
 
   let root_exported = spans
@@ -328,6 +347,7 @@ fn main() -> Result<(), String> {
   match mode.as_deref() {
     Some("panic-hook") => verify_zdr_panic_hook(),
     Some("panic-hook-worker") => run_zdr_panic_hook_worker(),
-    _ => verify_w3c_and_zdr(),
+    None => verify_w3c_and_zdr(),
+    Some(other) => Err(format!("unknown verify_telemetry mode: {other}")),
   }
 }

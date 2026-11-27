@@ -9,7 +9,14 @@ version.workspace = true
 [features]
 default = []
 napi = ["dep:napi", "dep:napi-derive", "dep:tokio", "dep:tracing-subscriber"]
-types = ["dep:firecrawl-kinded-macro", "dep:serde_path_to_error", "dep:strum", "dep:thiserror", "dep:ts-rs"]
+types = [
+  "dep:firecrawl-kinded-macro",
+  "dep:serde_path_to_error",
+  "dep:strum",
+  "dep:thiserror",
+  "dep:ts-rs",
+  "serde_json/float_roundtrip",
+]
 telemetry = [
   "dep:opentelemetry",
   "dep:opentelemetry-otlp",
