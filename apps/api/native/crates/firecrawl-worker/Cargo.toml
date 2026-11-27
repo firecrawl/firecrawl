@@ -1,0 +1,48 @@
+[package]
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+name = "firecrawl-worker"
+publish.workspace = true
+version.workspace = true
+
+[lib]
+name = "firecrawl_worker"
+path = "src/lib.rs"
+
+[[bin]]
+name = "firecrawl-worker"
+path = "src/main.rs"
+
+[dependencies]
+bytes.workspace = true
+deadpool-postgres.workspace = true
+firecrawl-core = { workspace = true, features = ["telemetry"] }
+http.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+lapin.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
+rustls-native-certs.workspace = true
+rustls-pki-types.workspace = true
+serde.workspace = true
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-postgres.workspace = true
+tokio-postgres-rustls.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+tikv-jemallocator.workspace = true
+
+[dev-dependencies]
+hegeltest.workspace = true
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "test-util", "time"] }
+tracing-subscriber = { workspace = true, features = ["registry"] }
+
+[lints]
+workspace = true
