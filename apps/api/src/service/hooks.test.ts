@@ -58,7 +58,7 @@ describe("hookPoints", () => {
       expect(Object.isFrozen(spec)).toBe(true);
       byKind[spec.kind]++;
     }
-    expect(byKind).toEqual({ observe: 5, await: 5, transform: 16 });
+    expect(byKind).toEqual({ observe: 6, await: 5, transform: 16 });
 
     expect(hookPoints["process.stop"]).toEqual({
       kind: "await",
