@@ -56,6 +56,32 @@ describe("extractImages", () => {
     expect(images).toHaveLength(3);
   });
 
+  it("should keep the commas inside srcset URLs", async () => {
+    const html = `
+      <html>
+        <body>
+          <img srcset="https://res.cloudinary.com/demo/image/upload/w_400,h_300,c_fill/sample.jpg 400w,
+                       https://res.cloudinary.com/demo/image/upload/w_800,h_600,c_fill/sample.jpg 800w">
+          <picture>
+            <source srcset="https://cdn.example.com/a,b.webp, https://cdn.example.com/c,d.webp 2x">
+          </picture>
+        </body>
+      </html>
+    `;
+
+    const images = await extractImages(html, baseUrl);
+
+    expect(images).toEqual(
+      expect.arrayContaining([
+        "https://res.cloudinary.com/demo/image/upload/w_400,h_300,c_fill/sample.jpg",
+        "https://res.cloudinary.com/demo/image/upload/w_800,h_600,c_fill/sample.jpg",
+        "https://cdn.example.com/a,b.webp",
+        "https://cdn.example.com/c,d.webp",
+      ]),
+    );
+    expect(images).toHaveLength(4);
+  });
+
   it("should extract images from picture elements", async () => {
     const html = `
       <html>
