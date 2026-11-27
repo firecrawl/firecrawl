@@ -20,6 +20,7 @@ type ApiResponse<T> = {
   success: boolean;
   data?: T;
   id?: string;
+  next?: string | null;
   error?: string;
 };
 
