@@ -26,6 +26,7 @@ import {
   typeIncludes,
 } from "../../../lib/openai-strict-schema";
 import type { CostTracking } from "../../../lib/cost-tracking";
+import { EXPECTED_ERROR } from "../../../lib/expected-error";
 import { isZeroDataRetentionActive } from "../../../lib/otel-tracer";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { aiTelemetry } from "../../../lib/ai-telemetry";
@@ -155,6 +156,8 @@ const getModelLimits = (model: string) => {
 
 export class LLMRefusalError extends Error {
   public refusal: string;
+  // The model declined; surfaced to the caller, nothing for us to fix.
+  [EXPECTED_ERROR] = true;
 
   constructor(refusal: string) {
     super("LLM refused to extract the website's content");

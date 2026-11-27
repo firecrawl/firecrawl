@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { inMemoryJsonValueSchema, jsonRecordSchema } from "./json-types";
 import type { JsonObject, LogMeta } from "./json-types";
+import { EXPECTED_ERROR, isExpectedError } from "./expected-error";
 import { UNSUPPORTED_SITE_MESSAGE } from "./strings";
 
 /**
@@ -94,6 +95,13 @@ export class TransportableError extends Error {
   }
 
   get [transportableErrorBrand](): true {
+    return true;
+  }
+
+  // A coded error is an answer the API gives the caller, not a defect. The
+  // one exception, UnknownError, is the wrapper for everything that is. A
+  // getter keeps the flag off the instance, like the brand above.
+  get [EXPECTED_ERROR](): boolean {
     return true;
   }
 
@@ -534,6 +542,7 @@ export class ConcurrencyQueueTimeoutError extends TransportableError {
 
 export class UnknownError extends TransportableError {
   static readonly codes: ReadonlyArray<ErrorCode> = ["UNKNOWN_ERROR"];
+  #expected = false;
 
   constructor(inner: unknown) {
     const innerMessage =
@@ -546,10 +555,23 @@ export class UnknownError extends TransportableError {
     if (inner instanceof Error) {
       this.stack = inner.stack;
     }
+    // The wrapper is only as expected as what it wraps: a cancelled job
+    // stays a normal outcome, a TypeError stays a defect.
+    this.#expected = isExpectedError(inner);
   }
 
   serialize() {
-    return super.serialize();
+    // The wrapped error does not survive the queue, so its classification
+    // travels explicitly; otherwise a cancelled job revived on the API side
+    // would look like a defect.
+    // The flag is only written when set, so a defect's wire form is unchanged.
+    const data: ReturnType<TransportableError["serialize"]> & {
+      expected?: true;
+    } = super.serialize();
+    if (this.#expected) {
+      data.expected = true;
+    }
+    return data;
   }
 
   static deserialize(
@@ -559,7 +581,12 @@ export class UnknownError extends TransportableError {
     const x = new UnknownError("dummy");
     x.message = data.message;
     x.stack = data.stack;
+    x.#expected = data.expected === true;
     return x;
+  }
+
+  get [EXPECTED_ERROR](): boolean {
+    return this.#expected;
   }
 }
 
@@ -738,6 +765,8 @@ export class ActionsNotSupportedError extends TransportableError {
  * This is expected behavior when a crawl/batch is cancelled
  */
 export class JobCancelledError extends Error {
+  [EXPECTED_ERROR] = true;
+
   constructor() {
     super(
       "This scrape was not completed because the parent crawl or batch scrape was cancelled. This happens when you call the cancel endpoint on a crawl or batch scrape, or when the operation is stopped for another reason. Any URLs that were already scraped before cancellation are still available in the results.",

@@ -61,10 +61,12 @@ import { getCrawlScope } from "../../lib/crawl-scope";
 import type { Logger } from "winston";
 import {
   CrawlDenialError,
+  isTransportableError,
   JobCancelledError,
   RacedRedirectError,
   ScrapeJobTimeoutError,
   SitemapError,
+  UnknownError,
   UnsupportedSiteError,
 } from "../../lib/error";
 import { serializeThrownError } from "../../lib/error-serde";
@@ -85,6 +87,7 @@ import {
   withZeroDataRetention,
   setSpanAttributes,
 } from "../../lib/otel-tracer";
+import { isExpectedError, markExpectedError } from "../../lib/expected-error";
 import type { ScrapeUrlResponse } from "../../scraper/scrapeURL";
 import type { FeatureFlag } from "../../scraper/scrapeURL/engines";
 import { createScrapeFinishedEmitter } from "../../scraper/scrapeURL/hooks";
@@ -1860,7 +1863,19 @@ async function processJobWithTracing(
     if (job.data.skipNuq) {
       throw error;
     } else {
-      throw new Error(serializeThrownError(error), { cause: error });
+      // The queue stores the failure as a serialized TransportableError. The
+      // carrier keeps the code and expected-ness so the worker span's
+      // exception is still grouped by code and filtered like the original.
+      const transportable = isTransportableError(error)
+        ? error
+        : new UnknownError(error);
+      const carrier = Object.assign(
+        new Error(serializeThrownError(transportable), { cause: error }),
+        { code: transportable.code, stack: transportable.stack },
+      );
+      throw isExpectedError(transportable)
+        ? markExpectedError(carrier)
+        : carrier;
     }
   }
 }

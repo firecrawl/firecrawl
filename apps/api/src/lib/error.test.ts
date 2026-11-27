@@ -1,13 +1,22 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   CrawlDenialError,
   isTransportableError,
+  JobCancelledError,
   TransportableError,
+  UnknownError,
 } from "./error";
+import {
+  coreErrors,
+  deserializeTransportableError,
+  serializeTransportableError,
+} from "./error-serde";
+import { isExpectedError } from "./expected-error";
+import { createService, replaceService } from "../service/service";
 
 describe("isTransportableError", () => {
   it("holds for the base class and for every subclass", () => {
@@ -78,5 +87,53 @@ describe("isTransportableError", () => {
       );
 
     expect(asking).toEqual([]);
+  });
+});
+
+const revive = (error: UnknownError) =>
+  deserializeTransportableError(serializeTransportableError(error));
+
+describe("error classification for tracing", () => {
+  // Reading an error back from a job asks the service for the class that
+  // carries its code.
+  beforeAll(() => {
+    replaceService(
+      createService(
+        { modules: {} },
+        {
+          core: { name: "core", errors: coreErrors },
+          logger: { error: vi.fn() },
+        },
+      ),
+    );
+  });
+  afterAll(() => {
+    replaceService(undefined);
+  });
+
+  it("treats coded errors as expected outcomes", () => {
+    expect(
+      isExpectedError(new TransportableError("SCRAPE_TIMEOUT", "timed out")),
+    ).toBe(true);
+    expect(isExpectedError(new JobCancelledError())).toBe(true);
+  });
+
+  it("keeps an unknown error's classification across the queue", () => {
+    expect(
+      isExpectedError(revive(new UnknownError(new JobCancelledError()))),
+    ).toBe(true);
+    expect(isExpectedError(revive(new UnknownError(new TypeError("x"))))).toBe(
+      false,
+    );
+  });
+
+  it("treats an unknown error as expected only when what it wraps is", () => {
+    expect(isExpectedError(new UnknownError(new TypeError("null deref")))).toBe(
+      false,
+    );
+    expect(isExpectedError(new UnknownError("string failure"))).toBe(false);
+    expect(isExpectedError(new UnknownError(new JobCancelledError()))).toBe(
+      true,
+    );
   });
 });

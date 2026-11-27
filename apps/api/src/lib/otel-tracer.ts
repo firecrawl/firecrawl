@@ -1,10 +1,10 @@
-import type { SpanKind } from "@opentelemetry/api";
 import {
   context,
   createContextKey,
   diag,
   isSpanContextValid,
   propagation,
+  SpanKind,
   SpanStatusCode,
   trace,
 } from "@opentelemetry/api";
@@ -38,6 +38,7 @@ import {
   resourceFromAttributes,
 } from "@opentelemetry/resources";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { isExpectedError } from "./expected-error";
 
 export { SpanKind } from "@opentelemetry/api";
 export type { Span } from "@opentelemetry/api";
@@ -335,6 +336,9 @@ function cleanAttributes(
 
 // Spans marked failed by `recordSpanException`; `withSpan` keeps their error status.
 const erroredSpans = new WeakSet<Span>();
+// Errors already attached to some span, so a later catch-all (the Express
+// error handler) does not record the same failure a second time.
+const recordedErrors = new WeakSet<object>();
 
 interface SpanOptions {
   attributes?: SpanAttributeInput;
@@ -378,14 +382,65 @@ export async function withSpan<T>(
 /**
  * Marks a span as failed and attaches the error as an exception event, for
  * failures that are handled (returned) rather than thrown out of `withSpan`.
+ * The span also gets `error.expected` (see `EXPECTED_ERROR`) and, for errors
+ * that carry a string `code` such as `TransportableError`, `error.code`.
  */
 export function recordSpanException(span: Span, error: unknown): void {
   erroredSpans.add(span);
+  if (typeof error === "object" && error !== null) {
+    recordedErrors.add(error);
+  }
   span.recordException(error instanceof Error ? error : String(error));
   span.setStatus({
     code: SpanStatusCode.ERROR,
     message: error instanceof Error ? error.message : String(error),
   });
+
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+  span.setAttribute("error.expected", isExpectedError(error));
+  if (typeof code === "string") {
+    span.setAttribute("error.code", code);
+  }
+}
+
+/**
+ * Records an error that escaped every handler, such as an Express 500. An
+ * error that a `withSpan` already recorded (a traced controller that threw)
+ * is left alone; the Express error handler runs after that span ended, so
+ * recording it again would count the failure twice. Otherwise it goes on the
+ * active span when there is one, or on a standalone `api.unhandled_error`
+ * span, so routes without a root span still produce an exception event.
+ */
+export function recordUnhandledException(
+  error: unknown,
+  attributes?: SpanAttributeInput,
+): void {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    recordedErrors.has(error)
+  ) {
+    return;
+  }
+
+  const active = trace.getActiveSpan();
+  if (active) {
+    recordSpanException(active, error);
+    if (attributes) {
+      setSpanAttributes(active, attributes);
+    }
+    return;
+  }
+
+  const span = trace.getTracer(TRACER_NAME).startSpan("api.unhandled_error", {
+    kind: SpanKind.SERVER,
+    attributes: cleanAttributes(attributes),
+  });
+  recordSpanException(span, error);
+  span.end();
 }
 
 export function setSpanAttributes(

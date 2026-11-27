@@ -1,3 +1,5 @@
+import { EXPECTED_ERROR } from "../../../lib/expected-error";
+
 export type AbortInstance = {
   signal: AbortSignal;
   timesOutAt?: Date;
@@ -138,6 +140,8 @@ export class AbortManager {
 
 export class AbortManagerThrownError extends Error {
   name = "AbortManagerThrownError";
+  // A deadline the request or an engine ran into, not a defect.
+  [EXPECTED_ERROR] = true;
   public tier: AbortInstance["tier"];
   public inner: unknown;
   constructor(tier: AbortInstance["tier"], inner: unknown) {

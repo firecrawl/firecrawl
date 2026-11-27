@@ -22,21 +22,18 @@ import os from "node:os";
 import { logger } from "./lib/logger";
 import { adminInternalRouter, adminRouter } from "./routes/admin";
 import type { AdminKeySlot } from "./lib/admin-auth";
-import { adminAuth, adminPathKeyAuth, redactAdminKey } from "./lib/admin-auth";
+import { adminAuth, adminPathKeyAuth } from "./lib/admin-auth";
 import http from "node:http";
 import https from "node:https";
 import expressWs from "express-ws";
-import type {
-  ErrorResponse,
-  RequestWithMaybeACUC,
-} from "./controllers/v2/types";
+import type { ErrorResponse } from "./controllers/v2/types";
 import { ZodError, z } from "zod";
 import { QueueFullError } from "./lib/queue-full-error";
-import { v7 as uuidv7 } from "uuid";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
 import { nuqShutdown } from "./services/worker/nuq";
 import { service } from "./service";
+import { unhandledErrorHandler } from "./lib/unhandled-error-handler";
 import { installedService, runProcessStop } from "./service/service";
 import { initializeApiStartupDependencies } from "./lib/api-startup";
 import responseTime from "response-time";
@@ -55,10 +52,6 @@ class TypedExpressAdapter extends ExpressAdapter {
 
 const adminKeySlotLocalsSchema = z.object({
   adminKeySlot: z.enum(["current", "previous"]),
-});
-
-const payloadTooLargeErrorSchema = z.object({
-  status: z.literal(413),
 });
 
 const numCPUs = config.ENV === "local" ? 2 : os.cpus().length;
@@ -389,52 +382,7 @@ app.use(
   },
 );
 
-app.use(
-  (
-    err: unknown,
-    req: RequestWithMaybeACUC<Request["params"], ErrorResponse, undefined>,
-    res: Response<ErrorResponse>,
-    next: NextFunction,
-  ) => {
-    if (
-      err instanceof SyntaxError &&
-      "status" in err &&
-      err.status === 400 &&
-      "body" in err
-    ) {
-      return res.status(400).json({
-        success: false,
-        code: "BAD_REQUEST_INVALID_JSON",
-        error: "Bad request, malformed JSON",
-      });
-    }
-    if (payloadTooLargeErrorSchema.safeParse(err).success) {
-      return res.status(413).json({
-        success: false,
-        error: "Request body is too large",
-      });
-    }
-
-    const id = uuidv7();
-    const path = redactAdminKey(req.path);
-
-    logger.error(
-      "Error occurred in request! (" + path + ") -- ID " + id + " -- ",
-      {
-        error: err,
-        errorId: id,
-        path,
-        teamId: req.acuc?.team_id,
-        team_id: req.acuc?.team_id,
-      },
-    );
-    res.status(500).json({
-      success: false,
-      code: "UNKNOWN_ERROR",
-      error: service.modules.messages.errorContact(id),
-    });
-  },
-);
+app.use(unhandledErrorHandler);
 
 logger.info(`Worker ${process.pid} started`);
 
