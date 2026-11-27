@@ -13,7 +13,8 @@ use std::{
 use chromiumoxide::{
   browser::{Browser, BrowserConfig},
   cdp::browser_protocol::network::{
-    EventLoadingFailed, EventLoadingFinished, EventRequestWillBeSent, ResourceType,
+    EventLoadingFailed, EventLoadingFinished, EventRequestWillBeSent, Headers, ResourceType,
+    SetExtraHttpHeadersParams,
   },
   page::ScreenshotParams,
 };
@@ -337,6 +338,7 @@ impl BrowserPool {
   pub async fn render(
     &self,
     url: &Url,
+    accept_language: Option<&str>,
     wait_for: Duration,
     timeout: Duration,
     screenshot: bool,
@@ -355,7 +357,11 @@ impl BrowserPool {
         .map_err(|e| format!("could not open a tab: {e}"))?
     };
 
-    let result = tokio::time::timeout(timeout, self.drive(&page, url, wait_for, screenshot)).await;
+    let result = tokio::time::timeout(
+      timeout,
+      self.drive(&page, url, accept_language, wait_for, screenshot),
+    )
+    .await;
     let _ = page.close().await;
     match result {
       Ok(r) => r,
@@ -367,6 +373,7 @@ impl BrowserPool {
     &self,
     page: &chromiumoxide::Page,
     url: &Url,
+    accept_language: Option<&str>,
     wait_for: Duration,
     screenshot: bool,
   ) -> Result<Rendered, String> {
@@ -374,6 +381,16 @@ impl BrowserPool {
       .set_user_agent(self.user_agent.as_str())
       .await
       .map_err(|e| format!("could not set the user agent: {e}"))?;
+    if let Some(language) =
+      accept_language.filter(|value| reqwest::header::HeaderValue::from_str(value).is_ok())
+    {
+      page
+        .execute(SetExtraHttpHeadersParams::new(Headers::new(
+          serde_json::json!({ "Accept-Language": language }),
+        )))
+        .await
+        .map_err(|e| format!("could not set Accept-Language: {e}"))?;
+    }
     let _ = page.evaluate_on_new_document(NETWORK_TRACKER).await;
     let watch = NetWatch::start(page).await;
     let result = self

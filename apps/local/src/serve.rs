@@ -840,6 +840,107 @@ mod tests {
     format!("http://{addr}")
   }
 
+  async fn scrape_browser_language(mode: crate::scrape::BrowserMode) -> Value {
+    let page = Router::new().route(
+      "/",
+      get(|headers: HeaderMap| async move {
+        let language = headers
+          .get(header::ACCEPT_LANGUAGE)
+          .and_then(|value| value.to_str().ok())
+          .unwrap_or("missing");
+        axum::response::Html(format!(
+          "<html><body><div id=\"root\"></div><script>\
+           const heading = document.createElement('h1');\
+           heading.textContent = 'Accept-Language: {language}';\
+           document.getElementById('root').appendChild(heading);\
+           </script></body></html>"
+        ))
+      }),
+    );
+    let page_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+      .await
+      .unwrap();
+    let page_url = format!("http://{}/", page_listener.local_addr().unwrap());
+    let page_server = tokio::spawn(async move { axum::serve(page_listener, page).await.unwrap() });
+    let engine = Arc::new(
+      Engine::new(crate::scrape::EngineConfig {
+        policy: crate::guard::NetworkPolicy::AllowPrivate,
+        user_agent: None,
+        browser: mode,
+      })
+      .unwrap(),
+    );
+    assert!(
+      engine.has_browser(),
+      "This test requires Chrome or Chromium"
+    );
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+      .await
+      .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let cfg = ServeConfig {
+      addr,
+      token: None,
+      allowed_hosts: Vec::new(),
+      cloud: Cloud::new(page_url.clone(), None, cloud::CloudMode::Off),
+      use_client_key: false,
+    };
+    let api_server = tokio::spawn(serve_on(
+      listener,
+      engine.clone(),
+      cfg,
+      std::future::pending(),
+    ));
+    let answer = reqwest::Client::new()
+      .post(format!("http://{addr}/v2/scrape"))
+      .json(&json!({
+        "url": page_url,
+        "formats": ["rawHtml"],
+        "headers": { "Accept-Language": "*" },
+        "timeout": 10000
+      }))
+      .send()
+      .await
+      .unwrap()
+      .json::<Value>()
+      .await
+      .unwrap();
+    engine.shutdown().await;
+    api_server.abort();
+    page_server.abort();
+    answer
+  }
+
+  #[tokio::test]
+  #[ignore = "requires Chrome or Chromium"]
+  async fn forced_browser_preserves_accept_language() {
+    let answer = scrape_browser_language(crate::scrape::BrowserMode::Always).await;
+    assert_eq!(answer["success"], true, "{answer}");
+    assert_eq!(answer["data"]["metadata"]["engine"], "local-browser");
+    assert!(
+      answer["data"]["rawHtml"]
+        .as_str()
+        .unwrap()
+        .contains("<h1>Accept-Language: *</h1>"),
+      "{answer}"
+    );
+  }
+
+  #[tokio::test]
+  #[ignore = "requires Chrome or Chromium"]
+  async fn automatic_browser_preserves_accept_language() {
+    let answer = scrape_browser_language(crate::scrape::BrowserMode::Auto).await;
+    assert_eq!(answer["success"], true, "{answer}");
+    assert_eq!(answer["data"]["metadata"]["engine"], "local-browser");
+    assert!(
+      answer["data"]["rawHtml"]
+        .as_str()
+        .unwrap()
+        .contains("<h1>Accept-Language: *</h1>"),
+      "{answer}"
+    );
+  }
+
   #[tokio::test]
   async fn a_callers_key_is_used_only_where_callers_bring_their_own() {
     let http = reqwest::Client::new();
