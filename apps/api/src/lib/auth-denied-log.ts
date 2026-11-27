@@ -1,5 +1,5 @@
 import type { Request } from "express";
-import type { AuthCreditUsageChunk } from "../controllers/v1/types";
+import type { AuthCreditUsageChunk } from "../controllers/v2/types";
 import { redactAdminKey } from "./admin-auth";
 import { getRoutePattern } from "./http-metrics";
 import { logger } from "./logger";
@@ -16,6 +16,7 @@ export type AuthDenialReason =
   | "invalid_vercel_oidc_token"
   | "vercel_oidc_team_mismatch"
   | "team_banned"
+  | "key_expired"
   | "ip_restricted"
   | "endpoint_restricted"
   | "keyless_ip_ineligible"

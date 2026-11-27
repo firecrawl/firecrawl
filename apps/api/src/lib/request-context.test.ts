@@ -62,6 +62,8 @@ describe("requestContext", () => {
       orgId: "org",
       apiKeyId: 7,
       billing: { endpoint: "crawl", jobId: "crawl-1" },
+      concurrencyLimit: 20,
+      rateLimitMultiplier: 50,
     });
 
     expect(stored(ctx)).toEqual(ctx);

@@ -1031,10 +1031,12 @@ export async function performLLMExtract(
       markdown: document.markdown,
       previousWarning: document.warning,
       model: getModel(modelSelection.modelName, "openai", {
+        ctx: meta.ctx,
         teamFlags,
         feature: "JSON format",
       }),
       retryModel: getModel("gpt-4.1-mini", "openai", {
+        ctx: meta.ctx,
         teamFlags,
         feature: "JSON format",
       }),

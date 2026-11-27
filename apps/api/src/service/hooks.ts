@@ -12,7 +12,8 @@
  * request schemas, scrape engines, configuration, or clients.
  */
 import type { Logger } from "winston";
-import type { Document } from "../controllers/v2/types";
+import type { Document, MapDocument } from "../controllers/v2/types";
+import type { SearchV2Response } from "../lib/entities";
 import type { ErrorCode } from "../lib/error";
 import type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
 import type { EngineFeatureName, EngineName } from "./engines";
@@ -59,6 +60,16 @@ export interface ScrapePlan {
   options: ScrapeOptions;
   /** Engine features the waterfall must satisfy. */
   features: Set<EngineFeatureName>;
+  /** Require markdown derivation even when no built-in format needs it. */
+  needsMarkdown?: boolean;
+  /** Top-level document keys kept during final format coercion. */
+  keepDocumentFields?: Set<string>;
+  /** Optional rewritten URL to scrape (for example, stripped of embedded credentials). */
+  url?: string;
+  /** Optional rewritten unnormalized source URL. */
+  unnormalizedSourceURL?: string;
+  /** Optional override for whether robots.txt should be checked for this scrape. */
+  checkRobots?: boolean;
 }
 
 /**
@@ -77,6 +88,13 @@ export interface HtmlCleaning {
 export interface EnginePlan {
   /** Candidate engines to try, best first. */
   candidates: EngineName[];
+  /** When true, resolved candidates carry no unsupported-feature warnings. */
+  suppressUnsupportedWarnings?: boolean;
+  /**
+   * On `scrape.engine.fallback`: when true, continue waterfalling to remaining
+   * candidates even when the failed engine's error would otherwise stop the loop.
+   */
+  continueWaterfall?: boolean;
 }
 
 /** HTTP refusal payload returned when a request is rejected. */
@@ -85,7 +103,7 @@ export interface Refusal {
   body: {
     success: false;
     error: string;
-    code?: ErrorCode;
+    code?: ErrorCode | (string & {});
   } & Record<string, unknown>;
   headers?: Record<string, string>;
 }
@@ -120,6 +138,15 @@ export interface ScrapeFinished {
   /** Metered usage charged for this scrape, or undefined when unmetered. */
   charged: number | undefined;
   timeTakenMs: number;
+  startedAt?: number;
+  completedAt?: number;
+  origin?: string;
+  crawlId?: string;
+  skipNuq?: boolean;
+  isParse?: boolean;
+  costTracking?: Record<string, unknown>;
+  /** Opaque per-job metadata passed through to completion hooks. */
+  metadata?: Record<string, unknown>;
 }
 
 /** Completion payload delivered when a crawl or batch scrape finishes. */
@@ -129,6 +156,13 @@ export interface CrawlFinished {
   ctx: RequestContext;
   completed: number;
   cancelled: boolean;
+  requestId?: string;
+  origin?: string;
+  originUrl?: string;
+  crawlerOptions?: Record<string, unknown> | null;
+  charged?: number | null;
+  isV1?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 /** Plan transformed before executing a search request. */
@@ -143,10 +177,15 @@ export interface SearchHit {
   url: string;
   title?: string;
   description?: string;
+  group?: "web" | "news" | "images";
+  category?: string;
+  imageUrl?: string;
+  imageWidth?: number;
+  imageHeight?: number;
 }
 
 /**
- * The service's 25 typed hook points, grouped by lifecycle area.
+ * The service's 26 typed hook points, grouped by lifecycle area.
  */
 export interface HookPoints {
   // process
@@ -165,8 +204,16 @@ export interface HookPoints {
     jobId: string;
     kind: JobKind;
     ctx: RequestContext;
+    url?: string;
+    options?: ScrapeOptions;
+    jobData?: unknown;
   }>;
-  "concurrency.limited": Observe<{ ctx: RequestContext; limit: number }>;
+  "concurrency.limited": Observe<{
+    ctx: RequestContext;
+    limit: number;
+    exceededBacklog?: boolean;
+    isCrawlOrBatch?: boolean;
+  }>;
   // scrape, in pipeline order
   "scrape.start": Transform<ScrapePlan, ScrapeMeta>;
   "scrape.engines.select": Transform<EnginePlan, ScrapeMeta>;
@@ -177,6 +224,12 @@ export interface HookPoints {
   "scrape.fetched": Transform<EngineScrapeResult, ScrapeMeta>;
   "scrape.html.clean": Transform<HtmlCleaning, ScrapeMeta>;
   "scrape.document.markdown": Transform<Document, ScrapeMeta>;
+  /**
+   * Runs after standard document derivation (markdown and metadata) completes.
+   * Internal sitemap fetches (`ctx.teamId === "sitemap"`) skip HTML/markdown
+   * derivation and invoke this hook with only `rawHtml` and `metadata.scrapeId`
+   * populated.
+   */
   "scrape.document.derived": Transform<Document, ScrapeMeta>;
   "scrape.document.extracted": Transform<Document, ScrapeMeta>;
   "scrape.document.final": Transform<Document, ScrapeMeta>;
@@ -184,32 +237,104 @@ export interface HookPoints {
   // crawl
   "crawl.kickoff": Transform<
     string[],
-    { id: string; ctx: RequestContext; url: string }
+    {
+      id: string;
+      ctx: RequestContext;
+      url: string;
+      crawlerOptions?: Record<string, unknown>;
+    }
   >;
   "crawl.links": Transform<
     string[],
-    { id: string; ctx: RequestContext; from: string }
+    {
+      id: string;
+      ctx: RequestContext;
+      from: string;
+      crawlerOptions?: Record<string, unknown> | null;
+      bypassBilling?: boolean;
+    }
   >;
   "crawl.finished": Await<CrawlFinished>;
   // map and search
   "map.collect": Transform<
     string[],
-    { ctx: RequestContext; url: string; limit: number }
+    {
+      ctx: RequestContext;
+      url: string;
+      limit: number;
+      search?: string;
+      includeSubdomains?: boolean;
+      allowExternalLinks?: boolean;
+      ignoreCache?: boolean;
+      sitemap?: "skip" | "include" | "only";
+      useIndex?: boolean;
+      maxSearchResults?: number;
+      abort?: AbortSignal;
+      documents?: Map<string, MapDocument>;
+      state?: Record<string, unknown>;
+      logger?: Logger;
+    }
   >;
-  "map.finished": Observe<{ id: string; ctx: RequestContext; urls: number }>;
+  "map.filter": Transform<
+    MapDocument[],
+    {
+      ctx: RequestContext;
+      url: string;
+      limit: number;
+      state?: Record<string, unknown>;
+      logger?: Logger;
+    }
+  >;
+  "map.finished": Observe<{
+    id: string;
+    requestId?: string;
+    ctx: RequestContext;
+    urls: number;
+    url?: string;
+    options?: Record<string, unknown>;
+    links?: MapDocument[];
+    charged?: number;
+    timeTakenMs?: number;
+    state?: Record<string, unknown>;
+  }>;
   "search.plan": Transform<
     SearchPlan,
-    { ctx: RequestContext; body: RequestBodies["search"] }
+    {
+      ctx: RequestContext;
+      body: RequestBodies["search"];
+      state?: Record<string, unknown>;
+      logger?: Logger;
+    }
   >;
   "search.results": Transform<
     SearchHit[],
-    { ctx: RequestContext; body: RequestBodies["search"] }
+    {
+      ctx: RequestContext;
+      body: RequestBodies["search"];
+      state?: Record<string, unknown>;
+      response?: SearchV2Response;
+      logger?: Logger;
+    }
   >;
   "search.finished": Observe<{
     id: string;
+    requestId?: string;
     ctx: RequestContext;
     results: number;
     charged: number | undefined;
+    scrapeCredits?: number;
+    totalCredits?: number;
+    body?: RequestBodies["search"];
+    response?: SearchV2Response;
+    timeTakenMs?: number;
+    resultCountsBySource?: Record<string, number>;
+    resultCategories?: Record<string, unknown>;
+    searchTypes?: string[];
+    scrapeFormats?: string[];
+    shouldScrape?: boolean;
+    isSuccessful?: boolean;
+    error?: string;
+    state?: Record<string, unknown>;
   }>;
 }
 
@@ -284,7 +409,7 @@ const rawHookPoints: {
   "process.start": Object.freeze({ kind: "await" }),
   "process.stop": Object.freeze({
     kind: "await",
-    timeoutMs: 10_000,
+    timeoutMs: 45_000,
     isolate: true,
     reverse: true,
   }),
@@ -307,6 +432,7 @@ const rawHookPoints: {
   "crawl.links": Object.freeze({ kind: "transform" }),
   "crawl.finished": Object.freeze({ kind: "await" }),
   "map.collect": Object.freeze({ kind: "transform" }),
+  "map.filter": Object.freeze({ kind: "transform" }),
   "map.finished": Object.freeze({ kind: "observe" }),
   "search.plan": Object.freeze({ kind: "transform" }),
   "search.results": Object.freeze({ kind: "transform" }),

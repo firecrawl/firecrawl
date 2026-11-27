@@ -1,8 +1,12 @@
 import { SearchV2Response, SearchResultType } from "../../lib/entities";
 import { Logger } from "winston";
 import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
-import type { TeamPlanClass } from "../../lib/team-plan-class";
+import {
+  coreSearchProviderNames,
+  type TeamPlanClass,
+} from "../../service/search-providers";
 import { service, type SearchQuery } from "../../service";
+import { searchWithProvider } from "../../lib/search-metrics";
 
 export class SearchProviderError extends Error {
   constructor(cause: unknown) {
@@ -90,21 +94,24 @@ export async function search({
     teamPlanClass,
   };
 
-  try {
-    for (const provider of providers) {
-      const result = await provider.search(searchQuery);
+  for (const provider of providers) {
+    try {
+      const result = await searchWithProvider(provider, searchQuery);
       if (result != null) {
         return result;
       }
+    } catch (error) {
+      logger.error(`Error in search function`, { error });
+      if (
+        throwOnSelfHostedProviderError &&
+        coreSearchProviderNames.includes(provider.name) &&
+        service.describe().searchProviders[provider.name]?.owner === "core"
+      ) {
+        throw new SearchProviderError(error);
+      }
+      return {};
     }
-
-    // Fallback to empty response
-    return {};
-  } catch (error) {
-    logger.error(`Error in search function`, { error });
-    if (throwOnSelfHostedProviderError && !config.FIRE_ENGINE_BETA_URL) {
-      throw new SearchProviderError(error);
-    }
-    return {};
   }
+
+  return {};
 }

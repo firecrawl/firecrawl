@@ -4,7 +4,6 @@ import {
   ActionError,
   AddFeatureError,
   AgentIndexOnlyError,
-  BrandingNotSupportedError,
   DNSResolutionError,
   DocumentAntibotError,
   DocumentFetchProxyError,
@@ -13,7 +12,6 @@ import {
   FEPageLoadFailed,
   IndexMissError,
   LockdownMissError,
-  MediaAccessDeniedError,
   NoCachedDataError,
   NoEnginesLeftError,
   PaywalledContentError,
@@ -50,28 +48,6 @@ import {
   serializeThrownError,
   serializeTransportableError,
 } from "./error-serde";
-import {
-  ThirdPartyDataTermsRequiredError,
-  ThirdPartyDataUnsupportedOptionError,
-} from "./exchange-errors";
-import { UnsafeDomainBlockedError } from "./threat-protection/error";
-import type { ThreatDecision } from "./threat-protection/types";
-
-const sampleThreatDecision: ThreatDecision = {
-  allowed: false,
-  rule: "blacklist",
-  url: "https://bad.example/path",
-  domain: "bad.example",
-  providerConsulted: true,
-  verdict: {
-    provider: "google-web-risk",
-    riskScore: 97,
-    categories: ["MALWARE"],
-    fromCache: false,
-    raw: { threat: { threatTypes: ["MALWARE"] } },
-  },
-  mode: "normal",
-};
 
 const withCoreErrors = createService(
   { modules: {} },
@@ -151,10 +127,6 @@ describe("behavioral error traits", () => {
       new UsOnlyUnavailableError("us-only"),
       new ReservedCapacityUnavailableError(),
       new ExchangeRefusedError("THIRD_PARTY_DATA_NOT_FOUND", "missing"),
-      new ThirdPartyDataTermsRequiredError({
-        key: "acme",
-        version: "2026-01-01",
-      }),
     ];
 
     for (const error of terminalErrors) {
@@ -169,10 +141,6 @@ describe("behavioral error traits", () => {
       new NoEnginesLeftError(["fetch"]),
       new LockdownMissError(),
       new PaywalledContentError(),
-      new BrandingNotSupportedError("PDFs are not supported."),
-      new MediaAccessDeniedError(),
-      new UnsafeDomainBlockedError("https://bad.example", sampleThreatDecision),
-      new ThirdPartyDataUnsupportedOptionError("actions"),
       new ScrapeJobTimeoutError(),
       new TransportableError("UNKNOWN_ERROR", "plain"),
       new Error("plain"),
@@ -200,11 +168,6 @@ describe("behavioral error traits", () => {
 
 describe("HTTP response metadata", () => {
   it("derives exact HTTP status and extra fields for every mapped error class", () => {
-    const terms = new ThirdPartyDataTermsRequiredError({
-      key: "acme",
-      version: "2026-01-01",
-    });
-
     const cases: Array<{
       label: string;
       error: TransportableError;
@@ -282,36 +245,9 @@ describe("HTTP response metadata", () => {
         expected: { status: 403, code: "RESERVED_CAPACITY_UNAVAILABLE" },
       },
       {
-        label: "UnsafeDomainBlockedError",
-        error: new UnsafeDomainBlockedError(
-          "https://bad.example/path",
-          sampleThreatDecision,
-        ),
-        expected: { status: 403, code: "unsafe_domain_blocked" },
-      },
-      {
         label: "PaywalledContentError",
         error: new PaywalledContentError(),
         expected: { status: 403, code: "SCRAPE_PAYWALLED_CONTENT" },
-      },
-      {
-        label: "MediaAccessDeniedError",
-        error: new MediaAccessDeniedError("denied"),
-        expected: { status: 403, code: "SCRAPE_MEDIA_ACCESS_DENIED" },
-      },
-      {
-        label: "ThirdPartyDataUnsupportedOptionError",
-        error: new ThirdPartyDataUnsupportedOptionError("actions"),
-        expected: { status: 400, code: "THIRD_PARTY_DATA_UNSUPPORTED_OPTION" },
-      },
-      {
-        label: "ThirdPartyDataTermsRequiredError",
-        error: terms,
-        expected: {
-          status: 403,
-          code: "THIRD_PARTY_DATA_TERMS_REQUIRED",
-          extraFields: { requiresAction: terms.requiresAction },
-        },
       },
     ];
 
@@ -410,18 +346,7 @@ describe("wire format stability", () => {
         "THIRD_PARTY_DATA_ENRICHMENT_NOT_ENABLED",
         "enrichment disabled",
       ),
-      new MediaAccessDeniedError("denied"),
       new PaywalledContentError(),
-      new BrandingNotSupportedError("PDFs are not supported."),
-      new UnsafeDomainBlockedError(
-        "https://bad.example/path",
-        sampleThreatDecision,
-      ),
-      new ThirdPartyDataTermsRequiredError({
-        key: "acme",
-        version: "2026-01-01",
-      }),
-      new ThirdPartyDataUnsupportedOptionError("actions"),
     ];
 
     const traitKeyPattern =
@@ -477,47 +402,49 @@ describe("FormatUnavailableError and isFormatUnavailable", () => {
   it("matches concrete FormatUnavailableError subclasses with preserved warning text", () => {
     class StubFormatUnavailableError extends FormatUnavailableError {
       constructor(message: string) {
-        super("custom", "SCRAPE_BRANDING_NOT_SUPPORTED", message);
+        super("custom", "UNKNOWN_ERROR", message);
+      }
+    }
+
+    class CustomFormatError extends FormatUnavailableError {
+      constructor(message: string) {
+        super(
+          "custom-format",
+          "UNKNOWN_ERROR",
+          message,
+          `Custom format was skipped: ${message}`,
+        );
       }
     }
 
     const custom = new StubFormatUnavailableError("Custom format unavailable");
-    const branding = new BrandingNotSupportedError(
-      "Branding extraction is only supported for HTML web pages. PDFs are not supported.",
+    const customWithWarning = new CustomFormatError(
+      "Format is only supported for HTML web pages.",
     );
 
     expect(isFormatUnavailable(custom)).toBe(true);
     expect(custom.format).toBe("custom");
     expect(custom.warning).toBe("Custom format unavailable");
 
-    expect(branding).toBeInstanceOf(FormatUnavailableError);
-    expect(isFormatUnavailable(branding)).toBe(true);
-    expect(branding.format).toBe("branding");
-    expect(branding.warning).toBe(
-      "Branding was skipped: Branding extraction is only supported for HTML web pages. PDFs are not supported.",
+    expect(customWithWarning).toBeInstanceOf(FormatUnavailableError);
+    expect(isFormatUnavailable(customWithWarning)).toBe(true);
+    expect(customWithWarning.format).toBe("custom-format");
+    expect(customWithWarning.warning).toBe(
+      "Custom format was skipped: Format is only supported for HTML web pages.",
     );
-
-    const revived = deserializeTransportableError(
-      serializeTransportableError(branding),
-    )!;
-    expect(isFormatUnavailable(revived)).toBe(true);
-    if (isFormatUnavailable(revived)) {
-      expect(revived.format).toBe("branding");
-      expect(revived.warning).toBe(branding.warning);
-    }
 
     expect(isFormatUnavailable(new NoCachedDataError())).toBe(false);
     expect(
       isFormatUnavailable(
         Object.assign(new Error("plain"), {
-          format: "branding",
+          format: "custom-format",
           warning: "warn",
         }),
       ),
     ).toBe(false);
-    expect(isFormatUnavailable({ format: "branding", warning: "warn" })).toBe(
-      false,
-    );
+    expect(
+      isFormatUnavailable({ format: "custom-format", warning: "warn" }),
+    ).toBe(false);
   });
 
   it("recognizes FormatUnavailableError and behavioral traits across module copies", async () => {
@@ -527,10 +454,10 @@ describe("FormatUnavailableError and isFormatUnavailable", () => {
     class ForeignFormatUnavailableError extends second.FormatUnavailableError {
       constructor(message: string) {
         super(
-          "branding",
-          "SCRAPE_BRANDING_NOT_SUPPORTED",
+          "custom-format",
+          "UNKNOWN_ERROR",
           message,
-          `Branding was skipped: ${message}`,
+          `Custom format was skipped: ${message}`,
         );
       }
     }
@@ -540,8 +467,10 @@ describe("FormatUnavailableError and isFormatUnavailable", () => {
     expect(foreignFormat instanceof FormatUnavailableError).toBe(false);
     expect(isFormatUnavailable(foreignFormat)).toBe(true);
     if (isFormatUnavailable(foreignFormat)) {
-      expect(foreignFormat.format).toBe("branding");
-      expect(foreignFormat.warning).toBe("Branding was skipped: Not supported");
+      expect(foreignFormat.format).toBe("custom-format");
+      expect(foreignFormat.warning).toBe(
+        "Custom format was skipped: Not supported",
+      );
     }
 
     class ForeignRefusal extends second.TransportableError {
@@ -592,11 +521,6 @@ describe("FormatUnavailableError and isFormatUnavailable", () => {
 describe("scrapeLog diagnostics metadata", () => {
   it("preserves established errorType, warning text, and structured context across round-trips", () => {
     const siteRestriction = new SiteRestrictionError();
-    const branding = new BrandingNotSupportedError("PDFs are not supported.");
-    const threatBlocked = new UnsafeDomainBlockedError(
-      "https://bad.example/path",
-      sampleThreatDecision,
-    );
     const paywalled = new PaywalledContentError();
 
     expect(getErrorScrapeLog(siteRestriction)).toEqual({
@@ -604,26 +528,12 @@ describe("scrapeLog diagnostics metadata", () => {
       message: "scrapeURL: Site restriction returned (Safe Mode)",
       context: { error: siteRestriction },
     });
-    expect(getErrorScrapeLog(branding)).toEqual({
-      errorType: "BrandingNotSupportedError",
-      message: "scrapeURL: Branding not supported for this content",
-      context: { error: branding },
-    });
-    expect(getErrorScrapeLog(threatBlocked)).toEqual({
-      errorType: "UnsafeDomainBlockedError",
-      message: "scrapeURL: Domain blocked by threat protection policy",
-      context: {
-        error: threatBlocked,
-        domain: "bad.example",
-        rule: "blacklist",
-      },
-    });
     expect(getErrorScrapeLog(paywalled)).toEqual({
       errorType: "PaywalledContentError",
       message: "scrapeURL: Paywalled page refused by Safe Mode",
     });
 
-    for (const error of [siteRestriction, branding, threatBlocked, paywalled]) {
+    for (const error of [siteRestriction, paywalled]) {
       const revived = deserializeTransportableError(
         serializeTransportableError(error),
       )!;
@@ -631,13 +541,7 @@ describe("scrapeLog diagnostics metadata", () => {
       expect(log, error.constructor.name).toBeDefined();
       expect(log!.errorType).toBe(getErrorScrapeLog(error)!.errorType);
       expect(log!.message).toBe(getErrorScrapeLog(error)!.message);
-      if (error === threatBlocked) {
-        expect(log!.context).toEqual({
-          error: revived,
-          domain: "bad.example",
-          rule: "blacklist",
-        });
-      } else if (error === paywalled) {
+      if (error === paywalled) {
         expect(log!.context).toBeUndefined();
       } else {
         expect(log!.context).toEqual({ error: revived });

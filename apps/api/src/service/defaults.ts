@@ -1,19 +1,42 @@
-/*
+/**
  * Default open-source module implementations.
  *
  * This file imports only module types so constructing default modules or
  * describing a service never loads configuration, queues, or storage clients.
  */
+import type { JobKind } from "./hooks";
 import type {
+  AuthModule,
+  BillingModule,
   BlocklistModule,
   FetchProxyFileKind,
   IdempotencyModule,
+  JobOutcome,
+  JobOwner,
+  JobRecord,
+  JobStoreModule,
+  JobUsageOptions,
+  LimitsModule,
   MessagesModule,
   Modules,
+  PolicyModule,
+  StoredJob,
   UploadDriver,
   UploadsModule,
   WebhooksModule,
 } from "./modules";
+import type { BaseCaller, BaseRequestContext } from "./request-context";
+
+/**
+ * Default authentication module that admits every request under a single fixed
+ * team id. Typed on `BaseCaller` so widening `Caller` rejects it at compile
+ * time.
+ */
+export function openAuth(teamId = "bypass"): AuthModule<BaseCaller> {
+  return {
+    authenticate: async () => ({ ok: true, caller: { teamId } }),
+  };
+}
 
 /** Empty blocklist that initializes as a no-op and allows every URL. */
 export function noBlocklist(): BlocklistModule {
@@ -21,6 +44,28 @@ export function noBlocklist(): BlocklistModule {
     async init() {},
     isBlocked: () => false,
     hasScopedRules: () => false,
+  };
+}
+
+/** Default limits module: unlimited concurrency, base priority, and configured queue backend. */
+export function noLimits(): LimitsModule {
+  return {
+    concurrency: async () => null,
+    teamConcurrency: async () => null,
+    jobPriority: async ({ base }) => base,
+    queueBackend: () => undefined,
+  };
+}
+
+/** Default billing module: authorizes every request and records no charges. */
+export function unmeteredBilling(): BillingModule {
+  return {
+    async authorize() {
+      return { ok: true };
+    },
+    async charge() {
+      return undefined;
+    },
   };
 }
 
@@ -144,6 +189,105 @@ export function memoryUploads(): UploadsModule {
   return { driver: () => driver };
 }
 
+/**
+ * Default open-source job store backed by the job queue and Redis crawl state.
+ * Registration, terminal recording, and removal are no-ops because finished
+ * queue payloads stay inline; usage returns null.
+ */
+export function queueJobStore(): JobStoreModule {
+  return {
+    storesResultsExternally(): boolean {
+      return false;
+    },
+
+    async register(_job: JobRecord): Promise<void> {},
+
+    async owner(id: string, kind: JobKind): Promise<JobOwner | null> {
+      if (kind === "scrape") {
+        const [{ scrapeQueue }, { normalizeOwnerId }] = await Promise.all([
+          import("../services/worker/nuq-router.js"),
+          import("../lib/owner-id.js"),
+        ]);
+        const job = await scrapeQueue.getJob(id);
+        if (!job) return null;
+        if (
+          job.data != null &&
+          (typeof job.data !== "object" ||
+            (job.data as { mode?: unknown }).mode !== "single_urls")
+        ) {
+          return null;
+        }
+        const rawTeamId =
+          job.data &&
+          typeof job.data === "object" &&
+          typeof (job.data as { team_id?: unknown }).team_id === "string"
+            ? (job.data as { team_id: string }).team_id
+            : undefined;
+        const teamId = rawTeamId ?? job.ownerId;
+        if (!teamId) return null;
+        return {
+          teamId,
+          matchesTeam(candidate: string): boolean {
+            if (rawTeamId !== undefined) {
+              return rawTeamId === candidate;
+            }
+            return job.ownerId === normalizeOwnerId(candidate);
+          },
+        };
+      }
+
+      const { getCrawl } = await import("../lib/crawl-redis.js");
+      const crawl = await getCrawl(id);
+      if (!crawl?.team_id) return null;
+      return { teamId: crawl.team_id };
+    },
+
+    async read(id: string, kind: JobKind): Promise<StoredJob | null> {
+      if (kind !== "scrape") return null;
+      const { scrapeQueue } = await import("../services/worker/nuq-router.js");
+      const job = await scrapeQueue.getJob(id);
+      if (!job) return null;
+      if (
+        job.data != null &&
+        (typeof job.data !== "object" ||
+          (job.data as { mode?: unknown }).mode !== "single_urls")
+      ) {
+        return null;
+      }
+      const completedAtMs =
+        job.finishedAt !== undefined ? job.finishedAt.valueOf() : undefined;
+      if (job.status === "completed") {
+        const raw = job.returnvalue;
+        const document = Array.isArray(raw) ? raw[0] : raw;
+        return {
+          state: "completed",
+          ...(document ? { document } : {}),
+          ...(completedAtMs !== undefined ? { completedAtMs } : {}),
+        };
+      }
+      if (job.status === "failed") {
+        return {
+          state: "failed",
+          ...(job.failedReason ? { error: job.failedReason } : {}),
+          ...(completedAtMs !== undefined ? { completedAtMs } : {}),
+        };
+      }
+      return null;
+    },
+
+    async record(_job: JobRecord, _outcome: JobOutcome): Promise<void> {},
+
+    async usage(
+      _requestId: string,
+      _options?: JobUsageOptions,
+    ): Promise<number | null> {
+      return null;
+    },
+
+    async remove(_id: string, _kind: JobKind): Promise<void> {},
+  };
+}
+
 const DEFAULT_IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60;
 const DEFAULT_IDEMPOTENCY_TIMEOUT_MS = 5_000;
 
@@ -261,12 +405,91 @@ export function directWebhooks(
   };
 }
 
-/** Returns fresh instances of every default module slot. */
-export function defaultModules(): Modules {
+/**
+ * Default policy module: admits every request with no restrictions, preserves
+ * caller-requested `zeroDataRetention`, and propagates `zeroDataRetention` and
+ * `usOnly` to system sub-requests. Typed on `BaseRequestContext` so widening
+ * `RequestContext` rejects it at compile time.
+ */
+export function unrestrictedPolicy(): PolicyModule<BaseRequestContext> {
   return {
+    async admit({ kind, caller, body }) {
+      const record = body as {
+        zeroDataRetention?: unknown;
+        ignoreRobotsTxt?: unknown;
+        robotsUserAgent?: unknown;
+        lockdown?: unknown;
+        enterprise?: unknown;
+      };
+      const enterprise = Array.isArray(record.enterprise)
+        ? record.enterprise
+        : [];
+      const zeroDataRetention =
+        record.zeroDataRetention === true ||
+        record.lockdown === true ||
+        (kind === "search" &&
+          (enterprise.includes("zdr") || enterprise.includes("anon")));
+      const ignoreRobotsTxt =
+        typeof record.ignoreRobotsTxt === "boolean"
+          ? record.ignoreRobotsTxt
+          : undefined;
+      const robotsUserAgent =
+        typeof record.robotsUserAgent === "string"
+          ? record.robotsUserAgent
+          : undefined;
+      const lockdown = record.lockdown === true;
+      return {
+        ok: true,
+        ctx: {
+          teamId: caller.teamId,
+          zeroDataRetention,
+          ...(ignoreRobotsTxt !== undefined ? { ignoreRobotsTxt } : {}),
+          ...(robotsUserAgent !== undefined ? { robotsUserAgent } : {}),
+          ...(lockdown ? { lockdown: true } : {}),
+        },
+        body,
+      };
+    },
+    system(purpose, parent) {
+      return {
+        teamId: purpose,
+        zeroDataRetention: parent?.zeroDataRetention ?? false,
+        ...(parent?.usOnly ? { usOnly: true } : {}),
+      };
+    },
+    async context({ caller }) {
+      return {
+        ok: true,
+        ctx: {
+          teamId: caller.teamId,
+          zeroDataRetention: false,
+        },
+      };
+    },
+  };
+}
+
+/**
+ * The default slot table, with `auth` typed on `BaseCaller` and `policy` typed
+ * on `BaseRequestContext`. Assignable to `Modules` only when neither `Caller`
+ * nor `RequestContext` has been widened with required fields.
+ */
+export type DefaultModules = Omit<Modules, "auth" | "policy"> & {
+  auth: AuthModule<BaseCaller>;
+  policy: PolicyModule<BaseRequestContext>;
+};
+
+/** Returns fresh instances of every default module slot. */
+export function defaultModules(): DefaultModules {
+  return {
+    auth: openAuth(),
+    billing: unmeteredBilling(),
     blocklist: noBlocklist(),
+    limits: noLimits(),
     messages: logsMessages(),
+    policy: unrestrictedPolicy(),
     uploads: memoryUploads(),
+    jobStore: queueJobStore(),
     idempotency: redisIdempotency(),
     webhooks: directWebhooks(),
   };

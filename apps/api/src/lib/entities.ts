@@ -1,6 +1,13 @@
-import type { Action } from "../controllers/v1/types";
-import type { SkillCard } from "../search/skill-cards";
-import type { BrandingProfile } from "../types/branding";
+import type { Action } from "../controllers/v2/types";
+
+export type SkillCard = {
+  id: string;
+  name: string;
+  description: string;
+  source: "official" | "provider";
+  provider?: string;
+  similarity?: number;
+};
 
 export type PageOptions = {
   includeMarkdown?: boolean;
@@ -78,7 +85,6 @@ export class Document {
     }[];
     pdfs?: string[];
   };
-  branding?: BrandingProfile;
 
   index?: number;
   linksOnPage?: string[]; // Add this new field as a separate property
@@ -165,7 +171,7 @@ export interface WebSearchResult {
 export type SearchResultType = "web" | "images" | "news";
 
 export interface SearchV2Response {
-  tools?: import("../services/alexandria/contracts").DiscoveredTool[];
+  tools?: unknown[];
   skills?: SkillCard[];
   web?: WebSearchResult[];
   images?: ImageSearchResult[];

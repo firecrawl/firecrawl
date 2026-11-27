@@ -1,7 +1,6 @@
 import { getRedisConnection } from "../services/queue-service";
 import { getCrawl, StoredCrawl } from "./crawl-redis";
 import { logger } from "./logger";
-import { abTestJob } from "../services/ab-test";
 import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
 export { QueueFullError } from "./queue-full-error";
 export {
@@ -18,20 +17,13 @@ import {
   pushConcurrencyLimitActiveJob,
   removeConcurrencyLimitActiveJob,
 } from "./concurrency-redis";
-import { getACUCTeam } from "../controllers/auth";
-import { DEFAULT_TEAM_LIMITS } from "../services/autumn/autumn.service";
 import { reportPipelineError } from "./redis-pipeline";
 import { jobContext, storedZeroDataRetention } from "./request-context";
 import type { JobKind } from "../service/hooks";
 import { installedService } from "../service/service";
 import type { ScrapeJobData } from "../types";
-
-/**
- * CONCURRENCY granted by the Autumn `hobby` plan (firecrawl-web
- * autumn.config.ts). Pairs with HOBBY_RATE_LIMIT_MULTIPLIER in
- * services/rate-limiter.ts; change both if the hobby plan changes.
- */
-export const HOBBY_CONCURRENCY_LIMIT = 5;
+import { currentLimits } from "./limits";
+import { recordCrawlStateMissing } from "./crawl-state-metrics";
 
 function scrapeJobKind(data: ScrapeJobData): JobKind {
   if (data.mode === "kickoff" || data.mode === "kickoff_sitemap") {
@@ -51,6 +43,8 @@ export function observeJobEnqueued(jobId: string, data: ScrapeJobData): void {
     jobId,
     kind: scrapeJobKind(data),
     ctx: jobContext(data),
+    ...(data.mode === "single_urls" ? { url: data.url } : {}),
+    jobData: data,
   });
 }
 
@@ -250,7 +244,7 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
   job: ConcurrencyLimitedJob;
   timeout: number;
 } | null> {
-  const crawlCache = new Map<string, StoredCrawl>();
+  const crawlCache = new Map<string, StoredCrawl | null>();
   const queueKey = constructQueueKey(teamId);
   const redis = getRedisConnection();
   const now = Date.now();
@@ -285,16 +279,21 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
 
       // Check crawl concurrency limit
       if (job.data.crawl_id) {
-        const sc =
-          crawlCache.get(job.data.crawl_id) ??
-          (await getCrawl(job.data.crawl_id));
-        if (sc !== null) {
+        let sc = crawlCache.get(job.data.crawl_id);
+        if (sc === undefined) {
+          sc = await getCrawl(job.data.crawl_id);
           crawlCache.set(job.data.crawl_id, sc);
+          // A missing crawl document gets the strictest crawl cap, never none.
+          if (sc === null) {
+            recordCrawlStateMissing("gate", job.data.crawl_id, logger, {
+              teamId,
+              jobId: job.id,
+            });
+          }
         }
-
         const maxCrawlConcurrency =
           sc === null
-            ? null
+            ? 1
             : typeof sc.crawlerOptions?.delay === "number" &&
                 sc.crawlerOptions.delay > 0
               ? 1
@@ -354,18 +353,30 @@ export async function concurrentJobDone(job: NuQJob<any>) {
       await cleanOldCrawlConcurrencyLimitEntries(job.data.crawl_id);
     }
 
-    // Once per call, not once per job promoted below.
-    const maxTeamConcurrency =
-      (await getACUCTeam(job.data.team_id).catch(() => null))
-        ?.concurrency_limit ?? DEFAULT_TEAM_LIMITS.concurrency_limit;
+    // Once per call, not once per job promoted below. Skip promotion if lookup fails
+    // so a transient limits error is never treated as an unlimited cap.
+    let maxTeamConcurrency: number | null;
+    try {
+      maxTeamConcurrency = await currentLimits().teamConcurrency(
+        job.data.team_id,
+      );
+    } catch (error) {
+      logger.warn(
+        "Failed to resolve team concurrency limit during job completion, skipping backlog promotion",
+        { teamId: job.data.team_id, error },
+      );
+      return;
+    }
 
     let staleSkipped = 0;
     while (staleSkipped < 100) {
-      const currentActiveConcurrency = (
-        await getConcurrencyLimitActiveJobs(job.data.team_id)
-      ).length;
+      if (maxTeamConcurrency !== null) {
+        const currentActiveConcurrency = (
+          await getConcurrencyLimitActiveJobs(job.data.team_id)
+        ).length;
 
-      if (currentActiveConcurrency >= maxTeamConcurrency) break;
+        if (currentActiveConcurrency >= maxTeamConcurrency) break;
+      }
 
       const nextJob = await getNextConcurrentJob(job.data.team_id);
       if (nextJob === null) break;
@@ -390,8 +401,6 @@ export async function concurrentJobDone(job: NuQJob<any>) {
           );
         }
       }
-
-      abTestJob(nextJob.job.data);
 
       const promotedSuccessfully =
         (await scrapeQueue.promoteJobFromBacklogOrAdd(

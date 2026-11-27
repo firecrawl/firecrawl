@@ -6,45 +6,6 @@ vi.mock("../../../search/execute", () => ({
   executeSearch: (...args: any[]) => mockExecuteSearch(...args),
 }));
 
-vi.mock("../../../services/logging/log_job", () => ({
-  logRequest: vi.fn().mockResolvedValue(undefined),
-  logSearch: vi.fn().mockResolvedValue(undefined),
-  logResearchEndpoint: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock("../../../services/billing/credit_billing", () => ({
-  billTeam: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock("../../../lib/keyless", () => ({
-  KEYLESS_FREE_TIER_LIMIT_MESSAGE: "keyless limit reached",
-  adjustKeylessCredits: vi.fn().mockResolvedValue(undefined),
-  keylessLimitBody: vi.fn().mockResolvedValue({ success: false }),
-  keylessProviderToolsBody: vi.fn(() => ({ success: false })),
-  logKeylessCreditUsage: vi.fn().mockResolvedValue(undefined),
-  reserveKeylessCredits: vi.fn().mockResolvedValue({ ok: true }),
-}));
-
-vi.mock("../../../lib/keyless-credit-projection", () => ({
-  projectSearchTotalCredits: () => 0,
-}));
-
-vi.mock("../../../lib/threat-protection/request", () => ({
-  resolveThreatProtection: vi.fn().mockResolvedValue({ policy: null }),
-  checkUrlsAgainstThreatPolicy: vi.fn(),
-}));
-
-vi.mock("../../../lib/key-restriction", () => ({
-  actionTypesOf: () => [],
-  formatTypesOf: () => [],
-  checkKeyFormatRestriction: vi.fn().mockResolvedValue({ allowed: true }),
-  checkKeyEndpointRestriction: vi.fn().mockResolvedValue({ allowed: true }),
-}));
-
-vi.mock("../../../lib/alexandria-activity", () => ({
-  markAlexandriaActivity: vi.fn(),
-}));
-
 vi.mock("../../../lib/logger", () => ({
   logger: {
     info: vi.fn(),
@@ -58,19 +19,6 @@ vi.mock("../../../lib/logger", () => ({
 import { searchController } from "../search";
 import { createService, replaceService } from "../../../service/service";
 
-beforeAll(() => {
-  replaceService(
-    createService(
-      { modules: {} },
-      { core: { name: "core" }, logger: { error: vi.fn() } },
-    ),
-  );
-});
-
-afterAll(() => {
-  replaceService(undefined);
-});
-
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 
 function makeRes() {
@@ -80,84 +28,70 @@ function makeRes() {
   return res;
 }
 
-/** Runs one plain web search as `acuc` and returns the context the search ran with. */
-async function searchContextFor(acuc: unknown, teamId = TEAM_ID) {
+async function searchContextFor(
+  caller?: { teamId: string; planClass?: "free" | "self_serve" | "contract" },
+  teamId = TEAM_ID,
+) {
+  const req: any = {
+    body: { query: "firecrawl" },
+    headers: {},
+    auth: { team_id: teamId },
+    caller,
+  };
+
   const res = makeRes();
-  await searchController(
-    {
-      body: { query: "http client" },
-      headers: {},
-      auth: { team_id: teamId },
-      acuc,
-    } as any,
-    res,
-  );
+  await searchController(req, res);
   expect(res.status).toHaveBeenCalledWith(200);
+
   expect(mockExecuteSearch).toHaveBeenCalledTimes(1);
   return mockExecuteSearch.mock.calls[0][1];
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  replaceService(
+    createService({}, { core: { name: "core" }, logger: { error: vi.fn() } }),
+  );
   mockExecuteSearch.mockResolvedValue({
     response: { web: [] },
     totalResultsCount: 0,
+    billableResultsCount: 0,
     indexResultsCount: 0,
-    searchCredits: 0,
-    scrapeCredits: 0,
-    totalCredits: 0,
+    threatDecisions: [],
+    scrapedDocuments: [],
+    searchTypes: ["web"],
+    scrapeFormats: [],
+    resultCountsBySource: {},
+    resultCategories: {},
+    toolFusion: false,
     shouldScrape: false,
   });
 });
 
+afterEach(() => {
+  replaceService(undefined);
+});
+
 describe("the team plan class a v2 search runs with", () => {
   it.each(["free", "self_serve", "contract"] as const)(
-    "is %s when the team's chunk says so and no flag overrides it",
-    async plan_class => {
+    "forwards %s from req.caller.planClass into executeSearch",
+    async planClass => {
       const context = await searchContextFor({
-        api_key_id: 7,
-        flags: {},
-        plan_class,
+        teamId: TEAM_ID,
+        planClass,
       });
 
-      expect(context.teamPlanClass).toBe(plan_class);
+      expect(context.teamPlanClass).toBe(planClass);
     },
   );
 
-  it("is contract for a team under negotiated terms, whatever plan it pays for", async () => {
-    for (const flags of [
-      { signedContract: true },
-      { enterprisePilot: { startDate: "2026-01-01T00:00:00Z" } },
-      { searchZDR: "allowed" },
-      { usOnly: true },
-    ]) {
-      mockExecuteSearch.mockClear();
-      const context = await searchContextFor({
-        api_key_id: 7,
-        flags,
-        plan_class: "self_serve",
-      });
-
-      expect(context.teamPlanClass).toBe("contract");
-    }
-  });
-
-  it("is free for a keyless request", async () => {
-    const context = await searchContextFor(
-      { api_key_id: 0, flags: null, plan_class: "free" },
-      "preview_keyless_203.0.113.8",
-    );
-
-    expect(context.teamPlanClass).toBe("free");
-  });
-
-  it("is not stated when the chunk carries no plan class", async () => {
-    const context = await searchContextFor({ api_key_id: 7, flags: {} });
+  it("is not stated when caller carries no planClass", async () => {
+    const context = await searchContextFor({ teamId: TEAM_ID });
 
     expect(context).toHaveProperty("teamPlanClass", undefined);
   });
 
-  it("is not stated without a chunk", async () => {
+  it("is not stated without a caller", async () => {
     const context = await searchContextFor(undefined);
 
     expect(context).toHaveProperty("teamPlanClass", undefined);

@@ -27,5 +27,4 @@ export async function createWebhookSender(params: {
   });
 }
 
-export { getWebhookInsertQueueLength, processWebhookInsertJobs } from "./logs";
 export { WebhookEvent } from "./types";

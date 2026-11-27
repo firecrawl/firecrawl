@@ -12,6 +12,8 @@ const makeProvider = (
   overrides: {
     priority?: number;
     supportsUsOnly?: boolean;
+    supportsZdr?: boolean;
+    supportsAnon?: boolean;
     enabled?: () => boolean;
     search?: SearchProvider["search"];
   } = {},
@@ -340,6 +342,39 @@ describe("buildSearchProviderRegistry", () => {
         },
       ]),
     ).toThrow('Search provider "searxng" supportsUsOnly must be a boolean');
+
+    for (const flag of ["supportsZdr", "supportsAnon"] as const) {
+      expect(() =>
+        buildSearchProviderRegistry([
+          {
+            owner: "core",
+            searchProviders: [
+              makeProvider("searxng", { [flag]: 1 as unknown as boolean }),
+            ],
+          },
+        ]),
+      ).toThrow(`Search provider "searxng" ${flag} must be a boolean`);
+    }
+  });
+
+  it("keeps declared mode support on the registered provider", () => {
+    const { registry } = buildSearchProviderRegistry([
+      {
+        owner: "core",
+        searchProviders: [
+          makeProvider("primary", { supportsZdr: true, supportsAnon: true }),
+          makeProvider("zdr-only", { supportsZdr: true, supportsAnon: false }),
+          makeProvider("duckduckgo"),
+        ],
+      },
+    ]);
+
+    expect(registry.get("primary")?.supportsZdr).toBe(true);
+    expect(registry.get("primary")?.supportsAnon).toBe(true);
+    expect(registry.get("zdr-only")?.supportsZdr).toBe(true);
+    expect(registry.get("zdr-only")?.supportsAnon).toBeUndefined();
+    expect(registry.get("duckduckgo")?.supportsZdr).toBeUndefined();
+    expect(registry.get("duckduckgo")?.supportsAnon).toBeUndefined();
   });
 
   it("lists all built-in search provider names and specs in default priority order", () => {

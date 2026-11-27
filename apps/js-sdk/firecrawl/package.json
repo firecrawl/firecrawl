@@ -1,7 +1,7 @@
 {
   "name": "@mendable/firecrawl-js",
   "version": "4.56.0",
-  "description": "JavaScript SDK for Firecrawl, the context API for AI agents: search, scrape, parse, crawl, map, and interact with the web, run Agent and Monitor jobs, and search scientific papers (PubMed, bioRxiv, medRxiv, arXiv)",
+  "description": "JavaScript SDK for Firecrawl: search, scrape, parse, crawl, map, and interact with the web, run Agent and Monitor jobs, and search scientific papers (PubMed, bioRxiv, medRxiv, arXiv)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {

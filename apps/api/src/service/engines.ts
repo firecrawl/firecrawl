@@ -15,21 +15,11 @@ import type { EngineScrapeResult } from "../scraper/scrapeURL/engines";
  * on this one can add its own by declaration merging.
  */
 export interface Engines {
-  exchange: true;
-  "fire-engine;chrome-cdp": true;
-  "fire-engine(retry);chrome-cdp": true;
-  "fire-engine;chrome-cdp;stealth": true;
-  "fire-engine(retry);chrome-cdp;stealth": true;
-  "fire-engine;tlsclient": true;
-  "fire-engine;tlsclient;stealth": true;
+  wikipedia: true;
   playwright: true;
   fetch: true;
   pdf: true;
   document: true;
-  image: true;
-  index: true;
-  "index;documents": true;
-  wikipedia: true;
 }
 
 export type EngineName = keyof Engines;
@@ -46,15 +36,12 @@ export interface EngineFeatures {
   pdf: true;
   document: true;
   image: true;
-  audio: true;
-  video: true;
   atsv: true;
   location: true;
   mobile: true;
   skipTlsVerification: true;
   useFastMode: true;
   stealthProxy: true;
-  branding: true;
   disableAdblock: true;
 }
 
@@ -91,6 +78,16 @@ export interface Engine {
   maxReasonableTime?(meta: Meta): number;
   /** When true, omitted from automatic fallback selection and only run when chosen explicitly. */
   readonly explicitOnly?: boolean;
+  /** When true, serves cached scrape results (lockdown, index-only, cache state). */
+  readonly cache?: boolean;
+  /** When true, parses binary files only rather than fetching general HTML pages. */
+  readonly fileOnly?: boolean;
+  /** When true, supports authenticated browser profiles. */
+  readonly supportsProfile?: boolean;
+  /** When true, can prefetch binary files via a browser handoff. */
+  readonly prefetchesFiles?: boolean;
+  /** When true, a 2xx or 304 response with empty text and no page error is accepted as a complete document. */
+  readonly allowEmptyContent?: boolean;
 }
 
 /** Description of a registered engine feature in `ServiceDescription`. */
@@ -167,6 +164,11 @@ function snapshotEngine(engine: Engine): Engine {
       ? { maxReasonableTime: engine.maxReasonableTime }
       : {}),
     ...(engine.explicitOnly ? { explicitOnly: true } : {}),
+    ...(engine.cache ? { cache: true } : {}),
+    ...(engine.fileOnly ? { fileOnly: true } : {}),
+    ...(engine.supportsProfile ? { supportsProfile: true } : {}),
+    ...(engine.prefetchesFiles ? { prefetchesFiles: true } : {}),
+    ...(engine.allowEmptyContent ? { allowEmptyContent: true } : {}),
   };
   return Object.freeze(frozen);
 }

@@ -1,13 +1,13 @@
 import { Logger } from "winston";
 import { logger as _logger } from "../../lib/logger";
 import { config } from "../../config";
-import { RateLimiterMode, ScrapeJobData } from "../../types";
-import { getACUCTeam } from "../../controllers/auth";
-import { DEFAULT_TEAM_LIMITS } from "../autumn/autumn.service";
+import { ScrapeJobData } from "../../types";
 import { redisEvictConnection } from "../../services/redis";
-import { isSelfHosted } from "../../lib/deployment";
-import { getApiKeyConcurrencyLimit } from "../../lib/api-key-concurrency";
-import { jobContext } from "../../lib/request-context";
+import { crawlStateStore } from "../../lib/crawl-state-store";
+import { getRedisConnection } from "../../services/queue-service";
+import { currentLimits } from "../../lib/limits";
+import { jobContext, requestContext } from "../../lib/request-context";
+import type { RequestContext } from "../../service/request-context";
 import {
   getTeamQueueLimit,
   getConcurrencyLimitActiveJobsCount,
@@ -86,16 +86,26 @@ async function optionalFdb<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 // Whether NEW work for this team should go to FDB. Existing crawls follow
-// their StoredCrawl.queueBackend marker instead.
-export async function isFdbTeam(teamId: string | undefined): Promise<boolean> {
+// their StoredCrawl.queueBackend marker instead. Request-scoped callers pass
+// `ctx`; omitting `ctx` leaves `flags` undefined so background team-ID-only
+// paths let `LimitsModule.queueBackend` resolve by `ctx.teamId`.
+export async function isFdbTeam(
+  teamId: string | undefined,
+  ctx?: RequestContext,
+): Promise<boolean> {
   if (!fdbQueueEnabled()) return false;
   if (fdbForced()) return true;
   if (!teamId) return false;
   try {
-    const acuc = await getACUCTeam(teamId, false, true, RateLimiterMode.Crawl);
-    return acuc?.flags?.nuqFdb === true;
+    const resolvedCtx =
+      ctx ??
+      requestContext({
+        teamId,
+        zeroDataRetention: false,
+      });
+    return (await currentLimits().queueBackend(resolvedCtx)) === "fdb";
   } catch (error) {
-    _logger.warn("Failed to resolve nuqFdb team flag, defaulting to pg", {
+    _logger.warn("Failed to resolve queue backend override, defaulting to pg", {
       module: "nuq-router",
       teamId,
       error,
@@ -106,8 +116,9 @@ export async function isFdbTeam(teamId: string | undefined): Promise<boolean> {
 
 export async function resolveNewGroupBackend(
   teamId: string,
+  ctx?: RequestContext,
 ): Promise<QueueBackend> {
-  return (await isFdbTeam(teamId)) ? "fdb" : "pg";
+  return (await isFdbTeam(teamId, ctx)) ? "fdb" : "pg";
 }
 
 // Reads only the queueBackend marker off the stored crawl. Deliberately not
@@ -116,7 +127,7 @@ async function getCrawlQueueBackend(
   crawlId: string,
 ): Promise<QueueBackend | null> {
   if (fdbForced()) return "fdb";
-  const raw = await redisEvictConnection.get("crawl:" + crawlId);
+  const raw = await (await crawlStateStore(crawlId)).get("crawl:" + crawlId);
   if (!raw) return null;
   try {
     const sc = JSON.parse(raw);
@@ -169,7 +180,7 @@ async function getJobQueueBackend(jobId: string): Promise<QueueBackend> {
 }
 
 // Which backend a job belongs to at enqueue time. Crawl jobs follow their
-// crawl's pinned backend; standalone jobs follow the team flag.
+// crawl's pinned backend; standalone jobs follow the limits module override.
 export async function resolveJobBackend(
   data: ScrapeJobData,
 ): Promise<QueueBackend> {
@@ -178,7 +189,7 @@ export async function resolveJobBackend(
   if (data.crawl_id) {
     return (await getCrawlQueueBackend(data.crawl_id)) ?? "pg";
   }
-  return (await isFdbTeam(data.team_id)) ? "fdb" : "pg";
+  return (await isFdbTeam(data.team_id, jobContext(data))) ? "fdb" : "pg";
 }
 
 function tagFdbJob<T extends object>(job: T): T & { backend: "fdb" } {
@@ -189,34 +200,113 @@ function tagFdbJob<T extends object>(job: T): T & { backend: "fdb" } {
 // === External capacity holders (browser sessions, sync scrapes)
 //
 // Non-queue work that occupies team capacity mirrors itself into whichever
-// ledger the team runs on. Mismatched acquire/release pairs (flag flipped
-// mid-hold) self-heal: Redis entries expire by score, FDB external slots are
-// reaped by the sweeper.
+// ledger the team runs on. When FDB is selected dynamically, record the holder's
+// backend so context-free settlement releases the same ledger; Redis entries
+// expire by score and FDB external slots are reaped by the sweeper as a backstop.
+
+const externalSlotBackendKey = (holderId: string) =>
+  `nuq:external_slot_backend:${holderId}`;
+
+async function markExternalSlotBackend(
+  holderId: string,
+  backend: QueueBackend,
+  ttlMs: number,
+): Promise<void> {
+  if (fdbForced()) return;
+  try {
+    await getRedisConnection().set(
+      externalSlotBackendKey(holderId),
+      backend,
+      "PX",
+      Math.max(ttlMs, 0) + 60_000,
+    );
+  } catch (error) {
+    _logger.warn("Failed to record external slot backend marker", {
+      module: "nuq-router",
+      holderId,
+      backend,
+      error,
+    });
+    throw error;
+  }
+}
+
+async function getExternalSlotBackend(
+  holderId: string,
+): Promise<QueueBackend | null> {
+  if (!fdbQueueEnabled() || fdbForced()) return null;
+  try {
+    const raw = await getRedisConnection().get(
+      externalSlotBackendKey(holderId),
+    );
+    return raw === "fdb" ? "fdb" : null;
+  } catch (error) {
+    _logger.warn("Failed to read external slot backend marker", {
+      module: "nuq-router",
+      holderId,
+      error,
+    });
+    return null;
+  }
+}
+
+async function clearExternalSlotBackend(holderId: string): Promise<void> {
+  if (!fdbQueueEnabled() || fdbForced()) return;
+  try {
+    await getRedisConnection().del(externalSlotBackendKey(holderId));
+  } catch (error) {
+    _logger.warn("Failed to clear external slot backend marker", {
+      module: "nuq-router",
+      holderId,
+      error,
+    });
+  }
+}
 
 export async function reserveExternalSlot(
   teamId: string,
   holderId: string,
   ttlMs: number,
   limit: number,
+  ctx?: RequestContext,
 ): Promise<boolean> {
-  if (await isFdbTeam(teamId)) {
+  if (await isFdbTeam(teamId, ctx)) {
     const legacyActive = await getConcurrencyLimitActiveJobsCount(teamId);
-    // A timed-out write may have committed. Fail closed; the caller releases
-    // this holder from both ledgers instead of admitting it a second time.
-    return optionalFdb(() =>
+    // Record before acquiring so a timed-out write that committed remotely
+    // still routes later context-free settlement releases to FDB.
+    await markExternalSlotBackend(holderId, "fdb", ttlMs);
+    const acquired = await optionalFdb(() =>
       externalSlotsFdb.acquire(teamId, holderId, ttlMs, limit - legacyActive),
     );
+    if (!acquired) {
+      await clearExternalSlotBackend(holderId);
+    }
+    return acquired;
   }
-  return reserveConcurrencyLimitSlot(teamId, holderId, ttlMs, limit);
+  const acquired = await reserveConcurrencyLimitSlot(
+    teamId,
+    holderId,
+    ttlMs,
+    limit,
+  );
+  if (acquired) {
+    await clearExternalSlotBackend(holderId);
+  }
+  return acquired;
 }
 
 export async function mirrorExternalSlotRelease(
   teamId: string,
   holderId: string,
+  ctx?: RequestContext,
 ): Promise<void> {
-  if (await isFdbTeam(teamId)) {
+  const recordedFdb = (await getExternalSlotBackend(holderId)) === "fdb";
+  if (recordedFdb || (await isFdbTeam(teamId, ctx))) {
     try {
       await optionalFdb(() => externalSlotsFdb.release(teamId, holderId));
+      if (recordedFdb) {
+        await clearExternalSlotBackend(holderId);
+      }
       return;
     } catch (error) {
       if (fdbForced()) throw error;
@@ -230,9 +320,10 @@ export async function mirrorExternalSlotRelease(
 // its old PG crawls drain.
 export async function getCombinedTeamActiveCount(
   teamId: string,
+  ctx?: RequestContext,
 ): Promise<number> {
   const redisCount = await getConcurrencyLimitActiveJobsCount(teamId);
-  if (!(await isFdbTeam(teamId))) return redisCount;
+  if (!(await isFdbTeam(teamId, ctx))) return redisCount;
   try {
     return (
       redisCount +
@@ -267,28 +358,36 @@ export async function fdbEnqueueScrapeJobs(
   teamLimit: number | null;
   backlogLimit: number | null;
 }> {
-  let teamLimit: number | null = null;
-  if (!isSelfHosted()) {
-    teamLimit =
-      (await getACUCTeam(teamId).catch(() => null))?.concurrency_limit ??
-      DEFAULT_TEAM_LIMITS.concurrency_limit;
-  }
+  const limits = currentLimits();
+  const firstCtx = jobs.length > 0 ? jobContext(jobs[0].data) : null;
+  const liveFirstCtx =
+    firstCtx && firstCtx.concurrencyLimit !== undefined
+      ? { ...firstCtx, concurrencyLimit: undefined }
+      : firstCtx;
+  const teamLimit =
+    liveFirstCtx && liveFirstCtx.teamId === teamId
+      ? await limits.concurrency(liveFirstCtx)
+      : await limits.teamConcurrency(teamId);
 
   const queueCap =
     teamLimit === null ? Number.MAX_SAFE_INTEGER : getTeamQueueLimit(teamLimit);
 
-  // API-key-scoped concurrency: applies when every job in the batch was
-  // requested with the same key (batches always are; child jobs inherit the
-  // kickoff's apiKeyId) and that key has a limit configured.
+  // Per-key concurrency applies when every job in the batch shares the same
+  // API key and the active limits module enforces a cap for that key.
   let keyGate: { id: string; limit: number } | null = null;
-  if (teamLimit !== null) {
+  if (teamLimit !== null && limits.keyConcurrency && firstCtx) {
     const keyIds = new Set(jobs.map(j => jobContext(j.data).apiKeyId ?? null));
     const apiKeyId = keyIds.size === 1 ? [...keyIds][0] : null;
     if (apiKeyId !== null) {
-      const keyLimit = await getApiKeyConcurrencyLimit(apiKeyId);
-      if (keyLimit !== null) {
-        keyGate = { id: String(apiKeyId), limit: keyLimit };
-      }
+      keyGate = await limits.keyConcurrency(firstCtx).catch(error => {
+        _logger.warn("Failed to resolve API key concurrency limit", {
+          module: "nuq-router",
+          teamId,
+          apiKeyId,
+          error,
+        });
+        return null;
+      });
     }
   }
 
@@ -716,8 +815,9 @@ class RoutedCrawlGroup {
   public async getOngoingByOwner(
     ownerId: string,
     logger: Logger = _logger,
+    ctx?: RequestContext,
   ): Promise<NuQJobGroupInstance[]> {
-    if (!(await isFdbTeam(ownerId))) {
+    if (!(await isFdbTeam(ownerId, ctx))) {
       return crawlGroupPg.getOngoingByOwner(ownerId, logger);
     }
     let fdb: NuQJobGroupInstance[] = [];
