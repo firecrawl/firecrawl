@@ -11,7 +11,11 @@ import type IORedis from "ioredis";
 import { logger as _logger } from "./logger";
 import { getAdjustedMaxDepth } from "../scraper/WebScraper/utils/maxDepthUtils";
 import type { Logger } from "winston";
-import { withSpan, setSpanAttributes } from "./otel-tracer";
+import {
+  withSpan,
+  setSpanAttributes,
+  withZeroDataRetention,
+} from "./otel-tracer";
 import { crawlContext } from "./request-context";
 import {
   firstPipelineError,
@@ -769,29 +773,37 @@ export function generateURLPermutations(url: string | URL): Array<URL> {
   return [...new Set(permutations.map(x => x.href))].map(x => new URL(x));
 }
 
+type URLLockResult = "locked" | "already_visited" | "limit_reached";
+
 export async function lockURL(
   id: string,
   sc: StoredCrawl,
   url: string,
   __logger: Logger = _logger,
 ): Promise<boolean> {
-  return await withSpan(
-    "firecrawl-redis-lock-url",
-    async span => {
+  return (await tryLockURL(id, sc, url, __logger)) === "locked";
+}
+
+/**
+ * Locks a URL for a crawl and says why when it could not. A crawl calls this
+ * once per discovered link, so it records no span of its own; callers that
+ * lock in bulk record one summary span instead.
+ */
+export async function tryLockURL(
+  id: string,
+  sc: StoredCrawl,
+  url: string,
+  __logger: Logger = _logger,
+): Promise<URLLockResult> {
+  return await withZeroDataRetention(
+    crawlContext(sc).zeroDataRetention,
+    async () => {
       const normalizedUrl = normalizeURL(url, sc);
       const redis = await crawlStateStore(id);
-      setSpanAttributes(span, {
-        "crawl.id": id,
-        "crawl.url": normalizedUrl,
-        "crawl.team_id": sc.team_id,
-        operation: "lock_url",
-      });
-
       const limit = sc.crawlerOptions?.limit;
       if (typeof limit === "number") {
         if ((await redis.scard("crawl:" + id + ":visited_unique")) >= limit) {
-          setSpanAttributes(span, { "crawl.limit_reached": true });
-          return false;
+          return "limit_reached";
         }
       }
 
@@ -938,10 +950,8 @@ export async function lockURL(
         }
       }
 
-      setSpanAttributes(span, { "crawl.url_locked": res });
-      return res;
+      return res ? "locked" : "already_visited";
     },
-    { zeroDataRetention: crawlContext(sc).zeroDataRetention },
   );
 }
 
