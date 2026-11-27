@@ -407,8 +407,10 @@ const EMPTY_NON_MAIN_FRAMES: [&str; 3] = [
   "[data-original-tag=\"iframe\"][src*=\"youtube-nocookie.com/embed/\"]",
 ];
 
-const FORCE_INCLUDE_MAIN_TAGS: [&str; 13] = [
+const FORCE_INCLUDE_MAIN_TAGS: [&str; 15] = [
   "#main",
+  "#article-body",
+  "[itemprop~=\"articleBody\"]",
   ".swoogo-cols",
   ".swoogo-text",
   ".swoogo-table-div",
@@ -1101,4 +1103,39 @@ fn remove_skip_to_content_links(input: &str) -> String {
   }
 
   out
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn main_content(html: &str) -> String {
+    _transform_html_inner(TransformHtmlOptions {
+      html: html.to_string(),
+      url: "https://example.com/post".to_string(),
+      include_tags: vec![],
+      exclude_tags: vec![],
+      only_main_content: true,
+      omce_signatures: None,
+    })
+    .unwrap()
+  }
+
+  #[test]
+  fn test_only_main_content_keeps_excluded_container_wrapping_article_body() {
+    let out = main_content(
+      r#"<html><body><div id="main"><div class="widget"><div id="article-body"><p>Article text</p></div></div><div class="widget">Unrelated widget</div></div></body></html>"#,
+    );
+    assert!(out.contains("Article text"));
+    assert!(!out.contains("Unrelated widget"));
+  }
+
+  #[test]
+  fn test_only_main_content_keeps_excluded_container_wrapping_itemprop_article_body() {
+    let out = main_content(
+      r#"<html><body><div class="widget"><div itemprop="text articleBody"><p>Article text</p></div></div><div class="sidebar">Sidebar</div></body></html>"#,
+    );
+    assert!(out.contains("Article text"));
+    assert!(!out.contains("Sidebar"));
+  }
 }
