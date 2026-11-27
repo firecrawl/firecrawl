@@ -356,7 +356,7 @@ describe("service.searchProviders dispatch in v2 search", () => {
         enterprise: ["zdr"],
       });
 
-      expect(res.web?.[0]?.url).toBe("https://capable.test");
+      expect(res.web?.[0]?.url).toBe("https://searxng.test");
       expect(other.search).not.toHaveBeenCalled();
       expect(mocks.ddgSearch).not.toHaveBeenCalled();
     });
