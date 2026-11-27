@@ -539,7 +539,15 @@ async fn amqp_publisher_declares_quorum_queue_publishes_exact_wire_props_and_rec
   assert!(publisher.is_configured());
 
   let job1 = make_job("job-001");
-  let job2 = make_job("job-002");
+  let job2 = NuqJob {
+    finished_at: Some("2026-11-26T02:01:00.000Z".to_owned()),
+    listen_channel_id: Some("listen-42".to_owned()),
+    returnvalue: Some(json!({"markdown": "example"})),
+    failed_reason: Some("example reason".to_owned()),
+    owner_id: Some("owner-42".to_owned()),
+    group_id: Some("group-42".to_owned()),
+    ..make_job("job-002")
+  };
 
   assert!(matches!(
     publisher
@@ -594,20 +602,17 @@ async fn amqp_publisher_declares_quorum_queue_publishes_exact_wire_props_and_rec
   }
 
   assert_eq!(wire.publishes.len(), 3);
-  let expected_ids = ["job-001", "job-002"];
-  for (pub_msg, expected_id) in wire.publishes.iter().zip(expected_ids.iter()) {
+  for (pub_msg, job) in wire.publishes.iter().zip([&job1, &job2]) {
     assert_eq!(pub_msg.exchange, "");
     assert_eq!(pub_msg.routing_key, "nuq.queue_scrape.prefetch");
     assert_eq!(pub_msg.delivery_mode, Some(2));
-    assert_eq!(pub_msg.correlation_id.as_deref(), Some(*expected_id));
+    assert_eq!(pub_msg.correlation_id.as_deref(), Some(job.id.as_str()));
     assert_eq!(pub_msg.expiration.as_deref(), Some("50000"));
 
-    let parsed: Result<NuqJob, _> = serde_json::from_slice(&pub_msg.body);
-    assert!(parsed.is_ok());
-    if let Ok(decoded) = parsed {
-      assert_eq!(decoded.id, *expected_id);
-      assert_eq!(decoded.created_at, "2026-11-26T02:00:00.000Z");
-    }
+    assert_eq!(
+      serde_json::to_vec(job).ok().as_deref(),
+      Some(pub_msg.body.as_slice())
+    );
   }
   if let Some(fail_msg) = wire.publishes.get(2) {
     assert_eq!(fail_msg.exchange, "");
