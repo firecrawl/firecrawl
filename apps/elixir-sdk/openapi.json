@@ -10814,7 +10814,8 @@
                           "properties": {
                             "inStock": {
                               "type": "boolean",
-                              "description": "Whether the variant is in stock."
+                              "nullable": true,
+                              "description": "true when the page says the variant is in stock, false when it says it is out of stock, and null when the page does not state stock."
                             },
                             "text": {
                               "type": "string",
