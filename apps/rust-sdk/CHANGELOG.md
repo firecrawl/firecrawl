@@ -1,5 +1,18 @@
 ## CHANGELOG
 
+## [2.22.0] - 2026-11-17
+
+### Added
+
+- `ProductVariant` includes optional `gtin`, `mpn` and `condition`.
+
+### Changed
+
+- `ProductAvailability::in_stock` is now `Option<bool>`. It is `None` when the
+  page does not state whether the product is in stock, including when the key
+  is missing. Code that reads it as a `bool` must handle `None`, which means
+  unknown stock.
+
 ## [2.21.10] - 2026-11-04
 
 ### Added

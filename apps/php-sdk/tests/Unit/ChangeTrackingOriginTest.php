@@ -57,3 +57,23 @@ it('sends the SDK origin on crawl, batch scrape and map', function (): void {
     expect($bodies[1]['formats'])->toBe(['markdown', 'changeTracking']);
     expect($bodies[1])->not->toHaveKey('changeTracking');
 });
+
+it('sends the SDK origin on scrape and search', function (): void {
+    $history = new ArrayObject();
+    $client = fakeFirecrawlClient([
+        new Response(200, [], json_encode(['success' => true, 'data' => ['markdown' => '# ok']])),
+        new Response(200, [], json_encode(['success' => true, 'data' => ['web' => []]])),
+    ], $history);
+
+    $client->scrape('https://example.com');
+    $client->search('widgets');
+
+    $bodies = array_map(
+        fn (array $entry): array => json_decode((string) $entry['request']->getBody(), true),
+        $history->getArrayCopy(),
+    );
+    expect($bodies)->toHaveCount(2);
+    foreach ($bodies as $body) {
+        expect($body['origin'])->toBe('php-sdk@' . Version::SDK_VERSION);
+    }
+});

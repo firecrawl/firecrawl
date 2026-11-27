@@ -207,9 +207,48 @@ it('hydrates product into Product model in Document', function (): void {
     // Availability is always present, even when omitted from the payload.
     $v2 = $product->getVariants()[1];
     expect($v2['values'])->toBe(['color' => 'blue', 'size' => '42', 'limited' => true]);
-    expect($v2['availability'])->toBe(['inStock' => false]);
+    expect($v2['availability'])->toBe(['inStock' => null]);
     expect(array_key_exists('sale', $v2))->toBeFalse();
     expect(array_key_exists('price', $v2))->toBeFalse();
+});
+
+it('keeps unknown product inStock as null', function (array $availability, ?bool $expected): void {
+    $doc = Document::fromArray([
+        'product' => [
+            'title' => 'Widget',
+            'url' => 'https://example.com/widget',
+            'variants' => [['title' => 'Default', 'availability' => $availability]],
+        ],
+    ]);
+
+    expect($doc->getProduct()->getVariants()[0]['availability']['inStock'])->toBe($expected);
+})->with([
+    'true' => [['inStock' => true, 'text' => 'In stock'], true],
+    'false' => [['inStock' => false, 'text' => 'Sold out'], false],
+    'null' => [['inStock' => null], null],
+    'missing' => [['text' => 'Call for availability'], null],
+]);
+
+it('round-trips product variant identifiers and unknown stock', function (): void {
+    $fixture = [
+        'sku' => 'SKU-1',
+        'gtin' => '00012345678905',
+        'mpn' => 'MPN-1',
+        'condition' => 'refurbished',
+        'availability' => ['inStock' => null],
+    ];
+    $product = Product::fromArray([
+        'title' => 'Widget',
+        'url' => 'https://example.com/widget',
+        'variants' => [$fixture, ['condition' => 'open-box'], []],
+    ]);
+
+    [$variant, $unknown, $bare] = $product->getVariants();
+    expect($variant)->toBe($fixture);
+    expect($unknown['condition'])->toBe('open-box');
+    foreach (['gtin', 'mpn', 'condition'] as $key) {
+        expect(array_key_exists($key, $bare))->toBeFalse();
+    }
 });
 
 it('returns null product when absent in Document', function (): void {

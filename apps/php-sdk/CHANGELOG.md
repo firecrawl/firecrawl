@@ -5,6 +5,14 @@ All notable changes to the Firecrawl PHP SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.0] - 2026-11-17
+
+### Changed
+- Product variant `availability.inStock` is now `bool|null`. It is `null` when
+  the page does not state whether the product is in stock, or when
+  availability is missing, instead of defaulting to `false`. Code that treats
+  the value as a plain `bool` must handle `null` as unknown stock.
+
 ## [1.16.7] - 2026-11-04
 
 ### Changed
