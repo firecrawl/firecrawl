@@ -1,5 +1,5 @@
 import { v7 as uuidv7 } from "uuid";
-import { ScrapeJobData } from "../types";
+import type { ScrapeJobData } from "../types";
 import {
   cleanOldConcurrencyLimitEntries,
   getConcurrencyLimitActiveJobs,
@@ -15,16 +15,17 @@ import {
   QueueFullError,
 } from "../lib/concurrency-limit";
 import { logger as _logger } from "../lib/logger";
-import { Document } from "../controllers/v2/types";
+import type { Document } from "../controllers/v2/types";
 import { service } from "../service";
 import { getCrawl } from "../lib/crawl-redis";
 import { recordCrawlStateMissing } from "../lib/crawl-state-metrics";
 import { currentLimits } from "../lib/limits";
 import { jobContext } from "../lib/request-context";
-import { Logger } from "winston";
+import type { Logger } from "winston";
 import { isTransportableError, ScrapeJobTimeoutError } from "../lib/error";
 import { deserializeTransportableError } from "../lib/error-serde";
-import { NuQJob, scrapeQueue } from "./worker/nuq";
+import type { NuQJob } from "./worker/nuq";
+import { scrapeQueue } from "./worker/nuq";
 import {
   fdbEnqueueScrapeJobs,
   resolveJobBackend,
@@ -35,15 +36,50 @@ import {
   scrapeQueueFdb,
   withFdbTimeout,
 } from "./worker/nuq-fdb";
+import { z } from "zod";
 import { serializeTraceContext } from "../lib/otel-tracer";
+import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
+
+interface ConcurrencyLimitedPayload {
+  ctx: RequestContext;
+  limit: number;
+  isCrawlOrBatch: boolean;
+  exceededBacklog?: boolean;
+}
+
+const crawlerDelaySchema = z.object({
+  delay: z.union([z.number(), z.string()]),
+});
+
+function getCrawlerDelay(crawlerOptions: unknown): number | undefined {
+  const parsed = crawlerDelaySchema.safeParse(crawlerOptions);
+  if (!parsed.success) {
+    return undefined;
+  }
+  const raw = parsed.data.delay;
+  if (typeof raw === "number") {
+    return Number.isFinite(raw) ? raw : undefined;
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  const parsedNumber = Number(trimmed);
+  return Number.isFinite(parsedNumber) ? parsedNumber : undefined;
+}
 
 // Queue-wait deadline for a backlogged job (how long its owner still cares about the result)
 function backlogTimeoutMs(data: ScrapeJobData): number {
-  if (typeof data.backlogTimeoutMs === "number") return data.backlogTimeoutMs;
-  if (data.crawl_id) return MAX_BACKLOG_TIMEOUT_MS;
-  if (data.mode === "single_urls")
+  if (typeof data.backlogTimeoutMs === "number") {
+    return data.backlogTimeoutMs;
+  }
+  if (data.crawl_id) {
+    return MAX_BACKLOG_TIMEOUT_MS;
+  }
+  if (data.mode === "single_urls") {
     return data.scrapeOptions.timeout ?? 60 * 1000;
+  }
   return 60 * 1000;
 }
 
@@ -53,7 +89,7 @@ function backlogTimeoutMs(data: ScrapeJobData): number {
  * @returns true if the job is either a crawl or batch scrape
  */
 function isCrawlOrBatchScrape(options: {
-  crawlerOptions?: any;
+  crawlerOptions?: unknown;
   crawl_id?: string;
 }): boolean {
   // If crawlerOptions exists, it's a crawl
@@ -67,19 +103,22 @@ function observeConcurrencyLimited(
   extra?: { exceededBacklog?: boolean },
 ): void {
   const hooks = installedService()?.hooks;
-  if (!hooks?.has("concurrency.limited")) return;
-  hooks.observe("concurrency.limited", {
+  if (!hooks?.has("concurrency.limited")) {
+    return;
+  }
+  const event: ConcurrencyLimitedPayload = {
     ctx: jobContext(data),
     limit,
     isCrawlOrBatch: isCrawlOrBatchScrape(data),
-    ...(extra?.exceededBacklog !== undefined
-      ? { exceededBacklog: extra.exceededBacklog }
-      : {}),
-  });
+  };
+  if (extra?.exceededBacklog !== undefined) {
+    event.exceededBacklog = extra.exceededBacklog;
+  }
+  hooks.observe("concurrency.limited", event);
 }
 
 async function _addScrapeJobToConcurrencyQueue(
-  webScraperOptions: any,
+  webScraperOptions: ScrapeJobData,
   jobId: string,
   priority: number = 0,
   listenable: boolean = false,
@@ -115,12 +154,12 @@ async function _addScrapeJobToConcurrencyQueue(
 }
 
 async function _addScrapeJobsToConcurrencyQueue(
-  jobs: {
-    data: any;
+  jobs: Array<{
+    data: ScrapeJobData;
     jobId: string;
     priority: number;
     listenable?: boolean;
-  }[],
+  }>,
 ) {
   await scrapeQueue.addJobs(
     jobs.map(job => ({
@@ -139,18 +178,25 @@ async function _addScrapeJobsToConcurrencyQueue(
 
   const jobsByTeam = new Map<
     string,
-    {
-      job: { id: string; data: any; priority: number; listenable: boolean };
+    Array<{
+      job: {
+        id: string;
+        data: ScrapeJobData;
+        priority: number;
+        listenable: boolean;
+      };
       timeout: number;
-    }[]
+    }>
   >();
 
   for (const job of jobs) {
-    const teamId = job.data.team_id as string;
-    if (!jobsByTeam.has(teamId)) {
-      jobsByTeam.set(teamId, []);
+    const teamId = job.data.team_id;
+    let teamJobs = jobsByTeam.get(teamId);
+    if (!teamJobs) {
+      teamJobs = [];
+      jobsByTeam.set(teamId, teamJobs);
     }
-    jobsByTeam.get(teamId)!.push({
+    teamJobs.push({
       job: {
         id: job.jobId,
         data: job.data,
@@ -214,7 +260,7 @@ async function _addScrapeJobToBullMQPg(
 
     if (webScraperOptions.crawl_id) {
       const sc = await getCrawl(webScraperOptions.crawl_id);
-      if (!sc || sc.crawlerOptions?.delay || sc.maxConcurrency) {
+      if (!sc || getCrawlerDelay(sc.crawlerOptions) || sc.maxConcurrency) {
         await pushCrawlConcurrencyLimitActiveJob(
           webScraperOptions.crawl_id,
           jobId,
@@ -235,13 +281,13 @@ async function _addScrapeJobToBullMQPg(
 }
 
 async function _addScrapeJobsToBullMQ(
-  jobs: {
-    data: any;
+  jobs: Array<{
+    data: ScrapeJobData;
     jobId: string;
     priority: number;
     listenable?: boolean;
-  }[],
-): Promise<NuQJob<ScrapeJobData>[]> {
+  }>,
+): Promise<Array<NuQJob<ScrapeJobData>>> {
   for (const job of jobs) {
     if (job.data && job.data.team_id) {
       await pushConcurrencyLimitActiveJob(
@@ -252,7 +298,7 @@ async function _addScrapeJobsToBullMQ(
 
       if (job.data.crawl_id) {
         const sc = await getCrawl(job.data.crawl_id);
-        if (!sc || sc.crawlerOptions?.delay || sc.maxConcurrency) {
+        if (!sc || getCrawlerDelay(sc.crawlerOptions) || sc.maxConcurrency) {
           await pushCrawlConcurrencyLimitActiveJob(
             job.data.crawl_id,
             job.jobId,
@@ -332,15 +378,19 @@ async function checkFdbBacklogExceeded(
   teamLimit: number | null,
   crawlOrBatch: boolean,
 ): Promise<boolean> {
-  if (teamLimit === null || crawlOrBatch) return false;
+  if (teamLimit === null || crawlOrBatch) {
+    return false;
+  }
   try {
-    if (!(await nuqFdbHealthCheck(FDB_OPTIONAL_COUNT_TIMEOUT_MS))) return false;
+    if (!(await nuqFdbHealthCheck(FDB_OPTIONAL_COUNT_TIMEOUT_MS))) {
+      return false;
+    }
     const pending = await withFdbTimeout(
       scrapeQueueFdb.getTeamPendingCount(teamId),
       FDB_OPTIONAL_COUNT_TIMEOUT_MS,
     );
     return pending > teamLimit;
-  } catch (error) {
+  } catch (error: unknown) {
     _logger.warn("Failed to check FDB concurrency backlog", { error });
     return false;
   }
@@ -382,7 +432,7 @@ async function addScrapeJobRaw(
       }
       const concurrencyLimit = !crawl
         ? 1
-        : crawl.crawlerOptions?.delay === undefined &&
+        : getCrawlerDelay(crawl.crawlerOptions) === undefined &&
             crawl.maxConcurrency === undefined
           ? null
           : (crawl.maxConcurrency ?? 1);
@@ -509,33 +559,37 @@ export async function addScrapeJob(
 }
 
 export async function addScrapeJobs(
-  jobs: {
+  jobs: Array<{
     jobId: string;
     data: ScrapeJobData;
     priority: number;
     listenable?: boolean;
-  }[],
+  }>,
 ) {
-  if (jobs.length === 0) return true;
+  if (jobs.length === 0) {
+    return true;
+  }
 
   // Capture trace context for all jobs
   const traceContext = serializeTraceContext();
 
   const jobsByTeam = new Map<
     string,
-    {
+    Array<{
       jobId: string;
       data: ScrapeJobData;
       priority: number;
       listenable?: boolean;
-    }[]
+    }>
   >();
 
   for (const job of jobs) {
-    if (!jobsByTeam.has(job.data.team_id)) {
-      jobsByTeam.set(job.data.team_id, []);
+    let teamList = jobsByTeam.get(job.data.team_id);
+    if (!teamList) {
+      teamList = [];
+      jobsByTeam.set(job.data.team_id, teamList);
     }
-    jobsByTeam.get(job.data.team_id)!.push(job);
+    teamList.push(job);
   }
 
   for (const [teamId, allTeamJobs] of jobsByTeam) {
@@ -545,13 +599,18 @@ export async function addScrapeJobs(
     const backendByCrawl = new Map<string, "pg" | "fdb">();
     for (const job of allTeamJobs) {
       const crawlId = job.data.crawl_id;
-      if (crawlId && backendByCrawl.has(crawlId)) {
-        backendByJob.set(job.jobId, backendByCrawl.get(crawlId)!);
-        continue;
+      if (crawlId) {
+        const cachedBackend = backendByCrawl.get(crawlId);
+        if (cachedBackend !== undefined) {
+          backendByJob.set(job.jobId, cachedBackend);
+          continue;
+        }
       }
       const backend = await resolveJobBackend(job.data);
       backendByJob.set(job.jobId, backend);
-      if (crawlId) backendByCrawl.set(crawlId, backend);
+      if (crawlId) {
+        backendByCrawl.set(crawlId, backend);
+      }
     }
 
     const fdbJobs = allTeamJobs.filter(
@@ -605,52 +664,56 @@ export async function addScrapeJobs(
     const teamJobs = allTeamJobs.filter(
       j => backendByJob.get(j.jobId) === "pg",
     );
-    if (teamJobs.length === 0) continue;
+    if (teamJobs.length === 0) {
+      continue;
+    }
     // == Buckets for jobs ==
-    let jobsForcedToCQ: {
+    const jobsForcedToCQ: Array<{
       data: ScrapeJobData;
       jobId: string;
       priority: number;
       listenable?: boolean;
-    }[] = [];
+    }> = [];
 
-    let jobsPotentiallyInCQ: {
+    const jobsPotentiallyInCQ: Array<{
       data: ScrapeJobData;
       jobId: string;
       priority: number;
       listenable?: boolean;
-    }[] = [];
+    }> = [];
 
     // == Select jobs by crawl ID ==
     const jobsByCrawlID = new Map<
       string,
-      {
+      Array<{
         data: ScrapeJobData;
         jobId: string;
         priority: number;
         listenable?: boolean;
-      }[]
+      }>
     >();
 
-    const jobsWithoutCrawlID: {
+    const jobsWithoutCrawlID: Array<{
       data: ScrapeJobData;
       jobId: string;
       priority: number;
       listenable?: boolean;
-    }[] = [];
-    const crawlConcurrencyLimits: {
+    }> = [];
+    const crawlConcurrencyLimits: Array<{
       crawlId: string;
       maxCrawlConcurrency: number;
       currentCrawlConcurrency: number;
       jobsCount: number;
-    }[] = [];
+    }> = [];
 
     for (const job of teamJobs) {
       if (job.data.crawl_id) {
-        if (!jobsByCrawlID.has(job.data.crawl_id)) {
-          jobsByCrawlID.set(job.data.crawl_id, []);
+        let crawlList = jobsByCrawlID.get(job.data.crawl_id);
+        if (!crawlList) {
+          crawlList = [];
+          jobsByCrawlID.set(job.data.crawl_id, crawlList);
         }
-        jobsByCrawlID.get(job.data.crawl_id)!.push(job);
+        crawlList.push(job);
       } else {
         jobsWithoutCrawlID.push(job);
       }
@@ -667,7 +730,7 @@ export async function addScrapeJobs(
       }
       const concurrencyLimit = !crawl
         ? 1
-        : crawl.crawlerOptions?.delay === undefined &&
+        : getCrawlerDelay(crawl.crawlerOptions) === undefined &&
             crawl.maxConcurrency === undefined
           ? null
           : (crawl.maxConcurrency ?? 1);
@@ -836,7 +899,7 @@ export async function waitForJob(
   zeroDataRetention: boolean,
   logger: Logger = _logger,
 ): Promise<Document> {
-  const jobId = typeof job == "string" ? job : job.id;
+  const jobId = typeof job === "string" ? job : job.id;
   const isConcurrencyLimited = !!(typeof job === "string");
 
   let timeoutHandle: NodeJS.Timeout | null = null;
@@ -865,18 +928,18 @@ export async function waitForJob(
           : null,
       ].filter(x => x !== null),
     );
-  } catch (e) {
-    if (isTransportableError(e)) {
-      throw e;
-    } else if (e instanceof Error) {
-      const x = deserializeTransportableError(e.message);
+  } catch (error) {
+    if (isTransportableError(error)) {
+      throw error;
+    } else if (error instanceof Error) {
+      const x = deserializeTransportableError(error.message);
       if (x) {
         throw x;
       } else {
-        throw e;
+        throw error;
       }
     } else {
-      throw e;
+      throw error;
     }
   } finally {
     if (timeoutHandle) {

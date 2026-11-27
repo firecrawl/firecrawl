@@ -1,9 +1,28 @@
+import { z } from "zod";
+import { jsonRecordSchema } from "../../lib/json-types";
+import type { JsonObject } from "../../lib/json-types";
 import { jobLogJson, jobLogRows } from "./job-log";
+
+const costTrackingCallSchema = z.object({
+  model: z.string(),
+  cost: z.number(),
+  metadata: jsonRecordSchema,
+  tokens: z
+    .object({
+      input: z.number(),
+      output: z.number(),
+    })
+    .optional(),
+});
+
+const costTrackingEnvelopeSchema = z.object({
+  calls: z.array(z.unknown()).optional(),
+});
 
 export type CostTrackingCall = {
   model: string;
   cost: number;
-  metadata: Record<string, unknown>;
+  metadata: JsonObject;
   tokens?: { input: number; output: number };
 };
 
@@ -11,17 +30,27 @@ export type CostTrackingCall = {
 // few seconds later; poll until it carries parseable cost tracking.
 export async function getCostTrackingCalls(
   scrapeId: string,
-): Promise<CostTrackingCall[]> {
-  const deadline = Date.now() + 30000;
+): Promise<Array<CostTrackingCall>> {
+  const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     const [row] = await jobLogRows("scrapes", "id = {id: UUID}", {
       id: scrapeId,
     });
-    const costTracking = jobLogJson(row?.cost_tracking) as {
-      calls?: CostTrackingCall[];
-    } | null;
-    if (costTracking) return costTracking.calls ?? [];
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    const parsedTracking = costTrackingEnvelopeSchema.safeParse(
+      jobLogJson(row?.cost_tracking),
+    );
+    if (parsedTracking.success) {
+      if (parsedTracking.data.calls) {
+        return parsedTracking.data.calls.flatMap(call => {
+          const parsedCall = costTrackingCallSchema.safeParse(call);
+          return parsedCall.success ? [parsedCall.data] : [];
+        });
+      }
+      return [];
+    }
+    await new Promise<void>(resolve => {
+      setTimeout(resolve, 1000);
+    });
   }
   throw new Error(`No cost tracking on the scrapes row for ${scrapeId}`);
 }

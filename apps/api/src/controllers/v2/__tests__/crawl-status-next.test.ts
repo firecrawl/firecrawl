@@ -39,7 +39,11 @@ vi.mock("../../../lib/logger", () => ({
   },
 }));
 
+import express from "express";
+import request from "supertest";
 import { afterAll, beforeAll } from "vitest";
+import { jsonObjectSchema } from "../../../lib/json-types";
+import type { JsonObject } from "../../../lib/json-types";
 import { queueJobStore } from "../../../service/defaults";
 import { createService, replaceService } from "../../../service/service";
 import { crawlStatusController } from "../crawl-status";
@@ -66,23 +70,6 @@ afterAll(() => {
 
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 const JOB_ID = "22222222-2222-4222-8222-222222222222";
-
-function makeReq(query: Record<string, string> = {}) {
-  return {
-    params: { jobId: JOB_ID },
-    query,
-    auth: { team_id: TEAM_ID },
-    protocol: "http",
-    host: "localhost",
-  } as any;
-}
-
-function makeRes() {
-  const res: any = { status: vi.fn(), json: vi.fn() };
-  res.status.mockReturnValue(res);
-  res.json.mockReturnValue(res);
-  return res;
-}
 
 const doc = (url: string) => ({
   id: url,
@@ -118,10 +105,22 @@ function mockCrawl(options: {
   );
 }
 
-async function getStatus(query: Record<string, string> = {}) {
-  const res = makeRes();
-  await crawlStatusController(makeReq(query), res);
-  return res.json.mock.calls[0][0];
+async function getStatus(
+  query: Record<string, string> = {},
+): Promise<JsonObject> {
+  const app = express();
+  app.get("/v2/crawl/:jobId", async (req, res) => {
+    const authedReq = Object.assign(req, {
+      auth: { team_id: TEAM_ID },
+    });
+    await crawlStatusController(authedReq, res);
+  });
+  const response = await request(app)
+    .get(`/v2/crawl/${JOB_ID}`)
+    .query(query)
+    .set("Host", "localhost");
+  const parsed: unknown = JSON.parse(response.text);
+  return jsonObjectSchema.parse(parsed);
 }
 
 describe("crawl status next cursor", () => {

@@ -28,7 +28,7 @@ export interface Worker {
 /** The process roles registered on a service. */
 export interface RoleRegistry {
   /** Every registered role name, sorted alphabetically. */
-  names(): readonly string[];
+  names(): ReadonlyArray<string>;
   /** Whether a role with `name` is registered on this service. */
   has(name: string): boolean;
   /** The registered worker for `name`, or undefined if unregistered. */
@@ -37,18 +37,33 @@ export interface RoleRegistry {
   owner(name: string): string | undefined;
 }
 
+function isPlainRecord(value: unknown): value is Record<string, Worker> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
 /** @internal */
 export interface WorkerRegistrySource {
   owner: string;
   workers?: Record<string, Worker>;
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
-  }
-  const proto = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null;
+interface BuiltWorkerRegistry {
+  roles: RoleRegistry;
+  workers: Readonly<Record<string, Worker>>;
+  describedRoles: Record<string, string>;
+}
+
+function isWorker(value: unknown): value is Worker {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "run" in value &&
+    typeof value.run === "function"
+  );
 }
 
 const sortedByKey = <T>(record: Record<string, T>): Record<string, T> =>
@@ -63,48 +78,43 @@ const sortedByKey = <T>(record: Record<string, T>): Record<string, T> =>
  *
  * @internal
  */
-export function buildWorkerRegistry(sources: readonly WorkerRegistrySource[]): {
-  roles: RoleRegistry;
-  workers: Readonly<Record<string, Worker>>;
-  describedRoles: Record<string, string>;
-} {
+export function buildWorkerRegistry(
+  sources: ReadonlyArray<WorkerRegistrySource>,
+): BuiltWorkerRegistry {
   const byName = new Map<string, { owner: string; worker: Worker }>();
 
   for (const source of sources) {
-    if (source.workers === undefined) continue;
-    if (!isPlainObject(source.workers)) {
+    if (source.workers === undefined) {
+      continue;
+    }
+    if (!isPlainRecord(source.workers)) {
       throw new Error(
         `Extension "${source.owner}" workers must be a plain object`,
       );
     }
 
-    for (const role of Object.keys(source.workers)) {
+    for (const [role, candidate] of Object.entries(source.workers)) {
       if (role.trim().length === 0) {
         throw new Error(
           `Extension "${source.owner}" worker role name must be a non-empty string`,
         );
       }
-      const worker = source.workers[role] as unknown;
-      if (
-        typeof worker !== "object" ||
-        worker === null ||
-        typeof (worker as Worker).run !== "function"
-      ) {
+      if (!isWorker(candidate)) {
         throw new Error(
           `Worker "${role}" in extension "${source.owner}" must provide a run() function`,
         );
       }
-      byName.set(role, { owner: source.owner, worker: worker as Worker });
+      byName.set(role, { owner: source.owner, worker: candidate });
     }
   }
 
   const sortedNames = Object.freeze(
     [...byName.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
   );
-  const roleOwners: Record<string, string> = Object.create(null);
+  const roleOwnerEntries: Array<[string, string]> = [];
   const workerEntries: Array<[string, Worker]> = [];
   for (const [role, entry] of byName) {
-    roleOwners[role] = entry.owner;
+    roleOwnerEntries.push([role, entry.owner]);
     workerEntries.push([role, entry.worker]);
   }
 
@@ -122,6 +132,6 @@ export function buildWorkerRegistry(sources: readonly WorkerRegistrySource[]): {
   return {
     roles,
     workers,
-    describedRoles: sortedByKey(roleOwners),
+    describedRoles: sortedByKey(Object.fromEntries(roleOwnerEntries)),
   };
 }

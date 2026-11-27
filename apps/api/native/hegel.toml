@@ -1,0 +1,4 @@
+# Property-test profile used by CI (selected via HEGEL_DEFAULT_PROFILE=ci
+# in .github/workflows/native-rust.yml).
+[profiles.ci]
+test_cases = 10000

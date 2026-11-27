@@ -37,7 +37,6 @@ import {
   ActionsNotSupportedError,
   ConcurrencyQueueTimeoutError,
   CrawlDenialError,
-  type ErrorCode,
   isTransportableError,
   MapFailedError,
   MapTimeoutError,
@@ -48,6 +47,7 @@ import {
   UnknownError,
   UnsupportedSiteError,
 } from "./error";
+import type { ErrorCode } from "./error";
 import {
   coreErrors,
   deserializeTransportableError,
@@ -55,9 +55,19 @@ import {
   serializeThrownError,
   serializeTransportableError,
 } from "./error-serde";
+import type { JsonObject } from "./json-types";
 
 const wire = (code: string, payload: unknown) =>
   `${code}|${JSON.stringify(payload)}`;
+
+const long = (length: number) => "x".repeat(length);
+const bytes = (text: string) => Buffer.byteLength(text, "utf8");
+const cut = (text: string) => `${text.slice(0, 4096)}... [truncated]`;
+
+interface CircularCause {
+  status: number;
+  self?: CircularCause;
+}
 
 // What is read back from a job is rebuilt by the class the service has for its
 // code. A test runner cannot load a module on first use, so the service is
@@ -81,9 +91,12 @@ describe("deserializeTransportableError", () => {
       });
       const revived = deserializeTransportableError(
         serializeTransportableError(original),
-      ) as CrawlDenialError;
+      );
 
       expect(revived).toBeInstanceOf(CrawlDenialError);
+      if (!(revived instanceof CrawlDenialError)) {
+        throw new Error("Expected CrawlDenialError");
+      }
       expect(revived.code).toBe("CRAWL_DENIAL");
       expect(revived.message).toBe("Blocked by robots.txt");
       expect(revived.reason).toBe("Blocked by robots.txt");
@@ -93,7 +106,7 @@ describe("deserializeTransportableError", () => {
 
     it("reads a payload written as code, separator, JSON", () => {
       const revived = deserializeTransportableError(
-        'SCRAPE_TIMEOUT|{"stack":"Error: slow | very slow\\n    at worker","message":"slow | very slow"}',
+        String.raw`SCRAPE_TIMEOUT|{"stack":"Error: slow | very slow\n    at worker","message":"slow | very slow"}`,
       )!;
 
       expect(revived).toBeInstanceOf(ScrapeJobTimeoutError);
@@ -232,12 +245,9 @@ describe("the wire form of every class", () => {
   };
   // The code, a label, the error, and the fields its class writes after the
   // three every error has, in the order it writes them.
-  const samples: [
-    ErrorCode,
-    string,
-    () => TransportableError,
-    Record<string, unknown>,
-  ][] = [
+  const samples: Array<
+    [ErrorCode, string, () => TransportableError, JsonObject]
+  > = [
     [
       "SCRAPE_TIMEOUT",
       "ScrapeJobTimeoutError",
@@ -468,8 +478,8 @@ describe("the wire form of every class", () => {
     [
       "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR",
       "PDFInsufficientTimeError",
-      () => new PDFInsufficientTimeError(412, 95000),
-      { pageCount: 412, minTimeout: 95000 },
+      () => new PDFInsufficientTimeError(412, 95_000),
+      { pageCount: 412, minTimeout: 95_000 },
     ],
     [
       "SCRAPE_DNS_RESOLUTION_ERROR",
@@ -626,7 +636,7 @@ describe("serializeThrownError", () => {
   });
 
   it("leaves out a cause that JSON cannot write", () => {
-    const circular: Record<string, unknown> = { status: 503 };
+    const circular: CircularCause = { status: 503 };
     circular.self = circular;
 
     for (const cause of [circular, { bytes: 10n }]) {
@@ -692,7 +702,7 @@ describe("serializeThrownError", () => {
   );
 
   it.each([
-    ["cannot be made into a string", () => Object.create(null)],
+    ["cannot be made into a string", () => ({ __proto__: null })],
     [
       "throws when its message is read",
       () =>
@@ -727,10 +737,6 @@ describe("serializeThrownError", () => {
   });
 
   describe("an error that is too long for the queue to keep whole", () => {
-    const long = (length: number) => "x".repeat(length);
-    const bytes = (text: string) => Buffer.byteLength(text, "utf8");
-    const cut = (text: string) => `${text.slice(0, 4096)}... [truncated]`;
-
     it("is too long past what the FoundationDB queue keeps of a reason", () => {
       expect(MAX_SERIALIZED_ERROR_BYTES).toBe(DATA_CHUNK_BYTES);
     });
@@ -819,12 +825,13 @@ describe("serializeThrownError", () => {
         robotsBlockedUrl: "https://example.com/private",
       });
       const serialized = serializeThrownError(original);
-      const revived = deserializeTransportableError(
-        serialized,
-      ) as CrawlDenialError;
+      const revived = deserializeTransportableError(serialized);
 
       expect(bytes(serialized)).toBeLessThanOrEqual(MAX_SERIALIZED_ERROR_BYTES);
       expect(revived).toBeInstanceOf(CrawlDenialError);
+      if (!(revived instanceof CrawlDenialError)) {
+        throw new Error("Expected CrawlDenialError");
+      }
       expect(revived.code).toBe("CRAWL_DENIAL");
       expect(revived.reason).toBe(cut(original.reason));
       expect(revived.robotsBlockedUrl).toBe("https://example.com/private");
@@ -891,13 +898,14 @@ describe("serializeThrownError", () => {
     expect(isTransportableError(foreign)).toBe(true);
 
     const serialized = serializeThrownError(foreign);
-    const revived = deserializeTransportableError(
-      serialized,
-    ) as CrawlDenialError;
+    const revived = deserializeTransportableError(serialized);
 
     expect(serialized).toBe(serializeTransportableError(foreign));
     expect(serialized).toMatch(/^CRAWL_DENIAL\|/);
     expect(revived).toBeInstanceOf(CrawlDenialError);
+    if (!(revived instanceof CrawlDenialError)) {
+      throw new Error("Expected CrawlDenialError");
+    }
     expect(revived.robotsBlockedUrl).toBe("https://example.com/private");
   });
 });

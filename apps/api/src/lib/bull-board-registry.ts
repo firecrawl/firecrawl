@@ -2,8 +2,8 @@ import type { Queue } from "bullmq";
 
 type BullBoardQueueBinder = (queue: Queue) => void;
 
-const registeredQueues: Queue[] = [];
-const binders: BullBoardQueueBinder[] = [];
+const registeredQueues: Array<Queue> = [];
+const binders: Array<BullBoardQueueBinder> = [];
 
 /**
  * Registers an extra BullMQ queue so it appears in all Bull Board admin

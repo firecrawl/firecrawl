@@ -1,3 +1,5 @@
+import express from "express";
+import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const startupMocks = vi.hoisted(() => ({
@@ -8,13 +10,15 @@ vi.mock("../scraper/WebScraper/utils/engine-forcing", () => ({
   initializeEngineForcing: startupMocks.initializeEngineForcing,
 }));
 
+import type { TeamFlags } from "../controllers/v2/types";
 import { initializeApiStartupDependencies } from "../lib/api-startup";
 import { logger } from "../lib/logger";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
 import { blocklistMiddleware } from "../routes/shared";
 import { defaultModules, noBlocklist } from "./defaults";
 import type { BlocklistModule } from "./modules";
-import { createService, replaceService, run, type CoreParts } from "./service";
+import { createService, replaceService, run } from "./service";
+import type { CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
 const parts: CoreParts = {
@@ -31,27 +35,59 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function runBlocklistMiddleware(
-  req: Record<string, unknown>,
+interface BlocklistMiddlewareInput {
+  body: {
+    url?: string;
+    origin?: string;
+    zeroDataRetention?: boolean;
+  };
+  acuc: {
+    team_id: string;
+    org_id: string | null;
+    flags: TeamFlags;
+  };
+}
+
+async function runBlocklistMiddleware(
+  input: BlocklistMiddlewareInput,
 ): Promise<{ next: true } | { status: number; body: unknown }> {
-  return new Promise((resolve, reject) => {
-    let statusCode = 200;
-    const res: any = {
-      headersSent: false,
-      status(code: number) {
-        statusCode = code;
-        return res;
-      },
-      json(body: unknown) {
-        res.headersSent = true;
-        resolve({ status: statusCode, body });
-        return res;
-      },
-    };
-    blocklistMiddleware(req as any, res, (err?: unknown) =>
-      err ? reject(err) : resolve({ next: true }),
-    );
-  });
+  let calledNext = false;
+  let caughtError: unknown;
+  const app = express();
+  app.use(express.json());
+  app.post(
+    "/probe",
+    (req, _res, next) => {
+      Object.assign(req, { acuc: input.acuc });
+      next();
+    },
+    blocklistMiddleware,
+    (_req, res) => {
+      calledNext = true;
+      res.status(200).end();
+    },
+  );
+  app.use(
+    (
+      err: unknown,
+      _req: express.Request,
+      res: express.Response,
+      _next: express.NextFunction,
+    ) => {
+      caughtError = err;
+      res.status(500).end();
+    },
+  );
+
+  const response = await request(app).post("/probe").send(input.body);
+  if (caughtError !== undefined) {
+    throw caughtError;
+  }
+  if (calledNext) {
+    return { next: true };
+  }
+  const body: unknown = response.body;
+  return { status: response.status, body };
 }
 
 describe("blocklist module integration", () => {
@@ -162,7 +198,7 @@ describe("blocklist module integration", () => {
   });
 
   it("awaits blocklist.init() in initializeApiStartupDependencies() before starting other API dependencies", async () => {
-    const order: string[] = [];
+    const order: Array<string> = [];
     startupMocks.initializeEngineForcing.mockImplementation(() => {
       order.push("engine-forcing");
     });

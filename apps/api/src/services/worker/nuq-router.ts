@@ -1,12 +1,15 @@
-import { Logger } from "winston";
+import type { Logger } from "winston";
+import { z } from "zod";
 import { logger as _logger } from "../../lib/logger";
 import { config } from "../../config";
-import { ScrapeJobData } from "../../types";
+import type { Document } from "../../controllers/v2/types";
+import type { ScrapeJobData } from "../../types";
 import { redisEvictConnection } from "../../services/redis";
 import { crawlStateStore } from "../../lib/crawl-state-store";
 import { getRedisConnection } from "../../services/queue-service";
 import { currentLimits } from "../../lib/limits";
 import { jobContext, requestContext } from "../../lib/request-context";
+import { safeParseLogged } from "../../lib/zod-log";
 import type { RequestContext } from "../../service/request-context";
 import {
   getTeamQueueLimit,
@@ -14,15 +17,18 @@ import {
   removeConcurrencyLimitActiveJob,
   reserveConcurrencyLimitSlot,
 } from "../../lib/concurrency-redis";
-import {
+import type {
   NuQJob,
   NuQJobStatus,
   NuQGroupStatus,
   NuQJobGroupInstance,
+} from "./nuq";
+import {
   scrapeQueue as scrapeQueuePg,
   crawlFinishedQueue as crawlFinishedQueuePg,
   crawlGroup as crawlGroupPg,
 } from "./nuq";
+import type { NuQFdbJob } from "./nuq-fdb";
 import {
   scrapeQueueFdb,
   crawlFinishedQueueFdb,
@@ -31,8 +37,6 @@ import {
   isFdbConfigured,
   nuqFdbHealthCheck,
   withFdbTimeout,
-  NuQFdbQueue,
-  NuQFdbJob,
 } from "./nuq-fdb";
 
 // Dual-backend router for the NuQ migration to FoundationDB. Exports the same
@@ -68,7 +72,9 @@ function logFdbFallback(
 ): void {
   const now = Date.now();
   const lastWarn = fdbFallbackLastWarn.get(operation) ?? 0;
-  if (now - lastWarn < 60_000) return;
+  if (now - lastWarn < 60_000) {
+    return;
+  }
   fdbFallbackLastWarn.set(operation, now);
   logger.warn("FDB queue operation failed, falling back to PG", {
     module: "nuq-router",
@@ -78,7 +84,9 @@ function logFdbFallback(
 }
 
 async function optionalFdb<T>(operation: () => Promise<T>): Promise<T> {
-  if (fdbForced()) return operation();
+  if (fdbForced()) {
+    return operation();
+  }
   if (!(await nuqFdbHealthCheck(FDB_OPTIONAL_OP_TIMEOUT_MS))) {
     throw new Error("FDB health check failed before optional operation");
   }
@@ -93,9 +101,15 @@ export async function isFdbTeam(
   teamId: string | undefined,
   ctx?: RequestContext,
 ): Promise<boolean> {
-  if (!fdbQueueEnabled()) return false;
-  if (fdbForced()) return true;
-  if (!teamId) return false;
+  if (!fdbQueueEnabled()) {
+    return false;
+  }
+  if (fdbForced()) {
+    return true;
+  }
+  if (!teamId) {
+    return false;
+  }
   try {
     const resolvedCtx =
       ctx ??
@@ -104,7 +118,7 @@ export async function isFdbTeam(
         zeroDataRetention: false,
       });
     return (await currentLimits().queueBackend(resolvedCtx)) === "fdb";
-  } catch (error) {
+  } catch (error: unknown) {
     _logger.warn("Failed to resolve queue backend override, defaulting to pg", {
       module: "nuq-router",
       teamId,
@@ -121,17 +135,33 @@ export async function resolveNewGroupBackend(
   return (await isFdbTeam(teamId, ctx)) ? "fdb" : "pg";
 }
 
+const crawlQueueBackendSchema = z.object({
+  queueBackend: z.unknown().optional(),
+});
+
 // Reads only the queueBackend marker off the stored crawl. Deliberately not
 // getCrawl() -- importing crawl-redis pulls the whole scraper tree in.
 async function getCrawlQueueBackend(
   crawlId: string,
 ): Promise<QueueBackend | null> {
-  if (fdbForced()) return "fdb";
+  if (fdbForced()) {
+    return "fdb";
+  }
   const raw = await (await crawlStateStore(crawlId)).get("crawl:" + crawlId);
-  if (!raw) return null;
+  if (!raw) {
+    return null;
+  }
   try {
-    const sc = JSON.parse(raw);
-    return sc?.queueBackend === "fdb" ? "fdb" : sc ? "pg" : null;
+    const parsed = safeParseLogged(
+      crawlQueueBackendSchema,
+      JSON.parse(raw),
+      "nuq-router.crawlQueueBackend",
+    );
+    return parsed.success
+      ? parsed.data.queueBackend === "fdb"
+        ? "fdb"
+        : "pg"
+      : null;
   } catch {
     return null;
   }
@@ -142,8 +172,12 @@ async function resolveGroupBackend(
   logger: Logger = _logger,
 ): Promise<QueueBackend> {
   const backend = await getCrawlQueueBackend(groupId);
-  if (backend) return backend;
-  if (!fdbQueueEnabled()) return "pg";
+  if (backend) {
+    return backend;
+  }
+  if (!fdbQueueEnabled()) {
+    return "pg";
+  }
 
   try {
     const group = await optionalFdb(() =>
@@ -151,7 +185,9 @@ async function resolveGroupBackend(
     );
     return group ? "fdb" : "pg";
   } catch (error) {
-    if (fdbForced()) throw error;
+    if (fdbForced()) {
+      throw error;
+    }
     logFdbFallback(logger, "resolveGroupBackend", error);
     return "pg";
   }
@@ -163,7 +199,9 @@ async function markJobBackend(
   jobId: string,
   backend: QueueBackend,
 ): Promise<void> {
-  if (fdbForced()) return;
+  if (fdbForced()) {
+    return;
+  }
   await redisEvictConnection.set(
     jobBackendKey(jobId),
     backend,
@@ -173,7 +211,9 @@ async function markJobBackend(
 }
 
 async function getJobQueueBackend(jobId: string): Promise<QueueBackend> {
-  if (fdbForced()) return "fdb";
+  if (fdbForced()) {
+    return "fdb";
+  }
   return (await redisEvictConnection.get(jobBackendKey(jobId))) === "fdb"
     ? "fdb"
     : "pg";
@@ -184,17 +224,22 @@ async function getJobQueueBackend(jobId: string): Promise<QueueBackend> {
 export async function resolveJobBackend(
   data: ScrapeJobData,
 ): Promise<QueueBackend> {
-  if (!fdbQueueEnabled()) return "pg";
-  if (fdbForced()) return "fdb";
+  if (!fdbQueueEnabled()) {
+    return "pg";
+  }
+  if (fdbForced()) {
+    return "fdb";
+  }
   if (data.crawl_id) {
     return (await getCrawlQueueBackend(data.crawl_id)) ?? "pg";
   }
   return (await isFdbTeam(data.team_id, jobContext(data))) ? "fdb" : "pg";
 }
 
-function tagFdbJob<T extends object>(job: T): T & { backend: "fdb" } {
-  (job as any).backend = "fdb";
-  return job as T & { backend: "fdb" };
+function tagFdbJob<T extends NuQJob<unknown, unknown>>(
+  job: T,
+): T & { backend: "fdb" } {
+  return Object.assign(job, { backend: "fdb" as const });
 }
 
 // === External capacity holders (browser sessions, sync scrapes)
@@ -212,7 +257,9 @@ async function markExternalSlotBackend(
   backend: QueueBackend,
   ttlMs: number,
 ): Promise<void> {
-  if (fdbForced()) return;
+  if (fdbForced()) {
+    return;
+  }
   try {
     await getRedisConnection().set(
       externalSlotBackendKey(holderId),
@@ -220,7 +267,7 @@ async function markExternalSlotBackend(
       "PX",
       Math.max(ttlMs, 0) + 60_000,
     );
-  } catch (error) {
+  } catch (error: unknown) {
     _logger.warn("Failed to record external slot backend marker", {
       module: "nuq-router",
       holderId,
@@ -234,13 +281,15 @@ async function markExternalSlotBackend(
 async function getExternalSlotBackend(
   holderId: string,
 ): Promise<QueueBackend | null> {
-  if (!fdbQueueEnabled() || fdbForced()) return null;
+  if (!fdbQueueEnabled() || fdbForced()) {
+    return null;
+  }
   try {
     const raw = await getRedisConnection().get(
       externalSlotBackendKey(holderId),
     );
     return raw === "fdb" ? "fdb" : null;
-  } catch (error) {
+  } catch (error: unknown) {
     _logger.warn("Failed to read external slot backend marker", {
       module: "nuq-router",
       holderId,
@@ -251,10 +300,12 @@ async function getExternalSlotBackend(
 }
 
 async function clearExternalSlotBackend(holderId: string): Promise<void> {
-  if (!fdbQueueEnabled() || fdbForced()) return;
+  if (!fdbQueueEnabled() || fdbForced()) {
+    return;
+  }
   try {
     await getRedisConnection().del(externalSlotBackendKey(holderId));
-  } catch (error) {
+  } catch (error: unknown) {
     _logger.warn("Failed to clear external slot backend marker", {
       module: "nuq-router",
       holderId,
@@ -309,7 +360,9 @@ export async function mirrorExternalSlotRelease(
       }
       return;
     } catch (error) {
-      if (fdbForced()) throw error;
+      if (fdbForced()) {
+        throw error;
+      }
       logFdbFallback(_logger, "mirrorExternalSlotRelease", error);
     }
   }
@@ -323,14 +376,18 @@ export async function getCombinedTeamActiveCount(
   ctx?: RequestContext,
 ): Promise<number> {
   const redisCount = await getConcurrencyLimitActiveJobsCount(teamId);
-  if (!(await isFdbTeam(teamId, ctx))) return redisCount;
+  if (!(await isFdbTeam(teamId, ctx))) {
+    return redisCount;
+  }
   try {
     return (
       redisCount +
       (await optionalFdb(() => scrapeQueueFdb.getTeamActiveCount(teamId)))
     );
   } catch (error) {
-    if (fdbForced()) throw error;
+    if (fdbForced()) {
+      throw error;
+    }
     logFdbFallback(_logger, "getCombinedTeamActiveCount", error);
     return redisCount;
   }
@@ -343,17 +400,22 @@ export function backlogTimeoutMsForGate(timeoutMs: number): Date {
 }
 
 export async function fdbEnqueueScrapeJobs(
-  jobs: {
+  jobs: Array<{
     jobId: string;
     data: ScrapeJobData;
     priority: number;
     listenable?: boolean;
     backlogTimeoutMs: number;
-  }[],
+  }>,
   teamId: string,
   options?: { bypassGate?: boolean },
 ): Promise<{
-  jobs: (NuQJob<ScrapeJobData> & { backend: "fdb"; backlogLimit?: number })[];
+  jobs: Array<
+    NuQJob<ScrapeJobData, Document | null> & {
+      backend: "fdb";
+      backlogLimit?: number;
+    }
+  >;
   backloggedCount: number;
   teamLimit: number | null;
   backlogLimit: number | null;
@@ -379,15 +441,17 @@ export async function fdbEnqueueScrapeJobs(
     const keyIds = new Set(jobs.map(j => jobContext(j.data).apiKeyId ?? null));
     const apiKeyId = keyIds.size === 1 ? [...keyIds][0] : null;
     if (apiKeyId !== null) {
-      keyGate = await limits.keyConcurrency(firstCtx).catch(error => {
-        _logger.warn("Failed to resolve API key concurrency limit", {
-          module: "nuq-router",
-          teamId,
-          apiKeyId,
-          error,
+      keyGate = await limits
+        .keyConcurrency(firstCtx)
+        .catch((error: unknown) => {
+          _logger.warn("Failed to resolve API key concurrency limit", {
+            module: "nuq-router",
+            teamId,
+            apiKeyId,
+            error,
+          });
+          return null;
         });
-        return null;
-      });
     }
   }
 
@@ -412,9 +476,7 @@ export async function fdbEnqueueScrapeJobs(
     ),
   );
 
-  const tagged = results.map(r =>
-    tagFdbJob(r as NuQJob<ScrapeJobData> & { backlogLimit?: number }),
-  );
+  const tagged = results.map(r => tagFdbJob(r));
   const markerResults = await Promise.allSettled(
     tagged.map(job => markJobBackend(job.id, "fdb")),
   );
@@ -426,7 +488,9 @@ export async function fdbEnqueueScrapeJobs(
       module: "nuq-router",
       failed: markerFailures.length,
       total: markerResults.length,
-      errors: markerFailures.map(r => r.reason),
+      errors: markerFailures.map(r =>
+        r.reason instanceof Error ? r.reason : String(r.reason),
+      ),
     });
   }
   const backloggedJobs = tagged.filter(j => j.status === "backlog");
@@ -450,7 +514,7 @@ class RoutedScrapeQueue {
 
   public async getJobToProcess(
     logger: Logger = _logger,
-  ): Promise<NuQJob<ScrapeJobData> | null> {
+  ): Promise<NuQJob<ScrapeJobData, Document | null> | null> {
     if (fdbQueueEnabled()) {
       try {
         const job = await optionalFdb(() =>
@@ -458,15 +522,19 @@ class RoutedScrapeQueue {
         );
         if (job) {
           this.inflightBackend.set(job.id, "fdb");
-          return tagFdbJob(job as NuQJob<ScrapeJobData>);
+          return tagFdbJob(job);
         }
-      } catch (error) {
-        if (fdbForced()) throw error;
+      } catch (error: unknown) {
+        if (fdbForced()) {
+          throw error;
+        }
         logFdbFallback(logger, "scrape.getJobToProcess", error);
       }
     }
     const job = await scrapeQueuePg.getJobToProcess();
-    if (job) this.inflightBackend.set(job.id, "pg");
+    if (job) {
+      this.inflightBackend.set(job.id, "pg");
+    }
     return job;
   }
 
@@ -481,7 +549,9 @@ class RoutedScrapeQueue {
           scrapeQueueFdb.renewLock(id, lock, logger),
         );
       } catch (error) {
-        if (fdbForced()) throw error;
+        if (fdbForced()) {
+          throw error;
+        }
         logFdbFallback(logger, "scrape.renewLock", error);
         return false;
       }
@@ -492,7 +562,7 @@ class RoutedScrapeQueue {
   public async jobFinish(
     id: string,
     lock: string,
-    returnvalue: any | null,
+    returnvalue: unknown,
     logger: Logger = _logger,
   ): Promise<boolean> {
     const backend = this.backendFor(id);
@@ -503,7 +573,9 @@ class RoutedScrapeQueue {
           scrapeQueueFdb.jobFinish(id, lock, returnvalue, logger),
         );
       } catch (error) {
-        if (fdbForced()) throw error;
+        if (fdbForced()) {
+          throw error;
+        }
         logFdbFallback(logger, "scrape.jobFinish", error);
         return false;
       }
@@ -525,7 +597,9 @@ class RoutedScrapeQueue {
           scrapeQueueFdb.jobFail(id, lock, failedReason, logger),
         );
       } catch (error) {
-        if (fdbForced()) throw error;
+        if (fdbForced()) {
+          throw error;
+        }
         logFdbFallback(logger, "scrape.jobFail", error);
         return false;
       }
@@ -536,52 +610,67 @@ class RoutedScrapeQueue {
   public async getJob(
     id: string,
     logger: Logger = _logger,
-  ): Promise<NuQJob<ScrapeJobData> | null> {
+  ): Promise<NuQJob<ScrapeJobData | null, Document | null> | null> {
     if ((await getJobQueueBackend(id)) === "fdb") {
       const job = await optionalFdb(() => scrapeQueueFdb.getJob(id, logger));
-      return job ? tagFdbJob(job as NuQJob<ScrapeJobData>) : null;
+      return job ? tagFdbJob(job) : null;
     }
     return scrapeQueuePg.getJob(id, logger);
   }
 
   public async getJobs(
-    ids: string[],
+    ids: Array<string>,
     logger: Logger = _logger,
-  ): Promise<NuQJob<ScrapeJobData>[]> {
-    if (ids.length === 0) return [];
+  ): Promise<Array<NuQJob<ScrapeJobData | null, Document | null>>> {
+    if (ids.length === 0) {
+      return [];
+    }
     const backends = await Promise.all(ids.map(id => getJobQueueBackend(id)));
     const fdbIds = ids.filter((_, i) => backends[i] === "fdb");
     const pgIds = ids.filter((_, i) => backends[i] === "pg");
     const [fdbJobs, pgJobs] = await Promise.all([
       fdbIds.length > 0
         ? optionalFdb(() => scrapeQueueFdb.getJobs(fdbIds, logger))
-        : Promise.resolve([] as NuQFdbJob<ScrapeJobData>[]),
+        : Promise.resolve<
+            Array<NuQFdbJob<ScrapeJobData | null, Document | null>>
+          >([]),
       pgIds.length > 0
         ? scrapeQueuePg.getJobs(pgIds, logger)
-        : Promise.resolve([] as NuQJob<ScrapeJobData>[]),
+        : Promise.resolve<Array<NuQJob<ScrapeJobData, Document | null>>>([]),
     ]);
-    const byId = new Map<string, NuQJob<ScrapeJobData>>();
-    for (const j of fdbJobs)
-      byId.set(j.id, tagFdbJob(j as NuQJob<ScrapeJobData>));
-    for (const j of pgJobs) byId.set(j.id, j);
-    return ids
-      .map(id => byId.get(id))
-      .filter((j): j is NuQJob<ScrapeJobData> => j !== undefined);
+    const byId = new Map<
+      string,
+      NuQJob<ScrapeJobData | null, Document | null>
+    >();
+    for (const j of fdbJobs) {
+      byId.set(j.id, tagFdbJob(j));
+    }
+    for (const j of pgJobs) {
+      byId.set(j.id, j);
+    }
+    const ordered: Array<NuQJob<ScrapeJobData | null, Document | null>> = [];
+    for (const id of ids) {
+      const job = byId.get(id);
+      if (job !== undefined) {
+        ordered.push(job);
+      }
+    }
+    return ordered;
   }
 
   public async getJobsWithStatus(
-    ids: string[],
+    ids: Array<string>,
     status: NuQJobStatus,
     logger: Logger = _logger,
-  ): Promise<NuQJob<ScrapeJobData>[]> {
+  ): Promise<Array<NuQJob<ScrapeJobData | null, Document | null>>> {
     return (await this.getJobs(ids, logger)).filter(j => j.status === status);
   }
 
   public async getJobsWithStatuses(
-    ids: string[],
-    statuses: NuQJobStatus[],
+    ids: Array<string>,
+    statuses: Array<NuQJobStatus>,
     logger: Logger = _logger,
-  ): Promise<NuQJob<ScrapeJobData>[]> {
+  ): Promise<Array<NuQJob<ScrapeJobData | null, Document | null>>> {
     const set = new Set(statuses);
     return (await this.getJobs(ids, logger)).filter(j => set.has(j.status));
   }
@@ -590,12 +679,12 @@ class RoutedScrapeQueue {
     groupId: string,
     ownerId: string,
     logger: Logger = _logger,
-  ): Promise<NuQJob<ScrapeJobData> | null> {
+  ): Promise<NuQJob<ScrapeJobData | null, Document | null> | null> {
     if ((await resolveGroupBackend(groupId, logger)) === "fdb") {
       const job = await optionalFdb(() =>
         scrapeQueueFdb.getGroupAnyJob(groupId, ownerId, logger),
       );
-      return job ? tagFdbJob(job as NuQJob<ScrapeJobData>) : null;
+      return job ? tagFdbJob(job) : null;
     }
     return scrapeQueuePg.getGroupAnyJob(groupId, ownerId);
   }
@@ -605,9 +694,9 @@ class RoutedScrapeQueue {
     logger: Logger = _logger,
   ): Promise<Record<NuQJobStatus, number>> {
     if ((await resolveGroupBackend(groupId, logger)) === "fdb") {
-      return (await optionalFdb(() =>
+      return await optionalFdb(() =>
         scrapeQueueFdb.getGroupNumericStats(groupId, logger),
-      )) as Record<NuQJobStatus, number>;
+      );
     }
     return scrapeQueuePg.getGroupNumericStats(groupId, logger);
   }
@@ -618,12 +707,12 @@ class RoutedScrapeQueue {
     limit?: number,
     offset = 0,
     logger: Logger = _logger,
-  ): Promise<NuQJob<ScrapeJobData>[]> {
+  ): Promise<Array<NuQJob<ScrapeJobData | null, Document | null>>> {
     if ((await resolveGroupBackend(groupId, logger)) === "fdb") {
       const jobs = await optionalFdb(() =>
         scrapeQueueFdb.getGroupJobs(groupId, status, limit, offset, logger),
       );
-      return jobs.map(j => tagFdbJob(j as NuQJob<ScrapeJobData>));
+      return jobs.map(j => tagFdbJob(j));
     }
     return scrapeQueuePg.getGroupJobs(groupId, status, limit, offset, logger);
   }
@@ -637,7 +726,7 @@ class RoutedScrapeQueue {
   }
 
   public async removeJobs(
-    ids: string[],
+    ids: Array<string>,
     logger: Logger = _logger,
   ): Promise<void> {
     for (const id of ids) {
@@ -645,18 +734,18 @@ class RoutedScrapeQueue {
     }
   }
 
-  public async waitForJob<T = any>(
+  public async waitForJob<_T = Document | null>(
     id: string,
     timeout: number | null,
     logger: Logger = _logger,
-  ): Promise<T> {
+  ): Promise<Document | null> {
     if ((await getJobQueueBackend(id)) === "fdb") {
       // Waiting is intentionally long-lived; callers pass the real scrape
       // timeout. optionalFdb is only for quick FDB reads/writes and applies a
       // 500ms guard, which would incorrectly fail synchronous FDB-backed jobs.
       return scrapeQueueFdb.waitForJob(id, timeout, logger);
     }
-    return scrapeQueuePg.waitForJob(id, timeout, logger) as Promise<T>;
+    return scrapeQueuePg.waitForJob(id, timeout, logger);
   }
 
   public async getMetrics(logger: Logger = _logger) {
@@ -671,7 +760,7 @@ class RoutedCrawlFinishedQueue {
 
   public async getJobToProcess(
     logger: Logger = _logger,
-  ): Promise<NuQJob<any> | null> {
+  ): Promise<NuQJob | null> {
     if (fdbQueueEnabled()) {
       try {
         const job = await optionalFdb(() =>
@@ -679,15 +768,19 @@ class RoutedCrawlFinishedQueue {
         );
         if (job) {
           this.inflightBackend.set(job.id, "fdb");
-          return tagFdbJob(job as NuQJob<any>);
+          return tagFdbJob(job);
         }
-      } catch (error) {
-        if (fdbForced()) throw error;
+      } catch (error: unknown) {
+        if (fdbForced()) {
+          throw error;
+        }
         logFdbFallback(logger, "crawlFinished.getJobToProcess", error);
       }
     }
     const job = await crawlFinishedQueuePg.getJobToProcess();
-    if (job) this.inflightBackend.set(job.id, "pg");
+    if (job) {
+      this.inflightBackend.set(job.id, "pg");
+    }
     return job;
   }
 
@@ -702,7 +795,9 @@ class RoutedCrawlFinishedQueue {
           crawlFinishedQueueFdb.renewLock(id, lock, logger),
         );
       } catch (error) {
-        if (fdbForced()) throw error;
+        if (fdbForced()) {
+          throw error;
+        }
         logFdbFallback(logger, "crawlFinished.renewLock", error);
         return false;
       }
@@ -713,7 +808,7 @@ class RoutedCrawlFinishedQueue {
   public async jobFinish(
     id: string,
     lock: string,
-    returnvalue: any | null,
+    returnvalue: unknown,
     logger: Logger = _logger,
   ): Promise<boolean> {
     const backend = this.inflightBackend.get(id) ?? "pg";
@@ -724,7 +819,9 @@ class RoutedCrawlFinishedQueue {
           crawlFinishedQueueFdb.jobFinish(id, lock, returnvalue, logger),
         );
       } catch (error) {
-        if (fdbForced()) throw error;
+        if (fdbForced()) {
+          throw error;
+        }
         logFdbFallback(logger, "crawlFinished.jobFinish", error);
         return false;
       }
@@ -746,7 +843,9 @@ class RoutedCrawlFinishedQueue {
           crawlFinishedQueueFdb.jobFail(id, lock, failedReason, logger),
         );
       } catch (error) {
-        if (fdbForced()) throw error;
+        if (fdbForced()) {
+          throw error;
+        }
         logFdbFallback(logger, "crawlFinished.jobFail", error);
         return false;
       }
@@ -757,12 +856,12 @@ class RoutedCrawlFinishedQueue {
   public async getJob(
     id: string,
     logger: Logger = _logger,
-  ): Promise<NuQJob<any> | null> {
+  ): Promise<NuQJob | null> {
     if ((await getJobQueueBackend(id)) === "fdb") {
       const job = await optionalFdb(() =>
         crawlFinishedQueueFdb.getJob(id, logger),
       );
-      return job ? tagFdbJob(job as NuQJob<any>) : null;
+      return job ? tagFdbJob(job) : null;
     }
     return crawlFinishedQueuePg.getJob(id, logger);
   }
@@ -795,7 +894,7 @@ class RoutedCrawlGroup {
           logger,
         ),
       );
-      return g as NuQJobGroupInstance;
+      return g;
     }
     return crawlGroupPg.addGroup(id, ownerId, ttl, logger);
   }
@@ -805,9 +904,7 @@ class RoutedCrawlGroup {
     logger: Logger = _logger,
   ): Promise<NuQJobGroupInstance | null> {
     if ((await resolveGroupBackend(id, logger)) === "fdb") {
-      return (await optionalFdb(() =>
-        crawlGroupFdb.getGroup(id, logger),
-      )) as NuQJobGroupInstance | null;
+      return await optionalFdb(() => crawlGroupFdb.getGroup(id, logger));
     }
     return crawlGroupPg.getGroup(id, logger);
   }
@@ -816,27 +913,28 @@ class RoutedCrawlGroup {
     ownerId: string,
     logger: Logger = _logger,
     ctx?: RequestContext,
-  ): Promise<NuQJobGroupInstance[]> {
+  ): Promise<Array<NuQJobGroupInstance>> {
     if (!(await isFdbTeam(ownerId, ctx))) {
       return crawlGroupPg.getOngoingByOwner(ownerId, logger);
     }
-    let fdb: NuQJobGroupInstance[] = [];
+    let fdb: Array<NuQJobGroupInstance>;
     try {
-      fdb = (await optionalFdb(() =>
+      fdb = await optionalFdb(() =>
         crawlGroupFdb.getOngoingByOwner(ownerId, logger),
-      )) as NuQJobGroupInstance[];
+      );
     } catch (error) {
-      if (fdbForced()) throw error;
+      if (fdbForced()) {
+        throw error;
+      }
       logFdbFallback(logger, "crawlGroup.getOngoingByOwner", error);
       return crawlGroupPg.getOngoingByOwner(ownerId, logger);
     }
-    if (fdbForced()) return fdb as NuQJobGroupInstance[];
+    if (fdbForced()) {
+      return fdb;
+    }
     const pg = await crawlGroupPg.getOngoingByOwner(ownerId, logger);
     const seen = new Set(fdb.map(g => g.id));
-    return [
-      ...(fdb as NuQJobGroupInstance[]),
-      ...pg.filter(g => !seen.has(g.id)),
-    ];
+    return [...fdb, ...pg.filter(g => !seen.has(g.id))];
   }
 
   // O(1) cancel; only meaningful for FDB groups. PG crawls keep their
@@ -845,11 +943,15 @@ class RoutedCrawlGroup {
     id: string,
     logger: Logger = _logger,
   ): Promise<boolean> {
-    if ((await resolveGroupBackend(id, logger)) !== "fdb") return false;
+    if ((await resolveGroupBackend(id, logger)) !== "fdb") {
+      return false;
+    }
     try {
       return await optionalFdb(() => crawlGroupFdb.cancelGroup(id, logger));
     } catch (error) {
-      if (fdbForced()) throw error;
+      if (fdbForced()) {
+        throw error;
+      }
       logFdbFallback(logger, "crawlGroup.cancelGroup", error);
       return false;
     }

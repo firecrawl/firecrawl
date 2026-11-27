@@ -1,5 +1,8 @@
 //! Guards shared by the XML parsers in this crate.
 
+// Pre-existing XML depth scanner exempt from strict workspace clippy denies.
+#![allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
+
 /// roxmltree recurses once per nesting level and overflows the stack on
 /// deeply nested input, which aborts the whole process instead of erroring.
 /// This flat pass counts element nesting without parsing: comments, CDATA
@@ -9,7 +12,7 @@
 /// Markup the scan cannot follow to its end, such as an unterminated tag,
 /// comment or attribute value, also returns `true`: the depth of what follows
 /// is unknown, so it must not reach the recursive parser.
-pub(crate) fn exceeds_element_depth(xml: &str, limit: usize) -> bool {
+pub fn exceeds_element_depth(xml: &str, limit: usize) -> bool {
   let mut depth = 0usize;
   let mut i = 0;
   while let Some(offset) = xml[i..].find('<') {

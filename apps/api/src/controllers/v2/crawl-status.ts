@@ -1,5 +1,7 @@
-import { Response } from "express";
-import {
+import type { Response } from "express";
+import { z } from "zod";
+import type {
+  BaseScrapeOptions,
   CrawlStatusParams,
   CrawlStatusResponse,
   RequestWithAuth,
@@ -9,25 +11,19 @@ import {
   getCrawl,
   getCrawlError,
   getCrawlExpiry,
-  getCrawlQualifiedJobCount,
-  getDoneJobsOrderedLength,
-  getDoneJobsOrderedUntil,
   getLastDoneJobTimestamp,
-  isCrawlKickoffFinished,
   getCrawlRobotsBlockedCount,
 } from "../../lib/crawl-redis";
 import { configDotenv } from "dotenv";
 import { logger } from "../../lib/logger";
-import {
-  scrapeQueue,
-  NuQJob,
-  NuQJobStatus,
-  crawlGroup,
-} from "../../services/worker/nuq-router";
-import { ScrapeJobSingleUrls } from "../../types";
+import type { NuQJob, NuQJobStatus } from "../../services/worker/nuq-router";
+import { scrapeQueue, crawlGroup } from "../../services/worker/nuq-router";
+import type { ScrapeJobData } from "../../types";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { storedZeroDataRetention } from "../../lib/request-context";
-import { service, type StoredJob } from "../../service";
+import { safeParseLogged } from "../../lib/zod-log";
+import { service } from "../../service";
+import type { StoredJob } from "../../service";
 configDotenv();
 
 export type PseudoJob<T> = {
@@ -36,18 +32,60 @@ export type PseudoJob<T> = {
   returnvalue: T | null;
   timestamp: number;
   data: {
-    scrapeOptions: any;
+    scrapeOptions: BaseScrapeOptions | null;
     teamId?: string;
   };
   failedReason?: string;
 };
 
+interface CrawlStatusSummary {
+  status?: "completed" | "scraping" | "cancelled" | "failed";
+  completed?: number;
+  total?: number;
+  creditsUsed?: number;
+}
+
+const documentShapeSchema = z.looseObject({});
+
+const documentSchema = z.custom<Document>(
+  value =>
+    safeParseLogged(documentShapeSchema, value, "crawl-status.document")
+      .success,
+);
+
+const crawlEntireDomainSchema = z.object({
+  crawlEntireDomain: z.literal(true),
+});
+
+function extractDocument(
+  storedDoc: Document | undefined,
+  rawReturnValue: unknown,
+): Document | null {
+  if (storedDoc) {
+    return storedDoc;
+  }
+  const candidate: unknown = Array.isArray(rawReturnValue)
+    ? rawReturnValue[0]
+    : rawReturnValue;
+  if (candidate === null || candidate === undefined) {
+    return null;
+  }
+  const parsed = documentSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
+}
+
+function readCrawlEntireDomain(crawlerOptions: unknown): boolean {
+  return crawlEntireDomainSchema.safeParse(crawlerOptions).success;
+}
+
 const JOB_STORE_READ_CONCURRENCY = 20;
 
 async function readStoredJobs(
-  ids: readonly string[],
+  ids: ReadonlyArray<string>,
 ): Promise<Map<string, StoredJob>> {
-  if (ids.length === 0) return new Map();
+  if (ids.length === 0) {
+    return new Map();
+  }
   const store = service.modules.jobStore;
   if (store.readMany) {
     return store.readMany(ids, "scrape");
@@ -59,7 +97,9 @@ async function readStoredJobs(
       batch.map(async id => [id, await store.read(id, "scrape")] as const),
     );
     for (const [id, job] of entries) {
-      if (job) result.set(id, job);
+      if (job) {
+        result.set(id, job);
+      }
     }
   }
   return result;
@@ -68,42 +108,51 @@ async function readStoredJobs(
 export async function getJob(
   id: string,
   _logger = logger,
-): Promise<PseudoJob<any> | null> {
+): Promise<PseudoJob<Document> | null> {
   const store = service.modules.jobStore;
   const externalStore = store.storesResultsExternally?.() ?? false;
-  let storeReadError: unknown = null;
-  const readStore = () =>
-    store.read(id, "scrape").catch(error => {
+  const readStore = async (): Promise<{
+    stored: StoredJob | null;
+    error: Error | null;
+  }> => {
+    try {
+      return { stored: await store.read(id, "scrape"), error: null };
+    } catch (error: unknown) {
       _logger.warn("Job store read failed", {
         error,
         scrapeId: id,
       });
-      storeReadError = error;
-      return null;
-    });
+      return {
+        stored: null,
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
+    }
+  };
 
-  let nuqJob: NuQJob<ScrapeJobSingleUrls> | null;
+  let nuqJob: NuQJob<ScrapeJobData | null, Document | null> | null;
   let stored: StoredJob | null = null;
+  let storeReadError: Error | null = null;
   if (externalStore) {
-    [nuqJob, stored] = await Promise.all([
-      scrapeQueue.getJob(
-        id,
-        _logger,
-      ) as Promise<NuQJob<ScrapeJobSingleUrls> | null>,
+    let storeResult: { stored: StoredJob | null; error: Error | null };
+    [nuqJob, storeResult] = await Promise.all([
+      scrapeQueue.getJob(id, _logger),
       readStore(),
     ]);
+    stored = storeResult.stored;
+    storeReadError = storeResult.error;
   } else {
-    nuqJob = (await scrapeQueue.getJob(
-      id,
-      _logger,
-    )) as NuQJob<ScrapeJobSingleUrls> | null;
+    nuqJob = await scrapeQueue.getJob(id, _logger);
     if (!nuqJob) {
-      stored = await readStore();
+      const storeResult = await readStore();
+      stored = storeResult.stored;
+      storeReadError = storeResult.error;
     }
   }
 
   if (!nuqJob && !stored) {
-    if (storeReadError) throw storeReadError;
+    if (storeReadError) {
+      throw storeReadError;
+    }
     return null;
   }
 
@@ -121,14 +170,22 @@ export async function getJob(
     throw storeReadError;
   }
 
-  const data = stored?.document ?? nuqJob?.returnvalue;
+  const scrapeOptions =
+    nuqJob?.data && "scrapeOptions" in nuqJob.data
+      ? nuqJob.data.scrapeOptions
+      : null;
+  const status: NuQJobStatus = stored
+    ? stored.state
+    : nuqJob
+      ? nuqJob.status
+      : "failed";
 
-  const job: PseudoJob<any> = {
+  const job: PseudoJob<Document> = {
     id,
-    status: stored?.state ?? nuqJob!.status,
-    returnvalue: Array.isArray(data) ? data[0] : data,
+    status,
+    returnvalue: extractDocument(stored?.document, nuqJob?.returnvalue),
     data: {
-      scrapeOptions: nuqJob?.data ? nuqJob.data.scrapeOptions : null,
+      scrapeOptions,
     },
     timestamp:
       stored?.completedAtMs ?? nuqJob?.createdAt.valueOf() ?? Date.now(),
@@ -139,20 +196,23 @@ export async function getJob(
 }
 
 export async function getJobs(
-  ids: string[],
+  ids: Array<string>,
   _logger = logger,
-): Promise<PseudoJob<any>[]> {
+): Promise<Array<PseudoJob<Document>>> {
   const fetchExternal = Boolean(
     service.modules.jobStore.storesResultsExternally?.(),
   );
   const [nuqJobs, externalJobs] = await Promise.all([
-    scrapeQueue.getJobs(ids, _logger) as Promise<NuQJob<ScrapeJobSingleUrls>[]>,
+    scrapeQueue.getJobs(ids, _logger),
     fetchExternal
       ? readStoredJobs(ids)
       : Promise.resolve(new Map<string, StoredJob>()),
   ]);
 
-  const nuqJobMap = new Map<string, NuQJob<any, any>>();
+  const nuqJobMap = new Map<
+    string,
+    NuQJob<ScrapeJobData | null, Document | null>
+  >();
   for (const job of nuqJobs) {
     nuqJobMap.set(job.id, job);
   }
@@ -160,29 +220,38 @@ export async function getJobs(
   let storedJobMap = externalJobs;
   if (!fetchExternal) {
     const missingIds = nuqJobs
-      .filter(job => job.status === "completed" && job.returnvalue == null)
+      .filter(
+        job =>
+          job.status === "completed" &&
+          (job.returnvalue === null || job.returnvalue === undefined),
+      )
       .map(job => job.id);
     if (missingIds.length > 0) {
       storedJobMap = await readStoredJobs(missingIds);
     }
   }
 
-  const jobs: PseudoJob<any>[] = [];
+  const jobs: Array<PseudoJob<Document>> = [];
 
   for (const id of ids) {
     const nuqJob = nuqJobMap.get(id);
     const storedJob = storedJobMap.get(id);
 
-    if (!nuqJob) continue;
+    if (!nuqJob) {
+      continue;
+    }
 
-    const data = storedJob?.document ?? nuqJob.returnvalue;
+    const scrapeOptions =
+      nuqJob.data && "scrapeOptions" in nuqJob.data
+        ? nuqJob.data.scrapeOptions
+        : null;
 
-    const job: PseudoJob<any> = {
+    const job: PseudoJob<Document> = {
       id,
       status: nuqJob.status,
-      returnvalue: Array.isArray(data) ? data[0] : data,
+      returnvalue: extractDocument(storedJob?.document, nuqJob.returnvalue),
       data: {
-        scrapeOptions: nuqJob.data?.scrapeOptions ?? null,
+        scrapeOptions,
       },
       timestamp: nuqJob.createdAt.valueOf(),
       failedReason: nuqJob.failedReason || undefined,
@@ -209,10 +278,12 @@ export async function crawlStatusController(
   }
 
   const start =
-    typeof req.query.skip === "string" ? parseInt(req.query.skip, 10) : 0;
+    typeof req.query.skip === "string"
+      ? Number.parseInt(req.query.skip, 10)
+      : 0;
   const end =
     typeof req.query.limit === "string"
-      ? start + parseInt(req.query.limit, 10) - 1
+      ? start + Number.parseInt(req.query.limit, 10) - 1
       : undefined;
 
   const group = await crawlGroup.getGroup(req.params.jobId);
@@ -243,12 +314,7 @@ export async function crawlStatusController(
   // check if the crawl failed during kickoff (e.g. queue full)
   const crawlError = await getCrawlError(req.params.jobId);
 
-  let outputBulkA: {
-    status?: "completed" | "scraping" | "cancelled" | "failed";
-    completed?: number;
-    total?: number;
-    creditsUsed?: number;
-  } = {
+  const outputBulkA: CrawlStatusSummary = {
     status: sc?.cancelled
       ? "cancelled"
       : group.status === "active"
@@ -292,11 +358,6 @@ export async function crawlStatusController(
     });
   }
 
-  let outputBulkB: {
-    data: Document[];
-    next: string | undefined;
-  };
-
   const pageSize = end !== undefined ? end - start + 1 : 100;
   const doneJobs = await scrapeQueue.getGroupJobs(
     req.params.jobId,
@@ -306,15 +367,21 @@ export async function crawlStatusController(
     logger.child({ zeroDataRetention }),
   );
 
-  let scrapes: Document[] = [];
+  const scrapes: Array<Document> = [];
   let iteratedOver = 0;
   let bytes = 0;
-  const bytesLimit = 10485760; // 10 MiB in bytes
+  const bytesLimit = 10_485_760; // 10 MiB in bytes
 
-  const missingIds = doneJobs.filter(x => x.returnvalue == null).map(x => x.id);
+  const missingIds = doneJobs
+    .filter(x => x.returnvalue === null || x.returnvalue === undefined)
+    .map(x => x.id);
   const storedById = await readStoredJobs(missingIds);
   const scrapeBlobs = doneJobs.map(
-    x => [x.id, x.returnvalue ?? storedById.get(x.id)?.document] as const,
+    x =>
+      [
+        x.id,
+        extractDocument(storedById.get(x.id)?.document, x.returnvalue),
+      ] as const,
   );
 
   for (const [id, scrape] of scrapeBlobs) {
@@ -341,7 +408,7 @@ export async function crawlStatusController(
     iteratedOver--;
   }
 
-  outputBulkB = {
+  const outputBulkB = {
     data: scrapes,
     // Only completed documents are paged, so a finished job's cursor ends after
     // its last one. `completed` is read before this page, so a full or
@@ -366,7 +433,7 @@ export async function crawlStatusController(
     if (rbCount > 0 && statusNow !== "scraping") {
       warning = `One or more pages could not be crawled because the site's robots.txt disallows them. See the robotsBlocked list on GET /v2/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}/errors. Teams with the feature enabled can set ignoreRobotsTxt: true.`;
     }
-  } catch (error) {
+  } catch (error: unknown) {
     // If we can't check robots blocked URLs, continue without warning
     logger.debug("Failed to check robots blocked URLs", {
       error,
@@ -383,8 +450,9 @@ export async function crawlStatusController(
     const crawl = await getCrawl(req.params.jobId);
     if (crawl && crawl.originUrl && !isBaseDomain(crawl.originUrl)) {
       // Don't show warning if user is already using crawlEntireDomain
-      const isUsingCrawlEntireDomain =
-        crawl.crawlerOptions?.crawlEntireDomain === true;
+      const isUsingCrawlEntireDomain = readCrawlEntireDomain(
+        crawl.crawlerOptions,
+      );
       if (!isUsingCrawlEntireDomain) {
         const baseDomain = extractBaseDomain(crawl.originUrl);
         if (baseDomain) {

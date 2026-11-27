@@ -34,8 +34,10 @@ export type ImageOcrGate = () => Promise<boolean>;
  * `image` parser (the default, and parse uploads of an image always count),
  * and an image-capable engine must be enabled (see isImageOcrEnabled).
  */
-export function shouldParseImages(parsers?: readonly unknown[]): boolean {
-  if (!parsers) return true;
+export function shouldParseImages(parsers?: ReadonlyArray<unknown>): boolean {
+  if (!parsers) {
+    return true;
+  }
   return parsers.some(
     parser =>
       parser === "image" ||

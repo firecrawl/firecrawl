@@ -49,6 +49,7 @@ import {
   serializeThrownError,
   serializeTransportableError,
 } from "./error-serde";
+import type { JsonObject } from "./json-types";
 
 const withCoreErrors = createService(
   { modules: {} },
@@ -107,7 +108,7 @@ describe("behavioral error traits", () => {
   });
 
   it("marks all 22 engine-loop-terminal errors and excludes non-terminal errors", () => {
-    const terminalErrors: Error[] = [
+    const terminalErrors: Array<Error> = [
       new AddFeatureError(["stealthProxy"]),
       new RemoveFeatureError(["pdf"]),
       new SiteError("ERR_CONNECTION_RESET"),
@@ -121,7 +122,7 @@ describe("behavioral error traits", () => {
       new PDFOCRRequiredError("Scanned"),
       new DocumentAntibotError(),
       new DocumentFetchProxyError(),
-      new PDFInsufficientTimeError(100, 60000),
+      new PDFInsufficientTimeError(100, 60_000),
       new ProxySelectionError(),
       new NoCachedDataError(),
       new AgentIndexOnlyError(),
@@ -135,7 +136,7 @@ describe("behavioral error traits", () => {
       expect(endsEngineLoop(error), error.constructor.name).toBe(true);
     }
 
-    const nonTerminalErrors: Error[] = [
+    const nonTerminalErrors: Array<Error> = [
       new EngineError("failed"),
       new IndexMissError(),
       new FEPageLoadFailed(),
@@ -176,7 +177,7 @@ describe("HTTP response metadata", () => {
       expected: {
         status: number;
         code: string;
-        extraFields?: Record<string, unknown>;
+        extraFields?: JsonObject;
       };
     }> = [
       {
@@ -258,14 +259,24 @@ describe("HTTP response metadata", () => {
       },
     ];
 
+    interface ExpectedErrorHttpResponse {
+      status: number;
+      code: string;
+      message: string;
+      extraFields?: JsonObject;
+    }
+
     for (const { label, error, expected } of cases) {
       const response = getErrorHttpResponse(error);
-      expect(response, label).toEqual({
+      const expectedResponse: ExpectedErrorHttpResponse = {
         status: expected.status,
         code: expected.code,
         message: error.message,
-        ...(expected.extraFields ? { extraFields: expected.extraFields } : {}),
-      });
+      };
+      if (expected.extraFields) {
+        expectedResponse.extraFields = expected.extraFields;
+      }
+      expect(response, label).toEqual(expectedResponse);
 
       const revived = deserializeTransportableError(
         serializeTransportableError(error),
@@ -327,7 +338,7 @@ describe("HTTP response metadata", () => {
 
 describe("wire format stability", () => {
   it("serializes no behavioral or HTTP trait fields and round-trips byte-for-byte", () => {
-    const modifiedErrors: TransportableError[] = [
+    const modifiedErrors: Array<TransportableError> = [
       new SiteError("ERR_CONNECTION_RESET"),
       new SiteRestrictionError(),
       new SSLError(false),
@@ -339,7 +350,7 @@ describe("wire format stability", () => {
       new PDFOCRRequiredError("Scanned"),
       new DocumentAntibotError(),
       new DocumentFetchProxyError(),
-      new PDFInsufficientTimeError(100, 60000),
+      new PDFInsufficientTimeError(100, 60_000),
       new ProxySelectionError(),
       new NoCachedDataError(),
       new LockdownMissError(),

@@ -15,6 +15,9 @@ const delimitedList = (separator = ",") => {
 const emptyStringAsDefault = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess(value => (value === "" ? undefined : value), schema);
 
+const coercedNumberWithFallback = (fallback: number) =>
+  z.coerce.number().default(fallback).catch(fallback);
+
 /* Schema */
 const configSchema = z.object({
   // Application
@@ -34,9 +37,11 @@ const configSchema = z.object({
   // Admin & AI Keys
   BULL_AUTH_KEY: z.string().optional(),
   BULL_AUTH_KEY_PREVIOUS: emptyStringAsUndefined(z.string()),
-  BULL_AUTH_KEY_PATH_ROUTES: emptyStringAsDefault(z.stringbool().default(true)),
+  BULL_AUTH_KEY_PATH_ROUTES: emptyStringAsDefault(
+    z.stringbool().default(false),
+  ),
   ADMIN_INTERNAL_PORT: emptyStringAsUndefined(
-    z.coerce.number().int().positive().max(65535),
+    z.coerce.number().int().positive().max(65_535),
   ),
   ADMIN_INTERNAL_HOST: emptyStringAsDefault(z.string().default("localhost")),
   OPENAI_API_KEY: z.string().optional(),
@@ -95,19 +100,19 @@ const configSchema = z.object({
 
   // Worker Configuration
   WORKER_PORT: z.coerce.number().default(3005),
-  NUQ_WORKER_PORT: z.coerce.number().default(3000).catch(3000),
+  NUQ_WORKER_PORT: coercedNumberWithFallback(3000),
   NUQ_WORKER_START_PORT: z.coerce.number().default(3006),
   NUQ_WORKER_COUNT: z.coerce.number().default(5),
-  NUQ_PREFETCH_WORKER_PORT: z.coerce.number().default(3011).catch(3011),
-  NUQ_RECONCILER_WORKER_PORT: z.coerce.number().default(3012).catch(3012),
+  NUQ_PREFETCH_WORKER_PORT: coercedNumberWithFallback(3011),
+  NUQ_RECONCILER_WORKER_PORT: coercedNumberWithFallback(3012),
   NUQ_WAIT_MODE: z.string().optional(),
 
   // Harness Configuration
-  HARNESS_STARTUP_TIMEOUT_MS: z.coerce.number().default(60000),
+  HARNESS_STARTUP_TIMEOUT_MS: z.coerce.number().default(60_000),
 
   // Job & Lock Management
-  JOB_LOCK_EXTEND_INTERVAL: z.coerce.number().default(10000),
-  JOB_LOCK_EXTENSION_TIME: z.coerce.number().default(60000),
+  JOB_LOCK_EXTEND_INTERVAL: z.coerce.number().default(10_000),
+  JOB_LOCK_EXTENSION_TIME: z.coerce.number().default(60_000),
 
   // Proxy
   PROXY_SERVER: z.string().optional(),

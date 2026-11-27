@@ -1,5 +1,9 @@
-import type { NextFunction } from "express";
+import express from "express";
+import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import type { RequestWithAuth } from "../../controllers/v2/types";
+import type { JsonObject } from "../../lib/json-types";
 
 vi.mock("../../lib/logger", () => ({
   logger: {
@@ -21,12 +25,27 @@ vi.mock("geoip-country", () => ({ lookup: vi.fn(() => null) }));
 import { checkCreditsMiddleware } from "../../routes/shared";
 import { defaultModules } from "../../service/defaults";
 import type { BillingModule } from "../../service/modules";
-import { replaceService, type CoreParts } from "../../service/service";
+import { replaceService } from "../../service/service";
+import type { CoreParts } from "../../service/service";
 import { testService, withService } from "../../service/testing";
 
 const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
 
-function buildReq(overrides: Record<string, unknown> = {}): any {
+type MockReq = {
+  path: string;
+  body: {
+    limit?: number;
+    url?: string;
+    urls?: Array<string>;
+    query?: string;
+    prompt?: string;
+  };
+  auth: { team_id: string; org_id: string };
+  acuc: JsonObject;
+  account?: { remainingCredits: number };
+};
+
+function buildReq(overrides: Partial<MockReq> = {}): MockReq {
   return {
     path: "/crawl",
     body: { limit: 100 },
@@ -36,41 +55,66 @@ function buildReq(overrides: Record<string, unknown> = {}): any {
   };
 }
 
-function runMiddleware(
-  req: any,
+const limitBodySchema = z.object({ limit: z.number() });
+
+async function runMiddleware(
+  reqSpec: MockReq,
   middleware = checkCreditsMiddleware(),
-): Promise<{ res: any; nextErr?: unknown; nextCalled: boolean }> {
-  return new Promise(resolve => {
-    let settled = false;
-    let nextCalled = false;
-    const settle = (payload: { res: any; nextErr?: unknown }) => {
-      if (settled) return;
-      settled = true;
-      resolve({ ...payload, nextCalled });
-    };
+) {
+  let nextCalled = false;
+  let nextErr: unknown;
+  const headers: Record<string, string> = {};
+  const statusSpy = vi.fn();
+  const jsonSpy = vi.fn();
 
-    const headers: Record<string, string> = {};
-    const res: any = {
-      locals: {},
-      headers,
-      setHeader: vi.fn((name: string, value: string) => {
-        headers[name] = value;
-        return res;
-      }),
-      status: vi.fn((..._args: unknown[]) => {
-        setImmediate(() => settle({ res }));
-        return res;
-      }),
-      json: vi.fn().mockReturnThis(),
-      headersSent: false,
-    };
+  const app = express();
+  app.use(express.json());
+  app.post<Record<string, string>, undefined, undefined>(
+    reqSpec.path,
+    (req, res, next) => {
+      const authReq: RequestWithAuth = Object.assign(req, {
+        auth: reqSpec.auth,
+      });
+      const origSetHeader = res.setHeader.bind(res);
+      vi.spyOn(res, "setHeader").mockImplementation((name, value) => {
+        headers[name] = String(value);
+        return origSetHeader(name, value);
+      });
+      const origStatus = res.status.bind(res);
+      vi.spyOn(res, "status").mockImplementation(code => {
+        statusSpy(code);
+        return origStatus(code);
+      });
+      const origJson = res.json.bind(res);
+      vi.spyOn(res, "json").mockImplementation(body => {
+        jsonSpy(body);
+        return origJson(body);
+      });
+      middleware(authReq, res, err => {
+        nextCalled = true;
+        nextErr = err;
+        reqSpec.account = authReq.account;
+        const parsedBody = limitBodySchema.safeParse(authReq.body);
+        if (parsedBody.success) {
+          reqSpec.body.limit = parsedBody.data.limit;
+        }
+        if (err) {
+          next(err);
+          return;
+        }
+        res.statusCode = 204;
+        res.end();
+      });
+    },
+  );
 
-    const next: NextFunction = (err?: unknown) => {
-      nextCalled = true;
-      settle({ res, nextErr: err });
-    };
-    middleware(req, res, next);
-  });
+  await request(app).post(reqSpec.path).send(reqSpec.body);
+
+  return {
+    res: { headers, status: statusSpy, json: jsonSpy },
+    nextErr,
+    nextCalled,
+  };
 }
 
 beforeEach(() => {
