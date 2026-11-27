@@ -215,8 +215,19 @@ impl NuqJob {
         .map_err(|_| JobDecodeError::InvalidColumn(index))?;
     }
     let mut job = Self::from_pg_columns(&cols)?;
-    if queue == QueueKind::Scrape {
-      job.returnvalue = job.returnvalue.take().and_then(decode_scrape_returnvalue);
+    if queue == QueueKind::Scrape
+      && let Some(value) = job.returnvalue.take()
+    {
+      job.returnvalue = decode_scrape_returnvalue(value);
+      if job.returnvalue.is_none() {
+        let job_id = (stored_zdr_flag(Some(&job.data)) == Some(false)).then_some(job.id.as_str());
+        tracing::warn!(
+          module = "nuq",
+          queue = queue.table_name(),
+          job_id,
+          "Failed to decode NuQ job returnvalue"
+        );
+      }
     }
     Ok(job)
   }
@@ -353,15 +364,17 @@ fn read_zdr_field(map: &serde_json::Map<String, serde_json::Value>) -> Option<bo
 /// failing closed on any non-null, non-`false` value.
 #[must_use]
 pub fn stored_zero_data_retention(data: Option<&serde_json::Value>) -> bool {
-  let Some(serde_json::Value::Object(map)) = data else {
-    return false;
-  };
+  stored_zdr_flag(data).unwrap_or(false)
+}
+
+fn stored_zdr_flag(data: Option<&Value>) -> Option<bool> {
+  let map = data.and_then(Value::as_object)?;
   if let Some(ctx_map) = map.get("ctx").and_then(serde_json::Value::as_object)
     && let Some(flag) = read_zdr_field(ctx_map)
   {
-    return flag;
+    return Some(flag);
   }
-  read_zdr_field(map).unwrap_or(false)
+  read_zdr_field(map)
 }
 
 #[cfg(test)]

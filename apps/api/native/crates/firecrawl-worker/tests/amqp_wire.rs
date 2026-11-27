@@ -541,6 +541,19 @@ async fn amqp_publisher_declares_quorum_queue_publishes_exact_wire_props_and_rec
   let job1 = make_job("job-001");
   let job2 = make_job("job-002");
 
+  assert!(matches!(
+    publisher
+      .send_job_failed(QueueKind::Scrape, &job1.id, &"é".repeat(128))
+      .await,
+    Err(PublishError::InvalidShortString("routing key"))
+  ));
+  assert!(matches!(
+    publisher
+      .send_job(QueueKind::Scrape, &make_job(&"x".repeat(256)))
+      .await,
+    Err(PublishError::InvalidShortString("correlation ID"))
+  ));
+
   let drop_wait = controls.dropped_notify.notified();
   tokio::pin!(drop_wait);
   drop_wait.as_mut().enable();

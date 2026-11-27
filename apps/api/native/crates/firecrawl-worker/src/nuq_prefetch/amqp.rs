@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use lapin::options::{BasicPublishOptions, ConfirmSelectOptions, QueueDeclareOptions};
-use lapin::types::{AMQPValue, FieldTable};
+use lapin::types::{AMQPValue, FieldTable, ShortString};
 use lapin::{BasicProperties, Channel, Confirmation, Connection, ConnectionProperties};
 use thiserror::Error;
 use tokio::sync::Mutex;
@@ -43,12 +43,15 @@ pub fn prefetch_queue_args() -> FieldTable {
 }
 
 /// Builds the exact AMQP publish properties for a prefetched job.
-#[must_use]
-pub fn prefetch_publish_properties(job_id: &str) -> BasicProperties {
-  BasicProperties::default()
-    .with_correlation_id(job_id.into())
-    .with_delivery_mode(AMQP_DELIVERY_MODE_PERSISTENT)
-    .with_expiration(PREFETCH_MESSAGE_EXPIRATION_MS.into())
+pub fn prefetch_publish_properties(job_id: &str) -> Result<BasicProperties, PublishError> {
+  let correlation_id =
+    ShortString::try_new(job_id).map_err(|_| PublishError::InvalidShortString("correlation ID"))?;
+  Ok(
+    BasicProperties::default()
+      .with_correlation_id(correlation_id)
+      .with_delivery_mode(AMQP_DELIVERY_MODE_PERSISTENT)
+      .with_expiration(PREFETCH_MESSAGE_EXPIRATION_MS.into()),
+  )
 }
 
 /// Errors returned when publishing prefetched jobs to RabbitMQ.
@@ -60,6 +63,8 @@ pub enum PublishError {
   ShuttingDown,
   #[error("failed to serialize job payload: {0}")]
   Serialize(String),
+  #[error("AMQP {0} exceeds 255 bytes")]
+  InvalidShortString(&'static str),
   #[error("AMQP operation timed out: {0}")]
   Timeout(&'static str),
   #[error("AMQP publish confirmation timed out; delivery outcome is ambiguous")]
@@ -94,16 +99,17 @@ impl AmqpSession {
     self.connection.status().connected() && self.channel.status().connected()
   }
 
-  async fn close_gracefully(self, reason: &str) {
+  async fn close_gracefully(self, reason: &'static str) {
+    let reason = ShortString::truncated(reason);
     let _ = tokio::time::timeout(AMQP_CLOSE_TIMEOUT, async {
-      if let Err(err) = self.channel.close(200, reason.into()).await {
+      if let Err(err) = self.channel.close(200, reason.clone()).await {
         tracing::debug!(
           module = "nuq/rabbitmq",
           error = %err,
           "NuQ sender channel already closed"
         );
       }
-      if let Err(err) = self.connection.close(200, reason.into()).await {
+      if let Err(err) = self.connection.close(200, reason).await {
         tracing::debug!(
           module = "nuq/rabbitmq",
           error = %err,
@@ -178,8 +184,8 @@ impl AmqpPrefetchPublisher {
   pub async fn send_job(&self, queue: QueueKind, job: &NuqJob) -> Result<(), PublishError> {
     let payload =
       serde_json::to_vec(job).map_err(|err| PublishError::Serialize(err.to_string()))?;
-    let routing_key = queue.prefetch_queue_name();
-    let properties = prefetch_publish_properties(&job.id);
+    let routing_key = queue.prefetch_queue_name().into();
+    let properties = prefetch_publish_properties(&job.id)?;
 
     self
       .publish_frame(queue, routing_key, &payload, properties)
@@ -204,17 +210,21 @@ impl AmqpPrefetchPublisher {
     job_id: &str,
     listen_channel_id: &str,
   ) -> Result<(), PublishError> {
-    let routing_key = format!("{}.listen.{listen_channel_id}", queue.table_name());
-    let properties = BasicProperties::default().with_correlation_id(job_id.into());
+    let routing_key =
+      ShortString::try_new(format!("{}.listen.{listen_channel_id}", queue.table_name()))
+        .map_err(|_| PublishError::InvalidShortString("routing key"))?;
+    let correlation_id = ShortString::try_new(job_id)
+      .map_err(|_| PublishError::InvalidShortString("correlation ID"))?;
+    let properties = BasicProperties::default().with_correlation_id(correlation_id);
     self
-      .publish_frame(queue, &routing_key, b"failed", properties)
+      .publish_frame(queue, routing_key, b"failed", properties)
       .await
   }
 
   async fn publish_frame(
     &self,
     queue: QueueKind,
-    routing_key: &str,
+    routing_key: ShortString,
     payload: &[u8],
     properties: BasicProperties,
   ) -> Result<(), PublishError> {
@@ -264,7 +274,7 @@ impl AmqpPrefetchPublisher {
 
       match publish_once(
         &session.channel,
-        routing_key,
+        routing_key.clone(),
         payload,
         properties.clone(),
         self.op_timeout,
@@ -422,7 +432,7 @@ async fn connect_and_declare(
 
 async fn publish_once(
   channel: &Channel,
-  routing_key: &str,
+  routing_key: ShortString,
   payload: &[u8],
   properties: BasicProperties,
   op_timeout: Duration,
@@ -431,7 +441,7 @@ async fn publish_once(
     op_timeout,
     channel.basic_publish(
       "".into(),
-      routing_key.into(),
+      routing_key,
       BasicPublishOptions::default(),
       payload,
       properties,
@@ -472,6 +482,8 @@ mod tests {
     );
 
     let props = prefetch_publish_properties("job-123");
+    assert!(props.is_ok());
+    let Ok(props) = props else { return };
     assert_eq!(
       props.correlation_id().as_ref().map(|s| s.as_str()),
       Some("job-123")
@@ -481,6 +493,11 @@ mod tests {
       props.expiration().as_ref().map(|s| s.as_str()),
       Some("50000")
     );
+    assert!(prefetch_publish_properties(&"x".repeat(255)).is_ok());
+    assert!(matches!(
+      prefetch_publish_properties(&"é".repeat(128)),
+      Err(PublishError::InvalidShortString("correlation ID"))
+    ));
   }
 
   #[test]

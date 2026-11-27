@@ -319,6 +319,14 @@ async fn flush_pending_failure_notifications<P: PrefetchPublisher>(
         any_succeeded = true;
         consecutive_errors = 0;
       }
+      Ok(Err(err @ PublishError::InvalidShortString(_))) => {
+        tracing::warn!(
+          module = "nuq/rabbitmq",
+          queue = queue.table_name(),
+          error = %err,
+          "Dropping invalid NuQ job failure notification"
+        );
+      }
       Ok(Err(err)) => {
         had_error = true;
         consecutive_errors = consecutive_errors.saturating_add(1);
