@@ -250,15 +250,16 @@ export function deserializeTransportableError(
   }
   const { code, payload } = parsed;
 
+  const { message, stack, cause } = payload;
+  if (!CODE.test(code) || typeof message !== "string") {
+    return null;
+  }
+
   const errorClass = service.errors.classFor(code);
   if (errorClass) {
     return errorClass.deserialize(code as ErrorCode, payload);
   }
 
-  const { message, stack, cause } = payload;
-  if (!CODE.test(code) || typeof message !== "string") {
-    return null;
-  }
   return TransportableError.deserialize(code as ErrorCode, {
     message,
     stack: typeof stack === "string" ? stack : undefined,

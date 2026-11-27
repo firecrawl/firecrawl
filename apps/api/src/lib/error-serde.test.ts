@@ -190,6 +190,14 @@ describe("deserializeTransportableError", () => {
         'SCRAPE_TIMEOUT|{"message":"cut of',
       ],
       ["a code with a class and a null payload", "SCRAPE_TIMEOUT|null"],
+      [
+        "a code with a class and a payload with no message",
+        'SCRAPE_TIMEOUT|{"stack":"Error: timed out"}',
+      ],
+      [
+        "a code with a class and a non-string message",
+        'SCRAPE_TIMEOUT|{"message":5}',
+      ],
     ])("returns null for %s", (_name, data) => {
       expect(deserializeTransportableError(data)).toBeNull();
     });
