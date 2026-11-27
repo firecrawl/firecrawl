@@ -71,15 +71,11 @@ describe("isSameDomain", () => {
     expect(
       isSameDomain("http://docs.example.co.uk", "http://example.co.uk"),
     ).toBe(true);
-    expect(
-      isSameDomain("https://a.vercel.app", "https://b.vercel.app"),
-    ).toBe(false);
-    expect(
-      isSameDomain("http://www.localhost", "http://localhost"),
-    ).toBe(true);
-    expect(
-      isSameDomain("http://127.0.0.1", "http://127.0.0.2"),
-    ).toBe(false);
+    expect(isSameDomain("https://a.vercel.app", "https://b.vercel.app")).toBe(
+      false,
+    );
+    expect(isSameDomain("http://www.localhost", "http://localhost")).toBe(true);
+    expect(isSameDomain("http://127.0.0.1", "http://127.0.0.2")).toBe(false);
   });
 });
 
