@@ -1,5 +1,6 @@
 import {
   type CreateMonitorRequest,
+  type MonitorTarget,
   type ListMonitorsOptions,
   type ListMonitorChecksOptions,
   type Monitor,
@@ -15,6 +16,7 @@ import {
   normalizeAxiosError,
 } from "../utils/errorHandler";
 import { fetchAllPages } from "../utils/pagination";
+import { ensureValidScrapeOptions } from "../utils/validation";
 
 type ApiResponse<T> = {
   success: boolean;
@@ -40,12 +42,30 @@ function dataOrThrow<T>(res: { status: number; data?: ApiResponse<T> }, action: 
   return res.data.data;
 }
 
+function prepareMonitorRequest<T extends CreateMonitorRequest | UpdateMonitorRequest>(request: T): T {
+  if (!request.targets) return { ...request };
+  const targets = request.targets.map((target): MonitorTarget => {
+    if (target.type === "search" || !target.scrapeOptions) return { ...target };
+    // Validation converts schemas in place. Copy the option and format containers
+    // so creating or updating a monitor also accepts reusable/frozen requests.
+    const scrapeOptions = {
+      ...target.scrapeOptions,
+      formats: target.scrapeOptions.formats?.map((format) =>
+        typeof format === "string" ? format : { ...format },
+      ),
+    };
+    ensureValidScrapeOptions(scrapeOptions);
+    return { ...target, scrapeOptions };
+  });
+  return { ...request, targets };
+}
+
 export async function createMonitor(
   http: HttpClient,
   request: CreateMonitorRequest,
 ): Promise<Monitor> {
   try {
-    const res = await http.post<ApiResponse<Monitor>>("/v2/monitor", request as any);
+    const res = await http.post<ApiResponse<Monitor>>("/v2/monitor", prepareMonitorRequest(request) as any);
     return dataOrThrow(res, "create monitor");
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "create monitor");
@@ -89,7 +109,7 @@ export async function updateMonitor(
   try {
     const res = await http.patch<ApiResponse<Monitor>>(
       `/v2/monitor/${monitorId}`,
-      request as any,
+      prepareMonitorRequest(request) as any,
     );
     return dataOrThrow(res, "update monitor");
   } catch (err: any) {
