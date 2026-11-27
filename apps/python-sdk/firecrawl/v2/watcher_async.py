@@ -9,16 +9,19 @@ Usage:
 import asyncio
 import inspect
 import json
+import logging
 import time
 from typing import AsyncIterator, Dict, List, Literal, Optional
 
 import websockets
+from pydantic import ValidationError
 from websockets.exceptions import ConnectionClosed, ConnectionClosedOK, ConnectionClosedError
 
 from .types import BatchScrapeJob, CrawlJob, Document
 from .utils.normalize import normalize_document_input
 
 JobKind = Literal["crawl", "batch"]
+logger = logging.getLogger(__name__)
 
 
 class AsyncWatcher:
@@ -46,9 +49,6 @@ class AsyncWatcher:
             self._api_url = getattr(client, "api_url", None)
             self._api_key = getattr(client, "api_key", None)
 
-        self._status: str = "scraping"
-        self._data: List[Dict] = []
-
     def __aiter__(self) -> AsyncIterator[object]:
         return self._iterate()
 
@@ -61,6 +61,9 @@ class AsyncWatcher:
         return f"{ws_base}/v2/batch/scrape/{self._job_id}"
 
     async def _iterate(self) -> AsyncIterator[object]:
+        status = "scraping"
+        reported_counts: Dict = {}
+        streamed_docs: List[Document] = []
         uri = self._build_ws_url()
         headers_list = []
         if self._api_key:
@@ -118,7 +121,6 @@ class AsyncWatcher:
 
                     msg_type = body.get("type")
                     if msg_type == "error":
-                        self._status = "failed"
                         # Yield a terminal snapshot
                         if self._kind == "crawl":
                             yield CrawlJob(status="failed", completed=0, total=0, credits_used=0, expires_at=None, next=None, data=[])
@@ -127,33 +129,41 @@ class AsyncWatcher:
                         return
                     elif msg_type == "catchup":
                         d = body.get("data", {})
-                        self._status = d.get("status", self._status)
-                        docs_in = d.get("data", []) or []
-                        self._data.extend(docs_in)
+                        self._append_documents(streamed_docs, d.get("data"))
                         # Fall through to emit a snapshot below
                     elif msg_type == "document":
                         doc = body.get("data")
-                        if isinstance(doc, dict):
-                            self._data.append(doc)
+                        if not isinstance(doc, dict):
+                            continue
+                        self._append_documents(streamed_docs, [doc])
                         # Fall through to emit a snapshot below
                     elif msg_type == "done":
-                        self._status = "completed"
                         raw_payload = body.get("data", {}) or {}
-                        docs_in = raw_payload.get("data", []) or []
-                        if isinstance(docs_in, list) and docs_in:
-                            for doc in docs_in:
-                                if isinstance(doc, dict):
-                                    self._data.append(doc)
+                        self._append_documents(streamed_docs, raw_payload.get("data"))
                         # Emit final snapshot then end
-                        yield self._make_snapshot(status="completed", payload=raw_payload, docs_override=self._data)
+                        yield self._make_snapshot(
+                            status="completed",
+                            payload={**reported_counts, **raw_payload},
+                            docs_override=streamed_docs,
+                        )
                         return
 
                     # Generic snapshot emit for status messages and periodic progress
-                    payload = body.get("data", body)
-                    status_str = payload.get("status", body.get("status", self._status))
-                    snapshot = self._make_snapshot(status=status_str, payload=payload)
+                    if msg_type == "document":
+                        payload = reported_counts
+                    else:
+                        payload = body.get("data", body)
+                        for key in ("completed", "total", "creditsUsed"):
+                            if key in payload:
+                                reported_counts[key] = payload[key]
+                    status = payload.get("status", body.get("status", status))
+                    snapshot = self._make_snapshot(
+                        status=status,
+                        payload=payload,
+                        docs_override=streamed_docs if msg_type in ("catchup", "document") else None,
+                    )
                     yield snapshot
-                    if status_str in ("completed", "failed", "cancelled"):
+                    if status in ("completed", "failed", "cancelled"):
                         return
         except Exception:
             # WS connect failure: fallback to HTTP polling loop until terminal/timeout
@@ -195,13 +205,26 @@ class AsyncWatcher:
         except Exception:
             return None
 
-    def _make_snapshot(self, *, status: str, payload: Dict, docs_override: Optional[List[Dict]] = None):
-        docs = []
-        source_docs = docs_override if docs_override is not None else payload.get("data", []) or []
-        for doc in source_docs:
-            if isinstance(doc, dict):
-                d = normalize_document_input(doc)
-                docs.append(Document(**d))
+    @staticmethod
+    def _append_documents(documents: List[Document], raw_docs: object) -> None:
+        if not isinstance(raw_docs, list):
+            return
+        for doc in raw_docs:
+            if not isinstance(doc, dict):
+                continue
+            try:
+                documents.append(Document(**normalize_document_input(doc)))
+            except ValidationError as exc:
+                error_type = exc.errors(include_input=False, include_context=False, include_url=False)[0]["type"]
+                logger.warning("Skipping invalid WebSocket document (%s)", error_type)
+
+    def _make_snapshot(self, *, status: str, payload: Dict, docs_override: Optional[List[Document]] = None):
+        if docs_override is not None:
+            # Never expose the cache: consumers may mutate nested document values.
+            docs = [doc.model_copy(deep=True) for doc in docs_override]
+        else:
+            docs = []
+            self._append_documents(docs, payload.get("data"))
 
         if self._kind == "crawl":
             return CrawlJob(
@@ -222,4 +245,3 @@ class AsyncWatcher:
             next=payload.get("next"),
             data=docs,
         )
-
