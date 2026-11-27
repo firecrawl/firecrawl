@@ -9,7 +9,9 @@ use std::{
 };
 
 use opentelemetry::trace::TracerProvider as _;
-use opentelemetry_otlp::{Protocol, RetryPolicy, SpanExporter, WithExportConfig, WithHttpConfig};
+use opentelemetry_otlp::{
+  ExporterBuildError, Protocol, RetryPolicy, SpanExporter, WithExportConfig, WithHttpConfig,
+};
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::trace::{
   BatchSpanProcessor, Sampler, SdkTracerProvider, SimpleSpanProcessor, SpanExporter as SdkExporter,
@@ -152,10 +154,14 @@ fn build_otlp_tracer_provider() -> Option<ZdrTracerProvider> {
     .build()
   {
     Ok(exporter) => exporter,
-    Err(_) => {
+    Err(err) => {
+      let reason = match err {
+        ExporterBuildError::InvalidConfiguration(_) => "invalid OTLP configuration",
+        ExporterBuildError::InternalFailure(_) => "internal exporter initialization error",
+      };
       let _ = writeln!(
         std::io::stderr(),
-        "[telemetry] failed to build OTLP exporter"
+        "[telemetry] failed to build OTLP exporter: {reason}"
       );
       return None;
     }
