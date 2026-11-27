@@ -548,6 +548,25 @@ results.data.web.forEach(result => {
 - [Firecrawl CLI](https://docs.firecrawl.dev/sdks/cli)
 - [Firecrawl MCP](https://github.com/firecrawl/firecrawl-mcp-server)
 
+#### Agent skills marketplace
+
+This repo ships an agent-agnostic skills marketplace at [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json). It packages the build skills under [`skills/`](./skills) (onboarding, scrape, search, interact, and the parent `firecrawl-build` skill) and the official Firecrawl MCP server from [`.mcp.json`](.mcp.json). Set `FIRECRAWL_API_KEY` in your environment; do not commit a real key.
+
+```sh
+# Point any agent that reads .agents/plugins/marketplace.json at this repo,
+# then install firecrawl@firecrawl
+```
+
+Claude Code and Codex can use the same plugin via their own manifests (secondary):
+
+```sh
+claude plugin marketplace add firecrawl/firecrawl
+claude plugin install firecrawl@firecrawl
+
+codex plugin marketplace add firecrawl/firecrawl
+codex plugin add firecrawl@firecrawl
+```
+
 The build skills for integrating Firecrawl into product code live in this repo under [`skills/`](./skills), and CI mirrors them into the catalog. To contribute a skill, send CLI skills (including the research and developer index skills) to [`firecrawl/cli`](https://github.com/firecrawl/cli), build and SDK skills to this repo's `skills/` folder, and workflow skills to [`firecrawl/firecrawl-workflows`](https://github.com/firecrawl/firecrawl-workflows). The catalog at [`firecrawl/skills`](https://github.com/firecrawl/skills) is read-only, so never open a PR against it directly.
 
 **Platforms**
