@@ -52,7 +52,7 @@ export class UsOnlyUnavailableError extends TransportableError {
 
 /** A search whose enterprise modes no enabled search provider declares support for. */
 export class SearchModeUnavailableError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SEARCH_MODE_UNAVAILABLE"];
+  static readonly codes: ReadonlyArray<ErrorCode> = ["SEARCH_MODE_UNAVAILABLE"];
 
   constructor(
     message = "Search with this data retention mode is temporarily unavailable.",

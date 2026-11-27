@@ -25,6 +25,7 @@ import {
   UsOnlyUnavailableError,
 } from "../../scraper/scrapeURL/error";
 import type { SearchProvider } from "../../service";
+import type { SearchProviderName } from "../../service/search-providers";
 import { createService, replaceService } from "../../service/service";
 import { coreSearchProviders } from "../providers";
 import { search } from "./index";
@@ -64,6 +65,21 @@ afterEach(() => {
   replaceService(undefined);
   config.SEARXNG_ENDPOINT = originalSearxngEndpoint;
 });
+
+function provider(
+  name: SearchProviderName,
+  flags: Partial<
+    Pick<SearchProvider, "supportsUsOnly" | "supportsZdr" | "supportsAnon">
+  >,
+  search = vi.fn<SearchProvider["search"]>(async () => ({
+    web: [{ url: `https://${name}.test`, title: name, description: "" }],
+  })),
+) {
+  return {
+    provider: { name, priority: 200, ...flags, enabled: () => true, search },
+    search,
+  };
+}
 
 describe("domain filters on the SearXNG and DuckDuckGo results", () => {
   beforeEach(() => {
@@ -285,30 +301,11 @@ describe("service.searchProviders dispatch in v2 search", () => {
   });
 
   describe("enterprise modes", () => {
-    const provider = (
-      name: string,
-      flags: Partial<
-        Pick<SearchProvider, "supportsUsOnly" | "supportsZdr" | "supportsAnon">
-      >,
-      search = vi.fn<SearchProvider["search"]>(async () => ({
-        web: [{ url: `https://${name}.test`, title: name, description: "" }],
-      })),
-    ) => ({
-      provider: {
-        name: name as SearchProvider["name"],
-        priority: 200,
-        ...flags,
-        enabled: () => true,
-        search,
-      },
-      search,
-    });
-
     it.each([["zdr"], ["anon"]] as const)(
       "refuses %s search when no enabled provider supports it",
       async mode => {
         config.SEARXNG_ENDPOINT = "http://searxng.test";
-        const other = provider("other", { supportsUsOnly: true });
+        const other = provider("duckduckgo", { supportsUsOnly: true });
         installSearchService([
           { name: "custom", searchProviders: [other.provider] },
         ]);
@@ -341,8 +338,8 @@ describe("service.searchProviders dispatch in v2 search", () => {
     );
 
     it("routes zdr search only to providers that support it", async () => {
-      const capable = provider("capable", { supportsZdr: true });
-      const other = provider("other", { supportsAnon: true });
+      const capable = provider("searxng", { supportsZdr: true });
+      const other = provider("duckduckgo", { supportsAnon: true });
       installSearchService([
         {
           name: "custom",
@@ -366,11 +363,11 @@ describe("service.searchProviders dispatch in v2 search", () => {
 
     it("does not move on to a non-capable provider when the capable one returns null", async () => {
       const capable = provider(
-        "capable",
+        "searxng",
         { supportsZdr: true, supportsAnon: true },
         vi.fn(async () => null),
       );
-      const other = provider("other", { supportsZdr: true });
+      const other = provider("duckduckgo", { supportsZdr: true });
       installSearchService([
         {
           name: "custom",
@@ -394,8 +391,8 @@ describe("service.searchProviders dispatch in v2 search", () => {
     });
 
     it("requires every requested mode on the same provider", async () => {
-      const zdrOnly = provider("zdr-only", { supportsZdr: true });
-      const anonOnly = provider("anon-only", { supportsAnon: true });
+      const zdrOnly = provider("searxng", { supportsZdr: true });
+      const anonOnly = provider("duckduckgo", { supportsAnon: true });
       installSearchService([
         {
           name: "custom",
@@ -411,8 +408,8 @@ describe("service.searchProviders dispatch in v2 search", () => {
     });
 
     it("requires US-only support alongside zdr support", async () => {
-      const zdrOnly = provider("zdr-only", { supportsZdr: true });
-      const usOnly = provider("us-only", { supportsUsOnly: true });
+      const zdrOnly = provider("searxng", { supportsZdr: true });
+      const usOnly = provider("duckduckgo", { supportsUsOnly: true });
       installSearchService([
         {
           name: "custom",
@@ -434,7 +431,7 @@ describe("service.searchProviders dispatch in v2 search", () => {
 
     it("keeps the default mode on every enabled provider", async () => {
       const plain = provider(
-        "plain",
+        "searxng",
         {},
         vi.fn(async () => null),
       );
