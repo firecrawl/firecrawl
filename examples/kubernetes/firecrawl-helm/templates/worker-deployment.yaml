@@ -24,7 +24,7 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: [ "node" ]
-          args: [ "--max-old-space-size=3072", "dist/src/services/queue-worker.js" ]
+          args: [ '--max-old-space-size={{ include "firecrawl.nodeHeapSize" (tuple .Values "worker" 3072) }}', "dist/src/services/queue-worker.js" ]
           ports:
             - containerPort: {{ .Values.worker.port | int }}
           env:

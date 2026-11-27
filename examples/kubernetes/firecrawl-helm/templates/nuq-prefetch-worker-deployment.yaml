@@ -25,7 +25,7 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: [ "node" ]
-          args: [ "--max-old-space-size=2048", "dist/src/services/worker/nuq-prefetch-worker.js" ]
+          args: [ '--max-old-space-size={{ include "firecrawl.nodeHeapSize" (tuple .Values "nuqPrefetchWorker" 2048) }}', "dist/src/services/worker/nuq-prefetch-worker.js" ]
           ports:
             - containerPort: {{ .Values.nuqPrefetchWorker.port | int }}
           env:

@@ -25,7 +25,7 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: [ "node" ]
-          args: [ "--max-old-space-size=3072", "dist/src/services/extract-worker.js" ]
+          args: [ '--max-old-space-size={{ include "firecrawl.nodeHeapSize" (tuple .Values "extractWorker" 3072) }}', "dist/src/services/extract-worker.js" ]
           ports:
             - containerPort: {{ .Values.extractWorker.port | int }}
           env:
