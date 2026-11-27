@@ -372,7 +372,7 @@ if not scrape_job_id:
 
 run = firecrawl.interact(
   scrape_job_id,
-  code="print(await page.url())",
+  code="print(page.url)",
   language="python",
   timeout=60,
 )
