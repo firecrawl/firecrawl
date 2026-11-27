@@ -336,9 +336,16 @@ export async function getMapResults({
 
   const indexOnly = ctx?.lockdown === true;
 
-  const resolvedUrl = indexOnly
-    ? url
-    : await resolveRedirects(url, abort, mock);
+  const usOnly =
+    ctx?.usOnly === true ||
+    ctx?.flags?.usOnly === true ||
+    flags?.usOnly === true;
+
+  // Resolving redirects fetches the target directly from this host, which
+  // lockdown's zero-outbound guarantee forbids and a US-only team can't pin to
+  // a US exit, so both take the URL as given.
+  const resolvedUrl =
+    indexOnly || usOnly ? url : await resolveRedirects(url, abort, mock);
 
   // If the resolved URL is on a different domain, replace the hostname
   if (!isSameDomain(url, resolvedUrl)) {

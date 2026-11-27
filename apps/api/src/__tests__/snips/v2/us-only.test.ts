@@ -207,6 +207,30 @@ describeIf(TEST_PRODUCTION)("US-only teams", () => {
   );
 
   it.concurrent(
+    "scrapes a PDF",
+    async () => {
+      const response = await scrape(
+        { url: "https://www.orimi.com/pdf-test.pdf", maxAge: 0 },
+        identity,
+      );
+
+      expect(response.markdown).toContain("PDF Test File");
+    },
+    scrapeTimeout,
+  );
+
+  it.concurrent(
+    "maps a site",
+    async () => {
+      const response = await map({ url: "https://firecrawl.dev" }, identity);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.links.length).toBeGreaterThan(0);
+    },
+    scrapeTimeout,
+  );
+
+  it.concurrent(
     "refuses a scrape located outside the US",
     async () => {
       const response = await scrapeRaw(
