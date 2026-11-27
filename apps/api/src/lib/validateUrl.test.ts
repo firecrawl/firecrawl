@@ -57,6 +57,15 @@ describe("isSameDomain", () => {
     );
     expect(result).toBe(true);
   });
+
+  it("should compare registrable domains, not just the last two labels", () => {
+    expect(
+      isSameDomain("http://shop.example.co.uk", "http://shop.another.co.uk"),
+    ).toBe(false);
+    expect(
+      isSameDomain("http://docs.example.co.uk", "http://example.co.uk"),
+    ).toBe(true);
+  });
 });
 
 describe("isSameSubdomain", () => {
