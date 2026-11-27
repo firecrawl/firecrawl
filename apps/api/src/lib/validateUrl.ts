@@ -78,10 +78,12 @@ export function isSameDomain(url: string, baseUrl: string) {
   const typedUrlObj1 = urlObj1 as URL;
   const typedUrlObj2 = urlObj2 as URL;
 
+  const stripWww = (hostname: string) =>
+    hostname.startsWith("www.") ? hostname.slice(4) : hostname;
   const domain1 =
-    parseHostname(typedUrlObj1.hostname).domain ?? typedUrlObj1.hostname;
+    parseHostname(typedUrlObj1.hostname).domain ?? stripWww(typedUrlObj1.hostname);
   const domain2 =
-    parseHostname(typedUrlObj2.hostname).domain ?? typedUrlObj2.hostname;
+    parseHostname(typedUrlObj2.hostname).domain ?? stripWww(typedUrlObj2.hostname);
 
   return domain1 === domain2;
 }
