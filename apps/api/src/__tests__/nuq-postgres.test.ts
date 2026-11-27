@@ -1,18 +1,32 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import amqp from "amqplib";
 import { Pool } from "pg";
 import { config } from "../config";
+import { scrapeOptions } from "../controllers/v2/types";
 import {
   crawlFinishedQueue,
   nuqShutdown,
   scrapeQueue,
 } from "../services/worker/nuq";
+import type { ScrapeJobData } from "../types";
 
 const describeIf = config.NUQ_DATABASE_URL ? describe : describe.skip;
 
+function scrapeData(url = "https://example.com"): ScrapeJobData {
+  return {
+    mode: "single_urls",
+    url,
+    team_id: randomUUID(),
+    scrapeOptions: scrapeOptions.parse({}),
+    origin: "test",
+    apiKeyId: null,
+    zeroDataRetention: false,
+  };
+}
+
 describeIf("NuQ Postgres queue", () => {
   let cleanupPool: Pool;
-  const ids: string[] = [];
+  const ids: Array<string> = [];
 
   beforeAll(() => {
     cleanupPool = new Pool({
@@ -22,7 +36,9 @@ describeIf("NuQ Postgres queue", () => {
   });
 
   afterEach(async () => {
-    if (ids.length === 0) return;
+    if (ids.length === 0) {
+      return;
+    }
     await cleanupPool.query(
       "DELETE FROM nuq.queue_scrape_backlog WHERE id = ANY($1::uuid[])",
       [ids],
@@ -38,14 +54,6 @@ describeIf("NuQ Postgres queue", () => {
     await cleanupPool.end();
     await nuqShutdown();
   });
-
-  function scrapeData() {
-    return {
-      mode: "single_urls",
-      url: "https://example.com",
-      team_id: randomUUID(),
-    } as any;
-  }
 
   test("single backlogged inserts report backlog status", async () => {
     const addJobId = randomUUID();
@@ -119,32 +127,29 @@ describeIf("NuQ Postgres queue", () => {
 
       try {
         await expect(
-          scrapeQueue.waitForJob(randomUUID(), 5_000),
+          scrapeQueue.waitForJob(randomUUID(), 5000),
         ).rejects.toThrow("NOT_FOUND");
       } finally {
         connectSpy.mockRestore();
       }
       expect(listenChannelId).toBeTruthy();
-      await vi.waitFor(
-        () => expect(rejectedConnectionClosed).toBe(true),
-        2_000,
-      );
+      await vi.waitFor(() => expect(rejectedConnectionClosed).toBe(true), 2000);
 
       const id = randomUUID();
       const lock = randomUUID();
       ids.push(id);
       await cleanupPool.query(
-        `INSERT INTO nuq.queue_scrape (id, status, lock, locked_at, listen_channel_id)
-         VALUES ($1, 'active', $2, now(), $3)`,
-        [id, lock, listenChannelId],
+        `INSERT INTO nuq.queue_scrape (id, status, lock, locked_at, listen_channel_id, data)
+         VALUES ($1, 'active', $2, now(), $3, $4)`,
+        [id, lock, listenChannelId, scrapeData()],
       );
       const getJob = vi.spyOn(scrapeQueue, "getJob");
-      const returnValue = { ok: true };
+      const returnValue = { markdown: "Done" };
 
       try {
         const result = scrapeQueue.waitForJob(id, 10_000);
         const completed = expect(result).resolves.toEqual(returnValue);
-        await vi.waitFor(() => expect(getJob).toHaveBeenCalledOnce(), 5_000);
+        await vi.waitFor(() => expect(getJob).toHaveBeenCalledOnce(), 5000);
         await expect(getJob.mock.results[0].value).resolves.toMatchObject({
           status: "active",
         });
@@ -181,11 +186,11 @@ describeIf("NuQ Postgres queue", () => {
           [id],
         );
         const completed = expect(
-          crawlFinishedQueue.waitForJob(id, 5_000),
+          crawlFinishedQueue.waitForJob(id, 5000),
         ).resolves.toEqual(result);
         await vi.waitFor(
           () => expect(getJob).toHaveBeenCalledWith(id, expect.anything()),
-          2_000,
+          2000,
         );
         await expect(getJob.mock.results[0].value).resolves.toMatchObject({
           status: "active",
@@ -195,7 +200,10 @@ describeIf("NuQ Postgres queue", () => {
           "UPDATE nuq.queue_crawl_finished SET status = 'completed', finished_at = now(), returnvalue = $2 WHERE id = $1",
           [id, result],
         );
-        await listenerConnection!.close();
+        if (!listenerConnection) {
+          throw new Error("Expected a live listener connection");
+        }
+        await listenerConnection.close();
 
         await completed;
         expect(connectSpy).toHaveBeenCalledTimes(3);
@@ -221,32 +229,32 @@ describeIf("NuQ Postgres queue", () => {
       {
         id: completedIds[0],
         status: "completed",
-        finishedAt: new Date(base + 1_000),
-        data: { mode: "single_urls", url: "https://example.com/completed-1" },
+        finishedAt: new Date(base + 1000),
+        data: scrapeData("https://example.com/completed-1"),
         returnvalue: { ok: 1 },
         failedReason: null,
       },
       {
         id: failedIds[0],
         status: "failed",
-        finishedAt: new Date(base + 2_000),
-        data: { mode: "single_urls", url: "https://example.com/failed-1" },
+        finishedAt: new Date(base + 2000),
+        data: scrapeData("https://example.com/failed-1"),
         returnvalue: null,
         failedReason: "failure-1",
       },
       {
         id: completedIds[1],
         status: "completed",
-        finishedAt: new Date(base + 3_000),
-        data: { mode: "single_urls", url: "https://example.com/completed-2" },
+        finishedAt: new Date(base + 3000),
+        data: scrapeData("https://example.com/completed-2"),
         returnvalue: { ok: 2 },
         failedReason: null,
       },
       {
         id: failedIds[1],
         status: "failed",
-        finishedAt: new Date(base + 4_000),
-        data: { mode: "single_urls", url: "https://example.com/failed-2" },
+        finishedAt: new Date(base + 4000),
+        data: scrapeData("https://example.com/failed-2"),
         returnvalue: null,
         failedReason: "failure-2",
       },
@@ -290,13 +298,13 @@ describeIf("NuQ Postgres queue", () => {
       failed.map(job => ({
         id: job.id,
         failedReason: job.failedReason,
-        url: (job.data as any).url,
+        url: "url" in job.data ? job.data.url : undefined,
       })),
     ).toEqual(
       expectedFailed.map(row => ({
         id: row.id,
         failedReason: row.failedReason,
-        url: row.data.url,
+        url: "url" in row.data ? row.data.url : undefined,
       })),
     );
   });

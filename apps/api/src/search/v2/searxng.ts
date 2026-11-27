@@ -1,6 +1,6 @@
 import axios from "axios";
 import { config } from "../../config";
-import { SearchV2Response, WebSearchResult } from "../../lib/entities";
+import type { SearchV2Response, WebSearchResult } from "../../lib/entities";
 import { logger } from "../../lib/logger";
 
 interface SearchOptions {
@@ -14,6 +14,26 @@ interface SearchOptions {
   page?: number;
 }
 
+interface SearxngApiResult {
+  url: string;
+  title: string;
+  content: string;
+}
+
+interface SearxngApiResponse {
+  results?: Array<SearxngApiResult>;
+}
+
+interface SearxngParams {
+  q: string;
+  language: string | undefined;
+  engines: string;
+  categories: string;
+  pageno: number;
+  format: string;
+  safesearch?: number;
+}
+
 export async function searxng_search(
   q: string,
   options: SearchOptions,
@@ -22,13 +42,16 @@ export async function searxng_search(
   const requestedResults = Math.max(options.num_results, 0);
   const startPage = options.page ?? 1;
 
-  const url = config.SEARXNG_ENDPOINT!;
+  const url = config.SEARXNG_ENDPOINT;
+  if (!url) {
+    return {};
+  }
   const cleanedUrl = url.endsWith("/") ? url.slice(0, -1) : url;
   const finalUrl = cleanedUrl + "/search";
 
-  const fetchPage = async (page: number): Promise<WebSearchResult[]> => {
-    const params = {
-      q: q,
+  const fetchPage = async (page: number): Promise<Array<WebSearchResult>> => {
+    const params: SearxngParams = {
+      q,
       language: options.lang,
       // gl: options.country, //not possible with SearXNG
       // location: options.location, //not possible with SearXNG
@@ -37,21 +60,23 @@ export async function searxng_search(
       categories: config.SEARXNG_CATEGORIES ?? "",
       pageno: page,
       format: "json",
-      // 2 = strict; omitted otherwise so the instance default applies
-      ...(options.safe ? { safesearch: 2 } : {}),
     };
+    if (options.safe) {
+      // 2 = strict; omitted otherwise so the instance default applies
+      params.safesearch = 2;
+    }
 
-    const response = await axios.get(finalUrl, {
+    const response = await axios.get<SearxngApiResponse>(finalUrl, {
       headers: {
         "Content-Type": "application/json",
       },
-      params: params,
+      params,
     });
 
     const data = response.data;
 
     if (data && Array.isArray(data.results)) {
-      return data.results.map((a: any) => ({
+      return data.results.map(a => ({
         url: a.url,
         title: a.title,
         description: a.content,
@@ -70,7 +95,7 @@ export async function searxng_search(
       1,
       Math.ceil(requestedResults / resultsPerPage),
     );
-    let webResults: WebSearchResult[] = [];
+    let webResults: Array<WebSearchResult> = [];
 
     for (let pageOffset = 0; pageOffset < pagesToFetch; pageOffset += 1) {
       const pageResults = await fetchPage(startPage + pageOffset);
@@ -88,7 +113,7 @@ export async function searxng_search(
           web: webResults.slice(0, requestedResults),
         }
       : {};
-  } catch (error) {
+  } catch (error: unknown) {
     logger.error(`There was an error searching for content`, { error });
     return {};
   }

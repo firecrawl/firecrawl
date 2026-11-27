@@ -1,23 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createLogger } from "winston";
 import { readFile, unlink } from "node:fs/promises";
 import { AddFeatureError, UnsupportedFileError } from "../../error";
-import type { FireEngineCheckStatusSuccess } from "../fire-engine/checkStatus";
-
-// The GCS handoff (large PDFs by reference) has its own tests under the pdf
-// engine; keep the storage client out of this unit's import graph.
-vi.mock("./downloadGcsFile", () => ({
-  downloadFireEngineGcsFile: vi.fn(async () => null),
-}));
+import type { SpecialtyHandoffResponse } from "./specialtyHandler";
 
 import { specialtyScrapeCheck } from "./specialtyHandler";
 
-const logger: any = {
-  debug: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  child: () => logger,
-};
+const logger = createLogger({ silent: true });
 
 const PDF = Buffer.from(
   "%PDF-1.3\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n",
@@ -49,26 +38,20 @@ const DOWNLOAD_URL = "https://example.com/collection/items/42/download";
 /** A chrome-cdp (or tlsclient binary) response: the file was captured. */
 function download(
   bytes: Buffer,
-  overrides: Partial<FireEngineCheckStatusSuccess> = {},
-): FireEngineCheckStatusSuccess {
+  overrides: Partial<SpecialtyHandoffResponse> = {},
+): SpecialtyHandoffResponse {
   return {
-    jobId: "job-1",
-    state: "completed",
-    processing: false,
     content: "",
     pageStatusCode: 200,
     url: DOWNLOAD_URL,
-    file: { name: "download", content: bytes.toString("base64") },
+    file: { content: bytes.toString("base64") },
     ...overrides,
   };
 }
 
 /** A response whose body came back inline as text (no captured file). */
-function inline(content: string): FireEngineCheckStatusSuccess {
+function inline(content: string): SpecialtyHandoffResponse {
   return {
-    jobId: "job-1",
-    state: "completed",
-    processing: false,
     content,
     pageStatusCode: 200,
     url: DOWNLOAD_URL,
@@ -77,7 +60,7 @@ function inline(content: string): FireEngineCheckStatusSuccess {
 
 const ocrGate = () => vi.fn(async () => true);
 
-const tempFiles: string[] = [];
+const tempFiles: Array<string> = [];
 afterEach(async () => {
   await Promise.all(
     tempFiles.splice(0).map(file => unlink(file).catch(() => undefined)),
@@ -87,17 +70,21 @@ afterEach(async () => {
 async function expectHandoff(run: Promise<unknown>): Promise<AddFeatureError> {
   try {
     await run;
-  } catch (error) {
+  } catch (error: unknown) {
     expect(error).toBeInstanceOf(AddFeatureError);
-    const handoff = error as AddFeatureError;
-    for (const prefetch of [
-      handoff.pdfPrefetch,
-      handoff.documentPrefetch,
-      handoff.imagePrefetch,
-    ]) {
-      if (prefetch) tempFiles.push(prefetch.filePath);
+    if (!(error instanceof AddFeatureError)) {
+      throw new Error("expected AddFeatureError", { cause: error });
     }
-    return handoff;
+    for (const prefetch of [
+      error.pdfPrefetch,
+      error.documentPrefetch,
+      error.imagePrefetch,
+    ]) {
+      if (prefetch) {
+        tempFiles.push(prefetch.filePath);
+      }
+    }
+    return error;
   }
   throw new Error("expected specialtyScrapeCheck to hand the file off");
 }
@@ -108,7 +95,10 @@ async function expectUnsupported(run: Promise<unknown>): Promise<string> {
     (error: unknown) => error,
   );
   expect(failure).toBeInstanceOf(UnsupportedFileError);
-  return (failure as UnsupportedFileError).message;
+  if (!(failure instanceof UnsupportedFileError)) {
+    throw new Error("expected UnsupportedFileError");
+  }
+  return failure.message;
 }
 
 describe("specialtyScrapeCheck: the bytes decide when the header does not", () => {
@@ -332,7 +322,7 @@ describe("specialtyScrapeCheck: the bytes decide when the header does not", () =
         }),
       ),
     );
-    expect(declared.pdfPrefetch?.handoff).toEqual({ contentLength: 123456 });
+    expect(declared.pdfPrefetch?.handoff).toEqual({ contentLength: 123_456 });
 
     const encoded = await expectHandoff(
       specialtyScrapeCheck(

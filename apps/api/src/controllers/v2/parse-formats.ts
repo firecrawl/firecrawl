@@ -1,15 +1,20 @@
-import { Response } from "express";
-import { RequestWithAuth } from "./types";
+import type { Response } from "express";
+import type { RequestWithAuth } from "./types";
 import { isImageOcrEnabled } from "../../lib/image-ocr-gate";
-import { listParseFormats, ParseFormat } from "../../lib/parse-formats";
+import type { ParseFormat } from "../../lib/parse-formats";
+import { listParseFormats } from "../../lib/parse-formats";
 
 type ParseFormatsResponse = {
   success: true;
-  data: { formats: ParseFormat[] };
+  data: { formats: Array<ParseFormat> };
 };
 
 export async function parseFormatsController(
-  _req: RequestWithAuth<{}, ParseFormatsResponse, undefined>,
+  _req: RequestWithAuth<
+    Record<string, string>,
+    ParseFormatsResponse,
+    undefined
+  >,
   res: Response<ParseFormatsResponse>,
 ) {
   res.setHeader("Cache-Control", "private, max-age=3600");

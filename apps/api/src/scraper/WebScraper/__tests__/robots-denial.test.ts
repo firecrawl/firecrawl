@@ -1,10 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CrawlDenialError } from "../../../lib/error";
 import {
+  coreErrors,
   deserializeTransportableError,
   serializeTransportableError,
 } from "../../../lib/error-serde";
+import { createService, replaceService } from "../../../service/service";
 import { DenialReason, WebCrawler } from "../crawler";
+
+// What is read back from a job is rebuilt by the class the service has for its
+// code.
+const withCoreErrors = createService(
+  { modules: {} },
+  { core: { name: "core", errors: coreErrors }, logger: { error: vi.fn() } },
+);
+beforeAll(() => {
+  replaceService(withCoreErrors);
+});
+afterAll(() => {
+  replaceService(undefined);
+});
 
 const BASE = "https://example.com";
 const BLOCKED = BASE + "/blocked/page";
@@ -74,8 +89,16 @@ describe("robots.txt denials", () => {
     );
 
     expect(robots).toBeInstanceOf(CrawlDenialError);
-    expect((robots as CrawlDenialError).robotsBlockedUrl).toBe(BLOCKED);
-    expect((robots as CrawlDenialError).reason).toBe("blocked");
-    expect((other as CrawlDenialError).robotsBlockedUrl).toBeNull();
+    if (!(robots instanceof CrawlDenialError)) {
+      throw new Error("Expected CrawlDenialError");
+    }
+    expect(robots.robotsBlockedUrl).toBe(BLOCKED);
+    expect(robots.reason).toBe("blocked");
+
+    expect(other).toBeInstanceOf(CrawlDenialError);
+    if (!(other instanceof CrawlDenialError)) {
+      throw new Error("Expected CrawlDenialError");
+    }
+    expect(other.robotsBlockedUrl).toBeNull();
   });
 });

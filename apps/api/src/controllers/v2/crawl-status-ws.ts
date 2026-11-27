@@ -1,13 +1,12 @@
 import { RateLimiterMode } from "../../types";
-import { authenticateUser } from "../auth";
-import {
+import type {
   CrawlStatusParams,
   CrawlStatusResponse,
   Document,
   ErrorResponse,
   RequestWithAuth,
 } from "./types";
-import { WebSocket } from "ws";
+import type { WebSocket } from "ws";
 import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../lib/logger";
 import {
@@ -17,10 +16,15 @@ import {
   getCrawlJobs,
   getDoneJobsOrdered,
 } from "../../lib/crawl-redis";
-import { getJobs, PseudoJob } from "./crawl-status";
+import type { PseudoJob } from "./crawl-status";
+import { getJobs } from "./crawl-status";
 import { getConcurrencyLimitedJobs } from "../../lib/concurrency-limit";
-import { scrapeQueue, NuQJobStatus } from "../../services/worker/nuq-router";
-import { getErrorContactMessage } from "../../lib/deployment";
+import type { NuQJobStatus } from "../../services/worker/nuq-router";
+import { scrapeQueue } from "../../services/worker/nuq-router";
+import { z } from "zod";
+import { service } from "../../service";
+
+const callerOrgSchema = z.object({ orgId: z.string().nullable() });
 
 type ErrorMessage = {
   type: "error";
@@ -45,8 +49,11 @@ function send(ws: WebSocket, msg: Message) {
   if (ws.readyState === 1) {
     return new Promise((resolve, reject) => {
       ws.send(JSON.stringify(msg), err => {
-        if (err) reject(err);
-        else resolve(null);
+        if (err) {
+          reject(err);
+        } else {
+          resolve(null);
+        }
       });
     });
   }
@@ -71,11 +78,26 @@ async function crawlStatusWS(
     return close(ws, 3003, { type: "error", error: "Forbidden" });
   }
 
-  let doneJobIDs: string[] = [];
+  let doneJobIDs: Array<string> = [];
   let finished = false;
 
+  const scheduleLoop = () => {
+    setTimeout(() => {
+      loop().catch((error: unknown) => {
+        finished = true;
+        logger.error("Crawl status WS polling failed", {
+          error,
+          jobId: req.params.jobId,
+        });
+        close(ws, 1011, { type: "error", error: "Polling failed" });
+      });
+    }, 1000);
+  };
+
   const loop = async () => {
-    if (finished) return;
+    if (finished) {
+      return;
+    }
 
     const jobIDs = await getCrawlJobs(req.params.jobId);
 
@@ -85,21 +107,21 @@ async function crawlStatusWS(
 
     const notDoneJobIDs = jobIDs.filter(x => !doneJobIDs.includes(x));
 
-    const newlyDoneJobIDs: string[] = (
+    const newlyDoneJobIDs: Array<string> = (
       await scrapeQueue.getJobsWithStatuses(notDoneJobIDs, [
         "completed",
         "failed",
       ])
     ).map(x => x.id);
 
-    const newlyDoneJobs: PseudoJob<any>[] = await getJobs(
+    const newlyDoneJobs: Array<PseudoJob<Document>> = await getJobs(
       newlyDoneJobIDs,
       logger,
     );
 
     for (const job of newlyDoneJobs) {
       if (job.returnvalue) {
-        send(ws, {
+        void send(ws, {
           type: "document",
           data: job.returnvalue,
         });
@@ -109,22 +131,23 @@ async function crawlStatusWS(
     }
 
     doneJobIDs.push(...newlyDoneJobIDs);
-    setTimeout(loop, 1000);
+    scheduleLoop();
   };
 
-  setTimeout(loop, 1000);
+  scheduleLoop();
 
-  let [_doneJobIDs, jobIDs, throttledJobsSet] = await Promise.all([
+  const [_doneJobIDs, initialJobIDs, throttledJobsSet] = await Promise.all([
     getDoneJobsOrdered(req.params.jobId),
     getCrawlJobs(req.params.jobId),
     getConcurrencyLimitedJobs(req.auth.team_id),
   ]);
+  let jobIDs = initialJobIDs;
 
   doneJobIDs = _doneJobIDs;
   const jobs = new Map((await scrapeQueue.getJobs(jobIDs)).map(x => [x.id, x]));
 
-  const validJobStatuses: [string, NuQJobStatus][] = [];
-  const validJobIDs: string[] = [];
+  const validJobStatuses: Array<[string, NuQJobStatus]> = [];
+  const validJobIDs: Array<string> = [];
 
   for (const id of jobIDs) {
     if (throttledJobsSet.has(id)) {
@@ -156,7 +179,9 @@ async function crawlStatusWS(
   jobIDs = validJobIDs; // Use validJobIDs instead of jobIDs for further processing
 
   const doneJobs = await getJobs(doneJobIDs, logger);
-  const data = doneJobs.map(x => x.returnvalue);
+  const data = doneJobs
+    .map(x => x.returnvalue)
+    .filter((doc): doc is Document => doc !== null);
 
   if (status === "failed" && crawlError) {
     await send(ws, {
@@ -185,7 +210,7 @@ async function crawlStatusWS(
       completed: doneJobIDs.length,
       creditsUsed: jobIDs.length,
       expiresAt: (await getCrawlExpiry(req.params.jobId)).toISOString(),
-      data: data,
+      data,
     },
   });
 
@@ -201,29 +226,34 @@ export async function crawlStatusWSController(
   req: RequestWithAuth<CrawlStatusParams, undefined, undefined>,
 ) {
   try {
-    const auth = await authenticateUser(req, null, RateLimiterMode.CrawlStatus);
+    const auth = await service.modules.auth.authenticate(req, {
+      kind: RateLimiterMode.CrawlStatus,
+    });
 
-    if (!auth.success) {
+    if (!auth.ok) {
       return close(ws, 3000, {
         type: "error",
-        error: auth.error,
+        error: auth.refusal.body.error,
       });
     }
 
-    const { team_id, org_id } = auth;
-
-    req.auth = { team_id, org_id };
+    const orgParsed = callerOrgSchema.safeParse(auth.caller);
+    req.caller = auth.caller;
+    req.auth = {
+      team_id: auth.caller.teamId,
+      org_id: orgParsed.success ? orgParsed.data.orgId : null,
+    };
 
     await crawlStatusWS(ws, req);
-  } catch (err) {
+  } catch (error) {
     const id = uuidv7();
-    let verbose = JSON.stringify(err);
+    let verbose = JSON.stringify(error);
     if (verbose === "{}") {
-      if (err instanceof Error) {
+      if (error instanceof Error) {
         verbose = JSON.stringify({
-          message: err.message,
-          name: err.name,
-          stack: err.stack,
+          message: error.message,
+          name: error.name,
+          stack: error.stack,
         });
       }
     }
@@ -238,7 +268,7 @@ export async function crawlStatusWSController(
     );
     return close(ws, 1011, {
       type: "error",
-      error: getErrorContactMessage(id),
+      error: service.modules.messages.errorContact(id),
     });
   }
 }

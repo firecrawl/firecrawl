@@ -1,11 +1,12 @@
 import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConsumeMessage } from "amqplib";
+import type { crawlFinishedQueue, nuqShutdown } from "./nuq.js";
 
 const { connect } = vi.hoisted(() => ({ connect: vi.fn() }));
 vi.mock("amqplib", () => ({ default: { connect } }));
 vi.mock("./redis", () => ({ nuqRedis: { shutdown: async () => {} } }));
-vi.setConfig({ testTimeout: 5_000 });
+vi.setConfig({ testTimeout: 5000 });
 
 type Delivery = (message: ConsumeMessage | null) => void;
 
@@ -32,11 +33,33 @@ const completedJob = {
   returnvalue: { ok: true },
 };
 
-function completion() {
+function completion(): ConsumeMessage {
   return {
-    properties: { correlationId: activeJob.id },
+    fields: {
+      deliveryTag: 1,
+      redelivered: false,
+      exchange: "",
+      routingKey: "queue",
+      consumerTag: "tag",
+    },
+    properties: {
+      correlationId: activeJob.id,
+      contentType: undefined,
+      contentEncoding: undefined,
+      headers: undefined,
+      deliveryMode: undefined,
+      priority: undefined,
+      replyTo: undefined,
+      expiration: undefined,
+      messageId: undefined,
+      timestamp: undefined,
+      type: undefined,
+      userId: undefined,
+      appId: undefined,
+      clusterId: undefined,
+    },
     content: Buffer.from("completed"),
-  } as ConsumeMessage;
+  };
 }
 
 function broker() {
@@ -65,7 +88,10 @@ function broker() {
 }
 
 describe("NuQ RabbitMQ listener", () => {
-  let nuq: typeof import("./nuq.js");
+  let nuq: {
+    crawlFinishedQueue: typeof crawlFinishedQueue;
+    nuqShutdown: typeof nuqShutdown;
+  };
 
   beforeEach(async () => {
     vi.stubEnv("NUQ_RABBITMQ_URL", "amqp://localhost");
@@ -97,14 +123,19 @@ describe("NuQ RabbitMQ listener", () => {
     expect(failed.connection.close).toHaveBeenCalledOnce();
     expect(getJob).not.toHaveBeenCalled();
 
-    const result = queue.waitForJob(activeJob.id, 2_000);
+    const result = queue.waitForJob(activeJob.id, 2000);
     const received = expect(result).resolves.toEqual(completedJob.returnvalue);
     await vi.waitFor(() =>
       expect(getJob).toHaveBeenCalledWith(activeJob.id, expect.anything()),
     );
     getJob.mockResolvedValue(completedJob);
     const message = completion();
-    recovered.channel.consume.mock.calls[0][1](message);
+    const deliver = recovered.channel.consume.mock.calls[0][1];
+    const invalid = { ...message, content: Buffer.from("active") };
+    deliver(invalid);
+    expect(recovered.channel.ack).toHaveBeenCalledWith(invalid);
+    expect(getJob).toHaveBeenCalledTimes(1);
+    deliver(message);
 
     await received;
     expect(recovered.channel.ack).toHaveBeenCalledWith(message);
@@ -189,7 +220,7 @@ describe("NuQ RabbitMQ listener", () => {
     const getJobs = vi.spyOn(queue, "getJobs").mockResolvedValueOnce([]);
 
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const result = queue.waitForJob(activeJob.id, 2_000);
+    const result = queue.waitForJob(activeJob.id, 2000);
     const received = expect(result).resolves.toEqual(completedJob.returnvalue);
     await waiting.promise;
 
@@ -273,13 +304,13 @@ describe("NuQ RabbitMQ listener", () => {
     const shutdown = queue.shutdown().then(() => {
       didShutdown = true;
     });
-    await vi.advanceTimersByTimeAsync(4_999);
+    await vi.advanceTimersByTimeAsync(4999);
     expect(didShutdown).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     await shutdown;
 
     closing.resolve();
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(5000);
     expect(connect).toHaveBeenCalledOnce();
   });
 
@@ -295,7 +326,7 @@ describe("NuQ RabbitMQ listener", () => {
     expect(connect).toHaveBeenCalledOnce();
 
     const shutdown = queue.shutdown();
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(5000);
     await shutdown;
     connecting.resolve(attempt.connection);
 
@@ -321,7 +352,7 @@ describe("NuQ RabbitMQ listener", () => {
     await queue.shutdown();
 
     expect(vi.getTimerCount()).toBe(0);
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(5000);
     expect(connect).toHaveBeenCalledTimes(2);
   });
 
@@ -345,7 +376,7 @@ describe("NuQ RabbitMQ listener", () => {
     await vi.advanceTimersByTimeAsync(100);
     await timedOut;
 
-    const live = queue.waitForJob("live", 1_000);
+    const live = queue.waitForJob("live", 1000);
     subscribed.resolve({ consumerTag: "tag" });
     await expect(live).resolves.toEqual(completedJob.returnvalue);
     attempt.channel.consume.mock.calls[0][1](completion());
