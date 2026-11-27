@@ -1,0 +1,29 @@
+---
+title: "v2.12.0 is live"
+date: "October 9, 2026"
+description: "Firecrawl v2.12.0 ships Alexandria provider tools, enterprise Safe Mode, HLS session replay and zero-data-retention sessions for /interact, agent list/effort/terms and full-SDK exchange support, the menu scrape format, a GET /v2/parse/formats endpoint, a free gov search category, and image OCR out of the box."
+---
+
+## v2.12.0 is live
+
+Firecrawl v2.12.0 introduces Alexandria provider tools, deterministic agent response hints driven by a response-guidance provider, an enterprise Safe Mode, HLS session replay and zero-data-retention for `/interact`, full agent list/effort/terms/traces controls across every SDK, a `GET /v2/parse/formats` endpoint, a free `gov` search category, the new `menu` scrape format, image OCR by default — plus a long list of security and reliability fixes.
+
+### Highlights
+
+- **Alexandria provider tools** — Discover and execute third-party provider tools through Firecrawl. Search with `sources: ["alexandria"]` to get back tool contracts, scrape with `domainTools: true` to attach tools matched to a page's domain, or scrape with an `alexandria` body to execute one to ten provider calls with idempotent replays. Available in the JavaScript, Python, Go, and Rust SDKs.
+- **Agent response hints** — v2 `/scrape`, `/search`, `/parse`, and `/map` can now return an opt-in `agent_hints: string[]` driven by a deployment-configured response-guidance provider. Hints are deterministic, computed from response signals already in memory, and capped at three per response. Opt in per request with `X-Firecrawl-Agent-Hints: true`.
+- **Safe Mode** — New enterprise Safe Mode enforced across `/scrape`, `/crawl`, `/batch/scrape`, `/search`, `/map`, `/extract`, `/interact`, and `/monitor`. Restricted sites terminate the scrape, blocked options return `403 SAFE_MODE_BLOCKED`, and Lockdown runs cache-only with zero data retention.
+- **`menu` scrape format** — Added a deterministic structured `menu` format that returns restaurant menu data in `document.menu`, available in all 9 SDKs and gated behind the `menuBeta` team flag.
+- **Session Replay and ZDR for `/interact`** — `GET /v2/interact/:sessionId/replay` and `/replay/:pageId` return HLS playlists of recorded browser tabs with pre-signed segments (opt in with `recordSession: true`). Sessions also now accept `zeroDataRetention: true`, with recording and saved profiles rejected and prompts routed through a non-logging provider.
+- **Agent list, effort, terms, traces, and full-SDK exchange** — `GET /v2/agent` with cursor pagination and per-run threading metadata, `effort: "low" | "medium" | "high"` running against `spark-2`, `exchange.onTermsRequired: "skip" | "ask"`, `partial` / `partialSchemaValid` / `stopReason` on failed runs, plus `GET /v2/agent/:id/trace` and `/snapshots/:snapshotId`. The JavaScript, Python, Go, Rust, Java, .NET, PHP, Ruby, and Elixir SDKs all accept `exchange`, `threadId`, and `mode` on `POST /v2/agent`.
+- **`GET /v2/parse/formats`** — Added a read-only endpoint that lists every upload type `/v2/parse` accepts (format id, kind, extensions, MIME types, and per-deployment availability). Clients no longer need to mirror `document-formats.ts` / `image-formats.ts`. Shipped in all nine SDKs.
+- **`gov` search category** — Added a free `gov` category on `POST /v2/search` and a dedicated `POST /v2/search/gov` endpoint that returns government-source web results. Keyless-friendly and billed at 0 credits.
+- **Auto-resume for large-document scrapes** — The JavaScript and Python SDKs now transparently resume `/scrape` when the API signals `processing_continues`, so oversized PDF scrapes turn into one slow successful call instead of a retry loop.
+- **Threat Protection, IP Restriction, and API key scope lockdown** — Three new enterprise controls: URL-level threat classification through Google Web Risk or Zscaler ZIA (billed `+2` credits per scanned URL), per-team API key IP allowlists (IPv4, IPv6, CIDR), and per-key allowlists for output formats and endpoint groups enforced server-side.
+- **SIEM Logging** — Added org-scoped SIEM Logging that delivers scrape activity events to third-party destinations through a shared, replica-safe queue with retries.
+- **PDF page attribution** — Added `parsers[].pageMarkers` for inline page markers in `document.markdown`, `parsers[].pages` for per-page markdown, and `parsers[].blocks` for typed PDF layout blocks.
+- **Image OCR by default** — Raster PNG, JPEG, WebP, AVIF, and JPEG 2000 inputs now route through the image parser and return a one-page OCR document.
+- **Prompt-injection guard for JSON extraction** — Added an opt-in `checkPromptInjection` on JSON-mode extraction that runs a classifier on scraped content and fails fast with `SCRAPE_PROMPT_INJECTION_DETECTED` on detection.
+- **Abortable crawls in JS and Python** — `crawl()` now stops polling and cancels its server-side job when the caller aborts (JS `AbortSignal`, Python `asyncio` cancellation), so a timed-out caller no longer leaves a crawl burning credits.
+
+Read the full changelog [here](https://github.com/firecrawl/firecrawl/releases/tag/v2.12.0).
