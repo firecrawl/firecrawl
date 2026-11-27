@@ -5,6 +5,7 @@ import warnings
 from ...types import ExtractResponse, ScrapeOptions, ThreatProtectionOptions
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.validation import prepare_scrape_options
+from ..extract import _normalize_extract_response_payload
 
 _EXTRACT_DEPRECATION_MSG = (
     "The extract endpoint is in maintenance mode and its use is discouraged. "
@@ -94,7 +95,7 @@ async def start_extract(
         threat_protection=threat_protection,
     )
     resp = await client.post("/v2/extract", body)
-    return ExtractResponse(**resp.json())
+    return ExtractResponse(**_normalize_extract_response_payload(resp.json()))
 
 
 async def get_extract_status(client: AsyncHttpClient, job_id: str) -> ExtractResponse:
@@ -107,7 +108,7 @@ async def get_extract_status(client: AsyncHttpClient, job_id: str) -> ExtractRes
     """
     warnings.warn(_EXTRACT_DEPRECATION_MSG, DeprecationWarning, stacklevel=2)
     resp = await client.get(f"/v2/extract/{job_id}")
-    return ExtractResponse(**resp.json())
+    return ExtractResponse(**_normalize_extract_response_payload(resp.json()))
 
 
 async def wait_extract(
