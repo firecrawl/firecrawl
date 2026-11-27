@@ -10,7 +10,8 @@ workspace_manifest="../api/native/Cargo.toml"
 rm -rf src/native
 mkdir -p src/native
 
-cp "$core_src/xml.rs" "$core_src/html.rs" "$core_src/crawler.rs" "$core_src/parsers/document.rs" src/native/
+cp "$core_src/xml.rs" "$core_src/html.rs" "$core_src/crawler.rs" \
+  "$core_src/parsers/document.rs" "$core_src/parsers/pdf_table_align.rs" src/native/
 
 expected=$(sed -nE 's/.*#\[path = "native\/([^"]+)"\].*/\1/p' src/lib.rs | sort)
 actual=$(ls -1 src/native | sort)

@@ -1,5 +1,7 @@
 use pdf_inspector::{PdfOptions, PdfType, process_pdf_with_options as rust_process_pdf};
 
+use super::pdf_table_align::realign_tagged_tables;
+
 #[derive(Debug, Clone)]
 pub struct PdfProcessOutput {
   pub pdf_type: String,
@@ -55,7 +57,14 @@ pub fn process_pdf_file(path: &str, max_pages: Option<u32>) -> Result<PdfProcess
     "PDF processing complete"
   );
 
-  Ok(to_output(result))
+  let mut output = to_output(result);
+  if let Some(markdown) = output.markdown.take() {
+    output.markdown = Some(match std::fs::read(path) {
+      Ok(bytes) => realign_tagged_tables(&bytes, markdown, max_pages),
+      Err(_) => markdown,
+    });
+  }
+  Ok(output)
 }
 
 pub fn detect_pdf_file(path: &str) -> Result<PdfProcessOutput, String> {

@@ -14,6 +14,8 @@ pub use firecrawl_core::crawler;
 pub use firecrawl_core::html;
 #[cfg(not(vendored_native))]
 pub use firecrawl_core::parsers::document;
+#[cfg(not(vendored_native))]
+use firecrawl_core::parsers::pdf_table_align;
 
 // Declared through a macro so `cargo fmt` does not try to load the gitignored
 // `src/native/*.rs` files when they are absent in normal repository checkouts.
@@ -26,6 +28,8 @@ macro_rules! declare_vendored_native {
     pub mod document;
     #[path = "native/html.rs"]
     pub mod html;
+    #[path = "native/pdf_table_align.rs"]
+    mod pdf_table_align;
     #[path = "native/xml.rs"]
     mod xml;
   };
