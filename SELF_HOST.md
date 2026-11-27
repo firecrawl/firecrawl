@@ -30,6 +30,8 @@ the services and configuration match the revision you checked out.
   `NUQ_BACKEND=fdb` and are prepared to operate FoundationDB.
 - **Scraping: bundled Playwright with basic fetch fallback.** Connect and
   configure a separate engine such as Fire-engine only when you need it.
+- **Markdown: the Go HTML-to-Markdown converter built into the API image.**
+  Set `USE_GO_MARKDOWN_PARSER=false` only to fall back to Turndown.
 - **AI-backed features: no model provider.** Connect OpenAI, an OpenAI-compatible
   endpoint, or Ollama when a feature needs it.
 - **Queue administration UI: off.** Enable it only with a strong
