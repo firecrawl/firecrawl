@@ -42,7 +42,7 @@ async function processFinishCrawlJobInternal(_job: NuQJob) {
     throw new Error("crawlFinish couldn't find anyJob");
   }
 
-  await finishCrawlSuper(anyJob as any);
+  await finishCrawlSuper(anyJob);
 }
 
 function startCrawlFinishedLoop() {
@@ -55,9 +55,11 @@ function startCrawlFinishedLoop() {
       const job = await crawlFinishedQueueFdb.getJobToProcess();
 
       if (job === null) {
-        await new Promise(resolve => setTimeout(resolve, noJobTimeout));
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, noJobTimeout);
+        });
         if (!config.NUQ_RABBITMQ_URL) {
-          noJobTimeout = Math.min(noJobTimeout * 2, 10000);
+          noJobTimeout = Math.min(noJobTimeout * 2, 10_000);
         }
         continue;
       }
@@ -71,41 +73,48 @@ function startCrawlFinishedLoop() {
         crawlId: job.groupId,
       });
 
+      const jobLock = job.lock;
+      if (!jobLock) {
+        logger.warn("Acquired crawl finished job without lock");
+        continue;
+      }
+
       logger.info("Acquired crawl finished job");
 
-      const lockRenewInterval = setInterval(async () => {
-        try {
-          logger.info("Renewing crawl finished lock");
-          if (
-            !(await crawlFinishedQueueFdb.renewLock(job.id, job.lock!, logger))
-          ) {
-            logger.warn("Failed to renew crawl finished lock");
-            clearInterval(lockRenewInterval);
+      const lockRenewInterval = setInterval(() => {
+        void (async () => {
+          try {
+            logger.info("Renewing crawl finished lock");
+            if (
+              !(await crawlFinishedQueueFdb.renewLock(job.id, jobLock, logger))
+            ) {
+              logger.warn("Failed to renew crawl finished lock");
+              clearInterval(lockRenewInterval);
+            }
+          } catch (error: unknown) {
+            logger.warn("Failed to renew crawl finished lock", { error });
           }
-        } catch (error) {
-          logger.warn("Failed to renew crawl finished lock", { error });
-          clearInterval(lockRenewInterval);
-        }
-      }, 15000);
+        })();
+      }, 15_000);
 
       try {
-        await processFinishCrawlJobInternal(job as any);
+        await processFinishCrawlJobInternal(job);
         if (
           !(await crawlFinishedQueueFdb.jobFinish(
             job.id,
-            job.lock!,
+            jobLock,
             null,
             logger,
           ))
         ) {
           logger.warn("Could not update crawl finished job status");
         }
-      } catch (error) {
+      } catch (error: unknown) {
         logger.error("Crawl finished job failed", { error });
         if (
           !(await crawlFinishedQueueFdb.jobFail(
             job.id,
-            job.lock!,
+            jobLock,
             error instanceof Error ? error.message : JSON.stringify(error),
             logger,
           ))
@@ -118,7 +127,7 @@ function startCrawlFinishedLoop() {
     }
   })();
 
-  const done = loop.catch(error => {
+  const done = loop.catch((error: unknown) => {
     _logger.error("Crawl finished loop stopped unexpectedly", {
       module: "nuq-fdb-worker",
       error,
@@ -139,7 +148,7 @@ export async function start() {
 
   await runNuqWorker({
     serviceName: "nuq-fdb-worker",
-    queue: scrapeQueueFdb as any,
+    queue: scrapeQueueFdb,
     healthCheck: () => nuqFdbHealthCheck(),
     beforeStart: () => {
       getNuqFdbSweeper().start();

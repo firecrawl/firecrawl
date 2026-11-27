@@ -1,14 +1,20 @@
 import { v7 as uuidv7 } from "uuid";
 import type { Logger } from "winston";
-import { Document, ScrapeOptions, TeamFlags } from "../controllers/v2/types";
+import type {
+  Document,
+  ScrapeOptions,
+  TeamFlags,
+} from "../controllers/v2/types";
 import { CostTracking } from "../lib/cost-tracking";
 import { resolveJobPriority } from "../lib/limits";
 import { service } from "../service";
-import { NuQJob } from "../services/worker/nuq";
+import type { NuQJob } from "../services/worker/nuq";
 import { processJobInternal } from "../services/worker/scrape-worker";
-import { ScrapeJobData } from "../types";
-import { SearchV2Response } from "../lib/entities";
+import type { ScrapeJobData } from "../types";
+import { z } from "zod";
+import type { SearchV2Response, WebSearchResult } from "../lib/entities";
 import type { BillingMetadata } from "../lib/billing-types";
+import type { InternalOptions } from "../scraper/scrapeURL";
 import {
   contextThreatProtection,
   requestContext,
@@ -26,8 +32,13 @@ interface ScrapeJobInput {
   description: string;
 }
 
+type SearchResultItem =
+  | WebSearchResult
+  | NonNullable<SearchV2Response["news"]>[number]
+  | NonNullable<SearchV2Response["images"]>[number];
+
 interface ScrapeItem {
-  item: any;
+  item: SearchResultItem;
   type: "web" | "news" | "image";
   scrapeInput: ScrapeJobInput;
 }
@@ -51,6 +62,10 @@ interface ScrapeSearchOptions {
   ctx?: RequestContext;
 }
 
+type SearchScrapeOptions = ScrapeOptions & {
+  maxAge?: number;
+};
+
 async function scrapeSearchResultDirect(
   searchResult: ScrapeJobInput,
   options: ScrapeSearchOptions,
@@ -72,6 +87,28 @@ async function scrapeSearchResultDirect(
   });
 
   try {
+    const internalOptions: InternalOptions = {
+      ctx,
+      teamId: options.teamId,
+      orgId: options.orgId ?? null,
+      bypassBilling: options.bypassBilling ?? true,
+      zeroDataRetention: ctx.zeroDataRetention,
+      teamFlags: flags,
+      agentIndexOnly: options.agentIndexOnly ?? false,
+    };
+    if (options.workContactOnly) {
+      internalOptions.workContactOnly = true;
+    }
+    if (threatProtection !== undefined) {
+      // Rolling-deploy compatibility dual-write alongside the ctx fallback.
+      internalOptions.threatProtection = threatProtection;
+    }
+
+    const scrapeOptions: SearchScrapeOptions = {
+      ...options.scrapeOptions,
+      maxAge: 3 * 24 * 60 * 60 * 1000, // 3 days
+    };
+
     const job: NuQJob<ScrapeJobData> = {
       id: jobId,
       status: "active",
@@ -82,22 +119,8 @@ async function scrapeSearchResultDirect(
         mode: "single_urls",
         ctx,
         team_id: options.teamId,
-        scrapeOptions: {
-          ...options.scrapeOptions,
-          maxAge: 3 * 24 * 60 * 60 * 1000, // 3 days
-        } as ScrapeOptions,
-        internalOptions: {
-          ctx,
-          teamId: options.teamId,
-          orgId: options.orgId ?? null,
-          bypassBilling: options.bypassBilling ?? true,
-          zeroDataRetention: ctx.zeroDataRetention,
-          teamFlags: flags,
-          agentIndexOnly: options.agentIndexOnly ?? false,
-          ...(options.workContactOnly ? { workContactOnly: true } : {}),
-          // Rolling-deploy compatibility dual-write alongside the ctx fallback.
-          ...(threatProtection !== undefined ? { threatProtection } : {}),
-        },
+        scrapeOptions,
+        internalOptions,
         skipNuq: true,
         origin: options.origin,
         is_scrape: false,
@@ -132,20 +155,22 @@ async function scrapeSearchResultDirect(
       document,
       costTracking: new CostTracking().toJSON(),
     };
-  } catch (error) {
-    logger.error(`Error in scrapeSearchResultDirect: ${error}`, {
+  } catch (error: unknown) {
+    logger.error("Error in scrapeSearchResultDirect", {
+      error,
       url: searchResult.url,
       teamId: options.teamId,
       scrapeId: jobId,
     });
 
+    const errorMessage = error instanceof Error ? error.message : String(error);
     const document: Document = {
       title: searchResult.title,
       description: searchResult.description,
       url: searchResult.url,
       metadata: {
         statusCode: 500,
-        error: error.message,
+        error: errorMessage,
         proxyUsed: "basic",
       },
     };
@@ -157,13 +182,14 @@ async function scrapeSearchResultDirect(
   }
 }
 
+const forcedScrapeZdrFlagsSchema = z.union([
+  z.object({ scrapeZDR: z.literal("forced") }),
+  z.object({ forceZDR: z.literal(true) }),
+  z.object({ allowZDR: z.literal("forced") }),
+]);
+
 function hasForcedScrapeZdr(flags: TeamFlags | null | undefined): boolean {
-  const raw = flags as Record<string, unknown> | null | undefined;
-  return (
-    raw?.scrapeZDR === "forced" ||
-    raw?.forceZDR === true ||
-    raw?.allowZDR === "forced"
-  );
+  return forcedScrapeZdrFlagsSchema.safeParse(flags).success;
 }
 
 export function getItemsToScrape(
@@ -177,8 +203,8 @@ export function getItemsToScrape(
     safeMode?: boolean;
     ctx?: RequestContext;
   },
-): ScrapeItem[] {
-  const items: ScrapeItem[] = [];
+): Array<ScrapeItem> {
+  const items: Array<ScrapeItem> = [];
   const forcedScrapeZdr = hasForcedScrapeZdr(context?.ctx?.flags ?? flags);
   const blockZeroDataRetention =
     (context?.ctx?.zeroDataRetention ?? false) ||
@@ -259,11 +285,11 @@ export function getItemsToScrape(
 }
 
 export async function scrapeSearchResults(
-  items: ScrapeJobInput[],
+  items: Array<ScrapeJobInput>,
   options: ScrapeSearchOptions,
   logger: Logger,
   flags: TeamFlags,
-): Promise<DocumentWithCostTracking[]> {
+): Promise<Array<DocumentWithCostTracking>> {
   if (items.length === 0) {
     return [];
   }
@@ -317,8 +343,8 @@ export async function scrapeSearchResults(
 
 export function mergeScrapedContent(
   searchResponse: SearchV2Response,
-  items: ScrapeItem[],
-  docs: DocumentWithCostTracking[],
+  items: Array<ScrapeItem>,
+  docs: Array<DocumentWithCostTracking>,
 ): void {
   const resultsMap = new Map<string, Document>();
   items.forEach((item, index) => {
@@ -332,15 +358,15 @@ export function mergeScrapedContent(
     }));
   }
   if (searchResponse.news?.length) {
-    searchResponse.news = searchResponse.news.map(item => ({
-      ...item,
-      ...(item.url ? resultsMap.get(item.url) : {}),
-    }));
+    searchResponse.news = searchResponse.news.map(item => {
+      const scraped = item.url ? resultsMap.get(item.url) : undefined;
+      return scraped ? { ...item, ...scraped } : { ...item };
+    });
   }
   if (searchResponse.images?.length) {
-    searchResponse.images = searchResponse.images.map(item => ({
-      ...item,
-      ...(item.url ? resultsMap.get(item.url) : {}),
-    }));
+    searchResponse.images = searchResponse.images.map(item => {
+      const scraped = item.url ? resultsMap.get(item.url) : undefined;
+      return scraped ? { ...item, ...scraped } : { ...item };
+    });
   }
 }

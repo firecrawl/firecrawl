@@ -98,6 +98,18 @@ jobs:
         env:
           npm_config_ignore_scripts: 'true' # keeps pnpm from rebuilding the cached native lib
 
+      - name: Lint API
+        run: pnpm run lint
+        working-directory: apps/api
+        env:
+          npm_config_ignore_scripts: 'true' # keeps pnpm from rebuilding the cached native lib
+
+      - name: Format check
+        run: pnpm run format:check
+        working-directory: apps/api
+        env:
+          npm_config_ignore_scripts: 'true' # keeps pnpm from rebuilding the cached native lib
+
       - name: Run core unit tests
         run: pnpm test:core --reporter=default --reporter=github-actions
         working-directory: apps/api

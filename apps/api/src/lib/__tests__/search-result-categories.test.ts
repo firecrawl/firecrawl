@@ -2,16 +2,20 @@ import { describe, it, expect } from "vitest";
 import {
   collectSearchResultCategories,
   countSearchResultsBySource,
-  type SearchResultType,
-  type SearchV2Response,
 } from "../entities";
+import type { SearchV2Response, WebSearchResult } from "../entities";
 
-const web = (url: string, category?: string) => ({
-  url,
-  title: url,
-  description: "",
-  ...(category ? { category } : {}),
-});
+const web = (url: string, category?: string): WebSearchResult => {
+  const result: WebSearchResult = {
+    url,
+    title: url,
+    description: "",
+  };
+  if (category) {
+    result.category = category;
+  }
+  return result;
+};
 
 describe("collectSearchResultCategories", () => {
   it("keys the serving vertical by group and 1-indexed position", () => {
@@ -78,18 +82,22 @@ describe("collectSearchResultCategories", () => {
   });
 
   it("ignores non-string and empty categories", () => {
-    const response = {
+    const nonStringCategory: WebSearchResult = {
+      url: "https://b.example/",
+      title: "",
+      description: "",
+    };
+    Object.defineProperty(nonStringCategory, "category", {
+      value: 7,
+      enumerable: true,
+    });
+    const response: SearchV2Response = {
       web: [
         { url: "https://a.example/", title: "", description: "", category: "" },
-        {
-          url: "https://b.example/",
-          title: "",
-          description: "",
-          category: 7 as unknown as string,
-        },
+        nonStringCategory,
         web("https://c.example/", "pdf"),
       ],
-    } as SearchV2Response;
+    };
 
     expect(collectSearchResultCategories(response)).toEqual({
       web: { "3": "pdf" },
@@ -140,11 +148,13 @@ describe("collectSearchResultCategories", () => {
     const counts = countSearchResultsBySource(response);
     const categories = collectSearchResultCategories(response);
 
-    for (const [source, byPosition] of Object.entries(categories)) {
+    for (const source of ["web", "images", "news"] as const) {
+      const byPosition = categories[source];
+      if (!byPosition) {
+        continue;
+      }
       for (const position of Object.keys(byPosition)) {
-        expect(Number(position)).toBeLessThanOrEqual(
-          counts[source as SearchResultType],
-        );
+        expect(Number(position)).toBeLessThanOrEqual(counts[source]);
       }
     }
   });

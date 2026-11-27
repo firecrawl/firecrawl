@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   createTestIdUrl,
   describeIf,
@@ -5,9 +6,9 @@ import {
   TEST_SELF_HOST,
   TEST_SUITE_WEBSITE,
 } from "../lib";
+import type { Identity } from "./lib";
 import {
   idmux,
-  Identity,
   monitorCheckRaw,
   monitorCreateRaw,
   monitorDeleteRaw,
@@ -21,6 +22,28 @@ import {
   scrapeTimeout,
 } from "./lib";
 
+const monitorCheckDataSchema = z.object({
+  status: z.string(),
+  estimatedCredits: z.number().nullish(),
+  actualCredits: z.number().nullish(),
+  reservedCredits: z.number().nullish(),
+});
+
+type MonitorCheckData = z.infer<typeof monitorCheckDataSchema>;
+
+const monitorCheckEnvelopeSchema = z.object({
+  data: monitorCheckDataSchema,
+});
+
+const monitorListBodySchema = z.object({
+  data: z.array(z.object({ id: z.string().optional() })),
+});
+
+function externalRecipient(): string {
+  const id = Math.random().toString(36).slice(2, 10);
+  return `optin-${id}@external-test.example`;
+}
+
 describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
   let identity: Identity;
 
@@ -28,9 +51,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     identity = await idmux({
       name: "monitor",
       concurrency: 20,
-      credits: 1000000,
+      credits: 1_000_000,
     });
-  }, 10000);
+  }, 10_000);
 
   it(
     "reserves the known PDF page cost before a repeat monitor run",
@@ -54,21 +77,31 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
       );
       expect(create.statusCode).toBe(200);
       const monitorId = create.body.data.id;
-      const runToCompletion = async () => {
+      const runToCompletion = async (): Promise<MonitorCheckData> => {
         const run = await monitorRunRaw(monitorId, identity);
         expect(run.statusCode).toBe(200);
-        let check: any;
+        let check: MonitorCheckData | undefined;
         for (let i = 0; i < 90; i++) {
           const raw = await monitorCheckRaw(monitorId, run.body.id, identity);
           expect(raw.statusCode).toBe(200);
-          check = raw.body.data;
+          const parsed = monitorCheckEnvelopeSchema.safeParse(raw.body);
+          if (!parsed.success) {
+            throw new Error("Unexpected monitor check response shape");
+          }
+          check = parsed.data.data;
           if (
             ["completed", "partial", "failed", "skipped_no_credits"].includes(
               check.status,
             )
-          )
+          ) {
             break;
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, 1000);
+          });
+        }
+        if (!check) {
+          throw new Error("Expected monitor check result");
         }
         expect(check.status).toBe("completed");
         return check;
@@ -113,7 +146,9 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     const id = create.body.data.id;
     const list = await monitorListRaw(identity);
     expect(list.statusCode).toBe(200);
-    expect(list.body.data.some((x: any) => x.id === id)).toBe(true);
+    const parsedList = monitorListBodySchema.safeParse(list.body);
+    const listItems = parsedList.success ? parsedList.data.data : [];
+    expect(listItems.some(x => x.id === id)).toBe(true);
 
     const get = await monitorGetRaw(id, identity);
     expect(get.statusCode).toBe(200);
@@ -134,10 +169,10 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     beforeAll(async () => {
       searchZdr = await idmux({
         name: "monitor/search-zdr",
-        credits: 10000,
+        credits: 10_000,
         flags: { searchZDR: "forced-zdr" },
       });
-    }, 10000);
+    }, 10_000);
 
     it("refuses a search monitor", async () => {
       const create = await monitorCreateRaw(
@@ -206,10 +241,10 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     beforeAll(async () => {
       lockdown = await idmux({
         name: "monitor/lockdown",
-        credits: 10000,
+        credits: 10_000,
         flags: { safeMode: true, safeModeConfig: { lockdown: true } },
       });
-    }, 10000);
+    }, 10_000);
 
     it("refuses a search monitor", async () => {
       const create = await monitorCreateRaw(
@@ -298,9 +333,8 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
             urls: [createTestIdUrl()],
           },
         ],
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         nonsenseField: "value",
-      } as any,
+      },
       identity,
     );
 
@@ -357,8 +391,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         const raw = await monitorCheckRaw(monitorId, checkId, identity);
         expect(raw.statusCode).toBe(200);
         check = raw.body.data;
-        if (["completed", "partial", "failed"].includes(check.status)) break;
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (["completed", "partial", "failed"].includes(check.status)) {
+          break;
+        }
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
       }
 
       expect(["completed", "partial"]).toContain(check.status);
@@ -430,8 +468,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         const raw = await monitorCheckRaw(monitorId, checkId, identity);
         expect(raw.statusCode).toBe(200);
         check = raw.body.data;
-        if (["completed", "partial", "failed"].includes(check.status)) break;
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (["completed", "partial", "failed"].includes(check.status)) {
+          break;
+        }
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
       }
       expect(["completed", "partial"]).toContain(check.status);
       // First run: status is "new" (no previous scrape to diff against), no
@@ -496,8 +538,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         const raw = await monitorCheckRaw(monitorId, checkId, identity);
         expect(raw.statusCode).toBe(200);
         check = raw.body.data;
-        if (["completed", "partial", "failed"].includes(check.status)) break;
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (["completed", "partial", "failed"].includes(check.status)) {
+          break;
+        }
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
       }
       // Contract: deterministicJson is accepted, the reusable-json-mode extractor
       // populates document.json via the code-sandbox, and the check flows through
@@ -558,8 +604,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         const raw = await monitorCheckRaw(monitorId, checkId, identity);
         expect(raw.statusCode).toBe(200);
         check = raw.body.data;
-        if (["completed", "partial", "failed"].includes(check.status)) break;
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (["completed", "partial", "failed"].includes(check.status)) {
+          break;
+        }
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
       }
       expect(["completed", "partial"]).toContain(check.status);
       expect(check.pages[0].status).toBe("new");
@@ -570,11 +620,6 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
   );
 
   describe("email recipient opt-in", () => {
-    function externalRecipient(): string {
-      const id = Math.random().toString(36).slice(2, 10);
-      return `optin-${id}@external-test.example`;
-    }
-
     it("starts external recipients as pending without sending notifications", async () => {
       const recipient = externalRecipient();
       const create = await monitorCreateRaw(
@@ -735,8 +780,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         const raw = await monitorCheckRaw(monitorId, checkId, identity);
         expect(raw.statusCode).toBe(200);
         check = raw.body.data;
-        if (["completed", "partial", "failed"].includes(check.status)) break;
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (["completed", "partial", "failed"].includes(check.status)) {
+          break;
+        }
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
       }
       expect(["completed", "partial"]).toContain(check.status);
       // First run is always "new"; the assertion here is that mixed-mode

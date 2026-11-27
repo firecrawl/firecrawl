@@ -1,24 +1,30 @@
 import Module from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ScrapeJobTimeoutError } from "../lib/error";
-import * as errorSerde from "../lib/error-serde";
+import { coreErrors } from "../lib/error-serde";
 import { coreEngineSpecs } from "../scraper/scrapeURL/engines/metadata";
 import { coreParts } from "./core-parts";
 import { defaultModules } from "./defaults";
 import type { Engine } from "./engines";
-import {
-  coreLlmProviderNames,
-  type LlmModel,
-  type LlmProvider,
-} from "./llm-providers";
-import {
-  coreSearchProviderSpecs,
-  type SearchProvider,
-} from "./search-providers";
+import { coreLlmProviderNames } from "./llm-providers";
+import type { LlmModel, LlmProvider } from "./llm-providers";
+import { coreSearchProviderSpecs } from "./search-providers";
+import type { SearchProvider } from "./search-providers";
 import { hookPointNames } from "./hooks";
 import { createService } from "./service";
 
-const loadedSideEffectModules = vi.hoisted(() => [] as string[]);
+type V4Model = Extract<LlmModel, { specificationVersion: "v4" }>;
+
+const fakeModel = (id: string): LlmModel => ({
+  specificationVersion: "v4",
+  provider: "test",
+  modelId: id,
+  supportedUrls: {},
+  doGenerate: vi.fn<V4Model["doGenerate"]>(),
+  doStream: vi.fn<V4Model["doStream"]>(),
+});
+
+const loadedSideEffectModules = vi.hoisted(() => [] as Array<string>);
 vi.mock("../config", () => {
   loadedSideEffectModules.push("config");
   return { config: {} };
@@ -51,34 +57,38 @@ const v2TypesModule = "../controllers/v2/types";
 // use. The test runner cannot resolve a source file loaded that way, so those
 // loads are answered with stub modules.
 function answerRequire(
-  mockEngines?: readonly Engine[],
-  mockLlmProviders?: readonly LlmProvider[],
-  mockSearchProviders?: readonly SearchProvider[],
+  mockEngines?: ReadonlyArray<Engine>,
+  mockLlmProviders?: ReadonlyArray<LlmProvider>,
+  mockSearchProviders?: ReadonlyArray<SearchProvider>,
 ) {
   const load = Module.prototype.require;
   const enginesStub = mockEngines
     ? { coreEngines: mockEngines }
     : {
-        coreEngines: coreEngineSpecs.map(spec => ({
-          name: spec.name,
-          quality: spec.quality,
-          features: spec.features,
-          ...(spec.explicitOnly ? { explicitOnly: true } : {}),
-          enabled: vi.fn(() => true),
-          scrape: vi.fn(),
-          maxReasonableTime: vi.fn(() => 12345),
-        })),
+        coreEngines: coreEngineSpecs.map(spec => {
+          const base = {
+            name: spec.name,
+            quality: spec.quality,
+            features: spec.features,
+            enabled: vi.fn(() => true),
+            scrape: vi.fn<Engine["scrape"]>(),
+            maxReasonableTime: vi.fn(() => 12_345),
+          };
+          return spec.explicitOnly ? { ...base, explicitOnly: true } : base;
+        }),
       };
   const searchProvidersStub = mockSearchProviders
     ? { coreSearchProviders: mockSearchProviders }
     : {
-        coreSearchProviders: coreSearchProviderSpecs.map(spec => ({
-          name: spec.name,
-          priority: spec.priority,
-          ...(spec.supportsUsOnly ? { supportsUsOnly: true } : {}),
-          enabled: vi.fn(() => true),
-          search: vi.fn(async () => ({ web: [] })),
-        })),
+        coreSearchProviders: coreSearchProviderSpecs.map(spec => {
+          const base = {
+            name: spec.name,
+            priority: spec.priority,
+            enabled: vi.fn(() => true),
+            search: vi.fn(async () => ({ web: [] })),
+          };
+          return spec.supportsUsOnly ? { ...base, supportsUsOnly: true } : base;
+        }),
       };
   const llmProvidersStub = mockLlmProviders
     ? { coreLlmProviders: mockLlmProviders }
@@ -86,9 +96,7 @@ function answerRequire(
         coreLlmProviders: coreLlmProviderNames.map(name => ({
           name,
           enabled: vi.fn(() => true),
-          model: vi.fn(
-            (id: string) => ({ modelId: id }) as unknown as LlmModel,
-          ),
+          model: vi.fn((id: string) => fakeModel(id)),
         })),
       };
   const v2TypesStub = {
@@ -110,12 +118,23 @@ function answerRequire(
     this: Module,
     id: string,
   ) {
-    if (id === errorClassesModule) return errorSerde;
-    if (id === enginesModule) return enginesStub;
-    if (id === searchProvidersModule) return searchProvidersStub;
-    if (id === llmProvidersModule) return llmProvidersStub;
-    if (id === v2TypesModule) return v2TypesStub;
-    return load.call(this, id);
+    if (id === errorClassesModule) {
+      return { coreErrors };
+    }
+    if (id === enginesModule) {
+      return enginesStub;
+    }
+    if (id === searchProvidersModule) {
+      return searchProvidersStub;
+    }
+    if (id === llmProvidersModule) {
+      return llmProvidersStub;
+    }
+    if (id === v2TypesModule) {
+      return v2TypesStub;
+    }
+    const loaded: unknown = load.call(this, id);
+    return loaded;
   });
 }
 
@@ -144,17 +163,19 @@ describe("coreParts", () => {
       statusCode: 200,
       proxyUsed: "basic",
     });
-    const maxReasonableTime = vi.fn(() => 42000);
-    const mockEngines: Engine[] = coreEngineSpecs.map(spec => ({
-      name: spec.name,
-      quality: spec.quality,
-      features: spec.features,
-      ...(spec.explicitOnly ? { explicitOnly: true } : {}),
-      enabled: spec.name === "fetch" ? enabled : () => false,
-      scrape: spec.name === "fetch" ? scrape : vi.fn(),
-      maxReasonableTime:
-        spec.name === "fetch" ? maxReasonableTime : () => 30000,
-    }));
+    const maxReasonableTime = vi.fn(() => 42_000);
+    const mockEngines: Array<Engine> = coreEngineSpecs.map(spec => {
+      const base: Engine = {
+        name: spec.name,
+        quality: spec.quality,
+        features: spec.features,
+        enabled: spec.name === "fetch" ? enabled : () => false,
+        scrape: spec.name === "fetch" ? scrape : vi.fn<Engine["scrape"]>(),
+        maxReasonableTime:
+          spec.name === "fetch" ? maxReasonableTime : () => 30_000,
+      };
+      return spec.explicitOnly ? { ...base, explicitOnly: true } : base;
+    });
 
     const required = answerRequire(mockEngines);
     const built = createService({ modules: {} }, coreParts());
@@ -170,10 +191,12 @@ describe("coreParts", () => {
     expect(built.engines.enabled().map(e => e.name)).toEqual(["fetch"]);
     expect(enabled).toHaveBeenCalledTimes(1);
 
-    const stubMeta = {} as Parameters<Engine["scrape"]>[0];
+    const stubMeta = {};
+    // @ts-expect-error: lazy engine wrapper only forwards the opaque meta object to the mock engine
     await fetchEngine!.scrape(stubMeta);
     expect(scrape).toHaveBeenCalledWith(stubMeta);
-    expect(fetchEngine!.maxReasonableTime?.(stubMeta)).toBe(42000);
+    // @ts-expect-error: lazy engine wrapper only forwards the opaque meta object to the mock engine
+    expect(fetchEngine!.maxReasonableTime?.(stubMeta)).toBe(42_000);
     expect(maxReasonableTime).toHaveBeenCalledWith(stubMeta);
     expect(
       required.mock.calls.filter(([id]) => id === enginesModule),
@@ -182,13 +205,15 @@ describe("coreParts", () => {
 
   it("loads its LLM provider implementations on the first provider call, and once", () => {
     const enabled = vi.fn(() => true);
-    const fakeModel = { modelId: "gpt-4o-mini" } as unknown as LlmModel;
-    const model = vi.fn(() => fakeModel);
-    const mockProviders: LlmProvider[] = coreLlmProviderNames.map(name => ({
-      name,
-      enabled: name === "openai" ? enabled : () => false,
-      model: name === "openai" ? model : vi.fn(() => fakeModel),
-    }));
+    const stubModel = fakeModel("gpt-4o-mini");
+    const model = vi.fn(() => stubModel);
+    const mockProviders: Array<LlmProvider> = coreLlmProviderNames.map(
+      name => ({
+        name,
+        enabled: name === "openai" ? enabled : () => false,
+        model: name === "openai" ? model : vi.fn(() => stubModel),
+      }),
+    );
 
     const required = answerRequire(undefined, mockProviders);
     const built = createService({ modules: {} }, coreParts());
@@ -205,7 +230,7 @@ describe("coreParts", () => {
     expect(enabled).toHaveBeenCalledTimes(1);
 
     const opts = { feature: "Extract" };
-    expect(openaiProvider!.model("gpt-4o-mini", opts)).toBe(fakeModel);
+    expect(openaiProvider!.model("gpt-4o-mini", opts)).toBe(stubModel);
     expect(model).toHaveBeenCalledWith("gpt-4o-mini", opts);
     expect(
       required.mock.calls.filter(([id]) => id === llmProvidersModule),
@@ -218,14 +243,16 @@ describe("coreParts", () => {
       web: [{ url: "https://example.com", title: "Example", description: "" }],
     };
     const search = vi.fn(async () => searchResult);
-    const mockProviders: SearchProvider[] = coreSearchProviderSpecs.map(
-      spec => ({
-        name: spec.name,
-        priority: spec.priority,
-        ...(spec.supportsUsOnly ? { supportsUsOnly: true } : {}),
-        enabled: spec.name === "searxng" ? enabled : () => false,
-        search: spec.name === "searxng" ? search : vi.fn(async () => null),
-      }),
+    const mockProviders: Array<SearchProvider> = coreSearchProviderSpecs.map(
+      spec => {
+        const base: SearchProvider = {
+          name: spec.name,
+          priority: spec.priority,
+          enabled: spec.name === "searxng" ? enabled : () => false,
+          search: spec.name === "searxng" ? search : vi.fn(async () => null),
+        };
+        return spec.supportsUsOnly ? { ...base, supportsUsOnly: true } : base;
+      },
     );
 
     const required = answerRequire(undefined, undefined, mockProviders);
@@ -454,13 +481,14 @@ describe("coreParts", () => {
 
   it("registers only openai and ollama in core and accepts extension-contributed LLM providers without side effects", () => {
     const required = answerRequire();
-    const customModel = { modelId: "custom-model" } as unknown as LlmModel;
+    const customModel = fakeModel("custom-model");
     const customEnabled = vi.fn(() => true);
-    const customProvider = {
+    const customProvider: LlmProvider = {
+      // @ts-expect-error: test provider name exercises open declaration-merged LlmProviderName
       name: "custom-llm",
       enabled: customEnabled,
       model: vi.fn(() => customModel),
-    } as unknown as LlmProvider;
+    };
 
     const built = createService(
       {
@@ -498,7 +526,8 @@ describe("coreParts", () => {
             name: "custom-search",
             searchProviders: [
               {
-                name: "custom-primary" as SearchProvider["name"],
+                // @ts-expect-error: test provider name exercises open declaration-merged SearchProviderName
+                name: "custom-primary",
                 priority: 100,
                 supportsUsOnly: true,
                 enabled: customEnabled,

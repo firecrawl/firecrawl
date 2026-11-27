@@ -2,7 +2,8 @@ import { configDotenv } from "dotenv";
 import { config } from "../../config";
 configDotenv();
 
-import { TeamFlags } from "../../controllers/v2/types";
+import { z } from "zod";
+import type { TeamFlags } from "../../controllers/v2/types";
 
 // =========================================
 // Configuration
@@ -11,8 +12,10 @@ import { TeamFlags } from "../../controllers/v2/types";
 export const TEST_API_URL = config.TEST_API_URL;
 
 const stripTrailingSlash = (url: string) => {
-  if (url.length < 1) throw new Error("Invalid URL supplied");
-  return url.endsWith("/") ? url.substring(0, url.length - 1) : url;
+  if (url.length < 1) {
+    throw new Error("Invalid URL supplied");
+  }
+  return url.endsWith("/") ? url.slice(0, -1) : url;
 };
 
 export const TEST_SUITE_WEBSITE = stripTrailingSlash(config.TEST_SUITE_WEBSITE);
@@ -32,8 +35,8 @@ export const HAS_MENU_SERVICE = !!process.env.MENU_EXTRACTION_SERVICE_URL;
 export const HAS_SEARCH = TEST_PRODUCTION || !!config.SEARXNG_ENDPOINT;
 
 const isLocalUrl = (x: string) =>
-  /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
-    x as string,
+  /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([/?#]|$)/i.test(
+    x,
   );
 
 // due to playwright / api using proxy, we don't want to run local tests while proxy is enabled or in production testing
@@ -61,8 +64,8 @@ if (isLocalUrl(TEST_SUITE_WEBSITE)) {
 }
 
 // Due to the limited resources of the CI runner, we need to set a longer timeout for the many many scrape tests
-export const scrapeTimeout = 90000;
-export const indexCooldown = 30000;
+export const scrapeTimeout = 90_000;
+export const indexCooldown = 30_000;
 
 // =========================================
 // idmux
@@ -101,8 +104,12 @@ export async function idmux(req: IdmuxRequest): Promise<Identity> {
     return fallbackIdentity();
   }
 
-  let runNumber = parseInt(process.env.GITHUB_RUN_NUMBER!);
-  if (isNaN(runNumber) || runNumber === null || runNumber === undefined) {
+  let runNumber = Number.parseInt(process.env.GITHUB_RUN_NUMBER!);
+  if (
+    Number.isNaN(runNumber) ||
+    runNumber === null ||
+    runNumber === undefined
+  ) {
     runNumber = 0;
   }
 
@@ -137,10 +144,16 @@ export async function idmux(req: IdmuxRequest): Promise<Identity> {
   }
 
   expect(res.ok).toBe(true);
-  return await res.json();
+  const parsed = identitySchema.safeParse(await res.json());
+  if (!parsed.success) {
+    throw new Error("Unexpected identity response from idmux");
+  }
+  return parsed.data;
 }
 
-export type Identity = {
-  apiKey: string;
-  teamId: string;
-};
+const identitySchema = z.object({
+  apiKey: z.string(),
+  teamId: z.string(),
+});
+
+export type Identity = z.infer<typeof identitySchema>;

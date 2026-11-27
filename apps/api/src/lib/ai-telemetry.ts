@@ -1,10 +1,6 @@
 import { LegacyOpenTelemetry } from "@ai-sdk/otel";
-import {
-  trace,
-  type Attributes,
-  type AttributeValue,
-  type Tracer,
-} from "@opentelemetry/api";
+import { trace } from "@opentelemetry/api";
+import type { Attributes, AttributeValue, Tracer } from "@opentelemetry/api";
 import type { TelemetryOptions } from "ai";
 
 type AiTelemetryOptions = {

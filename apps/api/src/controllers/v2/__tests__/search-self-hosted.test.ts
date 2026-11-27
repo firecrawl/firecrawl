@@ -9,9 +9,9 @@ import { withService } from "../../../service/testing";
 import { searchController } from "../search";
 
 vi.mock(
-  "../../../scraper/scrapeURL/engines/utils/safeFetch",
+  import("../../../scraper/scrapeURL/engines/utils/safeFetch.js"),
   async importOriginal => ({
-    ...(await importOriginal<Record<string, unknown>>()),
+    ...(await importOriginal()),
     getSecureDispatcher: vi.fn(),
   }),
 );

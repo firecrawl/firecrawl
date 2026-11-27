@@ -1,13 +1,25 @@
-import * as undici from "undici";
+import { fetch as undiciFetch } from "undici";
+import type { Response as UndiciResponse } from "undici";
 import { config } from "../../config";
 import { JSDOM } from "jsdom";
-import { SearchV2Response, WebSearchResult } from "../../lib/entities";
+import type { SearchV2Response, WebSearchResult } from "../../lib/entities";
 import { logger } from "../../lib/logger";
 import { getSecureDispatcher } from "../../scraper/scrapeURL/engines/utils/safeFetch";
 
 class DDGAntiBotError extends Error {
   constructor() {
     super("Blocked by DuckDuckGo Anti-Bot measures");
+  }
+}
+
+class DDGRateLimitError extends Error {
+  readonly status: number;
+  readonly statusText: string;
+
+  constructor(status: number, statusText: string) {
+    super("DuckDuckGo: Too many requests, try again later.");
+    this.status = status;
+    this.statusText = statusText;
   }
 }
 
@@ -42,22 +54,22 @@ function cleanUrl(href: string): string {
 function extractResults(
   document: Document,
   seenUrls: Set<string>,
-): WebSearchResult[] {
+): Array<WebSearchResult> {
   const anomalyModal = document.querySelector(".anomaly-modal__modal");
   if (anomalyModal) {
     throw new DDGAntiBotError();
   }
 
-  const results: WebSearchResult[] = [];
+  const results: Array<WebSearchResult> = [];
   const blocks = Array.from(document.querySelectorAll(".result.web-result"));
 
   for (const block of blocks) {
-    const titleLink = block.querySelector(
-      ".result__a",
-    ) as HTMLAnchorElement | null;
+    const titleLink = block.querySelector<HTMLAnchorElement>(".result__a");
     const snippet = block.querySelector(".result__snippet");
 
-    if (!titleLink || !snippet) continue;
+    if (!titleLink || !snippet) {
+      continue;
+    }
 
     const rawUrl = titleLink.href?.trim();
     const title = titleLink.textContent?.trim();
@@ -76,14 +88,18 @@ function extractResults(
 }
 
 function getNextPageData(document: Document): URLSearchParams | null {
-  const nextButton = document.querySelector(
+  const nextButton = document.querySelector<HTMLInputElement>(
     'input[type="submit"][class="btn btn--alt"][value="Next"]',
-  ) as HTMLInputElement | null;
+  );
 
-  if (!nextButton) return null;
+  if (!nextButton) {
+    return null;
+  }
 
-  const nextForm = nextButton.closest("form") as HTMLFormElement | null;
-  if (!nextForm) return null;
+  const nextForm = nextButton.closest<HTMLFormElement>("form");
+  if (!nextForm) {
+    return null;
+  }
 
   const formData = new URLSearchParams();
   const inputs = Array.from(nextForm.querySelectorAll("input"));
@@ -128,7 +144,7 @@ export async function ddgSearch(
       params.set("df", tbs);
     }
 
-    const results: WebSearchResult[] = [];
+    const results: Array<WebSearchResult> = [];
     const seenUrls = new Set<string>();
     const dispatcher = getSecureDispatcher(false);
     let isFirstPage = true;
@@ -144,10 +160,10 @@ export async function ddgSearch(
       }, timeout);
 
       try {
-        let response: undici.Response;
+        let response: UndiciResponse;
 
         if (isFirstPage) {
-          response = await undici.fetch(
+          response = await undiciFetch(
             `https://html.duckduckgo.com/html?${params.toString()}`,
             {
               dispatcher,
@@ -164,7 +180,7 @@ export async function ddgSearch(
             },
           );
         } else {
-          response = await undici.fetch(`https://html.duckduckgo.com/html`, {
+          response = await undiciFetch(`https://html.duckduckgo.com/html`, {
             method: "POST",
             body: nextPageData.toString(),
             dispatcher,
@@ -189,6 +205,9 @@ export async function ddgSearch(
             });
             break;
           }
+          if (response.status === 429) {
+            throw new DDGRateLimitError(response.status, response.statusText);
+          }
           throw new Error(
             `DuckDuckGo search failed with HTTP ${response.status}`,
           );
@@ -205,10 +224,12 @@ export async function ddgSearch(
 
         results.push(...newResults);
 
-        if (newResults.length === 0) break;
+        if (newResults.length === 0) {
+          break;
+        }
 
         nextPageData = getNextPageData(doc);
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (error instanceof DDGAntiBotError) {
           if (antiBotRetries++ > 3) {
             throw error;
@@ -225,10 +246,14 @@ export async function ddgSearch(
           throw error;
         }
       } finally {
-        if (timeoutHandle) clearTimeout(timeoutHandle);
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+        }
       }
 
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 1000);
+      });
     }
 
     if (results.length === 0) {
@@ -237,7 +262,7 @@ export async function ddgSearch(
     }
 
     return { web: results.slice(0, num_results) };
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof DDGAntiBotError) {
       if (config.TEST_SUITE_SELF_HOSTED) {
         logger.warn(
@@ -264,10 +289,20 @@ export async function ddgSearch(
       }
 
       logger.error("DuckDuckGo: Blocked by anti-bot measures", { term });
-      throw new Error("DuckDuckGo: Blocked by anti-bot measures.");
+      throw new Error("DuckDuckGo: Blocked by anti-bot measures.", {
+        cause: error,
+      });
     }
 
-    logger.error("DuckDuckGo search error", { error: error.message, term });
+    if (error instanceof DDGRateLimitError) {
+      logger.warn("DuckDuckGo: Too many requests, try again later.", {
+        status: error.status,
+        statusText: error.statusText,
+      });
+      throw error;
+    }
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error("DuckDuckGo search error", { error: errorMessage, term });
     throw error;
   }
 }

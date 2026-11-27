@@ -1,26 +1,30 @@
-import { Response } from "express";
-import {
-  getV2RequestSchemas,
-  RequestWithAuth,
-  MapRequest,
+import type { Response } from "express";
+import type {
+  DefaultRequestParams,
   MapResponse,
+  RequestWithAuth,
 } from "./types";
+import { getV2RequestSchemas } from "./types";
+import type { MapRequest } from "../../service/request";
 import { configDotenv } from "dotenv";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import { finalizeResponse, service, type RequestContext } from "../../service";
+import { finalizeResponse, service } from "../../service";
+import type { RequestContext, ResponsePayload } from "../../service";
 import { logger as _logger } from "../../lib/logger";
 import { MapTimeoutError } from "../../lib/error";
-import { getMapResults, MapResult } from "../../lib/map-utils";
+import type { MapResult } from "../../lib/map-utils";
+import { getMapResults } from "../../lib/map-utils";
 import { v7 as uuidv7 } from "uuid";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { installedService } from "../../service/service";
+import { readOptionalBooleanField } from "./agent-interop";
 
 configDotenv();
 
 export async function mapController(
-  req: RequestWithAuth<{}, MapResponse, MapRequest>,
-  res: Response<MapResponse>,
+  req: RequestWithAuth<DefaultRequestParams, MapResponse, MapRequest>,
+  res: Response<MapResponse | ResponsePayload>,
 ) {
   const zeroDataRetention = req.ctx?.zeroDataRetention === true;
   const mapId = req.requestId ?? uuidv7();
@@ -34,14 +38,15 @@ export async function mapController(
   });
   // Get timing data from middleware (includes all middleware processing time)
   const middlewareStartTime =
-    (req as any).requestTiming?.startTime || new Date().getTime();
+    req.requestTiming?.startTime || new Date().getTime();
   const controllerStartTime = new Date().getTime();
 
   const originalRequest = req.rawRequestBody ?? req.body;
   if (!req.ctx) {
     req.body = getV2RequestSchemas().map.parse(req.body);
   }
-  const extBody = req.body as Record<string, any>;
+  const useIndex = readOptionalBooleanField(req.body, "useIndex");
+  const ignoreCache = readOptionalBooleanField(req.body, "ignoreCache");
 
   const middlewareTime = controllerStartTime - middlewareStartTime;
 
@@ -76,43 +81,41 @@ export async function mapController(
 
   const abort = new AbortController();
   try {
-    result = (await Promise.race([
-      getMapResults({
-        url: req.body.url,
-        search: req.body.search,
-        limit: req.body.limit,
-        includeSubdomains: req.body.includeSubdomains,
-        crawlerOptions: {
-          ...req.body,
-          sitemap: req.body.sitemap,
-        },
-        origin: req.body.origin,
-        teamId: req.auth.team_id,
-        orgId: req.acuc?.org_id ?? null,
-        allowExternalLinks: req.body.allowExternalLinks,
-        abort: abort.signal,
-        mock: req.body.useMock,
-        filterByPath: req.body.filterByPath !== false,
-        flags: req.acuc?.flags ?? null,
-        useIndex: extBody.useIndex,
-        ignoreCache: extBody.ignoreCache,
-        location: req.body.location,
-        headers: req.body.headers,
-        id: mapId,
-        ctx,
-      }),
-      ...(req.body.timeout !== undefined
-        ? [
-            new Promise(
-              (_resolve, reject) =>
-                (timeoutHandle = setTimeout(() => {
-                  abort.abort(new MapTimeoutError());
-                  reject(new MapTimeoutError());
-                }, req.body.timeout)),
-            ),
-          ]
-        : []),
-    ])) as any;
+    const mapPromise = getMapResults({
+      url: req.body.url,
+      search: req.body.search,
+      limit: req.body.limit,
+      includeSubdomains: req.body.includeSubdomains,
+      crawlerOptions: {
+        ...req.body,
+        sitemap: req.body.sitemap,
+      },
+      origin: req.body.origin,
+      teamId: req.auth.team_id,
+      orgId: req.acuc?.org_id ?? null,
+      allowExternalLinks: req.body.allowExternalLinks,
+      abort: abort.signal,
+      mock: req.body.useMock,
+      filterByPath: req.body.filterByPath !== false,
+      flags: req.acuc?.flags ?? null,
+      useIndex,
+      ignoreCache,
+      location: req.body.location,
+      headers: req.body.headers,
+      id: mapId,
+      ctx,
+    });
+    if (req.body.timeout !== undefined) {
+      const timeoutPromise = new Promise<never>((_resolve, reject) => {
+        timeoutHandle = setTimeout(() => {
+          abort.abort(new MapTimeoutError());
+          reject(new MapTimeoutError());
+        }, req.body.timeout);
+      });
+      result = await Promise.race([mapPromise, timeoutPromise]);
+    } else {
+      result = await mapPromise;
+    }
   } catch (error) {
     if (error instanceof MapTimeoutError) {
       return res.status(408).json({
@@ -138,7 +141,7 @@ export async function mapController(
       urls: result.mapResults.length,
       state: result.state ?? {},
     })
-    .catch(error => {
+    .catch((error: unknown) => {
       logger.error("Failed to bill team for map credits", {
         teamId: req.auth.team_id,
         mapId,
@@ -208,5 +211,5 @@ export async function mapController(
     ...(warning && { warning }),
   });
 
-  return res.status(200).json(response as MapResponse);
+  return res.status(200).json(response);
 }

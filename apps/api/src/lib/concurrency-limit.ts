@@ -1,7 +1,10 @@
+import { z } from "zod";
 import { getRedisConnection } from "../services/queue-service";
-import { getCrawl, StoredCrawl } from "./crawl-redis";
+import type { StoredCrawl } from "./crawl-redis";
+import { getCrawl } from "./crawl-redis";
 import { logger } from "./logger";
-import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
+import { scrapeQueue } from "../services/worker/nuq";
+import type { NuQJob } from "../services/worker/nuq";
 export { QueueFullError } from "./queue-full-error";
 export {
   getTeamQueueLimit,
@@ -11,7 +14,6 @@ export {
   removeConcurrencyLimitActiveJob,
 } from "./concurrency-redis";
 import {
-  getTeamQueueLimit,
   MAX_BACKLOG_TIMEOUT_MS,
   constructConcurrencyLimitKey,
   pushConcurrencyLimitActiveJob,
@@ -20,17 +22,29 @@ import {
 import { reportPipelineError } from "./redis-pipeline";
 import { jobContext, storedZeroDataRetention } from "./request-context";
 import type { JobKind } from "../service/hooks";
+import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
 import type { ScrapeJobData } from "../types";
 import { currentLimits } from "./limits";
 import { recordCrawlStateMissing } from "./crawl-state-metrics";
+import { jsonObjectSchema } from "./json-types";
+
+interface JobEnqueuedEvent {
+  jobId: string;
+  kind: JobKind;
+  ctx: RequestContext;
+  url?: string;
+  jobData: ScrapeJobData;
+}
 
 function scrapeJobKind(data: ScrapeJobData): JobKind {
   if (data.mode === "kickoff" || data.mode === "kickoff_sitemap") {
     return "crawl";
   }
   if (data.crawl_id) {
-    return data.crawlerOptions != null ? "crawl" : "batchScrape";
+    return data.crawlerOptions !== null && data.crawlerOptions !== undefined
+      ? "crawl"
+      : "batchScrape";
   }
   return "scrape";
 }
@@ -38,14 +52,19 @@ function scrapeJobKind(data: ScrapeJobData): JobKind {
 /** Emits `job.enqueued` when a handler is registered on the active service. */
 export function observeJobEnqueued(jobId: string, data: ScrapeJobData): void {
   const hooks = installedService()?.hooks;
-  if (!hooks?.has("job.enqueued")) return;
-  hooks.observe("job.enqueued", {
+  if (!hooks?.has("job.enqueued")) {
+    return;
+  }
+  const event: JobEnqueuedEvent = {
     jobId,
     kind: scrapeJobKind(data),
     ctx: jobContext(data),
-    ...(data.mode === "single_urls" ? { url: data.url } : {}),
     jobData: data,
-  });
+  };
+  if (data.mode === "single_urls") {
+    event.url = data.url;
+  }
+  hooks.observe("job.enqueued", event);
 }
 
 const constructKey = constructConcurrencyLimitKey;
@@ -71,7 +90,7 @@ export async function cleanOldConcurrencyLimitEntries(
 export async function getConcurrencyLimitActiveJobs(
   team_id: string,
   now: number = Date.now(),
-): Promise<string[]> {
+): Promise<Array<string>> {
   return await getRedisConnection().zrangebyscore(
     constructKey(team_id),
     now,
@@ -81,9 +100,11 @@ export async function getConcurrencyLimitActiveJobs(
 
 export async function removeConcurrencyLimitedJobs(
   team_id: string,
-  job_ids: string[],
+  job_ids: Array<string>,
 ) {
-  if (job_ids.length === 0) return;
+  if (job_ids.length === 0) {
+    return;
+  }
   const redis = getRedisConnection();
   const queueKey = constructQueueKey(team_id);
   const chunkSize = 1000;
@@ -106,12 +127,56 @@ export async function removeConcurrencyLimitedJobs(
   }
 }
 
-type ConcurrencyLimitedJob = {
-  id: string;
-  data: any;
-  priority: number;
-  listenable: boolean;
+const scrapeJobCommonFields = {
+  team_id: z.string(),
+  zeroDataRetention: z.boolean().nullish(),
+  origin: z.string().nullish(),
+  apiKeyId: z.number().nullish(),
 };
+
+const scrapeJobDataSchema = z.discriminatedUnion("mode", [
+  z.object({
+    ...scrapeJobCommonFields,
+    mode: z.literal("single_urls"),
+    url: z.string(),
+    scrapeOptions: jsonObjectSchema.nullish(),
+    crawl_id: z.string().nullish(),
+    crawlerOptions: jsonObjectSchema.nullish(),
+  }),
+  z.object({
+    ...scrapeJobCommonFields,
+    mode: z.literal("kickoff"),
+    url: z.string(),
+    crawl_id: z.string(),
+    scrapeOptions: jsonObjectSchema.nullish(),
+    v1: z.boolean().nullish(),
+    crawlerOptions: jsonObjectSchema.nullish(),
+  }),
+  z.object({
+    ...scrapeJobCommonFields,
+    mode: z.literal("kickoff_sitemap"),
+    crawl_id: z.string(),
+    sitemapUrl: z.string(),
+    v1: z.boolean().nullish(),
+  }),
+]);
+
+const concurrencyLimitedJobSchema = z.object({
+  id: z.string(),
+  priority: z
+    .number()
+    .nullish()
+    .transform(value => value ?? 0),
+  listenable: z
+    .boolean()
+    .nullish()
+    .transform(value => value ?? false),
+  data: z.custom<ScrapeJobData>(
+    value => scrapeJobDataSchema.safeParse(value).success,
+  ),
+});
+
+type ConcurrencyLimitedJob = z.infer<typeof concurrencyLimitedJobSchema>;
 
 export async function cleanOldConcurrencyLimitedJobs(
   team_id: string,
@@ -135,7 +200,7 @@ export async function pushConcurrencyLimitedJob(
 
 export async function pushConcurrencyLimitedJobs(
   team_id: string,
-  jobs: { job: ConcurrencyLimitedJob; timeout: number }[],
+  jobs: Array<{ job: ConcurrencyLimitedJob; timeout: number }>,
   now: number = Date.now(),
 ) {
   if (jobs.length === 0) {
@@ -145,7 +210,7 @@ export async function pushConcurrencyLimitedJobs(
   const queueKey = constructQueueKey(team_id);
   const redis = getRedisConnection();
   const pipeline = redis.pipeline();
-  const zaddArgs: (string | number)[] = [];
+  const zaddArgs: Array<string | number> = [];
 
   for (const { job, timeout } of jobs) {
     const cappedTimeout = Number.isFinite(timeout)
@@ -204,7 +269,7 @@ async function cleanOldCrawlConcurrencyLimitEntries(
 export async function getCrawlConcurrencyLimitActiveJobs(
   crawl_id: string,
   now: number = Date.now(),
-): Promise<string[]> {
+): Promise<Array<string>> {
   return await getRedisConnection().zrangebyscore(
     constructCrawlKey(crawl_id),
     now,
@@ -232,6 +297,21 @@ export async function removeCrawlConcurrencyLimitActiveJob(
   await getRedisConnection().zrem(constructCrawlKey(crawl_id), id);
 }
 
+function parseCrawlDelay(rawDelay: unknown): number | undefined {
+  if (typeof rawDelay === "number") {
+    return Number.isFinite(rawDelay) ? rawDelay : undefined;
+  }
+  if (typeof rawDelay === "string") {
+    const trimmed = rawDelay.trim();
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
 /**
  * Grabs the next job from the team's concurrency limit queue. Handles crawl concurrency limits.
  *
@@ -251,17 +331,23 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
 
   // Jobs we popped but can't run due to crawl concurrency limits.
   // We'll re-add them at the end so other callers can try them later.
-  const crawlBlocked: { member: string; score: number; jobData: string }[] = [];
+  const crawlBlocked: Array<{
+    member: string;
+    score: number;
+    jobData: string;
+  }> = [];
 
   try {
     while (true) {
       // ZPOPMIN atomically removes and returns the lowest-scored member.
       // No two workers can ever get the same entry.
       const result = await redis.zpopmin(queueKey);
-      if (!result || result.length === 0) return null;
+      if (!result || result.length < 2) {
+        return null;
+      }
 
-      const [member, scoreStr] = result as [string, string];
-      const score = parseFloat(scoreStr);
+      const [member, scoreStr] = result;
+      const score = Number.parseFloat(scoreStr);
 
       // Expired entry - discard
       if (score < now) {
@@ -275,7 +361,51 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
         continue;
       }
 
-      const job: ConcurrencyLimitedJob = JSON.parse(jobData);
+      let parsedJob: unknown;
+      try {
+        parsedJob = JSON.parse(jobData);
+      } catch {
+        await redis.del(constructJobKey(member));
+        continue;
+      }
+      const validated = concurrencyLimitedJobSchema.safeParse(parsedJob);
+      if (!validated.success) {
+        const parsedDataHolder = z
+          .object({ data: z.unknown() })
+          .safeParse(parsedJob);
+        const topZdr = storedZeroDataRetention(parsedJob);
+        const nestedZdr = parsedDataHolder.success
+          ? storedZeroDataRetention(parsedDataHolder.data.data)
+          : undefined;
+        const isZdr = topZdr === true || nestedZdr === true;
+        const knownNonZdr = topZdr === false || nestedZdr === false;
+        logger.warn(
+          "Dropping invalid concurrency-limited job payload",
+          isZdr
+            ? {
+                module: "concurrency-limit",
+                teamId,
+                jobId: member,
+                zeroDataRetention: true,
+                issues: validated.error.issues,
+              }
+            : knownNonZdr
+              ? {
+                  module: "concurrency-limit",
+                  teamId,
+                  jobId: member,
+                  zeroDataRetention: false,
+                  issues: validated.error.issues,
+                }
+              : {
+                  module: "concurrency-limit",
+                  issues: validated.error.issues,
+                },
+        );
+        await redis.del(constructJobKey(member));
+        continue;
+      }
+      const job = validated.data;
 
       // Check crawl concurrency limit
       if (job.data.crawl_id) {
@@ -291,11 +421,11 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
             });
           }
         }
+        const delay = parseCrawlDelay(sc?.crawlerOptions?.delay);
         const maxCrawlConcurrency =
           sc === null
             ? 1
-            : typeof sc.crawlerOptions?.delay === "number" &&
-                sc.crawlerOptions.delay > 0
+            : delay !== undefined && delay > 0
               ? 1
               : (sc.maxConcurrency ?? null);
 
@@ -323,7 +453,7 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
   } finally {
     // Re-add crawl-blocked jobs so they can be picked up later
     if (crawlBlocked.length > 0) {
-      const zaddArgs: (string | number)[] = [];
+      const zaddArgs: Array<string | number> = [];
       for (const { member, score } of crawlBlocked) {
         zaddArgs.push(score, member);
       }
@@ -337,7 +467,7 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
  *
  * @param job The BullMQ job that is done.
  */
-export async function concurrentJobDone(job: NuQJob<any>) {
+export async function concurrentJobDone(job: NuQJob<ScrapeJobData>) {
   if (job.id && job.data && job.data.team_id) {
     await removeConcurrencyLimitActiveJob(job.data.team_id, job.id);
     await getRedisConnection().zrem(
@@ -360,7 +490,7 @@ export async function concurrentJobDone(job: NuQJob<any>) {
       maxTeamConcurrency = await currentLimits().teamConcurrency(
         job.data.team_id,
       );
-    } catch (error) {
+    } catch (error: unknown) {
       logger.warn(
         "Failed to resolve team concurrency limit during job completion, skipping backlog promotion",
         { teamId: job.data.team_id, error },
@@ -375,11 +505,15 @@ export async function concurrentJobDone(job: NuQJob<any>) {
           await getConcurrencyLimitActiveJobs(job.data.team_id)
         ).length;
 
-        if (currentActiveConcurrency >= maxTeamConcurrency) break;
+        if (currentActiveConcurrency >= maxTeamConcurrency) {
+          break;
+        }
       }
 
       const nextJob = await getNextConcurrentJob(job.data.team_id);
-      if (nextJob === null) break;
+      if (nextJob === null) {
+        break;
+      }
 
       await pushConcurrencyLimitActiveJob(
         job.data.team_id,
@@ -395,10 +529,11 @@ export async function concurrentJobDone(job: NuQJob<any>) {
         );
 
         const sc = await getCrawl(nextJob.job.data.crawl_id);
-        if (sc !== null && typeof sc.crawlerOptions?.delay === "number") {
-          await new Promise(resolve =>
-            setTimeout(resolve, sc.crawlerOptions.delay * 1000),
-          );
+        const delay = parseCrawlDelay(sc?.crawlerOptions?.delay);
+        if (delay !== undefined) {
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, delay * 1000);
+          });
         }
       }
 

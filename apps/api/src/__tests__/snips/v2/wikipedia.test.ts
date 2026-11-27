@@ -1,11 +1,6 @@
 import { describeIf } from "../lib";
-import {
-  scrape,
-  scrapeRaw,
-  scrapeTimeout,
-  idmux,
-  Identity,
-} from "./lib";
+import type { Identity } from "./lib";
+import { scrape, scrapeRaw, scrapeTimeout, idmux } from "./lib";
 
 const HAS_WIKIPEDIA = !!(
   process.env.WIKIPEDIA_ENTERPRISE_USERNAME &&
@@ -18,9 +13,9 @@ beforeAll(async () => {
   identity = await idmux({
     name: "wikipedia",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000);
+}, 10_000);
 
 describeIf(HAS_WIKIPEDIA && !process.env.TEST_SUITE_SELF_HOSTED)(
   "Wikipedia Enterprise API integration",

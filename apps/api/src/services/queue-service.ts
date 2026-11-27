@@ -8,9 +8,10 @@ let redisConnection: IORedis;
 
 export function getRedisConnection(): IORedis {
   if (!redisConnection) {
-    redisConnection = new IORedis(config.REDIS_URL!, {
-      maxRetriesPerRequest: null,
-    });
+    const options = { maxRetriesPerRequest: null };
+    redisConnection = config.REDIS_URL
+      ? new IORedis(config.REDIS_URL, options)
+      : new IORedis(options);
     redisConnection.on("connect", () => logger.info("Redis connected"));
     redisConnection.on("reconnecting", () => logger.warn("Redis reconnecting"));
     redisConnection.on("error", err => logger.warn("Redis error", { err }));

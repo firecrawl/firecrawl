@@ -1,27 +1,36 @@
 import "dotenv/config";
 import { config } from "./config";
 import { shutdownTracing } from "./otel";
-import express, { NextFunction, Request, Response } from "express";
+import type {
+  Express,
+  NextFunction,
+  Request,
+  RequestHandler,
+  Response,
+} from "express";
+import express from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
+import { createBullBoard } from "@bull-board/api";
+import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
+import { ExpressAdapter } from "@bull-board/express";
 import { getPrecrawlQueue } from "./services/queue-service";
 import { bindBullBoard } from "./lib/bull-board-registry";
 import { livenessController, readinessController } from "./controllers/health";
 import { startNodeRuntimeMetrics } from "./lib/node-runtime-metrics";
-import os from "os";
+import os from "node:os";
 import { logger } from "./lib/logger";
 import { adminInternalRouter, adminRouter } from "./routes/admin";
-import {
-  AdminKeySlot,
-  adminAuth,
-  adminPathKeyAuth,
-  redactAdminKey,
-} from "./lib/admin-auth";
+import type { AdminKeySlot } from "./lib/admin-auth";
+import { adminAuth, adminPathKeyAuth, redactAdminKey } from "./lib/admin-auth";
 import http from "node:http";
 import https from "node:https";
 import expressWs from "express-ws";
-import { ErrorResponse, RequestWithMaybeACUC } from "./controllers/v2/types";
-import { ZodError } from "zod";
+import type {
+  ErrorResponse,
+  RequestWithMaybeACUC,
+} from "./controllers/v2/types";
+import { ZodError, z } from "zod";
 import { QueueFullError } from "./lib/queue-full-error";
 import { v7 as uuidv7 } from "uuid";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
@@ -34,9 +43,23 @@ import responseTime from "response-time";
 import { notFoundHandler } from "./lib/not-found";
 import { startRole } from "./main";
 
-const { createBullBoard } = require("@bull-board/api");
-const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
-const { ExpressAdapter } = require("@bull-board/express");
+declare global {
+  var isProduction: boolean | undefined;
+}
+
+class TypedExpressAdapter extends ExpressAdapter {
+  override getRouter(): Express {
+    return this.app;
+  }
+}
+
+const adminKeySlotLocalsSchema = z.object({
+  adminKeySlot: z.enum(["current", "previous"]),
+});
+
+const payloadTooLargeErrorSchema = z.object({
+  status: z.literal(413),
+});
 
 const numCPUs = config.ENV === "local" ? 2 : os.cpus().length;
 logger.info(`Number of CPUs: ${numCPUs} available`);
@@ -90,7 +113,7 @@ if (config.EXPRESS_TRUST_PROXY) {
   app.set("trust proxy", config.EXPRESS_TRUST_PROXY);
 }
 
-function attachBullBoard(serverAdapter: any) {
+function attachBullBoard(serverAdapter: ExpressAdapter) {
   const board = createBullBoard({
     queues: [new BullMQAdapter(getPrecrawlQueue())],
     serverAdapter,
@@ -105,28 +128,37 @@ if (!config.BULL_AUTH_KEY) {
 } else {
   // A browser cannot add the Authorization header by itself; use the internal
   // listener's /admin/queues where possible.
-  const opsBullBoard = new ExpressAdapter();
+  const opsBullBoard = new TypedExpressAdapter();
   opsBullBoard.setBasePath("/admin/ops/queues");
   attachBullBoard(opsBullBoard);
   app.use("/admin/ops/queues", adminAuth, opsBullBoard.getRouter());
 
   if (config.BULL_AUTH_KEY_PATH_ROUTES) {
     // One board per accepted key, since the UI links to its own base path.
-    const pathBoards: Partial<Record<AdminKeySlot, express.Router>> = {};
+    const pathBoards: Partial<Record<AdminKeySlot, RequestHandler>> = {};
     for (const [slot, key] of [
       ["current", config.BULL_AUTH_KEY],
       ["previous", config.BULL_AUTH_KEY_PREVIOUS],
     ] as const) {
-      if (!key) continue;
-      const board = new ExpressAdapter();
+      if (!key) {
+        continue;
+      }
+      const board = new TypedExpressAdapter();
       board.setBasePath(`/admin/${encodeURIComponent(key)}/queues`);
       attachBullBoard(board);
       pathBoards[slot] = board.getRouter();
     }
     const queuesPathRouter = express.Router({ mergeParams: true });
-    queuesPathRouter.use(adminPathKeyAuth("queues"), (req, res, next) =>
-      pathBoards[res.locals.adminKeySlot as AdminKeySlot]!(req, res, next),
-    );
+    queuesPathRouter.use(adminPathKeyAuth("queues"), (req, res, next) => {
+      const parsedLocals = adminKeySlotLocalsSchema.safeParse(res.locals);
+      const boardRouter = parsedLocals.success
+        ? pathBoards[parsedLocals.data.adminKeySlot]
+        : undefined;
+      if (!boardRouter) {
+        return next();
+      }
+      boardRouter(req, res, next);
+    });
     app.use("/admin/:adminKey/queues", queuesPathRouter);
   }
 }
@@ -162,7 +194,7 @@ function startAdminInternalServer(port: number) {
   adminApp.disable("x-powered-by");
   adminApp.use(bodyParser.json({ limit: "10mb" }));
 
-  const internalBullBoard = new ExpressAdapter();
+  const internalBullBoard = new TypedExpressAdapter();
   internalBullBoard.setBasePath("/admin/queues");
   attachBullBoard(internalBullBoard);
   adminApp.use("/admin/queues", internalBullBoard.getRouter());
@@ -238,37 +270,54 @@ async function startServer(port = DEFAULT_PORT) {
       ? startAdminInternalServer(config.ADMIN_INTERNAL_PORT)
       : undefined;
 
-  const exitHandler = async () => {
+  const shutdown = async () => {
     logger.info("SIGTERM signal received: closing HTTP server");
     if (config.IS_KUBERNETES) {
       // Account for GCE load balancer drain timeout
       logger.info("Waiting 60s for GCE load balancer drain timeout");
-      await new Promise(resolve => setTimeout(resolve, 60000));
-    }
-    const adminInternalClosed = new Promise<void>(resolve =>
-      adminInternalServer
-        ? adminInternalServer.close(() => resolve())
-        : resolve(),
-    );
-    server.close(async () => {
-      await adminInternalClosed;
-      logger.info("Server closed.");
-      nuqShutdown().finally(() => {
-        Promise.resolve()
-          .then(() => installedService()?.modules.webhooks.shutdown?.())
-          .catch(error => {
-            logger.warn("Error shutting down webhooks module", { error });
-          })
-          .finally(async () => {
-            try {
-              await runProcessStop("api");
-            } finally {
-              await shutdownTracing();
-            }
-            logger.info("NUQ shutdown complete");
-            process.exit(0);
-          });
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 60_000);
       });
+    }
+    const adminInternalClosed = new Promise<void>(resolve => {
+      if (adminInternalServer) {
+        adminInternalServer.close(() => {
+          resolve();
+        });
+      } else {
+        resolve();
+      }
+    });
+    await new Promise<void>(resolve => {
+      server.close(() => {
+        resolve();
+      });
+    });
+    await adminInternalClosed;
+    logger.info("Server closed.");
+    try {
+      await nuqShutdown();
+    } catch (error: unknown) {
+      logger.warn("Error during NUQ shutdown", { error });
+    }
+    try {
+      await installedService()?.modules.webhooks.shutdown?.();
+    } catch (error: unknown) {
+      logger.warn("Error shutting down webhooks module", { error });
+    }
+    try {
+      await runProcessStop("api");
+    } finally {
+      await shutdownTracing();
+    }
+    logger.info("NUQ shutdown complete");
+    process.exit(0);
+  };
+
+  const exitHandler = () => {
+    void shutdown().catch((error: unknown) => {
+      logger.error("Error during server shutdown", { error });
+      process.exit(1);
     });
   };
 
@@ -278,7 +327,7 @@ async function startServer(port = DEFAULT_PORT) {
 }
 
 export async function start() {
-  await startServer().catch(error => {
+  await startServer().catch((error: unknown) => {
     logger.error("Failed to start server", { error });
     process.exit(1);
   });
@@ -295,7 +344,7 @@ app.use(notFoundHandler);
 app.use(
   (
     err: unknown,
-    req: Request<{}, ErrorResponse, undefined>,
+    req: Request<Record<string, string>, ErrorResponse, undefined>,
     res: Response<ErrorResponse>,
     next: NextFunction,
   ) => {
@@ -310,7 +359,7 @@ app.use(
 
       if (
         Array.isArray(issues) &&
-        issues.find(x => x.message === "URL uses unsupported protocol")
+        issues.some(x => x.message === "URL uses unsupported protocol")
       ) {
         logger.warn("Unsupported protocol error: " + JSON.stringify(req.body));
       }
@@ -343,7 +392,7 @@ app.use(
 app.use(
   (
     err: unknown,
-    req: RequestWithMaybeACUC<{}, ErrorResponse, undefined>,
+    req: RequestWithMaybeACUC<Request["params"], ErrorResponse, undefined>,
     res: Response<ErrorResponse>,
     next: NextFunction,
   ) => {
@@ -359,12 +408,7 @@ app.use(
         error: "Bad request, malformed JSON",
       });
     }
-    if (
-      typeof err === "object" &&
-      err !== null &&
-      "status" in err &&
-      (err as { status?: number }).status === 413
-    ) {
+    if (payloadTooLargeErrorSchema.safeParse(err).success) {
       return res.status(413).json({
         success: false,
         error: "Request body is too large",

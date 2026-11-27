@@ -1,15 +1,17 @@
 import { configDotenv } from "dotenv";
 import { config } from "../../config";
-import http from "http";
-import https from "https";
+import http from "node:http";
+import https from "node:https";
 
 import { logger as _logger } from "../../lib/logger";
+import { safeParseLogged } from "../../lib/zod-log";
 import {
   concurrentJobDone,
   pushConcurrencyLimitActiveJob,
 } from "../../lib/concurrency-limit";
 import { cacheableLookup } from "../../scraper/scrapeURL/lib/cacheableLookup";
 import { v7 as uuidv7 } from "uuid";
+import type { StoredCrawl } from "../../lib/crawl-redis";
 import {
   addCrawlJob,
   addCrawlJobs,
@@ -25,7 +27,6 @@ import {
   normalizeURL,
   saveCrawl,
   setCrawlError,
-  StoredCrawl,
 } from "../../lib/crawl-redis";
 import { redisEvictConnection } from "../redis";
 import { crawlStateStore } from "../../lib/crawl-state-store";
@@ -41,18 +42,21 @@ import {
   serpScrapeWarningEnabled,
 } from "../../lib/serp-url";
 import { resolveJobPriority } from "../../lib/limits";
-import { Document, getV2RequestSchemas } from "../../controllers/v2/types";
+import type { Document } from "../../controllers/v2/types";
+import { getV2RequestSchemas } from "../../controllers/v2/types";
 import { hasFormatOfType } from "../../lib/format-utils";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
 import { crawlContext, jobContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import { service, type RequestContext } from "../../service";
+import { service } from "../../service";
+import type { RequestContext } from "../../service";
 import { installedService } from "../../service/service";
 import { CostTracking } from "../../lib/cost-tracking";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
 
-import { DenialReason, WebCrawler } from "../../scraper/WebScraper/crawler";
+import type { WebCrawler } from "../../scraper/WebScraper/crawler";
+import { DenialReason } from "../../scraper/WebScraper/crawler";
 import { getCrawlScope } from "../../lib/crawl-scope";
 import type { Logger } from "winston";
 import {
@@ -65,12 +69,15 @@ import {
 } from "../../lib/error";
 import { serializeThrownError } from "../../lib/error-serde";
 import type { NuQJob } from "./nuq";
-import {
+import type {
+  JobCrawlerOptions,
   ScrapeJobData,
   ScrapeJobKickoff,
   ScrapeJobKickoffSitemap,
   ScrapeJobSingleUrls,
 } from "../../types";
+import { z } from "zod";
+import type { JsonObject } from "../../lib/json-types";
 import { scrapeSitemap } from "../../scraper/crawler/sitemap";
 import {
   withTraceContextAsync,
@@ -78,27 +85,148 @@ import {
   withZeroDataRetention,
   setSpanAttributes,
 } from "../../lib/otel-tracer";
-import { ScrapeUrlResponse } from "../../scraper/scrapeURL";
-import { FeatureFlag } from "../../scraper/scrapeURL/engines";
-import {
-  createScrapeFinishedEmitter,
-  type ScrapeFinishedOutcome,
-} from "../../scraper/scrapeURL/hooks";
+import type { ScrapeUrlResponse } from "../../scraper/scrapeURL";
+import type { FeatureFlag } from "../../scraper/scrapeURL/engines";
+import { createScrapeFinishedEmitter } from "../../scraper/scrapeURL/hooks";
+import type { ScrapeFinishedOutcome } from "../../scraper/scrapeURL/hooks";
 import type { JobKind } from "../../service/hooks";
 import { summarizeWebhookForLog } from "../webhook/log";
 
 configDotenv();
 
 const jobLockExtendInterval = config.JOB_LOCK_EXTEND_INTERVAL;
-const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
 
 if (require.main === module) {
   cacheableLookup.install(http.globalAgent);
   cacheableLookup.install(https.globalAgent);
 }
 
+type StoredCrawlerOptions = JobCrawlerOptions & {
+  sitemapOnly?: boolean;
+  ignoreSitemap?: boolean;
+  maxDepth?: number;
+};
+
+const storedCrawlerShapeSchema = z.looseObject({});
+
+const storedCrawlerObjectSchema = z.custom<StoredCrawlerOptions>(
+  value =>
+    safeParseLogged(
+      storedCrawlerShapeSchema,
+      value,
+      "scrape-worker.crawlerOptions",
+    ).success,
+);
+
+function parseLegacyNumber(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function parseLegacyBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (value === "true") {
+    return true;
+  }
+  if (value === "false") {
+    return false;
+  }
+  return undefined;
+}
+
+const errorWithMessageSchema = z.object({
+  message: z.string(),
+});
+
+function getStoredCrawlerOptions(sc: StoredCrawl): StoredCrawlerOptions | null {
+  if (sc.crawlerOptions === null || sc.crawlerOptions === undefined) {
+    return null;
+  }
+  const parsedObj = storedCrawlerObjectSchema.safeParse(sc.crawlerOptions);
+  if (!parsedObj.success) {
+    return null;
+  }
+  const normalized: StoredCrawlerOptions = { ...parsedObj.data };
+  const rawLimit: unknown = parsedObj.data.limit;
+  if (rawLimit !== undefined) {
+    normalized.limit = parseLegacyNumber(rawLimit);
+  }
+  const rawMaxDepth: unknown = parsedObj.data.maxDepth;
+  if (rawMaxDepth !== undefined) {
+    normalized.maxDepth = parseLegacyNumber(rawMaxDepth);
+  }
+  const rawSitemapOnly: unknown = parsedObj.data.sitemapOnly;
+  if (rawSitemapOnly !== undefined) {
+    normalized.sitemapOnly = parseLegacyBoolean(rawSitemapOnly);
+  }
+  const rawIgnoreSitemap: unknown = parsedObj.data.ignoreSitemap;
+  if (rawIgnoreSitemap !== undefined) {
+    normalized.ignoreSitemap = parseLegacyBoolean(rawIgnoreSitemap);
+  }
+  return normalized;
+}
+
+function enrichContextWithTeam(
+  ctx: RequestContext,
+  team: Partial<RequestContext> | null | undefined,
+): RequestContext {
+  const enriched: RequestContext = { ...ctx };
+  if (ctx.flags === undefined && team) {
+    enriched.flags = team.flags ?? null;
+  }
+  if (
+    ctx.concurrencyLimit === undefined &&
+    team?.concurrencyLimit !== undefined
+  ) {
+    enriched.concurrencyLimit = team.concurrencyLimit;
+  }
+  if (
+    ctx.rateLimitMultiplier === undefined &&
+    team?.rateLimitMultiplier !== undefined
+  ) {
+    enriched.rateLimitMultiplier = team.rateLimitMultiplier;
+  }
+  return enriched;
+}
+
+type CrawlLinksHookInfo = {
+  id: string;
+  ctx: RequestContext;
+  from: string;
+  crawlerOptions?: JobCrawlerOptions | null;
+  bypassBilling?: boolean;
+};
+
+type ProcessJobResult =
+  | {
+      success: true;
+      result: {
+        links: Array<{ content: Document; source: string; id: string }>;
+      };
+      document: Document;
+    }
+  | {
+      success: false;
+      document: null;
+      error: Error;
+    };
+
+type KickoffJobResult = { success: true } | { success: false; error: unknown };
+
 async function applyCrawlLinksHook(
-  links: string[],
+  links: Array<string>,
   {
     crawlId,
     ctx,
@@ -117,22 +245,27 @@ async function applyCrawlLinksHook(
     limit: number;
     maxDepth: number;
     fromMap?: boolean;
-    crawlerOptions?: Record<string, unknown> | null;
+    crawlerOptions?: JobCrawlerOptions | null;
     bypassBilling?: boolean;
   },
-): Promise<string[]> {
+): Promise<Array<string>> {
   const hooks = installedService()?.hooks;
   if (!hooks?.has("crawl.links") || links.length === 0) {
     return links;
   }
   const existing = new Set(links);
-  const transformed = await hooks.transform("crawl.links", links, {
+  const hookInfo: CrawlLinksHookInfo = {
     id: crawlId,
     ctx,
     from,
-    ...(crawlerOptions !== undefined ? { crawlerOptions } : {}),
-    ...(bypassBilling !== undefined ? { bypassBilling } : {}),
-  });
+  };
+  if (crawlerOptions !== undefined) {
+    hookInfo.crawlerOptions = crawlerOptions;
+  }
+  if (bypassBilling !== undefined) {
+    hookInfo.bypassBilling = bypassBilling;
+  }
+  const transformed = await hooks.transform("crawl.links", links, hookInfo);
   if (transformed.every(url => existing.has(url))) {
     return transformed;
   }
@@ -147,13 +280,13 @@ async function applyCrawlLinksHook(
 }
 
 async function billScrapeJob(
-  job: NuQJob<any>,
+  job: NuQJob<ScrapeJobSingleUrls>,
   document: Document | null,
   costTracking: CostTracking,
   error?: Error | null,
   unsupportedFeatures?: Set<FeatureFlag>,
-  exchange?: unknown,
-  threatDecisions?: unknown[],
+  exchange?: JsonObject,
+  threatDecisions?: Array<unknown>,
 ): Promise<number | undefined> {
   if (job.data.is_scrape === true || job.data.internalOptions?.bypassBilling) {
     return undefined;
@@ -175,13 +308,15 @@ async function billScrapeJob(
       keylessReserved: job.data.keylessReserved,
       error: error ?? null,
       unsupportedFeatures,
-      exchange: exchange as any,
-      threatDecisions: threatDecisions as any,
+      exchange,
+      threatDecisions,
     },
   });
 }
 
-async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
+async function processJob(
+  job: NuQJob<ScrapeJobSingleUrls>,
+): Promise<ProcessJobResult> {
   const ctx = jobContext(job.data);
   const logger = _logger.child({
     module: "queue-worker",
@@ -232,16 +367,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     getState: () => pipeline?.state,
   });
   let finishedOutcome: ScrapeFinishedOutcome | null = null;
-  let resultData:
-    | {
-        success: boolean;
-        result?: {
-          links: Array<{ content: Document; source: string; id: string }>;
-        };
-        document: Document | null;
-        error?: Error;
-      }
-    | undefined;
+  let resultData: ProcessJobResult | undefined;
   let failureCleanupError: unknown;
   let hasFailureCleanupError = false;
   let successBilled = false;
@@ -253,7 +379,14 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     }
 
     if (job.data.crawl_id) {
-      const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
+      const sc = await getCrawl(job.data.crawl_id);
+      if (
+        !sc &&
+        job.data.crawlerOptions !== null &&
+        job.data.crawlerOptions !== undefined
+      ) {
+        throw new Error("Crawl not found");
+      }
       if (sc && sc.cancelled) {
         throw new JobCancelledError();
       }
@@ -261,6 +394,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       // Discovered, sitemap and index URLs pass filterLinks before they are
       // queued. The start URL is not, so check it here, before it is fetched.
       if (
+        sc &&
         job.data.isCrawlSourceScrape &&
         !crawlToCrawler(
           job.data.crawl_id,
@@ -307,7 +441,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
     try {
       signal?.throwIfAborted();
-    } catch (e) {
+    } catch {
       throw new ScrapeJobTimeoutError();
     }
 
@@ -375,7 +509,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       }
     }
 
-    const data = {
+    const data: ProcessJobResult = {
       success: true,
       result: {
         links: [
@@ -405,10 +539,16 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     }
 
     if (job.data.crawl_id) {
-      const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
+      const sc = await getCrawl(job.data.crawl_id);
 
       let crawler: WebCrawler | null = null;
-      if (job.data.crawlerOptions !== null) {
+      if (
+        job.data.crawlerOptions !== null &&
+        job.data.crawlerOptions !== undefined
+      ) {
+        if (!sc) {
+          throw new Error("Crawl not found");
+        }
         const teamFlags =
           (
             await installedService()?.modules.auth.lookupTeam?.(
@@ -421,17 +561,18 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           job.data.crawl_id,
           sc,
           teamFlags,
-          sc.originUrl!,
+          sc.originUrl,
           job.data.crawlerOptions,
         );
       }
 
       if (
+        sc &&
+        crawler && // only on crawls, don't care on batch scrape
         doc.metadata.url !== undefined &&
         doc.metadata.sourceURL !== undefined &&
         normalizeURL(doc.metadata.url, sc) !==
-          normalizeURL(doc.metadata.sourceURL, sc) &&
-        crawler // only on crawls, don't care on batch scrape
+          normalizeURL(doc.metadata.sourceURL, sc)
       ) {
         // The engine has already followed the redirect, so this can only
         // keep a disallowed target out of the crawl.
@@ -441,7 +582,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           });
         }
 
-        const filterResult = await crawler!.filterURL(
+        const filterResult = await crawler.filterURL(
           doc.metadata.url,
           doc.metadata.sourceURL,
         );
@@ -493,21 +634,26 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         }
       }
 
-      if (crawler) {
+      if (crawler && sc) {
         if (!sc.cancelled) {
-          crawler.setBaseUrl(
-            doc.metadata.url ?? doc.metadata.sourceURL ?? sc.originUrl!,
-          );
+          const scCrawlerOptions = getStoredCrawlerOptions(sc);
+          const baseUrl =
+            doc.metadata.url ??
+            doc.metadata.sourceURL ??
+            sc.originUrl ??
+            job.data.url;
+          crawler.setBaseUrl(baseUrl);
 
-          if (!sc.crawlerOptions?.sitemapOnly) {
+          if (!scCrawlerOptions?.sitemapOnly) {
+            const maxDepth = scCrawlerOptions?.maxDepth ?? 10;
             const links = await crawler.filterLinks(
               await crawler.extractLinksFromContent(
                 rawHtml ?? "",
-                doc.metadata?.url ?? doc.metadata?.sourceURL ?? sc.originUrl!,
+                baseUrl,
                 doc.metadata?.contentType,
               ),
               Infinity,
-              sc.crawlerOptions?.maxDepth ?? 10,
+              maxDepth,
             );
             logger.debug("Discovered " + links.links.length + " links...", {
               linksLength: links.links.length,
@@ -523,11 +669,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                   ...ctx,
                   orgId: ctx.orgId ?? crawlContext(sc).orgId,
                 },
-                from:
-                  doc.metadata?.url ?? doc.metadata?.sourceURL ?? sc.originUrl!,
+                from: baseUrl,
                 crawler,
                 limit: Infinity,
-                maxDepth: sc.crawlerOptions?.maxDepth ?? 10,
+                maxDepth,
                 crawlerOptions: job.data.crawlerOptions,
                 bypassBilling: job.data.internalOptions?.bypassBilling ?? false,
               });
@@ -537,7 +682,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               sc.team_id === ctx.teamId ? ctx : crawlContext(sc);
             let discoveredJobPriority: number | undefined;
 
-            const crawlLimit = sc.crawlerOptions?.limit;
+            const crawlLimit = scCrawlerOptions?.limit;
             let remainingLimit =
               typeof crawlLimit === "number" && discoveredLinks.length > 0
                 ? crawlLimit -
@@ -547,7 +692,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 : Infinity;
 
             for (const link of discoveredLinks) {
-              if (remainingLimit <= 0) break;
+              if (remainingLimit <= 0) {
+                break;
+              }
               if (await lockURL(job.data.crawl_id, sc, link)) {
                 remainingLimit--;
                 const jobPriority =
@@ -582,7 +729,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                     ),
                     internalOptions: sc.internalOptions,
                     crawlerOptions: {
-                      ...sc.crawlerOptions,
+                      ...scCrawlerOptions,
                       currentDiscoveryDepth:
                         (job.data.crawlerOptions?.currentDiscoveryDepth ?? 0) +
                         1,
@@ -624,22 +771,23 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
           // Only run check after adding new jobs for discovery - mogery
           if (job.data.isCrawlSourceScrape) {
+            const sourceUrl =
+              doc.metadata.url ?? doc.metadata.sourceURL ?? job.data.url;
             const filterResult = await crawler.filterLinks(
-              [doc.metadata.url ?? doc.metadata.sourceURL!],
+              [sourceUrl],
               1,
-              sc.crawlerOptions?.maxDepth ?? 10,
+              scCrawlerOptions?.maxDepth ?? 10,
               false,
               false,
               true,
             );
             if (filterResult.links.length === 0) {
-              const url = doc.metadata.url ?? doc.metadata.sourceURL!;
               const reason =
-                filterResult.denialReasons.get(url) ||
-                `The source URL ("${url}") you provided as the starting point for this crawl is not allowed by your own crawl configuration. This can happen if your includePaths, excludePaths, maxDepth, or other filters exclude the starting URL itself. Please check your crawl configuration to ensure the starting URL is allowed.`;
+                filterResult.denialReasons.get(sourceUrl) ||
+                `The source URL ("${sourceUrl}") you provided as the starting point for this crawl is not allowed by your own crawl configuration. This can happen if your includePaths, excludePaths, maxDepth, or other filters exclude the starting URL itself. Please check your crawl configuration to ensure the starting URL is allowed.`;
               throw new CrawlDenialError(reason, {
-                robotsBlockedUrl: filterResult.robotsBlocked.includes(url)
-                  ? url
+                robotsBlockedUrl: filterResult.robotsBlocked.includes(sourceUrl)
+                  ? sourceUrl
                   : null,
               });
             }
@@ -649,7 +797,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
       try {
         signal?.throwIfAborted();
-      } catch (e) {
+      } catch {
         throw new ScrapeJobTimeoutError();
       }
 
@@ -689,7 +837,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           },
           { state: "completed", document: doc },
         );
-      } catch (error) {
+      } catch (error: unknown) {
         logger.error("Failed to record completed scrape in job store", {
           error,
         });
@@ -714,13 +862,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             ? data.result.links.map(x => x.content)
             : [];
           if (job.data.crawlerOptions !== null) {
-            sender.send(WebhookEvent.CRAWL_PAGE, {
+            void sender.send(WebhookEvent.CRAWL_PAGE, {
               success: true,
               data: documents,
               scrapeId: job.id,
             });
           } else {
-            sender.send(WebhookEvent.BATCH_SCRAPE_PAGE, {
+            void sender.send(WebhookEvent.BATCH_SCRAPE_PAGE, {
               success: true,
               data: documents,
               scrapeId: job.id,
@@ -732,7 +880,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       logger.debug("Declaring job as done...");
       try {
         await addCrawlJobDone(job.data.crawl_id, job.id, true, logger);
-      } catch (e) {
+      } catch (error: unknown) {
         // The scrape succeeded and its success webhook already went out:
         // a bookkeeping failure must not route this job through the
         // failure path (contradictory failure webhook, misrecorded job).
@@ -740,7 +888,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         logger.error("Failed to mark successful crawl job as done", {
           crawlId: job.data.crawl_id,
           jobId: job.id,
-          error: e,
+          error,
         });
         // Durable fallback so the crawl's completion marker is retried by
         // the reconciler instead of being lost for good.
@@ -763,7 +911,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     } else {
       try {
         signal?.throwIfAborted();
-      } catch (e) {
+      } catch {
         throw new ScrapeJobTimeoutError();
       }
 
@@ -806,13 +954,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       if (job.data.skipNuq) {
         const recordOutcomePromise = recordPromise
           .then(() => true)
-          .catch(error => {
+          .catch((error: unknown) => {
             logger.error("Failed to record completed scrape in job store", {
               error,
             });
             return false;
           });
-        const SCRAPE_STATE_BARRIER_MS = 2_000;
+        const SCRAPE_STATE_BARRIER_MS = 2000;
         let barrierTimer: ReturnType<typeof setTimeout> | undefined;
         let recorded = false;
         try {
@@ -841,7 +989,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       } else {
         try {
           await recordPromise;
-        } catch (error) {
+        } catch (error: unknown) {
           logger.error("Failed to record completed scrape in job store", {
             error,
           });
@@ -868,7 +1016,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
     logger.info(`🐂 Job done ${job.id}`);
     resultData = data;
-  } catch (error) {
+  } catch (error: unknown) {
     let credits_billed: number | null | undefined;
     let failureEnd: number | undefined;
     try {
@@ -884,23 +1032,23 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             error.robotsBlockedUrl,
           ]);
         }
-      } catch (e) {
-        logger.debug("Failed to record top-level robots block", { e });
+      } catch (error_: unknown) {
+        logger.debug("Failed to record top-level robots block", { e: error_ });
       }
 
       if (job.data.crawl_id) {
-        const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
+        const sc = await getCrawl(job.data.crawl_id);
 
         logger.debug("Declaring job as done...");
         try {
           await addCrawlJobDone(job.data.crawl_id, job.id, false, logger);
-        } catch (e) {
+        } catch (error_: unknown) {
           // Already logged canonically inside addCrawlJobDone; a throw here
           // must not escape the error handler and fail the job a second time.
           logger.error("Failed to declare failed crawl job as done", {
             crawlId: job.data.crawl_id,
             jobId: job.id,
-            error: e,
+            error: error_,
           });
           await queueCrawlJobDoneRepair(
             job.data.crawl_id,
@@ -909,12 +1057,14 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             logger,
           );
         }
-        await (
-          await crawlStateStore(job.data.crawl_id)
-        ).srem(
-          "crawl:" + job.data.crawl_id + ":visited_unique",
-          normalizeURL(job.data.url, sc),
-        );
+        if (sc) {
+          await (
+            await crawlStateStore(job.data.crawl_id)
+          ).srem(
+            "crawl:" + job.data.crawl_id + ":visited_unique",
+            normalizeURL(job.data.url, sc),
+          );
+        }
 
         await (
           await crawlStateStore(job.data.crawl_id)
@@ -931,15 +1081,15 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       } else if (isCancelled) {
         logger.warn(`🐂 Job got cancelled, silently failing`);
       } else {
-        logger.error(`🐂 Job errored ${job.id} - ${error}`, { error });
+        logger.error("🐂 Job errored", { jobId: job.id, error });
 
         logger.error(error);
-        if (error.stack) {
+        if (error instanceof Error && error.stack) {
           logger.error(error.stack);
         }
       }
 
-      const data = {
+      const data: ProcessJobResult = {
         success: false,
         document: null,
         error:
@@ -965,12 +1115,14 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             });
           }
         }
-      } catch {}
+      } catch {
+        // Ignore request logging errors while already handling scrape failure.
+      }
 
       if (job.data.crawl_id) {
         const sender = await createWebhookSender({
           teamId: job.data.team_id,
-          jobId: (job.data.crawl_id ?? job.id) as string,
+          jobId: job.data.crawl_id ?? job.id,
           webhook: job.data.webhook,
           v0: Boolean(!job.data.v1),
           zeroDataRetention: ctx.zeroDataRetention,
@@ -979,11 +1131,11 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         // at this point we don't have a document, send a minimal payload to let users identify the errored URL
         const metadata = {
           sourceURL: job.data.url,
-        } as any;
+        };
 
         if (sender) {
           if (job.data.crawlerOptions !== null) {
-            sender.send(WebhookEvent.CRAWL_PAGE, {
+            void sender.send(WebhookEvent.CRAWL_PAGE, {
               success: false,
               error: data.error.message,
               data: [
@@ -994,7 +1146,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               scrapeId: job.id,
             });
           } else {
-            sender.send(WebhookEvent.BATCH_SCRAPE_PAGE, {
+            void sender.send(WebhookEvent.BATCH_SCRAPE_PAGE, {
               success: false,
               error: data.error.message,
               data: [
@@ -1025,11 +1177,15 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           );
 
       const requestId = job.data.requestId ?? job.data.crawl_id ?? job.id;
+      const parsedError = errorWithMessageSchema.safeParse(error);
       const errorMessage =
         typeof error === "string"
           ? error
-          : (error.message ??
-            "Something went wrong... Contact help@mendable.ai");
+          : error instanceof Error
+            ? error.message
+            : parsedError.success
+              ? parsedError.data.message
+              : "Something went wrong... Contact help@mendable.ai";
 
       try {
         await service.modules.jobStore.record(
@@ -1047,14 +1203,14 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           },
           { state: "failed", error: errorMessage },
         );
-      } catch (recordError) {
+      } catch (recordError: unknown) {
         logger.error("Failed to record failed scrape in job store", {
           error: recordError,
         });
       }
 
       resultData = data;
-    } catch (cleanupError) {
+    } catch (cleanupError: unknown) {
       failureCleanupError = cleanupError;
       hasFailureCleanupError = true;
     } finally {
@@ -1075,14 +1231,16 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       };
     }
   } finally {
-    if (abortTimeoutHandle) clearTimeout(abortTimeoutHandle);
+    if (abortTimeoutHandle) {
+      clearTimeout(abortTimeoutHandle);
+    }
   }
 
   if (finishedOutcome) {
     if (hasFailureCleanupError) {
       try {
         await emitScrapeFinished(finishedOutcome);
-      } catch (hookError) {
+      } catch (hookError: unknown) {
         logger.warn("scrape.finished handler failed after cleanup error", {
           error: hookError,
         });
@@ -1094,7 +1252,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     await emitScrapeFinished(finishedOutcome);
   }
 
-  return resultData!;
+  if (!resultData) {
+    throw new Error("Scrape job finished without result");
+  }
+  return resultData;
 }
 
 async function kickoffGetIndexLinks(
@@ -1104,11 +1265,12 @@ async function kickoffGetIndexLinks(
   url: string,
   ctx: RequestContext,
 ) {
-  if (sc.crawlerOptions.ignoreSitemap || sc.crawlerOptions.sitemapOnly) {
+  const scCrawlerOptions = getStoredCrawlerOptions(sc);
+  if (scCrawlerOptions?.ignoreSitemap || scCrawlerOptions?.sitemapOnly) {
     return [];
   }
 
-  let index: string[] = [];
+  let index: Array<string> = [];
 
   const hooks = installedService()?.hooks;
   if (hooks?.has("crawl.kickoff")) {
@@ -1116,7 +1278,7 @@ async function kickoffGetIndexLinks(
       id: crawlId,
       ctx,
       url,
-      crawlerOptions: sc.crawlerOptions,
+      crawlerOptions: scCrawlerOptions ?? undefined,
     });
   }
 
@@ -1126,8 +1288,8 @@ async function kickoffGetIndexLinks(
 
   const { links, robotsBlocked } = await crawler.filterLinks(
     index,
-    sc.crawlerOptions.limit ?? 10000,
-    sc.crawlerOptions.maxDepth ?? 10,
+    scCrawlerOptions?.limit ?? 10_000,
+    scCrawlerOptions?.maxDepth ?? 10,
     false,
   );
   await recordRobotsBlocked(crawlId, robotsBlocked);
@@ -1171,7 +1333,7 @@ async function addKickoffSitemapJob(
       team_id: sourceJob.data.team_id,
       zeroDataRetention:
         sourceJob.data.zeroDataRetention || (sc.zeroDataRetention ?? false),
-      sitemapUrl: sitemapUrl,
+      sitemapUrl,
       origin: sourceJob.data.origin,
       integration: sourceJob.data.integration,
       crawl_id: sourceJob.data.crawl_id,
@@ -1195,7 +1357,9 @@ async function addKickoffSitemapJob(
   ).expire("crawl:" + sourceJob.data.crawl_id + ":sitemap_jobs", 24 * 60 * 60);
 }
 
-async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
+async function processKickoffJob(
+  job: NuQJob<ScrapeJobKickoff>,
+): Promise<KickoffJobResult> {
   const ctx = jobContext(job.data);
   const logger = _logger.child({
     module: "queue-worker",
@@ -1208,22 +1372,15 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
   });
 
   try {
-    const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
+    const sc = await getCrawl(job.data.crawl_id);
+    if (!sc) {
+      throw new Error("Crawl not found");
+    }
+    const scCrawlerOptions = getStoredCrawlerOptions(sc);
     const team = await installedService()?.modules.auth.lookupTeam?.(
       job.data.team_id,
     );
-    const kickoffCtx = {
-      ...ctx,
-      ...(ctx.flags === undefined && team ? { flags: team.flags ?? null } : {}),
-      ...(ctx.concurrencyLimit === undefined &&
-      team?.concurrencyLimit !== undefined
-        ? { concurrencyLimit: team.concurrencyLimit }
-        : {}),
-      ...(ctx.rateLimitMultiplier === undefined &&
-      team?.rateLimitMultiplier !== undefined
-        ? { rateLimitMultiplier: team.rateLimitMultiplier }
-        : {}),
-    };
+    const kickoffCtx = enrichContextWithTeam(ctx, team);
     const crawler = crawlToCrawler(
       job.data.crawl_id,
       sc,
@@ -1278,17 +1435,17 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         v0: Boolean(!job.data.v1),
       });
       if (sender) {
-        sender.send(WebhookEvent.CRAWL_STARTED, { success: true });
+        void sender.send(WebhookEvent.CRAWL_STARTED, { success: true });
       }
     }
 
-    if (!sc.crawlerOptions.ignoreSitemap) {
+    if (!scCrawlerOptions?.ignoreSitemap) {
       if (job.data.url.endsWith(".xml") || job.data.url.endsWith(".xml.gz")) {
         await addKickoffSitemapJob(job.data.url, job, sc, logger);
       } else {
         const urlObj = new URL(job.data.url);
 
-        const attempts: string[] = crawler.robots.getSitemaps();
+        const attempts: Array<string> = crawler.robots.getSitemaps();
 
         // sitemap.xml in the directory the crawl is scoped to
         const urlWithSitemap = new URL(urlObj.href);
@@ -1296,10 +1453,12 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
           getCrawlScope(urlObj.href).prefix + "sitemap.xml";
         urlWithSitemap.search = "";
         urlWithSitemap.hash = "";
-        attempts.push(urlWithSitemap.href);
 
-        // Base sitemap.xml
-        attempts.push(new URL("/sitemap.xml", urlObj.href).href);
+        // Scoped directory sitemap.xml and base /sitemap.xml
+        attempts.push(
+          urlWithSitemap.href,
+          new URL("/sitemap.xml", urlObj.href).href,
+        );
 
         // Root domain sitemap.xml. Skipped when the host has no registrable domain
         // (IP literals, localhost): assigning a null domain would stringify to the
@@ -1333,10 +1492,10 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
       },
       from: job.data.url,
       crawler,
-      limit: sc.crawlerOptions.limit ?? 10000,
-      maxDepth: sc.crawlerOptions.maxDepth ?? 10,
+      limit: scCrawlerOptions?.limit ?? 10_000,
+      maxDepth: scCrawlerOptions?.maxDepth ?? 10,
       fromMap: false,
-      crawlerOptions: sc.crawlerOptions,
+      crawlerOptions: scCrawlerOptions,
       bypassBilling: sc.internalOptions?.bypassBilling ?? false,
     });
 
@@ -1345,7 +1504,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         indexLinksLength: indexLinks.length,
       });
 
-      let jobPriority = await resolveJobPriority(kickoffCtx, 21, error => {
+      const jobPriority = await resolveJobPriority(kickoffCtx, 21, error => {
         logger.error("Failed to determine job priority", { error });
       });
       logger.debug("Using job priority " + jobPriority, { jobPriority });
@@ -1404,7 +1563,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
     await finishCrawlKickoff(job.data.crawl_id);
 
     return { success: true };
-  } catch (error) {
+  } catch (error: unknown) {
     logger.error("An error occurred!", { error });
     await finishCrawlKickoff(job.data.crawl_id);
     await setCrawlError(
@@ -1417,7 +1576,9 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
   }
 }
 
-async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
+async function processKickoffSitemapJob(
+  job: NuQJob<ScrapeJobKickoffSitemap>,
+): Promise<KickoffJobResult> {
   const ctx = jobContext(job.data);
   const logger = _logger.child({
     module: "queue-worker",
@@ -1435,22 +1596,12 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       logger.error("Crawl not found");
       return { success: false, error: "Crawl not found" };
     }
+    const scCrawlerOptions = getStoredCrawlerOptions(sc);
 
     const team = await installedService()?.modules.auth.lookupTeam?.(
       job.data.team_id,
     );
-    const sitemapCtx = {
-      ...ctx,
-      ...(ctx.flags === undefined && team ? { flags: team.flags ?? null } : {}),
-      ...(ctx.concurrencyLimit === undefined &&
-      team?.concurrencyLimit !== undefined
-        ? { concurrencyLimit: team.concurrencyLimit }
-        : {}),
-      ...(ctx.rateLimitMultiplier === undefined &&
-      team?.rateLimitMultiplier !== undefined
-        ? { rateLimitMultiplier: team.rateLimitMultiplier }
-        : {}),
-    };
+    const sitemapCtx = enrichContextWithTeam(ctx, team);
     const crawler = crawlToCrawler(
       job.data.crawl_id,
       sc,
@@ -1468,10 +1619,11 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       isPreCrawl: sc.internalOptions?.isPreCrawl ?? false,
     });
 
+    const maxDepth = scCrawlerOptions?.maxDepth ?? 10;
     const sitemapLinks = await crawler.filterLinks(
       results.urls.map(x => x.href),
       Infinity,
-      sc.crawlerOptions.maxDepth ?? 10,
+      maxDepth,
       false,
     );
     await recordRobotsBlocked(job.data.crawl_id, sitemapLinks.robotsBlocked);
@@ -1484,9 +1636,9 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       from: job.data.sitemapUrl,
       crawler,
       limit: Infinity,
-      maxDepth: sc.crawlerOptions.maxDepth ?? 10,
+      maxDepth,
       fromMap: false,
-      crawlerOptions: sc.crawlerOptions,
+      crawlerOptions: scCrawlerOptions,
       bypassBilling: sc.internalOptions?.bypassBilling ?? false,
     });
 
@@ -1501,11 +1653,11 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
 
       const jobs = passingURLs.map(url => ({
         data: {
-          url: url,
+          url,
           mode: "single_urls" as const,
           ctx: job.data.ctx,
           team_id: job.data.team_id,
-          crawlerOptions: sc.crawlerOptions,
+          crawlerOptions: scCrawlerOptions,
           scrapeOptions: sc.scrapeOptions,
           internalOptions: sc.internalOptions,
           origin: job.data.origin,
@@ -1555,7 +1707,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       logger.debug("Done queueing sitemap jobs!");
     }
     return { success: true };
-  } catch (error) {
+  } catch (error: unknown) {
     if (error instanceof SitemapError && error.cause === 404) {
       logger.debug("Sitemap not found", { sitemapUrl: job.data.sitemapUrl });
     } else {
@@ -1606,10 +1758,13 @@ export const processJobInternal = async (job: NuQJob<ScrapeJobData>) => {
   });
 };
 
-async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
+async function processJobWithTracing(
+  job: NuQJob<ScrapeJobData>,
+  logger: Logger,
+) {
   // FDB-backed jobs hold their concurrency slot through the queue lease; the
   // Redis slot mirror and promotion-on-done below are PG-backend machinery
-  const isFdbJob = (job as any).backend === "fdb";
+  const isFdbJob = "backend" in job && job.backend === "fdb";
   try {
     try {
       let extendLockInterval: NodeJS.Timeout | null = null;
@@ -1619,8 +1774,8 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
         job.data?.team_id &&
         !job.data.skipNuq
       ) {
-        extendLockInterval = setInterval(async () => {
-          await pushConcurrencyLimitActiveJob(
+        extendLockInterval = setInterval(() => {
+          void pushConcurrencyLimitActiveJob(
             job.data.team_id,
             job.id,
             60 * 1000,
@@ -1634,25 +1789,30 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
       );
       try {
         if (job.data.mode === "kickoff") {
-          const result = await processKickoffJob(
-            job as NuQJob<ScrapeJobKickoff>,
-          );
+          const result = await processKickoffJob({
+            ...job,
+            data: job.data,
+          });
           if (result.success) {
             return null;
           } else {
-            throw (result as any).error;
+            throw result.error;
           }
         } else if (job.data.mode === "kickoff_sitemap") {
-          const result = await processKickoffSitemapJob(
-            job as NuQJob<ScrapeJobKickoffSitemap>,
-          );
+          const result = await processKickoffSitemapJob({
+            ...job,
+            data: job.data,
+          });
           if (result.success) {
             return null;
           } else {
-            throw (result as any).error;
+            throw result.error;
           }
         } else {
-          const result = await processJob(job as NuQJob<ScrapeJobSingleUrls>);
+          const result = await processJob({
+            ...job,
+            data: job.data,
+          });
           if (result.success) {
             try {
               if (job.data.team_id) {
@@ -1663,8 +1823,8 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
                   60 * 60 * 24,
                 );
               }
-            } catch (e) {
-              logger.warn("Failed to set most recent success", { error: e });
+            } catch (error: unknown) {
+              logger.warn("Failed to set most recent success", { error });
             }
 
             if (
@@ -1677,7 +1837,7 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
             logger.debug("Job succeeded -- putting result in queue");
             return result.document;
           } else {
-            throw (result as any).error;
+            throw result.error;
           }
         }
       } finally {
@@ -1694,13 +1854,13 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
         await concurrentJobDone(job);
       }
     }
-  } catch (error) {
+  } catch (error: unknown) {
     logger.warn("Job failed", { error });
 
     if (job.data.skipNuq) {
       throw error;
     } else {
-      throw new Error(serializeThrownError(error));
+      throw new Error(serializeThrownError(error), { cause: error });
     }
   }
 }

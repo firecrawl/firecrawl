@@ -1,14 +1,32 @@
-import type { Queue } from "bullmq";
 import { Gauge } from "prom-client";
 import { logger } from "../lib/logger";
 
 const STATES = ["waiting", "delayed", "active", "failed"] as const;
+type MonitoredQueueState = (typeof STATES)[number];
+
+interface MonitoredQueueClient {
+  zrange(
+    key: string,
+    start: number,
+    stop: number,
+    withScores: "WITHSCORES",
+  ): Promise<Array<string>>;
+}
+
+interface MonitoredQueue {
+  readonly name: string;
+  getJobCounts(
+    ...types: Array<MonitoredQueueState>
+  ): Promise<Record<string, number>>;
+  toKey(type: string): string;
+  readonly client: Promise<MonitoredQueueClient>;
+}
 
 // A scrape must not hang on Redis: the queue clients retry forever while
 // disconnected, and VMServiceScrape gives the whole endpoint 30s.
 const COLLECT_TIMEOUT_MS = 5000;
 
-let monitoredQueues: Queue[] = [];
+let monitoredQueues: Array<MonitoredQueue> = [];
 
 /**
  * Exports depth and drain progress for these queues on every scrape. Multiple
@@ -17,7 +35,7 @@ let monitoredQueues: Queue[] = [];
  * the numbers are Redis-wide, so every pod that exports them adds an identical
  * copy of each series.
  */
-export function startBullmqQueueMetrics(queues: Queue[]) {
+export function startBullmqQueueMetrics(queues: Array<MonitoredQueue>) {
   const byName = new Map(monitoredQueues.map(queue => [queue.name, queue]));
   for (const queue of queues) {
     byName.set(queue.name, queue);
@@ -30,15 +48,20 @@ export function resetBullmqQueueMetricsForTest() {
   monitoredQueues = [];
 }
 
-const inFlight = new Map<string, Promise<unknown>>();
+const depthInFlight = new Map<string, Promise<Record<string, number>>>();
+const overdueInFlight = new Map<string, Promise<Array<string>>>();
 
 /**
  * Bounds a read to COLLECT_TIMEOUT_MS. A read that outlives it cannot be
  * cancelled, so later scrapes wait on that same read instead of queueing
  * another command behind a disconnected client.
  */
-async function readOnce<T>(key: string, read: () => Promise<T>): Promise<T> {
-  let work = inFlight.get(key) as Promise<T> | undefined;
+async function readOnce<T>(
+  inFlight: Map<string, Promise<T>>,
+  key: string,
+  read: () => Promise<T>,
+): Promise<T> {
+  let work = inFlight.get(key);
   if (!work) {
     work = read().finally(() => inFlight.delete(key));
     inFlight.set(key, work);
@@ -72,16 +95,19 @@ export const bullmqQueueDepth = new Gauge({
     const queues = [...monitoredQueues];
     const results = await Promise.allSettled(
       queues.map(queue =>
-        readOnce(`depth:${queue.name}`, () => queue.getJobCounts(...STATES)),
+        readOnce(depthInFlight, `depth:${queue.name}`, () =>
+          queue.getJobCounts(...STATES),
+        ),
       ),
     );
     this.reset();
     results.forEach((result, i) => {
       const queue = queues[i].name;
       if (result.status === "rejected") {
+        const error: unknown = result.reason;
         logger.warn("Failed to collect BullMQ queue depth", {
           queue,
-          error: result.reason,
+          error,
         });
         return;
       }
@@ -106,7 +132,7 @@ export const bullmqQueueOldestOverdueSeconds = new Gauge({
     const queues = [...monitoredQueues];
     const results = await Promise.allSettled(
       queues.map(queue =>
-        readOnce(`overdue:${queue.name}`, async () => {
+        readOnce(overdueInFlight, `overdue:${queue.name}`, async () => {
           const client = await queue.client;
           return client.zrange(queue.toKey("delayed"), 0, 0, "WITHSCORES");
         }),
@@ -117,16 +143,17 @@ export const bullmqQueueOldestOverdueSeconds = new Gauge({
     results.forEach((result, i) => {
       const queue = queues[i].name;
       if (result.status === "rejected") {
+        const error: unknown = result.reason;
         logger.warn("Failed to collect BullMQ queue overdue age", {
           queue,
-          error: result.reason,
+          error,
         });
         return;
       }
       const score = result.value[1];
       // BullMQ scores a delayed job as dueAtMs * 0x1000 plus a counter.
       const dueAt =
-        score === undefined ? now : Math.floor(Number(score) / 0x1000);
+        score === undefined ? now : Math.floor(Number(score) / 0x10_00);
       this.labels(queue).set(Math.max(0, (now - dueAt) / 1000));
     });
   },
