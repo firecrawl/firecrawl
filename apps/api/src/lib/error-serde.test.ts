@@ -27,6 +27,7 @@ import {
   SiteRestrictionError,
   SSLError,
   UnsupportedFileError,
+  SearchProviderUnavailableError,
   UsOnlyUnavailableError,
   ZDRViolationError,
 } from "../scraper/scrapeURL/error";
@@ -360,6 +361,12 @@ describe("the wire form of every class", () => {
       "US_ONLY_UNAVAILABLE",
       "UsOnlyUnavailableError",
       () => new UsOnlyUnavailableError("No US-based route serves this request"),
+      {},
+    ],
+    [
+      "SEARCH_PROVIDER_UNAVAILABLE",
+      "SearchProviderUnavailableError",
+      () => new SearchProviderUnavailableError(),
       {},
     ],
     [

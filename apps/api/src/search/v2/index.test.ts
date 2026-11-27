@@ -9,7 +9,10 @@ vi.mock("./ddgsearch", () => ({ ddgSearch: mocks.ddgSearch }));
 import { createLogger } from "winston";
 import { config } from "../../config";
 import type { SearchV2Response } from "../../lib/entities";
-import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
+import {
+  SearchProviderUnavailableError,
+  UsOnlyUnavailableError,
+} from "../../scraper/scrapeURL/error";
 import type { SearchProvider } from "../../service";
 import { createService, replaceService } from "../../service/service";
 import { coreSearchProviders } from "../providers";
@@ -269,7 +272,7 @@ describe("service.searchProviders dispatch in v2 search", () => {
     expect(mocks.ddgSearch).not.toHaveBeenCalled();
   });
 
-  it("catches provider errors, logs them, and returns an empty response", async () => {
+  it("fails with SearchProviderUnavailableError when a provider throws", async () => {
     const failure = new Error("upstream failed");
     installSearchService([
       {
@@ -287,9 +290,32 @@ describe("service.searchProviders dispatch in v2 search", () => {
       },
     ]);
 
-    const res = await search({ query: "firecrawl", logger });
+    const pending = search({ query: "firecrawl", logger });
+    await expect(pending).rejects.toBeInstanceOf(
+      SearchProviderUnavailableError,
+    );
+    await expect(pending).rejects.toHaveProperty("cause", failure);
+  });
 
-    expect(res).toEqual({});
+  it("rethrows a TransportableError from a provider unchanged", async () => {
+    const failure = new UsOnlyUnavailableError("no route");
+    installSearchService([
+      {
+        name: "custom",
+        searchProviders: [
+          {
+            name: "searxng",
+            priority: 200,
+            enabled: () => true,
+            search: async () => {
+              throw failure;
+            },
+          },
+        ],
+      },
+    ]);
+
+    await expect(search({ query: "firecrawl", logger })).rejects.toBe(failure);
     expect(loggerErrorSpy).toHaveBeenCalledWith("Error in search function", {
       error: failure,
     });

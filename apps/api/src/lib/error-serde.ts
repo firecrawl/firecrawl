@@ -40,6 +40,7 @@ import {
   PaywalledContentError,
   JsonExtractionContentTooLargeError,
   UsOnlyUnavailableError,
+  SearchProviderUnavailableError,
   ReservedCapacityUnavailableError,
   ExchangeRefusedError,
 } from "../scraper/scrapeURL/error";
@@ -87,6 +88,7 @@ export const coreErrors: Array<TransportableErrorClass> = [
   PaywalledContentError,
   JsonExtractionContentTooLargeError,
   UsOnlyUnavailableError,
+  SearchProviderUnavailableError,
   ReservedCapacityUnavailableError,
   MapFailedError,
   ConcurrencyQueueTimeoutError,

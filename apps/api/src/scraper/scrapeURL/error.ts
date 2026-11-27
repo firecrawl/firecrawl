@@ -50,6 +50,35 @@ export class UsOnlyUnavailableError extends TransportableError {
   }
 }
 
+/** The search provider failed, so the search cannot tell an outage apart from a genuine zero-result answer. */
+export class SearchProviderUnavailableError extends TransportableError {
+  static readonly codes: ReadonlyArray<ErrorCode> = [
+    "SEARCH_PROVIDER_UNAVAILABLE",
+  ];
+
+  constructor(
+    message = "The search provider is temporarily unavailable. Please retry the request.",
+    options?: ErrorOptions,
+  ) {
+    super("SEARCH_PROVIDER_UNAVAILABLE", message, options);
+  }
+
+  get httpStatus(): number {
+    return 503;
+  }
+
+  static deserialize(
+    _: ErrorCode,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new SearchProviderUnavailableError(data.message, {
+      cause: data.cause,
+    });
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 /** Parsing the team's reserved capacity restriction rules out, because the PDF service could not run, or did not confirm running, it there. */
 export class ReservedCapacityUnavailableError extends TransportableError {
   static readonly codes: ReadonlyArray<ErrorCode> = [

@@ -355,6 +355,7 @@ describe("coreParts", () => {
         UNKNOWN_ERROR: "core",
         UNSUPPORTED_SITE: "core",
         US_ONLY_UNAVAILABLE: "core",
+        SEARCH_PROVIDER_UNAVAILABLE: "core",
       },
       engines: {
         document: "core",
