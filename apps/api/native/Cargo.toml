@@ -12,9 +12,7 @@ version = "0.1.0"
 [workspace.dependencies]
 anydoc = "0.2.5"
 firecrawl-core = { path = "crates/firecrawl-core" }
-firecrawl-core-types = { path = "crates/firecrawl-core-types" }
 firecrawl-kinded-macro = { path = "crates/firecrawl-kinded-macro" }
-firecrawl-telemetry = { path = "crates/firecrawl-telemetry" }
 hegeltest = { version = "0.54.2", features = ["serde_json"] }
 kuchikiki = "0.8.9-speedreader"
 napi = { version = "3.0.0", features = ["serde-json", "tokio_rt"] }

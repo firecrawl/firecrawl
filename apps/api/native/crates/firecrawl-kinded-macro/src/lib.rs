@@ -1,4 +1,4 @@
-//! Attribute macro backing `firecrawl_core_types::kinded`.
+//! Attribute macro backing `firecrawl_core::types::kinded`.
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
@@ -17,7 +17,7 @@ use syn::{
 /// - `default` (optional): variants a `KindedSet` holds when none are given.
 /// - `kind` (optional): discriminant enum name, defaulting to `{Enum}Kind`.
 /// - `crate` (optional): path to the `kinded` module, defaulting to
-///   `::firecrawl_core_types::kinded`.
+///   `::firecrawl_core::types::kinded`.
 #[proc_macro_attribute]
 pub fn kinded(args: TokenStream, input: TokenStream) -> TokenStream {
   let args = parse_macro_input!(args with Punctuated::<Meta, Token![,]>::parse_terminated);
@@ -118,7 +118,7 @@ fn expand(args: Punctuated<Meta, Token![,]>, item: ItemEnum) -> Result<TokenStre
 
   let kinded_mod = match kinded_path {
     Some(path) => quote!(#path),
-    None => quote!(::firecrawl_core_types::kinded),
+    None => quote!(::firecrawl_core::types::kinded),
   };
 
   let name = item.ident.clone();

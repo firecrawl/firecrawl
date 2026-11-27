@@ -9,7 +9,7 @@ use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::Sampler;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-use crate::zdr::ZdrContextMarker;
+use super::zdr::ZdrContextMarker;
 
 const DEFAULT_SERVICE_NAME: &str = "firecrawl-rs";
 

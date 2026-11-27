@@ -7,7 +7,7 @@ use tracing::span;
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::{Context as LayerContext, SubscriberExt};
 
-use crate::{
+use super::{
   CoreNativeError, CoreNativeFailure, CoreParserKind, CoreParsers, CorePdfType,
   DeriveCoreHtmlRequest, NativeCallContext, ParseRawDocumentRequest, parse_json_input,
 };

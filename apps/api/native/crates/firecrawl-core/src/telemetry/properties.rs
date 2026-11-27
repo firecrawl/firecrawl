@@ -4,7 +4,7 @@ use opentelemetry::{KeyValue, Value};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SamplingDecision, ShouldSample};
 use tracing_subscriber::layer::SubscriberExt;
 
-use crate::{
+use super::{
   TraceContext, ZdrLayer, ZeroDataRetentionSampler, attach_parent_context, build_resource,
   build_zdr_tracer_provider, extract_trace_context, pre_parse_zdr_from_json_str, sampler_from_env,
 };

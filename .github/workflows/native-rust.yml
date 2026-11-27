@@ -53,7 +53,7 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all --check
 
-      - name: Check firecrawl-core without Node bindings
+      - name: Check firecrawl-core without optional features
         run: cargo check --locked -p firecrawl-core --no-default-features
 
       - name: Clippy
@@ -63,6 +63,11 @@ jobs:
         run: cargo test --workspace --all-features --locked
         env:
           HEGEL_DEFAULT_PROFILE: ci
+
+      - name: Verify telemetry
+        run: |
+          cargo run --locked -p firecrawl-core --features telemetry --example verify_telemetry
+          cargo run --locked -p firecrawl-core --features telemetry --example verify_telemetry -- panic-hook
 
       - name: Check TS bindings are up to date
         run: |

@@ -2,8 +2,6 @@
 //! `serde_path_to_error` input parsing, `Kinded` union helpers, and
 //! deterministic `ts-rs` declaration generation.
 
-extern crate self as firecrawl_core_types;
-
 pub mod context;
 pub mod error;
 pub mod html;

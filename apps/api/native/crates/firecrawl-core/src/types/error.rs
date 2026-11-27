@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
-use crate::parsers::{CoreParserKind, CorePdfType};
+use super::parsers::{CoreParserKind, CorePdfType};
 
 /// Rust-side error enum for open-source native entrypoints.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

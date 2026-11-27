@@ -4,7 +4,7 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
 use ts_rs::TS;
 
-use crate::kinded::{KindedSet, kinded};
+use super::kinded::{KindedSet, kinded};
 
 /// Maximum PDF pages accepted by `pdfParserWithOptions.maxPages` in
 /// `apps/api/src/controllers/v2/types.ts`.

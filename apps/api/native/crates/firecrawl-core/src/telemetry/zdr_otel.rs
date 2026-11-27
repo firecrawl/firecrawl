@@ -20,7 +20,7 @@ use opentelemetry_sdk::trace::{
   Span as SdkSpan, SpanData, SpanProcessor,
 };
 
-use crate::zdr::{ZdrContextMarker, has_zdr_attribute, is_zdr_kv};
+use super::zdr::{ZdrContextMarker, has_zdr_attribute, is_zdr_kv};
 
 const ZDR_TRACE_LIMIT: usize = 100_000;
 const ZDR_TRACESTATE_KEY: &str = "firecrawl_zdr";

@@ -12,7 +12,7 @@ use tracing::field::Visit;
 use tracing_subscriber::layer::{Context as LayerContext, SubscriberExt};
 use tracing_subscriber::{EnvFilter, Layer};
 
-use firecrawl_telemetry::{
+use firecrawl_core::telemetry::{
   TraceContext, ZdrLayer, attach_parent_context, build_resource, build_zdr_tracer_provider,
   in_zdr_span, install_zdr_panic_hook, pre_parse_zdr_from_json_str, run_on_scoped_rayon_pool,
   sampler_from_env, spawn_blocking_with_span, spawn_thread_with_span, zdr_span_filter,

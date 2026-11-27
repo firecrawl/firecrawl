@@ -8,8 +8,8 @@ use opentelemetry_sdk::trace::{InMemorySpanExporter, SimpleSpanProcessor};
 use tracing_subscriber::layer::{Context as LayerContext, SubscriberExt};
 use tracing_subscriber::{EnvFilter, Layer};
 
-use crate::zdr_otel::ZdrTraceRegistry;
-use crate::{
+use super::zdr_otel::ZdrTraceRegistry;
+use super::{
   TraceContext, ZdrLayer, build_resource, build_tracer_provider_with_registry,
   build_zdr_tracer_provider, extract_trace_context, in_zdr_span, pre_parse_zdr_from_json_str,
   sampler_from_env, spawn_thread_with_span, zdr_span_filter,

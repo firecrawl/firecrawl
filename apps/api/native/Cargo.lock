@@ -693,39 +693,36 @@ name = "firecrawl-core"
 version = "0.1.0"
 dependencies = [
  "anydoc",
+ "firecrawl-kinded-macro",
+ "hegeltest",
  "kuchikiki",
  "napi",
  "napi-derive",
  "nodesig",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
  "pdf-inspector",
  "psl",
+ "rayon",
  "regex",
+ "reqwest",
  "roxmltree",
- "serde",
- "serde_json",
- "texting_robots",
- "tinyvec",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "url",
- "zip",
-]
-
-[[package]]
-name = "firecrawl-core-types"
-version = "0.1.0"
-dependencies = [
- "firecrawl-kinded-macro",
- "hegeltest",
+ "rustls",
  "serde",
  "serde_json",
  "serde_path_to_error",
  "strum",
+ "texting_robots",
  "thiserror 2.0.21",
+ "tinyvec",
+ "tokio",
  "tracing",
+ "tracing-opentelemetry",
  "tracing-subscriber",
  "ts-rs",
+ "url",
+ "zip",
 ]
 
 [[package]]
@@ -735,24 +732,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "firecrawl-telemetry"
-version = "0.1.0"
-dependencies = [
- "hegeltest",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
- "rayon",
- "reqwest",
- "rustls",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
 ]
 
 [[package]]

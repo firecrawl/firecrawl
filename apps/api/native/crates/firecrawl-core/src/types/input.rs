@@ -4,7 +4,7 @@
 use serde::de::DeserializeOwned;
 use tracing::Span;
 
-use crate::error::CoreNativeError;
+use super::error::CoreNativeError;
 
 fn record_input_error(argument: &'static str, path: &str) {
   let span = Span::current();
