@@ -13,6 +13,13 @@ use serde::{
 
 pub use firecrawl_kinded_macro::kinded;
 
+/// Decodes buffered options while preserving their path for boundary errors.
+pub fn deserialize_kinded_options<T: serde::de::DeserializeOwned>(
+  options: serde_json::Map<String, serde_json::Value>,
+) -> Result<T, serde_json::Error> {
+  super::input::deserialize_buffered(serde_json::Value::Object(options))
+}
+
 pub trait Kinded: Sized {
   type Kind: Copy + Ord + Debug + Display + FromStr;
 

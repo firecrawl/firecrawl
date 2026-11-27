@@ -225,7 +225,7 @@ fn expand(args: Punctuated<Meta, Token![,]>, item: ItemEnum) -> Result<TokenStre
             #name::#units
           },)*
           #(#kind::#option_variants => #name::#option_variants(
-            ::serde_json::from_value(::serde_json::Value::Object(options))?
+            #kinded_mod::deserialize_kinded_options(options)?
           ),)*
         })
       }

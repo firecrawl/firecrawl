@@ -10,6 +10,7 @@ use tracing_subscriber::layer::{Context as LayerContext, SubscriberExt};
 use super::{
   CoreNativeError, CoreNativeFailure, CoreParserKind, CoreParsers, CorePdfType,
   DeriveCoreHtmlRequest, NativeCallContext, ParseRawDocumentRequest, parse_json_input,
+  parse_json_value,
 };
 
 #[derive(Debug, Default, Clone)]
@@ -301,11 +302,14 @@ fn boundary_request_validation_enforces_required_zdr_unknown_fields_and_max_page
   // PDF maxPages enforces the TS schema bounds 1..=10000.
   assert!(matches!(
     parse_json_input::<CoreParsers>("parsers", r#"[{"type": "pdf", "maxPages": 0}]"#),
-    Err(CoreNativeError::InvalidInput { .. })
+    Err(CoreNativeError::InvalidInput { ref path, .. }) if path == "[0].maxPages"
   ));
   assert!(matches!(
-    parse_json_input::<CoreParsers>("parsers", r#"[{"type": "pdf", "maxPages": 10001}]"#),
-    Err(CoreNativeError::InvalidInput { .. })
+    parse_json_value::<ParseRawDocumentRequest>(
+      "req",
+      json!({"url":"https://example.com","parsers":[{"maxPages":10001,"type":"pdf"}]}),
+    ),
+    Err(CoreNativeError::InvalidInput { ref path, .. }) if path == "parsers[0].maxPages"
   ));
   assert!(
     parse_json_input::<CoreParsers>("parsers", r#"[{"type": "pdf", "maxPages": 1}]"#).is_ok()
