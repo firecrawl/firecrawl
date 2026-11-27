@@ -38,7 +38,13 @@ function resolveUrlWithBaseHref(
     } else if (href.startsWith("#")) {
       return "";
     } else {
-      return new URL(href, resolutionBase).href;
+      const resolved = new URL(href, resolutionBase);
+      // `javascript:` runs a script instead of naming a page (`javascript:void(0)` on
+      // buttons styled as links); the URL parser has already normalized its case
+      if (resolved.protocol === "javascript:") {
+        return "";
+      }
+      return resolved.href;
     }
   } catch (error) {
     logger.error(
