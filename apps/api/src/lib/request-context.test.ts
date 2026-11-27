@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { baseScrapeOptions } from "../controllers/v2/types";
 import type { RequestContext } from "../service/request-context";
-import type { ScrapeJobData } from "../types";
+import type { ScrapeJobKickoffSitemap, ScrapeJobSingleUrls } from "../types";
 import type { StoredCrawl } from "./crawl-redis";
 import {
   crawlContext,
@@ -9,26 +10,48 @@ import {
   storedZeroDataRetention,
 } from "./request-context";
 
-const stored = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+const defaultScrapeOptions = baseScrapeOptions.parse({});
 
-const job = (fields: Record<string, unknown>) =>
-  ({
-    mode: "single_urls",
-    url: "https://example.com",
-    team_id: "team",
-    zeroDataRetention: false,
-    apiKeyId: null,
-    ...fields,
-  }) as ScrapeJobData;
+const stored = <T>(value: T): T => {
+  JSON.stringify(value);
+  return structuredClone(value);
+};
 
-const crawl = (fields: Record<string, unknown>) =>
-  ({
-    team_id: "team",
-    createdAt: 0,
-    crawlerOptions: null,
-    internalOptions: { teamId: "team", orgId: null },
-    ...fields,
-  }) as StoredCrawl;
+const job = (
+  fields: Partial<ScrapeJobSingleUrls> = {},
+): ScrapeJobSingleUrls => ({
+  mode: "single_urls",
+  url: "https://example.com",
+  team_id: "team",
+  zeroDataRetention: false,
+  apiKeyId: null,
+  origin: "api",
+  scrapeOptions: defaultScrapeOptions,
+  ...fields,
+});
+
+const sitemapJob = (
+  fields: Partial<ScrapeJobKickoffSitemap>,
+): ScrapeJobKickoffSitemap => ({
+  mode: "kickoff_sitemap",
+  crawl_id: "crawl-1",
+  sitemapUrl: "https://example.com/sitemap.xml",
+  team_id: "team",
+  zeroDataRetention: false,
+  apiKeyId: null,
+  origin: "api",
+  v1: false,
+  ...fields,
+});
+
+const crawl = (fields: Partial<StoredCrawl> = {}): StoredCrawl => ({
+  team_id: "team",
+  createdAt: 0,
+  crawlerOptions: null,
+  scrapeOptions: defaultScrapeOptions,
+  internalOptions: { teamId: "team", orgId: null },
+  ...fields,
+});
 
 describe("requestContext", () => {
   it("is not zero data retention unless it is told so", () => {
@@ -79,7 +102,11 @@ describe("jobContext", () => {
       added: { by: "someone else" },
     } as RequestContext;
     const data = stored(
-      job({ ctx, zeroDataRetention: false, internalOptions: { teamId: "x" } }),
+      job({
+        ctx,
+        zeroDataRetention: false,
+        internalOptions: { teamId: "x", orgId: null },
+      }),
     );
 
     expect(jobContext(data)).toEqual(ctx);
@@ -88,7 +115,7 @@ describe("jobContext", () => {
 
   it("takes the same facts from the older fields of a payload without one", () => {
     const flags = { checkRobotsOnScrape: true };
-    const billing = { endpoint: "scrape", jobId: "scrape-1" };
+    const billing = { endpoint: "scrape" as const, jobId: "scrape-1" };
 
     expect(
       jobContext(
@@ -112,8 +139,10 @@ describe("jobContext", () => {
   });
 
   it("keeps flags that were stored as none apart from flags that were never stored", () => {
-    const none = job({ internalOptions: { teamId: "team", teamFlags: null } });
-    const unknown = job({ internalOptions: { teamId: "team" } });
+    const none = job({
+      internalOptions: { teamId: "team", teamFlags: null, orgId: null },
+    });
+    const unknown = job({ internalOptions: { teamId: "team", orgId: null } });
     const noOptions = job({});
 
     expect(jobContext(stored(none)).flags).toBeNull();
@@ -123,8 +152,7 @@ describe("jobContext", () => {
 
   it("reads a sitemap job, which has no internal options", () => {
     const data = stored(
-      job({
-        mode: "kickoff_sitemap",
+      sitemapJob({
         crawl_id: "crawl-1",
         sitemapUrl: "https://example.com/sitemap.xml",
         zeroDataRetention: true,

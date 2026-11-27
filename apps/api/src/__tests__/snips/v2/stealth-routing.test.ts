@@ -1,3 +1,18 @@
+import { createLogger } from "winston";
+import {
+  applyScrapeOptionsDefaults,
+  scrapeOptions,
+} from "../../../controllers/v2/types";
+import { CostTracking } from "../../../lib/cost-tracking";
+import { requestContext } from "../../../lib/request-context";
+import type { Meta } from "../../../scraper/scrapeURL";
+import type {
+  buildFallbackList as BuildFallbackList,
+  FeatureFlag,
+} from "../../../scraper/scrapeURL/engines/index.js";
+import { AbortManager } from "../../../scraper/scrapeURL/lib/abortManager";
+import type { replaceService as ReplaceService } from "../../../service/service.js";
+
 /**
  * Unit test for stealth proxy engine routing via buildFallbackList.
  * Without fire-engine no engine fetches a page through a stealth proxy, so an
@@ -5,29 +20,58 @@
  * engines instead of narrowing to the file parsers.
  */
 
-describe("Stealth proxy routing without fire-engine (buildFallbackList)", () => {
-  let buildFallbackList: typeof import("../../../scraper/scrapeURL/engines/index.js").buildFallbackList;
-  let replaceService:
-    | typeof import("../../../service/service.js").replaceService
-    | undefined;
+const setEnv = (env: Record<string, string | undefined>) => {
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+};
 
-  const overrides: Record<string, string | undefined> = {
+const buildStubMeta = (featureFlags: Array<FeatureFlag>): Meta => {
+  const options = {
+    ...applyScrapeOptionsDefaults(
+      scrapeOptions.parse({
+        formats: [],
+        proxy: "auto",
+      }),
+    ),
+    maxAge: 0,
+  };
+  return {
+    id: "test",
+    url: "https://example.com/",
+    ctx: requestContext({ teamId: "test", zeroDataRetention: false }),
+    state: {},
+    options,
+    internalOptions: { teamId: "test", orgId: null },
+    featureFlags: new Set(featureFlags),
+    mock: null,
+    logger: createLogger({ silent: true }),
+    abort: new AbortManager(),
+    imageOcrEnabled: async () => false,
+    pdfPrefetch: undefined,
+    documentPrefetch: undefined,
+    imagePrefetch: undefined,
+    fetchPrefetch: undefined,
+    costTracking: new CostTracking(),
+    threatDecisions: [],
+  };
+};
+
+describe("Stealth proxy routing without fire-engine (buildFallbackList)", () => {
+  let buildFallbackList: typeof BuildFallbackList;
+  let replaceService: typeof ReplaceService | undefined;
+
+  const overrides = {
     FIRE_ENGINE_BETA_URL: undefined,
     FIRE_EXCHANGE_URL: undefined,
     INDEX_DATABASE_URL: undefined,
     PLAYWRIGHT_MICROSERVICE_URL: "http://test-playwright",
-  };
+  } satisfies Record<string, string | undefined>;
   const original: Record<string, string | undefined> = {};
-
-  const setEnv = (env: Record<string, string | undefined>) => {
-    for (const [key, value] of Object.entries(env)) {
-      if (value === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = value;
-      }
-    }
-  };
 
   beforeAll(async () => {
     for (const key of Object.keys(overrides)) {
@@ -37,9 +81,8 @@ describe("Stealth proxy routing without fire-engine (buildFallbackList)", () => 
 
     // Re-import engines fresh so it reads the env vars set above at eval time.
     vi.resetModules();
-    const enginesModule = await import(
-      "../../../scraper/scrapeURL/engines/index.js"
-    );
+    const enginesModule =
+      await import("../../../scraper/scrapeURL/engines/index.js");
     const serviceModule = await import("../../../service/service.js");
     buildFallbackList = enginesModule.buildFallbackList;
     replaceService = serviceModule.replaceService;
@@ -62,27 +105,6 @@ describe("Stealth proxy routing without fire-engine (buildFallbackList)", () => 
     replaceService?.(undefined);
     setEnv(original);
   });
-
-  const buildStubMeta = (featureFlags: string[]) =>
-    ({
-      id: "test",
-      url: "https://example.com/",
-      options: {
-        formats: [],
-        maxAge: 0,
-        proxy: "auto",
-      },
-      internalOptions: { teamId: "test" },
-      featureFlags: new Set(featureFlags),
-      mock: null,
-      logger: {
-        info: vi.fn(),
-        warn: vi.fn(),
-        debug: vi.fn(),
-        error: vi.fn(),
-        child: vi.fn().mockReturnThis(),
-      },
-    }) as any;
 
   it("keeps the page engines when stealthProxy is added to an HTML scrape", async () => {
     const before = await buildFallbackList(buildStubMeta([]));

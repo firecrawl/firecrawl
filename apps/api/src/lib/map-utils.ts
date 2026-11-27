@@ -1,12 +1,13 @@
 import { v7 as uuidv7 } from "uuid";
-import {
+import { z } from "zod";
+import type {
   TeamFlags,
   MapDocument,
-  scrapeOptions,
   ScrapeOptions,
-  MAX_MAP_LIMIT,
 } from "../controllers/v2/types";
-import { crawlToCrawler, StoredCrawl } from "./crawl-redis";
+import { scrapeOptions, MAX_MAP_LIMIT } from "../controllers/v2/types";
+import type { StoredCrawl, StoredCrawlerOptions } from "./crawl-redis";
+import { crawlToCrawler } from "./crawl-redis";
 import {
   checkAndUpdateURLForMap,
   isSameDomain,
@@ -14,10 +15,15 @@ import {
   resolveRedirects,
 } from "./validateUrl";
 import { performCosineSimilarityV2 } from "./map-cosine";
-import { Logger } from "winston";
+import type { Logger } from "winston";
 import { requestContext } from "./request-context";
+import type { HookPoints, MapState } from "../service/hooks";
 import type { RequestContext } from "../service/request-context";
 import { installedService } from "../service/service";
+
+const errorWithMessageSchema = z.object({
+  message: z.unknown(),
+});
 
 const MAX_SEARCH_RESULTS = 100;
 
@@ -25,11 +31,13 @@ export interface MapResult {
   success: boolean;
   job_id: string;
   time_taken: number;
-  mapResults: MapDocument[];
-  state?: Record<string, unknown>;
+  mapResults: Array<MapDocument>;
+  state?: MapState;
 }
 
-function dedupeMapDocumentArray(documents: MapDocument[]): MapDocument[] {
+function dedupeMapDocumentArray(
+  documents: Array<MapDocument>,
+): Array<MapDocument> {
   const urlMap = new Map<string, MapDocument>();
 
   for (const doc of documents) {
@@ -52,8 +60,13 @@ interface MapScopeOptions {
   allowExternalLinks?: boolean;
 }
 
+interface MapScrapeOptionsInput {
+  location?: ScrapeOptions["location"];
+  headers?: Record<string, string>;
+}
+
 function applyMapScope(
-  documents: MapDocument[],
+  documents: Array<MapDocument>,
   baseUrl: string,
   {
     ignoreQueryParameters = true,
@@ -61,19 +74,18 @@ function applyMapScope(
     filterByPath = true,
     allowExternalLinks = false,
   }: MapScopeOptions = {},
-): MapDocument[] {
-  let scoped = documents
-    .map(x => {
-      try {
-        return {
-          ...x,
-          url: checkAndUpdateURLForMap(x.url, ignoreQueryParameters).url.trim(),
-        };
-      } catch (_) {
-        return null;
-      }
-    })
-    .filter((x): x is MapDocument => x !== null);
+): Array<MapDocument> {
+  let scoped: Array<MapDocument> = [];
+  for (const x of documents) {
+    try {
+      scoped.push({
+        ...x,
+        url: checkAndUpdateURLForMap(x.url, ignoreQueryParameters).url.trim(),
+      });
+    } catch {
+      // Drop malformed URLs.
+    }
+  }
 
   scoped = scoped.filter(x => isSameDomain(x.url, baseUrl));
 
@@ -108,7 +120,7 @@ function applyMapScope(
  * map documents.
  */
 export async function applyMapFilterHook(
-  mapResults: MapDocument[],
+  mapResults: Array<MapDocument>,
   {
     ctx,
     url,
@@ -119,21 +131,22 @@ export async function applyMapFilterHook(
     ctx: RequestContext;
     url: string;
     limit: number;
-    state?: Record<string, unknown>;
+    state?: MapState;
     logger?: Logger;
   },
-): Promise<MapDocument[]> {
+): Promise<Array<MapDocument>> {
   const hooks = installedService()?.hooks;
   if (!hooks?.has("map.filter")) {
     return mapResults;
   }
-  return await hooks.transform("map.filter", mapResults, {
-    ctx,
-    url,
-    limit,
-    ...(state !== undefined ? { state } : {}),
-    ...(logger !== undefined ? { logger } : {}),
-  });
+  const meta: HookPoints["map.filter"]["info"] = { ctx, url, limit };
+  if (state !== undefined) {
+    meta.state = state;
+  }
+  if (logger !== undefined) {
+    meta.logger = logger;
+  }
+  return await hooks.transform("map.filter", mapResults, meta);
 }
 
 /**
@@ -143,7 +156,7 @@ export async function applyMapFilterHook(
  * hooks post-scope and post-limit.
  */
 export async function applyMapCollectHook(
-  mapResults: MapDocument[],
+  mapResults: Array<MapDocument>,
   {
     ctx,
     url,
@@ -172,10 +185,10 @@ export async function applyMapCollectHook(
     useIndex?: boolean;
     maxSearchResults?: number;
     abort?: AbortSignal;
-    state?: Record<string, unknown>;
+    state?: MapState;
     logger?: Logger;
   },
-): Promise<MapDocument[]> {
+): Promise<Array<MapDocument>> {
   const hooks = installedService()?.hooks;
   const skipDiscovery = state?.skipDiscovery === true;
   const runCollect = Boolean(hooks?.has("map.collect")) && !skipDiscovery;
@@ -184,29 +197,54 @@ export async function applyMapCollectHook(
   }
 
   let candidateDocs = mapResults;
-  if (runCollect) {
+  if (runCollect && hooks) {
     const deduped = dedupeMapDocumentArray(mapResults);
     const currentUrls = deduped.map(doc => doc.url);
     const documents = new Map<string, MapDocument>();
     for (const doc of deduped) {
       documents.set(doc.url, doc);
     }
-    const collectedUrls = await hooks!.transform("map.collect", currentUrls, {
+    const collectMeta: HookPoints["map.collect"]["info"] = {
       ctx,
       url,
       limit,
-      ...(search !== undefined ? { search } : {}),
-      ...(includeSubdomains !== undefined ? { includeSubdomains } : {}),
-      ...(allowExternalLinks !== undefined ? { allowExternalLinks } : {}),
-      ...(ignoreCache !== undefined ? { ignoreCache } : {}),
-      ...(sitemap !== undefined ? { sitemap } : {}),
-      ...(useIndex !== undefined ? { useIndex } : {}),
-      ...(maxSearchResults !== undefined ? { maxSearchResults } : {}),
-      ...(abort !== undefined ? { abort } : {}),
       documents,
-      ...(state !== undefined ? { state } : {}),
-      ...(logger !== undefined ? { logger } : {}),
-    });
+    };
+    if (search !== undefined) {
+      collectMeta.search = search;
+    }
+    if (includeSubdomains !== undefined) {
+      collectMeta.includeSubdomains = includeSubdomains;
+    }
+    if (allowExternalLinks !== undefined) {
+      collectMeta.allowExternalLinks = allowExternalLinks;
+    }
+    if (ignoreCache !== undefined) {
+      collectMeta.ignoreCache = ignoreCache;
+    }
+    if (sitemap !== undefined) {
+      collectMeta.sitemap = sitemap;
+    }
+    if (useIndex !== undefined) {
+      collectMeta.useIndex = useIndex;
+    }
+    if (maxSearchResults !== undefined) {
+      collectMeta.maxSearchResults = maxSearchResults;
+    }
+    if (abort !== undefined) {
+      collectMeta.abort = abort;
+    }
+    if (state !== undefined) {
+      collectMeta.state = state;
+    }
+    if (logger !== undefined) {
+      collectMeta.logger = logger;
+    }
+    const collectedUrls = await hooks.transform(
+      "map.collect",
+      currentUrls,
+      collectMeta,
+    );
     candidateDocs = collectedUrls.map(collectedUrl => {
       const existing = documents.get(collectedUrl);
       if (existing) {
@@ -274,7 +312,7 @@ export async function getMapResults({
   search?: string;
   limit?: number;
   includeSubdomains?: boolean;
-  crawlerOptions?: any;
+  crawlerOptions?: StoredCrawlerOptions;
   teamId: string;
   orgId?: string | null;
   origin?: string;
@@ -311,10 +349,9 @@ export async function getMapResults({
   }
 
   const id = providedId ?? uuidv7();
-  let mapResults: MapDocument[] = [];
+  let mapResults: Array<MapDocument> = [];
   const zeroDataRetention =
     ctx?.zeroDataRetention === true || requestZeroDataRetention || indexOnly;
-  const searchZeroDataRetention = zeroDataRetention;
 
   const mapCtx: RequestContext = ctx
     ? { ...ctx, zeroDataRetention }
@@ -325,18 +362,23 @@ export async function getMapResults({
         orgId: orgId ?? null,
       });
 
+  const rawScrapeOptions: MapScrapeOptionsInput = {};
+  if (location) {
+    rawScrapeOptions.location = location;
+  }
+  if (headers) {
+    rawScrapeOptions.headers = headers;
+  }
+
   const sc: StoredCrawl = {
     ctx: mapCtx,
     originUrl: url,
     crawlerOptions: {
       ...crawlerOptions,
-      limit: crawlerOptions.sitemapOnly ? 10000000 : limit,
+      limit: crawlerOptions.sitemapOnly ? 10_000_000 : limit,
       scrapeOptions: undefined,
     },
-    scrapeOptions: scrapeOptions.parse({
-      ...(location ? { location } : {}),
-      ...(headers ? { headers } : {}),
-    }),
+    scrapeOptions: scrapeOptions.parse(rawScrapeOptions),
     internalOptions: { ctx: mapCtx, teamId, orgId: orgId ?? null },
     team_id: teamId,
     createdAt: Date.now(),
@@ -348,7 +390,7 @@ export async function getMapResults({
   try {
     sc.robots = await crawler.getRobotsTxt(false, abort);
     crawler.importRobotsTxt(sc.robots);
-  } catch (_) {
+  } catch {
     // Robots.txt fetch failed, continue without it
   }
 
@@ -364,25 +406,25 @@ export async function getMapResults({
       },
       true,
       true,
-      crawlerOptions.timeout ?? 30000,
+      crawlerOptions.timeout ?? 30_000,
       abort,
       crawlerOptions.useMock,
       ignoreCache ? 0 : undefined,
     );
 
     if (sitemap > 0) {
-      mapResults = mapResults
-        .map(x => {
-          try {
-            return {
-              ...x,
-              url: checkAndUpdateURLForMap(x.url).url.trim(),
-            };
-          } catch (_) {
-            return null;
-          }
-        })
-        .filter(x => x !== null) as MapDocument[];
+      const normalizedResults: Array<MapDocument> = [];
+      for (const x of mapResults) {
+        try {
+          normalizedResults.push({
+            ...x,
+            url: checkAndUpdateURLForMap(x.url).url.trim(),
+          });
+        } catch {
+          // Drop malformed URLs.
+        }
+      }
+      mapResults = normalizedResults;
     }
   } else if (crawlerOptions.sitemap === "include" && !indexOnly) {
     try {
@@ -396,12 +438,12 @@ export async function getMapResults({
         },
         true,
         false,
-        crawlerOptions.timeout ?? 30000,
+        crawlerOptions.timeout ?? 30_000,
         abort,
         undefined,
         ignoreCache ? 0 : undefined,
       );
-    } catch (e) {
+    } catch {
       // Silently handle sitemap errors
     }
   }
@@ -414,7 +456,7 @@ export async function getMapResults({
   };
   mapResults = applyMapScope(mapResults, url, scope);
 
-  const mapState: Record<string, unknown> = {};
+  const mapState: MapState = {};
   const hooks = installedService()?.hooks;
   if (hooks?.has("map.collect")) {
     mapResults = await applyMapCollectHook(mapResults, {
@@ -486,7 +528,7 @@ export async function buildPromptWithWebsiteStructure({
   maxFireEngineResults?: number;
   zeroDataRetention?: boolean;
   ctx?: RequestContext;
-}): Promise<{ prompt: string; websiteUrls: string[] }> {
+}): Promise<{ prompt: string; websiteUrls: Array<string> }> {
   try {
     logger.debug("Getting website structure for prompt enhancement");
     const mapResult = await getMapResults({
@@ -517,9 +559,16 @@ export async function buildPromptWithWebsiteStructure({
     )} URLs):\n${websiteUrls.slice(0, 120).join("\n")}\n\nBased on this structure and the user's request, generate appropriate crawler options.`;
 
     return { prompt, websiteUrls };
-  } catch (e) {
+  } catch (error: unknown) {
+    const parsedError = errorWithMessageSchema.safeParse(error);
+    const message =
+      error instanceof Error
+        ? error.message
+        : parsedError.success
+          ? (parsedError.data.message ?? error)
+          : error;
     logger.warn("Failed to get website structure for prompt enhancement", {
-      error: (e as any)?.message ?? e,
+      error: message,
     });
     return { prompt: basePrompt, websiteUrls: [] };
   }

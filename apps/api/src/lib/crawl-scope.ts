@@ -1,4 +1,4 @@
-// Keep in sync with crawl_scope() in apps/api/native/src/crawler.rs.
+// Keep in sync with firecrawl_core::crawler::crawl_scope().
 
 interface CrawlScope {
   /** Directory every crawled path must sit under. Always ends with "/". */

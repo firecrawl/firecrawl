@@ -11,35 +11,67 @@ import {
   scrapeRequestSchema,
   searchRequestSchema,
 } from "../controllers/v2/types";
+import { jsonRecordSchema } from "../lib/json-types";
+import type { JsonObject } from "../lib/json-types";
 import {
   buildRequestSchemaRegistry,
   buildRequestSchemas,
   hasFormatOfType,
   requestFieldBuckets,
   requestKinds,
-  type RequestContributions,
-  type RequestSchemaBuilder,
-  type RequestSchemas,
-  type ResolvedRequestContributions,
-  type ScrapeOptionsRule,
+} from "./request";
+import type {
+  RequestBodies,
+  RequestContributions,
+  RequestSchemaBuilder,
+  RequestSchemas,
+  ResolvedRequestContributions,
+  ScrapeOptions,
+  ScrapeOptionsRule,
 } from "./request";
 
-const stubSchemas = (): RequestSchemas =>
-  ({
-    scrape: z.object({ kind: z.literal("scrape") }),
-    parse: z.object({ kind: z.literal("parse") }),
-    crawl: z.object({ kind: z.literal("crawl") }),
-    batchScrape: z.object({ kind: z.literal("batchScrape") }),
-    batchScrapeNoURLValidation: z.object({
-      kind: z.literal("batchScrapeNoURLValidation"),
-    }),
-    map: z.object({ kind: z.literal("map") }),
-    search: z.object({ kind: z.literal("search") }),
-    scrapeOptions: z.object({ kind: z.literal("scrapeOptions") }),
-  }) as unknown as RequestSchemas;
+type TestZodMap = Record<string, z.ZodType | undefined>;
 
-const asRequest = (value: Record<string, unknown>): RequestContributions =>
-  value as unknown as RequestContributions;
+interface TestRequestContributions {
+  readonly scrapeOptions?: TestZodMap;
+  readonly scrape?: TestZodMap;
+  readonly parse?: TestZodMap;
+  readonly crawl?: TestZodMap;
+  readonly batchScrape?: TestZodMap;
+  readonly map?: TestZodMap;
+  readonly search?: TestZodMap;
+  readonly formats?: TestZodMap;
+  readonly rules?: ReadonlyArray<ScrapeOptionsRule>;
+}
+
+const stubSchemas = (): RequestSchemas => ({
+  scrape: z.custom<RequestBodies["scrape"]>(() => true),
+  parse: z.custom<RequestBodies["parse"]>(() => true),
+  crawl: z.custom<RequestBodies["crawl"]>(() => true),
+  batchScrape: z.custom<RequestBodies["batchScrape"]>(() => true),
+  batchScrapeNoURLValidation: z.custom<RequestBodies["batchScrape"]>(
+    () => true,
+  ),
+  map: z.custom<RequestBodies["map"]>(() => true),
+  search: z.custom<RequestBodies["search"]>(() => true),
+  scrapeOptions: z.custom<ScrapeOptions>(() => true),
+});
+
+const asRequest = (value: TestRequestContributions): RequestContributions =>
+  value;
+
+const testRule1: ScrapeOptionsRule = () => undefined;
+const testRule2: ScrapeOptionsRule = () => ({ set: { waitFor: 1000 } });
+const testRule3: ScrapeOptionsRule = () => undefined;
+
+function expectObject(value: unknown): JsonObject {
+  const parsed = jsonRecordSchema.safeParse(value);
+  expect(parsed.success).toBe(true);
+  if (!parsed.success) {
+    throw new Error("Expected parsed value to be an object");
+  }
+  return parsed.data;
+}
 
 describe("request-schemas", () => {
   it("exports frozen requestKinds and requestFieldBuckets", () => {
@@ -124,9 +156,6 @@ describe("request-schemas", () => {
       const customFormatB = z.strictObject({
         type: z.literal("customB"),
       });
-      const rule1: ScrapeOptionsRule = () => undefined;
-      const rule2: ScrapeOptionsRule = () => ({ set: { waitFor: 1000 } });
-      const rule3: ScrapeOptionsRule = () => undefined;
 
       let captured: ResolvedRequestContributions | undefined;
       const builder: RequestSchemaBuilder = contributions => {
@@ -154,7 +183,7 @@ describe("request-schemas", () => {
                 customB: customFormatB,
                 skipped: undefined,
               },
-              rules: [rule1, rule2],
+              rules: [testRule1, testRule2],
             }),
           },
           {
@@ -162,7 +191,7 @@ describe("request-schemas", () => {
             request: asRequest({
               scrapeOptions: { alphaTag: extraTagSchema },
               formats: { customA: customFormatA },
-              rules: [rule3],
+              rules: [testRule3],
             }),
           },
         ],
@@ -204,7 +233,7 @@ describe("request-schemas", () => {
       expect(captured!.scrapeOptions.alphaTag).toBe(extraTagSchema);
       expect(captured!.formats.customA).toBe(customFormatA);
       expect(captured!.formats.customB).toBe(customFormatB);
-      expect(captured!.rules).toEqual([rule1, rule2, rule3]);
+      expect(captured!.rules).toEqual([testRule1, testRule2, testRule3]);
       expect(Object.isFrozen(captured)).toBe(true);
       expect(Object.isFrozen(captured!.scrapeOptions)).toBe(true);
       expect(Object.isFrozen(captured!.formats)).toBe(true);
@@ -328,13 +357,13 @@ describe("request-schemas", () => {
     });
 
     it("snapshots contributions at build time so later caller mutations have no effect", () => {
-      const scrapeOptionsMap: Record<string, z.ZodType> = {
-        tag: z.string().optional(),
-      };
-      const formatMap: Record<string, z.ZodType> = {
-        custom: z.strictObject({ type: z.literal("custom") }),
-      };
-      const ruleList: ScrapeOptionsRule[] = [() => undefined];
+      const scrapeOptionsMap = Object.fromEntries<z.ZodType>([
+        ["tag", z.string().optional()],
+      ]);
+      const formatMap = Object.fromEntries<z.ZodType>([
+        ["custom", z.strictObject({ type: z.literal("custom") })],
+      ]);
+      const ruleList: Array<ScrapeOptionsRule> = [() => undefined];
       const request = {
         scrapeOptions: scrapeOptionsMap,
         formats: formatMap,
@@ -368,7 +397,8 @@ describe("request-schemas", () => {
       expect(() =>
         buildRequestSchemaRegistry(
           [],
-          "not-a-fn" as unknown as RequestSchemaBuilder,
+          // @ts-expect-error: verifying runtime rejection of non-function builder
+          "not-a-fn",
         ),
       ).toThrow("Request schema builder must be a function");
 
@@ -376,7 +406,8 @@ describe("request-schemas", () => {
         buildRequestSchemaRegistry([
           {
             owner: "bad",
-            request: null as unknown as RequestContributions,
+            // @ts-expect-error: verifying runtime rejection of null contributions
+            request: null,
           },
         ]),
       ).toThrow('Request contributions from "bad" must be a plain object');
@@ -385,7 +416,7 @@ describe("request-schemas", () => {
         buildRequestSchemaRegistry([
           {
             owner: "bad",
-            request: [] as unknown as RequestContributions,
+            request: [],
           },
         ]),
       ).toThrow('Request contributions from "bad" must be a plain object');
@@ -394,7 +425,8 @@ describe("request-schemas", () => {
         buildRequestSchemaRegistry([
           {
             owner: "bad",
-            request: asRequest({ unknownBucket: {} }),
+            // @ts-expect-error: verifying runtime rejection of unknown contribution bucket
+            request: { unknownBucket: {} },
           },
         ]),
       ).toThrow('Unknown request contribution key "unknownBucket" from "bad"');
@@ -403,7 +435,7 @@ describe("request-schemas", () => {
         buildRequestSchemaRegistry([
           {
             owner: "bad",
-            request: asRequest({ scrapeOptions: "nope" }),
+            request: { scrapeOptions: "nope" },
           },
         ]),
       ).toThrow(
@@ -477,6 +509,7 @@ describe("request-schemas", () => {
             owner: "bad",
             request: asRequest({
               scrapeOptions: {
+                // @ts-expect-error: verifying runtime rejection of non-Zod field schema
                 badField: { safeParse: "not-a-function" },
               },
             }),
@@ -490,7 +523,8 @@ describe("request-schemas", () => {
         buildRequestSchemaRegistry([
           {
             owner: "bad",
-            request: asRequest({ rules: "not-an-array" }),
+            // @ts-expect-error: verifying runtime rejection of non-array rules
+            request: { rules: "not-an-array" },
           },
         ]),
       ).toThrow('Request "rules" from "bad" must be an array');
@@ -508,15 +542,20 @@ describe("request-schemas", () => {
 
       const badBuilderNull = buildRequestSchemaRegistry(
         [],
-        (() => null) as unknown as RequestSchemaBuilder,
+        // @ts-expect-error: verifying runtime rejection of builder returning null
+        () => null,
       );
       expect(() => badBuilderNull.schemas.scrape).toThrow(
         "Request schema builder must return a schemas object",
       );
 
-      const badBuilderMissingKind = buildRequestSchemaRegistry([], (() => ({
-        scrape: z.object({}),
-      })) as unknown as RequestSchemaBuilder);
+      const badBuilderMissingKind = buildRequestSchemaRegistry(
+        [],
+        // @ts-expect-error: verifying runtime rejection of builder omitting required schemas
+        () => ({
+          scrape: z.object({}),
+        }),
+      );
       expect(() => badBuilderMissingKind.schemas.scrape).toThrow(
         'Request schema builder returned an invalid "parse" schema',
       );
@@ -557,14 +596,16 @@ describe("request-schemas", () => {
         depth: z.number().int().min(1).default(1),
       });
 
-      const observedKinds: string[] = [];
-      const rules: ScrapeOptionsRule[] = [
+      const observedKinds: Array<string> = [];
+      const rules: Array<ScrapeOptionsRule> = [
         (options, { kind }) => {
           observedKinds.push(kind);
           const hasCustom = options.formats.some(
             f => (f as { type: string }).type === "customMetric",
           );
-          if (!hasCustom) return;
+          if (!hasCustom) {
+            return;
+          }
           if (kind === "parse") {
             return {
               error: "Parse uploads do not support customMetric.",
@@ -579,7 +620,7 @@ describe("request-schemas", () => {
           return {
             set: {
               waitFor: Math.max(options.waitFor, 5000),
-              timeout: options.timeout === 30000 ? 60000 : options.timeout,
+              timeout: options.timeout === 30_000 ? 60_000 : options.timeout,
             },
           };
         },
@@ -630,13 +671,13 @@ describe("request-schemas", () => {
       const scrapeOk = schemas.scrape.safeParse({
         url: "https://example.com",
         formats: ["markdown", "customMetric"],
-        timeout: 30000,
+        timeout: 30_000,
         proxy: "basic",
         scrapeOnlyFlag: true,
       });
       expect(scrapeOk.success).toBe(true);
       if (scrapeOk.success) {
-        const data = scrapeOk.data as unknown as Record<string, unknown>;
+        const data = expectObject(scrapeOk.data);
         expect(data.customTraceId).toBe("default-trace");
         expect(data.scrapeOnlyFlag).toBe(true);
         expect(data.formats).toEqual([
@@ -644,7 +685,7 @@ describe("request-schemas", () => {
           { type: "customMetric", depth: 1 },
         ]);
         expect(data.waitFor).toBe(5000);
-        expect(data.timeout).toBe(60000);
+        expect(data.timeout).toBe(60_000);
         expect(data.onlyMainContent).toBe(false);
       }
 
@@ -678,7 +719,13 @@ describe("request-schemas", () => {
       });
       expect(parseOk.success).toBe(true);
       if (parseOk.success) {
-        const data = parseOk.data as unknown as Record<string, unknown>;
+        const data = z
+          .object({
+            parseOnlyTag: z.string(),
+            customTraceId: z.string(),
+            file: z.unknown(),
+          })
+          .parse(parseOk.data);
         expect(data.parseOnlyTag).toBe("p1");
         expect(data.customTraceId).toBe("trace-parse");
         expect(data.file).toBe(uploadFile);
@@ -703,11 +750,11 @@ describe("request-schemas", () => {
       });
       expect(crawlDefault.success).toBe(true);
       if (crawlDefault.success) {
-        const data = crawlDefault.data as unknown as Record<string, unknown>;
+        const data = expectObject(crawlDefault.data);
         expect(data.crawlOnlyTag).toBe("c1");
-        expect(
-          (data.scrapeOptions as Record<string, unknown>).customTraceId,
-        ).toBe("default-trace");
+        expect(expectObject(data.scrapeOptions).customTraceId).toBe(
+          "default-trace",
+        );
       }
 
       const crawlRefused = schemas.crawl.safeParse({
@@ -731,9 +778,7 @@ describe("request-schemas", () => {
       });
       expect(mapOk.success).toBe(true);
       if (mapOk.success) {
-        expect(
-          (mapOk.data as unknown as Record<string, unknown>).mapOnlyTag,
-        ).toBe("m1");
+        expect(expectObject(mapOk.data).mapOnlyTag).toBe("m1");
       }
       expect(
         schemas.map.safeParse({
@@ -751,29 +796,23 @@ describe("request-schemas", () => {
       expect(searchNoScrape.success).toBe(true);
       expect(observedKinds.length).toBe(kindsBeforeSearchNoScrape);
       if (searchNoScrape.success) {
-        expect(
-          (searchNoScrape.data as unknown as Record<string, unknown>)
-            .searchOnlyTag,
-        ).toBe("s1");
+        expect(expectObject(searchNoScrape.data).searchOnlyTag).toBe("s1");
       }
 
       const searchWithScrape = schemas.search.safeParse({
         query: "firecrawl",
         scrapeOptions: {
           formats: ["markdown", "customMetric"],
-          timeout: 30000,
+          timeout: 30_000,
           proxy: "basic",
         },
       });
       expect(searchWithScrape.success).toBe(true);
       if (searchWithScrape.success) {
-        const opts = searchWithScrape.data.scrapeOptions as unknown as Record<
-          string,
-          unknown
-        >;
+        const opts = expectObject(searchWithScrape.data.scrapeOptions);
         expect(opts.customTraceId).toBe("default-trace");
         expect(opts.waitFor).toBe(5000);
-        expect(opts.timeout).toBe(60000);
+        expect(opts.timeout).toBe(60_000);
         expect(opts.onlyMainContent).toBe(false);
       }
 
@@ -786,17 +825,17 @@ describe("request-schemas", () => {
       const batchOk = schemas.batchScrape.safeParse({
         urls: ["https://example.com"],
         formats: ["markdown", "customMetric"],
-        timeout: 30000,
+        timeout: 30_000,
         proxy: "basic",
         batchOnlyTag: "b1",
       });
       expect(batchOk.success).toBe(true);
       if (batchOk.success) {
-        const data = batchOk.data as unknown as Record<string, unknown>;
+        const data = expectObject(batchOk.data);
         expect(data.batchOnlyTag).toBe("b1");
         expect(data.customTraceId).toBe("default-trace");
         expect(data.waitFor).toBe(5000);
-        expect(data.timeout).toBe(60000);
+        expect(data.timeout).toBe(60_000);
         expect(data.onlyMainContent).toBe(false);
       }
       expect(
@@ -814,7 +853,7 @@ describe("request-schemas", () => {
       });
       expect(batchNoUrlOk.success).toBe(true);
       if (batchNoUrlOk.success) {
-        const data = batchNoUrlOk.data as unknown as Record<string, unknown>;
+        const data = expectObject(batchNoUrlOk.data);
         expect(data.urls).toEqual(["https://example.com", "not a valid url"]);
         expect(data.batchOnlyTag).toBe("b2");
         expect(data.customTraceId).toBe("default-trace");
@@ -836,28 +875,28 @@ describe("request-schemas", () => {
       // Standalone scrapeOptions: applies contributed fields, formats, rules, and wait-time refine
       const optsOk = schemas.scrapeOptions.safeParse({
         formats: ["markdown", "customMetric"],
-        timeout: 30000,
+        timeout: 30_000,
         proxy: "basic",
       });
       expect(optsOk.success).toBe(true);
       if (optsOk.success) {
-        const data = optsOk.data as unknown as Record<string, unknown>;
+        const data = expectObject(optsOk.data);
         expect(data.customTraceId).toBe("default-trace");
         expect(data.waitFor).toBe(5000);
-        expect(data.timeout).toBe(60000);
+        expect(data.timeout).toBe(60_000);
         expect(data.onlyMainContent).toBe(false);
       }
 
       const optsWaitExceeded = schemas.scrapeOptions.safeParse({
-        waitFor: 30000,
-        actions: [{ type: "wait", milliseconds: 35000 }],
+        waitFor: 30_000,
+        actions: [{ type: "wait", milliseconds: 35_000 }],
       });
       expect(optsWaitExceeded.success).toBe(false);
     });
 
     it("rejects contributions that collide with built-in fields or formats", () => {
       const cases: Array<{
-        contribution: Record<string, unknown>;
+        contribution: TestRequestContributions;
         expected: string;
       }> = [
         {
@@ -973,19 +1012,23 @@ describe("request-schemas", () => {
         buildV2RequestSchemas,
       );
 
-      const scraped = schemas.scrape.parse({
-        url: "https://example.com",
-        proxy: "stealth",
-        parsers: [{ type: "pdf", mode: "ocr" }, "image"],
-      }) as unknown as Record<string, unknown>;
+      const scraped = expectObject(
+        schemas.scrape.parse({
+          url: "https://example.com",
+          proxy: "stealth",
+          parsers: [{ type: "pdf", mode: "ocr" }, "image"],
+        }),
+      );
       expect(scraped.proxy).toBe("stealth");
       expect(scraped.parsers).toEqual([{ type: "pdf", mode: "ocr" }, "image"]);
 
-      const searched = schemas.search.parse({
-        query: "hello",
-        sources: ["custom"],
-        categories: ["custom"],
-      }) as unknown as Record<string, unknown>;
+      const searched = expectObject(
+        schemas.search.parse({
+          query: "hello",
+          sources: ["custom"],
+          categories: ["custom"],
+        }),
+      );
       expect(searched.sources).toEqual([{ type: "custom" }]);
       expect(searched.categories).toEqual([{ type: "custom" }]);
     });

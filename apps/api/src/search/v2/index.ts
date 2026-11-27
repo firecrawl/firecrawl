@@ -1,12 +1,13 @@
-import { SearchV2Response, SearchResultType } from "../../lib/entities";
-import { Logger } from "winston";
+import type { SearchV2Response, SearchResultType } from "../../lib/entities";
+import type { Logger } from "winston";
 import { isTransportableError } from "../../lib/error";
 import {
   SearchProviderUnavailableError,
   UsOnlyUnavailableError,
 } from "../../scraper/scrapeURL/error";
 import type { TeamPlanClass } from "../../service/search-providers";
-import { service, type SearchQuery } from "../../service";
+import { service } from "../../service";
+import type { SearchQuery } from "../../service";
 import { searchWithProvider } from "../../lib/search-metrics";
 
 export async function search({
@@ -45,10 +46,10 @@ export async function search({
   proxy?: string;
   sleep_interval?: number;
   timeout?: number;
-  type?: SearchResultType | SearchResultType[];
-  enterprise?: ("default" | "anon" | "zdr")[];
-  includeDomains?: string[];
-  excludeDomains?: string[];
+  type?: SearchResultType | Array<SearchResultType>;
+  enterprise?: Array<"default" | "anon" | "zdr">;
+  includeDomains?: Array<string>;
+  excludeDomains?: Array<string>;
   usOnly?: boolean;
   /** The team's plan class, when the caller knows it. Omitted, nothing is stated. */
   teamPlanClass?: TeamPlanClass;
@@ -90,13 +91,13 @@ export async function search({
   try {
     for (const provider of providers) {
       const result = await searchWithProvider(provider, searchQuery);
-      if (result != null) {
+      if (result !== null) {
         return result;
       }
     }
 
     return {};
-  } catch (error) {
+  } catch (error: unknown) {
     logger.error(`Error in search function`, { error });
     if (isTransportableError(error)) throw error;
     throw new SearchProviderUnavailableError(undefined, { cause: error });

@@ -1,4 +1,5 @@
-import { diag, DiagLogLevel, type DiagLogger } from "@opentelemetry/api";
+import { diag, DiagLogLevel } from "@opentelemetry/api";
+import type { DiagLogger } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { config } from "./config";
 import { logger } from "./lib/logger";
@@ -61,6 +62,8 @@ export async function shutdownTracing(timeoutMs = 5000): Promise<void> {
   provider = undefined;
   await Promise.race([
     active.shutdown().catch(() => {}),
-    new Promise<void>(resolve => setTimeout(resolve, timeoutMs).unref()),
+    new Promise<void>(resolve => {
+      setTimeout(resolve, timeoutMs).unref();
+    }),
   ]);
 }

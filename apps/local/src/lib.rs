@@ -1,33 +1,38 @@
 //! Firecrawl Local: the local primitive behind `firecrawl scrape|crawl|map`.
 //!
-//! The HTML cleaning, link extraction, metadata and crawl-filter modules are
-//! compiled directly from `apps/api/native/src`, the same Rust the cloud API
-//! loads through N-API. One source of truth means a page cleaned locally and a
-//! page cleaned in the cloud go through identical code.
+//! The HTML cleaning, link extraction, metadata, crawl-filter, and document
+//! conversion modules come directly from `firecrawl-core` without Node bindings.
 //!
-//! A published crate carries a copy of those files in `src/native` (see
-//! `build.rs` and `scripts/vendor-native.sh`).
+//! A published crate carries a vendored copy of those modules in `src/native`
+//! (see `build.rs` and `scripts/vendor-native.sh`).
 
 #![allow(dead_code)]
 
-#[cfg_attr(not(vendored_native), path = "../../api/native/src/utils.rs")]
-#[cfg_attr(vendored_native, path = "native/utils.rs")]
-mod utils;
-#[cfg_attr(not(vendored_native), path = "../../api/native/src/xml.rs")]
-#[cfg_attr(vendored_native, path = "native/xml.rs")]
-mod xml;
+#[cfg(not(vendored_native))]
+pub use firecrawl_core::crawler;
+#[cfg(not(vendored_native))]
+pub use firecrawl_core::html;
+#[cfg(not(vendored_native))]
+pub use firecrawl_core::parsers::document;
 
-#[cfg_attr(not(vendored_native), path = "../../api/native/src/html.rs")]
-#[cfg_attr(vendored_native, path = "native/html.rs")]
-pub mod html;
+// Declared through a macro so `cargo fmt` does not try to load the gitignored
+// `src/native/*.rs` files when they are absent in normal repository checkouts.
+#[cfg(vendored_native)]
+macro_rules! declare_vendored_native {
+  () => {
+    #[path = "native/crawler.rs"]
+    pub mod crawler;
+    #[path = "native/document.rs"]
+    pub mod document;
+    #[path = "native/html.rs"]
+    pub mod html;
+    #[path = "native/xml.rs"]
+    mod xml;
+  };
+}
 
-#[cfg_attr(not(vendored_native), path = "../../api/native/src/crawler.rs")]
-#[cfg_attr(vendored_native, path = "native/crawler.rs")]
-pub mod crawler;
-
-#[cfg_attr(not(vendored_native), path = "../../api/native/src/document.rs")]
-#[cfg_attr(vendored_native, path = "native/document.rs")]
-pub mod document;
+#[cfg(vendored_native)]
+declare_vendored_native!();
 
 pub mod browser;
 pub mod cloud;

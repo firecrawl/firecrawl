@@ -8,16 +8,19 @@ import {
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import crypto from "node:crypto";
+import type { Identity } from "./lib";
 import request, {
   idmux,
-  Identity,
   parse,
   parseWithFailure,
   scrapeTimeout,
   TEST_API_URL,
 } from "./lib";
 import { HAS_JOB_LOG, jobLogRows, waitForJobLogRow } from "../job-log";
+import { z } from "zod";
 import { config } from "../../../config";
+import { jsonRecordSchema } from "../../../lib/json-types";
+import type { JsonObject } from "../../../lib/json-types";
 import { getRedisConnection } from "../../../services/queue-service";
 
 const DOCX_FIXTURE_BASE64 =
@@ -52,16 +55,35 @@ function getUnparsedUploadRefsKey(teamId: string) {
   return `parse-upload-refs:${teamId}`;
 }
 
+const mintedUploadRefSchema = z.object({
+  uploadRef: z.string(),
+  uploadUrl: z.string(),
+  method: z.string(),
+  headers: z.record(z.string(), z.string()).optional(),
+  fields: z.record(z.string(), z.string()).optional(),
+  maxSizeBytes: z.number(),
+});
+
+type MintedUploadRef = z.infer<typeof mintedUploadRefSchema>;
+
+const mintedUploadRefEnvelopeSchema = z.object({
+  data: mintedUploadRefSchema,
+});
+
+const errorCodeBodySchema = z.object({
+  code: z.string(),
+});
+
 function enableLocalUploadRefAdapter() {
-  (config as any).ENV = "test";
-  (config as any).PARSE_UPLOAD_STORAGE_DRIVER = "local";
+  config.ENV = "test";
+  config.PARSE_UPLOAD_STORAGE_DRIVER = "local";
 }
 
 async function mintUploadRef(
   owner: Identity,
   filename = "upload-ref.html",
   contentType = "text/html",
-) {
+): Promise<MintedUploadRef | null> {
   const init = await request(TEST_API_URL)
     .post("/v2/parse/upload-url")
     .set("Authorization", `Bearer ${owner.apiKey}`)
@@ -71,38 +93,37 @@ async function mintUploadRef(
       contentType,
     });
 
-  if (
-    init.statusCode === 503 &&
-    typeof init.body.code === "string" &&
-    init.body.code.startsWith("PARSE_UPLOAD_")
-  ) {
-    if (parseUploadRefTestRequired) {
-      expect(init.statusCode).toBe(200);
+  if (init.statusCode === 503) {
+    const parsedError = errorCodeBodySchema.safeParse(init.body);
+    if (
+      parsedError.success &&
+      parsedError.data.code.startsWith("PARSE_UPLOAD_")
+    ) {
+      if (parseUploadRefTestRequired) {
+        expect(init.statusCode).toBe(200);
+      }
+      console.warn(
+        `Skipping uploadRef storage-dependent test because ${TEST_API_URL} is not configured for parse upload refs: ${parsedError.data.code}`,
+      );
+      return null;
     }
-    console.warn(
-      `Skipping uploadRef storage-dependent test because ${TEST_API_URL} is not configured for parse upload refs: ${init.body.code}`,
-    );
-    return null;
   }
 
   expect(init.statusCode).toBe(200);
   expect(init.body.success).toBe(true);
   expect(init.body.data.uploadRef).toEqual(expect.any(String));
-  return init.body.data as {
-    uploadRef: string;
-    uploadUrl: string;
-    method: string;
-    headers?: Record<string, string>;
-    fields?: Record<string, string>;
-    maxSizeBytes: number;
-  };
+  const parsed = mintedUploadRefEnvelopeSchema.safeParse(init.body);
+  if (!parsed.success) {
+    throw new Error("Unexpected /v2/parse/upload-url response shape");
+  }
+  return parsed.data.data;
 }
 
 async function mintRequiredUploadRef(
   owner: Identity,
   filename = "upload-ref.html",
   contentType = "text/html",
-) {
+): Promise<MintedUploadRef> {
   const init = await request(TEST_API_URL)
     .post("/v2/parse/upload-url")
     .set("Authorization", `Bearer ${owner.apiKey}`)
@@ -115,14 +136,11 @@ async function mintRequiredUploadRef(
   expect(init.statusCode, JSON.stringify(init.body)).toBe(200);
   expect(init.body.success).toBe(true);
   expect(init.body.data.uploadRef).toEqual(expect.any(String));
-  return init.body.data as {
-    uploadRef: string;
-    uploadUrl: string;
-    method: string;
-    headers?: Record<string, string>;
-    fields?: Record<string, string>;
-    maxSizeBytes: number;
-  };
+  const parsed = mintedUploadRefEnvelopeSchema.safeParse(init.body);
+  if (!parsed.success) {
+    throw new Error("Unexpected /v2/parse/upload-url response shape");
+  }
+  return parsed.data.data;
 }
 
 async function uploadToMintedTarget(
@@ -159,7 +177,7 @@ function getLocalUploadRefSecret() {
   return config.PARSE_UPLOAD_REF_SECRET;
 }
 
-function resignUploadRefPayload(payload: Record<string, unknown>) {
+function resignUploadRefPayload(payload: JsonObject) {
   const encodedPayload = Buffer.from(JSON.stringify(payload)).toString(
     "base64url",
   );
@@ -171,14 +189,22 @@ function resignUploadRefPayload(payload: Record<string, unknown>) {
   return `${encodedPayload}.${signature}`;
 }
 
+function decodeUploadRefPayload(uploadRef: string): JsonObject {
+  const [encodedPayload] = uploadRef.split(".");
+  const parsed = jsonRecordSchema.safeParse(
+    JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")),
+  );
+  if (!parsed.success) {
+    throw new Error("Expected JSON object in uploadRef payload");
+  }
+  return parsed.data;
+}
+
 function withUploadRefPayload(
   uploadRef: string,
-  mutate: (payload: Record<string, any>) => void,
+  mutate: (payload: JsonObject) => void,
 ) {
-  const [encodedPayload] = uploadRef.split(".");
-  const payload = JSON.parse(
-    Buffer.from(encodedPayload, "base64url").toString("utf8"),
-  );
+  const payload = decodeUploadRefPayload(uploadRef);
   mutate(payload);
   return resignUploadRefPayload(payload);
 }
@@ -189,43 +215,41 @@ function tamperUploadRefSignature(uploadRef: string) {
   return `${encodedPayload}.${signature.slice(0, -1)}${replacement}`;
 }
 
-function decodeUploadRefPayload(uploadRef: string) {
-  const [encodedPayload] = uploadRef.split(".");
-  return JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8"));
-}
-
 async function waitForSingleRow<T>(
   fetcher: () => Promise<T | null>,
-  timeoutMs: number = 10000,
+  timeoutMs: number = 10_000,
   intervalMs: number = 250,
 ): Promise<T | null> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const row = await fetcher();
-    if (row) return row;
-    await new Promise(resolve => setTimeout(resolve, intervalMs));
+    if (row) {
+      return row;
+    }
+    await new Promise<void>(resolve => {
+      setTimeout(resolve, intervalMs);
+    });
   }
   return null;
 }
 
 afterEach(() => {
-  (config as any).PARSE_UPLOAD_STORAGE_DRIVER =
-    originalParseUploadStorageDriver;
-  (config as any).ENV = originalEnv;
+  config.PARSE_UPLOAD_STORAGE_DRIVER = originalParseUploadStorageDriver;
+  config.ENV = originalEnv;
 });
 
 beforeAll(async () => {
   identity = await idmux({
     name: "parse",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
 
   if (ALLOW_TEST_SUITE_WEBSITE) {
     const response = await fetch(`${TEST_SUITE_WEBSITE}/example.pdf`);
     pdfFixture = Buffer.from(await response.arrayBuffer());
   }
-}, 10000 + scrapeTimeout);
+}, 10_000 + scrapeTimeout);
 
 describe("/v2/parse", () => {
   it(
@@ -260,7 +284,9 @@ describe("/v2/parse", () => {
     "parses an upload-ref HTML file into markdown",
     async () => {
       const init = await mintUploadRef(identity);
-      if (!init) return;
+      if (!init) {
+        return;
+      }
 
       expect(init.maxSizeBytes).toBe(50 * 1024 * 1024);
 
@@ -313,7 +339,7 @@ describe("/v2/parse", () => {
       const capIdentity = await idmux({
         name: `parse-upload-ref-cap-${Date.now()}`,
         concurrency: 100,
-        credits: 1000000,
+        credits: 1_000_000,
       });
       const key = getUnparsedUploadRefsKey(capIdentity.teamId);
       await getRedisConnection().del(key);
@@ -449,14 +475,16 @@ describe("/v2/parse", () => {
     "rejects upload refs owned by another team",
     async () => {
       const init = await mintUploadRef(identity);
-      if (!init) return;
+      if (!init) {
+        return;
+      }
 
       const canUseRealSecondTeam = !!process.env.IDMUX_URL && !TEST_SELF_HOST;
       const otherIdentity = canUseRealSecondTeam
         ? await idmux({
             name: "parse-upload-ref-other-team",
             concurrency: 100,
-            credits: 1000000,
+            credits: 1_000_000,
           })
         : identity;
 
@@ -490,7 +518,9 @@ describe("/v2/parse", () => {
     "rejects tampered upload refs",
     async () => {
       const init = await mintUploadRef(identity);
-      if (!init) return;
+      if (!init) {
+        return;
+      }
 
       const failure = await request(TEST_API_URL)
         .post("/v2/parse")
@@ -512,7 +542,9 @@ describe("/v2/parse", () => {
     "rejects expired upload refs",
     async () => {
       const init = await mintUploadRef(identity);
-      if (!init) return;
+      if (!init) {
+        return;
+      }
 
       const payload = decodeUploadRefPayload(init.uploadRef);
       if (payload.driver !== "local" && !config.PARSE_UPLOAD_REF_SECRET) {
@@ -550,7 +582,9 @@ describe("/v2/parse", () => {
         "upload-ref.xhtml",
         "application/xhtml+xml",
       );
-      if (!init) return;
+      if (!init) {
+        return;
+      }
 
       expect(init.uploadRef).toEqual(expect.any(String));
     },
@@ -683,7 +717,9 @@ describe("/v2/parse", () => {
   it(
     "logs parse metadata into the parses table",
     async () => {
-      if (TEST_SELF_HOST || !HAS_JOB_LOG) return;
+      if (TEST_SELF_HOST || !HAS_JOB_LOG) {
+        return;
+      }
 
       const filename = `parse-log-${Date.now()}.html`;
       await parse(
@@ -740,7 +776,7 @@ describe("/v2/parse", () => {
           options: {
             formats: ["markdown"],
             actions: [{ type: "wait", milliseconds: 250 }],
-          } as any,
+          },
           file: {
             content: htmlFixture,
             filename: "upload.html",
@@ -763,7 +799,7 @@ describe("/v2/parse", () => {
         {
           options: {
             formats: ["markdown", { type: "changeTracking" }],
-          } as any,
+          },
           file: {
             content: htmlFixture,
             filename: "upload.html",
@@ -787,7 +823,7 @@ describe("/v2/parse", () => {
           options: {
             formats: ["markdown"],
             waitFor: 1000,
-          } as any,
+          },
           file: {
             content: htmlFixture,
             filename: "upload.html",
@@ -811,7 +847,7 @@ describe("/v2/parse", () => {
           options: {
             formats: ["markdown"],
             location: { country: "US" },
-          } as any,
+          },
           file: {
             content: htmlFixture,
             filename: "upload.html",
@@ -835,7 +871,7 @@ describe("/v2/parse", () => {
           options: {
             formats: ["markdown"],
             mobile: true,
-          } as any,
+          },
           file: {
             content: htmlFixture,
             filename: "upload.html",
@@ -859,7 +895,7 @@ describe("/v2/parse", () => {
           options: {
             formats: ["markdown"],
             proxy: "stealth",
-          } as any,
+          },
           file: {
             content: htmlFixture,
             filename: "upload.html",
@@ -882,7 +918,7 @@ describe("/v2/parse", () => {
         {
           options: {
             formats: ["markdown", { type: "screenshot" }],
-          } as any,
+          },
           file: {
             content: htmlFixture,
             filename: "upload.html",
@@ -905,7 +941,7 @@ describe("/v2/parse", () => {
         {
           options: {
             formats: ["markdown", { type: "branding" }],
-          } as any,
+          },
           file: {
             content: htmlFixture,
             filename: "upload.html",
@@ -942,7 +978,7 @@ describe("/v2/parse", () => {
                   },
                 },
               ],
-            } as any,
+            },
             file: {
               content: htmlFixture,
               filename: "upload.html",
@@ -965,7 +1001,7 @@ describe("/v2/parse", () => {
           {
             options: {
               formats: ["markdown", { type: "summary" }],
-            } as any,
+            },
             file: {
               content: htmlFixture,
               filename: "upload.html",

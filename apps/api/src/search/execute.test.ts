@@ -13,14 +13,18 @@ vi.mock("./scrape", () => ({
   mergeScrapedContent: vi.fn(),
 }));
 
+import { createLogger } from "winston";
+import type { CategoryOption } from "../lib/search-query-builder";
 import { executeSearch } from "./execute";
 
-const logger = {
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
-} as any;
+const logger = createLogger({ silent: true });
+
+const web = (url: string, title = "Result") => ({
+  url,
+  title,
+  description: "",
+});
+const news = (url: string, title: string) => ({ url, title, snippet: "" });
 
 const context = {
   teamId: "team-1",
@@ -33,14 +37,16 @@ const context = {
   apiVersion: "v2",
 };
 
-function options(categories: Array<{ type: string }>) {
+function options(
+  categories: Array<CategoryOption>,
+): Parameters<typeof executeSearch>[0] {
   return {
     query: "retries",
     limit: 10,
     sources: [{ type: "web" }],
     categories,
-    timeout: 1_000,
-  } as any;
+    timeout: 1000,
+  };
 }
 
 beforeEach(() => {
@@ -48,13 +54,6 @@ beforeEach(() => {
 });
 
 describe("executeSearch query operators", () => {
-  const web = (url: string, title = "Result") => ({
-    url,
-    title,
-    description: "",
-  });
-  const news = (url: string, title: string) => ({ url, title, snippet: "" });
-
   it("sends inurl: with site: as plain terms and enforces both on web results", async () => {
     mocks.search.mockResolvedValue({
       web: [

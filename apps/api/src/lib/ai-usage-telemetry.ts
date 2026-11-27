@@ -1,5 +1,7 @@
-import { trace, type Attributes, type Span } from "@opentelemetry/api";
-import { wrapLanguageModel, type LanguageModelMiddleware } from "ai";
+import { trace } from "@opentelemetry/api";
+import type { Attributes, Span } from "@opentelemetry/api";
+import { wrapLanguageModel } from "ai";
+import type { LanguageModelMiddleware } from "ai";
 import { xSearchUsageFromResponseBody } from "./xai-x-search";
 
 type ProviderModel = Parameters<typeof wrapLanguageModel>[0]["model"];
@@ -17,7 +19,7 @@ function activeDoGenerateSpan(): Span | undefined {
   if (!span?.isRecording()) {
     return undefined;
   }
-  const name = (span as { name?: unknown }).name;
+  const name = "name" in span ? span.name : undefined;
   return typeof name === "string" && DO_GENERATE_SPAN_NAME.test(name)
     ? span
     : undefined;

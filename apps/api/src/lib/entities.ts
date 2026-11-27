@@ -1,4 +1,5 @@
-import type { Action } from "../controllers/v2/types";
+import type { Action, Document as V2Document } from "../controllers/v2/types";
+import type { JsonObject, JsonValue, StrictJsonValue } from "./json-types";
 
 export type SkillCard = {
   id: string;
@@ -23,13 +24,13 @@ export type PageOptions = {
   headers?: Record<string, string>;
   replaceAllPathsWithAbsolutePaths?: boolean;
   parsePDF?: boolean;
-  removeTags?: string | string[];
-  onlyIncludeTags?: string | string[];
+  removeTags?: string | Array<string>;
+  onlyIncludeTags?: string | Array<string>;
   includeLinks?: boolean;
   useFastMode?: boolean; // beta
   disableJsDom?: boolean; // beta
   atsv?: boolean; // anti-bot solver, beta
-  actions?: Action[]; // beta
+  actions?: Array<Action>; // beta
   geolocation?: {
     country?: string;
   };
@@ -45,7 +46,7 @@ export type ExtractorOptions = {
     | "llm-extraction-from-markdown"
     | "llm-extraction-from-raw-html";
   extractionPrompt?: string;
-  extractionSchema?: Record<string, any>;
+  extractionSchema?: JsonObject;
   userPrompt?: string;
 };
 
@@ -65,29 +66,29 @@ export class Document {
   markdown?: string;
   html?: string;
   rawHtml?: string;
-  llm_extraction?: Record<string, any>;
+  llm_extraction?: StrictJsonValue;
   createdAt?: Date;
   updatedAt?: Date;
   type?: string;
   metadata: {
     sourceURL?: string;
-    [key: string]: any;
+    [key: string]: JsonValue | undefined;
   };
-  childrenLinks?: string[];
+  childrenLinks?: Array<string>;
   provider?: string;
   warning?: string;
   actions?: {
-    screenshots?: string[];
-    scrapes?: ScrapeActionContent[];
-    javascriptReturns?: {
+    screenshots?: Array<string>;
+    scrapes?: Array<ScrapeActionContent>;
+    javascriptReturns?: Array<{
       type: string;
       value: unknown;
-    }[];
-    pdfs?: string[];
+    }>;
+    pdfs?: Array<string>;
   };
 
   index?: number;
-  linksOnPage?: string[]; // Add this new field as a separate property
+  linksOnPage?: Array<string>; // Add this new field as a separate property
 
   constructor(data: Partial<Document>) {
     if (!data.content) {
@@ -144,9 +145,9 @@ interface NewsSearchResult {
   markdown?: string;
   html?: string;
   rawHtml?: string;
-  links?: string[];
+  links?: Array<string>;
   screenshot?: string;
-  metadata?: Record<string, any>;
+  metadata?: V2Document["metadata"];
   answer?: string;
   highlights?: string;
 }
@@ -161,9 +162,9 @@ export interface WebSearchResult {
   markdown?: string;
   html?: string;
   rawHtml?: string;
-  links?: string[];
+  links?: Array<string>;
   screenshot?: string;
-  metadata?: Record<string, any>;
+  metadata?: V2Document["metadata"];
   answer?: string;
   highlights?: string;
 }
@@ -171,11 +172,11 @@ export interface WebSearchResult {
 export type SearchResultType = "web" | "images" | "news";
 
 export interface SearchV2Response {
-  tools?: unknown[];
-  skills?: SkillCard[];
-  web?: WebSearchResult[];
-  images?: ImageSearchResult[];
-  news?: NewsSearchResult[];
+  tools?: Array<unknown>;
+  skills?: Array<SkillCard>;
+  web?: Array<WebSearchResult>;
+  images?: Array<ImageSearchResult>;
+  news?: Array<NewsSearchResult>;
 }
 
 /**
@@ -194,13 +195,18 @@ export type SearchResultCountsBySource = Record<SearchResultType, number> & {
 export function countSearchResultsBySource(
   response: SearchV2Response,
 ): SearchResultCountsBySource {
-  return {
+  const counts: SearchResultCountsBySource = {
     web: response.web?.length ?? 0,
     images: response.images?.length ?? 0,
     news: response.news?.length ?? 0,
-    ...(response.tools ? { tools: response.tools.length } : {}),
-    ...(response.skills ? { skills: response.skills.length } : {}),
   };
+  if (response.tools) {
+    counts.tools = response.tools.length;
+  }
+  if (response.skills) {
+    counts.skills = response.skills.length;
+  }
+  return counts;
 }
 
 /**
@@ -234,15 +240,18 @@ export function collectSearchResultCategories(
 
   for (const source of ["web", "images", "news"] as const) {
     const results = response[source];
-    if (!results?.length) continue;
+    if (!results?.length) {
+      continue;
+    }
 
     const categories: Record<string, string> = {};
-    results.forEach((result, index) => {
-      const category = (result as { category?: unknown }).category;
+    for (let index = 0; index < results.length; index++) {
+      const result = results[index];
+      const category = "category" in result ? result.category : undefined;
       if (typeof category === "string" && category.length > 0) {
         categories[String(index + 1)] = category;
       }
-    });
+    }
 
     if (Object.keys(categories).length > 0) {
       collected[source] = categories;

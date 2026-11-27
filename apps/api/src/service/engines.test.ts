@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  buildEngineRegistry,
-  type Engine,
-  type EngineFeatureMap,
-} from "./engines";
+import { buildEngineRegistry } from "./engines";
+import type { Engine, EngineFeatureMap } from "./engines";
 
 const makeEngine = (
   name: string,
@@ -20,18 +17,19 @@ const makeEngine = (
     prefetchesFiles?: boolean;
     allowEmptyContent?: boolean;
   } = {},
-): Engine =>
-  ({
-    name,
-    quality: 10,
-    features: {},
-    enabled: () => true,
-    scrape: vi.fn(),
-    ...overrides,
-  }) as unknown as Engine;
+): Engine => ({
+  // @ts-expect-error: test engine names exercise open declaration-merged EngineName
+  name,
+  quality: 10,
+  features: {},
+  enabled: () => true,
+  scrape: vi.fn<Engine["scrape"]>(),
+  ...overrides,
+});
 
-const makeFeatures = (listed: Record<string, { priority: number }>) =>
-  listed as unknown as EngineFeatureMap;
+const makeFeatures = (
+  listed: Record<string, { priority: number }>,
+): EngineFeatureMap => listed;
 
 describe("buildEngineRegistry", () => {
   it("collects engines and features in registration order and returns frozen snapshots", () => {
@@ -166,7 +164,7 @@ describe("buildEngineRegistry", () => {
   });
 
   it("snapshots caller inputs so later mutations cannot alter the registry", () => {
-    const features: Record<string, boolean> = { waitFor: true };
+    const features = Object.fromEntries<boolean>([["waitFor", true]]);
     const input = makeEngine("snap", { quality: 10, features });
     const engines = [input];
     const featureEntry = { priority: 10 };
@@ -223,13 +221,16 @@ describe("buildEngineRegistry", () => {
   });
 
   it("rejects malformed engines and invalid feature priority", () => {
-    for (const badName of ["", 123 as unknown as string]) {
-      expect(() =>
-        buildEngineRegistry([
-          { owner: "core", engines: [makeEngine(badName)] },
-        ]),
-      ).toThrow("Engine name must be a non-empty string");
-    }
+    expect(() =>
+      buildEngineRegistry([{ owner: "core", engines: [makeEngine("")] }]),
+    ).toThrow("Engine name must be a non-empty string");
+
+    expect(() =>
+      buildEngineRegistry([
+        // @ts-expect-error: verifying runtime rejection of non-string engine name
+        { owner: "core", engines: [makeEngine(123)] },
+      ]),
+    ).toThrow("Engine name must be a non-empty string");
 
     expect(() =>
       buildEngineRegistry([
@@ -237,7 +238,8 @@ describe("buildEngineRegistry", () => {
           owner: "core",
           engines: [
             makeEngine("bad-enabled", {
-              enabled: true as unknown as () => boolean,
+              // @ts-expect-error: verifying runtime rejection of non-function enabled
+              enabled: true,
             }),
           ],
         },
@@ -250,7 +252,8 @@ describe("buildEngineRegistry", () => {
           owner: "core",
           engines: [
             makeEngine("bad-scrape", {
-              scrape: null as unknown as Engine["scrape"],
+              // @ts-expect-error: verifying runtime rejection of null scrape
+              scrape: null,
             }),
           ],
         },
@@ -263,8 +266,8 @@ describe("buildEngineRegistry", () => {
           owner: "core",
           engines: [
             makeEngine("bad-mrt", {
-              maxReasonableTime:
-                30000 as unknown as Engine["maxReasonableTime"],
+              // @ts-expect-error: verifying runtime rejection of non-function maxReasonableTime
+              maxReasonableTime: 30_000,
             }),
           ],
         },

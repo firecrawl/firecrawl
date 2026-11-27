@@ -1,4 +1,13 @@
+import express from "express";
+import type { Response } from "express";
+import request from "supertest";
 import { vi } from "vitest";
+import { createLogger } from "winston";
+import type {
+  generateObject as generateObjectFn,
+  generateText as generateTextFn,
+} from "ai";
+import type { getModel as getModelFn } from "../../../lib/generic-ai";
 
 const mocks = vi.hoisted(() => ({
   buildPromptWithWebsiteStructure: vi.fn(),
@@ -8,7 +17,10 @@ const mocks = vi.hoisted(() => ({
 // Call through to the real AI SDK so its telemetry spans are produced, while
 // still letting the tests read the options each call was made with.
 vi.mock("ai", async importOriginal => {
-  const actual = await importOriginal<typeof import("ai")>();
+  const actual = await importOriginal<{
+    generateObject: typeof generateObjectFn;
+    generateText: typeof generateTextFn;
+  }>();
   return {
     ...actual,
     generateObject: vi.fn(actual.generateObject),
@@ -17,7 +29,7 @@ vi.mock("ai", async importOriginal => {
 });
 
 vi.mock("../../../lib/generic-ai", async importOriginal => ({
-  ...(await importOriginal<typeof import("../../../lib/generic-ai")>()),
+  ...(await importOriginal<{ getModel: typeof getModelFn }>()),
   getModel: mocks.getModel,
 }));
 
@@ -54,13 +66,11 @@ vi.mock("../../../lib/logger", () => ({
 }));
 
 import { context, propagation, trace } from "@opentelemetry/api";
-import {
-  InMemorySpanExporter,
-  type NodeTracerProvider,
-} from "@opentelemetry/sdk-trace-node";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-node";
+import type { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { generateObject } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
-import type { Mock } from "vitest";
+import type { JsonObject } from "../../../lib/json-types";
 import {
   createTracerProvider,
   withSpan,
@@ -68,20 +78,17 @@ import {
 } from "../../../lib/otel-tracer";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { generateCompletions } from "../../../scraper/scrapeURL/transformers/llmExtract";
+import type { RequestContext } from "../../../service/request-context";
 import { createService, replaceService } from "../../../service/service";
+import type { ResponsePayload } from "../../../service/hooks";
 import { crawlController } from "../crawl";
 import { crawlParamsPreviewController } from "../crawl-params-preview";
+import type { AuthCreditUsageChunk, CrawlResponse, TeamFlags } from "../types";
 
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 const PROMPT = "only crawl the pricing pages of this site";
 
-const noopLogger = {
-  warn: () => {},
-  info: () => {},
-  error: () => {},
-  debug: () => {},
-  child: () => noopLogger,
-} as any;
+const noopLogger = createLogger({ silent: true });
 
 function mockModel() {
   return new MockLanguageModelV3({
@@ -103,34 +110,80 @@ function mockModel() {
   });
 }
 
-function makeReq(
-  body: Record<string, unknown>,
-  flags: Record<string, unknown>,
-  ctx?: Record<string, unknown>,
-) {
+function makeAcuc(flags: TeamFlags): AuthCreditUsageChunk {
   return {
-    body,
-    auth: { team_id: TEAM_ID },
-    acuc: { api_key_id: 7, org_id: null, flags },
-    ...(ctx ? { ctx } : {}),
-    headers: {},
-    protocol: "http",
-    host: "localhost",
-    get: () => undefined,
-  } as any;
+    api_key: "test-key",
+    api_key_id: 7,
+    team_id: TEAM_ID,
+    org_id: "",
+    flags,
+    concurrency_limit: 10,
+    rate_limit_multiplier: 1,
+    is_paid_plan: false,
+  };
 }
 
-function makeRes() {
-  const res: any = { status: vi.fn(), json: vi.fn() };
-  res.status.mockReturnValue(res);
-  res.json.mockReturnValue(res);
-  return res;
+async function postCrawl(
+  body: JsonObject,
+  flags: TeamFlags,
+  ctx?: RequestContext,
+): Promise<{
+  status: number;
+  body: CrawlResponse | ResponsePayload | undefined;
+}> {
+  let captured: CrawlResponse | ResponsePayload | undefined;
+  const app = express();
+  app.use(express.json());
+  app.post(
+    "/v2/crawl",
+    async (req, res: Response<CrawlResponse | ResponsePayload>) => {
+      const originalJson = res.json.bind(res);
+      res.json = (payload: CrawlResponse | ResponsePayload) => {
+        captured = payload;
+        originalJson(payload);
+        return res;
+      };
+      const authedReq = Object.assign(req, {
+        auth: { team_id: TEAM_ID },
+        acuc: makeAcuc(flags),
+        ctx,
+      });
+      await crawlController(authedReq, res);
+    },
+  );
+  const response = await request(app)
+    .post("/v2/crawl")
+    .set("Host", "localhost")
+    .send(body);
+  return { status: response.status, body: captured };
+}
+
+async function postCrawlParamsPreview(
+  body: JsonObject,
+  flags: TeamFlags,
+  ctx?: RequestContext,
+): Promise<{ status: number }> {
+  const app = express();
+  app.use(express.json());
+  app.post("/v2/crawl/params-preview", async (req, res) => {
+    const authedReq = Object.assign(req, {
+      auth: { team_id: TEAM_ID },
+      acuc: makeAcuc(flags),
+      ctx,
+    });
+    await crawlParamsPreviewController(authedReq, res);
+  });
+  const response = await request(app)
+    .post("/v2/crawl/params-preview")
+    .set("Host", "localhost")
+    .send(body);
+  return { status: response.status };
 }
 
 function telemetryOfCalls() {
-  return (generateObject as Mock).mock.calls.map(
-    ([options]) => options.telemetry,
-  );
+  return vi
+    .mocked(generateObject)
+    .mock.calls.map(([options]) => options.telemetry);
 }
 
 describe("crawl prompt telemetry under zero data retention", () => {
@@ -158,7 +211,7 @@ describe("crawl prompt telemetry under zero data retention", () => {
 
   beforeEach(() => {
     exporter.reset();
-    (generateObject as Mock).mockClear();
+    vi.mocked(generateObject).mockClear();
     mocks.getModel.mockImplementation(() => mockModel());
     // Stands in for the site map lookup, which starts spans of its own.
     mocks.buildPromptWithWebsiteStructure.mockImplementation(
@@ -176,13 +229,12 @@ describe("crawl prompt telemetry under zero data retention", () => {
   }
 
   it("exports the prompt step of a regular crawl", async () => {
-    const res = makeRes();
-    await crawlController(
-      makeReq({ url: "https://example.com", prompt: PROMPT }, {}),
-      res,
+    const res = await postCrawl(
+      { url: "https://example.com", prompt: PROMPT },
+      {},
     );
 
-    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.status).toBe(200);
     expect(telemetryOfCalls()).toEqual([
       expect.objectContaining({ isEnabled: true }),
     ]);
@@ -195,7 +247,7 @@ describe("crawl prompt telemetry under zero data retention", () => {
     );
   });
 
-  it.each([
+  it.each<[string, JsonObject, TeamFlags, RequestContext | undefined]>([
     [
       "context-scoped",
       { url: "https://example.com", prompt: PROMPT },
@@ -211,11 +263,10 @@ describe("crawl prompt telemetry under zero data retention", () => {
   ])(
     "records nothing from the prompt step of a %s ZDR crawl",
     async (_scope, body, flags, ctx) => {
-      const res = makeRes();
-      await crawlController(makeReq(body, flags, ctx), res);
+      const res = await postCrawl(body, flags, ctx);
 
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith(
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(
         expect.objectContaining({
           promptGeneratedOptions: { includePaths: ["pricing/.*"] },
         }),
@@ -227,7 +278,7 @@ describe("crawl prompt telemetry under zero data retention", () => {
     },
   );
 
-  it.each([
+  it.each<[string, JsonObject, TeamFlags, RequestContext | undefined]>([
     [
       "context-scoped",
       { url: "https://example.com", prompt: PROMPT },
@@ -243,10 +294,9 @@ describe("crawl prompt telemetry under zero data retention", () => {
   ])(
     "records nothing from a %s ZDR params preview",
     async (_scope, body, flags, ctx) => {
-      const res = makeRes();
-      await crawlParamsPreviewController(makeReq(body, flags, ctx), res);
+      const res = await postCrawlParamsPreview(body, flags, ctx);
 
-      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.status).toBe(200);
       expect(telemetryOfCalls()).toEqual([
         expect.objectContaining({ isEnabled: false }),
       ]);
@@ -255,13 +305,12 @@ describe("crawl prompt telemetry under zero data retention", () => {
   );
 
   it("exports a params preview for a regular team", async () => {
-    const res = makeRes();
-    await crawlParamsPreviewController(
-      makeReq({ url: "https://example.com", prompt: PROMPT }, {}),
-      res,
+    const res = await postCrawlParamsPreview(
+      { url: "https://example.com", prompt: PROMPT },
+      {},
     );
 
-    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.status).toBe(200);
     const names = (await exportedSpans()).map(span => span.name);
     expect(names).toContain("ai.generateObject");
   });

@@ -102,9 +102,9 @@ const coreEngineSpecsList = [
     },
     method: "scrapeDocument",
   },
-] as const satisfies readonly CoreEngineSpec[];
+] as const satisfies ReadonlyArray<CoreEngineSpec>;
 
 export type CoreEngineName = (typeof coreEngineSpecsList)[number]["name"];
 
-export const coreEngineSpecs: readonly CoreEngineSpec<CoreEngineName>[] =
+export const coreEngineSpecs: ReadonlyArray<CoreEngineSpec<CoreEngineName>> =
   coreEngineSpecsList;
