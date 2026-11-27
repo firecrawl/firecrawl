@@ -1,0 +1,53 @@
+name: Bug report
+description: Report a reproducible bug in Firecrawl
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug description
+      description: Describe the bug clearly, including the impact and the behavior you observed.
+      placeholder: Tell us what went wrong and what you observed.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: List the smallest set of steps, code, or commands that reliably reproduces the bug.
+      placeholder: |
+        1. Configure ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: Describe what you expected to happen instead.
+      placeholder: Explain the correct or expected result.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the OS, deployment type, Firecrawl version, and relevant runtime or dependency versions.
+      placeholder: |
+        - OS: ...
+        - Deployment type: ...
+        - Firecrawl version: ...
+        - Node.js version: ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs-context
+    attributes:
+      label: Logs and additional context
+      description: Add relevant logs, screenshots, configuration details, or other context. Redact secrets.
+      render: shell
+    validations:
+      required: false
