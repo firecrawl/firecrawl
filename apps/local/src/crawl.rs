@@ -50,8 +50,9 @@ pub struct CrawlOptions {
   pub ignore_robots_txt: bool,
   /// Pages fetched at once.
   pub max_concurrency: Option<usize>,
-  /// Milliseconds to wait between requests.
-  pub delay: Option<u64>,
+  /// Seconds to wait between requests, as in the Firecrawl API. Fractions
+  /// are allowed; the value must be above 0 and at most 60.
+  pub delay: Option<f64>,
   pub scrape_options: ScrapeOptions,
 }
 
@@ -71,6 +72,40 @@ impl Default for CrawlOptions {
       delay: None,
       scrape_options: ScrapeOptions::default(),
     }
+  }
+}
+
+/// The longest `delay` the Firecrawl API accepts, in seconds.
+const MAX_DELAY_SECS: f64 = 60.0;
+
+impl CrawlOptions {
+  /// The wait asked for between requests. Refuses what the Firecrawl API
+  /// refuses: a delay that is not above 0 or is over 60 seconds.
+  pub fn requested_delay(&self) -> Result<Option<Duration>, ScrapeError> {
+    match self.delay {
+      None => Ok(None),
+      Some(secs) if secs.is_finite() && secs > 0.0 && secs <= MAX_DELAY_SECS => {
+        Ok(Some(Duration::from_secs_f64(secs)))
+      }
+      Some(secs) => Err(ScrapeError {
+        status: 400,
+        code: "BAD_REQUEST",
+        message: format!(
+          "The delay parameter is measured in seconds and must be above 0 and at most 60 (got {secs})."
+        ),
+      }),
+    }
+  }
+}
+
+/// The wait between requests: the longer of the one asked for and the
+/// robots.txt Crawl-delay the crawl honours (capped at 30 seconds, so a
+/// hostile robots.txt cannot stall a crawl). Asking for a delay can never
+/// make a crawl faster than it would be without one.
+fn request_delay(requested: Option<Duration>, robots: Option<Duration>) -> Option<Duration> {
+  match (requested, robots) {
+    (Some(asked), Some(site)) => Some(asked.max(site)),
+    (asked, site) => asked.or(site),
   }
 }
 
@@ -307,6 +342,7 @@ where
 {
   let seed = parse_url(start)?;
   let scope = Scope::new(&seed, opts)?;
+  let requested_delay = opts.requested_delay()?;
   let limit = opts.limit.max(1);
   let max_depth = opts.max_discovery_depth.unwrap_or(u32::MAX);
   let robots = if opts.ignore_robots_txt {
@@ -319,11 +355,12 @@ where
     load_robots(&engine, &seed).await
   };
 
-  // robots.txt Crawl-delay means one request at a time, spaced out.
+  // A delay, asked for or from robots.txt Crawl-delay, means one request at
+  // a time, spaced out.
   let robots_delay = robots
     .delay
     .map(|d| Duration::from_secs_f32(d.clamp(0.0, 30.0)));
-  let delay = opts.delay.map(Duration::from_millis).or(robots_delay);
+  let delay = request_delay(requested_delay, robots_delay);
   let concurrency = if delay.is_some() {
     1
   } else {
@@ -661,6 +698,117 @@ mod tests {
     assert!(!s.allows(&u("https://example.com/private/x")));
     assert!(!s.allows(&u("https://example.com/logo.png")));
     assert!(!s.allows(&u("mailto:a@example.com")));
+  }
+
+  #[test]
+  fn delay_is_read_in_seconds_like_the_firecrawl_api() {
+    let opts =
+      |delay: Value| serde_json::from_value::<CrawlOptions>(json!({ "delay": delay })).unwrap();
+    assert_eq!(
+      opts(json!(2)).requested_delay().unwrap(),
+      Some(Duration::from_secs(2))
+    );
+    assert_eq!(
+      opts(json!(0.5)).requested_delay().unwrap(),
+      Some(Duration::from_millis(500))
+    );
+    assert_eq!(
+      opts(json!(60)).requested_delay().unwrap(),
+      Some(Duration::from_secs(60))
+    );
+    assert_eq!(CrawlOptions::default().requested_delay().unwrap(), None);
+    for bad in [json!(0), json!(-1), json!(60.5), json!(1000)] {
+      let err = opts(bad.clone()).requested_delay().unwrap_err();
+      assert_eq!(err.status, 400, "{bad}");
+    }
+  }
+
+  #[test]
+  fn asking_for_a_delay_never_undercuts_the_robots_crawl_delay() {
+    let secs = Duration::from_secs;
+    assert_eq!(request_delay(None, None), None);
+    assert_eq!(request_delay(Some(secs(2)), None), Some(secs(2)));
+    assert_eq!(request_delay(None, Some(secs(5))), Some(secs(5)));
+    assert_eq!(request_delay(Some(secs(1)), Some(secs(5))), Some(secs(5)));
+    assert_eq!(request_delay(Some(secs(9)), Some(secs(5))), Some(secs(9)));
+  }
+
+  type Hits = Arc<std::sync::Mutex<Vec<std::time::Instant>>>;
+
+  /// A site on loopback whose pages all link to /a and /b, recording when
+  /// each page (not robots.txt) is fetched.
+  async fn recording_site(robots: &'static str) -> (String, Hits) {
+    use axum::{extract::State, http::Uri, response::Html, response::IntoResponse};
+    async fn serve_path(
+      State((hits, robots)): State<(Hits, &'static str)>,
+      uri: Uri,
+    ) -> axum::response::Response {
+      if uri.path() == "/robots.txt" {
+        return robots.into_response();
+      }
+      hits.lock().unwrap().push(std::time::Instant::now());
+      let path = uri.path();
+      Html(format!(
+        "<html><head><title>{path}</title></head><body><main><h1>Page {path}</h1>\
+         <p>Some text on this page.</p><a href=\"/a\">a</a> <a href=\"/b\">b</a></main></body></html>"
+      ))
+      .into_response()
+    }
+    let hits = Hits::default();
+    let app = axum::Router::new()
+      .fallback(serve_path)
+      .with_state((hits.clone(), robots));
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+      .await
+      .unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await });
+    (format!("http://{addr}/"), hits)
+  }
+
+  fn loopback_engine() -> Arc<Engine> {
+    Arc::new(
+      Engine::new(crate::scrape::EngineConfig {
+        policy: crate::guard::NetworkPolicy::AllowPrivate,
+        user_agent: None,
+        browser: crate::scrape::BrowserMode::Never,
+      })
+      .unwrap(),
+    )
+  }
+
+  /// Crawl the three pages of `recording_site` and return the gaps between
+  /// the requests the site saw.
+  async fn crawl_gaps(robots: &'static str, delay_secs: f64) -> Vec<Duration> {
+    let (base, hits) = recording_site(robots).await;
+    let opts: CrawlOptions = serde_json::from_value(json!({
+      "limit": 3,
+      "sitemap": "skip",
+      "delay": delay_secs,
+    }))
+    .unwrap();
+    let outcome = crawl(loopback_engine(), &base, &opts, |_| {})
+      .await
+      .unwrap();
+    assert_eq!(outcome.pages.len(), 3, "errors: {:?}", outcome.errors);
+    let hits = hits.lock().unwrap();
+    assert_eq!(hits.len(), 3);
+    hits.windows(2).map(|w| w[1] - w[0]).collect()
+  }
+
+  #[tokio::test]
+  async fn a_delay_in_seconds_spaces_out_the_requests() {
+    for gap in crawl_gaps("", 0.3).await {
+      assert!(gap >= Duration::from_millis(290), "requests {gap:?} apart");
+    }
+  }
+
+  #[tokio::test]
+  async fn a_shorter_delay_than_robots_txt_asks_for_is_not_used() {
+    let robots = "User-agent: *\nCrawl-delay: 1\n";
+    for gap in crawl_gaps(robots, 0.1).await {
+      assert!(gap >= Duration::from_millis(990), "requests {gap:?} apart");
+    }
   }
 
   #[test]
