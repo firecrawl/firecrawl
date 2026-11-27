@@ -148,11 +148,13 @@ async function deriveMarkdownFromHTML(
     return document;
   }
 
-  // text/plain responses (e.g. llms.txt) are already plain text/markdown.
-  // Running them through the HTML-to-markdown converter escapes markdown
-  // punctuation like "_", which corrupts underscores inside link URLs. Pass
-  // the raw body through untouched instead.
-  if (contentType?.includes("text/plain")) {
+  // text/plain and text/markdown responses (e.g. llms.txt, /pricing.md) are
+  // already plain text/markdown. Running them through the HTML-to-markdown
+  // converter escapes markdown punctuation ("### Free" becomes "\### Free",
+  // "_" inside link URLs gets escaped). Pass the raw body through untouched
+  // instead. This matters most on index cache hits, which return only the
+  // stored raw body and no engine-supplied markdown.
+  if (isMarkdownContentType(contentType)) {
     document.markdown = requireRawHtml(document);
     return document;
   }
