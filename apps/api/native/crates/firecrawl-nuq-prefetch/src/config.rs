@@ -102,7 +102,6 @@ where
 /// Runtime configuration for `firecrawl-nuq-prefetch`.
 #[derive(Debug, Clone)]
 pub struct WorkerConfig {
-  pub database_url: RedactedString,
   pub pg_settings: PgConnectionSettings,
   pub rabbitmq_url: Option<RedactedString>,
   pub port: u16,
@@ -171,7 +170,6 @@ impl WorkerConfig {
       .filter(|v| !v.is_empty());
 
     Ok(Self {
-      database_url: RedactedString::new(raw_db),
       pg_settings,
       rabbitmq_url,
       port,

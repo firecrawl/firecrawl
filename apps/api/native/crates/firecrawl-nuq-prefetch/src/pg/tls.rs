@@ -96,8 +96,14 @@ fn load_root_store(
     }
   } else {
     let native = rustls_native_certs::load_native_certs();
-    for cert in native.certs {
-      let _ = roots.add(cert);
+    let (accepted, skipped) = roots.add_parsable_certificates(native.certs);
+    if skipped > 0 || !native.errors.is_empty() {
+      tracing::warn!(
+        accepted,
+        skipped,
+        loader_errors = native.errors.len(),
+        "System TLS trust store loaded with errors"
+      );
     }
   }
 

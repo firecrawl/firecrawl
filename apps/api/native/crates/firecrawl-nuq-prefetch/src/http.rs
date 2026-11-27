@@ -1,5 +1,4 @@
-//! Lightweight `hyper` HTTP/1.1 server exposing `/health` and `/metrics` with
-//! exact parity to `apps/api/src/services/worker/nuq-prefetch-worker.ts`.
+//! Lightweight `hyper` HTTP/1.1 server exposing NuQ health and pool metrics.
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -8,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
-use http::header::{ALLOW, CONTENT_LENGTH, CONTENT_TYPE};
+use http::header::{ALLOW, CONTENT_LENGTH, CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS};
 use http::{Method, Request, Response, StatusCode};
 use http_body_util::Full;
 use hyper::body::Incoming;
@@ -188,34 +187,50 @@ async fn handle_request<S: PrefetchStore>(
 ) -> Response<Full<Bytes>> {
   let method = req.method();
   let path = req.uri().path();
+  let path = path.strip_suffix('/').unwrap_or(path);
+  let is_metrics = path.eq_ignore_ascii_case("/metrics");
+  let is_health = path.eq_ignore_ascii_case("/health");
   let is_head = method == Method::HEAD;
 
-  if method != Method::GET && !is_head {
-    return match path {
-      "/health" | "/metrics" => method_not_allowed(),
-      _ => text_response(StatusCode::NOT_FOUND, "Not Found", is_head),
-    };
+  if (is_health || is_metrics) && method == Method::OPTIONS {
+    let mut resp = text_response(StatusCode::OK, "GET, HEAD", false);
+    resp
+      .headers_mut()
+      .insert(ALLOW, http::HeaderValue::from_static("GET, HEAD"));
+    resp
+      .headers_mut()
+      .insert(CONTENT_TYPE, http::HeaderValue::from_static("text/plain"));
+    resp.headers_mut().insert(
+      X_CONTENT_TYPE_OPTIONS,
+      http::HeaderValue::from_static("nosniff"),
+    );
+    return resp;
   }
 
-  match path {
-    "/metrics" => {
-      let body = format_pool_metrics(store.pool_metrics());
-      text_response(StatusCode::OK, body, is_head)
+  if method == Method::GET || is_head {
+    if is_metrics {
+      return text_response(
+        StatusCode::OK,
+        format_pool_metrics(store.pool_metrics()),
+        is_head,
+      );
     }
-    "/health" => match store.health_check().await {
-      Ok(true) => text_response(StatusCode::OK, "OK", is_head),
-      Ok(false) => text_response(StatusCode::INTERNAL_SERVER_ERROR, "Not OK", is_head),
-      Err(err) => {
-        tracing::warn!(
-          module = "nuq",
-          error = %err,
-          "NuQ health check failed"
-        );
-        text_response(StatusCode::INTERNAL_SERVER_ERROR, "Not OK", is_head)
-      }
-    },
-    _ => text_response(StatusCode::NOT_FOUND, "Not Found", is_head),
+    if is_health {
+      return match store.health_check().await {
+        Ok(true) => text_response(StatusCode::OK, "OK", is_head),
+        Ok(false) => text_response(StatusCode::INTERNAL_SERVER_ERROR, "Not OK", is_head),
+        Err(err) => {
+          tracing::warn!(
+            module = "nuq",
+            error = %err,
+            "NuQ health check failed"
+          );
+          text_response(StatusCode::INTERNAL_SERVER_ERROR, "Not OK", is_head)
+        }
+      };
+    }
   }
+  text_response(StatusCode::NOT_FOUND, "Not Found", is_head)
 }
 
 fn text_response(
@@ -235,13 +250,5 @@ fn text_response(
   let _ = resp
     .headers_mut()
     .insert(CONTENT_LENGTH, http::HeaderValue::from(content_length));
-  resp
-}
-
-fn method_not_allowed() -> Response<Full<Bytes>> {
-  let mut resp = text_response(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed", false);
-  let _ = resp
-    .headers_mut()
-    .insert(ALLOW, http::HeaderValue::from_static("GET, HEAD"));
   resp
 }

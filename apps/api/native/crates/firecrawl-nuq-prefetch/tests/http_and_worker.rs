@@ -270,7 +270,7 @@ async fn http_server_exposes_health_metrics_and_graceful_shutdown() {
   let client = reqwest::Client::new();
   let base = format!("http://{addr}");
 
-  let health_ok = client.get(format!("{base}/health")).send().await;
+  let health_ok = client.get(format!("{base}/Health/")).send().await;
   assert!(health_ok.is_ok());
   if let Ok(resp) = health_ok {
     assert_eq!(resp.status(), 200);
@@ -306,7 +306,7 @@ async fn http_server_exposes_health_metrics_and_graceful_shutdown() {
     assert_eq!(resp.text().await.ok().as_deref(), Some("Not OK"));
   }
 
-  let metrics_resp = client.get(format!("{base}/metrics")).send().await;
+  let metrics_resp = client.get(format!("{base}/Metrics/")).send().await;
   assert!(metrics_resp.is_ok());
   if let Ok(resp) = metrics_resp {
     assert_eq!(resp.status(), 200);
@@ -330,7 +330,21 @@ async fn http_server_exposes_health_metrics_and_graceful_shutdown() {
   let method_resp = client.post(format!("{base}/health")).send().await;
   assert!(method_resp.is_ok());
   if let Ok(resp) = method_resp {
-    assert_eq!(resp.status(), 405);
+    assert_eq!(resp.status(), 404);
+  }
+
+  let options_resp = client
+    .request(reqwest::Method::OPTIONS, format!("{base}/health/"))
+    .send()
+    .await;
+  assert!(options_resp.is_ok());
+  if let Ok(resp) = options_resp {
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+      resp.headers().get("allow").and_then(|v| v.to_str().ok()),
+      Some("GET, HEAD")
+    );
+    assert_eq!(resp.text().await.ok().as_deref(), Some("GET, HEAD"));
   }
 
   let not_found = client.get(format!("{base}/unknown")).send().await;

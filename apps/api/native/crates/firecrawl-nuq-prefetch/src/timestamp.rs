@@ -49,15 +49,7 @@ pub fn parse_pg_timestamp_to_epoch_millis(raw: &str) -> Result<i64, TimestampErr
     )
     .ok_or(TimestampError::InvalidSyntax)?;
 
-  let (raw_year, month, day) = parse_date(date_part)?;
-  // PostgreSQL BC years use astronomical numbering offset by 1 (1 BC == year 0).
-  let year = if is_bc {
-    1_i64
-      .checked_sub(raw_year)
-      .ok_or(TimestampError::OutOfRange)?
-  } else {
-    raw_year
-  };
+  let (year, month, day) = parse_date(date_part, is_bc)?;
 
   let (time_part, tz_offset_secs) = split_time_and_offset(rest)?;
   let (hour, minute, second, millis) = parse_time(time_part)?;
@@ -122,7 +114,7 @@ pub fn format_epoch_millis_iso_utc(epoch_ms: i64) -> Result<String, TimestampErr
   }
 }
 
-fn parse_date(s: &str) -> Result<(i64, u32, u32), TimestampError> {
+fn parse_date(s: &str, is_bc: bool) -> Result<(i64, u32, u32), TimestampError> {
   let (sign, rest) = if let Some(stripped) = s.strip_prefix('-') {
     (-1_i64, stripped)
   } else if let Some(stripped) = s.strip_prefix('+') {
@@ -149,9 +141,17 @@ fn parse_date(s: &str) -> Result<(i64, u32, u32), TimestampError> {
   let abs_year = y_str
     .parse::<i64>()
     .map_err(|_| TimestampError::OutOfRange)?;
-  let year = abs_year
+  let raw_year = abs_year
     .checked_mul(sign)
     .ok_or(TimestampError::OutOfRange)?;
+  // PostgreSQL 1 BC is astronomical year 0.
+  let year = if is_bc {
+    1_i64
+      .checked_sub(raw_year)
+      .ok_or(TimestampError::OutOfRange)?
+  } else {
+    raw_year
+  };
   let month = m_str
     .parse::<u32>()
     .map_err(|_| TimestampError::OutOfRange)?;
@@ -417,6 +417,7 @@ mod tests {
       ("1969-12-31 23:59:59.000001+00", "1969-12-31T23:59:59.000Z"),
       ("1970-01-01 00:00:00+00", "1970-01-01T00:00:00.000Z"),
       ("2000-02-29 12:34:56.007+00", "2000-02-29T12:34:56.007Z"),
+      ("0001-02-29 00:00:00+00 BC", "0000-02-29T00:00:00.000Z"),
       ("2026-11-26T02:00:00.123Z", "2026-11-26T02:00:00.123Z"),
     ];
 
@@ -432,6 +433,7 @@ mod tests {
   #[test]
   fn rejects_invalid_dates_and_syntax() {
     assert!(parse_pg_timestamp_to_iso_utc("2025-02-29 00:00:00+00").is_err());
+    assert!(parse_pg_timestamp_to_iso_utc("0004-02-29 00:00:00+00 BC").is_err());
     assert!(parse_pg_timestamp_to_iso_utc("2026-13-01 00:00:00+00").is_err());
     assert!(parse_pg_timestamp_to_iso_utc("2026-11-26 24:00:00+00").is_err());
     assert!(parse_pg_timestamp_to_iso_utc("2026-11-26 00:00:00.+00").is_err());
