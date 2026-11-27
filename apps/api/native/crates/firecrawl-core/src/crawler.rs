@@ -1,6 +1,12 @@
+// Pre-existing crawler logic exempt from strict workspace clippy denies.
+#![allow(
+  clippy::arithmetic_side_effects,
+  clippy::collapsible_if,
+  clippy::indexing_slicing,
+  clippy::unwrap_used
+)]
+
 use crate::xml::exceeds_element_depth;
-use napi::bindgen_prelude::*;
-use napi_derive::napi;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -8,7 +14,6 @@ use std::{
   sync::LazyLock,
 };
 use texting_robots::Robot;
-use tokio::task;
 use url::Url;
 
 static FILE_EXTENSIONS: &[&str] = &[
@@ -20,8 +25,7 @@ static FILE_EXTENSIONS: &[&str] = &[
 static FILE_EXT_SET: LazyLock<HashSet<&'static str>> =
   LazyLock::new(|| FILE_EXTENSIONS.iter().copied().collect());
 
-#[derive(Deserialize)]
-#[napi(object)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct FilterLinksCall {
   pub links: Vec<String>,
   pub limit: Option<i64>,
@@ -39,22 +43,19 @@ pub struct FilterLinksCall {
   pub allow_subdomains: bool,
 }
 
-#[derive(Serialize)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FilterLinksResult {
   pub links: Vec<String>,
   pub denial_reasons: HashMap<String, String>,
 }
 
-#[derive(Serialize)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct RegexValidationError {
   pub pattern: String,
   pub error: String,
 }
 
-#[derive(Deserialize)]
-#[napi(object)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct FilterUrlCall {
   pub href: String,
   pub url: String,
@@ -67,55 +68,47 @@ pub struct FilterUrlCall {
   pub allow_subdomains: bool,
 }
 
-#[derive(Serialize)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FilterUrlResult {
   pub allowed: bool,
   pub url: Option<String>,
   pub denial_reason: Option<String>,
 }
 
-#[derive(Serialize, Debug)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SitemapUrl {
   pub loc: Vec<String>,
 }
 
-#[derive(Serialize, Debug)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SitemapEntry {
   pub loc: Vec<String>,
 }
 
-#[derive(Serialize, Debug)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SitemapUrlset {
   pub url: Vec<SitemapUrl>,
 }
 
-#[derive(Serialize, Debug)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SitemapIndex {
   pub sitemap: Vec<SitemapEntry>,
 }
 
-#[derive(Serialize, Debug)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ParsedSitemap {
   pub urlset: Option<SitemapUrlset>,
   pub sitemapindex: Option<SitemapIndex>,
 }
 
-#[derive(Serialize, Debug)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SitemapInstruction {
   pub action: String,
   pub urls: Vec<String>,
   pub count: u32,
 }
 
-#[derive(Serialize, Debug)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SitemapProcessingResult {
   pub instructions: Vec<SitemapInstruction>,
   pub total_count: u32,
@@ -292,7 +285,8 @@ fn build_robot(
     .or_else(|| Robot::new("FirecrawlAgent", robots_txt.as_bytes()).ok())
 }
 
-fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult, String> {
+/// Filter links based on crawling rules and constraints.
+pub fn filter_links(data: FilterLinksCall) -> Result<FilterLinksResult, String> {
   let limit = data.limit.map_or(usize::MAX, |x| x.max(0) as usize);
   if limit == 0 {
     return Ok(FilterLinksResult {
@@ -457,21 +451,6 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
   })
 }
 
-/// Filter links based on crawling rules and constraints.
-#[napi]
-pub async fn filter_links(data: FilterLinksCall) -> Result<FilterLinksResult> {
-  let res = task::spawn_blocking(move || _filter_links(data))
-    .await
-    .map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("filter_links join error: {e}"),
-      )
-    })?;
-
-  res.map_err(|e| Error::new(Status::GenericFailure, format!("Filter links error: {e}")))
-}
-
 /// Compiled form of a client-supplied includePaths/excludePaths pattern.
 ///
 /// Path patterns are compiled with Unicode mode disabled, over bytes. Every
@@ -517,7 +496,6 @@ fn compile_path_regex(pattern: &str) -> std::result::Result<PathRegex, regex::Er
 /// crate), which is what link filtering compiles them with. Returns an entry for
 /// each pattern that fails to compile so callers can reject unsupported syntax
 /// (e.g. look-around, backreferences) instead of silently ignoring it.
-#[napi]
 pub fn validate_regexes(patterns: Vec<String>) -> Vec<RegexValidationError> {
   patterns
     .into_iter()
@@ -531,7 +509,8 @@ pub fn validate_regexes(patterns: Vec<String>) -> Vec<RegexValidationError> {
     .collect()
 }
 
-fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, String> {
+/// Filter a single URL based on crawling rules and constraints.
+pub fn filter_url(data: FilterUrlCall) -> Result<FilterUrlResult, String> {
   let mut full_url = data.href.clone();
 
   // Handle relative URLs
@@ -703,25 +682,11 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
   }
 }
 
-/// Filter a single URL based on crawling rules and constraints.
-#[napi]
-pub async fn filter_url(data: FilterUrlCall) -> Result<FilterUrlResult> {
-  let res = task::spawn_blocking(move || _filter_url(data))
-    .await
-    .map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("filter_url join error: {e}"),
-      )
-    })?;
-
-  res.map_err(|e| Error::new(Status::GenericFailure, format!("Filter URL error: {e}")))
-}
-
 /// Sitemaps nest a handful of levels; anything deeper is malformed.
 const MAX_SITEMAP_DEPTH: usize = 32;
 
-fn _parse_sitemap_xml(xml_content: &str) -> std::result::Result<ParsedSitemap, String> {
+/// Parse XML sitemap content into structured data.
+pub fn parse_sitemap_xml(xml_content: &str) -> Result<ParsedSitemap, String> {
   if exceeds_element_depth(xml_content, MAX_SITEMAP_DEPTH) {
     return Err(format!(
       "XML parsing error: elements nested deeper than {MAX_SITEMAP_DEPTH} levels"
@@ -787,28 +752,9 @@ fn _parse_sitemap_xml(xml_content: &str) -> std::result::Result<ParsedSitemap, S
   }
 }
 
-/// Parse XML sitemap content into structured data.
-#[napi]
-pub async fn parse_sitemap_xml(xml_content: String) -> Result<ParsedSitemap> {
-  let res = task::spawn_blocking(move || _parse_sitemap_xml(&xml_content))
-    .await
-    .map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("parse_sitemap_xml join error: {e}"),
-      )
-    })?;
-
-  res.map_err(|e| {
-    Error::new(
-      Status::GenericFailure,
-      format!("Parse sitemap XML error: {e}"),
-    )
-  })
-}
-
-fn _process_sitemap(xml_content: &str) -> std::result::Result<SitemapProcessingResult, String> {
-  let parsed = _parse_sitemap_xml(xml_content)?;
+/// Process sitemap XML and extract crawling instructions.
+pub fn process_sitemap(xml_content: &str) -> Result<SitemapProcessingResult, String> {
+  let parsed = parse_sitemap_xml(xml_content)?;
   let mut instructions = Vec::new();
   let mut total_count: u32 = 0;
 
@@ -880,21 +826,6 @@ fn _process_sitemap(xml_content: &str) -> std::result::Result<SitemapProcessingR
   })
 }
 
-/// Process sitemap XML and extract crawling instructions.
-#[napi]
-pub async fn process_sitemap(xml_content: String) -> Result<SitemapProcessingResult> {
-  let res = task::spawn_blocking(move || _process_sitemap(&xml_content))
-    .await
-    .map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("process_sitemap join error: {e}"),
-      )
-    })?;
-
-  res.map_err(|e| Error::new(Status::GenericFailure, format!("Parse sitemap error: {e}")))
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -959,7 +890,7 @@ mod tests {
   </url>
 </urlset>"#;
 
-    let result = _parse_sitemap_xml(xml_content).unwrap();
+    let result = parse_sitemap_xml(xml_content).unwrap();
     assert!(result.urlset.is_some());
     let urlset = result.urlset.unwrap();
     assert_eq!(urlset.url.len(), 2);
@@ -979,7 +910,7 @@ mod tests {
   </sitemap>
 </sitemapindex>"#;
 
-    let result = _parse_sitemap_xml(xml_content).unwrap();
+    let result = parse_sitemap_xml(xml_content).unwrap();
     assert!(result.sitemapindex.is_some());
     let sitemapindex = result.sitemapindex.unwrap();
     assert_eq!(sitemapindex.sitemap.len(), 2);
@@ -1002,7 +933,7 @@ mod tests {
   </url>
 </invalid>"#;
 
-    let result = _parse_sitemap_xml(xml_content);
+    let result = parse_sitemap_xml(xml_content);
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Invalid sitemap format"));
   }
@@ -1016,7 +947,7 @@ mod tests {
   </url>
 </urlset"#; // Missing closing >
 
-    let result = _parse_sitemap_xml(xml_content);
+    let result = parse_sitemap_xml(xml_content);
     assert!(result.is_err());
   }
 
@@ -1027,7 +958,7 @@ mod tests {
       "<url><loc>https://example.com/page%3C%2Floc%3E".repeat(50_000)
     );
 
-    let result = _parse_sitemap_xml(&xml_content);
+    let result = parse_sitemap_xml(&xml_content);
     assert!(result.unwrap_err().contains("nested deeper than"));
   }
 
@@ -1038,7 +969,7 @@ mod tests {
       r#"<url data="x/>" other='y>'>"#.repeat(100_000)
     );
 
-    let result = _parse_sitemap_xml(&xml_content);
+    let result = parse_sitemap_xml(&xml_content);
     assert!(result.unwrap_err().contains("nested deeper than"));
   }
 
@@ -1049,7 +980,7 @@ mod tests {
       "<url>".repeat(100_000)
     );
 
-    let result = _parse_sitemap_xml(&xml_content);
+    let result = parse_sitemap_xml(&xml_content);
     assert!(result.unwrap_err().contains("entity declarations"));
   }
 
@@ -1059,7 +990,7 @@ mod tests {
 <!DOCTYPE urlset>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://example.com/page1</loc></url></urlset>"#;
 
-    let urlset = _parse_sitemap_xml(xml_content).unwrap().urlset.unwrap();
+    let urlset = parse_sitemap_xml(xml_content).unwrap().urlset.unwrap();
     assert_eq!(urlset.url[0].loc[0], "https://example.com/page1");
   }
 
@@ -1076,7 +1007,7 @@ mod tests {
   <url><loc>https://example.com/page2</loc></url>
 </urlset>"#;
 
-    let urlset = _parse_sitemap_xml(xml_content).unwrap().urlset.unwrap();
+    let urlset = parse_sitemap_xml(xml_content).unwrap().urlset.unwrap();
     assert_eq!(urlset.url.len(), 2);
     assert_eq!(urlset.url[0].loc[0], "https://example.com/page1");
     assert_eq!(urlset.url[1].loc[0], "https://example.com/page2");
@@ -1097,7 +1028,7 @@ mod tests {
   </url>
 </urlset>"#;
 
-    let result = _process_sitemap(xml_content).unwrap();
+    let result = process_sitemap(xml_content).unwrap();
     assert_eq!(result.instructions.len(), 2);
 
     let recurse_instruction = result
@@ -1132,7 +1063,7 @@ mod tests {
   </sitemap>
 </sitemapindex>"#;
 
-    let result = _process_sitemap(xml_content).unwrap();
+    let result = process_sitemap(xml_content).unwrap();
     assert_eq!(result.instructions.len(), 1);
     assert_eq!(result.instructions[0].action, "recurse");
     assert_eq!(result.instructions[0].urls.len(), 2);
@@ -1168,12 +1099,14 @@ mod tests {
       robots_user_agent: None,
     };
 
-    let result = _filter_links(data).unwrap();
+    let result = filter_links(data).unwrap();
     assert_eq!(result.links.len(), 1);
     assert_eq!(result.links[0], "https://example.com/allowed");
-    assert!(result
-      .denial_reasons
-      .contains_key("https://example.com/disallowed"));
+    assert!(
+      result
+        .denial_reasons
+        .contains_key("https://example.com/disallowed")
+    );
     assert_eq!(
       result
         .denial_reasons
@@ -1203,7 +1136,7 @@ mod tests {
       robots_user_agent: None,
     };
 
-    let result = _filter_links(data);
+    let result = filter_links(data);
     assert!(result.is_ok());
     let result = result.unwrap();
     assert_eq!(result.links.len(), 1);
@@ -1233,7 +1166,7 @@ mod tests {
       robots_user_agent: None,
     };
 
-    let result = _filter_links(data);
+    let result = filter_links(data);
     assert!(result.is_ok());
     let result = result.unwrap();
     assert_eq!(result.links.len(), 1);
@@ -1261,7 +1194,7 @@ mod tests {
       robots_user_agent: None,
     };
 
-    let result = _filter_links(data);
+    let result = filter_links(data);
     assert!(result.is_ok());
     let result = result.unwrap();
     assert_eq!(result.links.len(), 1);
@@ -1292,22 +1225,30 @@ mod tests {
       robots_user_agent: None,
     };
 
-    let result = _filter_links(data).unwrap();
+    let result = filter_links(data).unwrap();
     // Should include only paths matching include on base or subdomains
     assert_eq!(result.links.len(), 3);
-    assert!(result
-      .links
-      .contains(&"https://example.com/pricing".to_string()));
-    assert!(result
-      .links
-      .contains(&"https://sub.example.com/pricing".to_string()));
-    assert!(result
-      .links
-      .contains(&"https://other.example.com/pricing".to_string()));
+    assert!(
+      result
+        .links
+        .contains(&"https://example.com/pricing".to_string())
+    );
+    assert!(
+      result
+        .links
+        .contains(&"https://sub.example.com/pricing".to_string())
+    );
+    assert!(
+      result
+        .links
+        .contains(&"https://other.example.com/pricing".to_string())
+    );
     // And should exclude blog due to includePaths
-    assert!(result
-      .denial_reasons
-      .contains_key("https://sub.example.com/blog"));
+    assert!(
+      result
+        .denial_reasons
+        .contains_key("https://sub.example.com/blog")
+    );
     assert_eq!(
       result
         .denial_reasons
@@ -1341,10 +1282,10 @@ mod tests {
       robots_user_agent: ua,
     };
 
-    let default_result = _filter_links(base_call(None)).unwrap();
+    let default_result = filter_links(base_call(None)).unwrap();
     assert_eq!(default_result.links, vec!["https://example.com/page"]);
 
-    let custom_result = _filter_links(base_call(Some("CustomBot".to_string()))).unwrap();
+    let custom_result = filter_links(base_call(Some("CustomBot".to_string()))).unwrap();
     assert!(custom_result.links.is_empty());
     assert_eq!(
       custom_result
@@ -1383,7 +1324,7 @@ mod tests {
   // seed) must be allowed under allowExternalLinks. Regression test for #4315.
   #[test]
   fn test_filter_url_allows_external_link_redirect_same_domain() {
-    let result = _filter_url(filter_url_call(
+    let result = filter_url(filter_url_call(
       "http://www.iana.org/help/example-domains",
       "https://iana.org/domains/example",
       "https://example.org",
@@ -1397,7 +1338,7 @@ mod tests {
   // a real subdomain must be allowed (PSL-based, not just stripping "www.").
   #[test]
   fn test_filter_url_allows_external_link_redirect_to_subdomain() {
-    let result = _filter_url(filter_url_call(
+    let result = filter_url(filter_url_call(
       "https://blog.example.com/post",
       "https://example.com/link",
       "https://crawlseed.org",
@@ -1410,7 +1351,7 @@ mod tests {
   // path (the london.gov.uk case from #4315).
   #[test]
   fn test_filter_url_allows_external_link_redirect_same_host_path_change() {
-    let result = _filter_url(filter_url_call(
+    let result = filter_url(filter_url_call(
       "https://www.london.gov.uk/programmes-strategies/planning/london-plan",
       "https://www.london.gov.uk/what-we-do/planning/london-plan",
       "https://example.org",
@@ -1423,7 +1364,7 @@ mod tests {
   // denied — the external-main-page exclusion is intentional (#4316).
   #[test]
   fn test_filter_url_denies_redirect_to_external_homepage() {
-    let result = _filter_url(filter_url_call(
+    let result = filter_url(filter_url_call(
       "https://www.peoplefirstinfo.org.uk/",
       "https://www.westminster.gov.uk/node/21229",
       "https://www.westminster.gov.uk",
@@ -1437,7 +1378,7 @@ mod tests {
   // domain, not in scope) remains denied.
   #[test]
   fn test_filter_url_denies_redirect_to_unrelated_external_domain() {
-    let result = _filter_url(filter_url_call(
+    let result = filter_url(filter_url_call(
       "https://unrelated.com/article",
       "https://iana.org/domains/example",
       "https://example.org",

@@ -3,9 +3,9 @@ import { z } from "zod";
 
 // Every pattern is compiled by the engine at request time (validation) and again
 // when links are filtered, so the amount of work a single request can demand is
-// count x per-pattern cost. The engine bounds per-pattern cost (see
-// compile_path_regex in native/src/crawler.rs); these bound the count and the
-// pattern length, which is what parsing cost scales with.
+// count x per-pattern cost. The engine bounds per-pattern cost in
+// firecrawl_core::crawler::compile_path_regex. These limits bound the count and
+// the pattern length, which is what parsing cost scales with.
 //
 // Keyword-style filtering (one short pattern per term) routinely needs a few
 // hundred patterns per field, so the count cap has headroom for that. Measured
