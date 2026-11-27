@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@mendable/firecrawl-rs", () => ({ validateRegexes: () => [] }));
 import { projectScrapeCredits } from "./keyless-credit-projection";
 import { scrapeOptions } from "../controllers/v2/types";
 
@@ -22,6 +24,24 @@ describe("projectScrapeCredits", () => {
               type: "json",
               schema: { type: "object", properties: {} },
               checkPromptInjection: true,
+            },
+          ],
+        }),
+        null,
+        false,
+      ),
+    ).toBe(9);
+  });
+
+  it("projects the json surcharge on top of lockdown", () => {
+    expect(
+      projectScrapeCredits(
+        scrapeOptions.parse({
+          lockdown: true,
+          formats: [
+            {
+              type: "json",
+              schema: { type: "object", properties: {} },
             },
           ],
         }),

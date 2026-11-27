@@ -20,7 +20,7 @@ export function projectScrapeCredits(
     hasFormatOfType(options.formats, "json") ||
     changeTrackingFormat?.modes?.includes("json")
   ) {
-    credits = 5;
+    credits += 4;
   }
 
   if (hasFormatOfType(options.formats, "deterministicJson")) {
