@@ -1,6 +1,17 @@
 const mocks = vi.hoisted(() => ({
   searxngSearch: vi.fn(),
   ddgSearch: vi.fn(),
+  baseLoggerWarn: vi.fn(),
+}));
+
+vi.mock("../../lib/logger", () => ({
+  logger: {
+    info: vi.fn(),
+    warn: mocks.baseLoggerWarn,
+    error: vi.fn(),
+    debug: vi.fn(),
+    child: vi.fn().mockReturnThis(),
+  },
 }));
 
 vi.mock("./searxng", () => ({ searxng_search: mocks.searxngSearch }));
@@ -301,8 +312,26 @@ describe("service.searchProviders dispatch in v2 search", () => {
         ]);
 
         await expect(
-          search({ query: "firecrawl", logger, enterprise: [mode] }),
+          search({
+            query: "firecrawl",
+            logger,
+            requestId: "req-1",
+            enterprise: [mode],
+          }),
         ).rejects.toThrow(SearchModeUnavailableError);
+        expect(mocks.baseLoggerWarn).toHaveBeenCalledTimes(1);
+        const [, meta] = mocks.baseLoggerWarn.mock.calls[0];
+        expect(meta).toEqual({
+          module: "search",
+          method: "search",
+          requestId: "req-1",
+          modes: [mode],
+          usOnly: false,
+          enabledProviders: expect.any(Array),
+        });
+        expect(JSON.stringify(mocks.baseLoggerWarn.mock.calls)).not.toContain(
+          "firecrawl",
+        );
         expect(other.search).not.toHaveBeenCalled();
         expect(mocks.searxngSearch).not.toHaveBeenCalled();
         expect(mocks.ddgSearch).not.toHaveBeenCalled();
