@@ -52,7 +52,9 @@ export class UsOnlyUnavailableError extends TransportableError {
 
 /** The search provider failed, so the search cannot tell an outage apart from a genuine zero-result answer. */
 export class SearchProviderUnavailableError extends TransportableError {
-  static readonly codes: readonly ErrorCode[] = ["SEARCH_PROVIDER_UNAVAILABLE"];
+  static readonly codes: ReadonlyArray<ErrorCode> = [
+    "SEARCH_PROVIDER_UNAVAILABLE",
+  ];
 
   constructor(
     message = "The search provider is temporarily unavailable. Please retry the request.",
