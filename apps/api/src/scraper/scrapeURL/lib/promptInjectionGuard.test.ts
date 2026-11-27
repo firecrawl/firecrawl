@@ -24,6 +24,7 @@ type MockGenerateObjectArgs = {
     functionId?: string;
     metadata?: Record<string, string | undefined>;
   };
+  system?: string;
 };
 
 const mocks = vi.hoisted(() => ({
@@ -264,32 +265,32 @@ describe("checkForPromptInjection", () => {
   });
 
   it("instructs the classifier that chatbot handoff links are not injections", async () => {
-    vi.mocked(generateObject).mockResolvedValue(verdict(false) as any);
+    mocks.generateObject.mockResolvedValue(verdict(false));
 
     await run(new CostTracking(), "short page");
 
-    const [[args]] = vi.mocked(generateObject).mock.calls;
-    const system = args.system as string;
+    const [[args]] = mocks.generateObject.mock.calls;
+    const system = args.system;
     // A pre-filled prompt handed to a third-party chatbot (e.g. cal.com's
     // "Continue with Claude" links) is addressed to that chatbot, not to the
     // model reading the page.
-    expect(system).toContain("third-party AI chatbot");
-    expect(system).toContain("visitor-facing navigation UI");
+    expect(system ?? "").toContain("third-party AI chatbot");
+    expect(system ?? "").toContain("visitor-facing navigation UI");
   });
 
   it("keeps action-request wording inside a handoff URL judged as page text", async () => {
-    vi.mocked(generateObject).mockResolvedValue(verdict(false) as any);
+    mocks.generateObject.mockResolvedValue(verdict(false));
 
     await run(new CostTracking(), "short page");
 
-    const [[args]] = vi.mocked(generateObject).mock.calls;
-    const system = args.system as string;
+    const [[args]] = mocks.generateObject.mock.calls;
+    const system = args.system;
     // The handoff shape is context about who the text is addressed to,
     // never an exemption for what it says: the reading model sees the URL
     // along with the rest of the page, so wording placed there is flagged
     // exactly as it would be anywhere else.
-    expect(system).toContain("never an exemption for what it says");
-    expect(system).toContain(
+    expect(system ?? "").toContain("never an exemption for what it says");
+    expect(system ?? "").toContain(
       "exactly as you would if that wording appeared as plain page text",
     );
     // The blanket sentence that excused first-person wording inside such a
