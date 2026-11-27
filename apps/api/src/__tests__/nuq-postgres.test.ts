@@ -1,13 +1,27 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { config } from "../config";
+import { scrapeOptions } from "../controllers/v2/types";
 import { nuqShutdown, scrapeQueue } from "../services/worker/nuq";
+import type { ScrapeJobData } from "../types";
 
 const describeIf = config.NUQ_DATABASE_URL ? describe : describe.skip;
 
+function scrapeData(): ScrapeJobData {
+  return {
+    mode: "single_urls",
+    url: "https://example.com",
+    team_id: randomUUID(),
+    scrapeOptions: scrapeOptions.parse({}),
+    origin: "test",
+    apiKeyId: null,
+    zeroDataRetention: false,
+  };
+}
+
 describeIf("NuQ Postgres queue", () => {
   let cleanupPool: Pool;
-  const ids: string[] = [];
+  const ids: Array<string> = [];
 
   beforeAll(() => {
     cleanupPool = new Pool({
@@ -17,7 +31,9 @@ describeIf("NuQ Postgres queue", () => {
   });
 
   afterEach(async () => {
-    if (ids.length === 0) return;
+    if (ids.length === 0) {
+      return;
+    }
     await cleanupPool.query(
       "DELETE FROM nuq.queue_scrape_backlog WHERE id = ANY($1::uuid[])",
       [ids],
@@ -33,14 +49,6 @@ describeIf("NuQ Postgres queue", () => {
     await cleanupPool.end();
     await nuqShutdown();
   });
-
-  function scrapeData() {
-    return {
-      mode: "single_urls",
-      url: "https://example.com",
-      team_id: randomUUID(),
-    } as any;
-  }
 
   test("single backlogged inserts report backlog status", async () => {
     const addJobId = randomUUID();
@@ -86,7 +94,7 @@ describeIf("NuQ Postgres queue", () => {
       {
         id: completedIds[0],
         status: "completed",
-        finishedAt: new Date(base + 1_000),
+        finishedAt: new Date(base + 1000),
         data: { mode: "single_urls", url: "https://example.com/completed-1" },
         returnvalue: { ok: 1 },
         failedReason: null,
@@ -94,7 +102,7 @@ describeIf("NuQ Postgres queue", () => {
       {
         id: failedIds[0],
         status: "failed",
-        finishedAt: new Date(base + 2_000),
+        finishedAt: new Date(base + 2000),
         data: { mode: "single_urls", url: "https://example.com/failed-1" },
         returnvalue: null,
         failedReason: "failure-1",
@@ -102,7 +110,7 @@ describeIf("NuQ Postgres queue", () => {
       {
         id: completedIds[1],
         status: "completed",
-        finishedAt: new Date(base + 3_000),
+        finishedAt: new Date(base + 3000),
         data: { mode: "single_urls", url: "https://example.com/completed-2" },
         returnvalue: { ok: 2 },
         failedReason: null,
@@ -110,7 +118,7 @@ describeIf("NuQ Postgres queue", () => {
       {
         id: failedIds[1],
         status: "failed",
-        finishedAt: new Date(base + 4_000),
+        finishedAt: new Date(base + 4000),
         data: { mode: "single_urls", url: "https://example.com/failed-2" },
         returnvalue: null,
         failedReason: "failure-2",
@@ -155,7 +163,7 @@ describeIf("NuQ Postgres queue", () => {
       failed.map(job => ({
         id: job.id,
         failedReason: job.failedReason,
-        url: (job.data as any).url,
+        url: "url" in job.data ? job.data.url : undefined,
       })),
     ).toEqual(
       expectedFailed.map(row => ({

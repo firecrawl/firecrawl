@@ -10,6 +10,14 @@ vi.mock("../../../../../config", () => ({
 
 import { pdfExtractionSemaphore, withPdfExtractionPermit } from "../semaphore";
 
+const slowPermitWork = () =>
+  withPdfExtractionPermit(
+    () =>
+      new Promise<void>(r => {
+        setTimeout(r, 60);
+      }),
+  );
+
 describe("pdfExtractionSemaphore", () => {
   beforeEach(() => {
     vi.useRealTimers();
@@ -21,14 +29,16 @@ describe("pdfExtractionSemaphore", () => {
   it("bounds concurrency to the configured limit and queues the rest", async () => {
     let active = 0;
     let maxActive = 0;
-    const started: number[] = [];
+    const started: Array<number> = [];
 
     const work = (i: number) =>
       withPdfExtractionPermit(async () => {
         active++;
         maxActive = Math.max(maxActive, active);
         started.push(i);
-        await new Promise(r => setTimeout(r, 25));
+        await new Promise<void>(r => {
+          setTimeout(r, 25);
+        });
         active--;
       });
 
@@ -72,14 +82,14 @@ describe("pdfExtractionSemaphore", () => {
     const { register } = await import("prom-client");
 
     // Force queueing: occupy both permits with slow work, then add a third.
-    const slow = () =>
-      withPdfExtractionPermit(() => new Promise(r => setTimeout(r, 60)));
-    const p1 = slow();
-    const p2 = slow();
-    const p3 = slow();
+    const p1 = slowPermitWork();
+    const p2 = slowPermitWork();
+    const p3 = slowPermitWork();
 
     // Let the queue form.
-    await new Promise(r => setTimeout(r, 10));
+    await new Promise<void>(r => {
+      setTimeout(r, 10);
+    });
     const mid = await register.getSingleMetricAsString(
       "pdf_extraction_semaphore_waiting",
     );

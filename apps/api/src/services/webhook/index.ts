@@ -1,5 +1,5 @@
 import { getWebhookConfig } from "./config";
-import { WebhookConfig } from "./types";
+import type { WebhookConfig } from "./types";
 import { WebhookSender } from "./delivery";
 
 export async function createWebhookSender(params: {

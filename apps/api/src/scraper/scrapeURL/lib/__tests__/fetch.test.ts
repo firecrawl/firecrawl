@@ -1,8 +1,6 @@
-import {
-  redactHeaders,
-  redactRequestBodyForLog,
-  robustFetch,
-} from "../fetch";
+import { createLogger } from "winston";
+import { z } from "zod";
+import { redactHeaders, redactRequestBodyForLog, robustFetch } from "../fetch";
 import type { MockState } from "../mock";
 
 const secretHeaders = {
@@ -25,14 +23,13 @@ const secretHeaders = {
 };
 
 function makeLogger() {
-  const logger: any = {
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  };
-  logger.child = vi.fn(() => logger);
-  return logger;
+  const logger = createLogger({ silent: true });
+  const debugSpy = vi.spyOn(logger, "debug");
+  vi.spyOn(logger, "info");
+  vi.spyOn(logger, "warn");
+  vi.spyOn(logger, "error");
+  vi.spyOn(logger, "child").mockReturnValue(logger);
+  return { logger, debugSpy };
 }
 
 function mockWith(status: number, body: string): MockState {
@@ -45,14 +42,40 @@ function mockWith(status: number, body: string): MockState {
       },
     ],
     tracker: {},
-  } as unknown as MockState;
+  };
 }
 
-async function captureCause(promise: Promise<unknown>): Promise<any> {
+const fetchErrorCauseSchema = z.object({
+  params: z.object({
+    headers: z.record(z.string(), z.string()).optional(),
+    body: z
+      .object({
+        url: z.string().optional(),
+        headers: z.record(z.string(), z.string()).optional(),
+        actions: z.array(z.object({ type: z.string().optional() })).optional(),
+      })
+      .optional(),
+  }),
+});
+
+type FetchErrorCauseParams = z.infer<typeof fetchErrorCauseSchema>["params"];
+
+async function captureCause(
+  promise: Promise<unknown>,
+): Promise<{ raw: unknown; params: FetchErrorCauseParams }> {
   try {
     await promise;
-  } catch (error) {
-    return (error as Error).cause;
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      const parsed = fetchErrorCauseSchema.safeParse(error.cause);
+      if (parsed.success) {
+        return { raw: error.cause, params: parsed.data.params };
+      }
+    }
+    throw new Error(
+      "expected robustFetch to throw an Error with structured cause",
+      { cause: error },
+    );
   }
   throw new Error("expected robustFetch to throw");
 }
@@ -101,7 +124,7 @@ describe("redactRequestBodyForLog", () => {
     const body = {
       url: "https://example.com/login",
       engine: "chrome-cdp",
-      timeout: 30000,
+      timeout: 30_000,
       mobileProxy: true,
       headers: secretHeaders,
       actions: secretActions,
@@ -112,7 +135,7 @@ describe("redactRequestBodyForLog", () => {
     expect(redacted).toEqual({
       url: "https://example.com/login",
       engine: "chrome-cdp",
-      timeout: 30000,
+      timeout: 30_000,
       mobileProxy: true,
       headers: redactHeaders(secretHeaders),
       actions: [
@@ -157,15 +180,14 @@ describe("robustFetch error logging", () => {
     [
       "a schema mismatch",
       mockWith(200, JSON.stringify({ other: 1 })),
-      (z: typeof import("zod")) => z.object({ id: z.string() }),
+      z.object({ id: z.string() }),
     ],
   ])(
     "never logs or throws credential headers on %s",
-    async (_, mock, schemaOf) => {
-      const z = await import("zod");
-      const logger = makeLogger();
+    async (_, mock, schema) => {
+      const { logger, debugSpy } = makeLogger();
 
-      const cause = await captureCause(
+      const { raw, params } = await captureCause(
         robustFetch({
           url: "https://upstream.test/run",
           method: "POST",
@@ -173,21 +195,21 @@ describe("robustFetch error logging", () => {
           body: { input: { file_content: "BASE64" } },
           logger,
           mock,
-          schema: schemaOf?.(z),
+          schema,
         }),
       );
 
-      const serialized = JSON.stringify([cause, logger.debug.mock.calls]);
+      const serialized = JSON.stringify([raw, debugSpy.mock.calls]);
       expect(serialized).not.toContain("secret-value");
-      expect(cause.params.headers.Authorization).toBe("[REDACTED]");
-      expect(cause.params.headers["User-Agent"]).toBe("firecrawl");
+      expect(params.headers?.Authorization).toBe("[REDACTED]");
+      expect(params.headers?.["User-Agent"]).toBe("firecrawl");
     },
   );
 
   it("redacts headers forwarded inside the request body", async () => {
-    const logger = makeLogger();
+    const { logger, debugSpy } = makeLogger();
 
-    const cause = await captureCause(
+    const { raw, params } = await captureCause(
       robustFetch({
         url: "https://upstream.test/run",
         method: "POST",
@@ -197,16 +219,16 @@ describe("robustFetch error logging", () => {
       }),
     );
 
-    const serialized = JSON.stringify([cause, logger.debug.mock.calls]);
+    const serialized = JSON.stringify([raw, debugSpy.mock.calls]);
     expect(serialized).not.toContain("secret-value");
-    expect(cause.params.body.url).toBe("https://example.com");
-    expect(cause.params.body.headers["User-Agent"]).toBe("firecrawl");
+    expect(params.body?.url).toBe("https://example.com");
+    expect(params.body?.headers?.["User-Agent"]).toBe("firecrawl");
   });
 
   it("redacts action payloads forwarded inside the request body", async () => {
-    const logger = makeLogger();
+    const { logger, debugSpy } = makeLogger();
 
-    const cause = await captureCause(
+    const { raw, params } = await captureCause(
       robustFetch({
         url: "https://upstream.test/run",
         method: "POST",
@@ -216,9 +238,9 @@ describe("robustFetch error logging", () => {
       }),
     );
 
-    const serialized = JSON.stringify([cause, logger.debug.mock.calls]);
+    const serialized = JSON.stringify([raw, debugSpy.mock.calls]);
     expect(serialized).not.toContain("secret-value");
-    expect(cause.params.body.actions.map((a: any) => a.type)).toEqual(
+    expect((params.body?.actions ?? []).map(a => a.type)).toEqual(
       secretActions.map(a => a.type),
     );
   });

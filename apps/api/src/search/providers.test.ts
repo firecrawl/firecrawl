@@ -16,16 +16,12 @@ vi.mock("./v2/ddgsearch", () => ({
   ddgSearch: mocks.ddgSearch,
 }));
 
+import { createLogger } from "winston";
 import { config } from "../config";
 import { coreSearchProviderSpecs } from "../service/search-providers";
 import { coreSearchProviders } from "./providers";
 
-const logger = {
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
-} as any;
+const logger = createLogger({ silent: true });
 
 const originalSearxngEndpoint = config.SEARXNG_ENDPOINT;
 
@@ -48,11 +44,18 @@ describe("coreSearchProviders", () => {
       "duckduckgo",
     ]);
     expect(
-      coreSearchProviders.map(provider => ({
-        name: provider.name,
-        priority: provider.priority,
-        ...(provider.supportsUsOnly ? { supportsUsOnly: true } : {}),
-      })),
+      coreSearchProviders.map(provider =>
+        provider.supportsUsOnly
+          ? {
+              name: provider.name,
+              priority: provider.priority,
+              supportsUsOnly: true,
+            }
+          : {
+              name: provider.name,
+              priority: provider.priority,
+            },
+      ),
     ).toEqual(coreSearchProviderSpecs);
   });
 

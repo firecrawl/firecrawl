@@ -7,8 +7,15 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { v7 as uuidv7 } from "uuid";
 import type { Document } from "../controllers/v2/types";
+import { z } from "zod";
 import { UNSUPPORTED_SITE_MESSAGE } from "../lib/strings";
-import type { Refusal, RequestEvent, RequestKind, ResponseInfo } from "./hooks";
+import type {
+  Refusal,
+  RequestEvent,
+  RequestKind,
+  ResponseInfo,
+  ResponsePayload,
+} from "./hooks";
 import type {
   AdmitInput,
   AuthRoute,
@@ -16,7 +23,7 @@ import type {
   CoreRouteKind,
   RouteKind,
 } from "./modules";
-import type { RequestContext } from "./request-context";
+import type { RequestBodies } from "./request";
 import { service } from "./service";
 
 export type { AuthRoute, CoreRouteKind, RouteKind };
@@ -43,7 +50,9 @@ export function requestKindForPath(path: string): RequestKind | undefined {
 
 /** Sends a ready-made HTTP refusal if the response has not already been sent. */
 export function sendRefusal(res: Response, refusal: Refusal): void {
-  if (res.headersSent) return;
+  if (res.headersSent) {
+    return;
+  }
   for (const [name, value] of Object.entries(refusal.headers ?? {})) {
     res.setHeader(name, value);
   }
@@ -101,12 +110,12 @@ export function authenticate(
 }
 
 /** Options controlling how `openRequest` parses, authorizes, and checks a request. */
-export interface OpenRequestOptions {
+export interface OpenRequestOptions<K extends RequestKind = RequestKind> {
   /**
    * Minimum billable units for `billing.authorize` preflight, or a function
    * deriving them from the admitted body.
    */
-  units?: number | ((body: unknown) => number | undefined);
+  units?: number | ((body: RequestBodies[K]) => number | undefined);
   /**
    * Whether `openRequest` runs `billing.authorize` preflight. Defaults to true.
    * Set to false when an earlier middleware already ran preflight billing.
@@ -115,7 +124,7 @@ export interface OpenRequestOptions {
   /** Extra state forwarded to `billing.authorize` during preflight. */
   authorizeState?: Partial<AuthorizeState>;
   /** Optional parser overriding the default `service.schemas[kind]` parse. */
-  parse?: (rawBody: unknown) => unknown;
+  parse?: (rawBody: unknown) => RequestBodies[K];
   /**
    * Optional handler invoked when body parsing throws. Returning `true` (or
    * writing a response) stops propagation to Express error middleware.
@@ -134,34 +143,47 @@ export interface OpenRequestOptions {
   blocklist?: "none" | "single";
 }
 
+interface PreflightAuthorizeState extends Partial<AuthorizeState> {
+  req: Request;
+  minimum?: number;
+}
+
 function defaultBlocklistMode(kind: RequestKind): "none" | "single" {
   return kind === "scrape" || kind === "crawl" || kind === "map"
     ? "single"
     : "none";
 }
 
-function parseBodyForKind(
-  kind: RequestKind,
+type DefaultRequestParsers = {
+  [K in RequestKind]: (rawBody: unknown) => RequestBodies[K];
+};
+
+const defaultRequestParsers: DefaultRequestParsers = {
+  scrape: rawBody => service.schemas.scrape.parse(rawBody),
+  parse: rawBody => service.schemas.parse.parse(rawBody),
+  crawl: rawBody => service.schemas.crawl.parse(rawBody),
+  batchScrape: rawBody =>
+    z.object({ ignoreInvalidURLs: z.literal(true) }).safeParse(rawBody).success
+      ? service.schemas.batchScrapeNoURLValidation.parse(rawBody)
+      : service.schemas.batchScrape.parse(rawBody),
+  map: rawBody => service.schemas.map.parse(rawBody),
+  search: rawBody => service.schemas.search.parse(rawBody),
+};
+
+function parseBodyForKind<K extends RequestKind>(
+  kind: K,
   rawBody: unknown,
-  customParse?: (rawBody: unknown) => unknown,
-): unknown {
+  customParse?: (rawBody: unknown) => RequestBodies[K],
+): RequestBodies[K] {
   if (customParse) {
     return customParse(rawBody);
   }
-  if (
-    kind === "batchScrape" &&
-    rawBody &&
-    typeof rawBody === "object" &&
-    (rawBody as Record<string, unknown>).ignoreInvalidURLs === true
-  ) {
-    return service.schemas.batchScrapeNoURLValidation.parse(rawBody);
-  }
-  return service.schemas[kind].parse(rawBody);
+  return defaultRequestParsers[kind](rawBody);
 }
 
-function deriveRequestedUnits(
-  body: unknown,
-  units: OpenRequestOptions["units"],
+function deriveRequestedUnits<K extends RequestKind>(
+  body: RequestBodies[K],
+  units: OpenRequestOptions<K>["units"],
 ): number | undefined {
   if (typeof units === "function") {
     return units(body);
@@ -170,9 +192,9 @@ function deriveRequestedUnits(
     return units;
   }
   if (body && typeof body === "object") {
-    const record = body as { limit?: unknown; urls?: unknown };
-    const candidate =
-      record.limit ?? (Array.isArray(record.urls) ? record.urls.length : 1);
+    const limitVal = "limit" in body ? body.limit : undefined;
+    const urlsVal = "urls" in body ? body.urls : undefined;
+    const candidate = limitVal ?? (Array.isArray(urlsVal) ? urlsVal.length : 1);
     const derived = Number(candidate);
     if (Number.isFinite(derived) && derived > 0) {
       return derived;
@@ -181,15 +203,41 @@ function deriveRequestedUnits(
   return undefined;
 }
 
+type RequestEventBuilders = {
+  [K in RequestKind]: (
+    id: string,
+    ctx: NonNullable<Request["ctx"]>,
+    body: RequestBodies[K],
+  ) => RequestEvent;
+};
+
+const requestEventBuilders: RequestEventBuilders = {
+  scrape: (id, ctx, body) => ({ kind: "scrape", id, ctx, body }),
+  parse: (id, ctx, body) => ({ kind: "parse", id, ctx, body }),
+  crawl: (id, ctx, body) => ({ kind: "crawl", id, ctx, body }),
+  batchScrape: (id, ctx, body) => ({ kind: "batchScrape", id, ctx, body }),
+  map: (id, ctx, body) => ({ kind: "map", id, ctx, body }),
+  search: (id, ctx, body) => ({ kind: "search", id, ctx, body }),
+};
+
+function buildRequestEvent<K extends RequestKind>(
+  kind: K,
+  id: string,
+  ctx: NonNullable<Request["ctx"]>,
+  body: RequestBodies[K],
+): RequestEvent {
+  return requestEventBuilders[kind](id, ctx, body);
+}
+
 /**
  * Express middleware shared by core API request routes: validates the request
  * body against `service.schemas`, admits it through `service.modules.policy`,
  * checks preflight billing and URL blocklist rules, emits `request.accepted`,
  * and sets `req.ctx`, `req.body`, and `req.requestId`.
  */
-export function openRequest(
-  kind: RequestKind,
-  options?: OpenRequestOptions,
+export function openRequest<K extends RequestKind>(
+  kind: K,
+  options?: OpenRequestOptions<K>,
 ): RequestHandler {
   const blocklistMode = options?.blocklist ?? defaultBlocklistMode(kind);
 
@@ -201,12 +249,12 @@ export function openRequest(
         );
       }
 
-      const rawBody = req.body;
+      const rawBody: unknown = req.body;
       req.rawRequestBody = rawBody;
       const id = req.requestId ?? uuidv7();
       req.requestId = id;
 
-      let parsedBody: unknown;
+      let parsedBody: RequestBodies[K];
       try {
         parsedBody = parseBodyForKind(kind, rawBody, options?.parse);
       } catch (error) {
@@ -219,7 +267,7 @@ export function openRequest(
         throw error;
       }
 
-      const admission = await service.modules.policy.admit({
+      const admitInput: AdmitInput<K> = {
         kind,
         caller: req.caller,
         body: parsedBody,
@@ -231,7 +279,8 @@ export function openRequest(
           rawBody,
           req,
         },
-      } as AdmitInput);
+      };
+      const admission = await service.modules.policy.admit(admitInput);
 
       if (!admission.ok) {
         rejectRequest(req, res, kind, admission.refusal);
@@ -244,8 +293,9 @@ export function openRequest(
         }
       }
 
+      const admittedBody = admission.body;
       req.ctx = admission.ctx;
-      req.body = admission.body;
+      req.body = admittedBody;
       if (admission.blocklistChecked) {
         req.requestBlocklistChecked = true;
       }
@@ -257,21 +307,24 @@ export function openRequest(
       }
 
       if (options?.authorize !== false) {
-        const requestedUnits = deriveRequestedUnits(req.body, options?.units);
-        const state: Record<string, unknown> = {
+        const requestedUnits = deriveRequestedUnits(
+          admittedBody,
+          options?.units,
+        );
+        const state: PreflightAuthorizeState = {
           ...(options?.authorizeState ?? {}),
           req,
-          ...(typeof options?.units === "number"
-            ? { minimum: options.units }
-            : {}),
         };
+        if (typeof options?.units === "number") {
+          state.minimum = options.units;
+        }
         const authz = await service.modules.billing.authorize({
           caller: req.caller,
           operation: kind,
           stage: "preflight",
           requestedUnits,
           ctx: req.ctx,
-          state: state as AuthorizeState,
+          state,
         });
 
         if (!authz.ok) {
@@ -279,34 +332,30 @@ export function openRequest(
           return;
         }
 
-        (req as Request & { account?: { remainingCredits: number } }).account =
-          {
-            remainingCredits: authz.maxUnits ?? Infinity,
-          };
-        if (
-          authz.clampedLimit !== undefined &&
-          req.body &&
-          typeof req.body === "object"
-        ) {
-          (req.body as Record<string, unknown>).limit = authz.clampedLimit;
+        req.account = {
+          remainingCredits: authz.maxUnits ?? Infinity,
+        };
+        if (authz.clampedLimit !== undefined) {
+          Object.assign(admittedBody, { limit: authz.clampedLimit });
         }
       }
 
       if (
         !admission.blocklistChecked &&
         blocklistMode === "single" &&
-        req.body &&
-        typeof req.body === "object" &&
-        typeof (req.body as { url?: unknown }).url === "string"
+        admittedBody &&
+        typeof admittedBody === "object" &&
+        "url" in admittedBody &&
+        typeof admittedBody.url === "string"
       ) {
-        const bodyRecord = req.body as { url: string; origin?: unknown };
+        const originVal =
+          "origin" in admittedBody && typeof admittedBody.origin === "string"
+            ? admittedBody.origin
+            : null;
         const blocked = service.modules.blocklist.isBlocked(
-          bodyRecord.url,
+          admittedBody.url,
           req.ctx,
-          {
-            origin:
-              typeof bodyRecord.origin === "string" ? bodyRecord.origin : null,
-          },
+          { origin: originVal },
         );
         if (blocked) {
           rejectRequest(req, res, kind, {
@@ -320,12 +369,10 @@ export function openRequest(
         }
       }
 
-      await service.hooks.run("request.accepted", {
-        kind,
-        id,
-        ctx: req.ctx,
-        body: req.body,
-      } as RequestEvent);
+      await service.hooks.run(
+        "request.accepted",
+        buildRequestEvent(kind, id, req.ctx, admittedBody),
+      );
 
       next();
     })().catch(next);
@@ -350,7 +397,7 @@ export function resolveRequestContext(route: string): RequestHandler {
         req.ctx = {
           teamId: req.caller.teamId,
           zeroDataRetention: false,
-        } as RequestContext;
+        };
         next();
         return;
       }
@@ -385,6 +432,12 @@ export function resolveRequestContext(route: string): RequestHandler {
   };
 }
 
+interface FinalizeRequest<K extends RequestKind> {
+  ctx?: Request["ctx"];
+  requestId?: string;
+  body: RequestBodies[K];
+}
+
 /**
  * Runs `request.responding` transform hooks on a response payload before
  * sending it. Returns `payload` synchronously with zero overhead when no
@@ -392,22 +445,20 @@ export function resolveRequestContext(route: string): RequestHandler {
  */
 export function finalizeResponse<
   K extends RequestKind,
-  T extends Record<string, unknown>,
+  T extends ResponsePayload,
 >(
-  req: Request,
+  req: FinalizeRequest<K>,
   kind: K,
   payload: T,
-  documents: Document[] = [],
-): T | Promise<T> {
+  documents: Array<Document> = [],
+): ResponsePayload | Promise<ResponsePayload> {
   if (!service.hooks.has("request.responding") || !req.ctx) {
     return payload;
   }
   const id = req.requestId ?? "";
-  return service.hooks.transform("request.responding", payload, {
-    kind,
-    id,
-    ctx: req.ctx,
-    body: req.body,
+  const info: ResponseInfo = {
+    ...buildRequestEvent(kind, id, req.ctx, req.body),
     documents,
-  } as ResponseInfo) as T | Promise<T>;
+  };
+  return service.hooks.transform("request.responding", payload, info);
 }

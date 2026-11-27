@@ -10,7 +10,7 @@ export function normalizeUrlOnlyHostname(url: string) {
   try {
     const urlObj = new URL(url);
     return urlObj.hostname.replace(/^www\./, "");
-  } catch (error) {
+  } catch {
     return url
       .replace(/^https?:\/\//, "")
       .replace(/^www\./, "")

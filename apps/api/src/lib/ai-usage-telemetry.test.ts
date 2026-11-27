@@ -1,15 +1,16 @@
 import { createXai } from "@ai-sdk/xai";
 import { context, propagation, trace } from "@opentelemetry/api";
-import {
-  InMemorySpanExporter,
-  type NodeTracerProvider,
-  type ReadableSpan,
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-node";
+import type {
+  NodeTracerProvider,
+  ReadableSpan,
 } from "@opentelemetry/sdk-trace-node";
 import { APICallError, generateObject, generateText, streamText } from "ai";
 import { convertArrayToReadableStream, MockLanguageModelV3 } from "ai/test";
 import { z } from "zod";
 import { aiTelemetry } from "./ai-telemetry";
 import { withUsageTelemetry } from "./ai-usage-telemetry";
+import type { JsonObject } from "./json-types";
 import { createTracerProvider } from "./otel-tracer";
 
 const telemetry = aiTelemetry({
@@ -82,7 +83,7 @@ const openAIResponsesBody = {
 
 // Responses API body as returned by xAI for a request that ran X Search.
 // Trimmed to the fields `@ai-sdk/xai` validates plus the usage block.
-function xaiResponsesBody(usage: Record<string, unknown>) {
+function xaiResponsesBody(usage: JsonObject) {
   return {
     id: "resp_xai_test",
     object: "response",
@@ -128,7 +129,7 @@ async function generateWithXaiResponses(body: unknown) {
   });
   await generateText({
     model: withUsageTelemetry(xai.responses("grok-4-1-fast-non-reasoning")),
-    tools: { x_search: xai.tools.xSearch() } as any,
+    tools: { x_search: xai.tools.xSearch() },
     prompt: "hello",
     telemetry,
   });
@@ -184,9 +185,8 @@ describe("usage telemetry middleware", () => {
     let resetService: (() => void) | undefined;
     try {
       vi.resetModules();
-      const { createService, replaceService } = await import(
-        "../service/service.js"
-      );
+      const { createService, replaceService } =
+        await import("../service/service.js");
       const { coreLlmProviders, getModel } = await import("./generic-ai.js");
       replaceService(
         createService(
@@ -212,8 +212,11 @@ describe("usage telemetry middleware", () => {
       resetService?.();
       vi.unstubAllGlobals();
       for (const [key, value] of Object.entries(savedEnv)) {
-        if (value === undefined) delete process.env[key];
-        else process.env[key] = value;
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
       }
       // Drop the generic-ai/config instances bound to the test env above.
       vi.resetModules();

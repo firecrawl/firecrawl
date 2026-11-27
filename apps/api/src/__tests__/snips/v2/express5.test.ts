@@ -1,4 +1,5 @@
-import request, { TEST_API_URL, idmux, Identity } from "./lib";
+import type { Identity } from "./lib";
+import request, { TEST_API_URL, idmux } from "./lib";
 import http from "node:http";
 import { gzipSync } from "node:zlib";
 
@@ -89,7 +90,9 @@ describe("Express 5 compatibility", () => {
       expect(responseStatus).toBe(valid.status);
 
       // The vulnerable parser can crash after sending a response.
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 200);
+      });
       const liveness = await request(TEST_API_URL).get("/e2e-test");
       expect(liveness.statusCode).toBe(200);
     },

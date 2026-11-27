@@ -1,17 +1,14 @@
-import { z } from "zod";
-import {
+import type { z } from "zod";
+import type {
   BaseScrapeOptions,
+  CrawlerOptions,
   ScrapeOptions,
-  Document as V2Document,
-  TeamFlags,
 } from "./controllers/v2/types";
-import { AuthCreditUsageChunk } from "./controllers/v2/types";
-import { ExtractorOptions } from "./lib/entities";
-import { InternalOptions } from "./scraper/scrapeURL";
+import type { InternalOptions } from "./scraper/scrapeURL";
 import type { CostTracking } from "./lib/cost-tracking";
 import type { BillingMetadata } from "./lib/billing-types";
 import type { RequestContext } from "./service/request-context";
-import { webhookSchema } from "./services/webhook/schema";
+import type { webhookSchema } from "./services/webhook/schema";
 import type { SerializedTraceContext } from "./lib/otel-tracer";
 
 type ScrapeJobCommon = {
@@ -45,11 +42,17 @@ export type ScrapeJobData = ScrapeJobCommon &
     | ScrapeJobKickoffSitemapUnique
   );
 
+export type JobCrawlerOptions = Partial<CrawlerOptions> & {
+  allowBackwardCrawling?: boolean;
+  currentDiscoveryDepth?: number;
+  urlInvisibleInCurrentCrawl?: boolean;
+};
+
 type ScrapeJobSingleUrlsUnique = {
   mode: "single_urls";
 
   url: string;
-  crawlerOptions?: any;
+  crawlerOptions?: JobCrawlerOptions | null;
   scrapeOptions: BaseScrapeOptions;
   internalOptions?: InternalOptions;
   origin: string;
@@ -71,7 +74,7 @@ type ScrapeJobSingleUrlsUnique = {
   is_extract?: boolean;
   apiKeyId: number | null;
 
-  logRequestPromise?: Promise<any>;
+  logRequestPromise?: Promise<unknown>;
 };
 
 export type ScrapeJobSingleUrls = ScrapeJobCommon & ScrapeJobSingleUrlsUnique;
@@ -80,7 +83,7 @@ type ScrapeJobKickoffUnique = {
   mode: "kickoff";
 
   url: string;
-  crawlerOptions?: any;
+  crawlerOptions?: JobCrawlerOptions | null;
   scrapeOptions: BaseScrapeOptions;
   internalOptions?: InternalOptions;
   origin: string;

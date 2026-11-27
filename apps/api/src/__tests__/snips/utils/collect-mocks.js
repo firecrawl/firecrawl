@@ -1,5 +1,5 @@
-const path = require("path");
-const fs = require("fs");
+const path = require("node:path");
+const fs = require("node:fs");
 
 const mocksDirPath = path.join(__dirname, "../../../scraper/scrapeURL/mocks");
 const files = fs.readdirSync(mocksDirPath);

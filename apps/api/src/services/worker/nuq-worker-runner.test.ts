@@ -17,7 +17,7 @@ vi.mock("../../otel", () => ({
 }));
 
 vi.mock("../../lib/otel-tracer", () => ({
-  withZeroDataRetention: (_zdr: boolean, fn: () => unknown) => fn(),
+  withZeroDataRetention: <T>(_zdr: boolean, fn: () => T): T => fn(),
 }));
 
 vi.mock("../../lib/logger", () => ({
@@ -47,9 +47,11 @@ vi.mock("../../scraper/WebScraper/utils/engine-forcing", () => ({
 }));
 
 import { defaultModules, noBlocklist } from "../../service/defaults";
-import { replaceService, type CoreParts } from "../../service/service";
+import { replaceService } from "../../service/service";
+import type { CoreParts } from "../../service/service";
 import { testService, withService } from "../../service/testing";
-import { runNuqWorker, type WorkerQueue } from "./nuq-worker-runner";
+import { runNuqWorker } from "./nuq-worker-runner";
+import type { WorkerQueue } from "./nuq-worker-runner";
 
 const parts: CoreParts = {
   core: { name: "core" },
@@ -72,16 +74,16 @@ afterEach(() => {
 
 describe("runNuqWorker blocklist startup init", () => {
   it("awaits service.modules.blocklist.init() before running beforeStart()", async () => {
-    const events: string[] = [];
+    const events: Array<string> = [];
     mocks.initializeEngineForcing.mockImplementation(() => {
       events.push("engine-forcing");
     });
 
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
-      code?: number,
-    ) => {
-      throw new Error(`process.exit:${code}`);
-    }) as never);
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((code?: number) => {
+        throw new Error(`process.exit:${code}`);
+      });
 
     const svc = testService(defaultModules(), parts, {
       blocklist: {
@@ -120,11 +122,11 @@ describe("runNuqWorker blocklist startup init", () => {
   it("logs and exits with code 1 when service.modules.blocklist.init() rejects", async () => {
     const failure = new Error("blocklist load failed");
     const beforeStart = vi.fn();
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
-      code?: number,
-    ) => {
-      throw new Error(`process.exit:${code}`);
-    }) as never);
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((code?: number) => {
+        throw new Error(`process.exit:${code}`);
+      });
 
     const svc = testService(defaultModules(), parts, {
       blocklist: {

@@ -1,3 +1,4 @@
+import express from "express";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DocumentFetchProxyError,
@@ -28,12 +29,11 @@ import type {
   JobStoreModule,
   LimitsModule,
   MessagesModule,
-  Modules,
-  PolicyModule,
   UploadsModule,
   WebhooksModule,
 } from "./modules";
-import { createService, replaceService, type CoreParts } from "./service";
+import { createService, replaceService } from "./service";
+import type { CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
 const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
@@ -104,7 +104,9 @@ describe("memoryUploads", () => {
     });
 
     expect(prepared.ok).toBe(true);
-    if (!prepared.ok) throw new Error("expected prepared upload");
+    if (!prepared.ok) {
+      throw new Error("expected prepared upload");
+    }
     expect(prepared.target).toEqual({
       uploadUrl:
         "http://localhost:3002/v2/parse/upload/upload-1?uploadRef=signed.ref%2B1",
@@ -133,7 +135,9 @@ describe("memoryUploads", () => {
       body: Buffer.from("<p>hi</p>"),
     });
     expect(wrongTeam.ok).toBe(false);
-    if (!wrongTeam.ok) expect(wrongTeam.status).toBe(404);
+    if (!wrongTeam.ok) {
+      expect(wrongTeam.status).toBe(404);
+    }
 
     const tooLarge = await driver.receiveUpload!({
       uploadId: "upload-1",
@@ -196,7 +200,9 @@ describe("memoryUploads", () => {
     });
 
     expect(prepared.ok).toBe(true);
-    if (!prepared.ok) throw new Error("expected prepared upload");
+    if (!prepared.ok) {
+      throw new Error("expected prepared upload");
+    }
     expect(prepared.target.headers).toEqual({
       "Content-Type": "application/octet-stream",
     });
@@ -208,7 +214,9 @@ describe("memoryUploads", () => {
       body: Buffer.from("pdf"),
     });
     expect(received.ok).toBe(false);
-    if (!received.ok) expect(received.status).toBe(404);
+    if (!received.ok) {
+      expect(received.status).toBe(404);
+    }
   });
 });
 
@@ -232,8 +240,8 @@ describe("noBlocklist", () => {
 describe("openAuth", () => {
   it("admits requests under the bypass team by default and returns fresh caller objects", async () => {
     const auth = openAuth();
-    const first = await auth.authenticate({} as never, { kind: "scrape" });
-    const second = await auth.authenticate({} as never, { kind: "crawl" });
+    const first = await auth.authenticate(express.request, { kind: "scrape" });
+    const second = await auth.authenticate(express.request, { kind: "crawl" });
 
     expect(first).toEqual({ ok: true, caller: { teamId: "bypass" } });
     expect(second).toEqual({ ok: true, caller: { teamId: "bypass" } });
@@ -244,7 +252,7 @@ describe("openAuth", () => {
 
   it("uses the supplied team id", async () => {
     const auth = openAuth("local-team");
-    const result = await auth.authenticate({} as never, { kind: "map" });
+    const result = await auth.authenticate(express.request, { kind: "map" });
 
     expect(result).toEqual({ ok: true, caller: { teamId: "local-team" } });
   });
@@ -255,7 +263,9 @@ describe("redisIdempotency", () => {
     const seen = new Map<string, number>();
     const idempotency = redisIdempotency({
       setIfAbsent: async (key, ttlSeconds) => {
-        if (seen.has(key)) return false;
+        if (seen.has(key)) {
+          return false;
+        }
         seen.set(key, ttlSeconds);
         return true;
       },
@@ -300,7 +310,8 @@ describe("redisIdempotency", () => {
     );
     expect(() =>
       redisIdempotency({
-        setIfAbsent: "not-a-function" as unknown as () => Promise<boolean>,
+        // @ts-expect-error: verifying runtime rejection of non-function setIfAbsent
+        setIfAbsent: "not-a-function",
       }),
     ).toThrow("Invalid idempotency setIfAbsent");
   });
@@ -341,9 +352,10 @@ describe("directWebhooks", () => {
       statusCode: 202,
     });
 
-    expect(() => directWebhooks({ secret: 123 as unknown as string })).toThrow(
-      "Invalid webhooks secret",
-    );
+    expect(() =>
+      // @ts-expect-error: verifying runtime rejection of non-string secret
+      directWebhooks({ secret: 123 }),
+    ).toThrow("Invalid webhooks secret");
   });
 
   it("propagates send errors from direct delivery", async () => {
@@ -397,7 +409,7 @@ describe("service module slots", () => {
       "webhooks",
     ]);
     await expect(
-      built.modules.auth.authenticate({} as never, { kind: "scrape" }),
+      built.modules.auth.authenticate(express.request, { kind: "scrape" }),
     ).resolves.toEqual({ ok: true, caller: { teamId: "bypass" } });
     await expect(
       built.modules.billing.authorize({
@@ -562,7 +574,7 @@ describe("service module slots", () => {
     ).resolves.toBe(13);
     expect(built.modules.limits.queueBackend(ctx)).toBe("fdb");
     await expect(
-      built.modules.auth.authenticate({} as never, { kind: "scrape" }),
+      built.modules.auth.authenticate(express.request, { kind: "scrape" }),
     ).resolves.toEqual({ ok: true, caller: { teamId: "custom-team" } });
     await expect(
       built.modules.billing.authorize({
@@ -618,34 +630,33 @@ describe("service module slots", () => {
 
   it("rejects invalid, null, or unknown module slots and malformed upload drivers at service creation", () => {
     expect(() =>
-      createService({ modules: { auth: {} as unknown as AuthModule } }, parts),
-    ).toThrow("Invalid auth module");
-    expect(() =>
       createService(
-        { modules: { auth: null as unknown as AuthModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of empty auth module
+            auth: {},
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid auth module");
-    expect(() =>
-      createService(
-        { modules: { blocklist: {} as unknown as BlocklistModule } },
-        parts,
-      ),
-    ).toThrow("Invalid blocklist module");
-    expect(() =>
-      createService(
-        { modules: { blocklist: null as unknown as BlocklistModule } },
-        parts,
-      ),
-    ).toThrow("Invalid blocklist module");
     expect(() =>
       createService(
         {
           modules: {
-            blocklist: {
-              init: async () => {},
-              isBlocked: () => false,
-            } as unknown as BlocklistModule,
+            // @ts-expect-error: verifying runtime rejection of null auth module
+            auth: null,
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid auth module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of empty blocklist module
+            blocklist: {},
           },
         },
         parts,
@@ -653,13 +664,48 @@ describe("service module slots", () => {
     ).toThrow("Invalid blocklist module");
     expect(() =>
       createService(
-        { modules: { limits: {} as unknown as LimitsModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of null blocklist module
+            blocklist: null,
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid blocklist module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of incomplete blocklist module
+            blocklist: {
+              init: async () => {},
+              isBlocked: () => false,
+            },
+          },
+        },
+        parts,
+      ),
+    ).toThrow("Invalid blocklist module");
+    expect(() =>
+      createService(
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of empty limits module
+            limits: {},
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid limits module");
     expect(() =>
       createService(
-        { modules: { limits: null as unknown as LimitsModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of null limits module
+            limits: null,
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid limits module");
@@ -669,7 +715,8 @@ describe("service module slots", () => {
           modules: {
             limits: {
               ...noLimits(),
-              keyConcurrency: "not-a-function" as unknown as never,
+              // @ts-expect-error: verifying runtime rejection of non-function keyConcurrency
+              keyConcurrency: "not-a-function",
             },
           },
         },
@@ -678,13 +725,23 @@ describe("service module slots", () => {
     ).toThrow("Invalid limits module");
     expect(() =>
       createService(
-        { modules: { billing: {} as unknown as BillingModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of empty billing module
+            billing: {},
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid billing module");
     expect(() =>
       createService(
-        { modules: { billing: null as unknown as BillingModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of null billing module
+            billing: null,
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid billing module");
@@ -694,8 +751,9 @@ describe("service module slots", () => {
           modules: {
             billing: {
               ...unmeteredBilling(),
+              // @ts-expect-error: verifying runtime rejection of non-function settle
               settle: "not-a-function",
-            } as unknown as BillingModule,
+            },
           },
         },
         parts,
@@ -703,73 +761,133 @@ describe("service module slots", () => {
     ).toThrow("Invalid billing module");
     expect(() =>
       createService(
-        { modules: { messages: {} as unknown as MessagesModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of empty messages module
+            messages: {},
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid messages module");
     expect(() =>
       createService(
-        { modules: { messages: null as unknown as MessagesModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of null messages module
+            messages: null,
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid messages module");
     expect(() =>
       createService(
-        { modules: { uploads: {} as unknown as UploadsModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of empty uploads module
+            uploads: {},
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid uploads module");
     expect(() =>
       createService(
-        { modules: { uploads: null as unknown as UploadsModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of null uploads module
+            uploads: null,
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid uploads module");
     expect(() =>
       createService(
-        { modules: { jobStore: {} as unknown as JobStoreModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of empty jobStore module
+            jobStore: {},
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid jobStore module");
     expect(() =>
       createService(
-        { modules: { jobStore: null as unknown as JobStoreModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of null jobStore module
+            jobStore: null,
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid jobStore module");
     expect(() =>
       createService(
-        { modules: { idempotency: {} as unknown as IdempotencyModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of empty idempotency module
+            idempotency: {},
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid idempotency module");
     expect(() =>
       createService(
-        { modules: { idempotency: null as unknown as IdempotencyModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of null idempotency module
+            idempotency: null,
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid idempotency module");
     expect(() =>
       createService(
-        { modules: { webhooks: {} as unknown as WebhooksModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of empty webhooks module
+            webhooks: {},
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid webhooks module");
     expect(() =>
       createService(
-        { modules: { webhooks: null as unknown as WebhooksModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of null webhooks module
+            webhooks: null,
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid webhooks module");
     expect(() =>
       createService(
-        { modules: { policy: {} as unknown as PolicyModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of empty policy module
+            policy: {},
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid policy module");
     expect(() =>
       createService(
-        { modules: { policy: null as unknown as PolicyModule } },
+        {
+          modules: {
+            // @ts-expect-error: verifying runtime rejection of null policy module
+            policy: null,
+          },
+        },
         parts,
       ),
     ).toThrow("Invalid policy module");
@@ -779,8 +897,9 @@ describe("service module slots", () => {
           modules: {
             policy: {
               ...unrestrictedPolicy(),
+              // @ts-expect-error: verifying runtime rejection of non-function policy.context
               context: "not-a-function",
-            } as unknown as PolicyModule,
+            },
           },
         },
         parts,
@@ -792,8 +911,9 @@ describe("service module slots", () => {
           modules: {
             jobStore: {
               ...queueJobStore(),
+              // @ts-expect-error: verifying runtime rejection of non-function jobStore.readMany
               readMany: "not-a-function",
-            } as unknown as JobStoreModule,
+            },
           },
         },
         parts,
@@ -805,8 +925,9 @@ describe("service module slots", () => {
           modules: {
             jobStore: {
               ...queueJobStore(),
+              // @ts-expect-error: verifying runtime rejection of non-function jobStore.storesResultsExternally
               storesResultsExternally: "not-a-function",
-            } as unknown as JobStoreModule,
+            },
           },
         },
         parts,
@@ -819,8 +940,9 @@ describe("service module slots", () => {
             webhooks: {
               signingSecret: async () => undefined,
               deliver: async () => ({ delivered: true }),
+              // @ts-expect-error: verifying runtime rejection of non-function webhooks.shutdown
               shutdown: "not-a-function",
-            } as unknown as WebhooksModule,
+            },
           },
         },
         parts,
@@ -831,7 +953,8 @@ describe("service module slots", () => {
         {
           modules: {
             uploads: {
-              driver: () => ({ name: "broken" }) as unknown as never,
+              // @ts-expect-error: verifying runtime rejection of incomplete uploads driver
+              driver: () => ({ name: "broken" }),
             },
           },
         },
@@ -843,19 +966,19 @@ describe("service module slots", () => {
         {
           modules: {
             uploads: {
-              driver: () =>
-                ({
-                  name: "broken",
-                  prepareUpload: async () => ({
-                    ok: false,
-                    status: 503,
-                    code: "PARSE_UPLOAD_STORAGE_DISABLED",
-                    error: "disabled",
-                  }),
-                  read: async () => Buffer.alloc(0),
-                  delete: async () => {},
-                  receiveUpload: "not-a-function",
-                }) as unknown as never,
+              driver: () => ({
+                name: "broken",
+                prepareUpload: async () => ({
+                  ok: false,
+                  status: 503,
+                  code: "PARSE_UPLOAD_STORAGE_DISABLED",
+                  error: "disabled",
+                }),
+                read: async () => Buffer.alloc(0),
+                delete: async () => {},
+                // @ts-expect-error: verifying runtime rejection of non-function driver.receiveUpload
+                receiveUpload: "not-a-function",
+              }),
             },
           },
         },
@@ -866,8 +989,9 @@ describe("service module slots", () => {
       createService(
         {
           modules: {
+            // @ts-expect-error: verifying runtime rejection of unknown module slot name
             upload: memoryUploads(),
-          } as unknown as Partial<Modules>,
+          },
         },
         parts,
       ),
@@ -983,8 +1107,9 @@ describe("unrestrictedPolicy", () => {
       body: {
         url: "https://example.com",
         zeroDataRetention: true,
+        // @ts-expect-error: passing partial body with robotsUserAgent to verify admit() field extraction
         robotsUserAgent: "CustomBot",
-      } as never,
+      },
     });
 
     expect(admitted.ok).toBe(true);

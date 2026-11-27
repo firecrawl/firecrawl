@@ -1,5 +1,5 @@
-import { Meta } from "..";
-import { Document } from "../../../controllers/v2/types";
+import type { Meta } from "..";
+import type { Document } from "../../../controllers/v2/types";
 import { checkForPromptInjection } from "../lib/promptInjectionGuard";
 import { MAX_JSON_EXTRACTION_MARKDOWN_CHARS } from "../lib/jsonExtract";
 
