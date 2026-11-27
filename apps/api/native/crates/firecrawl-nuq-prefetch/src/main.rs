@@ -63,7 +63,13 @@ fn main() -> ExitCode {
       ));
     }
     CliCommand::CheckConfig => match WorkerConfig::from_env() {
-      Ok(cfg) => return write_cli_output(format_args!("{}\n", cfg.redacted_summary())),
+      Ok(cfg) => {
+        if let Err(err) = PgStore::new(&cfg.pg_settings) {
+          let _ = writeln!(io::stderr().lock(), "config check failed: {err}");
+          return ExitCode::FAILURE;
+        }
+        return write_cli_output(format_args!("{}\n", cfg.redacted_summary()));
+      }
       Err(err) => {
         let _ = writeln!(io::stderr().lock(), "config check failed: {err}");
         return ExitCode::FAILURE;

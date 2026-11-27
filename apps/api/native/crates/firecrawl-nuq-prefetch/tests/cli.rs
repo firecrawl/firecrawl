@@ -58,12 +58,27 @@ fn cli_check_config_validates_and_redacts_secrets() {
     assert!(stderr.contains("NUQ_DATABASE_URL"));
   }
 
+  let invalid_ca = Command::new(BIN_PATH)
+    .arg("--check-config")
+    .env_clear()
+    .env(
+      "NUQ_DATABASE_URL",
+      "postgres://nuq@localhost/nuq?sslmode=verify-full&sslrootcert=/nonexistent/ca-bundle.pem",
+    )
+    .output();
+  assert!(invalid_ca.is_ok());
+  if let Ok(out) = invalid_ca {
+    assert_eq!(out.status.code(), Some(1));
+    assert!(out.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("failed to read sslrootcert PEM file"));
+  }
+
   let ok = Command::new(BIN_PATH)
     .arg("--check-config")
     .env_clear()
     .env(
       "NUQ_DATABASE_URL",
-      "postgres://secretuser:topsecretpg@pg.internal:6432/nuq?sslmode=verify-full",
+      "postgres://secretuser:topsecretpg@pg.internal:6432/nuq?sslmode=require",
     )
     .env(
       "NUQ_RABBITMQ_URL",
@@ -105,7 +120,7 @@ fn cli_check_config_validates_and_redacts_secrets() {
       );
       assert_eq!(
         v.get("databaseSslMode").and_then(serde_json::Value::as_str),
-        Some("verify-full")
+        Some("require")
       );
       assert_eq!(
         v.get("heartbeatConfigured")
