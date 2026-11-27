@@ -15,6 +15,7 @@ import type {
 } from "../../../lib/json-types";
 import { JsonExtractionContentTooLargeError } from "../error";
 import { toRootSchema, typeIncludes } from "../../../lib/openai-strict-schema";
+import { safeParseLogged } from "../../../lib/zod-log";
 
 // ~2MB of markdown, well past typical page sizes -- caps worst-case JSON extraction cost/latency.
 export const MAX_JSON_EXTRACTION_MARKDOWN_CHARS = 2_000_000;
@@ -206,7 +207,11 @@ export async function extractData({
       extractOptions.zeroDataRetention,
       extractOptions.teamFlags,
     );
-    const parsedGeneratedSchema = jsonOrRecordSchema.safeParse(genRes.extract);
+    const parsedGeneratedSchema = safeParseLogged(
+      jsonOrRecordSchema,
+      genRes.extract,
+      "json-extract.generatedSchema",
+    );
     schema = parsedGeneratedSchema.success
       ? parsedGeneratedSchema.data
       : undefined;

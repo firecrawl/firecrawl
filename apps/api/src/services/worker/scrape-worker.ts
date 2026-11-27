@@ -4,6 +4,7 @@ import http from "node:http";
 import https from "node:https";
 
 import { logger as _logger } from "../../lib/logger";
+import { safeParseLogged } from "../../lib/zod-log";
 import {
   concurrentJobDone,
   pushConcurrencyLimitActiveJob,
@@ -106,8 +107,15 @@ type StoredCrawlerOptions = JobCrawlerOptions & {
   maxDepth?: number;
 };
 
+const storedCrawlerShapeSchema = z.looseObject({});
+
 const storedCrawlerObjectSchema = z.custom<StoredCrawlerOptions>(
-  value => typeof value === "object" && value !== null && !Array.isArray(value),
+  value =>
+    safeParseLogged(
+      storedCrawlerShapeSchema,
+      value,
+      "scrape-worker.crawlerOptions",
+    ).success,
 );
 
 function parseLegacyNumber(value: unknown): number | undefined {
@@ -143,6 +151,9 @@ const errorWithMessageSchema = z.object({
 });
 
 function getStoredCrawlerOptions(sc: StoredCrawl): StoredCrawlerOptions | null {
+  if (sc.crawlerOptions === null || sc.crawlerOptions === undefined) {
+    return null;
+  }
   const parsedObj = storedCrawlerObjectSchema.safeParse(sc.crawlerOptions);
   if (!parsedObj.success) {
     return null;

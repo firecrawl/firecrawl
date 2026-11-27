@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { OngoingCrawlsResponse, RequestWithAuth } from "./types";
 import { toV2CrawlerOptions } from "./types";
 import { getCrawl } from "../../lib/crawl-redis";
+import { safeParseLogged, zCatchLogged } from "../../lib/zod-log";
 import { configDotenv } from "dotenv";
 import { crawlGroup } from "../../services/worker/nuq-router";
 import { requestContext } from "../../lib/request-context";
@@ -10,32 +11,49 @@ configDotenv();
 
 type StoredCrawlerOptionsInput = Parameters<typeof toV2CrawlerOptions>[0];
 
-function softOptional<T extends z.ZodType>(schema: T) {
-  return schema.optional().catch(undefined);
+function softOptional<T extends z.ZodType>(schema: T, field: string) {
+  return zCatchLogged(
+    schema
+      .nullable()
+      .transform(value => value ?? undefined)
+      .optional(),
+    undefined,
+    `crawl-ongoing.crawlerOptions.${field}`,
+  );
 }
 
 const storedCrawlerOptionsSchema = z.object({
-  includes: softOptional(z.array(z.string())),
-  excludes: softOptional(z.array(z.string())),
-  limit: softOptional(z.number()),
-  allowBackwardCrawling: softOptional(z.boolean()),
-  allowExternalContentLinks: softOptional(z.boolean()),
-  allowSubdomains: softOptional(z.boolean()),
-  ignoreRobotsTxt: softOptional(z.boolean()),
-  robotsUserAgent: softOptional(z.string()),
-  sitemapOnly: softOptional(z.boolean()),
-  ignoreSitemap: softOptional(z.boolean()),
-  deduplicateSimilarURLs: softOptional(z.boolean()),
-  ignoreQueryParameters: softOptional(z.boolean()),
-  regexOnFullURL: softOptional(z.boolean()),
-  maxDiscoveryDepth: softOptional(z.number()),
-  delay: softOptional(z.number()),
+  includes: softOptional(z.array(z.string()), "includes"),
+  excludes: softOptional(z.array(z.string()), "excludes"),
+  limit: softOptional(z.number(), "limit"),
+  allowBackwardCrawling: softOptional(z.boolean(), "allowBackwardCrawling"),
+  allowExternalContentLinks: softOptional(
+    z.boolean(),
+    "allowExternalContentLinks",
+  ),
+  allowSubdomains: softOptional(z.boolean(), "allowSubdomains"),
+  ignoreRobotsTxt: softOptional(z.boolean(), "ignoreRobotsTxt"),
+  robotsUserAgent: softOptional(z.string(), "robotsUserAgent"),
+  sitemapOnly: softOptional(z.boolean(), "sitemapOnly"),
+  ignoreSitemap: softOptional(z.boolean(), "ignoreSitemap"),
+  deduplicateSimilarURLs: softOptional(z.boolean(), "deduplicateSimilarURLs"),
+  ignoreQueryParameters: softOptional(z.boolean(), "ignoreQueryParameters"),
+  regexOnFullURL: softOptional(z.boolean(), "regexOnFullURL"),
+  maxDiscoveryDepth: softOptional(z.number(), "maxDiscoveryDepth"),
+  delay: softOptional(z.number(), "delay"),
 });
 
 function toStoredCrawlerOptionsInput(
   value: unknown,
 ): StoredCrawlerOptionsInput | null {
-  const parsed = storedCrawlerOptionsSchema.safeParse(value);
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const parsed = safeParseLogged(
+    storedCrawlerOptionsSchema,
+    value,
+    "crawl-ongoing.crawlerOptions",
+  );
   return parsed.success ? parsed.data : null;
 }
 

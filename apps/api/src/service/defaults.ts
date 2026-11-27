@@ -6,6 +6,7 @@
  */
 import type { z as Zod } from "zod";
 import type { Document } from "../controllers/v2/types";
+import type { safeParseLogged as SafeParseLogged } from "../lib/zod-log";
 import type { JobKind } from "./hooks";
 import type {
   AuthModule,
@@ -192,8 +193,13 @@ export function memoryUploads(): UploadsModule {
   return { driver: () => driver };
 }
 
-function buildQueueJobStoreSchemas(z: typeof Zod) {
+function buildQueueJobStoreSchemas(
+  z: typeof Zod,
+  safeParseLogged: typeof SafeParseLogged,
+) {
+  const storedDocumentShapeSchema = z.looseObject({});
   return {
+    safeParseLogged,
     singleUrlJobDataSchema: z.object({
       mode: z.literal("single_urls"),
       team_id: z
@@ -206,7 +212,11 @@ function buildQueueJobStoreSchemas(z: typeof Zod) {
     }),
     storedDocumentSchema: z.custom<Document>(
       value =>
-        typeof value === "object" && value !== null && !Array.isArray(value),
+        safeParseLogged(
+          storedDocumentShapeSchema,
+          value,
+          "queue-job-store.document",
+        ).success,
     ),
   };
 }
@@ -216,8 +226,11 @@ let queueJobStoreSchemasPromise: Promise<
 > | null = null;
 
 function getQueueJobStoreSchemas() {
-  queueJobStoreSchemasPromise ??= import("zod").then(({ z }) =>
-    buildQueueJobStoreSchemas(z),
+  queueJobStoreSchemasPromise ??= Promise.all([
+    import("zod"),
+    import("../lib/zod-log.js"),
+  ]).then(([{ z }, { safeParseLogged }]) =>
+    buildQueueJobStoreSchemas(z, safeParseLogged),
   );
   return queueJobStoreSchemasPromise;
 }
@@ -240,7 +253,7 @@ export function queueJobStore(): JobStoreModule {
         const [
           { scrapeQueue },
           { normalizeOwnerId },
-          { singleUrlJobDataSchema },
+          { safeParseLogged, singleUrlModeSchema, singleUrlJobDataSchema },
         ] = await Promise.all([
           import("../services/worker/nuq-router.js"),
           import("../lib/owner-id.js"),
@@ -253,7 +266,14 @@ export function queueJobStore(): JobStoreModule {
         const jobData: unknown = job.data;
         let rawTeamId: string | undefined;
         if (jobData !== null && jobData !== undefined) {
-          const parsedData = singleUrlJobDataSchema.safeParse(jobData);
+          if (!singleUrlModeSchema.safeParse(jobData).success) {
+            return null;
+          }
+          const parsedData = safeParseLogged(
+            singleUrlJobDataSchema,
+            jobData,
+            "queue-job-store.singleUrlJobData",
+          );
           if (!parsedData.success) {
             return null;
           }
@@ -309,9 +329,11 @@ export function queueJobStore(): JobStoreModule {
         const raw: unknown = job.returnvalue;
         const doc: unknown = Array.isArray(raw) ? raw[0] : raw;
         const stored: StoredJob = { state: "completed" };
-        const parsedDoc = storedDocumentSchema.safeParse(doc);
-        if (parsedDoc.success) {
-          stored.document = parsedDoc.data;
+        if (doc !== null && doc !== undefined) {
+          const parsedDoc = storedDocumentSchema.safeParse(doc);
+          if (parsedDoc.success) {
+            stored.document = parsedDoc.data;
+          }
         }
         if (completedAtMs !== undefined) {
           stored.completedAtMs = completedAtMs;

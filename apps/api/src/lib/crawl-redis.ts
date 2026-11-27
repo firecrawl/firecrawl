@@ -19,6 +19,7 @@ import {
   REDIS_COMMAND_ARG_CHUNK_SIZE,
 } from "./redis-pipeline";
 import { withWebhookSummaryForLog } from "../services/webhook/log";
+import { safeParseLogged } from "./zod-log";
 
 export type StoredCrawlerOptions = JobCrawlerOptions & {
   includes?: Array<string>;
@@ -88,7 +89,9 @@ const storedCrawlPayloadSchema = z.object({
 });
 
 const storedCrawlSchema = z.custom<StoredCrawl>(
-  value => storedCrawlPayloadSchema.safeParse(value).success,
+  value =>
+    safeParseLogged(storedCrawlPayloadSchema, value, "crawl-redis.storedCrawl")
+      .success,
 );
 
 const forcedAllowZdrSchema = z.object({
@@ -495,7 +498,11 @@ async function repairCrawlJobDoneMarkersOn(redis: IORedis, __logger: Logger) {
     let parsed: CrawlJobDoneRepairEntry;
     try {
       const raw: unknown = JSON.parse(fields[i + 1]);
-      const validated = crawlJobDoneRepairEntrySchema.safeParse(raw);
+      const validated = safeParseLogged(
+        crawlJobDoneRepairEntrySchema,
+        raw,
+        "crawl-redis.jobDoneRepairEntry",
+      );
       if (!validated.success) {
         await redis.hdel(CRAWL_JOB_DONE_REPAIR_KEY, field);
         continue;

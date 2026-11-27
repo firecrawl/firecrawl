@@ -21,6 +21,7 @@ import { scrapeQueue, crawlGroup } from "../../services/worker/nuq-router";
 import type { ScrapeJobData } from "../../types";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { storedZeroDataRetention } from "../../lib/request-context";
+import { safeParseLogged } from "../../lib/zod-log";
 import { service } from "../../service";
 import type { StoredJob } from "../../service";
 configDotenv();
@@ -47,7 +48,9 @@ interface CrawlStatusSummary {
 const documentShapeSchema = z.looseObject({});
 
 const documentSchema = z.custom<Document>(
-  value => documentShapeSchema.safeParse(value).success,
+  value =>
+    safeParseLogged(documentShapeSchema, value, "crawl-status.document")
+      .success,
 );
 
 const crawlEntireDomainSchema = z.object({
@@ -64,6 +67,9 @@ function extractDocument(
   const candidate: unknown = Array.isArray(rawReturnValue)
     ? rawReturnValue[0]
     : rawReturnValue;
+  if (candidate === null || candidate === undefined) {
+    return null;
+  }
   const parsed = documentSchema.safeParse(candidate);
   return parsed.success ? parsed.data : null;
 }

@@ -1,33 +1,45 @@
 import { z } from "zod";
 import type { JsonObject } from "../../lib/json-types";
+import { safeParseLogged, zCatchLogged } from "../../lib/zod-log";
 
-function softOptional<T extends z.ZodType>(schema: T) {
-  return schema.optional().catch(undefined);
+function softOptional<T extends z.ZodType>(schema: T, field: string) {
+  return zCatchLogged(
+    schema
+      .nullable()
+      .transform(value => value ?? undefined)
+      .optional(),
+    undefined,
+    `crawl-prompt-options.${field}`,
+  );
 }
 
 const promptCrawlerOptionsSchema = z.object({
-  includePaths: softOptional(z.array(z.string())),
-  excludePaths: softOptional(z.array(z.string())),
-  maxDepth: softOptional(z.number()),
-  maxDiscoveryDepth: softOptional(z.number()),
-  crawlEntireDomain: softOptional(z.boolean()),
-  allowExternalLinks: softOptional(z.boolean()),
-  allowSubdomains: softOptional(z.boolean()),
-  ignoreRobotsTxt: softOptional(z.boolean()),
-  robotsUserAgent: softOptional(z.string()),
-  sitemap: softOptional(z.enum(["skip", "include", "only"])),
-  ignoreQueryParameters: softOptional(z.boolean()),
-  deduplicateSimilarURLs: softOptional(z.boolean()),
-  regexOnFullURL: softOptional(z.boolean()),
-  delay: softOptional(z.number().positive().max(60)),
-  limit: softOptional(z.number()),
+  includePaths: softOptional(z.array(z.string()), "includePaths"),
+  excludePaths: softOptional(z.array(z.string()), "excludePaths"),
+  maxDepth: softOptional(z.number(), "maxDepth"),
+  maxDiscoveryDepth: softOptional(z.number(), "maxDiscoveryDepth"),
+  crawlEntireDomain: softOptional(z.boolean(), "crawlEntireDomain"),
+  allowExternalLinks: softOptional(z.boolean(), "allowExternalLinks"),
+  allowSubdomains: softOptional(z.boolean(), "allowSubdomains"),
+  ignoreRobotsTxt: softOptional(z.boolean(), "ignoreRobotsTxt"),
+  robotsUserAgent: softOptional(z.string(), "robotsUserAgent"),
+  sitemap: softOptional(z.enum(["skip", "include", "only"]), "sitemap"),
+  ignoreQueryParameters: softOptional(z.boolean(), "ignoreQueryParameters"),
+  deduplicateSimilarURLs: softOptional(z.boolean(), "deduplicateSimilarURLs"),
+  regexOnFullURL: softOptional(z.boolean(), "regexOnFullURL"),
+  delay: softOptional(z.number().positive().max(60), "delay"),
+  limit: softOptional(z.number(), "limit"),
 });
 
 export type PromptCrawlerOptions = z.infer<typeof promptCrawlerOptionsSchema>;
 
 /** Parses prompt-generated crawler options, retaining only valid defined fields. */
 export function parsePromptCrawlerOptions(raw: unknown): PromptCrawlerOptions {
-  const parsed = promptCrawlerOptionsSchema.safeParse(raw);
+  const parsed = safeParseLogged(
+    promptCrawlerOptionsSchema,
+    raw,
+    "crawl-prompt-options.extract",
+  );
   if (!parsed.success) {
     return {};
   }

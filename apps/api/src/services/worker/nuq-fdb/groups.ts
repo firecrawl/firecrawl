@@ -105,6 +105,7 @@ export class NuqFdbGroupOps {
     const gMeta = decodeJson(
       await tn.get(this.ks.groupMeta(gid)),
       groupMetaSchema,
+      "nuq-fdb.groupMeta",
     );
     if (!gMeta || gMeta.s === "completed") {
       tn.clear(this.ks.taskGroupFinish(gid));
@@ -176,7 +177,11 @@ export class NuQFdbJobGroup {
     return await this.db.doTn(async tn => {
       const existingBuf = await tn.get(this.ks.groupMeta(id));
       if (existingBuf !== undefined && existingBuf !== null) {
-        const existing = decodeJson(existingBuf, groupMetaSchema);
+        const existing = decodeJson(
+          existingBuf,
+          groupMetaSchema,
+          "nuq-fdb.groupMeta",
+        );
         if (!existing) {
           logger.error("Corrupt NuQ FDB group metadata record", {
             queueName: this.ks.queueName,
@@ -209,6 +214,7 @@ export class NuQFdbJobGroup {
       const g = decodeJson(
         await tn.get(this.ks.groupMeta(id)),
         groupMetaSchema,
+        "nuq-fdb.groupMeta",
       );
       return g ? this.toInstance(id, g) : null;
     });
@@ -231,6 +237,7 @@ export class NuQFdbJobGroup {
         const g = decodeJson(
           await tn.snapshot().get(this.ks.groupMeta(gid)),
           groupMetaSchema,
+          "nuq-fdb.groupMeta",
         );
         if (g && g.s === "active") {
           out.push(this.toInstance(gid, g));
@@ -250,6 +257,7 @@ export class NuQFdbJobGroup {
       const g = decodeJson(
         await tn.get(this.ks.groupMeta(id)),
         groupMetaSchema,
+        "nuq-fdb.groupMeta",
       );
       if (!g || g.s !== "active") {
         return false;

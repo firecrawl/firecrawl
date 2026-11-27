@@ -1,6 +1,7 @@
 import type { TupleItem } from "foundationdb";
 import { z } from "zod";
 import { config } from "../../../config";
+import { safeParseLogged } from "../../../lib/zod-log";
 import { getFdb } from "./client";
 
 export { normalizeOwnerId } from "../../../lib/owner-id";
@@ -145,6 +146,7 @@ export function encodeJson(v: unknown): Buffer {
 export function decodeJson<T>(
   buf: Buffer | undefined | null,
   schema: z.ZodType<T>,
+  schemaTag: string | null,
 ): T | null {
   if (!buf) {
     return null;
@@ -155,7 +157,10 @@ export function decodeJson<T>(
   } catch {
     return null;
   }
-  const result = schema.safeParse(parsed);
+  const result =
+    schemaTag !== null
+      ? safeParseLogged(schema, parsed, schemaTag)
+      : schema.safeParse(parsed);
   return result.success ? result.data : null;
 }
 

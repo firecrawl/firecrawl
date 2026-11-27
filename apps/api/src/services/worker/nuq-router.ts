@@ -9,6 +9,7 @@ import { crawlStateStore } from "../../lib/crawl-state-store";
 import { getRedisConnection } from "../../services/queue-service";
 import { currentLimits } from "../../lib/limits";
 import { jobContext, requestContext } from "../../lib/request-context";
+import { safeParseLogged } from "../../lib/zod-log";
 import type { RequestContext } from "../../service/request-context";
 import {
   getTeamQueueLimit,
@@ -151,7 +152,11 @@ async function getCrawlQueueBackend(
     return null;
   }
   try {
-    const parsed = crawlQueueBackendSchema.safeParse(JSON.parse(raw));
+    const parsed = safeParseLogged(
+      crawlQueueBackendSchema,
+      JSON.parse(raw),
+      "nuq-router.crawlQueueBackend",
+    );
     return parsed.success
       ? parsed.data.queueBackend === "fdb"
         ? "fdb"

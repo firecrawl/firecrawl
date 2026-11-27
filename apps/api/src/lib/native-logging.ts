@@ -1,6 +1,7 @@
 import type { Logger } from "winston";
 import { z } from "zod";
 import { jsonObjectSchema } from "./json-types";
+import { safeParseLogged } from "./zod-log";
 
 const NATIVE_LOGS_SEPARATOR = "\n__native_logs__:";
 
@@ -43,7 +44,11 @@ export function extractAndEmitNativeLogs(
 
   try {
     const parsed: unknown = JSON.parse(logsJson);
-    const validated = nativeLogsArraySchema.safeParse(parsed);
+    const validated = safeParseLogged(
+      nativeLogsArraySchema,
+      parsed,
+      "native-logging.logsArray",
+    );
     if (!validated.success) {
       return;
     }

@@ -8,6 +8,7 @@ import type { JsonValue } from "../../lib/json-types";
 import type { ScrapeJobData } from "../../types";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { storedZeroDataRetention } from "../../lib/request-context";
+import { safeParseLogged } from "../../lib/zod-log";
 import amqp from "amqplib";
 import { normalizeOwnerId } from "../../lib/owner-id";
 import { config } from "../../config";
@@ -55,18 +56,30 @@ const rabbitJobEnvelopeSchema = z.object({
   groupId: z.unknown().optional(),
 });
 
-function optionalString(value: unknown): string | undefined {
-  const parsed = stringSchema.safeParse(value);
+function optionalString(value: unknown, tag?: string): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  const parsed =
+    tag !== undefined
+      ? safeParseLogged(stringSchema, value, tag)
+      : stringSchema.safeParse(value);
   return parsed.success ? parsed.data : undefined;
 }
 
-function optionalDate(value: unknown): Date | undefined {
-  const parsed = timestampLikeSchema.safeParse(value);
+function optionalDate(value: unknown, tag: string): Date | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  const parsed = safeParseLogged(timestampLikeSchema, value, tag);
   return parsed.success ? new Date(parsed.data) : undefined;
 }
 
 function decodeJsonValue(raw: unknown): JsonValue {
-  const parsed = jsonValueSchema.safeParse(raw);
+  if (raw === undefined) {
+    return null;
+  }
+  const parsed = safeParseLogged(jsonValueSchema, raw, "nuq.jsonValue");
   return parsed.success ? parsed.data : null;
 }
 
@@ -301,7 +314,11 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
             status: rawStatus,
           });
 
-          const parsedStatus = terminalJobStatusSchema.safeParse(rawStatus);
+          const parsedStatus = safeParseLogged(
+            terminalJobStatusSchema,
+            rawStatus,
+            "nuq.rabbit.listenStatus",
+          );
           if (typeof rawJobId === "string" && parsedStatus.success) {
             if (rawJobId in this.listens) {
               this.listens[rawJobId].forEach(listener =>
@@ -338,7 +355,11 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
           const tok = (msg.payload ?? "unknown|unknown").split("|");
           const jobId = tok[0];
           const status = tok[1];
-          const parsedStatus = terminalJobStatusSchema.safeParse(status);
+          const parsedStatus = safeParseLogged(
+            terminalJobStatusSchema,
+            status,
+            "nuq.pg.listenStatus",
+          );
           if (jobId in this.listens && parsedStatus.success) {
             this.listens[jobId].forEach(listener =>
               listener(parsedStatus.data),
@@ -628,7 +649,11 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
   // serialized to JSON, so dates arrive as strings. Revive them here instead
   // of running the payload back through rowToJob (which expects raw DB rows).
   private rabbitRowToJob(raw: unknown): NuQJob<JobData, JobReturnValue> | null {
-    const parsed = rabbitJobEnvelopeSchema.safeParse(raw);
+    const parsed = safeParseLogged(
+      rabbitJobEnvelopeSchema,
+      raw,
+      "nuq.rabbit.jobEnvelope",
+    );
     if (!parsed.success) {
       return null;
     }
@@ -639,16 +664,19 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
       createdAt: new Date(row.createdAt),
       priority: row.priority,
       data: this.options.decodeData(row.data),
-      finishedAt: optionalDate(row.finishedAt),
-      listenChannelId: optionalString(row.listenChannelId),
+      finishedAt: optionalDate(row.finishedAt, "nuq.rabbit.finishedAt"),
+      listenChannelId: optionalString(
+        row.listenChannelId,
+        "nuq.rabbit.listenChannelId",
+      ),
       returnvalue:
         row.returnvalue !== undefined && row.returnvalue !== null
           ? this.options.decodeReturnvalue(row.returnvalue)
           : undefined,
-      failedReason: optionalString(row.failedReason),
-      lock: optionalString(row.lock),
-      ownerId: optionalString(row.ownerId),
-      groupId: optionalString(row.groupId),
+      failedReason: optionalString(row.failedReason, "nuq.rabbit.failedReason"),
+      lock: optionalString(row.lock, "nuq.rabbit.lock"),
+      ownerId: optionalString(row.ownerId, "nuq.rabbit.ownerId"),
+      groupId: optionalString(row.groupId, "nuq.rabbit.groupId"),
     };
   }
 
@@ -852,7 +880,11 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
         backlog: 0,
       };
       for (const row of rows) {
-        const parsedStatus = nuqJobStatusSchema.safeParse(row.status);
+        const parsedStatus = safeParseLogged(
+          nuqJobStatusSchema,
+          row.status,
+          "nuq.pg.groupNumericStatsStatus",
+        );
         if (parsedStatus.success) {
           stats[parsedStatus.data] = Number.parseInt(row.count, 10);
         }
@@ -1809,7 +1841,11 @@ class NuQ<JobData = JsonValue, JobReturnValue = JsonValue> {
     ]);
 
     result.rows.forEach(x => {
-      const parsedStatus = nuqJobStatusSchema.safeParse(x.status);
+      const parsedStatus = safeParseLogged(
+        nuqJobStatusSchema,
+        x.status,
+        "nuq.pg.metricsStatus",
+      );
       if (parsedStatus.success) {
         statusCounts.set(parsedStatus.data, Number.parseInt(x.count, 10));
       }

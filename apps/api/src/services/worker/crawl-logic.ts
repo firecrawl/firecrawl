@@ -17,6 +17,7 @@ import type {
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import type { NuQJob } from "./nuq";
 import { crawlContext, jobContext } from "../../lib/request-context";
+import { safeParseLogged, zCatchLogged } from "../../lib/zod-log";
 import type { RequestContext } from "../../service/request-context";
 import type { CrawlFinished } from "../../service/hooks";
 import { installedService } from "../../service/service";
@@ -56,23 +57,45 @@ const jobCrawlerOptionsShapeSchema = z.looseObject({
 });
 
 const jobCrawlerOptionsSchema = z.custom<JobCrawlerOptions>(
-  value => jobCrawlerOptionsShapeSchema.safeParse(value).success,
+  value =>
+    safeParseLogged(
+      jobCrawlerOptionsShapeSchema,
+      value,
+      "crawl-logic.crawlerOptions",
+    ).success,
 );
 
 const v0DocumentMetadataShapeSchema = z.looseObject({});
 
 const v0DocumentMetadataSchema = z.custom<Partial<DocumentMetadata>>(
-  value => v0DocumentMetadataShapeSchema.safeParse(value).success,
+  value =>
+    safeParseLogged(
+      v0DocumentMetadataShapeSchema,
+      value,
+      "crawl-logic.v0DocumentMetadata",
+    ).success,
 );
 
 const stringSchema = z.string();
 const numberSchema = z.number();
 
+function softV0String(field: string) {
+  return zCatchLogged(
+    z
+      .string()
+      .nullable()
+      .transform(value => value ?? undefined)
+      .optional(),
+    undefined,
+    `crawl-logic.v0CrawlDoc.${field}`,
+  );
+}
+
 const v0CrawlDocRawSchema = z.object({
-  content: z.unknown().optional(),
-  rawHtml: z.unknown().optional(),
-  markdown: z.unknown().optional(),
-  url: z.unknown().optional(),
+  content: softV0String("content"),
+  rawHtml: softV0String("rawHtml"),
+  markdown: softV0String("markdown"),
+  url: softV0String("url"),
   metadata: z.unknown().optional(),
 });
 
@@ -80,34 +103,47 @@ function extractV0CrawlDoc(returnvalue: unknown): V0CrawlDoc | null {
   const raw: unknown = Array.isArray(returnvalue)
     ? returnvalue[0]
     : returnvalue;
-  const parsed = v0CrawlDocRawSchema.safeParse(raw);
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+  const parsed = safeParseLogged(
+    v0CrawlDocRawSchema,
+    raw,
+    "crawl-logic.v0CrawlDoc",
+  );
   if (!parsed.success) {
     return null;
   }
-  const metadataParsed = v0DocumentMetadataSchema.safeParse(
-    parsed.data.metadata,
-  );
-  const metadata: Partial<DocumentMetadata> = metadataParsed.success
+  const rawMetadata = parsed.data.metadata;
+  const metadataParsed =
+    rawMetadata !== null && rawMetadata !== undefined
+      ? v0DocumentMetadataSchema.safeParse(rawMetadata)
+      : undefined;
+  const metadata: Partial<DocumentMetadata> = metadataParsed?.success
     ? metadataParsed.data
     : {};
-  const sourceURLParsed = stringSchema.safeParse(metadata.sourceURL);
-  const creditsUsedParsed = numberSchema.safeParse(metadata.creditsUsed);
-  const contentParsed = stringSchema.safeParse(parsed.data.content);
-  const rawHtmlParsed = stringSchema.safeParse(parsed.data.rawHtml);
-  const markdownParsed = stringSchema.safeParse(parsed.data.markdown);
-  const urlParsed = stringSchema.safeParse(parsed.data.url);
-  const markdown = markdownParsed.success ? markdownParsed.data : undefined;
-  const content = contentParsed.success
-    ? contentParsed.data
-    : rawHtmlParsed.success
-      ? rawHtmlParsed.data
-      : (markdown ?? "");
-  const source = sourceURLParsed.success
+  const sourceURLParsed =
+    metadata.sourceURL !== null && metadata.sourceURL !== undefined
+      ? safeParseLogged(
+          stringSchema,
+          metadata.sourceURL,
+          "crawl-logic.v0DocumentMetadata.sourceURL",
+        )
+      : undefined;
+  const creditsUsedParsed =
+    metadata.creditsUsed !== null && metadata.creditsUsed !== undefined
+      ? safeParseLogged(
+          numberSchema,
+          metadata.creditsUsed,
+          "crawl-logic.v0DocumentMetadata.creditsUsed",
+        )
+      : undefined;
+  const markdown = parsed.data.markdown;
+  const content = parsed.data.content ?? parsed.data.rawHtml ?? markdown ?? "";
+  const source = sourceURLParsed?.success
     ? sourceURLParsed.data
-    : urlParsed.success
-      ? urlParsed.data
-      : "";
-  const creditsUsed = creditsUsedParsed.success ? creditsUsedParsed.data : 0;
+    : (parsed.data.url ?? "");
+  const creditsUsed = creditsUsedParsed?.success ? creditsUsedParsed.data : 0;
   return { content, markdown, metadata, source, creditsUsed };
 }
 
@@ -156,10 +192,11 @@ export async function finishCrawlSuper(job: FinishCrawlJob) {
       : baseCtx;
   const webhook = data?.webhook ?? sc.webhook;
   const monitoring = data?.monitoring;
-  const parsedCrawlerOptions = jobCrawlerOptionsSchema.safeParse(
-    sc.crawlerOptions,
-  );
-  const crawlerOptions = parsedCrawlerOptions.success
+  const parsedCrawlerOptions =
+    sc.crawlerOptions !== null && sc.crawlerOptions !== undefined
+      ? jobCrawlerOptionsSchema.safeParse(sc.crawlerOptions)
+      : undefined;
+  const crawlerOptions = parsedCrawlerOptions?.success
     ? parsedCrawlerOptions.data
     : null;
 

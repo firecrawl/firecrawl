@@ -7,6 +7,7 @@ import type { JsonObject } from "../../../lib/json-types";
 import { logger as _logger } from "../../../lib/logger";
 import { QueueFullError } from "../../../lib/queue-full-error";
 import { storedZeroDataRetention } from "../../../lib/request-context";
+import { safeParseLogged } from "../../../lib/zod-log";
 import { installedService } from "../../../service/service";
 import { getNuqFdbDatabase } from "./client";
 import type {
@@ -590,6 +591,7 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
           const gMeta = decodeJson(
             await tn.get(ks.groupMeta(gid)),
             groupMetaSchema,
+            "nuq-fdb.groupMeta",
           );
           groupMetas.set(gid, gMeta);
           if (gMeta && gMeta.s === "active" && teamLimit !== null) {
@@ -884,16 +886,24 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
       const [key, value] = head[0];
       tn.clear(key);
       tn.add(ks.readyShardCount(shard), MINUS_ONE);
-      const e = decodeJson(value, queueEntrySchema);
+      const e = decodeJson(value, queueEntrySchema, "nuq-fdb.queueEntry");
       if (!e) {
-        const recovered = decodeJson(value, recoverableReadyEntryIdSchema);
+        const recovered = decodeJson(
+          value,
+          recoverableReadyEntryIdSchema,
+          null,
+        );
         if (recovered) {
           const [metaBuf, stBuf] = await Promise.all([
             tn.get(ks.jobMeta(recovered.i)),
             tn.get(ks.jobStatus(recovered.i)),
           ]);
-          const meta = decodeJson(metaBuf, jobMetaSchema);
-          const st = decodeJson(stBuf, jobStatusRecordSchema);
+          const meta = decodeJson(metaBuf, jobMetaSchema, "nuq-fdb.jobMeta");
+          const st = decodeJson(
+            stBuf,
+            jobStatusRecordSchema,
+            "nuq-fdb.jobStatus",
+          );
           _logger.warn(
             "Dropping corrupt NuQ FDB ready shard entry",
             meta
@@ -998,6 +1008,7 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
       const st = decodeJson(
         await tn.get(ks.jobStatus(e.i)),
         jobStatusRecordSchema,
+        "nuq-fdb.jobStatus",
       );
       if (!st || st.s !== "queued") {
         // tombstone (removed job) -- slots were released by the remover
@@ -1008,6 +1019,7 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
         const gMeta = decodeJson(
           await tn.snapshot().get(ks.groupMeta(e.g)),
           groupMetaSchema,
+          "nuq-fdb.groupMeta",
         );
         if (gMeta && gMeta.s === "cancelled") {
           // lazy cancellation: this job dies at take time
@@ -1015,6 +1027,7 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
             const gj = decodeJson(
               await tn.get(ks.groupJob(e.g, e.i)),
               groupJobIndexValueSchema,
+              "nuq-fdb.groupJobIndex",
             );
             if (gj) {
               tn.clear(ks.groupJob(e.g, e.i));
@@ -1041,6 +1054,7 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
       const meta = decodeJson(
         await tn.snapshot().get(ks.jobMeta(e.i)),
         jobMetaSchema,
+        "nuq-fdb.jobMeta",
       );
       if (!meta) {
         return "dropped";
@@ -1162,6 +1176,7 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
         const st = decodeJson(
           await tn.snapshot().get(ks.jobStatus(id)),
           jobStatusRecordSchema,
+          "nuq-fdb.jobStatus",
         );
         if (!st || st.s !== "active" || st.l !== lock) {
           throw new LockLostError();
@@ -1213,6 +1228,7 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
       const st = decodeJson(
         await tn.get(ks.jobStatus(id)),
         jobStatusRecordSchema,
+        "nuq-fdb.jobStatus",
       );
       if (!st) {
         return false;
@@ -1224,7 +1240,11 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
       if (st.s !== "active" || st.l !== lock) {
         return false;
       }
-      const meta = decodeJson(await tn.get(ks.jobMeta(id)), jobMetaSchema);
+      const meta = decodeJson(
+        await tn.get(ks.jobMeta(id)),
+        jobMetaSchema,
+        "nuq-fdb.jobMeta",
+      );
       if (!meta) {
         return false;
       }
@@ -1325,8 +1345,8 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
       snap.get(ks.jobMeta(id)),
       snap.get(ks.jobStatus(id)),
     ]);
-    const meta = decodeJson(metaBuf, jobMetaSchema);
-    const st = decodeJson(stBuf, jobStatusRecordSchema);
+    const meta = decodeJson(metaBuf, jobMetaSchema, "nuq-fdb.jobMeta");
+    const st = decodeJson(stBuf, jobStatusRecordSchema, "nuq-fdb.jobStatus");
     if (!meta || !st) {
       return null;
     }
@@ -1449,11 +1469,16 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
       const st = decodeJson(
         await tn.get(ks.jobStatus(id)),
         jobStatusRecordSchema,
+        "nuq-fdb.jobStatus",
       );
       if (!st || st.s === "cancelled") {
         return false;
       }
-      const meta = decodeJson(await tn.get(ks.jobMeta(id)), jobMetaSchema);
+      const meta = decodeJson(
+        await tn.get(ks.jobMeta(id)),
+        jobMetaSchema,
+        "nuq-fdb.jobMeta",
+      );
       if (!meta) {
         return false;
       }
@@ -1574,7 +1599,11 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
     while (true) {
       const { st, watch } = await this.db.doTn(async tn => {
         const stBuf = await tn.get(ks.jobStatus(id));
-        const st = decodeJson(stBuf, jobStatusRecordSchema);
+        const st = decodeJson(
+          stBuf,
+          jobStatusRecordSchema,
+          "nuq-fdb.jobStatus",
+        );
         if (
           st &&
           (st.s === "completed" || st.s === "failed" || st.s === "cancelled")
@@ -1665,8 +1694,12 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
         const n = Math.max(0, decodeI64(value));
         if (status === "pending") {
           out.backlog += n;
-        } else {
-          const parsedStatus = nuqJobStatusCompatSchema.safeParse(status);
+        } else if (status !== "cancelled") {
+          const parsedStatus = safeParseLogged(
+            nuqJobStatusCompatSchema,
+            status,
+            "nuq-fdb.groupStatusCount",
+          );
           if (parsedStatus.success) {
             out[parsedStatus.data] += n;
           }
@@ -1695,7 +1728,11 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
           return null;
         }
         for (const [key, value] of batch) {
-          const gj = decodeJson(value, groupJobIndexValueSchema);
+          const gj = decodeJson(
+            value,
+            groupJobIndexValueSchema,
+            "nuq-fdb.groupJobIndex",
+          );
           if (gj?.m === 1) {
             return ks.unpackId(key);
           }
@@ -1747,7 +1784,11 @@ export class TypedNuQFdbQueue<JobData, JobReturnValue, JobDataInput = JobData> {
           tn.snapshot().getRangeAll(begin, r.end, { limit: 500 }),
         );
         for (const [key, value] of rows) {
-          const groupJob = decodeJson(value, groupJobIndexValueSchema);
+          const groupJob = decodeJson(
+            value,
+            groupJobIndexValueSchema,
+            "nuq-fdb.groupJobIndex",
+          );
           if (groupJob?.m === 1 && groupJob.s === "failed") {
             ids.push(ks.unpackId(key));
             if (ids.length === target) {

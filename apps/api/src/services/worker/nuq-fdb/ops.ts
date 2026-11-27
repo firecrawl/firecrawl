@@ -283,7 +283,7 @@ export async function popTeamPending(
       continue; // counter was stale
     }
     const [key, value] = head[0];
-    const e = decodeJson(value, queueEntrySchema);
+    const e = decodeJson(value, queueEntrySchema, "nuq-fdb.queueEntry");
     tn.clear(key);
     tn.add(ks.teamShardCount(tid, shard), MINUS_ONE);
     tn.add(ks.teamPendingCount(tid), MINUS_ONE);
@@ -334,7 +334,7 @@ export async function popKeyPending(
       return null;
     }
     const [key, value] = head[0];
-    const e = decodeJson(value, queueEntrySchema);
+    const e = decodeJson(value, queueEntrySchema, "nuq-fdb.queueEntry");
     tn.clear(key);
     tn.add(ks.keyPendingCount(kid), MINUS_ONE);
     if (!e) {
@@ -362,7 +362,7 @@ export async function popCrawlPending(
       return null;
     }
     const [key, value] = head[0];
-    const e = decodeJson(value, queueEntrySchema);
+    const e = decodeJson(value, queueEntrySchema, "nuq-fdb.queueEntry");
     tn.clear(key);
     tn.add(ks.groupPendingCount(gid), MINUS_ONE);
     if (!e) {
@@ -470,6 +470,7 @@ export async function releaseSlotsAndPromote(
     const gMeta = decodeJson(
       await tn.snapshot().get(ks.groupMeta(heldGroupId)),
       groupMetaSchema,
+      "nuq-fdb.groupMeta",
     );
     if (gMeta && gMeta.s === "active") {
       crawlPromoted = await popCrawlPending(tn, ks, heldGroupId, txc);
@@ -617,8 +618,8 @@ export async function failCorruptPendingEntry(
     tn.get(ks.jobMeta(id)),
     tn.get(ks.jobStatus(id)),
   ]);
-  const meta = decodeJson(metaBuf, jobMetaSchema);
-  const st = decodeJson(stBuf, jobStatusRecordSchema);
+  const meta = decodeJson(metaBuf, jobMetaSchema, "nuq-fdb.jobMeta");
+  const st = decodeJson(stBuf, jobStatusRecordSchema, "nuq-fdb.jobStatus");
 
   _logger.warn(
     "Dropping corrupt NuQ FDB pending queue entry",

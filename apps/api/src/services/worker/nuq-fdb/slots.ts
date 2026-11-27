@@ -67,6 +67,7 @@ export class NuqFdbExternalSlots {
       const existing = decodeJson(
         await tn.get(this.key(owner, holderId)),
         externalSlotRecordSchema,
+        "nuq-fdb.externalSlot",
       );
       if (existing) {
         tn.clear(this.expiryKey(timeBucket(holderId), existing.e, holderId));
@@ -110,6 +111,7 @@ export class NuqFdbExternalSlots {
     const existing = decodeJson(
       await tn.get(this.key(owner, holderId)),
       externalSlotRecordSchema,
+      "nuq-fdb.externalSlot",
     );
     if (!existing) {
       return false;
@@ -143,7 +145,11 @@ export class NuqFdbExternalSlots {
       );
       for (const [key, value] of due) {
         const holderId = this.ks.unpackId(key);
-        const rec = decodeJson(value, externalSlotExpiryRefSchema);
+        const rec = decodeJson(
+          value,
+          externalSlotExpiryRefSchema,
+          "nuq-fdb.externalSlotExpiryRef",
+        );
         if (!rec) {
           continue;
         }
