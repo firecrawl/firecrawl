@@ -502,7 +502,8 @@ pub fn transform_document(
 
       let modes = signatures
         .iter()
-        .map(|x| Into::<SignatureMode>::into(x.split(':').nth(1).unwrap().to_string()))
+        .filter_map(|x| x.split(':').nth(1))
+        .map(|x| Into::<SignatureMode>::into(x.to_string()))
         .collect::<HashSet<_>>();
 
       for mode in modes {
@@ -596,41 +597,45 @@ pub fn transform_document(
         .map(|x| x.to_string())
     };
 
-    if let Some(srcset) = srcset {
-      let mut sizes: Vec<ImageSource> = srcset
-        .split(',')
-        .filter_map(|x| {
-          let tok: Vec<&str> = x.trim().split(' ').collect();
-          let last_token = tok[tok.len() - 1];
-          let (last_token, last_token_used) = if tok.len() > 1
-            && !last_token.is_empty()
-            && (last_token.ends_with('x') || last_token.ends_with('w'))
-          {
-            (last_token, true)
-          } else {
-            ("1x", false)
-          };
+    let mut sizes: Vec<ImageSource> = srcset
+      .map(|srcset| {
+        srcset
+          .split(',')
+          .filter_map(|x| {
+            let tok: Vec<&str> = x.trim().split(' ').collect();
+            let last_token = tok[tok.len() - 1];
+            let (last_token, last_token_used) = if tok.len() > 1
+              && !last_token.is_empty()
+              && (last_token.ends_with('x') || last_token.ends_with('w'))
+            {
+              (last_token, true)
+            } else {
+              ("1x", false)
+            };
 
-          if let Some((last_index, _)) = last_token.char_indices().last() {
-            if let Ok(parsed_size) = last_token[..last_index].parse() {
-              Some(ImageSource {
-                url: if last_token_used {
-                  tok[0..tok.len() - 1].join(" ")
-                } else {
-                  tok.join(" ")
-                },
-                size: parsed_size,
-                is_x: last_token.ends_with('x'),
-              })
+            if let Some((last_index, _)) = last_token.char_indices().last() {
+              last_token[..last_index]
+                .parse::<f64>()
+                .ok()
+                .filter(|x| x.is_finite())
+                .map(|parsed_size| ImageSource {
+                  url: if last_token_used {
+                    tok[0..tok.len() - 1].join(" ")
+                  } else {
+                    tok.join(" ")
+                  },
+                  size: parsed_size,
+                  is_x: last_token.ends_with('x'),
+                })
             } else {
               None
             }
-          } else {
-            None
-          }
-        })
-        .collect();
+          })
+          .collect()
+      })
+      .unwrap_or_default();
 
+    if !sizes.is_empty() {
       if sizes.iter().all(|x| x.is_x) {
         if let Some(src) = img.attributes.borrow().get("src").map(|x| x.to_string()) {
           sizes.push(ImageSource {
@@ -641,11 +646,7 @@ pub fn transform_document(
         }
       }
 
-      sizes.sort_by(|a, b| {
-        b.size
-          .partial_cmp(&a.size)
-          .unwrap_or(std::cmp::Ordering::Equal)
-      });
+      sizes.sort_by(|a, b| b.size.total_cmp(&a.size));
 
       if let Some(biggest) = sizes.first() {
         img

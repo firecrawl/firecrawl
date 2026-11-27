@@ -1,3 +1,5 @@
+import type { JsonObject } from "./json-types";
+
 export class CostLimitExceededError extends Error {
   constructor() {
     super("Cost limit exceeded");
@@ -7,12 +9,12 @@ export class CostLimitExceededError extends Error {
 }
 
 const nanProof = (n: number | null | undefined) =>
-  isNaN(n ?? 0) ? 0 : (n ?? 0);
+  Number.isNaN(n ?? 0) ? 0 : (n ?? 0);
 
 export class CostTracking {
-  calls: {
+  calls: Array<{
     type: "smartScrape" | "other";
-    metadata: Record<string, any>;
+    metadata: JsonObject;
     cost: number;
     model: string;
     tokens?: {
@@ -20,7 +22,7 @@ export class CostTracking {
       output: number;
     };
     stack: string;
-  }[] = [];
+  }> = [];
   limit: number | null = null;
 
   constructor(limit: number | null = null) {
@@ -30,7 +32,7 @@ export class CostTracking {
   public addCall(call: Omit<(typeof this.calls)[number], "stack">) {
     this.calls.push({
       ...call,
-      stack: new Error().stack!.split("\n").slice(2).join("\n"),
+      stack: (new Error().stack ?? "").split("\n").slice(2).join("\n"),
     });
 
     if (this.limit !== null && this.toJSON().totalCost > this.limit) {

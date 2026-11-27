@@ -1,9 +1,10 @@
+import type { Document } from "../../../controllers/v2/types";
 import type { ScrapeJobData } from "../../../types";
-import { NuQFdbQueue, QueueFullError, normalizeOwnerId } from "./queue";
+import { decodeScrapeJobData, decodeScrapeReturnValue } from "../nuq-decoders";
+import { NuQFdbQueue, TypedNuQFdbQueue } from "./queue";
 import { NuQFdbJobGroup } from "./groups";
 import { NuqFdbSweeper } from "./sweeper";
 import { NuqFdbExternalSlots } from "./slots";
-import { isFdbConfigured, nuqFdbHealthCheck, withFdbTimeout } from "./client";
 
 export { NuQFdbQueue, QueueFullError, normalizeOwnerId } from "./queue";
 export type {
@@ -18,21 +19,27 @@ export { NuqFdbSweeper } from "./sweeper";
 export { NuqFdbExternalSlots } from "./slots";
 export { isFdbConfigured, nuqFdbHealthCheck, withFdbTimeout } from "./client";
 
-export const scrapeQueueFdb = new NuQFdbQueue<ScrapeJobData, any>("scrape", {
+export const scrapeQueueFdb = new TypedNuQFdbQueue<
+  ScrapeJobData,
+  Document | null
+>("scrape", {
   hasGroups: true,
   finishedQueueName: "crawl_finished",
+  decodeData: decodeScrapeJobData,
+  decodeReturnvalue: decodeScrapeReturnValue,
 });
 
-export const crawlFinishedQueueFdb = new NuQFdbQueue<any, any>(
-  "crawl_finished",
-  {
-    hasGroups: false,
-  },
-);
+export const crawlFinishedQueueFdb = new NuQFdbQueue("crawl_finished", {
+  hasGroups: false,
+});
+
+if (!scrapeQueueFdb.groupOps) {
+  throw new Error("scrapeQueueFdb must be configured with hasGroups: true");
+}
 
 export const crawlGroupFdb = new NuQFdbJobGroup(
   scrapeQueueFdb.ks,
-  scrapeQueueFdb.groupOps!,
+  scrapeQueueFdb.groupOps,
 );
 
 export const externalSlotsFdb = new NuqFdbExternalSlots(scrapeQueueFdb.ks);

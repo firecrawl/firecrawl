@@ -1,20 +1,26 @@
-import { Response } from "express";
+import type { Response } from "express";
 
-import { getV2RequestSchemas, RequestWithAuth, SearchResponse } from "./types";
+import type {
+  DefaultRequestParams,
+  ErrorResponse,
+  RequestWithAuth,
+  SearchResponse,
+} from "./types";
+import { getV2RequestSchemas } from "./types";
 import type { SearchRequest } from "../../service/request";
 import { v7 as uuidv7 } from "uuid";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import {
-  finalizeResponse,
-  service,
-  type RequestContext,
-  type SettleOutcome,
+import { finalizeResponse, service } from "../../service";
+import type {
+  RequestContext,
+  ResponsePayload,
+  SearchState,
+  SettleOutcome,
 } from "../../service";
 import { logger as _logger } from "../../lib/logger";
 import { getErrorHttpResponse, ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
-import { CategoryOption } from "../../lib/search-query-builder";
 import { executeSearch } from "../../search/execute";
 import { applySearchPlanHook } from "../../search/plan-hook";
 import type { BillingMetadata } from "../../lib/billing-types";
@@ -24,21 +30,70 @@ import {
   setSpanAttributes,
   recordSpanException,
   SpanKind,
-  type Span,
 } from "../../lib/otel-tracer";
+import type { Span } from "../../lib/otel-tracer";
 import { installedService } from "../../service/service";
+import { jsonRecordSchema } from "../../lib/json-types";
+import {
+  readAgentInterop,
+  readBooleanField,
+  readOptionalBooleanField,
+} from "./agent-interop";
 
 const IMAGE_SEARCH_US_ONLY_MESSAGE =
   "Image search is not available for teams restricted to US-only processing.";
 
+const enterpriseSearchModeSchema = z.enum(["default", "anon", "zdr"]);
+type EnterpriseSearchMode = z.infer<typeof enterpriseSearchModeSchema>;
+
+interface JobIdField {
+  jobId?: string;
+}
+
+const enterpriseModesBodySchema = z.object({
+  enterprise: z.array(z.unknown()),
+});
+
+const callerPlanClassSchema = z.object({
+  planClass: z.enum(["free", "self_serve", "contract"]),
+});
+
+function readEnterpriseModes(
+  body: unknown,
+): Array<EnterpriseSearchMode> | undefined {
+  const parsed = enterpriseModesBodySchema.safeParse(body);
+  if (!parsed.success) {
+    return undefined;
+  }
+  return parsed.data.enterprise.flatMap(item => {
+    const mode = enterpriseSearchModeSchema.safeParse(item);
+    return mode.success ? [mode.data] : [];
+  });
+}
+
+function readTeamPlanClass(caller: unknown): TeamPlanClass | undefined {
+  const parsed = callerPlanClassSchema.safeParse(caller);
+  return parsed.success ? parsed.data.planClass : undefined;
+}
+
+function parseSearchRequestBody(body: unknown): SearchRequest {
+  const parsed = jsonRecordSchema.safeParse(body);
+  if (!parsed.success) {
+    return getV2RequestSchemas().search.parse(body);
+  }
+  const {
+    objective: _objective,
+    clientModel: _clientModel,
+    ...rest
+  } = parsed.data;
+  return getV2RequestSchemas().search.parse(rest);
+}
+
 export async function searchController(
-  req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
-  res: Response<SearchResponse>,
+  req: RequestWithAuth<DefaultRequestParams, SearchResponse, SearchRequest>,
+  res: Response<SearchResponse | ResponsePayload>,
 ) {
-  const rawBody = req.body as Record<string, any> | undefined;
-  const enterprise: unknown[] = Array.isArray(rawBody?.enterprise)
-    ? rawBody.enterprise
-    : [];
+  const enterprise = readEnterpriseModes(req.body) ?? [];
   const zeroDataRetentionTrace =
     req.ctx?.zeroDataRetention === true ||
     enterprise.includes("zdr") ||
@@ -59,17 +114,16 @@ export async function searchController(
 }
 
 async function searchControllerInner(
-  req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
-  res: Response<SearchResponse>,
+  req: RequestWithAuth<DefaultRequestParams, SearchResponse, SearchRequest>,
+  res: Response<SearchResponse | ResponsePayload>,
   span: Span,
 ) {
   const middlewareStartTime =
-    (req as any).requestTiming?.startTime || new Date().getTime();
+    req.requestTiming?.startTime || new Date().getTime();
   const controllerStartTime = new Date().getTime();
 
   const jobId = req.requestId ?? uuidv7();
   let zeroDataRetention = req.ctx?.zeroDataRetention === true;
-  const extBody = () => req.body as Record<string, any>;
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,
@@ -82,16 +136,18 @@ async function searchControllerInner(
 
   let billingHandle: unknown = undefined;
   let settledBilling = false;
-  let jobIdField: { jobId?: string } = {};
+  let jobIdField: JobIdField = {};
 
   const settleBilling = async (outcome: SettleOutcome) => {
-    if (billingHandle === undefined || settledBilling) return;
+    if (billingHandle === undefined || settledBilling) {
+      return;
+    }
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         await service.modules.billing.settle?.(billingHandle, outcome);
         settledBilling = true;
         return;
-      } catch (settleError) {
+      } catch (settleError: unknown) {
         if (attempt === 1) {
           logger.error("Failed to settle billing reservation", {
             teamId: req.auth.team_id,
@@ -106,21 +162,18 @@ async function searchControllerInner(
 
   try {
     if (!req.ctx) {
-      const rawBody = req.body as unknown as
-        | Record<string, unknown>
-        | undefined;
-      delete rawBody?.objective;
-      delete rawBody?.clientModel;
-      req.body = getV2RequestSchemas().search.parse(req.body);
+      req.body = parseSearchRequestBody(req.body);
     }
 
     const requestedFormats = req.body.scrapeOptions?.formats ?? [];
     let usOnlyImagesWarning: string | undefined;
 
-    const shouldBill = extBody().__agentInterop?.shouldBill ?? true;
-    const agentRequestId = extBody().__agentInterop?.requestId ?? null;
+    const agentInterop = readAgentInterop(req.body);
+    const enterpriseModes = readEnterpriseModes(req.body);
+    const shouldBill = agentInterop?.shouldBill ?? true;
+    const agentRequestId = agentInterop?.requestId ?? null;
     const billing: BillingMetadata = req.ctx?.billing ?? {
-      ...(extBody().__agentInterop
+      ...(agentInterop
         ? { endpoint: "agent" as const, jobId }
         : { endpoint: "search" as const, jobId }),
       hostedMcp: req.auth.hostedMcp,
@@ -132,12 +185,8 @@ async function searchControllerInner(
       origin: req.body.origin,
     });
 
-    const isZDR = (
-      extBody().enterprise as ("default" | "anon" | "zdr")[] | undefined
-    )?.includes("zdr");
-    const isAnon = (
-      extBody().enterprise as ("default" | "anon" | "zdr")[] | undefined
-    )?.includes("anon");
+    const isZDR = enterpriseModes?.includes("zdr");
+    const isAnon = enterpriseModes?.includes("anon");
     const isZDROrAnon = isZDR || isAnon;
     zeroDataRetention = req.ctx?.zeroDataRetention ?? Boolean(isZDROrAnon);
     logger = logger.child({ zeroDataRetention });
@@ -157,9 +206,11 @@ async function searchControllerInner(
           billing,
         });
     req.ctx = ctx;
-    if (!agentRequestId) jobIdField = { jobId };
+    if (!agentRequestId) {
+      jobIdField = { jobId };
+    }
 
-    const searchState: Record<string, unknown> = {};
+    const searchState: SearchState = {};
     const reservation = await service.modules.billing.authorize({
       caller: req.caller ?? { teamId: req.auth.team_id },
       operation: "search",
@@ -173,10 +224,8 @@ async function searchControllerInner(
         limit: req.body.limit,
         categories: req.body.categories,
         sources: req.body.sources,
-        domainTools: extBody().domainTools,
-        enterprise: extBody().enterprise as
-          | ("default" | "anon" | "zdr")[]
-          | undefined,
+        domainTools: readOptionalBooleanField(req.body, "domainTools"),
+        enterprise: enterpriseModes,
         scrapeOptions: req.body.scrapeOptions,
         endpoint: "v2_search",
       },
@@ -189,18 +238,16 @@ async function searchControllerInner(
           res.setHeader(name, value);
         }
       }
-      const body =
-        reservation.refusal.body &&
-        typeof reservation.refusal.body === "object" &&
-        !Array.isArray(reservation.refusal.body)
-          ? {
-              ...(reservation.refusal.body as Record<string, unknown>),
-              ...jobIdField,
-            }
-          : reservation.refusal.body;
-      return res
-        .status(reservation.refusal.status)
-        .json(body as SearchResponse);
+      const parsedRefusalBody = jsonRecordSchema.safeParse(
+        reservation.refusal.body,
+      );
+      const refusalBody: ResponsePayload = parsedRefusalBody.success
+        ? {
+            ...parsedRefusalBody.data,
+            ...jobIdField,
+          }
+        : reservation.refusal.body;
+      return res.status(reservation.refusal.status).json(refusalBody);
     }
     billingHandle = reservation.handle;
 
@@ -210,14 +257,14 @@ async function searchControllerInner(
           {
             query: req.body.query,
             limit: req.body.limit,
-            sources: req.body.sources as Array<{ type: string }>,
+            sources: req.body.sources,
           },
           { ctx, body: req.body, state: searchState, logger },
         )
       : {
           query: req.body.query,
           limit: req.body.limit,
-          sources: req.body.sources as Array<{ type: string }>,
+          sources: req.body.sources,
         };
 
     if (planHooks?.has("search.plan")) {
@@ -243,6 +290,33 @@ async function searchControllerInner(
       }
     }
 
+    const searchContext: Parameters<typeof executeSearch>[1] = {
+      teamId: req.auth.team_id,
+      orgId: req.acuc?.org_id ?? null,
+      origin: req.body.origin,
+      integration: req.body.integration,
+      apiKeyId: req.acuc?.api_key_id ?? null,
+      flags: req.acuc?.flags ?? null,
+      concurrencyLimit: req.acuc?.concurrency_limit,
+      rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
+      teamPlanClass: readTeamPlanClass(req.caller),
+      requestId: agentRequestId ?? jobId,
+      jobId,
+      apiVersion: "v2",
+      bypassBilling: !shouldBill,
+      zeroDataRetention,
+      billing,
+      agentIndexOnly: readBooleanField(req, "agentIndexOnly"),
+      keylessReserved: billingHandle !== undefined,
+      ctx,
+      body: req.body,
+      planApplied: true,
+      state: searchState,
+    };
+    if (req.headers["x-firecrawl-work-contact-only"] === "true") {
+      searchContext.workContactOnly = true;
+    }
+
     const result = await executeSearch(
       {
         query: planned.query,
@@ -254,43 +328,15 @@ async function searchControllerInner(
         location: req.body.location,
         safe: req.body.safe,
         sources: planned.sources,
-        categories: req.body.categories as CategoryOption[],
+        categories: req.body.categories,
         includeDomains: req.body.includeDomains,
         excludeDomains: req.body.excludeDomains,
-        enterprise: extBody().enterprise as
-          | ("default" | "anon" | "zdr")[]
-          | undefined,
+        enterprise: enterpriseModes,
         scrapeOptions: req.body.scrapeOptions,
-        highlights: extBody().highlights,
+        highlights: readOptionalBooleanField(req.body, "highlights"),
         timeout: req.body.timeout,
       },
-      {
-        teamId: req.auth.team_id,
-        orgId: req.acuc?.org_id ?? null,
-        origin: req.body.origin,
-        integration: req.body.integration,
-        apiKeyId: req.acuc?.api_key_id ?? null,
-        flags: req.acuc?.flags ?? null,
-        concurrencyLimit: req.acuc?.concurrency_limit,
-        rateLimitMultiplier: req.acuc?.rate_limit_multiplier,
-        teamPlanClass: (req.caller as { planClass?: TeamPlanClass } | undefined)
-          ?.planClass,
-        requestId: agentRequestId ?? jobId,
-        jobId,
-        apiVersion: "v2",
-        bypassBilling: !shouldBill,
-        zeroDataRetention,
-        billing,
-        agentIndexOnly: (req as any).agentIndexOnly ?? false,
-        keylessReserved: billingHandle !== undefined,
-        ...(req.headers["x-firecrawl-work-contact-only"] === "true"
-          ? { workContactOnly: true }
-          : {}),
-        ctx,
-        body: req.body,
-        planApplied: true,
-        state: searchState,
-      },
+      searchContext,
       logger,
     );
 
@@ -343,13 +389,11 @@ async function searchControllerInner(
               documents: scrapedDocuments,
               state: {
                 ...searchState,
-                enterprise: extBody().enterprise as
-                  | ("default" | "anon" | "zdr")[]
-                  | undefined,
+                enterprise: enterpriseModes,
                 threatDecisions: result.threatDecisions,
               },
             })
-            .catch(error => {
+            .catch((error: unknown) => {
               logger.error("Failed to bill team for search credits", {
                 teamId: req.auth.team_id,
                 jobId,
@@ -417,20 +461,25 @@ async function searchControllerInner(
       .filter(Boolean)
       .join(" ");
     await settleBilling({ ok: true, charged: totalCredits });
+    const responsePayload: ResponsePayload = {
+      success: true,
+      data: result.response,
+      id: jobId,
+    };
+    if (totalCredits !== undefined) {
+      responsePayload.creditsUsed = totalCredits;
+    }
+    if (warning) {
+      responsePayload.warning = warning;
+    }
     const payload = await finalizeResponse(
       req,
       "search",
-      {
-        success: true,
-        data: result.response,
-        ...(totalCredits !== undefined ? { creditsUsed: totalCredits } : {}),
-        id: jobId,
-        ...(warning ? { warning } : {}),
-      },
+      responsePayload,
       scrapedDocuments,
     );
-    return res.status(200).json(payload as SearchResponse);
-  } catch (error) {
+    return res.status(200).json(payload);
+  } catch (error: unknown) {
     await settleBilling({ ok: false });
 
     if (error instanceof z.ZodError) {
@@ -454,13 +503,16 @@ async function searchControllerInner(
     const httpResponse = getErrorHttpResponse(error);
     if (httpResponse) {
       setSpanAttributes(span, { "search.status_code": httpResponse.status });
-      return res.status(httpResponse.status).json({
+      const errorBody: ErrorResponse = {
         ...httpResponse.extraFields,
         success: false,
-        ...(httpResponse.code ? { code: httpResponse.code } : {}),
         error: httpResponse.message,
         ...jobIdField,
-      });
+      };
+      if (httpResponse.code) {
+        errorBody.code = httpResponse.code;
+      }
+      return res.status(httpResponse.status).json(errorBody);
     }
 
     logger.error("Unhandled error occurred in search", {
@@ -471,7 +523,7 @@ async function searchControllerInner(
     setSpanAttributes(span, { "search.status_code": 500 });
     return res.status(500).json({
       success: false,
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
       ...jobIdField,
     });
   }

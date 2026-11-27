@@ -54,7 +54,7 @@ describe("calculateCost", () => {
     expect(calculateCost("not-a-real-model", 1000, 1000)).toBe(0);
     expect(calculateCost("not-a-real-model", 1000, 1000)).toBe(0);
 
-    const warnings = (warn.mock.calls as unknown[][]).filter(
+    const warnings = (warn.mock.calls as Array<Array<unknown>>).filter(
       ([message]) =>
         typeof message === "string" && message.startsWith("No price for model"),
     );

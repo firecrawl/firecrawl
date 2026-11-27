@@ -30,7 +30,7 @@ function appUnderTest() {
   return app;
 }
 
-async function recordedRoutes(): Promise<string[]> {
+async function recordedRoutes(): Promise<Array<string>> {
   const metric = await httpRequestDurationSeconds.get();
   return metric.values
     .filter(value => value.metricName === "http_request_duration_seconds_count")

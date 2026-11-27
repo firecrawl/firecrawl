@@ -5,12 +5,12 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createOllama } from "ollama-ai-provider-v2";
 import { withUsageTelemetry } from "./ai-usage-telemetry";
 import { UsOnlyUnavailableError } from "../scraper/scrapeURL/error";
-import {
-  service,
-  type LlmModel,
-  type LlmModelOptions,
-  type LlmProvider,
-  type LlmProviderName,
+import { service } from "../service";
+import type {
+  LlmModel,
+  LlmModelOptions,
+  LlmProvider,
+  LlmProviderName,
 } from "../service";
 
 function once<T>(create: () => T): () => T {
@@ -45,7 +45,7 @@ function usOnlyUnavailable(feature = "The model this request needs") {
 }
 
 /** Built-in LLM providers registered by `coreParts()`. */
-export const coreLlmProviders: readonly LlmProvider[] = Object.freeze([
+export const coreLlmProviders: ReadonlyArray<LlmProvider> = Object.freeze([
   {
     name: "openai",
     enabled: () =>

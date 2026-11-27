@@ -1,37 +1,42 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Document, ScrapeOptions } from "../controllers/v2/types";
+import { createLogger } from "winston";
+import { scrapeOptions } from "../controllers/v2/types";
+import type { Document } from "../controllers/v2/types";
 import {
   buildHookRegistry,
   buildHooks,
   hookPointNames,
   hookPoints,
-  type EnginePlan,
-  type HookHandler,
-  type HookHandlers,
-  type HookName,
-  type ScrapeMeta,
+} from "./hooks";
+import type {
+  EnginePlan,
+  HookHandler,
+  HookHandlers,
+  ScrapeMeta,
 } from "./hooks";
 import type { RequestContext } from "./request-context";
 
-const tick = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+const noop = () => {};
+
+const tick = () =>
+  new Promise<void>(resolve => {
+    setTimeout(resolve, 0);
+  });
 
 const ctx: RequestContext = {
   teamId: "team-1",
   zeroDataRetention: false,
 };
 
+const testLogger = createLogger({ silent: true });
+
 const makeScrapeMeta = (): ScrapeMeta => ({
   id: "scrape-1",
   url: "https://example.com",
   ctx,
-  options: {} as ScrapeOptions,
+  options: scrapeOptions.parse({}),
   state: {},
-  logger: {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  } as unknown as ScrapeMeta["logger"],
+  logger: testLogger,
   abort: new AbortController().signal,
 });
 
@@ -62,9 +67,9 @@ describe("hookPoints", () => {
       reverse: true,
     });
     expect(hookPoints["process.start"]).toEqual({ kind: "await" });
-    expect(hookPoints["constructor" as HookName]).toBeUndefined();
-    expect(hookPoints["toString" as HookName]).toBeUndefined();
-    expect(hookPoints["__proto__" as HookName]).toBeUndefined();
+    expect(hookPoints["constructor"]).toBeUndefined();
+    expect(hookPoints["toString"]).toBeUndefined();
+    expect(hookPoints["__proto__"]).toBeUndefined();
   });
 });
 
@@ -89,17 +94,20 @@ describe("buildHooks", () => {
     expect(hooks.has("crawl.links")).toBe(false);
     expect(hooks.has("scrape.start")).toBe(false);
     expect(hooks.has("process.stop")).toBe(false);
-    expect(hooks.has("__proto__" as HookName)).toBe(false);
-    expect(hooks.has("constructor" as HookName)).toBe(false);
-    expect(hooks.has("toString" as HookName)).toBe(false);
+    // @ts-expect-error: verifying has() returns false for prototype key
+    expect(hooks.has("__proto__")).toBe(false);
+    // @ts-expect-error: verifying has() returns false for prototype key
+    expect(hooks.has("constructor")).toBe(false);
+    // @ts-expect-error: verifying has() returns false for prototype key
+    expect(hooks.has("toString")).toBe(false);
   });
 
   it("accepts null-prototype hook maps", () => {
     const handler = vi.fn(() => {});
-    const map = Object.create(null) as Record<string, unknown>;
+    const map: HookHandlers = Object.create(null);
     map["map.finished"] = handler;
 
-    const hooks = buildHooks([map as HookHandlers], vi.fn());
+    const hooks = buildHooks([map], vi.fn());
 
     expect(hooks.has("map.finished")).toBe(true);
     hooks.observe("map.finished", { id: "m1", ctx, urls: 4 });
@@ -111,7 +119,7 @@ describe("buildHooks", () => {
     const second = vi.fn((plan: EnginePlan) => ({
       candidates: [...plan.candidates, "playwright" as const],
     }));
-    const list: HookHandler<"scrape.engines.select">[] = [first];
+    const list: Array<HookHandler<"scrape.engines.select">> = [first];
     const set: HookHandlers = { "scrape.engines.select": list };
     const sets = [set];
 
@@ -140,91 +148,134 @@ describe("buildHooks", () => {
     it("rejects unknown hook point names, including prototype keys", () => {
       expect(() =>
         buildHooks(
-          [{ "unknown.hook": vi.fn() } as unknown as HookHandlers],
+          [
+            // @ts-expect-error: verifying runtime rejection of unknown hook point name
+            { "unknown.hook": vi.fn() },
+          ],
           vi.fn(),
         ),
       ).toThrow('Unknown hook point "unknown.hook"');
 
       expect(() =>
         buildHooks(
-          [{ "unknown.hook": undefined } as unknown as HookHandlers],
+          [
+            // @ts-expect-error: verifying runtime rejection of unknown hook point name with undefined value
+            { "unknown.hook": undefined },
+          ],
           vi.fn(),
         ),
       ).toThrow('Unknown hook point "unknown.hook"');
 
       expect(() =>
         buildHooks(
-          [{ constructor: vi.fn() } as unknown as HookHandlers],
+          [
+            // @ts-expect-error: verifying runtime rejection of prototype key constructor
+            { constructor: vi.fn() },
+          ],
           vi.fn(),
         ),
       ).toThrow('Unknown hook point "constructor"');
 
       expect(() =>
-        buildHooks([{ toString: vi.fn() } as unknown as HookHandlers], vi.fn()),
+        buildHooks(
+          [
+            // @ts-expect-error: verifying runtime rejection of prototype key toString
+            { toString: vi.fn() },
+          ],
+          vi.fn(),
+        ),
       ).toThrow('Unknown hook point "toString"');
 
       const withProtoKey = Object.defineProperty({}, "__proto__", {
         value: vi.fn(),
         enumerable: true,
       });
-      expect(() =>
-        buildHooks([withProtoKey as unknown as HookHandlers], vi.fn()),
-      ).toThrow('Unknown hook point "__proto__"');
+      expect(() => buildHooks([withProtoKey], vi.fn())).toThrow(
+        'Unknown hook point "__proto__"',
+      );
     });
 
     it("rejects non-function handlers and invalid hook containers", () => {
       expect(() =>
         buildHooks(
-          [{ "map.finished": null } as unknown as HookHandlers],
+          [
+            // @ts-expect-error: verifying runtime rejection of null handler
+            { "map.finished": null },
+          ],
           vi.fn(),
         ),
       ).toThrow('Hook "map.finished" handler must be a function');
 
       expect(() =>
         buildHooks(
-          [{ "map.finished": "nope" } as unknown as HookHandlers],
+          [
+            // @ts-expect-error: verifying runtime rejection of string handler
+            { "map.finished": "nope" },
+          ],
           vi.fn(),
         ),
       ).toThrow('Hook "map.finished" handler must be a function');
 
       expect(() =>
         buildHooks(
-          [{ "map.finished": [vi.fn(), 42] } as unknown as HookHandlers],
+          [
+            // @ts-expect-error: verifying runtime rejection of non-function array element
+            { "map.finished": [vi.fn(), 42] },
+          ],
           vi.fn(),
         ),
       ).toThrow('Hook "map.finished" handler at index 1 must be a function');
 
       expect(() =>
         buildHooks(
-          [{ "map.finished": [vi.fn(), undefined] } as unknown as HookHandlers],
+          [
+            // @ts-expect-error: verifying runtime rejection of undefined array element
+            { "map.finished": [vi.fn(), undefined] },
+          ],
           vi.fn(),
         ),
       ).toThrow('Hook "map.finished" handler at index 1 must be a function');
 
       const sparse = new Array(1);
+      expect(() => buildHooks([{ "map.finished": sparse }], vi.fn())).toThrow(
+        'Hook "map.finished" handler at index 0 must be a function',
+      );
+
       expect(() =>
         buildHooks(
-          [{ "map.finished": sparse } as unknown as HookHandlers],
+          [
+            // @ts-expect-error: verifying runtime rejection of null hook container
+            null,
+          ],
           vi.fn(),
         ),
-      ).toThrow('Hook "map.finished" handler at index 0 must be a function');
-
-      expect(() =>
-        buildHooks([null as unknown as HookHandlers], vi.fn()),
       ).toThrow('Extension "set-0" hooks must be a plain object');
 
       expect(() =>
-        buildHooks([[] as unknown as HookHandlers], vi.fn()),
+        buildHooks(
+          [
+            // @ts-expect-error: verifying runtime rejection of array hook container
+            [],
+          ],
+          vi.fn(),
+        ),
       ).toThrow('Extension "set-0" hooks must be a plain object');
 
       expect(() =>
-        buildHooks([new Map() as unknown as HookHandlers], vi.fn()),
+        buildHooks(
+          [
+            // @ts-expect-error: verifying runtime rejection of Map hook container
+            new Map(),
+          ],
+          vi.fn(),
+        ),
       ).toThrow('Extension "set-0" hooks must be a plain object');
 
       expect(() =>
         buildHooks(
           [],
-          null as unknown as (hook: string, error: unknown) => void,
+          // @ts-expect-error: verifying runtime rejection of null error reporter
+          null,
         ),
       ).toThrow("Hook error reporter must be a function");
     });
@@ -232,7 +283,7 @@ describe("buildHooks", () => {
 
   describe("observe", () => {
     it("runs handlers in registration order without waiting and is a no-op when empty", () => {
-      const order: string[] = [];
+      const order: Array<string> = [];
       let asyncFinished = false;
       const hooks = buildHooks(
         [
@@ -278,12 +329,12 @@ describe("buildHooks", () => {
                 throw syncErr;
               },
               () => Promise.reject(asyncErr),
-              () =>
-                ({
-                  then(_resolve: unknown, reject: (err: unknown) => void) {
-                    reject(thenableErr);
-                  },
-                }) as unknown as Promise<void>,
+              () => ({
+                // @ts-expect-error: verifying observe() catches rejection from a plain thenable
+                then(_resolve: unknown, reject: (err: unknown) => void) {
+                  reject(thenableErr);
+                },
+              }),
               last,
             ],
           },
@@ -345,7 +396,7 @@ describe("buildHooks", () => {
 
   describe("run", () => {
     it("runs handlers sequentially in registration order across sets", async () => {
-      const order: string[] = [];
+      const order: Array<string> = [];
       const hooks = buildHooks(
         [
           {
@@ -412,7 +463,7 @@ describe("buildHooks", () => {
 
     it("runs process.stop handlers in reverse registration order and isolates sync and async failures", async () => {
       const report = vi.fn();
-      const order: string[] = [];
+      const order: Array<string> = [];
       const syncErr = new Error("sync stop failure");
       const asyncErr = new Error("async stop failure");
 
@@ -463,7 +514,7 @@ describe("buildHooks", () => {
     });
 
     it("continues remaining process.stop handlers even if the error reporter throws", async () => {
-      const order: string[] = [];
+      const order: Array<string> = [];
       const hooks = buildHooks(
         [
           {
@@ -491,8 +542,8 @@ describe("buildHooks", () => {
 
     it("times out a hanging process.stop handler after 45_000ms, isolates it, and runs remaining handlers", async () => {
       vi.useFakeTimers();
-      const report = vi.fn();
-      const order: string[] = [];
+      const report = vi.fn<(hook: string, error: unknown) => void>();
+      const order: Array<string> = [];
       let rejectLate: ((reason: Error) => void) | undefined;
 
       const hooks = buildHooks(
@@ -529,11 +580,14 @@ describe("buildHooks", () => {
           "earlier-registered-runs-after-timeout",
         ]);
         expect(report).toHaveBeenCalledTimes(1);
-        expect(report.mock.calls[0][0]).toBe("process.stop");
-        expect(report.mock.calls[0][1]).toBeInstanceOf(Error);
-        expect((report.mock.calls[0][1] as Error).message).toBe(
-          'Hook "process.stop" timed out after 45000ms',
-        );
+        const [reportedHook, reportedError] = report.mock.calls[0] ?? [];
+        expect(reportedHook).toBe("process.stop");
+        expect(reportedError).toBeInstanceOf(Error);
+        if (reportedError instanceof Error) {
+          expect(reportedError.message).toBe(
+            'Hook "process.stop" timed out after 45000ms',
+          );
+        }
         expect(vi.getTimerCount()).toBe(0);
 
         rejectLate?.(new Error("late rejection"));
@@ -693,7 +747,6 @@ describe("buildHooks", () => {
 
 describe("buildHookRegistry", () => {
   it("reports hook handler owners sorted by point name in execution order", () => {
-    const noop = () => {};
     const { hooks, describedHooks } = buildHookRegistry(
       [
         {

@@ -5,11 +5,8 @@ import { v7 as uuidv7 } from "uuid";
 vi.mock("geoip-country", () => ({ lookup: vi.fn(() => null) }));
 
 import { idempotencyMiddleware } from "../../routes/shared";
-import {
-  defaultModules,
-  redisIdempotency,
-  type CoreParts,
-} from "../../service";
+import { defaultModules, redisIdempotency } from "../../service";
+import type { CoreParts } from "../../service";
 import { testService, withService } from "../../service/testing";
 
 const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
@@ -79,7 +76,9 @@ describe("idempotencyMiddleware", () => {
     const seen = new Set<string>();
     const idempotency = redisIdempotency({
       setIfAbsent: async key => {
-        if (seen.has(key)) return false;
+        if (seen.has(key)) {
+          return false;
+        }
         seen.add(key);
         return true;
       },

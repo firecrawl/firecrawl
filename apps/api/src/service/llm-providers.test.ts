@@ -2,19 +2,19 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildLlmProviderRegistry,
   coreLlmProviderNames,
-  type LlmModel,
-  type LlmProvider,
 } from "./llm-providers";
+import type { LlmModel, LlmProvider } from "./llm-providers";
 
-const fakeModel = (id: string): LlmModel =>
-  ({
-    specificationVersion: "v4",
-    provider: "test",
-    modelId: id,
-    supportedUrls: {},
-    doGenerate: vi.fn(),
-    doStream: vi.fn(),
-  }) as unknown as LlmModel;
+type V4Model = Extract<LlmModel, { specificationVersion: "v4" }>;
+
+const fakeModel = (id: string): LlmModel => ({
+  specificationVersion: "v4",
+  provider: "test",
+  modelId: id,
+  supportedUrls: {},
+  doGenerate: vi.fn<V4Model["doGenerate"]>(),
+  doStream: vi.fn<V4Model["doStream"]>(),
+});
 
 const makeProvider = (
   name: string,
@@ -22,13 +22,13 @@ const makeProvider = (
     enabled?: () => boolean;
     model?: LlmProvider["model"];
   } = {},
-): LlmProvider =>
-  ({
-    name,
-    enabled: () => true,
-    model: vi.fn((id: string) => fakeModel(id)),
-    ...overrides,
-  }) as unknown as LlmProvider;
+): LlmProvider => ({
+  // @ts-expect-error: test provider names exercise open declaration-merged LlmProviderName
+  name,
+  enabled: () => true,
+  model: vi.fn((id: string) => fakeModel(id)),
+  ...overrides,
+});
 
 describe("buildLlmProviderRegistry", () => {
   it("preserves registration order and evaluates enabled() at call time", () => {
@@ -120,18 +120,19 @@ describe("buildLlmProviderRegistry", () => {
   it("snapshots providers so later mutation does not alter the registry", () => {
     const originalModel = vi.fn((id: string) => fakeModel(`orig:${id}`));
     const replacementModel = vi.fn((id: string) => fakeModel(`other:${id}`));
-    const provider = makeProvider("openai", { model: originalModel }) as {
-      name: string;
-      enabled: () => boolean;
-      model: LlmProvider["model"];
+    const provider = {
+      name: "openai" as const,
+      enabled: () => true,
+      model: originalModel,
     };
-    const list = [provider as unknown as LlmProvider];
+    const list: Array<LlmProvider> = [provider];
 
     const { registry } = buildLlmProviderRegistry([
       { owner: "core", llmProviders: list },
     ]);
 
     list.push(makeProvider("anthropic"));
+    // @ts-expect-error: mutating provider name after registration to verify snapshotting
     provider.name = "mutated";
     provider.model = replacementModel;
 
@@ -199,7 +200,8 @@ describe("buildLlmProviderRegistry", () => {
           owner: "core",
           llmProviders: [
             makeProvider("openai", {
-              enabled: "yes" as unknown as () => boolean,
+              // @ts-expect-error: verifying runtime rejection of non-function enabled
+              enabled: "yes",
             }),
           ],
         },
@@ -212,7 +214,8 @@ describe("buildLlmProviderRegistry", () => {
           owner: "core",
           llmProviders: [
             makeProvider("openai", {
-              model: null as unknown as LlmProvider["model"],
+              // @ts-expect-error: verifying runtime rejection of null model
+              model: null,
             }),
           ],
         },

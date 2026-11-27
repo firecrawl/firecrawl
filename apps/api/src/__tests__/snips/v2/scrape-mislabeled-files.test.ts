@@ -1,17 +1,24 @@
 import request from "supertest";
+import { z } from "zod";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
   TEST_API_URL,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import {
-  idmux,
-  Identity,
-  scrape,
-  scrapeTimeout,
-  scrapeWithFailure,
-} from "./lib";
+import type { Identity } from "./lib";
+import { idmux, scrape, scrapeTimeout, scrapeWithFailure } from "./lib";
+
+const parseFormatsResponseSchema = z.object({
+  data: z.object({
+    formats: z.array(
+      z.object({
+        kind: z.string().optional(),
+        available: z.boolean().optional(),
+      }),
+    ),
+  }),
+});
 
 let identity: Identity;
 let imageOcrOn = false;
@@ -20,22 +27,23 @@ beforeAll(async () => {
   identity = await idmux({
     name: "scrape-mislabeled-files",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
 
   const formatsResponse = await request(TEST_API_URL)
     .get("/v2/parse/formats")
     .set("Authorization", `Bearer ${identity.apiKey}`);
-  if (
-    formatsResponse.statusCode === 200 &&
-    Array.isArray(formatsResponse.body?.data?.formats)
-  ) {
-    imageOcrOn = formatsResponse.body.data.formats.some(
-      (format: { kind?: string; available?: boolean }) =>
-        format.kind === "image" && format.available === true,
+  if (formatsResponse.statusCode === 200) {
+    const parsedFormats = parseFormatsResponseSchema.safeParse(
+      formatsResponse.body,
     );
+    if (parsedFormats.success) {
+      imageOcrOn = parsedFormats.data.data.formats.some(
+        format => format.kind === "image" && format.available === true,
+      );
+    }
   }
-}, 10000 + scrapeTimeout);
+}, 10_000 + scrapeTimeout);
 
 // The browser engine hands files it cannot render back to the API, which
 // routes them to a parser by content type — and servers mislabel. Static

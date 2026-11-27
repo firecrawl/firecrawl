@@ -6,12 +6,12 @@ import { domainToASCII } from "node:url";
  */
 
 export interface QueryOperators {
-  sites: string[];
-  excludedSites: string[];
-  inurl: string[];
-  intitle: string[];
-  excludedInurl: string[];
-  excludedIntitle: string[];
+  sites: Array<string>;
+  excludedSites: Array<string>;
+  inurl: Array<string>;
+  intitle: Array<string>;
+  excludedInurl: Array<string>;
+  excludedIntitle: Array<string>;
 }
 
 export interface OperatorPlan {
@@ -46,7 +46,7 @@ function normalizeSite(value: string): string {
 
 /** True when OR joins anything other than site: operators, which the matcher cannot represent. */
 function hasUnsupportedOr(query: string): boolean {
-  const unquoted = query.replace(/"[^"]*"/g, " ");
+  const unquoted = query.replaceAll(/"[^"]*"/g, " ");
   const ors = unquoted.match(/(?:^|[\s(])(?:OR|\|)(?=[\s)(]|$)/g)?.length ?? 0;
   const siteOrs =
     unquoted.match(/site:[^\s()]+\)*\s+(?:OR|\|)\s+(?=\(*site:)/gi)?.length ??
@@ -60,7 +60,9 @@ function hasUnsupportedOr(query: string): boolean {
  * routed search sends the query text alone, so it carries none of these.
  */
 export function usesSearchSyntax(query: string): boolean {
-  if (query.includes('"')) return true;
+  if (query.includes('"')) {
+    return true;
+  }
   return (
     /(?:^|[\s(-])[a-z]+:\S/i.test(query) ||
     /(?:^|[\s(])(?:OR|\|)(?=[\s)(]|$)/.test(query)
@@ -70,15 +72,20 @@ export function usesSearchSyntax(query: string): boolean {
 export function parseQueryOperators(query: string): QueryOperators {
   const operators = emptyOperators();
   for (const match of query.matchAll(OPERATOR_TOKEN)) {
-    if (match[1] !== undefined) continue;
+    if (match[1] !== undefined) {
+      continue;
+    }
     const value = (match[5] ?? match[6] ?? "").trim().toLowerCase();
-    if (!value) continue;
+    if (!value) {
+      continue;
+    }
     const negated = match[3] === "-";
     switch (match[4].toLowerCase()) {
       case "site": {
         const site = normalizeSite(value);
-        if (site)
+        if (site) {
           (negated ? operators.excludedSites : operators.sites).push(site);
+        }
         break;
       }
       case "inurl":
@@ -109,25 +116,57 @@ export function planOperatorQuery(query: string): OperatorPlan {
       operators.excludedInurl.length +
       operators.excludedIntitle.length >
       0;
-  if (!relaxed) return { query, operators, relaxed };
+  if (!relaxed) {
+    return { query, operators, relaxed };
+  }
 
   const rewritten = query
-    .replace(
+    .replaceAll(
       OPERATOR_TOKEN,
-      (token, phrase, lead, negated, name, quoted, bare, closing) => {
-        if (phrase !== undefined || name.toLowerCase() === "site") return token;
-        if (negated) return lead + closing;
-        return lead + (quoted !== undefined ? `"${quoted}"` : bare) + closing;
+      (
+        token: string,
+        phrase: string | undefined,
+        lead: string | undefined,
+        negated: string | undefined,
+        name: string | undefined,
+        quoted: string | undefined,
+        bare: string | undefined,
+        closing: string | undefined,
+      ): string => {
+        if (
+          phrase !== undefined ||
+          name === undefined ||
+          name.toLowerCase() === "site"
+        ) {
+          return token;
+        }
+        const prefix = lead ?? "";
+        const suffix = closing ?? "";
+        if (negated) {
+          return prefix + suffix;
+        }
+        return (
+          prefix +
+          (quoted !== undefined ? `"${quoted}"` : (bare ?? "")) +
+          suffix
+        );
       },
     )
-    .replace(/\s+/g, " ")
+    .replaceAll(/\s+/g, " ")
     .trim();
   return { query: rewritten, operators, relaxed };
 }
 
 /** Hostnames from site: operators, for the provider-side domain filter. */
-export function siteHostnames(sites: string[]): string[] {
-  return [...new Set(sites.map(site => site.split("/")[0]).filter(Boolean))];
+export function siteHostnames(sites: Array<string>): Array<string> {
+  const hosts = new Set<string>();
+  for (const site of sites) {
+    const host = site.split("/")[0];
+    if (host) {
+      hosts.add(host);
+    }
+  }
+  return [...hosts];
 }
 
 function matchesSite(url: URL, site: string): boolean {
@@ -135,17 +174,21 @@ function matchesSite(url: URL, site: string): boolean {
   const host = slash === -1 ? site : site.slice(0, slash);
   const path = slash === -1 ? "" : site.slice(slash);
   const hostname = url.hostname.toLowerCase();
-  if (hostname !== host && !hostname.endsWith("." + host)) return false;
+  if (hostname !== host && !hostname.endsWith("." + host)) {
+    return false;
+  }
   return !path || url.pathname.toLowerCase().startsWith(path);
 }
 
 /** True when the URL's host is, or is under, an included domain and no excluded one. */
 export function matchesDomains(
   url: string | undefined,
-  includeDomains: string[] = [],
-  excludeDomains: string[] = [],
+  includeDomains: Array<string> = [],
+  excludeDomains: Array<string> = [],
 ): boolean {
-  if (includeDomains.length === 0 && excludeDomains.length === 0) return true;
+  if (includeDomains.length === 0 && excludeDomains.length === 0) {
+    return true;
+  }
   let parsed: URL;
   try {
     parsed = new URL(url ?? "");
@@ -178,8 +221,12 @@ export function matchesQueryOperators(
   const { operators, relaxed } = plan;
   const filtersSites =
     operators.sites.length > 0 || operators.excludedSites.length > 0;
-  if (!filtersSites && !relaxed) return true;
-  if (!result.url) return false;
+  if (!filtersSites && !relaxed) {
+    return true;
+  }
+  if (!result.url) {
+    return false;
+  }
 
   let parsed: URL;
   try {
@@ -196,7 +243,9 @@ export function matchesQueryOperators(
   ) {
     return false;
   }
-  if (!relaxed) return true;
+  if (!relaxed) {
+    return true;
+  }
 
   const url = decodedUrl(result.url);
   const title = (result.title ?? "").toLowerCase();

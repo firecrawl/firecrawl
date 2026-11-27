@@ -1,9 +1,13 @@
+import express from "express";
+import request from "supertest";
 import { vi } from "vitest";
+import type { executeSearch } from "../../../search/execute";
 
-const mockExecuteSearch = vi.fn();
+const mockExecuteSearch = vi.fn<typeof executeSearch>();
 
 vi.mock("../../../search/execute", () => ({
-  executeSearch: (...args: any[]) => mockExecuteSearch(...args),
+  executeSearch: (...args: Parameters<typeof executeSearch>) =>
+    mockExecuteSearch(...args),
 }));
 
 vi.mock("../../../lib/logger", () => ({
@@ -21,30 +25,31 @@ import { createService, replaceService } from "../../../service/service";
 
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 
-function makeRes() {
-  const res: any = { status: vi.fn(), json: vi.fn() };
-  res.status.mockReturnValue(res);
-  res.json.mockReturnValue(res);
-  return res;
-}
-
 async function searchContextFor(
   caller?: { teamId: string; planClass?: "free" | "self_serve" | "contract" },
   teamId = TEAM_ID,
 ) {
-  const req: any = {
-    body: { query: "firecrawl" },
-    headers: {},
-    auth: { team_id: teamId },
-    caller,
-  };
+  const app = express();
+  app.use(express.json());
+  app.post("/v2/search", async (req, res) => {
+    const authedReq = Object.assign(req, {
+      auth: { team_id: teamId },
+      caller,
+    });
+    await searchController(authedReq, res);
+  });
 
-  const res = makeRes();
-  await searchController(req, res);
-  expect(res.status).toHaveBeenCalledWith(200);
+  const response = await request(app)
+    .post("/v2/search")
+    .send({ query: "firecrawl" });
+  expect(response.status).toBe(200);
 
   expect(mockExecuteSearch).toHaveBeenCalledTimes(1);
-  return mockExecuteSearch.mock.calls[0][1];
+  const context = mockExecuteSearch.mock.calls[0]?.[1];
+  if (!context) {
+    throw new Error("Expected executeSearch context");
+  }
+  return context;
 }
 
 beforeEach(() => {
@@ -61,7 +66,7 @@ beforeEach(() => {
     scrapedDocuments: [],
     searchTypes: ["web"],
     scrapeFormats: [],
-    resultCountsBySource: {},
+    resultCountsBySource: { web: 0, news: 0, images: 0 },
     resultCategories: {},
     toolFusion: false,
     shouldScrape: false,

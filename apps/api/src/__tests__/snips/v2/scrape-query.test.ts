@@ -6,14 +6,8 @@ import {
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import {
-  scrape,
-  scrapeRaw,
-  scrapeWithFailure,
-  scrapeTimeout,
-  idmux,
-  Identity,
-} from "./lib";
+import type { Identity } from "./lib";
+import { scrape, scrapeWithFailure, scrapeTimeout, idmux } from "./lib";
 
 let identity: Identity;
 
@@ -21,9 +15,9 @@ beforeAll(async () => {
   identity = await idmux({
     name: "scrape-query",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000 + scrapeTimeout);
+}, 10_000 + scrapeTimeout);
 
 describe("Query format", () => {
   concurrentIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
@@ -152,12 +146,12 @@ describe("Query format", () => {
   it(
     "rejects query prompt over 10000 characters",
     async () => {
-      const longPrompt = "a".repeat(10001);
+      const longPrompt = "a".repeat(10_001);
       const response = await scrapeWithFailure(
         {
           url: TEST_SUITE_WEBSITE,
           formats: [{ type: "query", prompt: longPrompt }],
-        } as any,
+        },
         identity,
       );
 
@@ -176,7 +170,7 @@ describe("Query format", () => {
           formats: [
             { type: "query", prompt: "What is Firecrawl?", mode: "summary" },
           ],
-        } as any,
+        },
         identity,
       );
 
@@ -192,8 +186,8 @@ describe("Query format", () => {
       const response = await scrapeWithFailure(
         {
           url: TEST_SUITE_WEBSITE,
-          formats: [{ type: "question", question: "a".repeat(10001) }],
-        } as any,
+          formats: [{ type: "question", question: "a".repeat(10_001) }],
+        },
         identity,
       );
 
@@ -209,8 +203,8 @@ describe("Query format", () => {
       const response = await scrapeWithFailure(
         {
           url: TEST_SUITE_WEBSITE,
-          formats: [{ type: "highlights", query: "a".repeat(10001) }],
-        } as any,
+          formats: [{ type: "highlights", query: "a".repeat(10_001) }],
+        },
         identity,
       );
 
