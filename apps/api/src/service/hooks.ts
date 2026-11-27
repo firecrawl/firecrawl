@@ -237,7 +237,7 @@ export type ResponsePayload = {
 };
 
 /**
- * The service's 26 typed hook points, grouped by lifecycle area.
+ * The service's 27 typed hook points, grouped by lifecycle area.
  */
 export interface HookPoints {
   // process

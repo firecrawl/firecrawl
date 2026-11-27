@@ -307,13 +307,13 @@ export async function scrapeURLWithWikipedia(
     projectIdentifier,
   });
 
-  const token = await getAccessToken(meta.logger);
-
-  const apiUrl = `${WIKIMEDIA_API_BASE}/articles/${encodeURIComponent(articleName)}`;
   installedService()?.hooks.observe("vendor.request", {
     vendor: "wikimedia-enterprise",
     ctx: meta.ctx,
   });
+  const token = await getAccessToken(meta.logger);
+
+  const apiUrl = `${WIKIMEDIA_API_BASE}/articles/${encodeURIComponent(articleName)}`;
 
   const response = await undiciFetch(apiUrl, {
     method: "POST",
