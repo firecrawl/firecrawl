@@ -290,16 +290,3 @@ class TestCrawlE2E:
         )
         
         assert crawl_job.id is not None
-
-
-    def test_crawl_params_preview(self):
-        """Test crawl_params function."""
-        params_data = self.client.crawl_params_preview(
-            "https://docs.firecrawl.dev",
-            "Extract all blog posts and documentation"
-        )
-
-        assert params_data is not None
-        assert params_data.limit is not None or params_data.include_paths is not None or params_data.max_discovery_depth is not None 
-        assert 'blog/.*' in params_data.include_paths
-        assert 'docs/.*' in params_data.include_paths

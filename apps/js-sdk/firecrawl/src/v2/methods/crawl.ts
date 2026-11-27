@@ -269,18 +269,3 @@ export async function getActiveCrawls(http: HttpClient): Promise<ActiveCrawlsRes
     throw err;
   }
 }
-
-export async function crawlParamsPreview(http: HttpClient, url: string, prompt: string): Promise<Record<string, unknown>> {
-  if (!url || !url.trim()) throw new Error("URL cannot be empty");
-  if (!prompt || !prompt.trim()) throw new Error("Prompt cannot be empty");
-  try {
-    const res = await http.post<{ success: boolean; data?: Record<string, unknown>; warning?: string }>("/v2/crawl/params-preview", { url: url.trim(), prompt });
-    if (res.status !== 200 || !res.data?.success) throwForBadResponse(res, "crawl params preview");
-    const data = res.data.data || {};
-    if (res.data.warning) (data as any).warning = res.data.warning;
-    return data;
-  } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "crawl params preview");
-    throw err;
-  }
-}

@@ -192,12 +192,5 @@ describe("v2.crawl e2e", () => {
     });
     expect(typeof job.id).toBe("string");
   }, testTimeoutMs(180_000));
-
-  test("crawl params preview", async () => {
-    if (!client) throw new Error();
-    const params = await client.crawlParamsPreview("https://docs.firecrawl.dev", "Extract all blog posts and documentation");
-    expect(params && typeof params === "object").toBe(true);
-    // Optional fields may or may not be present; just assert object shape
-  }, testTimeoutMs(60_000));
 });
 
