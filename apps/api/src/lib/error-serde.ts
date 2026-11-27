@@ -266,6 +266,12 @@ export function deserializeTransportableError(
   }
   const { code, payload } = parsed;
 
+  const wireCode = wireErrorCodeSchema.safeParse(code);
+  const plainPayload = plainErrorPayloadSchema.safeParse(payload);
+  if (!wireCode.success || !plainPayload.success) {
+    return null;
+  }
+
   const errorClass = service.errors.classFor(code);
   if (errorClass) {
     const registeredCode = errorClass.codes.find(c => c === code);
@@ -274,11 +280,6 @@ export function deserializeTransportableError(
     }
   }
 
-  const wireCode = wireErrorCodeSchema.safeParse(code);
-  const plainPayload = plainErrorPayloadSchema.safeParse(payload);
-  if (!wireCode.success || !plainPayload.success) {
-    return null;
-  }
   return TransportableError.deserialize(wireCode.data, {
     message: plainPayload.data.message,
     stack:
