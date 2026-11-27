@@ -332,6 +332,10 @@ where
 
   let mut frontier: VecDeque<(Url, u32)> = VecDeque::new();
   let mut visited: HashSet<String> = HashSet::new();
+  // Final URLs already saved. `visited` holds every URL ever queued,
+  // including the requested URL of a page not yet fetched, so it cannot
+  // tell a first save from a duplicate one.
+  let mut saved: HashSet<String> = HashSet::new();
   let mut robots_blocked = Vec::new();
 
   let enqueue = |url: Url,
@@ -400,6 +404,22 @@ where
     };
     match res {
       Ok((doc, links)) => {
+        // The fetch may have followed a redirect, so the page that came
+        // back can be one that is already queued under its own URL: the
+        // seed `https://x/` 308s to `/introduction`, which then links to
+        // itself. Dedup on the final URL, not just the requested one.
+        let final_key = doc
+          .pointer("/metadata/url")
+          .and_then(Value::as_str)
+          .and_then(|u| Url::parse(u).ok())
+          .map(|u| canonical(&u));
+        if let Some(key) = final_key {
+          if !saved.insert(key) {
+            // Already saved under this URL; it does not count against the limit.
+            started -= 1;
+            continue;
+          }
+        }
         on_page(&doc);
         pages.push(doc);
         if depth < max_depth && opts.sitemap != "only" {
@@ -582,6 +602,114 @@ pub async fn write_pages(dir: &std::path::Path, pages: &[Value]) -> Result<Vec<S
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[tokio::test]
+  async fn redirect_to_self_linking_page_is_saved_once() {
+    use crate::guard::NetworkPolicy;
+    use crate::scrape::{BrowserMode, Engine, EngineConfig};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let app = axum::Router::new()
+      .route(
+        "/",
+        axum::routing::get(|| async { axum::response::Redirect::permanent("/introduction") }),
+      )
+      .route(
+        "/introduction",
+        axum::routing::get(|| async {
+          axum::response::Html(
+            "<html><head><title>Intro</title></head><body><p>Intro</p>\
+             <a href=\"/introduction\">self</a></body></html>",
+          )
+        }),
+      );
+    tokio::spawn(async move {
+      axum::serve(listener, app).await.unwrap();
+    });
+
+    let engine = Arc::new(
+      Engine::new(EngineConfig {
+        policy: NetworkPolicy::AllowPrivate,
+        user_agent: None,
+        browser: BrowserMode::Never,
+      })
+      .unwrap(),
+    );
+    let opts = CrawlOptions {
+      limit: 20,
+      include_paths: vec!["^/introduction".into()],
+      sitemap: "skip".into(),
+      ignore_robots_txt: true,
+      ..Default::default()
+    };
+    let outcome = crawl(engine, &format!("http://127.0.0.1:{port}/"), &opts, |_| {})
+      .await
+      .unwrap();
+    assert_eq!(outcome.pages.len(), 1, "{:?}", outcome.pages);
+    assert_eq!(
+      outcome.pages[0]
+        .pointer("/metadata/url")
+        .and_then(Value::as_str),
+      Some(format!("http://127.0.0.1:{port}/introduction").as_str())
+    );
+  }
+
+  #[tokio::test]
+  async fn plain_pages_without_redirect_are_saved() {
+    use crate::guard::NetworkPolicy;
+    use crate::scrape::{BrowserMode, Engine, EngineConfig};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let app = axum::Router::new()
+      .route(
+        "/",
+        axum::routing::get(|| async {
+          axum::response::Html(
+            "<html><head><title>Home</title></head><body><p>Home</p>\
+             <a href=\"/about\">about</a></body></html>",
+          )
+        }),
+      )
+      .route(
+        "/about",
+        axum::routing::get(|| async {
+          axum::response::Html(
+            "<html><head><title>About</title></head><body><p>About</p></body></html>",
+          )
+        }),
+      );
+    tokio::spawn(async move {
+      axum::serve(listener, app).await.unwrap();
+    });
+
+    let engine = Arc::new(
+      Engine::new(EngineConfig {
+        policy: NetworkPolicy::AllowPrivate,
+        user_agent: None,
+        browser: BrowserMode::Never,
+      })
+      .unwrap(),
+    );
+    let opts = CrawlOptions {
+      limit: 20,
+      sitemap: "skip".into(),
+      ignore_robots_txt: true,
+      ..Default::default()
+    };
+    let outcome = crawl(engine, &format!("http://127.0.0.1:{port}/"), &opts, |_| {})
+      .await
+      .unwrap();
+    assert_eq!(outcome.pages.len(), 2, "{:?}", outcome.pages);
+    let urls: Vec<&str> = outcome
+      .pages
+      .iter()
+      .filter_map(|p| p.pointer("/metadata/url").and_then(Value::as_str))
+      .collect();
+    assert!(urls.contains(&format!("http://127.0.0.1:{port}/").as_str()));
+    assert!(urls.contains(&format!("http://127.0.0.1:{port}/about").as_str()));
+  }
 
   fn scope(seed: &str, opts: CrawlOptions) -> Scope {
     Scope::new(&Url::parse(seed).unwrap(), &opts).unwrap()
