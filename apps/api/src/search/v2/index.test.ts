@@ -13,6 +13,7 @@ import { UsOnlyUnavailableError } from "../../scraper/scrapeURL/error";
 import type { SearchProvider } from "../../service";
 import { createService, replaceService } from "../../service/service";
 import { coreSearchProviders } from "../providers";
+import { SearchProviderUnavailableError } from "./errors";
 import { search } from "./index";
 
 const logger = createLogger({ silent: true });
@@ -292,6 +293,68 @@ describe("service.searchProviders dispatch in v2 search", () => {
     expect(res).toEqual({});
     expect(loggerErrorSpy).toHaveBeenCalledWith("Error in search function", {
       error: failure,
+    });
+  });
+
+  it("falls back to the next provider when one throws", async () => {
+    const web = [
+      { url: "https://firecrawl.dev", title: "t", description: "d" },
+    ];
+    mocks.ddgSearch.mockResolvedValue({ web });
+    installSearchService([
+      {
+        name: "custom",
+        searchProviders: [
+          {
+            name: "searxng",
+            priority: 200,
+            enabled: () => true,
+            search: async () => {
+              throw new Error("upstream failed");
+            },
+          },
+        ],
+      },
+    ]);
+
+    const res = await search({ query: "firecrawl", logger });
+
+    expect(res).toEqual({ web });
+  });
+
+  it("fails with SearchProviderUnavailableError when every provider throws undefined", async () => {
+    mocks.ddgSearch.mockRejectedValue(undefined);
+
+    await expect(search({ query: "firecrawl", logger })).rejects.toBeInstanceOf(
+      SearchProviderUnavailableError,
+    );
+  });
+
+  it("fails with SearchProviderUnavailableError when every provider throws", async () => {
+    const failure = new Error("upstream failed");
+    mocks.ddgSearch.mockRejectedValue(new Error("fallback unavailable"));
+    installSearchService([
+      {
+        name: "custom",
+        searchProviders: [
+          {
+            name: "searxng",
+            priority: 200,
+            enabled: () => true,
+            search: async () => {
+              throw failure;
+            },
+          },
+        ],
+      },
+    ]);
+
+    const result = search({ query: "firecrawl", logger });
+
+    await expect(result).rejects.toBeInstanceOf(SearchProviderUnavailableError);
+    await expect(result).rejects.toMatchObject({
+      code: "SEARCH_PROVIDER_UNAVAILABLE",
+      httpStatus: 503,
     });
   });
 });

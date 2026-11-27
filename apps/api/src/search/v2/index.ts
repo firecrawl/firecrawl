@@ -5,6 +5,7 @@ import type { TeamPlanClass } from "../../service/search-providers";
 import { service } from "../../service";
 import type { SearchQuery } from "../../service";
 import { searchWithProvider } from "../../lib/search-metrics";
+import { SearchProviderUnavailableError } from "./errors";
 
 export async function search({
   query,
@@ -84,18 +85,25 @@ export async function search({
     teamPlanClass,
   };
 
-  try {
-    for (const provider of providers) {
+  let answered = false;
+  let failed = false;
+  let failure: unknown;
+  for (const provider of providers) {
+    try {
       const result = await searchWithProvider(provider, searchQuery);
       if (result !== null) {
         return result;
       }
+      answered = true;
+    } catch (error: unknown) {
+      logger.error(`Error in search function`, { error });
+      failed = true;
+      failure = error;
     }
-
-    // Fallback to empty response
-    return {};
-  } catch (error: unknown) {
-    logger.error(`Error in search function`, { error });
-    return {};
   }
+
+  if (!answered && failed) {
+    throw new SearchProviderUnavailableError({ cause: failure });
+  }
+  return {};
 }
