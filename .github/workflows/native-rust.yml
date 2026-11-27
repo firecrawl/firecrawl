@@ -37,6 +37,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             apps/api/native/target
+            apps/local/target
           key: ${{ runner.os }}-native-rust-${{ hashFiles('apps/api/native/rust-toolchain.toml', 'apps/api/native/Cargo.lock', 'apps/local/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-native-rust-
