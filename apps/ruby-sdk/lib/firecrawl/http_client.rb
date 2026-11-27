@@ -172,14 +172,14 @@ module Firecrawl
 
     def extract_error_message(body, status_code)
       parsed = JSON.parse(body)
-      parsed["error"] || parsed["message"] || "HTTP #{status_code} error"
+      parsed["error"] || parsed["message"] || parsed["detail"] || parsed["title"] || "HTTP #{status_code} error"
     rescue JSON::ParserError
       "HTTP #{status_code} error"
     end
 
     def extract_error_code(body)
       parsed = JSON.parse(body)
-      code = parsed["code"]
+      code = parsed["code"] || parsed["type"]
       code&.to_s
     rescue JSON::ParserError
       nil
