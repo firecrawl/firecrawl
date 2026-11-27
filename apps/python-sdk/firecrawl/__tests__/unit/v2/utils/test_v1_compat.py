@@ -168,3 +168,119 @@ def test_async_aliases_map_params():
     assert crawl.call_args.kwargs["limit"] == 1
     assert result["success"] is True
     assert result["data"][0]["markdown"] == "# hi"
+
+
+def test_scrape_url_maps_change_tracking_options(client):
+    with patch.object(client._v2_client, "scrape", return_value=_doc()) as scrape:
+        client.scrape_url(
+            "https://example.com",
+            params={
+                "formats": ["markdown", "changeTracking"],
+                "changeTrackingOptions": {"modes": ["git-diff", "json"]},
+            },
+        )
+    scrape.assert_called_once_with(
+        "https://example.com",
+        formats=["markdown", {"type": "changeTracking", "modes": ["git-diff", "json"]}],
+    )
+
+
+def test_scrape_url_maps_json_options(client):
+    with patch.object(client._v2_client, "scrape", return_value=_doc()) as scrape:
+        client.scrape_url(
+            "https://example.com",
+            params={
+                "formats": ["json"],
+                "jsonOptions": {"prompt": "Extract products", "schema": {"type": "object"}},
+            },
+        )
+    scrape.assert_called_once_with(
+        "https://example.com",
+        formats=[{"type": "json", "prompt": "Extract products", "schema": {"type": "object"}}],
+    )
+
+
+def test_scrape_url_change_tracking_without_formats_includes_markdown(client):
+    with patch.object(client._v2_client, "scrape", return_value=_doc()) as scrape:
+        client.scrape_url(
+            "https://example.com",
+            params={
+                "changeTrackingOptions": {"modes": ["git-diff"]},
+            },
+        )
+    scrape.assert_called_once_with(
+        "https://example.com",
+        formats=["markdown", {"type": "changeTracking", "modes": ["git-diff"]}],
+    )
+
+
+def test_scrape_url_change_tracking_with_typed_markdown_does_not_duplicate(client):
+    from pydantic import BaseModel
+
+    class DummyMarkdownFormat(BaseModel):
+        type: str = "markdown"
+
+    with patch.object(client._v2_client, "scrape", return_value=_doc()) as scrape:
+        client.scrape_url(
+            "https://example.com",
+            params={
+                "formats": [DummyMarkdownFormat()],
+                "changeTrackingOptions": {"modes": ["git-diff"]},
+            },
+        )
+    args, kwargs = scrape.call_args
+    assert len(kwargs["formats"]) == 2
+    assert kwargs["formats"][0].type == "markdown"
+    assert kwargs["formats"][1] == {"type": "changeTracking", "modes": ["git-diff"]}
+
+
+def test_scrape_url_maps_pydantic_model_options(client):
+    from pydantic import BaseModel
+
+    class DummyChangeTrackingConfig(BaseModel):
+        modes: list[str]
+
+    with patch.object(client._v2_client, "scrape", return_value=_doc()) as scrape:
+        client.scrape_url(
+            "https://example.com",
+            params={
+                "changeTrackingOptions": DummyChangeTrackingConfig(modes=["json"]),
+            },
+        )
+    scrape.assert_called_once_with(
+        "https://example.com",
+        formats=["markdown", {"type": "changeTracking", "modes": ["json"]}],
+    )
+
+
+def test_scrape_url_none_options_does_not_add_format(client):
+    with patch.object(client._v2_client, "scrape", return_value=_doc()) as scrape:
+        client.scrape_url(
+            "https://example.com",
+            params={
+                "formats": ["markdown"],
+                "changeTrackingOptions": None,
+                "jsonOptions": None,
+            },
+        )
+    scrape.assert_called_once_with(
+        "https://example.com",
+        formats=["markdown"],
+    )
+
+
+def test_scrape_url_merges_typed_format_objects(client):
+    from firecrawl.v2.types import JsonFormat
+
+    with patch.object(client._v2_client, "scrape", return_value=_doc()) as scrape:
+        client.scrape_url(
+            "https://example.com",
+            params={
+                "formats": [JsonFormat(prompt="base prompt")],
+                "jsonOptions": {"schema": {"type": "object"}},
+            },
+        )
+    scrape.assert_called_once_with(
+        "https://example.com",
+        formats=[{"type": "json", "prompt": "base prompt", "schema": {"type": "object"}}],
+    )
