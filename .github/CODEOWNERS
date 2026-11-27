@@ -51,14 +51,6 @@
 /apps/api/src/controllers/v1/search*            @nickscamara
 /apps/api/src/search/*                          @nickscamara
 
-### /llmstxt
-/apps/api/src/controllers/v1/generate-llmstxt*  @nickscamara
-/apps/api/src/lib/generate-llmstxt/*            @nickscamara
-
-### /deep-research
-/apps/api/src/controllers/v1/deep-research*     @nickscamara
-/apps/api/src/lib/deep-research/*               @nickscamara
-
 ### Input Validation/Zod
 /apps/api/src/controllers/v1/types.ts           @mogery
 
