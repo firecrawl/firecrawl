@@ -13,6 +13,7 @@ import {
   HAS_AI,
   ALLOW_TEST_SUITE_WEBSITE,
 } from "../lib";
+import type { Identity } from "./lib";
 import {
   scrape,
   scrapeWithFailure,
@@ -20,43 +21,44 @@ import {
   scrapeTimeout,
   indexCooldown,
   idmux,
-  Identity,
   scrapeRaw,
   creditUsage,
   TEST_API_URL,
 } from "./lib";
 import request from "./lib";
-import crypto from "crypto";
+import crypto from "node:crypto";
 import { z } from "zod";
 
-const stringbool = z.stringbool().catch(false);
-
 let identity: Identity;
+
+const createSelfHostedLocalUrl = () => {
+  const target = new URL(TEST_SUITE_WEBSITE);
+  target.searchParams.set("testId", crypto.randomUUID());
+  return target.toString();
+};
+
+const createDnsResolvedLocalUrl = () => {
+  const target = new URL(createSelfHostedLocalUrl());
+  target.hostname = "localtest.me";
+  return target.toString();
+};
 
 beforeAll(async () => {
   identity = await idmux({
     name: "scrape",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000 + scrapeTimeout);
+}, 10_000 + scrapeTimeout);
 
 describe("Scrape tests", () => {
   const base = TEST_SUITE_WEBSITE;
-  const playwrightAllowsLocalTargets = stringbool.parse(
-    process.env.ALLOW_LOCAL_WEBHOOKS,
-  );
-  const createSelfHostedLocalUrl = () => {
-    const target = new URL(TEST_SUITE_WEBSITE);
-    target.searchParams.set("testId", crypto.randomUUID());
-    return target.toString();
-  };
-
-  const createDnsResolvedLocalUrl = () => {
-    const target = new URL(createSelfHostedLocalUrl());
-    target.hostname = "localtest.me";
-    return target.toString();
-  };
+  const parsedAllowLocal = z
+    .stringbool()
+    .safeParse(process.env.ALLOW_LOCAL_WEBHOOKS);
+  const playwrightAllowsLocalTargets = parsedAllowLocal.success
+    ? parsedAllowLocal.data
+    : false;
 
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "works",
@@ -81,7 +83,7 @@ describe("Scrape tests", () => {
           {
             url: base,
             waitFor: 8000,
-            timeout: 15000,
+            timeout: 15_000,
           },
           identity,
         );
@@ -103,8 +105,8 @@ describe("Scrape tests", () => {
         const raw = await scrapeRaw(
           {
             url: base,
-            waitFor: 15000,
-            timeout: 15000,
+            waitFor: 15_000,
+            timeout: 15_000,
           },
           identity,
         );
@@ -126,8 +128,8 @@ describe("Scrape tests", () => {
         const raw = await scrapeRaw(
           {
             url: base,
-            waitFor: 20000,
-            timeout: 15000,
+            waitFor: 20_000,
+            timeout: 15_000,
           },
           identity,
         );
@@ -150,7 +152,7 @@ describe("Scrape tests", () => {
       const raw = await scrapeRaw(
         {
           url: "not-a-valid-url",
-        } as any,
+        },
         identity,
       );
 
@@ -259,7 +261,7 @@ describe("Scrape tests", () => {
       );
 
       expect(response.markdown?.trim()).toContain(
-        config.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
+        (config.PROXY_SERVER!.split("://").at(-1) ?? "").split(":")[0],
       );
     },
     scrapeTimeout,
@@ -278,7 +280,7 @@ describe("Scrape tests", () => {
       );
 
       expect(response.markdown?.trim()).toContain(
-        config.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
+        (config.PROXY_SERVER!.split("://").at(-1) ?? "").split(":")[0],
       );
     },
     scrapeTimeout,
@@ -536,11 +538,13 @@ describe("Scrape tests", () => {
         blockedIdentity,
       );
 
-      await new Promise(resolve => setTimeout(resolve, 40000));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 40_000);
+      });
       const rc2 = (await creditUsage(blockedIdentity)).remainingCredits;
       expect(rc1 - rc2).toBe(5);
     },
-    scrapeTimeout + 40000,
+    scrapeTimeout + 40_000,
   );
 
   itIf(TEST_SELF_HOST && !HAS_FIRE_ENGINE && ALLOW_TEST_SUITE_WEBSITE)(
@@ -592,7 +596,7 @@ describe("Scrape tests", () => {
         );
 
         expect(response.markdown).toContain("access_policies");
-        expect(response.markdown).not.toContain("access\\_policies");
+        expect(response.markdown).not.toContain(String.raw`access\_policies`);
       },
       scrapeTimeout,
     );
@@ -612,7 +616,9 @@ describe("Scrape tests", () => {
         expect(response.markdown).toContain("Firecrawl");
 
         // Give time to propagate to read replica
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, 1000);
+        });
 
         const status = await scrapeStatus(
           response.metadata.scrapeId!,
@@ -670,7 +676,9 @@ describe("Scrape tests", () => {
 
           expect(response1.metadata.cacheState).toBe("miss");
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -682,7 +690,9 @@ describe("Scrape tests", () => {
 
           expect(response2.metadata.cacheState).toBe("miss");
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response3 = await scrape(
             {
@@ -723,7 +733,9 @@ describe("Scrape tests", () => {
 
           expect(response1.metadata.cacheState).toBe("miss");
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -754,7 +766,9 @@ describe("Scrape tests", () => {
 
           expect(response1.screenshot).toBeDefined();
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -798,7 +812,9 @@ describe("Scrape tests", () => {
 
           expect(response1.screenshot).toBeDefined();
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -851,7 +867,9 @@ describe("Scrape tests", () => {
 
           expect(response1.metadata.cacheState).not.toBeDefined();
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -883,7 +901,9 @@ describe("Scrape tests", () => {
             identity,
           );
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response = await scrape(
             {
@@ -933,7 +953,9 @@ describe("Scrape tests", () => {
             identity,
           );
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response1 = await scrape(
             {
@@ -946,7 +968,9 @@ describe("Scrape tests", () => {
 
           expect(response1.metadata.cacheState).toBe("miss");
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -983,7 +1007,9 @@ describe("Scrape tests", () => {
 
           expect(response1.metadata.cacheState).not.toBeDefined();
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -1011,7 +1037,9 @@ describe("Scrape tests", () => {
             identity,
           );
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response1 = await scrape(
             {
@@ -1024,7 +1052,9 @@ describe("Scrape tests", () => {
 
           expect(response1.metadata.cacheState).toBe("miss");
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -1054,7 +1084,9 @@ describe("Scrape tests", () => {
             identity,
           );
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response0 = await scrape(
             {
@@ -1078,7 +1110,9 @@ describe("Scrape tests", () => {
 
           expect(response1.metadata.cacheState).toBe("miss");
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -1111,7 +1145,9 @@ describe("Scrape tests", () => {
           expect(response1.metadata.proxyUsed).toBe("stealth");
           expect(response1.metadata.cacheState).not.toBeDefined();
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response2 = await scrape(
             {
@@ -1150,7 +1186,9 @@ describe("Scrape tests", () => {
             identity,
           );
 
-          await new Promise(resolve => setTimeout(resolve, indexCooldown));
+          await new Promise<void>(resolve => {
+            setTimeout(resolve, indexCooldown);
+          });
 
           const response = await scrape(
             {
@@ -1400,24 +1438,20 @@ describe("Scrape tests", () => {
       //   expect(response.markdown).toContain("Robust adaptive beamforming based on jointly estimating covariance matrix");
       // }, 60000);
 
-      it.concurrent(
-        "blocks long PDFs with insufficient timeout",
-        async () => {
-          const response = await scrapeWithFailure(
-            {
-              url: `${base}/example-long.pdf`,
-              maxAge: 0,
-              timeout: 10000,
-            },
-            identity,
-          );
+      it.concurrent("blocks long PDFs with insufficient timeout", async () => {
+        const response = await scrapeWithFailure(
+          {
+            url: `${base}/example-long.pdf`,
+            maxAge: 0,
+            timeout: 10_000,
+          },
+          identity,
+        );
 
-          expect(response.error).toContain(
-            "pages, which requires more processing time than your current timeout allows.",
-          );
-        },
-        12000,
-      );
+        expect(response.error).toContain(
+          "pages, which requires more processing time than your current timeout allows.",
+        );
+      }, 12_000);
 
       it.concurrent(
         "scrapes long PDFs with sufficient timeout",
@@ -1483,13 +1517,13 @@ describe("Scrape tests", () => {
     concurrentIf(TEST_PRODUCTION || HAS_PROXY)(
       "scrapes Google Drive text files correctly",
       async () => {
-        const response = await scrape(
-          {
-            url: "https://drive.google.com/file/d/14m3ZVDnWJwwPSDHX6U6jkL7FXxOf6cHB/view?usp=sharing",
-            ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
-          },
-          identity,
-        );
+        const payload: Parameters<typeof scrape>[0] = {
+          url: "https://drive.google.com/file/d/14m3ZVDnWJwwPSDHX6U6jkL7FXxOf6cHB/view?usp=sharing",
+        };
+        if (TEST_PRODUCTION) {
+          payload.maxAge = 0;
+        }
+        const response = await scrape(payload, identity);
 
         expect(response.markdown).toContain("This is a simple TXT file.");
       },
@@ -1499,13 +1533,13 @@ describe("Scrape tests", () => {
     concurrentIf(TEST_PRODUCTION || HAS_PROXY)(
       "scrapes Google Sheets links correctly",
       async () => {
-        const response = await scrape(
-          {
-            url: "https://docs.google.com/spreadsheets/d/1DTpw_bbsf3OY17ZqEYEpW6lAmLdCRC2WfLrV0isG9ac/edit?usp=sharing",
-            ...(TEST_PRODUCTION ? { maxAge: 0 } : {}),
-          },
-          identity,
-        );
+        const payload: Parameters<typeof scrape>[0] = {
+          url: "https://docs.google.com/spreadsheets/d/1DTpw_bbsf3OY17ZqEYEpW6lAmLdCRC2WfLrV0isG9ac/edit?usp=sharing",
+        };
+        if (TEST_PRODUCTION) {
+          payload.maxAge = 0;
+        }
+        const response = await scrape(payload, identity);
 
         expect(response.markdown).toContain("This is a test sheet.");
       },
@@ -1633,14 +1667,13 @@ describe("Scrape tests", () => {
           );
 
           expect(response).toHaveProperty("json");
-          expect(response.json).toHaveProperty("company_mission");
-          expect(typeof response.json.company_mission).toBe("string");
-          expect(response.json).toHaveProperty("supports_sso");
-          expect(response.json.supports_sso).toBe(false);
-          expect(typeof response.json.supports_sso).toBe("boolean");
-          expect(response.json).toHaveProperty("is_open_source");
-          expect(response.json.is_open_source).toBe(true);
-          expect(typeof response.json.is_open_source).toBe("boolean");
+          expect(response.json).toEqual(
+            expect.objectContaining({
+              company_mission: expect.any(String),
+              supports_sso: false,
+              is_open_source: true,
+            }),
+          );
         },
         scrapeTimeout,
       );
@@ -1667,8 +1700,12 @@ describe("Scrape tests", () => {
           expect(response.warning ?? "").not.toContain(
             "JSON extraction failed",
           );
-          expect(typeof response.json.company_name).toBe("string");
-          expect(typeof response.json.is_open_source).toBe("boolean");
+          expect(response.json).toEqual(
+            expect.objectContaining({
+              company_name: expect.any(String),
+              is_open_source: expect.any(Boolean),
+            }),
+          );
         },
         scrapeTimeout,
       );
@@ -2082,36 +2119,30 @@ describe("Attribute formats", () => {
   });
 
   describe("UUID validation", () => {
-    it.concurrent(
-      "should reject invalid UUID 'None' for scrape status",
-      async () => {
-        const response = await request(TEST_API_URL)
-          .get("/v2/scrape/None")
-          .set("Authorization", `Bearer ${identity.apiKey}`)
-          .send();
+    it.concurrent("should reject invalid UUID 'None' for scrape status", async () => {
+      const response = await request(TEST_API_URL)
+        .get("/v2/scrape/None")
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .send();
 
-        expect(response.statusCode).toBe(400);
-        expect(response.body.success).toBe(false);
-        expect(response.body.error).toBe(
-          "Invalid job ID format. Job ID must be a valid UUID.",
-        );
-      },
-    );
+      expect(response.statusCode).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toBe(
+        "Invalid job ID format. Job ID must be a valid UUID.",
+      );
+    });
 
-    it.concurrent(
-      "should reject malformed UUID for scrape status",
-      async () => {
-        const response = await request(TEST_API_URL)
-          .get("/v2/scrape/not-a-valid-uuid")
-          .set("Authorization", `Bearer ${identity.apiKey}`)
-          .send();
+    it.concurrent("should reject malformed UUID for scrape status", async () => {
+      const response = await request(TEST_API_URL)
+        .get("/v2/scrape/not-a-valid-uuid")
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .send();
 
-        expect(response.statusCode).toBe(400);
-        expect(response.body.success).toBe(false);
-        expect(response.body.error).toBe(
-          "Invalid job ID format. Job ID must be a valid UUID.",
-        );
-      },
-    );
+      expect(response.statusCode).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toBe(
+        "Invalid job ID format. Job ID must be a valid UUID.",
+      );
+    });
   });
 });

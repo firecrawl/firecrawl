@@ -1,6 +1,6 @@
 import express from "express";
 import multer from "multer";
-import { ZodError } from "zod";
+import { ZodError, z } from "zod";
 import { RateLimiterMode } from "../types";
 import expressWs from "express-ws";
 import { searchController } from "../controllers/v2/search";
@@ -38,7 +38,10 @@ import {
   validateJobIdParam,
 } from "./shared";
 import { queueStatusController } from "../controllers/v2/queue-status";
+import type { RequestWithAuth } from "../controllers/v2/types";
 import { openRequest, resolveRequestContext, service } from "../service";
+
+const rawBodyRecordSchema = z.record(z.string(), z.unknown());
 
 // Every v2 route opts in to hosted MCP rate-limit minimums; /v1 routes do not.
 const authMiddleware: typeof sharedAuthMiddleware = (mode, options = {}) =>
@@ -57,7 +60,7 @@ const parseUpload = multer({
 const parseUploadMiddleware: express.RequestHandler = (req, res, next) => {
   const upload = parseUpload.single("file");
 
-  upload(req, res, err => {
+  upload(req, res, (err: unknown) => {
     if (!err) {
       return next();
     }
@@ -73,25 +76,37 @@ const parseUploadMiddleware: express.RequestHandler = (req, res, next) => {
     return res.status(400).json({
       success: false,
       code: "BAD_REQUEST",
-      error: err.message || "Invalid multipart form-data request.",
+      error:
+        (err instanceof Error && err.message) ||
+        "Invalid multipart form-data request.",
     });
   });
 };
 
-const parsePayloadMiddleware: express.RequestHandler = (req, res, next) => {
+const parsePayloadMiddleware = (
+  req: RequestWithAuth<express.Request["params"], unknown, unknown>,
+  res: express.Response,
+  next: express.NextFunction,
+) => {
   const contentType = req.headers["content-type"] || "";
   if (
     typeof contentType === "string" &&
     contentType.includes("multipart/form-data")
   ) {
-    return parseUploadMiddleware(req, res, err => {
-      if (err) return next(err);
+    return parseUploadMiddleware(req, res, (err?: unknown) => {
+      if (err) {
+        return next(err);
+      }
       return parseMultipartPayloadMiddleware(req, res, next);
     });
   }
 
-  if (req.body && typeof req.body === "object" && "uploadRef" in req.body) {
-    return parseUploadRefPayloadMiddleware(req as any, res, next);
+  const parsedUploadRefBody = rawBodyRecordSchema.safeParse(req.body);
+  if (parsedUploadRefBody.success && "uploadRef" in parsedUploadRefBody.data) {
+    parseUploadRefPayloadMiddleware(req, res, next).catch((error: unknown) =>
+      next(error),
+    );
+    return;
   }
 
   return res.status(400).json({
@@ -114,12 +129,13 @@ v2Router.post(
   openRequest("search", {
     authorizeState: { mcpCredits: true },
     parse: rawBody => {
-      if (rawBody && typeof rawBody === "object" && !Array.isArray(rawBody)) {
+      const parsed = rawBodyRecordSchema.safeParse(rawBody);
+      if (parsed.success) {
         const {
           objective: _objective,
           clientModel: _clientModel,
           ...rest
-        } = rawBody as Record<string, unknown>;
+        } = parsed.data;
         return service.schemas.search.parse(rest);
       }
       return service.schemas.search.parse(rawBody);
@@ -260,27 +276,34 @@ v2Router.delete(
   wrap(crawlCancelController),
 );
 
+const validateWsJobId: expressWs.WebsocketRequestHandler = (ws, req, next) => {
+  const jobId = Array.isArray(req.params.jobId) ? undefined : req.params.jobId;
+
+  if (!isValidJobId(jobId)) {
+    ws.close(1008, "Invalid job ID");
+    return;
+  }
+  next();
+};
+
 v2Router.ws(
   "/crawl/:jobId",
-  ((ws: any, req: express.Request, next: (err?: unknown) => void) => {
-    const jobId = Array.isArray(req.params.jobId)
-      ? undefined
-      : req.params.jobId;
-
-    if (!isValidJobId(jobId)) {
-      ws.close(1008, "Invalid job ID");
-      return;
-    }
-    next();
-  }) as any,
-  crawlStatusWSController,
+  validateWsJobId,
+  (ws, req: Parameters<typeof crawlStatusWSController>[1], next) => {
+    crawlStatusWSController(ws, req).catch((error: unknown) => next(error));
+  },
 );
 
 v2Router.get(
   "/batch/scrape/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus, { allowAgentManagedKey: true }),
   validateJobIdParam,
-  wrap((req: any, res: any) => crawlStatusController(req, res, true)),
+  wrap(
+    (
+      req: Parameters<typeof crawlStatusController>[0],
+      res: Parameters<typeof crawlStatusController>[1],
+    ) => crawlStatusController(req, res, true),
+  ),
 );
 
 v2Router.delete(

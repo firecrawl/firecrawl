@@ -1,11 +1,13 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
+import IORedis from "ioredis";
 import { vi } from "vitest";
 import { config } from "../../config";
+import type { ScrapeOptions } from "../../controllers/v2/types";
 import { redisEvictConnection } from "../../services/redis";
-import * as queueService from "../../services/queue-service";
 import { requestContext } from "../../lib/request-context";
 import { noLimits } from "../../service/defaults";
 import { testService, withService } from "../../service/testing";
+import type { ScrapeJobData } from "../../types";
 import {
   fdbQueueEnabled,
   isFdbTeam,
@@ -31,6 +33,36 @@ const describeIf = config.FDB_CLUSTER_FILE ? describe : describe.skip;
 
 const prevNuqBackend = config.NUQ_BACKEND;
 
+const defaultScrapeOptions: ScrapeOptions = {
+  formats: [{ type: "markdown" }],
+  onlyMainContent: true,
+  onlyCleanContent: false,
+  waitFor: 0,
+  mobile: false,
+  skipTlsVerification: false,
+  removeBase64Images: true,
+  fastMode: false,
+  blockAds: true,
+  proxy: "auto",
+  checkPromptInjection: false,
+};
+
+function makeScrapeJobData(
+  overrides: Partial<Extract<ScrapeJobData, { mode: "single_urls" }>> & {
+    team_id: string;
+  },
+): ScrapeJobData {
+  return {
+    mode: "single_urls",
+    url: "https://example.com",
+    scrapeOptions: defaultScrapeOptions,
+    origin: "test",
+    apiKeyId: null,
+    zeroDataRetention: false,
+    ...overrides,
+  };
+}
+
 describeIf("NuQ router (forced FDB mode)", () => {
   beforeAll(() => {
     config.NUQ_BACKEND = "fdb";
@@ -44,9 +76,7 @@ describeIf("NuQ router (forced FDB mode)", () => {
     const db = getNuqFdbDatabase();
     for (const name of ["scrape", "crawl_finished"]) {
       const r = fdb.tuple.range(["nuq", name]);
-      await db.doTn(async tn =>
-        tn.clearRange(r.begin as Buffer, r.end as Buffer),
-      );
+      await db.doTn(async tn => tn.clearRange(r.begin, r.end));
     }
   });
 
@@ -55,11 +85,11 @@ describeIf("NuQ router (forced FDB mode)", () => {
     expect(await isFdbTeam(randomUUID())).toBe(true);
     expect(await resolveNewGroupBackend(randomUUID())).toBe("fdb");
     expect(
-      await resolveJobBackend({
-        mode: "single_urls",
-        url: "https://example.com",
-        team_id: randomUUID(),
-      } as any),
+      await resolveJobBackend(
+        makeScrapeJobData({
+          team_id: randomUUID(),
+        }),
+      ),
     ).toBe("fdb");
   });
 
@@ -70,11 +100,9 @@ describeIf("NuQ router (forced FDB mode)", () => {
       [
         {
           jobId,
-          data: {
-            mode: "single_urls",
-            url: "https://example.com",
+          data: makeScrapeJobData({
             team_id: teamId,
-          } as any,
+          }),
           priority: 0,
           backlogTimeoutMs: 60_000,
         },
@@ -98,10 +126,10 @@ describeIf("NuQ router (forced FDB mode)", () => {
     }
     expect(taken).not.toBeNull();
     expect(taken.id).toBe(jobId);
-    expect((taken as any).backend).toBe("fdb");
+    expect(taken.backend).toBe("fdb");
 
-    expect(await scrapeQueue.renewLock(jobId, taken.lock!)).toBe(true);
-    expect(await scrapeQueue.jobFinish(jobId, taken.lock!, { ok: true })).toBe(
+    expect(await scrapeQueue.renewLock(jobId, taken.lock)).toBe(true);
+    expect(await scrapeQueue.jobFinish(jobId, taken.lock, { ok: true })).toBe(
       true,
     );
 
@@ -124,17 +152,15 @@ describeIf("NuQ router (forced FDB mode)", () => {
       redisGet.mockImplementation(async key =>
         key === `nuq:job_backend:${jobId}` ? "fdb" : null,
       );
-      redisSet.mockResolvedValue("OK" as any);
+      redisSet.mockResolvedValue("OK");
 
       const { jobs, backloggedCount } = await fdbEnqueueScrapeJobs(
         [
           {
             jobId,
-            data: {
-              mode: "single_urls",
-              url: "https://example.com",
+            data: makeScrapeJobData({
               team_id: teamId,
-            } as any,
+            }),
             priority: 0,
             listenable: true,
             backlogTimeoutMs: 60_000,
@@ -147,7 +173,9 @@ describeIf("NuQ router (forced FDB mode)", () => {
 
       const wait = scrapeQueue.waitForJob(jobId, 15_000);
 
-      await new Promise(resolve => setTimeout(resolve, 800));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 800);
+      });
 
       const taken = await scrapeQueueFdb.getJobToProcess();
       expect(taken?.id).toBe(jobId);
@@ -175,12 +203,10 @@ describeIf("NuQ router (forced FDB mode)", () => {
       [
         {
           jobId,
-          data: {
-            mode: "single_urls",
-            url: "https://example.com",
+          data: makeScrapeJobData({
             team_id: teamId,
             crawl_id: gid,
-          } as any,
+          }),
           priority: 0,
           backlogTimeoutMs: 60_000,
         },
@@ -192,10 +218,12 @@ describeIf("NuQ router (forced FDB mode)", () => {
     for (let i = 0; i < 10 && !taken; i++) {
       try {
         taken = await scrapeQueue.getJobToProcess();
-      } catch {}
+      } catch {
+        // PG fallback poll can throw without a database; FDB must still win
+      }
     }
     expect(taken?.id).toBe(jobId);
-    await scrapeQueue.jobFinish(jobId, taken.lock!, null);
+    await scrapeQueue.jobFinish(jobId, taken.lock, null);
 
     expect((await crawlGroup.getGroup(gid))?.status).toBe("completed");
     expect(await scrapeQueue.getGroupNumericStats(gid)).toMatchObject({
@@ -209,11 +237,13 @@ describeIf("NuQ router (forced FDB mode)", () => {
     for (let i = 0; i < 10 && !fin; i++) {
       try {
         fin = await crawlFinishedQueue.getJobToProcess();
-      } catch {}
+      } catch {
+        // PG fallback poll can throw without a database; FDB must still win
+      }
     }
     expect(fin).not.toBeNull();
     expect(fin.groupId).toBe(gid);
-    expect(await crawlFinishedQueue.jobFinish(fin.id, fin.lock!, null)).toBe(
+    expect(await crawlFinishedQueue.jobFinish(fin.id, fin.lock, null)).toBe(
       true,
     );
 
@@ -230,12 +260,11 @@ describeIf("NuQ router (forced FDB mode)", () => {
       [
         {
           jobId,
-          data: {
-            mode: "single_urls",
+          data: makeScrapeJobData({
             url: "https://example.com/failed",
             team_id: teamId,
             crawl_id: gid,
-          } as any,
+          }),
           priority: 0,
           backlogTimeoutMs: 60_000,
         },
@@ -247,10 +276,12 @@ describeIf("NuQ router (forced FDB mode)", () => {
     for (let i = 0; i < 10 && !taken; i++) {
       try {
         taken = await scrapeQueue.getJobToProcess();
-      } catch {}
+      } catch {
+        // PG fallback poll can throw without a database; FDB must still win
+      }
     }
     expect(taken?.id).toBe(jobId);
-    await scrapeQueue.jobFail(jobId, taken.lock!, "routed failure");
+    await scrapeQueue.jobFail(jobId, taken.lock, "routed failure");
 
     const failed = await scrapeQueue.getGroupJobs(gid, "failed");
     expect(failed).toHaveLength(1);
@@ -277,12 +308,11 @@ describeIf("NuQ router (forced FDB mode)", () => {
         [
           {
             jobId,
-            data: {
-              mode: "single_urls",
+            data: makeScrapeJobData({
               url: "https://example.com/probed",
               team_id: teamId,
               crawl_id: gid,
-            } as any,
+            }),
             priority: 0,
             backlogTimeoutMs: 60_000,
           },
@@ -324,19 +354,34 @@ describeIf("NuQ router (forced FDB mode)", () => {
   test("external slot release follows recorded FDB backend when settlement omits context", async () => {
     const forcedBackend = config.NUQ_BACKEND;
     const markers = new Map<string, string>();
-    const fakeRedis = {
-      zcount: vi.fn(async () => 0),
-      set: vi.fn(async (key: string, value: string) => {
-        markers.set(key, value);
-        return "OK";
-      }),
-      get: vi.fn(async (key: string) => markers.get(key) ?? null),
-      del: vi.fn(async (key: string) => (markers.delete(key) ? 1 : 0)),
-      zrem: vi.fn(async () => 0),
-    };
+    const fakeRedis = new IORedis({
+      lazyConnect: true,
+      maxRetriesPerRequest: 0,
+      retryStrategy: () => null,
+    });
+    vi.spyOn(fakeRedis, "zcount").mockResolvedValue(0);
+    vi.spyOn(fakeRedis, "set").mockImplementation(async (...args) => {
+      const [key, value] = args;
+      markers.set(String(key), String(value));
+      return "OK";
+    });
+    vi.spyOn(fakeRedis, "get").mockImplementation(
+      async key => markers.get(String(key)) ?? null,
+    );
+    vi.spyOn(fakeRedis, "del").mockImplementation(async (...keys) => {
+      let removed = 0;
+      for (const key of keys) {
+        if (markers.delete(String(key))) {
+          removed++;
+        }
+      }
+      return removed;
+    });
+    vi.spyOn(fakeRedis, "zrem").mockResolvedValue(0);
+    const queueService = await import("../../services/queue-service.js");
     const redisSpy = vi
       .spyOn(queueService, "getRedisConnection")
-      .mockReturnValue(fakeRedis as any);
+      .mockReturnValue(fakeRedis);
     config.NUQ_BACKEND = "pg";
     try {
       const limits = {
@@ -374,6 +419,7 @@ describeIf("NuQ router (forced FDB mode)", () => {
     } finally {
       config.NUQ_BACKEND = forcedBackend;
       redisSpy.mockRestore();
+      fakeRedis.disconnect();
     }
   });
 });

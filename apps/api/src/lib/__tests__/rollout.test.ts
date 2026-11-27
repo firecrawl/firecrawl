@@ -26,7 +26,9 @@ describe("sampled", () => {
   it("gives the same answer every call", () => {
     for (const org of orgs.slice(0, 50)) {
       const first = sampled(org, 37);
-      for (let i = 0; i < 5; i++) expect(sampled(org, 37)).toBe(first);
+      for (let i = 0; i < 5; i++) {
+        expect(sampled(org, 37)).toBe(first);
+      }
     }
   });
 

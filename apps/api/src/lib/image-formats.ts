@@ -53,7 +53,9 @@ export const IMAGE_EXTENSIONS = new Set([
 export function imageExtensionFromContentType(
   contentType: string | null | undefined,
 ): string | null {
-  if (!contentType) return null;
+  if (!contentType) {
+    return null;
+  }
   const mediaType = contentType.split(";")[0].trim().toLowerCase();
   return IMAGE_CONTENT_TYPE_TO_EXTENSION.get(mediaType) ?? null;
 }
@@ -64,7 +66,9 @@ export function imageContentTypeFromExtension(
   const lower = extension.toLowerCase();
   const ext = IMAGE_EXTENSION_ALIASES.get(lower) ?? lower;
   for (const [contentType, mapped] of IMAGE_CONTENT_TYPE_TO_EXTENSION) {
-    if (mapped === ext) return contentType;
+    if (mapped === ext) {
+      return contentType;
+    }
   }
   return null;
 }
@@ -74,7 +78,9 @@ export function imageContentTypeFromExtension(
 export function imageExtensionFromUrlPath(urlPath: string): string | null {
   const lowerPath = urlPath.toLowerCase();
   for (const ext of IMAGE_EXTENSIONS) {
-    if (lowerPath.endsWith(ext)) return ext;
+    if (lowerPath.endsWith(ext)) {
+      return ext;
+    }
   }
   return null;
 }
@@ -167,7 +173,9 @@ const SNIFF_WINDOW = Math.max(...MAGIC_SIGNATURES.map(s => s.bytes.length));
 
 export function sniffImageContentType(bytes: Uint8Array): string | null {
   for (const { contentType, bytes: magic } of MAGIC_SIGNATURES) {
-    if (bytes.length < magic.length) continue;
+    if (bytes.length < magic.length) {
+      continue;
+    }
     let matches = true;
     for (let i = 0; i < magic.length; i++) {
       if (magic[i] !== null && bytes[i] !== magic[i]) {
@@ -175,7 +183,9 @@ export function sniffImageContentType(bytes: Uint8Array): string | null {
         break;
       }
     }
-    if (matches) return contentType;
+    if (matches) {
+      return contentType;
+    }
   }
   return null;
 }

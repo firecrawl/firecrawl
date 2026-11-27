@@ -1,15 +1,13 @@
-use napi_derive::napi;
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
-use tracing::field::{Field, Visit};
 use tracing::Level;
-use tracing_subscriber::layer::SubscriberExt;
+use tracing::field::{Field, Visit};
 use tracing_subscriber::Layer;
+use tracing_subscriber::layer::SubscriberExt;
 
 /// Context passed from TypeScript to continue the trace.
-#[derive(Clone)]
-#[napi(object)]
+#[derive(Clone, Debug)]
 pub struct NativeContext {
   pub scrape_id: String,
   pub url: String,
@@ -17,7 +15,6 @@ pub struct NativeContext {
 
 /// A single log entry captured during Rust execution.
 #[derive(Clone, Debug, Serialize)]
-#[napi(object)]
 pub struct NativeLogEntry {
   pub level: String,
   pub target: String,
@@ -127,7 +124,7 @@ pub struct TracingResult<T> {
 /// Wraps the closure in `catch_unwind` for panic safety.
 ///
 /// Returns `TracingResult<napi::Result<T>>` so that logs are **always**
-/// available — even when the closure returns `Err` or panics.
+/// available, even when the closure returns `Err` or panics.
 pub fn with_native_tracing<T, F>(
   ctx: Option<&NativeContext>,
   module: &str,
@@ -202,6 +199,7 @@ pub fn embed_logs_in_error(err: napi::Error, logs: &[NativeLogEntry]) -> napi::E
 }
 
 #[cfg(test)]
+#[allow(clippy::indexing_slicing, clippy::panic, clippy::unwrap_used)]
 mod tests {
   use super::*;
 

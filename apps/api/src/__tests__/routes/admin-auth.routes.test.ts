@@ -1,5 +1,6 @@
 import express from "express";
 import request from "supertest";
+import { z } from "zod";
 import { config } from "../../config";
 import {
   ADMIN_KEY_HEADER,
@@ -11,10 +12,13 @@ import { logger } from "../../lib/logger";
 const CURRENT = "current-admin-key-0001";
 const PREVIOUS = "previous-admin-key-0002";
 
-function matchedKeys(spy: { mock: { calls: unknown[][] } }) {
-  return spy.mock.calls
-    .map(call => (call[1] as { matchedKey?: string } | undefined)?.matchedKey)
-    .filter(Boolean);
+const matchedKeyMetaSchema = z.object({ matchedKey: z.string().min(1) });
+
+function matchedKeys(spy: { mock: { calls: Array<Array<unknown>> } }) {
+  return spy.mock.calls.flatMap(call => {
+    const parsed = matchedKeyMetaSchema.safeParse(call[1]);
+    return parsed.success ? [parsed.data.matchedKey] : [];
+  });
 }
 
 function appWithAdminAuth() {

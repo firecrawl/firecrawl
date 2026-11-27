@@ -56,7 +56,7 @@ describe("isPdfBuffer", () => {
   });
 
   it("rejects a buffer containing only part of the magic", () => {
-    const buf = Buffer.from("%PD\x00\x00\x00");
+    const buf = Buffer.from("%PD\u0000\u0000\u0000");
     expect(isPdfBuffer(buf)).toBe(false);
   });
 

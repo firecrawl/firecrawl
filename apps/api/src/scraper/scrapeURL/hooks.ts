@@ -1,9 +1,12 @@
 import type { Logger } from "winston";
 import type { Document, ScrapeOptions } from "../../controllers/v2/types";
+import type { JsonObject } from "../../lib/json-types";
 import { requestContext } from "../../lib/request-context";
 import type {
   Hooks,
   JobKind,
+  ScrapeFinished,
+  ScrapeFinishedMetadata,
   ScrapeMeta,
   ScrapeState,
 } from "../../service/hooks";
@@ -62,8 +65,8 @@ export interface ScrapeFinishedOutcome {
   timeTakenMs: number;
   startedAt?: number;
   completedAt?: number;
-  costTracking?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
+  costTracking?: JsonObject;
+  metadata?: ScrapeFinishedMetadata;
 }
 
 /**
@@ -73,11 +76,15 @@ export interface ScrapeFinishedOutcome {
 export function createScrapeFinishedEmitter(job: ScrapeFinishedJobInfo) {
   let emitted = false;
   return async (outcome: ScrapeFinishedOutcome): Promise<void> => {
-    if (emitted) return;
+    if (emitted) {
+      return;
+    }
     emitted = true;
     const hooks = scrapeHooks();
-    if (!hooks?.has("scrape.finished")) return;
-    await hooks.run("scrape.finished", {
+    if (!hooks?.has("scrape.finished")) {
+      return;
+    }
+    const payload: ScrapeFinished = {
       jobId: job.jobId,
       requestId: job.requestId,
       kind: job.kind,
@@ -89,20 +96,31 @@ export function createScrapeFinishedEmitter(job: ScrapeFinishedJobInfo) {
       error: outcome.error,
       charged: outcome.charged,
       timeTakenMs: outcome.timeTakenMs,
-      ...(outcome.startedAt !== undefined
-        ? { startedAt: outcome.startedAt }
-        : {}),
-      ...(outcome.completedAt !== undefined
-        ? { completedAt: outcome.completedAt }
-        : {}),
-      ...(job.origin !== undefined ? { origin: job.origin } : {}),
-      ...(job.crawlId !== undefined ? { crawlId: job.crawlId } : {}),
-      ...(job.skipNuq !== undefined ? { skipNuq: job.skipNuq } : {}),
-      ...(job.isParse !== undefined ? { isParse: job.isParse } : {}),
-      ...(outcome.costTracking !== undefined
-        ? { costTracking: outcome.costTracking }
-        : {}),
-      ...(outcome.metadata !== undefined ? { metadata: outcome.metadata } : {}),
-    });
+    };
+    if (outcome.startedAt !== undefined) {
+      payload.startedAt = outcome.startedAt;
+    }
+    if (outcome.completedAt !== undefined) {
+      payload.completedAt = outcome.completedAt;
+    }
+    if (job.origin !== undefined) {
+      payload.origin = job.origin;
+    }
+    if (job.crawlId !== undefined) {
+      payload.crawlId = job.crawlId;
+    }
+    if (job.skipNuq !== undefined) {
+      payload.skipNuq = job.skipNuq;
+    }
+    if (job.isParse !== undefined) {
+      payload.isParse = job.isParse;
+    }
+    if (outcome.costTracking !== undefined) {
+      payload.costTracking = outcome.costTracking;
+    }
+    if (outcome.metadata !== undefined) {
+      payload.metadata = outcome.metadata;
+    }
+    await hooks.run("scrape.finished", payload);
   };
 }

@@ -1,0 +1,90 @@
+name: Native Rust
+
+on:
+  pull_request:
+    paths:
+      - apps/api/native/**
+      - apps/local/**
+      - .github/workflows/native-rust.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Format, clippy, tests, and local check
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    defaults:
+      run:
+        working-directory: ./apps/api/native
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Activate pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Cache cargo registry and target
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/api/native/target
+            apps/local/target
+          key: ${{ runner.os }}-native-rust-${{ hashFiles('apps/api/native/rust-toolchain.toml', 'apps/api/native/Cargo.lock', 'apps/local/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-native-rust-
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Check firecrawl-core without Node bindings
+        run: cargo check --locked -p firecrawl-core --no-default-features
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+      - name: Workspace tests
+        run: cargo test --workspace --all-features --locked
+        env:
+          HEGEL_DEFAULT_PROFILE: ci
+
+      - name: Check apps/local
+        run: cargo check --locked --manifest-path ../../local/Cargo.toml
+
+  deny:
+    name: Cargo deny
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    defaults:
+      run:
+        working-directory: ./apps/api/native
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Activate pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Cache cargo-deny binary
+        id: cargo_deny_cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cargo/bin/cargo-deny
+          key: ${{ runner.os }}-cargo-deny-0.20.2
+
+      - name: Install cargo-deny
+        if: steps.cargo_deny_cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-deny --locked --version 0.20.2
+
+      - name: Check dependencies
+        run: |
+          cargo deny --locked --all-features check
+          cargo deny --locked --manifest-path ../../local/Cargo.toml check advisories licenses sources

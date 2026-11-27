@@ -1,13 +1,10 @@
-import { Response } from "express";
+import type { Response } from "express";
 import { logger } from "../../lib/logger";
-import {
-  getCrawl,
-  getCrawlJobs,
-  saveCrawl,
-  StoredCrawl,
-} from "../../lib/crawl-redis";
+import type { StoredCrawl } from "../../lib/crawl-redis";
+import { getCrawl, getCrawlJobs, saveCrawl } from "../../lib/crawl-redis";
 import { configDotenv } from "dotenv";
-import { RequestWithAuth, scrapeOptions } from "./types";
+import type { RequestWithAuth } from "./types";
+import { scrapeOptions } from "./types";
 import { crawlGroup } from "../../services/worker/nuq-router";
 import { normalizeOwnerId } from "../../lib/owner-id";
 import { removeConcurrencyLimitedJobs } from "../../lib/concurrency-limit";
@@ -44,11 +41,18 @@ export async function crawlCancelController(
       },
     };
 
+    let saveError: unknown;
+    let failedToPersist = false;
     try {
       sc.cancelled = true;
       await saveCrawl(req.params.jobId, sc);
-    } catch (error) {
-      logger.error(error);
+    } catch (error: unknown) {
+      saveError = error;
+      failedToPersist = true;
+      logger.error("Failed to persist crawl cancellation", {
+        error,
+        jobId: req.params.jobId,
+      });
     }
 
     if (sc.queueBackend === "fdb") {
@@ -58,11 +62,29 @@ export async function crawlCancelController(
       await removeConcurrencyLimitedJobs(sc.team_id, jobIds);
     }
 
+    if (failedToPersist) {
+      logger.warn(
+        "Crawl queue cancelled after failing to persist crawl state",
+        {
+          error: saveError,
+          jobId: req.params.jobId,
+        },
+      );
+      return res
+        .status(500)
+        .json({ error: "Failed to persist crawl cancellation" });
+    }
+
     res.json({
       status: "cancelled",
     });
-  } catch (error) {
-    logger.error(error);
-    return res.status(500).json({ error: error.message });
+  } catch (error: unknown) {
+    logger.error("Failed to cancel crawl", {
+      error,
+      jobId: req.params.jobId,
+    });
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
