@@ -5,6 +5,7 @@ use std::fmt;
 
 use firecrawl_core::telemetry::is_zdr_json_value;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use thiserror::Error;
 
 use crate::nuq_prefetch::timestamp::{TimestampError, parse_pg_timestamp_to_iso_utc};
@@ -179,6 +180,8 @@ pub enum JobDecodeError {
   WrongColumnCount(usize),
   #[error("missing required column `{0}`")]
   MissingColumn(&'static str),
+  #[error("could not decode prefetched column at index {0}")]
+  InvalidColumn(usize),
   #[error("invalid `priority` integer")]
   InvalidPriority,
   #[error("invalid `{column}` timestamp: {source}")]
@@ -198,25 +201,24 @@ impl NuqJob {
   }
 
   /// Decodes a PostgreSQL `SimpleQueryRow` returned by [`QueueKind::prefetch_sql`].
-  pub fn from_pg_row(row: &tokio_postgres::SimpleQueryRow) -> Result<Self, JobDecodeError> {
+  pub fn from_pg_row(
+    row: &tokio_postgres::SimpleQueryRow,
+    queue: QueueKind,
+  ) -> Result<Self, JobDecodeError> {
     if row.len() != PREFETCH_RETURNING_COLUMNS {
       return Err(JobDecodeError::WrongColumnCount(row.len()));
     }
-    let cols = [
-      row.get(0),
-      row.get(1),
-      row.get(2),
-      row.get(3),
-      row.get(4),
-      row.get(5),
-      row.get(6),
-      row.get(7),
-      row.get(8),
-      row.get(9),
-      row.get(10),
-      row.get(11),
-    ];
-    Self::from_pg_columns(&cols)
+    let mut cols = [None; PREFETCH_RETURNING_COLUMNS];
+    for (index, value) in cols.iter_mut().enumerate() {
+      *value = row
+        .try_get(index)
+        .map_err(|_| JobDecodeError::InvalidColumn(index))?;
+    }
+    let mut job = Self::from_pg_columns(&cols)?;
+    if queue == QueueKind::Scrape {
+      job.returnvalue = job.returnvalue.take().and_then(decode_scrape_returnvalue);
+    }
+    Ok(job)
   }
 
   /// Decodes the 12 `RETURNING` columns from text values into a [`NuqJob`].
@@ -274,8 +276,7 @@ impl NuqJob {
 
     let listen_channel_id = cols.get(6).and_then(|c| *c).map(str::to_owned);
 
-    // In `rowToJob`, `returnvalue: row.returnvalue ?? undefined` turns both SQL
-    // NULL and JSONB `null` into omitted (`None`).
+    // Both SQL NULL and JSONB `null` are omitted before queue-specific decoding.
     let returnvalue = match cols.get(7).and_then(|c| *c) {
       Some(raw_json) => {
         let parsed: serde_json::Value =
@@ -305,6 +306,36 @@ impl NuqJob {
       group_id,
     })
   }
+}
+
+fn decode_scrape_returnvalue(raw: Value) -> Option<Value> {
+  let value = match raw {
+    Value::Array(items) => items.into_iter().next().unwrap_or(Value::Null),
+    value => value,
+  };
+  if value.is_null() {
+    return Some(value);
+  }
+
+  let document = value.as_object()?;
+  for (key, field) in document {
+    if field.is_null() {
+      continue;
+    }
+    let valid = match key.as_str() {
+      "title" | "description" | "url" | "markdown" | "html" | "rawHtml" | "rawBase64"
+      | "screenshot" | "summary" | "answer" | "warning" => field.is_string(),
+      "links" | "images" => field
+        .as_array()
+        .is_some_and(|items| items.iter().all(Value::is_string)),
+      "metadata" => field.is_object(),
+      _ => true,
+    };
+    if !valid {
+      return None;
+    }
+  }
+  Some(value)
 }
 
 fn read_zdr_field(map: &serde_json::Map<String, serde_json::Value>) -> Option<bool> {

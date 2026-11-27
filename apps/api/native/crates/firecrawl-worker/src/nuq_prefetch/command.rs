@@ -105,7 +105,13 @@ pub fn run_cli(args: impl IntoIterator<Item = impl Into<OsString>>) -> ExitCode 
     }
   };
 
-  let exit_code = runtime.block_on(run(config));
+  let (shutdown_tx, shutdown) = watch::channel(false);
+  let exit_code = runtime.block_on(async {
+    tokio::select! {
+      code = run(config, shutdown) => code,
+      code = wait_for_shutdown_signals(shutdown_tx) => code,
+    }
+  });
   drop(runtime);
   exit_code
 }
@@ -122,9 +128,9 @@ fn write_cli_output(args: Arguments<'_>) -> ExitCode {
   }
 }
 
-/// Runs the NuQ prefetch role until it shuts down or startup fails.
-/// The caller supplies a Tokio runtime with I/O and time enabled and manages telemetry.
-pub async fn run(config: WorkerConfig) -> ExitCode {
+/// Runs the NuQ prefetch role until shutdown is requested or startup fails.
+/// The caller manages telemetry and sends `true` on the shutdown channel.
+pub async fn run(config: WorkerConfig, mut shutdown: watch::Receiver<bool>) -> ExitCode {
   tracing::info!(
     config = %config.redacted_summary(),
     "NuQ prefetch worker starting"
@@ -166,10 +172,7 @@ pub async fn run(config: WorkerConfig) -> ExitCode {
 
   let rabbitmq_configured = config.rabbitmq_url.is_some();
   let publisher = Arc::new(AmqpPrefetchPublisher::new(config.rabbitmq_url));
-  let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
-
-  let signal_task = tokio::spawn(wait_for_shutdown_signal(shutdown_tx));
-  let http_task = tokio::spawn(http_server.serve(shutdown_rx.clone()));
+  let http_task = tokio::spawn(http_server.serve(shutdown.clone()));
 
   if rabbitmq_configured {
     run_prefetch_loops(
@@ -177,7 +180,7 @@ pub async fn run(config: WorkerConfig) -> ExitCode {
       Arc::clone(&publisher),
       heartbeat,
       DEFAULT_POLL_INTERVAL,
-      shutdown_rx,
+      shutdown,
     )
     .await;
   } else {
@@ -185,8 +188,8 @@ pub async fn run(config: WorkerConfig) -> ExitCode {
       module = "nuq/rabbitmq",
       "NUQ_RABBITMQ_URL is unset; serving /health and /metrics without claiming PostgreSQL jobs"
     );
-    while !*shutdown_rx.borrow() {
-      if shutdown_rx.changed().await.is_err() {
+    while !*shutdown.borrow() {
+      if shutdown.changed().await.is_err() {
         break;
       }
     }
@@ -196,67 +199,63 @@ pub async fn run(config: WorkerConfig) -> ExitCode {
   let _ = http_task.await;
   publisher.shutdown().await;
   store.close();
-  signal_task.abort();
-
   ExitCode::SUCCESS
 }
 
-async fn wait_for_shutdown_signal(shutdown_tx: watch::Sender<bool>) {
+async fn wait_for_shutdown_signals(shutdown_tx: watch::Sender<bool>) -> ExitCode {
   #[cfg(unix)]
-  {
-    let mut sigint = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-    {
-      Ok(stream) => Some(stream),
-      Err(err) => {
-        tracing::warn!(error = %err, "Failed to register SIGINT handler");
-        None
-      }
-    };
-    let mut sigterm = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-    {
-      Ok(stream) => Some(stream),
-      Err(err) => {
-        tracing::warn!(error = %err, "Failed to register SIGTERM handler");
-        None
-      }
-    };
+  let mut sigint = register_signal(tokio::signal::unix::SignalKind::interrupt(), "SIGINT");
+  #[cfg(unix)]
+  let mut sigterm = register_signal(tokio::signal::unix::SignalKind::terminate(), "SIGTERM");
 
-    tokio::select! {
-      _ = async {
-        match sigint.as_mut() {
-          Some(stream) => {
-            let _ = stream.recv().await;
-          }
-          None => std::future::pending::<()>().await,
-        }
-      } => {
-        tracing::info!("Received SIGINT. Shutting down gracefully...");
-      }
-      _ = async {
-        match sigterm.as_mut() {
-          Some(stream) => {
-            let _ = stream.recv().await;
-          }
-          None => std::future::pending::<()>().await,
-        }
-      } => {
-        tracing::info!("Received SIGTERM. Shutting down gracefully...");
-      }
-    }
-  }
-
-  #[cfg(not(unix))]
-  {
-    match tokio::signal::ctrl_c().await {
-      Ok(()) => {
-        tracing::info!("Received SIGINT. Shutting down gracefully...");
-      }
+  loop {
+    #[cfg(unix)]
+    let (signal, code) = tokio::select! {
+      () = receive_signal(&mut sigint) => ("SIGINT", 130),
+      () = receive_signal(&mut sigterm) => ("SIGTERM", 143),
+    };
+    #[cfg(not(unix))]
+    let (signal, code) = match tokio::signal::ctrl_c().await {
+      Ok(()) => ("SIGINT", 130),
       Err(err) => {
         tracing::warn!(error = %err, "Failed to register Ctrl-C handler");
-        std::future::pending::<()>().await;
+        return std::future::pending().await;
       }
+    };
+
+    if *shutdown_tx.borrow() {
+      tracing::warn!(
+        signal,
+        "Received a second signal; interrupting worker shutdown"
+      );
+      return ExitCode::from(code);
+    }
+
+    tracing::info!(signal, "Shutting down the worker gracefully");
+    let _ = shutdown_tx.send(true);
+  }
+}
+
+#[cfg(unix)]
+fn register_signal(
+  kind: tokio::signal::unix::SignalKind,
+  name: &'static str,
+) -> Option<tokio::signal::unix::Signal> {
+  match tokio::signal::unix::signal(kind) {
+    Ok(stream) => Some(stream),
+    Err(err) => {
+      tracing::warn!(signal = name, error = %err, "Failed to register shutdown signal");
+      None
     }
   }
+}
 
-  let _ = shutdown_tx.send(true);
+#[cfg(unix)]
+async fn receive_signal(stream: &mut Option<tokio::signal::unix::Signal>) {
+  if let Some(stream) = stream
+    && stream.recv().await.is_some()
+  {
+    return;
+  }
+  std::future::pending().await
 }

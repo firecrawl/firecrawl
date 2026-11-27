@@ -826,7 +826,7 @@ async fn broker_outage_retains_failure_notifications_and_bounds_per_tick_flush_w
   assert_eq!(burst_pub.fail_next_notify.load(Ordering::Acquire), 96);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn prefetch_loops_run_both_queues_with_nonblocking_heartbeat_and_finish_inflight_batch() {
   let store = Arc::new(MockStore::new());
   {
@@ -835,6 +835,10 @@ async fn prefetch_loops_run_both_queues_with_nonblocking_heartbeat_and_finish_in
       .lock()
       .unwrap_or_else(PoisonError::into_inner);
     scrape.push(Err(StoreError::Query("transient blip".to_owned())));
+    scrape.push(Ok(PrefetchBatch::from_jobs(vec![sample_job(
+      "scrape-first",
+      false,
+    )])));
     scrape.push(Ok(PrefetchBatch::from_jobs(vec![
       sample_job("scrape-1", false),
       sample_job("scrape-2", true),
@@ -870,18 +874,20 @@ async fn prefetch_loops_run_both_queues_with_nonblocking_heartbeat_and_finish_in
     shutdown_rx,
   ));
 
-  // Wait deterministically until the 2-job scrape batch is blocked mid-publish.
+  tokio::time::sleep(Duration::from_millis(5)).await;
+  assert_eq!(heartbeat.pings.load(Ordering::Acquire), 0);
+
+  // The next scrape batch must start before the first 2s heartbeat completes.
   assert!(
-    tokio::time::timeout(Duration::from_secs(3), gated_started)
+    tokio::time::timeout(Duration::from_secs(1), gated_started)
       .await
       .is_ok(),
     "scrape-1 publish never started"
   );
-  // First scrape attempt errored, so heartbeat must not have fired before the first success.
-  assert_eq!(heartbeat.pings.load(Ordering::Acquire), 0);
+  assert_eq!(heartbeat.pings.load(Ordering::Acquire), 1);
 
   // Ensure the independent crawl-finished loop has also processed its batch while scrape is paused.
-  let crawl_deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+  let crawl_deadline = tokio::time::Instant::now() + Duration::from_millis(100);
   while !publisher
     .published
     .lock()
@@ -907,13 +913,9 @@ async fn prefetch_loops_run_both_queues_with_nonblocking_heartbeat_and_finish_in
     .unwrap_or_else(PoisonError::into_inner)
     .clone();
   assert!(published.contains(&(QueueKind::CrawlFinished, "crawl-1".to_owned())));
+  assert!(published.contains(&(QueueKind::Scrape, "scrape-first".to_owned())));
   assert!(published.contains(&(QueueKind::Scrape, "scrape-1".to_owned())));
   assert!(published.contains(&(QueueKind::Scrape, "scrape-2".to_owned())));
-  // Heartbeat fired once after the successful scrape batch and stayed bounded to 1 in-flight call.
-  let hb_deadline = tokio::time::Instant::now() + Duration::from_secs(1);
-  while heartbeat.pings.load(Ordering::Acquire) == 0 && tokio::time::Instant::now() < hb_deadline {
-    tokio::time::sleep(Duration::from_millis(5)).await;
-  }
   assert_eq!(heartbeat.pings.load(Ordering::Acquire), 1);
 }
 

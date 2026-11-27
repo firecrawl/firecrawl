@@ -100,7 +100,7 @@ fn push_data_row(buf: &mut Vec<u8>, values: &[Option<&str>]) {
   buf.extend_from_slice(&body);
 }
 
-fn push_command_complete_and_ready(buf: &mut Vec<u8>, tag: &str) {
+fn push_command_complete_and_ready(buf: &mut Vec<u8>, tag: &str, status: u8) {
   buf.push(b'C');
   let clen = i32::try_from(tag.len().saturating_add(5)).unwrap_or(5);
   buf.extend_from_slice(&clen.to_be_bytes());
@@ -109,7 +109,7 @@ fn push_command_complete_and_ready(buf: &mut Vec<u8>, tag: &str) {
 
   buf.push(b'Z');
   buf.extend_from_slice(&5_i32.to_be_bytes());
-  buf.push(b'I');
+  buf.push(status);
 }
 
 async fn serve_mock_pg_connection(
@@ -191,7 +191,11 @@ async fn serve_mock_pg_connection(
         if sql.trim() == "SELECT 1;" {
           push_row_description(&mut resp, &["?column?"]);
           push_data_row(&mut resp, &[Some("1")]);
-          push_command_complete_and_ready(&mut resp, "SELECT 1");
+          push_command_complete_and_ready(&mut resp, "SELECT 1", b'I');
+        } else if sql == "START TRANSACTION" {
+          push_command_complete_and_ready(&mut resp, "START TRANSACTION", b'T');
+        } else if sql == "COMMIT" {
+          push_command_complete_and_ready(&mut resp, "COMMIT", b'I');
         } else if sql.contains("SET status = 'failed'::nuq.job_status") {
           let mut guard = state.lock().unwrap_or_else(PoisonError::into_inner);
           guard.failed_row_updates_handled = guard.failed_row_updates_handled.saturating_add(1);
@@ -212,9 +216,10 @@ async fn serve_mock_pg_connection(
                 Some(""),
               ],
             );
-            push_command_complete_and_ready(&mut resp, "SELECT 1");
+            push_command_complete_and_ready(&mut resp, "SELECT 1", b'I');
           }
-        } else if sql.starts_with("WITH next AS") && sql.contains("nuq.queue_scrape") {
+        } else if sql.starts_with("SET LOCAL statement_timeout") && sql.contains("nuq.queue_scrape")
+        {
           push_row_description(
             &mut resp,
             &[
@@ -259,14 +264,14 @@ async fn serve_mock_pg_connection(
               Some(r#"{"url":"https://example.com","ctx":{"zeroDataRetention":true}}"#),
               None,
               Some("main-listener"),
-              None,
+              Some(r#"[{"markdown":"result","extra":true},{"markdown":"ignored"}]"#),
               None,
               Some("22222222-2222-2222-2222-222222222222"),
               Some("33333333-3333-3333-3333-333333333333"),
               None,
             ],
           );
-          push_command_complete_and_ready(&mut resp, "UPDATE 2");
+          push_command_complete_and_ready(&mut resp, "UPDATE 2", b'T');
         } else {
           push_row_description(
             &mut resp,
@@ -285,7 +290,7 @@ async fn serve_mock_pg_connection(
               "group_id",
             ],
           );
-          push_command_complete_and_ready(&mut resp, "UPDATE 0");
+          push_command_complete_and_ready(&mut resp, "UPDATE 0", b'T');
         }
 
         if stream.write_all(&resp).await.is_err() {
@@ -366,7 +371,10 @@ async fn pg_store_uses_application_name_nuq_and_simple_query_only_for_pgbouncer_
     );
     assert!(job.group_id.is_none());
     assert!(job.finished_at.is_none());
-    assert!(job.returnvalue.is_none());
+    assert_eq!(
+      job.returnvalue,
+      Some(json!({"markdown":"result","extra":true}))
+    );
     assert!(job.failed_reason.is_none());
   }
 
@@ -389,22 +397,38 @@ async fn pg_store_uses_application_name_nuq_and_simple_query_only_for_pgbouncer_
     "PgBouncer transaction mode violated: saw extended query Parse message"
   );
   assert_eq!(wire.failed_row_updates_handled, 1);
-  assert_eq!(wire.queries.len(), 4);
+  assert_eq!(wire.queries.len(), 8);
   assert_eq!(wire.queries.first().map(String::as_str), Some("SELECT 1;"));
   assert_eq!(
     wire.queries.get(1).map(String::as_str),
-    Some(QueueKind::Scrape.prefetch_sql())
+    Some("START TRANSACTION")
   );
   assert_eq!(
-    wire.queries.get(2).map(String::as_str),
+    wire
+      .queries
+      .get(2)
+      .and_then(|sql| sql.strip_prefix("SET LOCAL statement_timeout = 30000; ")),
+    Some(QueueKind::Scrape.prefetch_sql())
+  );
+  assert_eq!(wire.queries.get(3).map(String::as_str), Some("COMMIT"));
+  assert_eq!(
+    wire.queries.get(4).map(String::as_str),
     Some(
       "WITH updated AS (UPDATE nuq.queue_scrape SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, finished_at = now(), failedreason = 'Failed to decode prefetched NuQ job row' WHERE id = '00000000-0000-0000-0000-000000000000'::uuid AND lock = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid RETURNING id, listen_channel_id), target AS (SELECT id, listen_channel_id FROM updated UNION ALL SELECT id, listen_channel_id FROM nuq.queue_scrape WHERE NOT EXISTS (SELECT 1 FROM updated) AND id = '00000000-0000-0000-0000-000000000000'::uuid AND status = 'failed'::nuq.job_status AND failedreason = 'Failed to decode prefetched NuQ job row') SELECT t.id, t.listen_channel_id, pg_notify('nuq.queue_scrape', t.id::text || '|failed') FROM target t;"
     )
   );
   assert_eq!(
-    wire.queries.get(3).map(String::as_str),
+    wire.queries.get(5).map(String::as_str),
+    Some("START TRANSACTION")
+  );
+  assert_eq!(
+    wire
+      .queries
+      .get(6)
+      .and_then(|sql| sql.strip_prefix("SET LOCAL statement_timeout = 30000; ")),
     Some(QueueKind::CrawlFinished.prefetch_sql())
   );
+  assert_eq!(wire.queries.get(7).map(String::as_str), Some("COMMIT"));
 }
 
 #[tokio::test]

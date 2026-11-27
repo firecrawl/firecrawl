@@ -50,6 +50,8 @@ pub enum CliCommand {
 pub enum ConfigError {
   #[error("CLI argument is not valid UTF-8")]
   InvalidUtf8Arg,
+  #[error("environment variable {0} is not valid UTF-8")]
+  InvalidUtf8Env(&'static str),
   #[error("unknown CLI argument: {0}")]
   UnknownArg(String),
   #[error("missing required environment variable NUQ_DATABASE_URL")]
@@ -112,7 +114,15 @@ pub struct WorkerConfig {
 impl WorkerConfig {
   /// Loads and validates configuration from the process environment.
   pub fn from_env() -> Result<Self, ConfigError> {
-    Self::from_lookup(|key| std::env::var(key).ok())
+    Self::from_fallible_lookup(|key| {
+      std::env::var_os(key)
+        .map(|value| {
+          value
+            .into_string()
+            .map_err(|_| ConfigError::InvalidUtf8Env(key))
+        })
+        .transpose()
+    })
   }
 
   /// Loads and validates configuration using a custom lookup function.
@@ -120,18 +130,20 @@ impl WorkerConfig {
   where
     F: Fn(&str) -> Option<String>,
   {
-    let raw_db = lookup("NUQ_DATABASE_URL")
-      .map(|v| v.trim().to_owned())
-      .filter(|v| !v.is_empty())
-      .ok_or(ConfigError::MissingDatabaseUrl)?;
+    Self::from_fallible_lookup(|key| Ok(lookup(key)))
+  }
+
+  fn from_fallible_lookup(
+    lookup: impl Fn(&'static str) -> Result<Option<String>, ConfigError>,
+  ) -> Result<Self, ConfigError> {
+    let read =
+      |key| lookup(key).map(|value| value.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty()));
+    let raw_db = read("NUQ_DATABASE_URL")?.ok_or(ConfigError::MissingDatabaseUrl)?;
 
     let pg_settings = parse_pg_connection_settings(&raw_db)
       .map_err(|err| ConfigError::InvalidDatabaseUrl(err.to_string()))?;
 
-    let rabbitmq_url = match lookup("NUQ_RABBITMQ_URL")
-      .map(|v| v.trim().to_owned())
-      .filter(|v| !v.is_empty())
-    {
+    let rabbitmq_url = match read("NUQ_RABBITMQ_URL")? {
       Some(raw) => {
         validate_amqp_url(&raw)?;
         Some(RedactedString::new(raw))
@@ -139,10 +151,7 @@ impl WorkerConfig {
       None => None,
     };
 
-    let port = match lookup("NUQ_PREFETCH_WORKER_PORT")
-      .map(|v| v.trim().to_owned())
-      .filter(|v| !v.is_empty())
-    {
+    let port = match read("NUQ_PREFETCH_WORKER_PORT")? {
       Some(raw) => {
         let parsed = raw.parse::<u16>().map_err(|_| ConfigError::InvalidPort)?;
         if parsed == 0 {
@@ -153,10 +162,7 @@ impl WorkerConfig {
       None => DEFAULT_PORT,
     };
 
-    let heartbeat_url = match lookup("NUQ_PREFETCH_WORKER_HEARTBEAT_URL")
-      .map(|v| v.trim().to_owned())
-      .filter(|v| !v.is_empty())
-    {
+    let heartbeat_url = match read("NUQ_PREFETCH_WORKER_HEARTBEAT_URL")? {
       Some(raw) => {
         validate_http_url(&raw)?;
         Some(RedactedString::new(raw))
@@ -165,9 +171,7 @@ impl WorkerConfig {
     };
 
     // Match `firecrawl_core::telemetry::resource_from_process_env()`: omit when unset/blank.
-    let pod_name = lookup("NUQ_POD_NAME")
-      .map(|v| v.trim().to_owned())
-      .filter(|v| !v.is_empty());
+    let pod_name = read("NUQ_POD_NAME")?;
 
     Ok(Self {
       pg_settings,

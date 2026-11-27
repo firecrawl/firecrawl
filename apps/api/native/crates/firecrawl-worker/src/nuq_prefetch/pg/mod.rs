@@ -165,14 +165,24 @@ impl PgStore {
       .await
       .map_err(|err| StoreError::PoolAcquire(err.to_string()))?;
 
-    let messages =
-      run_simple_query_with_timeout(client, queue.prefetch_sql(), PREFETCH_QUERY_TIMEOUT).await?;
+    let sql = format!(
+      "SET LOCAL statement_timeout = {}; {}",
+      PREFETCH_QUERY_TIMEOUT.as_millis(),
+      queue.prefetch_sql()
+    );
+    let messages = run_query_with_timeout(client, PREFETCH_QUERY_TIMEOUT, async |client| {
+      let transaction = client.transaction().await?;
+      let messages = transaction.simple_query(&sql).await?;
+      transaction.commit().await?;
+      Ok(messages)
+    })
+    .await?;
 
     let mut batch = PrefetchBatch::default();
     let mut decode_failures: Vec<(String, String)> = Vec::new();
     for msg in messages {
       if let SimpleQueryMessage::Row(row) = msg {
-        match NuqJob::from_pg_row(&row) {
+        match NuqJob::from_pg_row(&row, queue) {
           Ok(job) => batch.jobs.push(job),
           Err(err) => {
             tracing::error!(
@@ -356,8 +366,19 @@ async fn run_simple_query_with_timeout(
   sql: &str,
   timeout: Duration,
 ) -> Result<Vec<SimpleQueryMessage>, StoreError> {
-  match tokio::time::timeout(timeout, client.simple_query(sql)).await {
-    Ok(Ok(messages)) => Ok(messages),
+  run_query_with_timeout(client, timeout, async |client| {
+    client.simple_query(sql).await
+  })
+  .await
+}
+
+async fn run_query_with_timeout<T>(
+  mut client: Object,
+  timeout: Duration,
+  query: impl AsyncFnOnce(&mut Object) -> Result<T, tokio_postgres::Error>,
+) -> Result<T, StoreError> {
+  match tokio::time::timeout(timeout, query(&mut client)).await {
+    Ok(Ok(result)) => Ok(result),
     Ok(Err(err)) => {
       // Discard the connection so a broken or desynchronized socket is not recycled.
       let _ = Object::take(client);
