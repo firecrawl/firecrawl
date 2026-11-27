@@ -903,9 +903,10 @@ pub struct ProductPrice {
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ProductAvailability {
-    /// Whether the product is in stock.
-    #[serde(rename = "inStock")]
-    pub in_stock: bool,
+    /// Whether the product is in stock; `None` when the page does not state it.
+    #[serde(rename = "inStock", default)]
+    #[serialize_always]
+    pub in_stock: Option<bool>,
     /// Human-readable availability text.
     pub text: Option<String>,
 }
@@ -919,6 +920,12 @@ pub struct ProductVariant {
     pub id: Option<String>,
     /// Stock keeping unit.
     pub sku: Option<String>,
+    /// Global Trade Item Number (UPC, EAN, ISBN).
+    pub gtin: Option<String>,
+    /// Manufacturer part number.
+    pub mpn: Option<String>,
+    /// Item condition: `new`, `used`, `refurbished` or `damaged`. Kept as a string so new values still parse.
+    pub condition: Option<String>,
     /// Variant title.
     pub title: Option<String>,
     /// Variant option values (e.g. size, color).
@@ -1504,6 +1511,76 @@ mod tests {
         assert_eq!(item_json["sourceUrl"], "https://example.com/menu#i1");
         assert_eq!(item_json["availability"]["inStock"], true);
         assert_eq!(item_json["identifiers"]["merchantItemId"], "abc123");
+    }
+
+    #[test]
+    fn test_product_availability_in_stock() {
+        for (availability, expected) in [
+            (json!({ "inStock": true, "text": "In stock" }), Some(true)),
+            (json!({ "inStock": false, "text": "Sold out" }), Some(false)),
+            (json!({ "inStock": null }), None),
+            (json!({ "text": "Call for availability" }), None),
+        ] {
+            let json = json!({
+                "product": {
+                    "title": "Widget",
+                    "url": "https://example.com/widget",
+                    "variants": [{ "title": "Default", "availability": availability }]
+                }
+            });
+            let doc: Document = serde_json::from_value(json).unwrap();
+            let product = doc.product.expect("product should be present");
+            assert_eq!(product.variants[0].availability.in_stock, expected);
+        }
+    }
+
+    #[test]
+    fn test_product_availability_serializes_in_stock_key() {
+        for (in_stock, expected) in [
+            (None, serde_json::Value::Null),
+            (Some(true), json!(true)),
+            (Some(false), json!(false)),
+        ] {
+            let availability = ProductAvailability {
+                in_stock,
+                text: None,
+            };
+            let value = serde_json::to_value(&availability).unwrap();
+            let object = value.as_object().unwrap();
+            assert!(object.contains_key("inStock"));
+            assert_eq!(object["inStock"], expected);
+            assert!(!object.contains_key("text"));
+        }
+    }
+
+    #[test]
+    fn test_product_variant_identifiers_round_trip() {
+        let fixture = json!({
+            "sku": "SKU-1",
+            "gtin": "00012345678905",
+            "mpn": "MPN-1",
+            "condition": "refurbished",
+            "availability": { "inStock": null }
+        });
+        let variant: ProductVariant = serde_json::from_value(fixture.clone()).unwrap();
+        assert_eq!(variant.gtin.as_deref(), Some("00012345678905"));
+        assert_eq!(variant.mpn.as_deref(), Some("MPN-1"));
+        assert_eq!(variant.condition.as_deref(), Some("refurbished"));
+        assert_eq!(variant.availability.in_stock, None);
+        assert_eq!(serde_json::to_value(&variant).unwrap(), fixture);
+
+        let bare: ProductVariant =
+            serde_json::from_value(json!({ "availability": { "inStock": true } })).unwrap();
+        let bare_json = serde_json::to_value(&bare).unwrap();
+        for key in ["gtin", "mpn", "condition"] {
+            assert!(!bare_json.as_object().unwrap().contains_key(key));
+        }
+
+        let unknown: ProductVariant = serde_json::from_value(
+            json!({ "condition": "open-box", "availability": { "inStock": false } }),
+        )
+        .unwrap();
+        assert_eq!(unknown.condition.as_deref(), Some("open-box"));
     }
 
     #[test]

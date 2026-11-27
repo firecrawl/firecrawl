@@ -201,9 +201,13 @@ async def _fetch_all_batch_pages_async(
             break
         
         page_data = response.json()
+        # An API-reported page error keeps the partial results, like an HTTP failure; a page that
+        # fails validation raises rather than silently truncating the results.
         try:
             page_payload = _parse_batch_scrape_status_response(page_data)
-        except Exception:
+        except FirecrawlError as error:
+            import logging
+            logging.getLogger("firecrawl").warning("Failed to fetch next page", extra={"error": str(error)})
             break
         
         # Add documents from this page

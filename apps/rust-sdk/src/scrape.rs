@@ -1005,6 +1005,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_scrape_injects_sdk_origin() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/scrape")
+            .match_body(mockito::Matcher::PartialJson(json!({
+                "origin": format!("rust-sdk@{}", env!("CARGO_PKG_VERSION"))
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({ "success": true, "data": { "markdown": "# ok" } }).to_string())
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        client.scrape("https://example.com", None).await.unwrap();
+        mock.assert();
+    }
+
+    #[tokio::test]
     async fn test_scrape_with_options() {
         let mut server = mockito::Server::new_async().await;
 

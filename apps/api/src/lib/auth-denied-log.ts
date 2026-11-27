@@ -26,7 +26,9 @@ export type AuthDenialReason =
   | "agent_key_verification_expired";
 
 function routeOf(req: Request): string | undefined {
-  if (typeof req.path !== "string") return undefined;
+  if (typeof req.path !== "string") {
+    return undefined;
+  }
   return redactAdminKey(`${req.baseUrl ?? ""}${getRoutePattern(req)}`);
 }
 

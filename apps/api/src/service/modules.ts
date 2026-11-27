@@ -208,7 +208,7 @@ export type ChargeEvent =
        * `charge()` prices only the search itself and does not re-bill these
        * documents.
        */
-      documents: Document[];
+      documents: Array<Document>;
       state?: SearchChargeState;
     }
   | {
@@ -434,7 +434,7 @@ export interface JobStoreModule {
    * `read` calls when omitted.
    */
   readMany?(
-    ids: readonly string[],
+    ids: ReadonlyArray<string>,
     kind: JobKind,
   ): Promise<Map<string, StoredJob>>;
   /**
@@ -538,12 +538,12 @@ export type Admission<
       ok: true;
       ctx: X;
       body: RequestBodies[K];
-      warnings?: string[];
+      warnings?: Array<string>;
       headers?: Record<string, string>;
       /** True when the policy module already evaluated URL blocklist rules. */
       blocklistChecked?: boolean;
       /** URLs dropped during admission for partial-admission endpoints like batch scrape. */
-      droppedUrls?: string[];
+      droppedUrls?: Array<string>;
     }
   | { ok: false; refusal: Refusal };
 
@@ -558,10 +558,11 @@ export interface PolicyContextInput {
 }
 
 /** Outcome of `PolicyModule.context`. */
-export type PolicyContextResult<X extends BaseRequestContext = RequestContext> =
-
-    | { ok: true; ctx: X; headers?: Record<string, string> }
-    | { ok: false; refusal: Refusal };
+export type PolicyContextResult<
+  X extends BaseRequestContext = RequestContext,
+> =
+  | { ok: true; ctx: X; headers?: Record<string, string> }
+  | { ok: false; refusal: Refusal };
 
 /**
  * Request admission and context construction. The type parameter keeps
@@ -611,22 +612,20 @@ function freezeJobStore(jobStore: JobStoreModule): Readonly<JobStoreModule> {
   }
 
   const frozen: JobStoreModule = {
-    ...(jobStore.storesResultsExternally !== undefined
-      ? {
-          storesResultsExternally:
-            jobStore.storesResultsExternally.bind(jobStore),
-        }
-      : {}),
     register: jobStore.register.bind(jobStore),
     owner: jobStore.owner.bind(jobStore),
     read: jobStore.read.bind(jobStore),
-    ...(jobStore.readMany !== undefined
-      ? { readMany: jobStore.readMany.bind(jobStore) }
-      : {}),
     record: jobStore.record.bind(jobStore),
     usage: jobStore.usage.bind(jobStore),
     remove: jobStore.remove.bind(jobStore),
   };
+  if (jobStore.storesResultsExternally !== undefined) {
+    frozen.storesResultsExternally =
+      jobStore.storesResultsExternally.bind(jobStore);
+  }
+  if (jobStore.readMany !== undefined) {
+    frozen.readMany = jobStore.readMany.bind(jobStore);
+  }
   return Object.freeze(frozen);
 }
 
@@ -650,10 +649,10 @@ function freezeUploadDriver(driver: UploadDriver): Readonly<UploadDriver> {
     prepareUpload: driver.prepareUpload.bind(driver),
     read: driver.read.bind(driver),
     delete: driver.delete.bind(driver),
-    ...(driver.receiveUpload !== undefined
-      ? { receiveUpload: driver.receiveUpload.bind(driver) }
-      : {}),
   };
+  if (driver.receiveUpload !== undefined) {
+    frozen.receiveUpload = driver.receiveUpload.bind(driver);
+  }
   return Object.freeze(frozen);
 }
 
@@ -760,39 +759,46 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
     throw new Error("Invalid webhooks module");
   }
 
-  const frozenAuth: AuthModule = Object.freeze({
+  const authSlot: AuthModule = {
     authenticate: auth.authenticate.bind(auth),
-    ...(auth.lookupTeam !== undefined
-      ? { lookupTeam: auth.lookupTeam.bind(auth) }
-      : {}),
-  });
-  const frozenBilling: BillingModule = Object.freeze({
+  };
+  if (auth.lookupTeam !== undefined) {
+    authSlot.lookupTeam = auth.lookupTeam.bind(auth);
+  }
+  const frozenAuth: AuthModule = Object.freeze(authSlot);
+
+  const billingSlot: BillingModule = {
     authorize: billing.authorize.bind(billing),
     charge: billing.charge.bind(billing),
-    ...(billing.settle !== undefined
-      ? { settle: billing.settle.bind(billing) }
-      : {}),
-  });
+  };
+  if (billing.settle !== undefined) {
+    billingSlot.settle = billing.settle.bind(billing);
+  }
+  const frozenBilling: BillingModule = Object.freeze(billingSlot);
+
   const frozenBlocklist: BlocklistModule = Object.freeze({
     init: blocklist.init.bind(blocklist),
     isBlocked: blocklist.isBlocked.bind(blocklist),
     hasScopedRules: blocklist.hasScopedRules.bind(blocklist),
   });
-  const frozenLimits: LimitsModule = Object.freeze({
+
+  const limitsSlot: LimitsModule = {
     concurrency: limits.concurrency.bind(limits),
     teamConcurrency: limits.teamConcurrency.bind(limits),
-    ...(limits.keyConcurrency !== undefined
-      ? { keyConcurrency: limits.keyConcurrency.bind(limits) }
-      : {}),
     jobPriority: limits.jobPriority.bind(limits),
-    ...(limits.onJobStart !== undefined
-      ? { onJobStart: limits.onJobStart.bind(limits) }
-      : {}),
-    ...(limits.onJobEnd !== undefined
-      ? { onJobEnd: limits.onJobEnd.bind(limits) }
-      : {}),
     queueBackend: limits.queueBackend.bind(limits),
-  });
+  };
+  if (limits.keyConcurrency !== undefined) {
+    limitsSlot.keyConcurrency = limits.keyConcurrency.bind(limits);
+  }
+  if (limits.onJobStart !== undefined) {
+    limitsSlot.onJobStart = limits.onJobStart.bind(limits);
+  }
+  if (limits.onJobEnd !== undefined) {
+    limitsSlot.onJobEnd = limits.onJobEnd.bind(limits);
+  }
+  const frozenLimits: LimitsModule = Object.freeze(limitsSlot);
+
   const frozenMessages: MessagesModule = Object.freeze({
     errorContact: messages.errorContact.bind(messages),
     restrictedCountryContact: messages.restrictedCountryContact.bind(messages),
@@ -801,13 +807,16 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
     filePrefetchFailedContact:
       messages.filePrefetchFailedContact.bind(messages),
   });
-  const frozenPolicy: PolicyModule = Object.freeze({
+
+  const policySlot: PolicyModule = {
     admit: policy.admit.bind(policy),
     system: policy.system.bind(policy),
-    ...(policy.context !== undefined
-      ? { context: policy.context.bind(policy) }
-      : {}),
-  });
+  };
+  if (policy.context !== undefined) {
+    policySlot.context = policy.context.bind(policy);
+  }
+  const frozenPolicy: PolicyModule = Object.freeze(policySlot);
+
   const frozenDriver = freezeUploadDriver(uploads.driver());
   const frozenUploads: UploadsModule = Object.freeze({
     driver: () => frozenDriver,
@@ -816,13 +825,15 @@ export function freezeModules(modules: Modules): Readonly<Modules> {
   const frozenIdempotency: IdempotencyModule = Object.freeze({
     claim: idempotency.claim.bind(idempotency),
   });
-  const frozenWebhooks: WebhooksModule = Object.freeze({
+
+  const webhooksSlot: WebhooksModule = {
     signingSecret: webhooks.signingSecret.bind(webhooks),
     deliver: webhooks.deliver.bind(webhooks),
-    ...(webhooks.shutdown !== undefined
-      ? { shutdown: webhooks.shutdown.bind(webhooks) }
-      : {}),
-  });
+  };
+  if (webhooks.shutdown !== undefined) {
+    webhooksSlot.shutdown = webhooks.shutdown.bind(webhooks);
+  }
+  const frozenWebhooks: WebhooksModule = Object.freeze(webhooksSlot);
 
   return Object.freeze({
     auth: frozenAuth,

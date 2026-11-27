@@ -1,5 +1,5 @@
-import { RequestWithAuth } from "./types";
-import { Response } from "express";
+import type { DefaultRequestParams, RequestWithAuth } from "./types";
+import type { Response } from "express";
 import { redisEvictConnection } from "../../services/redis";
 import { isFdbTeam } from "../../services/worker/nuq-router";
 import {
@@ -29,7 +29,7 @@ type QueueStatusResponse = {
 const FDB_OPTIONAL_COUNT_TIMEOUT_MS = 500;
 
 export async function queueStatusController(
-  req: RequestWithAuth<{}, undefined, QueueStatusResponse>,
+  req: RequestWithAuth<DefaultRequestParams, undefined, QueueStatusResponse>,
   res: Response<QueueStatusResponse>,
 ) {
   const ctx = requestContext({
@@ -66,7 +66,7 @@ export async function queueStatusController(
         activeJobsOfTeam += fdbActive;
         queuedJobsOfTeam += fdbPending;
       }
-    } catch (error) {
+    } catch (error: unknown) {
       logger.warn("Failed to read FDB queue counts, falling back to Redis", {
         module: "queue-status",
         version: "v2",

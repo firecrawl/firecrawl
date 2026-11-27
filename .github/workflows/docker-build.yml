@@ -11,9 +11,7 @@ on:
       - apps/api/pnpm-lock.yaml
       - apps/api/pnpm-workspace.yaml
       - apps/api/patches/**
-      - apps/api/native/Cargo.toml
-      - apps/api/native/Cargo.lock
-      - apps/api/native/package.json
+      - apps/api/native/**
       - apps/api/sharedLibs/go-html-to-md/go.mod
       - apps/api/sharedLibs/go-html-to-md/go.sum
       - apps/playwright-service-ts/Dockerfile

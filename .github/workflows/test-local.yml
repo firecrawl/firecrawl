@@ -6,7 +6,8 @@ on:
       - main
     paths:
       - apps/local/**
-      - apps/api/native/src/**
+      - apps/api/native/Cargo.toml
+      - apps/api/native/crates/**
       - .github/workflows/test-local.yml
 
 permissions:

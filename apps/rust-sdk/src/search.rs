@@ -382,6 +382,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_search_injects_sdk_origin() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/v2/search")
+            .match_body(mockito::Matcher::PartialJson(json!({
+                "origin": format!("rust-sdk@{}", env!("CARGO_PKG_VERSION"))
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({ "success": true, "data": { "web": [] } }).to_string())
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        client.search("test query", None).await.unwrap();
+        mock.assert();
+    }
+
+    #[tokio::test]
     async fn test_search_with_options() {
         let mut server = mockito::Server::new_async().await;
 

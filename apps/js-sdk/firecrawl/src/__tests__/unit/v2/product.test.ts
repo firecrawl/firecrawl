@@ -159,4 +159,32 @@ describe("JS SDK v2 product format", () => {
     expect(result.product?.variants?.[1]?.availability?.inStock).toBe(false);
     expect(result.product?.variants?.[1]?.availability?.text).toBe("Sold out");
   });
+
+  test("scrape passes unknown stock through as null", async () => {
+    const mockResponse = {
+      status: 200,
+      data: {
+        success: true,
+        data: {
+          product: {
+            title: "Acme Mug",
+            url: "https://example.com/mug",
+            variants: [
+              { id: "a", availability: { inStock: true } },
+              { id: "b", availability: { inStock: false } },
+              { id: "c", availability: { inStock: null, text: "See store" } },
+            ],
+          },
+        },
+      },
+    };
+
+    const http = makeHttp(() => mockResponse);
+    const result = await scrape(http, "https://example.com", { formats: ["product"] });
+
+    const stock: Array<boolean | null> | undefined = result.product?.variants.map(
+      v => v.availability.inStock,
+    );
+    expect(stock).toEqual([true, false, null]);
+  });
 });

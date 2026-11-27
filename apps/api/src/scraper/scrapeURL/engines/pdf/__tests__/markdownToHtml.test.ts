@@ -1,27 +1,42 @@
+import { createLogger } from "winston";
+import type { MarkedOptions, parse as markedParse } from "marked";
 import { safeMarkdownToHtml } from "../markdownToHtml";
+
+type MarkedModule = {
+  parse: typeof markedParse;
+};
+
+type ParseFn = (
+  src: string,
+  options?: MarkedOptions | null,
+) => string | Promise<string>;
 
 // Allow a single test to force marked.parse to throw. marked's ESM exports are
 // read-only, so we mock the module with a passthrough that delegates to the real
 // parse unless a test installs an override.
-const markedOverride = vi.hoisted(
-  () => ({ parse: null as null | ((...args: any[]) => any) }),
-);
-vi.mock("marked", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("marked")>();
+const markedOverride = vi.hoisted(() => ({
+  parse: null as ParseFn | null,
+}));
+vi.mock("marked", async importOriginal => {
+  const actual = await importOriginal<MarkedModule>();
   return {
     ...actual,
-    parse: (...args: any[]) => (markedOverride.parse ?? actual.parse)(...args),
+    parse: (src: string, options?: MarkedOptions | null) =>
+      (markedOverride.parse ?? actual.parse)(src, options),
   };
 });
 
-const noopLogger = {
-  warn: vi.fn(),
-} as any;
+const noopLogger = createLogger({ silent: true });
 
 describe("safeMarkdownToHtml", () => {
+  let warnSpy = vi.spyOn(noopLogger, "warn");
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(noopLogger, "warn");
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
-    noopLogger.warn.mockClear();
   });
 
   it("converts simple markdown to HTML", async () => {
@@ -40,7 +55,7 @@ describe("safeMarkdownToHtml", () => {
     // ~200KB markdown table
     const row = "| " + "cell | ".repeat(10) + "\n";
     const header = row + "| " + "--- | ".repeat(10) + "\n";
-    const table = header + row.repeat(5_000);
+    const table = header + row.repeat(5000);
     expect(table.length).toBeGreaterThan(200_000);
 
     const htmlTable = await safeMarkdownToHtml(table, noopLogger, "test-table");
@@ -64,7 +79,7 @@ describe("safeMarkdownToHtml", () => {
       expect(html).toContain("&#39;apos&#39;");
       expect(html).not.toContain("<script>");
 
-      expect(noopLogger.warn).toHaveBeenCalledWith(
+      expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining("marked.parse failed"),
         expect.objectContaining({
           scrapeId: "test-escape",

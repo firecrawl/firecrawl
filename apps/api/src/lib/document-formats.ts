@@ -43,7 +43,9 @@ const EXTENSIONS_BY_LENGTH = [...DOCUMENT_EXTENSIONS].sort(
 export function documentExtensionFromContentType(
   contentType: string | null | undefined,
 ): string | null {
-  if (!contentType) return null;
+  if (!contentType) {
+    return null;
+  }
   const mediaType = contentType.split(";")[0].trim().toLowerCase();
   return DOCUMENT_CONTENT_TYPE_TO_EXTENSION.get(mediaType) ?? null;
 }
@@ -53,7 +55,9 @@ export function documentContentTypeFromExtension(
 ): string | null {
   const ext = extension.toLowerCase();
   for (const [contentType, mapped] of DOCUMENT_CONTENT_TYPE_TO_EXTENSION) {
-    if (mapped === ext) return contentType;
+    if (mapped === ext) {
+      return contentType;
+    }
   }
   return null;
 }
@@ -62,7 +66,9 @@ export function documentContentTypeFromExtension(
 export function documentExtensionFromUrlPath(urlPath: string): string | null {
   const lowerPath = urlPath.toLowerCase();
   for (const ext of EXTENSIONS_BY_LENGTH) {
-    if (lowerPath.endsWith(ext) || lowerPath.includes(ext + "/")) return ext;
+    if (lowerPath.endsWith(ext) || lowerPath.includes(ext + "/")) {
+      return ext;
+    }
   }
   return null;
 }

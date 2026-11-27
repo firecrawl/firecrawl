@@ -51,9 +51,10 @@ declare global {
     interface Request {
       caller?: Caller;
       ctx?: RequestContext;
+      account?: { remainingCredits: number };
       requestId?: string;
-      requestWarnings?: string[];
-      requestDroppedUrls?: string[];
+      requestWarnings?: Array<string>;
+      requestDroppedUrls?: Array<string>;
       requestBlocklistChecked?: boolean;
       rawRequestBody?: unknown;
     }

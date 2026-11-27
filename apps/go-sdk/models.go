@@ -106,8 +106,9 @@ type ProductPrice struct {
 }
 
 // ProductAvailability represents stock availability for a product or variant.
+// InStock is nil when the page does not state whether the product is in stock.
 type ProductAvailability struct {
-	InStock bool   `json:"inStock"`
+	InStock *bool  `json:"inStock"`
 	Text    string `json:"text,omitempty"`
 }
 
@@ -120,6 +121,9 @@ type ProductSale struct {
 type ProductVariant struct {
 	ID           string              `json:"id,omitempty"`
 	SKU          string              `json:"sku,omitempty"`
+	GTIN         string              `json:"gtin,omitempty"`
+	MPN          string              `json:"mpn,omitempty"`
+	Condition    string              `json:"condition,omitempty"` // "new", "used", "refurbished" or "damaged"; a string so new values still decode
 	Title        string              `json:"title,omitempty"`
 	Values       map[string]any      `json:"values,omitempty"`
 	Price        *ProductPrice       `json:"price,omitempty"`

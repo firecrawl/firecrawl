@@ -85,15 +85,16 @@ final class Product
 
     /**
      * @param mixed $availability
-     * @return array{inStock: bool, text?: string|null}
+     * @return array{inStock: bool|null, text?: string|null}
      */
     private static function normalizeAvailability(mixed $availability): array
     {
         if (!is_array($availability)) {
-            return ['inStock' => false];
+            return ['inStock' => null];
         }
 
-        $entry = ['inStock' => (bool) ($availability['inStock'] ?? false)];
+        $inStock = $availability['inStock'] ?? null;
+        $entry = ['inStock' => $inStock !== null ? (bool) $inStock : null];
         if (array_key_exists('text', $availability)) {
             $entry['text'] = $availability['text'] !== null ? (string) $availability['text'] : null;
         }
@@ -118,7 +119,7 @@ final class Product
             }
 
             $entry = [];
-            foreach (['id', 'sku', 'title'] as $key) {
+            foreach (['id', 'sku', 'gtin', 'mpn', 'condition', 'title'] as $key) {
                 if (isset($variant[$key])) {
                     $entry[$key] = (string) $variant[$key];
                 }

@@ -11,6 +11,7 @@
 import type { z } from "zod";
 import type {
   BatchScrapeRequest as BaseBatchScrapeRequest,
+  buildV2RequestSchemas,
   CrawlRequest as BaseCrawlRequest,
   FormatObject,
   MapRequest as BaseMapRequest,
@@ -76,22 +77,22 @@ export type ScrapeOptions = Omit<
   BaseScrapeOptions,
   "formats" | keyof ScrapeOptionsFields
 > & {
-  formats: Format[];
+  formats: Array<Format>;
 } & ScrapeOptionsFields;
 
 export type ScrapeRequest = Omit<
   BaseScrapeRequest,
-  "formats" | keyof ScrapeOptionsFields | keyof ScrapeRequestFields
+  "formats" | keyof (ScrapeOptionsFields & ScrapeRequestFields)
 > & {
-  formats: Format[];
+  formats: Array<Format>;
 } & ScrapeOptionsFields &
   ScrapeRequestFields;
 
 export type ParseRequest = Omit<
   BaseParseRequest,
-  "formats" | keyof ScrapeOptionsFields | keyof ParseRequestFields
+  "formats" | keyof (ScrapeOptionsFields & ParseRequestFields)
 > & {
-  formats: Format[];
+  formats: Array<Format>;
 } & ScrapeOptionsFields &
   ParseRequestFields;
 
@@ -104,9 +105,9 @@ export type CrawlRequest = Omit<
 
 export type BatchScrapeRequest = Omit<
   BaseBatchScrapeRequest,
-  "formats" | keyof ScrapeOptionsFields | keyof BatchScrapeRequestFields
+  "formats" | keyof (ScrapeOptionsFields & BatchScrapeRequestFields)
 > & {
-  formats: Format[];
+  formats: Array<Format>;
 } & ScrapeOptionsFields &
   BatchScrapeRequestFields;
 
@@ -133,7 +134,7 @@ export interface RequestBodies {
 export type RequestKind = keyof RequestBodies;
 
 /** Request kinds that expose a compiled request schema on `service.schemas`. */
-export const requestKinds: readonly RequestKind[] = Object.freeze([
+export const requestKinds: ReadonlyArray<RequestKind> = Object.freeze([
   "scrape",
   "parse",
   "crawl",
@@ -157,7 +158,7 @@ export type RequestFieldBucket = (typeof requestFieldBuckets)[number];
 
 /** Outcome returned by a `ScrapeOptionsRule`. */
 export type ScrapeOptionsRuleResult =
-  | { error: string; path?: (string | number)[] }
+  | { error: string; path?: Array<string | number> }
   | { set: Partial<ScrapeOptions> }
   | void;
 
@@ -180,7 +181,7 @@ export interface RequestContributions {
   readonly map?: FieldSchemas<MapRequestFields>;
   readonly search?: FieldSchemas<SearchRequestFields>;
   readonly formats?: FormatSchemas;
-  readonly rules?: readonly ScrapeOptionsRule[];
+  readonly rules?: ReadonlyArray<ScrapeOptionsRule>;
 }
 
 /** Compiled Zod schemas for each API request kind and standalone scrape options. */
@@ -201,7 +202,7 @@ export interface DescribedRequestSchemas {
   map: Record<string, string>;
   search: Record<string, string>;
   formats: Record<string, string>;
-  rules: string[];
+  rules: Array<string>;
 }
 
 /** Validated, snapshotted request-schema contributions passed to a schema builder. */
@@ -214,7 +215,7 @@ export interface ResolvedRequestContributions {
   readonly map: Readonly<Record<string, z.ZodType>>;
   readonly search: Readonly<Record<string, z.ZodType>>;
   readonly formats: Readonly<Record<string, z.ZodType>>;
-  readonly rules: readonly ScrapeOptionsRule[];
+  readonly rules: ReadonlyArray<ScrapeOptionsRule>;
 }
 
 /** Builds compiled `RequestSchemas` from validated extension contributions. */
@@ -227,10 +228,12 @@ export type RequestSchemaBuilder = (
  * undefined when not requested.
  */
 export function hasFormatOfType<K extends FormatName>(
-  formats: readonly Format[] | undefined,
+  formats: ReadonlyArray<Format> | undefined,
   type: K,
 ): Formats[K] | undefined {
-  if (!formats) return undefined;
+  if (!formats) {
+    return undefined;
+  }
   return formats.find((format): format is Formats[K] => format.type === type);
 }
 
@@ -249,19 +252,12 @@ const allowedRequestKeys = new Set<string>([
 const isForbiddenSchemaKey = (key: string): boolean =>
   key.trim().length === 0 || key === "prototype" || key in Object.prototype;
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> => {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
-  }
-  const proto = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null;
-};
-
 const isZodSchema = (value: unknown): value is z.ZodType =>
   typeof value === "object" &&
   value !== null &&
   "_zod" in value &&
-  typeof (value as { safeParse?: unknown }).safeParse === "function";
+  "safeParse" in value &&
+  typeof value.safeParse === "function";
 
 const sortedByKey = <T>(record: Record<string, T>): Record<string, T> =>
   Object.fromEntries(
@@ -269,14 +265,31 @@ const sortedByKey = <T>(record: Record<string, T>): Record<string, T> =>
   );
 
 const freezeNullProto = <T>(
-  record: Record<string, T>,
+  map: Map<string, T>,
 ): Readonly<Record<string, T>> => {
-  const out: Record<string, T> = Object.create(null);
-  for (const [key, value] of Object.entries(record)) {
-    out[key] = value;
-  }
+  const out: Record<string, T> = Object.fromEntries(map);
+  Object.setPrototypeOf(out, null);
   return Object.freeze(out);
 };
+
+function isPlainObjectRecord(value: unknown): value is object {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function isV2TypesSchemaModule(
+  value: unknown,
+): value is { buildV2RequestSchemas: typeof buildV2RequestSchemas } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "buildV2RequestSchemas" in value &&
+    typeof value.buildV2RequestSchemas === "function"
+  );
+}
 
 let registeredRequestSchemaBuilder: RequestSchemaBuilder | undefined;
 
@@ -304,45 +317,60 @@ export const defaultBuildRequestSchemas: RequestSchemaBuilder =
     if (registeredRequestSchemaBuilder) {
       return registeredRequestSchemaBuilder(contributions);
     }
-    return (
-      require("../controllers/v2/types") as typeof import("../controllers/v2/types")
-    ).buildV2RequestSchemas(contributions);
+    const mod: unknown = require("../controllers/v2/types");
+    if (!isV2TypesSchemaModule(mod)) {
+      throw new Error("v2 types module failed to export buildV2RequestSchemas");
+    }
+    return mod.buildV2RequestSchemas(contributions);
   };
 
 function collectSchemaMap(
-  targetSchemas: Record<string, z.ZodType>,
-  targetOwners: Record<string, string>,
+  targetSchemas: Map<string, z.ZodType>,
+  targetOwners: Map<string, string>,
   raw: unknown,
   bucket: string,
   owner: string,
 ): void {
-  if (raw === undefined) return;
-  if (!isPlainObject(raw)) {
+  if (raw === undefined) {
+    return;
+  }
+  if (!isPlainObjectRecord(raw)) {
     throw new Error(
       `Request "${bucket}" contributions from "${owner}" must be a plain object`,
     );
   }
-  for (const key of Object.keys(raw)) {
+  for (const [key, schema] of Object.entries(raw)) {
     if (isForbiddenSchemaKey(key)) {
       throw new Error(
         `Invalid request "${bucket}" key "${key}" from "${owner}"`,
       );
     }
-    const schema = raw[key];
-    if (schema === undefined) continue;
+    if (schema === undefined) {
+      continue;
+    }
     if (!isZodSchema(schema)) {
       throw new Error(
         `Request schema "${bucket}.${key}" from "${owner}" must be a Zod schema`,
       );
     }
-    if (key in targetOwners) {
+    const existingOwner = targetOwners.get(key);
+    if (existingOwner !== undefined) {
       throw new Error(
-        `Request "${bucket}.${key}" is already registered by "${targetOwners[key]}" and cannot also be registered by "${owner}"`,
+        `Request "${bucket}.${key}" is already registered by "${existingOwner}" and cannot also be registered by "${owner}"`,
       );
     }
-    targetSchemas[key] = schema;
-    targetOwners[key] = owner;
+    targetSchemas.set(key, schema);
+    targetOwners.set(key, owner);
   }
+}
+
+interface BuiltRequestSchemaRegistry {
+  schemas: RequestSchemas;
+  describedRequest: DescribedRequestSchemas;
+}
+
+function isScrapeOptionsRule(value: unknown): value is ScrapeOptionsRule {
+  return typeof value === "function";
 }
 
 /**
@@ -352,49 +380,49 @@ function collectSchemaMap(
  * @internal
  */
 export function buildRequestSchemaRegistry(
-  sources: readonly RequestSchemaSource[],
+  sources: ReadonlyArray<RequestSchemaSource>,
   buildSchemas?: RequestSchemaBuilder,
-): {
-  schemas: RequestSchemas;
-  describedRequest: DescribedRequestSchemas;
-} {
+): BuiltRequestSchemaRegistry {
   if (buildSchemas !== undefined && typeof buildSchemas !== "function") {
     throw new Error("Request schema builder must be a function");
   }
 
-  const fieldSchemas: Record<RequestFieldBucket, Record<string, z.ZodType>> = {
-    scrapeOptions: Object.create(null),
-    scrape: Object.create(null),
-    parse: Object.create(null),
-    crawl: Object.create(null),
-    batchScrape: Object.create(null),
-    map: Object.create(null),
-    search: Object.create(null),
+  const fieldSchemas: Record<RequestFieldBucket, Map<string, z.ZodType>> = {
+    scrapeOptions: new Map(),
+    scrape: new Map(),
+    parse: new Map(),
+    crawl: new Map(),
+    batchScrape: new Map(),
+    map: new Map(),
+    search: new Map(),
   };
-  const fieldOwners: Record<RequestFieldBucket, Record<string, string>> = {
-    scrapeOptions: Object.create(null),
-    scrape: Object.create(null),
-    parse: Object.create(null),
-    crawl: Object.create(null),
-    batchScrape: Object.create(null),
-    map: Object.create(null),
-    search: Object.create(null),
+  const fieldOwners: Record<RequestFieldBucket, Map<string, string>> = {
+    scrapeOptions: new Map(),
+    scrape: new Map(),
+    parse: new Map(),
+    crawl: new Map(),
+    batchScrape: new Map(),
+    map: new Map(),
+    search: new Map(),
   };
-  const formatSchemas: Record<string, z.ZodType> = Object.create(null);
-  const formatOwners: Record<string, string> = Object.create(null);
-  const rules: ScrapeOptionsRule[] = [];
-  const ruleOwners: string[] = [];
+  const formatSchemas = new Map<string, z.ZodType>();
+  const formatOwners = new Map<string, string>();
+  const rules: Array<ScrapeOptionsRule> = [];
+  const ruleOwners: Array<string> = [];
 
   for (const source of sources) {
     const request = source.request;
-    if (request === undefined) continue;
-    if (!isPlainObject(request)) {
+    if (request === undefined) {
+      continue;
+    }
+    if (!isPlainObjectRecord(request)) {
       throw new Error(
         `Request contributions from "${source.owner}" must be a plain object`,
       );
     }
 
-    for (const key of Object.keys(request)) {
+    const requestEntries = new Map<string, unknown>(Object.entries(request));
+    for (const key of requestEntries.keys()) {
       if (!allowedRequestKeys.has(key)) {
         throw new Error(
           `Unknown request contribution key "${key}" from "${source.owner}"`,
@@ -406,7 +434,7 @@ export function buildRequestSchemaRegistry(
       collectSchemaMap(
         fieldSchemas[bucket],
         fieldOwners[bucket],
-        request[bucket],
+        requestEntries.get(bucket),
         bucket,
         source.owner,
       );
@@ -415,34 +443,37 @@ export function buildRequestSchemaRegistry(
     collectSchemaMap(
       formatSchemas,
       formatOwners,
-      request.formats,
+      requestEntries.get("formats"),
       "formats",
       source.owner,
     );
 
-    if (request.rules !== undefined) {
-      if (!Array.isArray(request.rules)) {
+    const rawRules = requestEntries.get("rules");
+    if (rawRules !== undefined) {
+      if (!Array.isArray(rawRules)) {
         throw new Error(
           `Request "rules" from "${source.owner}" must be an array`,
         );
       }
-      for (let i = 0; i < request.rules.length; i++) {
-        if (!(i in request.rules) || typeof request.rules[i] !== "function") {
+      for (let i = 0; i < rawRules.length; i++) {
+        const ruleCandidate: unknown = rawRules[i];
+        if (!(i in rawRules) || !isScrapeOptionsRule(ruleCandidate)) {
           throw new Error(
             `Request rule at index ${i} from "${source.owner}" must be a function`,
           );
         }
-        rules.push(request.rules[i]);
+        rules.push(ruleCandidate);
         ruleOwners.push(source.owner);
       }
     }
   }
 
   for (const target of ["scrape", "parse", "batchScrape"] as const) {
-    for (const key of Object.keys(fieldOwners[target])) {
-      if (key in fieldOwners.scrapeOptions) {
+    for (const [key, targetOwner] of fieldOwners[target]) {
+      const scrapeOptionsOwner = fieldOwners.scrapeOptions.get(key);
+      if (scrapeOptionsOwner !== undefined) {
         throw new Error(
-          `Request field "${key}" is registered in both "scrapeOptions" (by "${fieldOwners.scrapeOptions[key]}") and "${target}" (by "${fieldOwners[target][key]}")`,
+          `Request field "${key}" is registered in both "scrapeOptions" (by "${scrapeOptionsOwner}") and "${target}" (by "${targetOwner}")`,
         );
       }
     }
@@ -469,12 +500,13 @@ export function buildRequestSchemaRegistry(
   const builder = buildSchemas ?? defaultBuildRequestSchemas;
   let compiled: RequestSchemas | undefined;
   const resolveSchemas = (): RequestSchemas => {
-    if (compiled) return compiled;
+    if (compiled) {
+      return compiled;
+    }
     const built = builder(snapshot);
     if (typeof built !== "object" || built === null) {
       throw new Error("Request schema builder must return a schemas object");
     }
-    const validated: Record<string, z.ZodType> = Object.create(null);
     for (const key of schemaKeys) {
       const schema = built[key];
       if (!isZodSchema(schema)) {
@@ -482,18 +514,17 @@ export function buildRequestSchemaRegistry(
           `Request schema builder returned an invalid "${key}" schema`,
         );
       }
-      validated[key] = schema;
     }
     compiled = Object.freeze({
-      scrape: validated.scrape,
-      parse: validated.parse,
-      crawl: validated.crawl,
-      batchScrape: validated.batchScrape,
-      batchScrapeNoURLValidation: validated.batchScrapeNoURLValidation,
-      map: validated.map,
-      search: validated.search,
-      scrapeOptions: validated.scrapeOptions,
-    }) as unknown as RequestSchemas;
+      scrape: built.scrape,
+      parse: built.parse,
+      crawl: built.crawl,
+      batchScrape: built.batchScrape,
+      batchScrapeNoURLValidation: built.batchScrapeNoURLValidation,
+      map: built.map,
+      search: built.search,
+      scrapeOptions: built.scrapeOptions,
+    });
     return compiled;
   };
 
@@ -525,14 +556,14 @@ export function buildRequestSchemaRegistry(
   });
 
   const describedRequest: DescribedRequestSchemas = {
-    scrapeOptions: sortedByKey(fieldOwners.scrapeOptions),
-    scrape: sortedByKey(fieldOwners.scrape),
-    parse: sortedByKey(fieldOwners.parse),
-    crawl: sortedByKey(fieldOwners.crawl),
-    batchScrape: sortedByKey(fieldOwners.batchScrape),
-    map: sortedByKey(fieldOwners.map),
-    search: sortedByKey(fieldOwners.search),
-    formats: sortedByKey(formatOwners),
+    scrapeOptions: sortedByKey(Object.fromEntries(fieldOwners.scrapeOptions)),
+    scrape: sortedByKey(Object.fromEntries(fieldOwners.scrape)),
+    parse: sortedByKey(Object.fromEntries(fieldOwners.parse)),
+    crawl: sortedByKey(Object.fromEntries(fieldOwners.crawl)),
+    batchScrape: sortedByKey(Object.fromEntries(fieldOwners.batchScrape)),
+    map: sortedByKey(Object.fromEntries(fieldOwners.map)),
+    search: sortedByKey(Object.fromEntries(fieldOwners.search)),
+    formats: sortedByKey(Object.fromEntries(formatOwners)),
     rules: [...ruleOwners],
   };
 
@@ -544,7 +575,7 @@ export function buildRequestSchemaRegistry(
  * `RequestSchemas` facade built from them.
  */
 export function buildRequestSchemas(
-  contributions: readonly RequestContributions[],
+  contributions: ReadonlyArray<RequestContributions>,
   buildSchemas?: RequestSchemaBuilder,
 ): RequestSchemas {
   return buildRequestSchemaRegistry(

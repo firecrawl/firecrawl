@@ -1,4 +1,3 @@
-import { z } from "zod";
 import {
   MAX_PATH_PATTERNS,
   MAX_PATH_PATTERN_LENGTH,
@@ -6,14 +5,7 @@ import {
   MAX_TOTAL_PATH_PATTERN_CHARS,
   collectPathPatternIssues,
 } from "../../../lib/crawl-regex";
-import {
-  scrapeRequestSchema,
-  parseRequestSchema,
-  scrapeOptions,
-  crawlRequestSchema,
-  mapRequestSchema,
-  batchScrapeRequestSchema,
-  searchRequestSchema,
+import type {
   ScrapeRequest,
   ScrapeRequestInput,
   CrawlRequest,
@@ -24,6 +16,15 @@ import {
   BatchScrapeRequestInput,
   SearchRequest,
   SearchRequestInput,
+} from "../../../controllers/v2/types";
+import {
+  scrapeRequestSchema,
+  parseRequestSchema,
+  scrapeOptions,
+  crawlRequestSchema,
+  mapRequestSchema,
+  batchScrapeRequestSchema,
+  searchRequestSchema,
   toV2CrawlerOptions,
 } from "../../../controllers/v2/types";
 
@@ -113,14 +114,14 @@ describe("V2 Types Validation", () => {
             },
           },
         ],
-        timeout: 30000,
+        timeout: 30_000,
         proxy: "basic", // Use basic proxy to avoid auto/stealth timeout transformation
       };
 
       const result = scrapeRequestSchema.parse(input);
       expect(result.formats).toHaveLength(1);
       expect(result.formats[0].type).toBe("json");
-      expect(result.timeout).toBe(60000); // Should be transformed from 30000
+      expect(result.timeout).toBe(60_000); // Should be transformed from 30000
     });
 
     it("should reject JSON schemas structured outputs cannot express", () => {
@@ -217,7 +218,7 @@ describe("V2 Types Validation", () => {
       expect(() =>
         scrapeRequestSchema.parse({
           url: "https://example.com",
-          formats: [{ type: "question", prompt: "What is Firecrawl?" } as any],
+          formats: [{ type: "question", prompt: "What is Firecrawl?" }],
         }),
       ).toThrow();
     });
@@ -253,9 +254,12 @@ describe("V2 Types Validation", () => {
       };
 
       const result = scrapeRequestSchema.parse(input);
-      expect(result.formats[0].type).toBe("screenshot");
-      expect((result.formats[0] as any).fullPage).toBe(true);
-      expect((result.formats[0] as any).quality).toBe(90);
+      const format = result.formats[0];
+      expect(format.type).toBe("screenshot");
+      if (format.type === "screenshot") {
+        expect(format.fullPage).toBe(true);
+        expect(format.quality).toBe(90);
+      }
     });
 
     it("should accept attributes format with selectors", () => {
@@ -275,8 +279,11 @@ describe("V2 Types Validation", () => {
       };
 
       const result = scrapeRequestSchema.parse(input);
-      expect(result.formats[0].type).toBe("attributes");
-      expect((result.formats[0] as any).selectors).toHaveLength(1);
+      const format = result.formats[0];
+      expect(format.type).toBe("attributes");
+      if (format.type === "attributes") {
+        expect(format.selectors).toHaveLength(1);
+      }
     });
 
     it("should reject invalid URL", () => {
@@ -409,8 +416,12 @@ describe("V2 Types Validation", () => {
 
       const result = scrapeRequestSchema.parse(input);
       expect(result.parsers).toBeDefined();
-      expect((result.parsers as any)[0].type).toBe("pdf");
-      expect((result.parsers as any)[0].maxPages).toBe(100);
+      const firstParser = result.parsers?.[0];
+      expect(typeof firstParser).toBe("object");
+      if (typeof firstParser === "object" && firstParser !== null) {
+        expect(firstParser.type).toBe("pdf");
+        expect(firstParser.maxPages).toBe(100);
+      }
     });
 
     it("should reject PDF parser with maxPages exceeding limit", () => {
@@ -419,7 +430,7 @@ describe("V2 Types Validation", () => {
         parsers: [
           {
             type: "pdf",
-            maxPages: 20000,
+            maxPages: 20_000,
           },
         ],
       };
@@ -431,11 +442,11 @@ describe("V2 Types Validation", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",
         proxy: "auto",
-        timeout: 30000,
+        timeout: 30_000,
       };
 
       const result = scrapeRequestSchema.parse(input);
-      expect(result.timeout).toBe(120000); // Should be transformed
+      expect(result.timeout).toBe(120_000); // Should be transformed
     });
 
     it("should handle location schema with valid country code", () => {
@@ -539,7 +550,7 @@ describe("V2 Types Validation", () => {
           {
             type: "screenshot",
             viewport: {
-              width: 10000, // Exceeds max
+              width: 10_000, // Exceeds max
               height: 1080,
             },
           },
@@ -575,7 +586,7 @@ describe("V2 Types Validation", () => {
       const result = crawlRequestSchema.parse(input);
       expect(result.url).toBe("https://example.com");
       expect(result.origin).toBe("api");
-      expect(result.limit).toBe(10000);
+      expect(result.limit).toBe(10_000);
       expect(result.scrapeOptions).toBeDefined();
       expect(result.sitemap).toBe("include");
     });
@@ -674,7 +685,7 @@ describe("V2 Types Validation", () => {
       expect(() =>
         crawlRequestSchema.parse({
           url: "https://example.com",
-          includePaths: ["(a)\\1"],
+          includePaths: [String.raw`(a)\1`],
         }),
       ).toThrow(/backreferences/);
     });
@@ -686,8 +697,8 @@ describe("V2 Types Validation", () => {
           url: "https://example.com",
           excludePaths: ["[abc"],
         });
-      } catch (e) {
-        message = String(e);
+      } catch (error) {
+        message = String(error);
       }
 
       expect(message).toMatch(/unclosed character class/);
@@ -701,8 +712,8 @@ describe("V2 Types Validation", () => {
           url: "https://example.com",
           excludePaths: ["^/?(?!blog)[^/]+/.+"],
         });
-      } catch (e) {
-        message = String(e);
+      } catch (error) {
+        message = String(error);
       }
 
       expect(message.match(/not supported/g)).toHaveLength(1);
@@ -716,8 +727,8 @@ describe("V2 Types Validation", () => {
       const result = crawlRequestSchema.parse({
         url: "https://example.com",
         includePaths: [
-          "^/[\\w-]{1,100}/[\\w-]{1,100}/[\\w-]{1,100}/?$",
-          "\\w{300}",
+          String.raw`^/[\w-]{1,100}/[\w-]{1,100}/[\w-]{1,100}/?$`,
+          String.raw`\w{300}`,
         ],
       });
 
@@ -731,8 +742,8 @@ describe("V2 Types Validation", () => {
           url: "https://example.com",
           excludePaths: ["a{5}{5}{5}{5}{5}{5}"],
         });
-      } catch (e) {
-        message = String(e);
+      } catch (error) {
+        message = String(error);
       }
 
       expect(message).toMatch(/exceeds size limit/);
@@ -744,10 +755,10 @@ describe("V2 Types Validation", () => {
       try {
         crawlRequestSchema.parse({
           url: "https://example.com",
-          excludePaths: ["^/\\p{Greek}+"],
+          excludePaths: [String.raw`^/\p{Greek}+`],
         });
-      } catch (e) {
-        message = String(e);
+      } catch (error) {
+        message = String(error);
       }
 
       expect(message).toMatch(/Unicode not allowed/);
@@ -843,8 +854,8 @@ describe("V2 Types Validation", () => {
             "[abc",
           ],
         });
-      } catch (e) {
-        message = String(e);
+      } catch (error) {
+        message = String(error);
       }
 
       expect(message).toMatch(
@@ -860,8 +871,8 @@ describe("V2 Types Validation", () => {
           url: "https://example.com",
           excludePaths: ["[exceeds size limit"],
         });
-      } catch (e) {
-        message = String(e);
+      } catch (error) {
+        message = String(error);
       }
 
       expect(message).toMatch(/unclosed character class/);
@@ -958,7 +969,7 @@ describe("V2 Types Validation", () => {
     it("should reject limit exceeding MAX_MAP_LIMIT", () => {
       const input: MapRequestInput = {
         url: "https://example.com",
-        limit: 200000,
+        limit: 200_000,
       };
 
       expect(() => mapRequestSchema.parse(input)).toThrow();
@@ -976,11 +987,11 @@ describe("V2 Types Validation", () => {
     it("should accept limit within valid range", () => {
       const input: MapRequestInput = {
         url: "https://example.com",
-        limit: 10000,
+        limit: 10_000,
       };
 
       const result = mapRequestSchema.parse(input);
-      expect(result.limit).toBe(10000);
+      expect(result.limit).toBe(10_000);
     });
 
     it("should handle sitemap enum values", () => {
@@ -1236,7 +1247,7 @@ describe("V2 Types Validation", () => {
     });
 
     it("should reject search scrapeOptions query format with invalid mode", () => {
-      const input: SearchRequestInput = {
+      const input = {
         query: "test",
         scrapeOptions: {
           formats: [
@@ -1244,7 +1255,7 @@ describe("V2 Types Validation", () => {
               type: "query",
               prompt: "What is Firecrawl?",
               mode: "quoted",
-            } as any,
+            },
           ],
         },
       };
@@ -1253,7 +1264,7 @@ describe("V2 Types Validation", () => {
     });
 
     it("should reject search scrapeOptions query format with directQuote boolean", () => {
-      const input: SearchRequestInput = {
+      const input = {
         query: "test",
         scrapeOptions: {
           formats: [
@@ -1261,7 +1272,7 @@ describe("V2 Types Validation", () => {
               type: "query",
               prompt: "What is Firecrawl?",
               directQuote: true,
-            } as any,
+            },
           ],
         },
       };
@@ -1273,7 +1284,7 @@ describe("V2 Types Validation", () => {
       const input: SearchRequestInput = {
         query: "test",
         scrapeOptions: {
-          formats: [{ type: "query", prompt: "a".repeat(10001) }],
+          formats: [{ type: "query", prompt: "a".repeat(10_001) }],
         },
       };
 
@@ -1285,7 +1296,7 @@ describe("V2 Types Validation", () => {
         searchRequestSchema.parse({
           query: "test",
           scrapeOptions: {
-            formats: [{ type: "question", question: "a".repeat(10001) }],
+            formats: [{ type: "question", question: "a".repeat(10_001) }],
           },
         } satisfies SearchRequestInput),
       ).toThrow();
@@ -1405,12 +1416,12 @@ describe("V2 Types Validation", () => {
             },
           },
         ],
-        timeout: 30000,
+        timeout: 30_000,
         proxy: "basic",
       };
 
       const result = scrapeRequestSchema.parse(input);
-      expect(result.timeout).toBe(60000);
+      expect(result.timeout).toBe(60_000);
     });
   });
 });

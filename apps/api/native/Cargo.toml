@@ -1,39 +1,85 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
 
-[package]
+[workspace.package]
 authors = ["Firecrawl"]
-edition = "2021"
-name = "firecrawl_rs"
+edition = "2024"
+license = "AGPL-3.0-only"
+publish = false
 version = "0.1.0"
 
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
+[workspace.dependencies]
 anydoc = "0.2.5"
-chrono = { version = "0.4", features = ["serde"] }
+firecrawl-core = { path = "crates/firecrawl-core" }
 kuchikiki = "0.8.9-speedreader"
-lol_html = "2.6.0"
-pdf-inspector = "1.21.0"
 napi = { version = "3.0.0", features = ["serde-json", "tokio_rt"] }
+napi-build = "2"
 napi-derive = "3.0.0"
-nodesig = { git = "https://github.com/firecrawl/nodesig" }
+nodesig = "2.0.0"
+pdf-inspector = "1.21.0"
 psl = "2.1.140"
 regex = "1.11.2"
 roxmltree = "0.20.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
 texting_robots = "0.2.2"
-url = "2.5.7"
-zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
-tokio = "1.48.0"
 # Transitive dep (pdf-inspector -> unicode-normalization -> tinyvec). Pinned because
 # tinyvec 1.13.0 fails to compile (https://github.com/Lokathor/tinyvec/issues/225).
 tinyvec = ">=1.12, <1.13"
+tokio = "1.48.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"] }
+url = "2.5.9"
+zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
+
+[workspace.lints.rust]
+missing_debug_implementations = "warn"
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+arithmetic_side_effects = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+large_futures = "warn"
+panic = "deny"
+unwrap_used = "deny"
+
+[package]
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+name = "firecrawl_rs"
+publish.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+firecrawl-core = { workspace = true, features = ["napi"] }
+napi.workspace = true
+napi-derive.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [build-dependencies]
-napi-build = "2"
+napi-build.workspace = true
+
+# napi-derive emits #[allow(unsafe_code)] on generated FFI shims, which
+# Rust rejects under forbid; deny keeps manual unsafe blocked here while
+# workspace crates inherit unsafe_code = "forbid".
+[lints.rust]
+missing_debug_implementations = "warn"
+unsafe_code = "deny"
+
+[lints.clippy]
+arithmetic_side_effects = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+large_futures = "warn"
+panic = "deny"
+unwrap_used = "deny"
 
 [profile.release]
 lto = true

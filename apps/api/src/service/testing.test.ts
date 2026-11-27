@@ -1,6 +1,8 @@
+import express from "express";
 import { describe, expect, it, vi } from "vitest";
 import { logsMessages, memoryUploads, noBlocklist, openAuth } from "./defaults";
-import { service, type CoreParts } from "./service";
+import { service } from "./service";
+import type { CoreParts } from "./service";
 import { testService, withService } from "./testing";
 
 const parts: CoreParts = { core: { name: "core" }, logger: { error: vi.fn() } };
@@ -32,7 +34,7 @@ describe("testService", () => {
     ]);
 
     await expect(
-      built.modules.auth.authenticate({} as never, { kind: "scrape" }),
+      built.modules.auth.authenticate(express.request, { kind: "scrape" }),
     ).resolves.toEqual({ ok: true, caller: { teamId: "base-team" } });
     expect(
       built.modules.blocklist.isBlocked("https://base-blocked.example/x", {

@@ -1,28 +1,27 @@
-import { Response } from "express";
+import type { Response } from "express";
 import { v7 as uuidv7 } from "uuid";
-import {
+import type {
   BatchScrapeRequest,
-  parseBatchScrapeRequest,
-  URL as urlSchema,
   RequestWithAuth,
   ScrapeOptions,
   BatchScrapeResponse,
 } from "./types";
+import { parseBatchScrapeRequest, URL as urlSchema } from "./types";
+import type { StoredCrawl } from "../../lib/crawl-redis";
 import {
   addCrawlJobs,
   finishCrawlKickoff,
   getCrawl,
   lockURLs,
-  markCrawlActive,
   saveCrawl,
-  StoredCrawl,
 } from "../../lib/crawl-redis";
 import { resolveJobPriority } from "../../lib/limits";
 import { addScrapeJobs } from "../../services/queue-jobs";
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 import { logger as _logger } from "../../lib/logger";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
-import { finalizeResponse, service, type RequestContext } from "../../service";
+import { finalizeResponse, service } from "../../service";
+import type { RequestContext, ResponsePayload } from "../../service";
 import {
   crawlGroup,
   resolveNewGroupBackend,
@@ -34,30 +33,40 @@ import {
 import type {} from "../../lib/billing-state";
 import type { BillingMetadata } from "../../lib/billing-types";
 import { summarizeWebhookForLog } from "../../services/webhook/log";
+import { readAgentInterop, readBooleanField } from "./agent-interop";
+import type { InternalOptions } from "../../scraper/scrapeURL";
 
 export async function batchScrapeController(
-  req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
-  res: Response<BatchScrapeResponse>,
+  req: RequestWithAuth<
+    Record<string, string>,
+    BatchScrapeResponse,
+    BatchScrapeRequest
+  >,
+  res: Response<BatchScrapeResponse | ResponsePayload>,
 ) {
   if (!req.ctx) {
     req.body = parseBatchScrapeRequest(req.body);
   }
-  const extBody = req.body as Record<string, any>;
+  const agentInterop = readAgentInterop(req.body);
+  const shouldBill = agentInterop?.shouldBill ?? true;
+  const agentRequestId = agentInterop?.requestId;
 
   const zeroDataRetention =
     req.ctx?.zeroDataRetention ??
-    ((req.body.zeroDataRetention ?? false) || (extBody.lockdown ?? false));
+    ((req.body.zeroDataRetention ?? false) ||
+      readBooleanField(req.body, "lockdown"));
 
   // Only batch scrapes can be appended to: crawls (including monitor crawls)
   // carry their own billing and scope.
   const appendTarget = req.body.appendToId
-    ? ((await getCrawl(req.body.appendToId)) as StoredCrawl | null)
+    ? await getCrawl(req.body.appendToId)
     : null;
   if (
     req.body.appendToId &&
     (!appendTarget ||
       appendTarget.team_id !== req.auth.team_id ||
-      appendTarget.crawlerOptions != null)
+      (appendTarget.crawlerOptions !== null &&
+        appendTarget.crawlerOptions !== undefined))
   ) {
     return res.status(404).json({
       success: false,
@@ -67,7 +76,7 @@ export async function batchScrapeController(
 
   const id = req.body.appendToId ?? req.requestId ?? uuidv7();
   const billing: BillingMetadata = req.ctx?.billing ?? {
-    ...(extBody.__agentInterop
+    ...(agentInterop
       ? { endpoint: "agent" as const, jobId: id }
       : { endpoint: "batch_scrape" as const, jobId: id }),
     hostedMcp: req.auth.hostedMcp,
@@ -108,8 +117,8 @@ export async function batchScrapeController(
       origin: req.body.origin ?? null,
     });
 
-  let urls: string[] = req.body.urls;
-  let invalidURLs: string[] | undefined =
+  let urls: Array<string> = req.body.urls;
+  let invalidURLs: Array<string> | undefined =
     req.requestDroppedUrls && req.requestDroppedUrls.length > 0
       ? [...req.requestDroppedUrls]
       : undefined;
@@ -129,7 +138,7 @@ export async function batchScrapeController(
           invalidURLs.push(u);
           blockedFound = true;
         }
-      } catch (_) {
+      } catch {
         invalidURLs.push(u);
       }
     }
@@ -165,50 +174,59 @@ export async function batchScrapeController(
   const workContactOnly =
     req.headers["x-firecrawl-work-contact-only"] === "true";
   const threatProtection = contextThreatProtection(ctx);
-  const sc: StoredCrawl = appendTarget
-    ? appendTarget
-    : {
-        ctx,
-        crawlerOptions: null,
-        scrapeOptions: req.body,
-        internalOptions: {
-          ctx,
-          disableSmartWaitCache: true,
-          teamId: req.auth.team_id,
-          orgId: req.acuc?.org_id ?? null,
-          zeroDataRetention,
-          ...(workContactOnly ? { workContactOnly } : {}),
-          bypassBilling: !(extBody.__agentInterop?.shouldBill ?? true),
-          agentIndexOnly: (req as any).agentIndexOnly ?? false,
-          teamFlags: req.acuc?.flags ?? null,
-          // Rolling-deploy compatibility dual-write alongside the ctx fallback.
-          ...(threatProtection !== undefined ? { threatProtection } : {}),
-        }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
-        team_id: req.auth.team_id,
-        createdAt: Date.now(),
-        maxConcurrency: req.body.maxConcurrency,
-        zeroDataRetention,
-        v1: true,
-        webhook: req.body.webhook,
-        requestId: extBody.__agentInterop?.requestId ?? undefined,
-        origin: req.body.origin,
-      };
+  let sc: StoredCrawl;
+  if (appendTarget) {
+    sc = appendTarget;
+  } else {
+    // Smart wait is disabled for batch scrapes to ensure contentful scrapes.
+    const internalOptions: InternalOptions = {
+      ctx,
+      disableSmartWaitCache: true,
+      teamId: req.auth.team_id,
+      orgId: req.acuc?.org_id ?? null,
+      zeroDataRetention,
+      bypassBilling: !shouldBill,
+      agentIndexOnly: readBooleanField(req, "agentIndexOnly"),
+      teamFlags: req.acuc?.flags ?? null,
+    };
+    if (workContactOnly) {
+      internalOptions.workContactOnly = true;
+    }
+    if (threatProtection !== undefined) {
+      // Rolling-deploy compatibility dual-write alongside the ctx fallback.
+      internalOptions.threatProtection = threatProtection;
+    }
+    sc = {
+      ctx,
+      crawlerOptions: null,
+      scrapeOptions: req.body,
+      internalOptions,
+      team_id: req.auth.team_id,
+      createdAt: Date.now(),
+      maxConcurrency: req.body.maxConcurrency,
+      zeroDataRetention,
+      v1: true,
+      webhook: req.body.webhook,
+      requestId: agentRequestId,
+      origin: req.body.origin,
+    };
+  }
 
   if (req.body.appendToId) {
     sc.ctx = blockCtx;
     sc.internalOptions.ctx = blockCtx;
     // Rolling-deploy compatibility dual-write alongside the ctx fallback.
     sc.internalOptions.threatProtection = contextThreatProtection(blockCtx);
-    sc.internalOptions.bypassBilling = !(
-      extBody.__agentInterop?.shouldBill ?? true
-    );
+    sc.internalOptions.bypassBilling = !shouldBill;
     sc.internalOptions.teamFlags = req.acuc?.flags ?? undefined;
-    if (workContactOnly) sc.internalOptions.workContactOnly = true;
+    if (workContactOnly) {
+      sc.internalOptions.workContactOnly = true;
+    }
   }
 
   const crawlTtlHours = ctx.crawlTtlHours ?? 24;
 
-  if (!req.body.appendToId && !extBody.__agentInterop) {
+  if (!req.body.appendToId && !agentInterop) {
     await service.modules.jobStore
       .register({
         id,
@@ -218,7 +236,7 @@ export async function batchScrapeController(
         clientOrigin: req.body.origin ?? "api",
         estimatedJobs: urls.length,
       })
-      .catch(error => {
+      .catch((error: unknown) => {
         logger.error("Failed to register batch scrape job", {
           error,
           estimatedJobs: urls.length,
@@ -228,7 +246,6 @@ export async function batchScrapeController(
     // An agent-started batch is recorded under the parent request rather than
     // as a request of its own, so initialize usage tracking for both ids
     // without creating fetchable job-access rows.
-    const agentRequestId = extBody.__agentInterop?.requestId;
     if (agentRequestId) {
       await service.modules.jobStore
         .register({
@@ -238,7 +255,7 @@ export async function batchScrapeController(
           jobAccess: false,
           estimatedJobs: 0,
         })
-        .catch(error => {
+        .catch((error: unknown) => {
           logger.error("Failed to initialize request usage tracking", {
             error,
             requestId: agentRequestId,
@@ -253,7 +270,7 @@ export async function batchScrapeController(
         jobAccess: false,
         estimatedJobs: urls.length,
       })
-      .catch(error => {
+      .catch((error: unknown) => {
         logger.error("Failed to initialize request usage tracking", {
           error,
           estimatedJobs: urls.length,
@@ -267,10 +284,9 @@ export async function batchScrapeController(
     await crawlGroup.addGroup(id, sc.team_id, crawlTtlHours * 60 * 60 * 1000, {
       backend: sc.queueBackend,
       maxConcurrency: sc.maxConcurrency,
-      delaySeconds: sc.crawlerOptions?.delay,
+      delaySeconds: undefined,
     });
     await saveCrawl(id, sc);
-    await markCrawlActive(id);
   }
 
   let jobPriority = 20;
@@ -285,9 +301,12 @@ export async function batchScrapeController(
   }
   logger.debug("Using job priority " + jobPriority, { jobPriority });
 
-  const scrapeOptions: ScrapeOptions = { ...req.body };
-  delete (scrapeOptions as any).urls;
-  delete (scrapeOptions as any).appendToId;
+  const {
+    urls: _urls,
+    appendToId: _appendToId,
+    ...restScrapeOptions
+  } = req.body;
+  const scrapeOptions: ScrapeOptions = restScrapeOptions;
 
   const jobs = urls.map(x => ({
     jobId: uuidv7(),
@@ -298,12 +317,12 @@ export async function batchScrapeController(
       team_id: req.auth.team_id,
       crawlerOptions: null,
       scrapeOptions,
-      origin: "api",
+      origin: sc.origin ?? req.body.origin ?? "api",
       integration: req.body.integration,
       billing,
       crawl_id: id,
-      requestId: extBody.__agentInterop?.requestId ?? undefined,
-      bypassBilling: !(extBody.__agentInterop?.shouldBill ?? true),
+      requestId: agentRequestId,
+      bypassBilling: !shouldBill,
       sitemapped: true,
       v1: true,
       webhook: req.body.webhook,
@@ -353,5 +372,5 @@ export async function batchScrapeController(
     url: `${protocol}://${req.host}/v2/batch/scrape/${id}`,
     invalidURLs,
   });
-  return res.status(200).json(payload as BatchScrapeResponse);
+  return res.status(200).json(payload);
 }

@@ -1,5 +1,5 @@
 export type AgentInteropStatus = "trusted" | "none" | "invalid";
-import { Request, Response } from "express";
+import type { Request } from "express";
 import { config } from "../../config";
 import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
@@ -8,20 +8,25 @@ import { countries } from "../../lib/validate-country";
 import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
 import { addStrictSchemaIssue } from "../../lib/openai-strict-schema";
 export { addStrictSchemaIssue };
-import { ScrapeActionContent } from "../../lib/entities";
+import type { ScrapeActionContent, SearchV2Response } from "../../lib/entities";
+import { jsonRecordSchema, jsonValueSchema } from "../../lib/json-types";
+import type {
+  JsonObject,
+  JsonValue,
+  StrictJsonValue,
+} from "../../lib/json-types";
 import type { TeamPlanClass } from "../../service/search-providers";
-import type { RateLimiterMode } from "../../types";
-import { ErrorCode } from "../../lib/error";
+import type { JobCrawlerOptions, RateLimiterMode } from "../../types";
+import type { ErrorCode } from "../../lib/error";
 import { integrationSchema } from "../../utils/integration";
 import { webhookSchema } from "../../services/webhook/schema";
 import { installedService } from "../../service/service";
-import {
-  registerDefaultRequestSchemaBuilder,
-  type RequestKind,
-  type RequestSchemas,
-  type ResolvedRequestContributions,
-  type ScrapeOptions as ServiceScrapeOptions,
-  type ScrapeOptionsRule,
+import { registerDefaultRequestSchemaBuilder } from "../../service/request";
+import type {
+  RequestKind,
+  RequestSchemas,
+  ResolvedRequestContributions,
+  ScrapeOptionsRule,
 } from "../../service/request";
 
 // Base URL schema with common validation logic
@@ -34,7 +39,7 @@ export const URL = z
   // .overwrite rather than .transform, so this stays a ZodString and .url() /
   // .regex() can still chain onto it.
   .overwrite(x => {
-    if (!protocolIncluded(x as string)) {
+    if (!protocolIncluded(x)) {
       x = `http://${x}`;
     }
 
@@ -55,8 +60,8 @@ export const URL = z
   .refine(x => {
     if (config.TEST_SUITE_SELF_HOSTED && config.ALLOW_LOCAL_WEBHOOKS) {
       if (
-        /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
-          x as string,
+        /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([/?#]|$)/i.test(
+          x,
         )
       ) {
         return true;
@@ -65,76 +70,112 @@ export const URL = z
     // Same TLD-shaped check as before, plus IP literals — which the old
     // inline regex accepted only when the last octet had 2+ digits, so
     // 8.8.8.8 was rejected while 169.254.169.254 passed.
-    return hasReachableHost(x as string);
+    return hasReachableHost(x);
   }, "URL must have a valid top-level domain or be an IP address")
   .refine(x => {
     try {
-      checkUrl(x as string);
+      checkUrl(x);
       return true;
-    } catch (_) {
+    } catch {
       return false;
     }
   }, "Invalid URL");
 // .refine((x) => !isUrlBlocked(x as string), UNSUPPORTED_SITE_MESSAGE)
 
-const strictMessage =
-  "Unrecognized key in body -- please review the v2 API documentation for request body changes";
-
-// Helper function to add strict validation
-// In zod v4, .strict() doesn't accept arguments
-// The custom error message is handled in the error handler (see src/index.ts)
-// We use a type assertion to preserve the input type so optional fields with defaults remain optional
-// The 'as any' is necessary because zod v4's .strict() changes type inference in a way that makes
-// optional fields with defaults appear required, even though they're not at runtime
-function strictWithMessage<T extends z.ZodObject<any>>(schema: T): T {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return schema.strict() as any as T;
+// In zod v4, .strict() returns a strict ZodObject without arguments; the custom
+// error message for unrecognized keys is produced by the error handler in src/index.ts.
+function strictWithMessage<S extends z.ZodRawShape>(
+  schema: z.ZodObject<S>,
+): z.ZodObject<S, z.core.$strict> {
+  return schema.strict();
 }
 
-export function normalizeSchemaForOpenAI(schema: any): any {
-  if (!schema || typeof schema !== "object") {
-    return schema;
+const rootJsonSchema = z.union([jsonValueSchema, jsonRecordSchema]);
+type ParsedJsonValue = z.infer<typeof jsonRecordSchema>[string];
+
+function softOptional<T extends z.ZodType>(schema: T) {
+  return schema.optional().catch(undefined);
+}
+
+function parseRootJsonInput(schema: unknown): ParsedJsonValue | undefined {
+  const direct = rootJsonSchema.safeParse(schema);
+  if (direct.success) {
+    return direct.data;
+  }
+  try {
+    const serialized = JSON.stringify(schema);
+    if (serialized === undefined) {
+      return undefined;
+    }
+    const roundTripped: unknown = JSON.parse(serialized);
+    const parsed = rootJsonSchema.safeParse(roundTripped);
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function normalizeSchemaForOpenAI(
+  schema: unknown,
+): JsonValue | undefined {
+  if (schema === undefined) {
+    return undefined;
+  }
+  const rootData = parseRootJsonInput(schema);
+  if (rootData === undefined) {
+    return undefined;
   }
 
-  const visited = new WeakSet();
+  const seen = new WeakSet<object>();
 
-  function normalizeObject(obj: any): any {
-    if (typeof obj !== "object" || obj === null) return obj;
+  function normalizeNode(
+    obj: ParsedJsonValue | undefined,
+  ): JsonValue | undefined {
+    if (obj === undefined || obj === null || typeof obj !== "object") {
+      return obj;
+    }
     if (Array.isArray(obj)) {
-      return obj.map(item => normalizeObject(item));
+      if (seen.has(obj)) {
+        return obj;
+      }
+      seen.add(obj);
+      return obj.map(item => normalizeNode(item));
     }
 
-    if (visited.has(obj)) return obj;
-    visited.add(obj);
+    if (seen.has(obj)) {
+      return obj;
+    }
+    seen.add(obj);
 
-    const normalized = { ...obj };
+    const normalized: JsonObject = { ...obj };
 
     // Handle $ref recursion - preserve as-is for OpenAI compatibility
-    if (normalized.hasOwnProperty("$ref")) {
+    if (Object.hasOwn(obj, "$ref")) {
       return normalized;
     }
 
-    if (normalized.hasOwnProperty("$defs")) {
-      const { $defs, ...rest } = normalized;
-      const processedRest = {};
+    if (Object.hasOwn(obj, "$defs")) {
+      const { $defs, ...rest } = obj;
+      const processedRest: JsonObject = {};
 
       for (const [key, value] of Object.entries(rest)) {
         if (
           typeof value === "object" &&
           value !== null &&
-          !value.hasOwnProperty("$ref")
+          !Object.hasOwn(value, "$ref")
         ) {
-          processedRest[key] = normalizeObject(value);
+          processedRest[key] = normalizeNode(value);
         } else {
           processedRest[key] = value;
         }
       }
 
-      const normalizedDefs = Object.fromEntries(
-        Object.entries($defs ?? {}).map(([key, value]) => [
-          key,
-          normalizeObject(value),
-        ]),
+      const defsEntries =
+        typeof $defs === "object" && $defs !== null && !Array.isArray($defs)
+          ? Object.entries($defs)
+          : [];
+      const normalizedDefs: JsonObject = Object.fromEntries(
+        defsEntries.map(([key, value]) => [key, normalizeNode(value)]),
       );
 
       return { ...processedRest, $defs: normalizedDefs };
@@ -142,24 +183,27 @@ export function normalizeSchemaForOpenAI(schema: any): any {
 
     if (
       normalized.type === "object" &&
-      normalized.hasOwnProperty("properties") &&
-      normalized.hasOwnProperty("additionalProperties")
+      Object.hasOwn(normalized, "properties") &&
+      Object.hasOwn(normalized, "additionalProperties")
     ) {
       delete normalized.additionalProperties;
     }
 
     if (
       normalized.type === "object" &&
-      normalized.hasOwnProperty("required") &&
-      normalized.hasOwnProperty("properties")
+      Object.hasOwn(normalized, "required") &&
+      Object.hasOwn(normalized, "properties")
     ) {
+      const rawProperties = normalized.properties;
       if (
         Array.isArray(normalized.required) &&
-        typeof normalized.properties === "object" &&
-        normalized.properties !== null
+        typeof rawProperties === "object" &&
+        rawProperties !== null &&
+        !Array.isArray(rawProperties)
       ) {
-        const validRequired = normalized.required.filter((field: string) =>
-          normalized.properties.hasOwnProperty(field),
+        const validRequired = normalized.required.filter(
+          (field): field is string =>
+            typeof field === "string" && Object.hasOwn(rawProperties, field),
         );
         if (validRequired.length > 0) {
           normalized.required = validRequired;
@@ -171,43 +215,65 @@ export function normalizeSchemaForOpenAI(schema: any): any {
       }
     }
 
-    for (const [key, value] of Object.entries(normalized)) {
+    for (const [key, value] of Object.entries(obj)) {
       if (
+        Object.hasOwn(normalized, key) &&
+        !(key === "required" && Array.isArray(value)) &&
         typeof value === "object" &&
         value !== null &&
-        !value.hasOwnProperty("$ref")
+        !Object.hasOwn(value, "$ref")
       ) {
-        normalized[key] = normalizeObject(value);
+        normalized[key] = normalizeNode(value);
       }
     }
 
     return normalized;
   }
 
-  return normalizeObject(schema);
+  return normalizeNode(rootData);
 }
 
-export function validateSchemaForOpenAI(schema: any): boolean {
-  if (!schema || typeof schema !== "object") {
+export function validateSchemaForOpenAI(schema: unknown): boolean {
+  const parsedRoot = rootJsonSchema.safeParse(schema);
+  if (!parsedRoot.success) {
     return true;
   }
 
-  const visited = new WeakSet();
+  const visited = new WeakSet<object>();
 
-  function hasInvalidStructure(obj: any): boolean {
-    if (typeof obj !== "object" || obj === null) return false;
+  function hasInvalidStructure(obj: ParsedJsonValue | undefined): boolean {
+    if (typeof obj !== "object" || obj === null) {
+      return false;
+    }
 
-    if (visited.has(obj)) return false;
+    if (visited.has(obj)) {
+      return false;
+    }
     visited.add(obj);
 
-    if (obj.hasOwnProperty("$ref")) {
+    if (Array.isArray(obj)) {
+      for (const value of obj) {
+        if (
+          typeof value === "object" &&
+          value !== null &&
+          !Object.hasOwn(value, "$ref")
+        ) {
+          if (hasInvalidStructure(value)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    if (Object.hasOwn(obj, "$ref")) {
       return false;
     }
 
     if (
       obj.type === "object" &&
-      !obj.hasOwnProperty("properties") &&
-      !obj.hasOwnProperty("patternProperties") &&
+      !Object.hasOwn(obj, "properties") &&
+      !Object.hasOwn(obj, "patternProperties") &&
       obj.additionalProperties === true
     ) {
       return true;
@@ -217,15 +283,17 @@ export function validateSchemaForOpenAI(schema: any): boolean {
       if (
         typeof value === "object" &&
         value !== null &&
-        !value.hasOwnProperty("$ref")
+        !Object.hasOwn(value, "$ref")
       ) {
-        if (hasInvalidStructure(value)) return true;
+        if (hasInvalidStructure(value)) {
+          return true;
+        }
       }
     }
     return false;
   }
 
-  return !hasInvalidStructure(schema);
+  return !hasInvalidStructure(parsedRoot.data);
 }
 
 export const OPENAI_SCHEMA_ERROR_MESSAGE =
@@ -233,8 +301,15 @@ export const OPENAI_SCHEMA_ERROR_MESSAGE =
 
 const ACTIONS_MAX_WAIT_TIME = 60;
 const MAX_ACTIONS = 50;
+
+interface WaitActionLike {
+  type?: string;
+  milliseconds?: number;
+  selector?: string;
+}
+
 function calculateTotalWaitTime(
-  actions: any[] = [],
+  actions: ReadonlyArray<WaitActionLike> = [],
   waitFor: number = 0,
 ): number {
   const actionWaitTime = actions.reduce((acc, action) => {
@@ -330,9 +405,7 @@ const actionSchema = z.union([
 export type Action = z.infer<typeof actionSchema>;
 
 export type InternalAction = Action & {
-  metadata?: {
-    [key: string]: unknown;
-  };
+  metadata?: JsonObject;
   /** fire-engine, executeJavascript only. */
   realViewport?: boolean;
 };
@@ -352,14 +425,14 @@ const actionsSchema = z
 const jsonFormatWithOptions = z.strictObject({
   type: z.literal("json"),
   schema: z
-    .any()
+    .unknown()
     .optional()
     .transform(val => normalizeSchemaForOpenAI(val))
     .refine(val => validateSchemaForOpenAI(val), {
       message: OPENAI_SCHEMA_ERROR_MESSAGE,
     })
     .superRefine(addStrictSchemaIssue),
-  prompt: z.string().max(10000).optional(),
+  prompt: z.string().max(10_000).optional(),
   // Deprecated: lifted into the top-level checkPromptInjection at parse time.
   checkPromptInjection: z.boolean().optional(),
 });
@@ -403,7 +476,7 @@ type AttributesFormatWithOptions = z.output<typeof attributesFormatWithOptions>;
 
 const questionFormatWithOptions = z.strictObject({
   type: z.literal("question"),
-  question: z.string().min(1).max(10000),
+  question: z.string().min(1).max(10_000),
 });
 
 type QuestionFormatWithOptions = z.output<typeof questionFormatWithOptions>;
@@ -411,7 +484,7 @@ type QuestionFormatWithOptions = z.output<typeof questionFormatWithOptions>;
 /** @deprecated Use `question` format instead. */
 const queryFormatWithOptions = z.strictObject({
   type: z.literal("query"),
-  prompt: z.string().max(10000),
+  prompt: z.string().max(10_000),
   mode: z.enum(["freeform", "directQuote"]).optional().default("freeform"),
 });
 
@@ -438,65 +511,67 @@ export type PDFMode = z.infer<typeof pdfModeSchema>;
 const pdfParserWithOptions = z.strictObject({
   type: z.literal("pdf"),
   mode: pdfModeSchema.optional(),
-  maxPages: z.int().positive().finite().max(10000).optional(),
+  maxPages: z.int().positive().finite().max(10_000).optional(),
 });
 
 const parsersSchema = z
   .array(z.union([z.literal("pdf"), pdfParserWithOptions]))
   .prefault(["pdf"]);
 
-type Parsers = z.infer<typeof parsersSchema>;
+const pdfParserObjectSchema = z.object({
+  type: z.literal("pdf"),
+  mode: softOptional(pdfModeSchema),
+  maxPages: softOptional(z.number()),
+});
 
-export function shouldParsePDF(parsers?: readonly unknown[]): boolean {
-  if (!parsers) return true;
-  return parsers.some(parser => {
-    if (parser === "pdf") return true;
-    if (typeof parser === "object" && parser !== null && "type" in parser) {
-      return (parser as { type?: unknown }).type === "pdf";
-    }
-    return false;
-  });
+const pdfParserEntrySchema = z.union([z.literal("pdf"), pdfParserObjectSchema]);
+
+export function shouldParsePDF(parsers?: ReadonlyArray<unknown>): boolean {
+  if (!parsers) {
+    return true;
+  }
+  return parsers.some(parser => pdfParserEntrySchema.safeParse(parser).success);
 }
 
 export function getPDFMaxPages(
-  parsers?: readonly unknown[],
+  parsers?: ReadonlyArray<unknown>,
 ): number | undefined {
-  if (!parsers) return undefined;
-  const pdfParser = parsers.find(parser => {
-    if (typeof parser === "object" && parser !== null && "type" in parser) {
-      return (parser as { type?: unknown }).type === "pdf";
+  if (!parsers) {
+    return undefined;
+  }
+  for (const parser of parsers) {
+    const parsed = pdfParserObjectSchema.safeParse(parser);
+    if (parsed.success) {
+      return parsed.data.maxPages;
     }
-    return false;
-  });
-  if (pdfParser && typeof pdfParser === "object" && "maxPages" in pdfParser) {
-    return (pdfParser as { maxPages?: number }).maxPages;
   }
   return undefined;
 }
 
-export function getPDFMode(parsers?: readonly unknown[]): PDFMode {
-  if (!parsers) return "auto";
+export function getPDFMode(parsers?: ReadonlyArray<unknown>): PDFMode {
+  if (!parsers) {
+    return "auto";
+  }
   for (const parser of parsers) {
-    if (parser === "pdf") return "auto";
-    if (
-      typeof parser === "object" &&
-      parser !== null &&
-      (parser as { type?: unknown }).type === "pdf"
-    ) {
-      return ((parser as { mode?: PDFMode }).mode ?? "auto") as PDFMode;
+    if (parser === "pdf") {
+      return "auto";
+    }
+    const parsed = pdfParserObjectSchema.safeParse(parser);
+    if (parsed.success) {
+      return parsed.data.mode ?? "auto";
     }
   }
   return "auto";
 }
 
 function transformIframeSelector(selector: string): string {
-  return selector.replace(/(?:^|[\s,])iframe(?=\s|$|[.#\[:,])/g, match => {
+  return selector.replaceAll(/(?:^|[\s,])iframe(?=\s|$|[.#[:,])/g, match => {
     const prefix = match.match(/^[\s,]/)?.[0] || "";
     return prefix + 'div[data-original-tag="iframe"]';
   });
 }
 
-const SPECIAL_COUNTRIES = ["us-generic", "us-whitelist"];
+const SPECIAL_COUNTRIES = new Set(["us-generic", "us-whitelist"]);
 
 const locationSchema = z
   .object({
@@ -507,11 +582,13 @@ const locationSchema = z
         val =>
           !val ||
           Object.keys(countries).includes(val.toUpperCase()) ||
-          SPECIAL_COUNTRIES.includes(val.toLowerCase()),
+          SPECIAL_COUNTRIES.has(val.toLowerCase()),
         "Invalid country code. Use a valid ISO 3166-1 alpha-2 country code.",
       )
       .transform(val => {
-        if (!val) return "us-generic";
+        if (!val) {
+          return "us-generic";
+        }
         return val.toLowerCase();
       }),
     languages: z.array(z.string()).optional(),
@@ -531,9 +608,11 @@ export const countryLocationSchema = z.strictObject({
 const scrapeOptionFields = z.strictObject({
   formats: z
     .preprocess(
-      val => {
-        if (!Array.isArray(val)) return val;
-        return val.map(format => {
+      (val: unknown) => {
+        if (!Array.isArray(val)) {
+          return val;
+        }
+        return val.map((format: unknown) => {
           if (typeof format === "string") {
             return { type: format };
           }
@@ -579,7 +658,7 @@ const scrapeOptionFields = z.strictObject({
   onlyMainContent: z.boolean().prefault(true),
   onlyCleanContent: z.boolean().prefault(false),
   timeout: z.int().positive().min(1000).optional(),
-  waitFor: z.int().nonnegative().max(60000).prefault(0),
+  waitFor: z.int().nonnegative().max(60_000).prefault(0),
   mobile: z.boolean().prefault(false),
   parsers: parsersSchema.optional(),
   actions: actionsSchema.optional(),
@@ -636,7 +715,7 @@ export const applyScrapeOptionsDefaults = <T extends ScrapeOptionsBase>(
  * flag and drops it from the format. Also accepts raw stored monitor options.
  */
 export function liftCheckPromptInjection<
-  T extends { formats?: unknown[]; checkPromptInjection?: unknown },
+  T extends { formats?: Array<unknown>; checkPromptInjection?: unknown },
 >(options: T): T {
   let requestedOnFormat = false;
   const formats = options.formats?.map(format => {
@@ -659,45 +738,37 @@ export function liftCheckPromptInjection<
   };
 }
 
-// Base transform function that handles both nullable and non-nullable cases
-// Uses generic type to preserve all fields from extended schemas
-const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
-  obj: T,
-): T extends undefined ? undefined : T => {
-  if (!obj) return obj as T extends undefined ? undefined : T;
-  // Handle timeout
+const extractTransformRequired = <T extends ScrapeOptionsBase>(obj: T): T => {
   let result = liftCheckPromptInjection(applyScrapeOptionsDefaults(obj));
   if (
-    obj.formats.find(x => typeof x === "object" && x.type === "json") &&
-    obj.timeout === 30000
+    obj.formats.some(x => typeof x === "object" && x.type === "json") &&
+    obj.timeout === 30_000
   ) {
-    result = { ...result, timeout: 60000 };
+    result = { ...result, timeout: 60_000 };
   }
 
-  if (obj.proxy === "auto" && obj.timeout === 30000) {
-    result = { ...result, timeout: 120000 };
+  if (obj.proxy === "auto" && obj.timeout === 30_000) {
+    result = { ...result, timeout: 120_000 };
   }
 
-  return result as T extends undefined ? undefined : T;
+  return result;
 };
 
-// Type-safe wrapper for nullable cases (used in optional scrapeOptions)
 export const extractTransform = (
   obj?: ScrapeOptionsBase,
 ): ScrapeOptionsBase | undefined => {
-  return extractTransformImpl(obj);
-};
-
-// Type-safe wrapper for non-nullable cases (used in required scrapeOptions schema)
-// This ensures TypeScript knows the output is always ScrapeOptionsBase, not undefined
-const extractTransformRequired = <T extends ScrapeOptionsBase>(obj: T): T => {
-  return extractTransformImpl(obj)! as T;
+  if (!obj) {
+    return undefined;
+  }
+  return extractTransformRequired(obj);
 };
 
 export const scrapeOptions = strictWithMessage(baseScrapeOptions)
   .refine(
     obj => {
-      if (!obj.actions) return true;
+      if (!obj.actions) {
+        return true;
+      }
       return (
         calculateTotalWaitTime(obj.actions, obj.waitFor) <=
         ACTIONS_MAX_WAIT_TIME * 1000
@@ -750,24 +821,15 @@ export type ScrapeRequestInput = Omit<
   zeroDataRetention?: boolean;
 };
 
+const uploadedParseFileObjectSchema = z.object({
+  buffer: z.custom<Buffer>(value => Buffer.isBuffer(value)),
+  filename: z.string().refine(name => name.trim().length > 0),
+  contentType: z.string().optional(),
+  kind: z.enum(["html", "pdf", "document", "image"]).optional(),
+});
+
 const uploadedParseFileSchema = z.custom<UploadedParseFile>(
-  value =>
-    typeof value === "object" &&
-    value !== null &&
-    "buffer" in value &&
-    Buffer.isBuffer((value as any).buffer) &&
-    "filename" in value &&
-    typeof (value as any).filename === "string" &&
-    (value as any).filename.trim().length > 0 &&
-    (!("contentType" in value) ||
-      (value as any).contentType === undefined ||
-      typeof (value as any).contentType === "string") &&
-    (!("kind" in value) ||
-      (value as any).kind === undefined ||
-      (value as any).kind === "html" ||
-      (value as any).kind === "pdf" ||
-      (value as any).kind === "document" ||
-      (value as any).kind === "image"),
+  value => uploadedParseFileObjectSchema.safeParse(value).success,
   {
     error: "A file upload is required.",
   },
@@ -841,7 +903,7 @@ export type BatchScrapeRequestInput = Omit<
 > & {
   formats?: z.input<typeof baseScrapeOptions>["formats"];
 } & {
-  urls: z.input<typeof URL>[];
+  urls: Array<z.input<typeof URL>>;
   origin?: string;
   integration?: z.input<typeof integrationSchema> | null;
   webhook?: z.input<typeof webhookSchema>;
@@ -855,7 +917,7 @@ export const crawlerOptions = z.strictObject({
   includePaths: pathPatternsSchema.prefault([]),
   excludePaths: pathPatternsSchema.prefault([]),
   maxDiscoveryDepth: z.number().optional(),
-  limit: z.number().prefault(10000), // default?
+  limit: z.number().prefault(10_000), // default?
   crawlEntireDomain: z.boolean().optional(),
   allowExternalLinks: z.boolean().prefault(false),
   allowSubdomains: z.boolean().prefault(false),
@@ -893,10 +955,10 @@ const crawlRequestSchemaBase = crawlerOptions.extend({
   integration: integrationSchema.optional().transform(val => val || null),
   scrapeOptions: baseScrapeOptions.prefault(() => baseScrapeOptions.parse({})),
   webhook: webhookSchema.optional(),
-  limit: z.number().prefault(10000),
+  limit: z.number().prefault(10_000),
   maxConcurrency: z.int().positive().optional(),
   zeroDataRetention: z.boolean().optional(),
-  prompt: z.string().max(10000).optional(),
+  prompt: z.string().max(10_000).optional(),
 });
 
 export const crawlRequestSchema = strictWithMessage(crawlRequestSchemaBase)
@@ -928,7 +990,7 @@ export const crawlRequestSchema = strictWithMessage(crawlRequestSchemaBase)
 export type CrawlRequest = z.infer<typeof crawlRequestSchema>;
 export type CrawlRequestInput = z.input<typeof crawlRequestSchema>;
 
-export const MAX_MAP_LIMIT = 100000;
+export const MAX_MAP_LIMIT = 100_000;
 
 const mapRequestSchemaBase = crawlerOptions
   .omit({ sitemap: true, ignoreQueryParameters: true })
@@ -975,7 +1037,7 @@ export interface DocumentMetadata {
   ogAudio?: string;
   ogDeterminer?: string;
   ogLocale?: string;
-  ogLocaleAlternate?: string[];
+  ogLocaleAlternate?: Array<string>;
   ogSiteName?: string;
   ogVideo?: string;
   favicon?: string;
@@ -1006,7 +1068,7 @@ export interface DocumentMetadata {
   cacheState?: "hit" | "miss";
   cachedAt?: string;
   creditsUsed?: number;
-  postprocessorsUsed?: string[];
+  postprocessorsUsed?: Array<string>;
   indexId?: string; // ID used to store the document in the index (GCS)
   concurrencyLimited?: boolean;
   concurrencyQueueDurationMs?: number;
@@ -1020,27 +1082,27 @@ export interface Document {
   html?: string;
   rawHtml?: string;
   rawBase64?: string;
-  links?: string[];
-  images?: string[];
+  links?: Array<string>;
+  images?: Array<string>;
   screenshot?: string;
-  extract?: any;
-  json?: any;
+  extract?: StrictJsonValue;
+  json?: StrictJsonValue;
   summary?: string;
   answer?: string;
   warning?: string;
-  attributes?: {
+  attributes?: Array<{
     selector: string;
     attribute: string;
-    values: string[];
-  }[];
+    values: Array<string>;
+  }>;
   actions?: {
-    screenshots?: string[];
-    scrapes?: ScrapeActionContent[];
-    javascriptReturns?: {
+    screenshots?: Array<string>;
+    scrapes?: Array<ScrapeActionContent>;
+    javascriptReturns?: Array<{
       type: string;
       value: unknown;
-    }[];
-    pdfs?: string[];
+    }>;
+    pdfs?: Array<string>;
   };
   metadata: DocumentMetadata;
   serpResults?: {
@@ -1054,7 +1116,7 @@ export type ErrorResponse = {
   success: false;
   code?: ErrorCode;
   error: string;
-  details?: any;
+  details?: unknown;
   sponsor_status?: string;
   login_url?: string;
   replacement?: string;
@@ -1070,7 +1132,7 @@ export type ScrapeResponse =
       success: true;
       warning?: string;
       data: Document & {
-        tools?: unknown[];
+        tools?: Array<unknown>;
       };
       scrape_id?: string;
     };
@@ -1089,7 +1151,7 @@ export type BatchScrapeResponse =
       success: true;
       id: string;
       url: string;
-      invalidURLs?: string[];
+      invalidURLs?: Array<string>;
     };
 
 // Map document interface (transitioned from v1)
@@ -1105,7 +1167,7 @@ export type MapResponse =
   | {
       success: true;
       id: string;
-      links?: MapDocument[];
+      links?: Array<MapDocument>;
       warning?: string;
     };
 
@@ -1138,7 +1200,7 @@ export type CrawlStatusResponse =
       completedAt?: string;
       duration?: number;
       next?: string;
-      data: Document[];
+      data: Array<Document>;
       warning?: string;
     }
   | {
@@ -1152,26 +1214,26 @@ export type CrawlStatusResponse =
       createdAt?: string;
       completedAt?: string;
       duration?: number;
-      data: Document[];
+      data: Array<Document>;
     };
 
 export type OngoingCrawlsResponse =
   | ErrorResponse
   | {
       success: true;
-      crawls: {
+      crawls: Array<{
         id: string;
         teamId: string;
         url: string;
         created_at: string;
         options: CrawlerOptions;
-      }[];
+      }>;
     };
 
 export type CrawlErrorsResponse =
   | ErrorResponse
   | {
-      errors: {
+      errors: Array<{
         id: string;
         timestamp?: string;
         url: string;
@@ -1182,10 +1244,10 @@ export type CrawlErrorsResponse =
           terms?: string;
           version?: string;
           url?: string;
-          [key: string]: unknown;
+          [key: string]: JsonValue | undefined;
         };
-      }[];
-      robotsBlocked: string[];
+      }>;
+      robotsBlocked: Array<string>;
     };
 
 type AuthObject = {
@@ -1266,10 +1328,10 @@ export type TeamFlags = {
     disableCountrySelection?: boolean;
     disableAutomaticReferrer?: boolean;
     respectPaywalls?: boolean;
-    allowlist?: string[];
+    allowlist?: Array<string>;
   };
   siemLogging?: boolean;
-  unblockedDomains?: string[];
+  unblockedDomains?: Array<string>;
   forceZDR?: boolean;
   allowZDR?: boolean;
   scrapeZDR?: "disabled" | "allowed" | "forced";
@@ -1288,17 +1350,13 @@ export type TeamFlags = {
   // gates the per-key scope/format lockdown (key_restriction_config table)
   keyRestriction?: boolean;
   skipCountryCheck?: boolean;
-  browserBeta?: boolean;
   bypassCreditChecks?: boolean;
   debugBranding?: boolean;
-  maxBrowserSessions?: number;
   // grants the privileged large-PDF size cap
   largePdfs?: boolean;
   // POST /v2/search/:jobId/feedback returns 403 TEAM_OPTED_OUT when true.
   searchFeedbackOptOut?: boolean;
-  researchBeta?: boolean;
   menuBeta?: boolean;
-  enrichBeta?: boolean;
   labsSearch?: boolean;
   freshFeed?: boolean;
   freshFeedCreditsPerRecord?: number;
@@ -1356,8 +1414,10 @@ export type AuthCreditUsageChunkFromTeam = Omit<
   "api_key"
 >;
 
+export type DefaultRequestParams = Request["params"];
+
 export interface RequestWithMaybeACUC<
-  ReqParams = {},
+  ReqParams = DefaultRequestParams,
   ReqBody = undefined,
   ResBody = undefined,
 > extends Request<ReqParams, ReqBody, ResBody> {
@@ -1366,7 +1426,7 @@ export interface RequestWithMaybeACUC<
 }
 
 export interface RequestWithMaybeAuth<
-  ReqParams = {},
+  ReqParams = DefaultRequestParams,
   ReqBody = undefined,
   ResBody = undefined,
 > extends RequestWithMaybeACUC<ReqParams, ReqBody, ResBody> {
@@ -1375,7 +1435,7 @@ export interface RequestWithMaybeAuth<
 }
 
 export interface RequestWithAuth<
-  ReqParams = {},
+  ReqParams = DefaultRequestParams,
   ReqBody = undefined,
   ResBody = undefined,
 > extends RequestWithMaybeACUC<ReqParams, ReqBody, ResBody> {
@@ -1407,20 +1467,38 @@ export function toV0CrawlerOptions(x: CrawlerOptions) {
   };
 }
 
-export function toV2CrawlerOptions(x: any): CrawlerOptions {
+export function toV2CrawlerOptions(
+  x: JobCrawlerOptions & {
+    includes?: Array<string>;
+    excludes?: Array<string>;
+    limit?: number;
+    allowBackwardCrawling?: boolean;
+    allowExternalContentLinks?: boolean;
+    allowSubdomains?: boolean;
+    ignoreRobotsTxt?: boolean;
+    robotsUserAgent?: string;
+    sitemapOnly?: boolean;
+    ignoreSitemap?: boolean;
+    deduplicateSimilarURLs?: boolean;
+    ignoreQueryParameters?: boolean;
+    regexOnFullURL?: boolean;
+    maxDiscoveryDepth?: number;
+    delay?: number;
+  },
+): CrawlerOptions {
   return {
-    includePaths: x.includes,
-    excludePaths: x.excludes,
-    limit: x.limit,
-    crawlEntireDomain: x.allowBackwardCrawling,
-    allowExternalLinks: x.allowExternalContentLinks,
-    allowSubdomains: x.allowSubdomains,
-    ignoreRobotsTxt: x.ignoreRobotsTxt,
+    includePaths: x.includes ?? [],
+    excludePaths: x.excludes ?? [],
+    limit: x.limit ?? 10_000,
+    crawlEntireDomain: x.allowBackwardCrawling ?? false,
+    allowExternalLinks: x.allowExternalContentLinks ?? false,
+    allowSubdomains: x.allowSubdomains ?? false,
+    ignoreRobotsTxt: x.ignoreRobotsTxt ?? false,
     robotsUserAgent: x.robotsUserAgent,
     sitemap: x.sitemapOnly ? "only" : x.ignoreSitemap ? "skip" : "include",
-    deduplicateSimilarURLs: x.deduplicateSimilarURLs,
-    ignoreQueryParameters: x.ignoreQueryParameters,
-    regexOnFullURL: x.regexOnFullURL,
+    deduplicateSimilarURLs: x.deduplicateSimilarURLs ?? false,
+    ignoreQueryParameters: x.ignoreQueryParameters ?? false,
+    regexOnFullURL: x.regexOnFullURL ?? false,
     maxDiscoveryDepth: x.maxDiscoveryDepth,
     delay: x.delay,
   };
@@ -1498,16 +1576,18 @@ const searchRequestSchemaBase = z.strictObject({
   location: z.string().optional(),
   origin: z.string().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
-  timeout: z.int().positive().finite().prefault(60000),
+  timeout: z.int().positive().finite().prefault(60_000),
   ignoreInvalidURLs: z.boolean().prefault(false),
   asyncScraping: z.boolean().prefault(false),
   scrapeOptions: baseScrapeOptions
     .safeExtend({
       formats: z
         .preprocess(
-          val => {
-            if (!Array.isArray(val)) return val;
-            return val.map(format => {
+          (val: unknown) => {
+            if (!Array.isArray(val)) {
+              return val;
+            }
+            return val.map((format: unknown) => {
               if (typeof format === "string") {
                 return { type: format };
               }
@@ -1537,8 +1617,30 @@ const searchRequestSchemaBase = z.strictObject({
     .optional(),
 });
 
+type SearchSourceEntry =
+  | z.infer<typeof webSearchSourceOptions>
+  | z.infer<typeof imagesSearchSourceOptions>
+  | (z.infer<typeof newsSearchSourceOptions> & {
+      tbs?: string;
+      lang?: string;
+      country?: string;
+      location?: string;
+    })
+  | { type: string };
+
+type SearchCategoryEntry =
+  | z.infer<typeof pdfCategoryOptions>
+  | { type: string; sites?: Array<string> };
+
 const transformSearchRequest = <
-  T extends z.infer<typeof searchRequestSchemaBase>,
+  T extends Omit<
+    z.infer<typeof searchRequestSchemaBase>,
+    "sources" | "categories" | "scrapeOptions"
+  > & {
+    sources?: ReadonlyArray<string | SearchSourceEntry>;
+    categories?: ReadonlyArray<string | SearchCategoryEntry>;
+    scrapeOptions?: ScrapeOptionsBase;
+  },
 >(
   x: T,
 ) => {
@@ -1562,68 +1664,83 @@ const transformSearchRequest = <
     )?.[1].name;
 
   // Transform string array sources to object format
-  let sources = x.sources;
-  if (sources && Array.isArray(sources) && sources.length > 0) {
-    // Check if it's a string array by checking the first element
-    if (typeof sources[0] === "string") {
-      // It's a string array, transform to object array
-      sources = (sources as string[]).map(s => {
-        switch (s) {
-          case "web":
-            return {
-              type: "web" as const,
-              tbs: x.tbs,
-              filter: x.filter,
-              lang: x.lang,
-              country,
-              location,
-            };
-          case "images":
-            return {
-              type: "images" as const,
-              // Images don't inherit global params in the simple format
-            };
-          case "news":
-            return {
-              type: "news" as const,
-              tbs: x.tbs,
-              lang: x.lang,
-              country,
-              location,
-            };
-          default:
-            return { type: s as any };
-        }
-      });
+  let sources: Array<SearchSourceEntry> | undefined;
+  const rawSources: ReadonlyArray<string | SearchSourceEntry> | undefined =
+    x.sources;
+  if (rawSources && Array.isArray(rawSources)) {
+    if (rawSources.length > 0 && typeof rawSources[0] === "string") {
+      sources = rawSources
+        .filter((s): s is string => typeof s === "string")
+        .map((s): SearchSourceEntry => {
+          switch (s) {
+            case "web":
+              return {
+                type: "web" as const,
+                tbs: x.tbs,
+                filter: x.filter,
+                lang: x.lang,
+                country,
+                location,
+              };
+            case "images":
+              return {
+                type: "images" as const,
+              };
+            case "news":
+              return {
+                type: "news" as const,
+                tbs: x.tbs,
+                lang: x.lang,
+                country,
+                location,
+              };
+            default:
+              return { type: s };
+          }
+        });
+    } else {
+      sources = rawSources.filter(
+        (entry): entry is SearchSourceEntry => typeof entry !== "string",
+      );
     }
-    // Otherwise it's already an object array, keep as is
   }
 
   // Transform string array categories to object format
-  let categories = x.categories;
-  if (categories && Array.isArray(categories) && categories.length > 0) {
-    // Check if it's a string array by checking the first element
-    if (typeof categories[0] === "string") {
-      // It's a string array, transform to object array
-      categories = (categories as string[]).map(c => {
-        switch (c) {
-          case "pdf":
-            return {
-              type: "pdf" as const,
-            };
-          default:
-            return { type: c as any };
-        }
-      });
-    }
-    // Otherwise it's already an object array, keep as is
+  let categories: Array<SearchCategoryEntry> | undefined;
+  const rawCategories: ReadonlyArray<string | SearchCategoryEntry> | undefined =
+    x.categories;
+  if (rawCategories) {
+    categories = rawCategories.map((entry): SearchCategoryEntry => {
+      if (typeof entry !== "string") {
+        return entry;
+      }
+      return entry === "pdf" ? { type: "pdf" as const } : { type: entry };
+    });
   }
 
+  const {
+    sources: _sources,
+    categories: _categories,
+    country: _country,
+    location: _location,
+    scrapeOptions: _scrapeOptions,
+    ...rest
+  } = x;
+
   return {
-    ...x,
+    ...rest,
     country,
     location,
-    sources,
+    sources: sources ?? [
+      {
+        type: "web" as const,
+        tbs: x.tbs,
+        filter: x.filter,
+        lang: x.lang,
+        country,
+        location,
+      },
+    ],
     categories,
     scrapeOptions: extractTransform(x.scrapeOptions),
   };
@@ -1645,25 +1762,25 @@ export type SearchResponse =
   | {
       success: true;
       warning?: string;
-      data: Document[];
+      data: Array<Document>;
       creditsUsed?: number;
       id: string;
     }
   | {
       success: true;
       warning?: string;
-      data: import("../../lib/entities").SearchV2Response;
+      data: SearchV2Response;
       creditsUsed?: number;
       id: string;
     }
   | {
       success: true;
       warning?: string;
-      data: import("../../lib/entities").SearchV2Response;
+      data: SearchV2Response;
       scrapeIds: {
-        web?: string[];
-        news?: string[];
-        images?: string[];
+        web?: Array<string>;
+        news?: Array<string>;
+        images?: Array<string>;
       };
       creditsUsed?: number;
       id: string;
@@ -1677,28 +1794,7 @@ export type TokenUsage = {
   model?: string;
 };
 
-const generateLLMsTextRequestSchema = z.object({
-  url: URL.describe("The URL to generate text from"),
-  maxUrls: z
-    .number()
-    .min(1)
-    .max(5000)
-    .prefault(10)
-    .describe("Maximum number of URLs to process"),
-  showFullText: z
-    .boolean()
-    .prefault(false)
-    .describe("Whether to show the full LLMs-full.txt in the response"),
-  cache: z
-    .boolean()
-    .prefault(true)
-    .describe("Whether to use cached content if available"),
-  __experimental_stream: z.boolean().optional(),
-});
-
-type GenerateLLMsTextRequest = z.infer<typeof generateLLMsTextRequestSchema>;
-
-const coreScrapeFormatSchemas: Record<string, z.ZodType> = {
+const coreScrapeFormatSchemas = {
   markdown: z.strictObject({ type: z.literal("markdown") }),
   html: z.strictObject({ type: z.literal("html") }),
   rawHtml: z.strictObject({ type: z.literal("rawHtml") }),
@@ -1711,9 +1807,9 @@ const coreScrapeFormatSchemas: Record<string, z.ZodType> = {
   attributes: attributesFormatWithOptions,
   question: questionFormatWithOptions,
   query: queryFormatWithOptions,
-};
+} satisfies Record<string, z.ZodType>;
 
-const coreSearchFormatSchemas: Record<string, z.ZodType> = {
+const coreSearchFormatSchemas = {
   markdown: coreScrapeFormatSchemas.markdown,
   html: coreScrapeFormatSchemas.html,
   rawHtml: coreScrapeFormatSchemas.rawHtml,
@@ -1724,37 +1820,55 @@ const coreSearchFormatSchemas: Record<string, z.ZodType> = {
   question: questionFormatWithOptions,
   query: queryFormatWithOptions,
   screenshot: screenshotFormatWithOptions,
-};
+} satisfies Record<string, z.ZodType>;
+
+const formatTypeSchema = z.object({ type: z.string() });
+
+function hasFormatType(value: unknown, expected: string): boolean {
+  const parsed = formatTypeSchema.safeParse(value);
+  return parsed.success && parsed.data.type === expected;
+}
+
+function createFormatsUnion(
+  baseFormats: Readonly<Record<string, z.ZodType>>,
+  extraFormats: Readonly<Record<string, z.ZodType>>,
+): z.ZodType {
+  const members: Array<z.ZodType> = Object.values({
+    ...baseFormats,
+    ...extraFormats,
+  });
+  const [first, second, ...rest] = members;
+  if (!first || !second) {
+    throw new Error("Expected at least two format schemas");
+  }
+  return z.union([first, second, ...rest]);
+}
 
 function createScrapeFormatsSchema(
   extraFormats: Readonly<Record<string, z.ZodType>>,
 ) {
-  const members = Object.values({
-    ...coreScrapeFormatSchemas,
-    ...extraFormats,
-  }) as [z.ZodType, z.ZodType, ...z.ZodType[]];
-
   return z
     .preprocess(
-      val => {
-        if (!Array.isArray(val)) return val;
-        return val.map(format => {
+      (val: unknown) => {
+        if (!Array.isArray(val)) {
+          return val;
+        }
+        return val.map((format: unknown) => {
           if (typeof format === "string") {
             return { type: format };
           }
           return format;
         });
       },
-      z
-        .union(members)
+      createFormatsUnion(coreScrapeFormatSchemas, extraFormats)
         .array()
         .prefault([{ type: "markdown" }]),
     )
     .refine(x => {
-      return x.filter((f: any) => f.type === "screenshot").length <= 1;
+      return x.filter(f => hasFormatType(f, "screenshot")).length <= 1;
     }, "You may only specify one screenshot format")
     .refine(
-      x => !x.some((f: any) => f.type === "rawBase64") || x.length === 1,
+      x => !x.some(f => hasFormatType(f, "rawBase64")) || x.length === 1,
       "The rawBase64 format cannot be combined with other formats",
     );
 }
@@ -1762,32 +1876,36 @@ function createScrapeFormatsSchema(
 function createSearchFormatsSchema(
   extraFormats: Readonly<Record<string, z.ZodType>>,
 ) {
-  const members = Object.values({
-    ...coreSearchFormatSchemas,
-    ...extraFormats,
-  }) as [z.ZodType, z.ZodType, ...z.ZodType[]];
-
   return z
-    .preprocess(val => {
-      if (!Array.isArray(val)) return val;
-      return val.map(format => {
+    .preprocess((val: unknown) => {
+      if (!Array.isArray(val)) {
+        return val;
+      }
+      return val.map((format: unknown) => {
         if (typeof format === "string") {
           return { type: format };
         }
         return format;
       });
-    }, z.union(members).array().prefault([]))
+    }, createFormatsUnion(coreSearchFormatSchemas, extraFormats).array().prefault([]))
     .refine(x => {
-      return x.filter((f: any) => f.type === "screenshot").length <= 1;
+      return x.filter(f => hasFormatType(f, "screenshot")).length <= 1;
     }, "You may only specify one screenshot format");
 }
 
-function applyBaseScrapeOptionsRefines<T extends z.ZodType<any>>(schema: T) {
+interface CheckPromptInjectionCandidate {
+  checkPromptInjection?: boolean;
+  formats: ReadonlyArray<unknown>;
+}
+
+function applyBaseScrapeOptionsRefines<T extends CheckPromptInjectionCandidate>(
+  schema: z.ZodType<T>,
+): z.ZodType<T> {
   return schema.refine(
-    (options: any) =>
+    options =>
       !(
         options.checkPromptInjection &&
-        options.formats.some((f: any) => f.type === "rawBase64")
+        options.formats.some(f => hasFormatType(f, "rawBase64"))
       ),
     {
       message:
@@ -1797,89 +1915,88 @@ function applyBaseScrapeOptionsRefines<T extends z.ZodType<any>>(schema: T) {
   );
 }
 
-function applyScrapeOptionsRules<T extends Record<string, unknown>>(
+function applyScrapeOptionsRules<T extends ScrapeOptionsBase>(
   value: T,
   kind: RequestKind,
-  rules: readonly ScrapeOptionsRule[],
+  rules: ReadonlyArray<ScrapeOptionsRule>,
   ctx: z.RefinementCtx,
-  pathPrefix: (string | number)[] = [],
+  pathPrefix: Array<string | number> = [],
 ): T | typeof z.NEVER {
-  let current = value;
+  const current: T = { ...value };
   for (const rule of rules) {
-    const verdict = rule(current as unknown as ServiceScrapeOptions, { kind });
-    if (!verdict) continue;
+    const verdict = rule(current, { kind });
+    if (!verdict) {
+      continue;
+    }
     if ("error" in verdict) {
-      ctx.addIssue({
-        code: "custom",
-        message: verdict.error,
-        ...(pathPrefix.length > 0 || verdict.path?.length
-          ? { path: [...pathPrefix, ...(verdict.path ?? [])] }
-          : {}),
-      });
+      if (pathPrefix.length > 0 || verdict.path?.length) {
+        ctx.addIssue({
+          code: "custom",
+          message: verdict.error,
+          path: [...pathPrefix, ...(verdict.path ?? [])],
+        });
+      } else {
+        ctx.addIssue({
+          code: "custom",
+          message: verdict.error,
+        });
+      }
       return z.NEVER;
     }
     if ("set" in verdict && verdict.set) {
-      current = { ...current, ...verdict.set };
+      Object.assign(current, verdict.set);
     }
   }
   return current;
 }
 
-function applyExtractTransformAndRules<T extends Record<string, unknown>>(
+function applyExtractTransformAndRules<T extends ScrapeOptionsBase>(
   value: T,
   kind: RequestKind,
-  rules: readonly ScrapeOptionsRule[],
+  rules: ReadonlyArray<ScrapeOptionsRule>,
   ctx: z.RefinementCtx,
-  pathPrefix: (string | number)[] = [],
+  pathPrefix: Array<string | number> = [],
 ): T | typeof z.NEVER {
-  const originalTimeout = (value as { timeout?: unknown }).timeout;
-  let base = liftCheckPromptInjection(
-    applyScrapeOptionsDefaults(value as unknown as ScrapeOptionsBase),
-  ) as unknown as T & {
-    formats?: unknown[];
-    timeout?: number;
-    proxy?: string;
-  };
-  if (base.proxy === "auto" && originalTimeout === 30000) {
-    base = { ...base, timeout: 120000 };
+  const originalTimeout = value.timeout;
+  let base: T = liftCheckPromptInjection(applyScrapeOptionsDefaults(value));
+  if (base.proxy === "auto" && originalTimeout === 30_000) {
+    base = { ...base, timeout: 120_000 };
   }
   const ruled =
     rules.length > 0
       ? applyScrapeOptionsRules(base, kind, rules, ctx, pathPrefix)
       : base;
-  if (ruled === z.NEVER) return z.NEVER;
-  let result = ruled as T & {
-    formats?: unknown[];
-    timeout?: number;
-    proxy?: string;
-  };
+  if (ruled === z.NEVER) {
+    return z.NEVER;
+  }
+  let result = ruled;
   if (
-    result.formats?.find(
-      x =>
-        typeof x === "object" &&
-        x !== null &&
-        (x as { type?: unknown }).type === "json",
-    ) &&
-    originalTimeout === 30000 &&
-    result.timeout === 30000
+    result.formats.some(x => hasFormatType(x, "json")) &&
+    originalTimeout === 30_000 &&
+    result.timeout === 30_000
   ) {
-    result = { ...result, timeout: 60000 };
+    result = { ...result, timeout: 60_000 };
   }
   return result;
 }
 
 // Core fields that extensions are explicitly allowed to widen.
-const extensibleCoreFields: Readonly<Record<string, ReadonlySet<string>>> = {
-  scrapeOptions: new Set(["parsers", "proxy"]),
-  search: new Set(["sources", "categories"]),
-};
+const extensibleCoreFields = {
+  scrapeOptions: new Set<string>(["parsers", "proxy"]),
+  search: new Set<string>(["sources", "categories"]),
+} satisfies Record<string, ReadonlySet<string>>;
 
 function assertNoCoreCollision(
   bucket: string,
-  contributed: Readonly<Record<string, unknown>>,
-  coreShape: Record<string, unknown>,
+  contributed: Readonly<Record<string, z.ZodType>>,
+  coreShape: Readonly<Record<string, z.ZodType>>,
 ): void {
-  const allowed = extensibleCoreFields[bucket];
+  const allowed =
+    bucket === "scrapeOptions"
+      ? extensibleCoreFields.scrapeOptions
+      : bucket === "search"
+        ? extensibleCoreFields.search
+        : undefined;
   for (const key of Object.keys(contributed)) {
     if (Object.hasOwn(coreShape, key) && !allowed?.has(key)) {
       throw new Error(
@@ -1887,6 +2004,24 @@ function assertNoCoreCollision(
       );
     }
   }
+}
+
+const extendedOutputObjectSchema = z.object({});
+
+function extendStrictObject<S extends z.ZodRawShape>(
+  base: z.ZodObject<S>,
+  extraEntries: ReadonlyArray<readonly [string, z.ZodType]>,
+): z.ZodType<z.output<z.ZodObject<S>>> {
+  const baseEntries: Array<[string, z.core.$ZodType]> = Object.entries(
+    base.shape,
+  );
+  const merged = Object.fromEntries([...baseEntries, ...extraEntries]);
+  return z
+    .strictObject(merged)
+    .refine(
+      (value): value is z.output<z.ZodObject<S>> =>
+        extendedOutputObjectSchema.safeParse(value).success,
+    );
 }
 
 const defaultV2RequestSchemas: RequestSchemas = Object.freeze({
@@ -1898,7 +2033,7 @@ const defaultV2RequestSchemas: RequestSchemas = Object.freeze({
   map: mapRequestSchema,
   search: searchRequestSchema,
   scrapeOptions,
-}) as unknown as RequestSchemas;
+});
 
 /**
  * Builds the v2 request and scrape-options schemas with extension-contributed
@@ -1985,29 +2120,33 @@ export function buildV2RequestSchemas(
     return defaultV2RequestSchemas;
   }
 
-  const scrapeOptionsShape: z.ZodRawShape = {
-    ...scrapeOptionFields.shape,
-    ...(hasFormats
-      ? { formats: createScrapeFormatsSchema(contributions.formats) }
-      : {}),
-    ...contributions.scrapeOptions,
-  };
-  const baseScrapeOpts: z.ZodType<any> =
+  const extraScrapeOptionEntries: Array<[string, z.ZodType]> = Object.entries(
+    contributions.scrapeOptions,
+  );
+  if (hasFormats) {
+    extraScrapeOptionEntries.push([
+      "formats",
+      createScrapeFormatsSchema(contributions.formats),
+    ]);
+  }
+
+  const baseScrapeOpts: z.ZodType<ScrapeOptionsBase> =
     hasFormats || hasScrapeOptionsFields
-      ? applyBaseScrapeOptionsRefines(z.strictObject(scrapeOptionsShape))
+      ? applyBaseScrapeOptionsRefines(
+          extendStrictObject(scrapeOptionFields, extraScrapeOptionEntries),
+        )
       : baseScrapeOptions;
 
-  const scrape =
+  const scrape: z.ZodType<ScrapeRequest> =
     hasFormats || hasScrapeOptionsFields || hasScrapeFields || hasRules
       ? applyBaseScrapeOptionsRefines(
-          z.strictObject({
-            ...scrapeRequestSchemaBase.shape,
-            ...scrapeOptionsShape,
-            ...contributions.scrape,
-          }),
+          extendStrictObject(scrapeRequestSchemaBase, [
+            ...extraScrapeOptionEntries,
+            ...Object.entries(contributions.scrape),
+          ]),
         )
-          .refine((x: any) => waitForRefine(x), waitForRefineOpts)
-          .transform((x: any, ctx) =>
+          .refine(x => waitForRefine(x), waitForRefineOpts)
+          .transform((x, ctx) =>
             applyExtractTransformAndRules(
               x,
               "scrape",
@@ -2017,22 +2156,20 @@ export function buildV2RequestSchemas(
           )
       : scrapeRequestSchema;
 
-  const parse =
+  const parse: z.ZodType<ParseRequest> =
     hasFormats || hasScrapeOptionsFields || hasParseFields || hasRules
       ? applyBaseScrapeOptionsRefines(
-          z.strictObject({
-            ...parseRequestSchemaBase.shape,
-            ...scrapeOptionsShape,
-            ...contributions.parse,
-          }),
+          extendStrictObject(parseRequestSchemaBase, [
+            ...extraScrapeOptionEntries,
+            ...Object.entries(contributions.parse),
+          ]),
         )
           .refine(
-            (x: any) =>
-              !x.formats.some((format: any) => format.type === "rawBase64"),
+            x => !x.formats.some(format => hasFormatType(format, "rawBase64")),
             "The rawBase64 format is not supported for parse uploads",
           )
-          .refine((x: any) => waitForRefine(x), waitForRefineOpts)
-          .transform((x: any, ctx) => {
+          .refine(x => waitForRefine(x), waitForRefineOpts)
+          .transform((x, ctx) => {
             const { file, ...scrapeLike } = x;
             const ruled = applyExtractTransformAndRules(
               scrapeLike,
@@ -2040,26 +2177,27 @@ export function buildV2RequestSchemas(
               contributions.rules,
               ctx,
             );
-            if (ruled === z.NEVER) return z.NEVER;
+            if (ruled === z.NEVER) {
+              return z.NEVER;
+            }
             return { ...ruled, file };
           })
       : parseRequestSchema;
 
-  const crawl =
+  const crawl: z.ZodType<CrawlRequest> =
     hasFormats || hasScrapeOptionsFields || hasCrawlFields || hasRules
-      ? z
-          .strictObject({
-            ...crawlRequestSchemaBase.shape,
-            scrapeOptions: baseScrapeOpts.prefault(() =>
-              baseScrapeOpts.parse({}),
-            ),
-            ...contributions.crawl,
-          })
-          .superRefine((x: any, ctx) => {
+      ? extendStrictObject(crawlRequestSchemaBase, [
+          [
+            "scrapeOptions",
+            baseScrapeOpts.prefault(() => baseScrapeOpts.parse({})),
+          ],
+          ...Object.entries(contributions.crawl),
+        ])
+          .superRefine((x, ctx) => {
             addPathRegexIssues(x, ctx);
           })
-          .refine((x: any) => waitForRefine(x.scrapeOptions), waitForRefineOpts)
-          .transform((x: any, ctx) => {
+          .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
+          .transform((x, ctx) => {
             const scrapeOptionsValue =
               x.scrapeOptions ?? baseScrapeOpts.parse({});
             const ruled = applyExtractTransformAndRules(
@@ -2069,7 +2207,9 @@ export function buildV2RequestSchemas(
               ctx,
               ["scrapeOptions"],
             );
-            if (ruled === z.NEVER) return z.NEVER;
+            if (ruled === z.NEVER) {
+              return z.NEVER;
+            }
             return {
               ...x,
               url: x.url,
@@ -2078,43 +2218,41 @@ export function buildV2RequestSchemas(
           })
       : crawlRequestSchema;
 
-  const map = hasMapFields
-    ? z
-        .strictObject({
-          ...mapRequestSchemaBase.shape,
-          ...contributions.map,
-        })
-        .superRefine((x: any, ctx) => {
-          addPathRegexIssues(x, ctx);
-        })
+  const map: z.ZodType<MapRequest> = hasMapFields
+    ? extendStrictObject(
+        mapRequestSchemaBase,
+        Object.entries(contributions.map),
+      ).superRefine((x, ctx) => {
+        addPathRegexIssues(x, ctx);
+      })
     : mapRequestSchema;
 
-  const searchScrapeOpts =
+  const searchScrapeOpts: z.ZodType<ScrapeOptionsBase> | undefined =
     hasFormats || hasScrapeOptionsFields
       ? applyBaseScrapeOptionsRefines(
-          z.strictObject({
-            ...scrapeOptionsShape,
-            formats: createSearchFormatsSchema(contributions.formats),
-          }),
+          extendStrictObject(scrapeOptionFields, [
+            ...extraScrapeOptionEntries,
+            ["formats", createSearchFormatsSchema(contributions.formats)],
+          ]),
         )
       : undefined;
 
-  const search =
+  const extraSearchEntries: Array<[string, z.ZodType]> = Object.entries(
+    contributions.search,
+  );
+  if (searchScrapeOpts) {
+    extraSearchEntries.push(["scrapeOptions", searchScrapeOpts.optional()]);
+  }
+
+  const search: z.ZodType<SearchRequest> =
     hasFormats || hasScrapeOptionsFields || hasSearchFields || hasRules
-      ? z
-          .strictObject({
-            ...searchRequestSchemaBase.shape,
-            ...(searchScrapeOpts
-              ? { scrapeOptions: searchScrapeOpts.optional() }
-              : {}),
-            ...contributions.search,
-          })
+      ? extendStrictObject(searchRequestSchemaBase, extraSearchEntries)
           .refine(
-            (x: any) => !(x.includeDomains?.length && x.excludeDomains?.length),
+            x => !(x.includeDomains?.length && x.excludeDomains?.length),
             "includeDomains and excludeDomains cannot both be specified",
           )
-          .refine((x: any) => waitForRefine(x.scrapeOptions), waitForRefineOpts)
-          .transform((x: any, ctx) => {
+          .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
+          .transform((x, ctx) => {
             const rawScrapeOptions = x.scrapeOptions;
             const transformed = transformSearchRequest({
               ...x,
@@ -2124,13 +2262,15 @@ export function buildV2RequestSchemas(
               return transformed;
             }
             const ruled = applyExtractTransformAndRules(
-              rawScrapeOptions as unknown as Record<string, unknown>,
+              rawScrapeOptions,
               "search",
               contributions.rules,
               ctx,
               ["scrapeOptions"],
             );
-            if (ruled === z.NEVER) return z.NEVER;
+            if (ruled === z.NEVER) {
+              return z.NEVER;
+            }
             return {
               ...transformed,
               scrapeOptions: ruled,
@@ -2138,16 +2278,19 @@ export function buildV2RequestSchemas(
           })
       : searchRequestSchema;
 
-  const buildBatchScrapeSchema = (baseShape: z.ZodRawShape) =>
+  const buildBatchScrapeSchema = (
+    baseSchema:
+      | typeof batchScrapeRequestSchemaBase
+      | typeof batchScrapeRequestSchemaNoURLValidationBase,
+  ): z.ZodType<BatchScrapeRequest> =>
     applyBaseScrapeOptionsRefines(
-      z.strictObject({
-        ...baseShape,
-        ...scrapeOptionsShape,
-        ...contributions.batchScrape,
-      }),
+      extendStrictObject(baseSchema, [
+        ...extraScrapeOptionEntries,
+        ...Object.entries(contributions.batchScrape),
+      ]),
     )
-      .refine((x: any) => waitForRefine(x), waitForRefineOpts)
-      .transform((x: any, ctx) =>
+      .refine(x => waitForRefine(x), waitForRefineOpts)
+      .transform((x, ctx) =>
         applyExtractTransformAndRules(
           x,
           "batchScrape",
@@ -2160,19 +2303,21 @@ export function buildV2RequestSchemas(
     hasFormats || hasScrapeOptionsFields || hasBatchScrapeFields || hasRules;
 
   const batchScrape = hasBatchScrapeChanges
-    ? buildBatchScrapeSchema(batchScrapeRequestSchemaBase.shape)
+    ? buildBatchScrapeSchema(batchScrapeRequestSchemaBase)
     : batchScrapeRequestSchema;
 
   const batchScrapeNoURLValidation = hasBatchScrapeChanges
-    ? buildBatchScrapeSchema(batchScrapeRequestSchemaNoURLValidationBase.shape)
+    ? buildBatchScrapeSchema(batchScrapeRequestSchemaNoURLValidationBase)
     : batchScrapeRequestSchemaNoURLValidation;
 
-  const compiledScrapeOptions =
+  const compiledScrapeOptions: z.ZodType<ScrapeOptions> =
     hasFormats || hasScrapeOptionsFields || hasRules
       ? baseScrapeOpts
           .refine(
-            (obj: any) => {
-              if (!obj.actions) return true;
+            obj => {
+              if (!obj.actions) {
+                return true;
+              }
               return (
                 calculateTotalWaitTime(obj.actions, obj.waitFor) <=
                 ACTIONS_MAX_WAIT_TIME * 1000
@@ -2182,8 +2327,8 @@ export function buildV2RequestSchemas(
               message: `Total wait time (waitFor + wait actions) cannot exceed ${ACTIONS_MAX_WAIT_TIME} seconds`,
             },
           )
-          .refine((x: any) => waitForRefine(x), waitForRefineOpts)
-          .transform((x: any, ctx) =>
+          .refine(x => waitForRefine(x), waitForRefineOpts)
+          .transform((x, ctx) =>
             applyExtractTransformAndRules(
               x,
               "scrape",
@@ -2193,7 +2338,10 @@ export function buildV2RequestSchemas(
           )
       : scrapeOptions;
 
-  if (Object.hasOwn(scrapeOptionsShape, "maxAge")) {
+  if (
+    Object.hasOwn(contributions.scrapeOptions, "maxAge") ||
+    Object.hasOwn(scrapeOptionFields.shape, "maxAge")
+  ) {
     maxAgeScrapeOptionsSchemas.add(compiledScrapeOptions);
   }
 
@@ -2206,16 +2354,16 @@ export function buildV2RequestSchemas(
     map,
     search,
     scrapeOptions: compiledScrapeOptions,
-  } as unknown as RequestSchemas;
+  };
 }
 
-const maxAgeScrapeOptionsSchemas = new WeakSet<object>();
+const maxAgeScrapeOptionsSchemas = new WeakSet<z.ZodType>();
 
 /**
  * Returns whether the given compiled scrapeOptions schema accepts maxAge.
  */
 export function scrapeOptionsAcceptsMaxAge(
-  schema: object = getV2RequestSchemas().scrapeOptions,
+  schema: z.ZodType = getV2RequestSchemas().scrapeOptions,
 ): boolean {
   return maxAgeScrapeOptionsSchemas.has(schema);
 }
@@ -2230,17 +2378,17 @@ export function getV2RequestSchemas(): RequestSchemas {
   return installedService()?.schemas ?? defaultV2RequestSchemas;
 }
 
+const ignoreInvalidURLsSchema = z.object({
+  ignoreInvalidURLs: z.literal(true),
+});
+
 /**
  * Parses a v2 batch scrape request body through the active service schemas,
  * skipping upfront URL validation when `ignoreInvalidURLs` is explicitly true.
  */
 export function parseBatchScrapeRequest(body: unknown): BatchScrapeRequest {
   const schemas = getV2RequestSchemas();
-  if (
-    typeof body === "object" &&
-    body !== null &&
-    (body as { ignoreInvalidURLs?: unknown }).ignoreInvalidURLs === true
-  ) {
+  if (ignoreInvalidURLsSchema.safeParse(body).success) {
     return schemas.batchScrapeNoURLValidation.parse(body);
   }
   return schemas.batchScrape.parse(body);
