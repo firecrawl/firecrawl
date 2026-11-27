@@ -1,17 +1,27 @@
+import express from "express";
+import type { Response } from "express";
+import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createLogger } from "winston";
+import type { search as searchV2 } from "../../search/v2";
+import type { BillingModule } from "../../service/modules";
 
 const mocks = vi.hoisted(() => ({
-  search: vi.fn(),
+  search: vi.fn<typeof searchV2>(),
   checkUrlsAgainstThreatPolicy: vi.fn(),
-  resolveThreatProtection: vi.fn(async (): Promise<any> => ({ policy: null })),
+  resolveThreatProtection: vi.fn(async (): Promise<{ policy: null }> => ({
+    policy: null,
+  })),
   removeExplicitResults: vi.fn(),
-  projectSearchTotalCredits: vi.fn((..._args: any[]) => 0),
-  reserveKeylessCredits: vi.fn(async (..._args: any[]) => ({ ok: true })),
-  billingAuthorize: vi.fn(async (..._args: any[]) => ({ ok: true as const })),
-  billingSettle: vi.fn(async (..._args: any[]) => undefined),
-  billingCharge: vi.fn(
-    async (..._args: any[]): Promise<number | undefined> => undefined,
+  projectSearchTotalCredits: vi.fn((_input: { limit: number }) => 0),
+  reserveKeylessCredits: vi.fn(async () => ({ ok: true })),
+  billingAuthorize: vi.fn<BillingModule["authorize"]>(async () => ({
+    ok: true,
+  })),
+  billingSettle: vi.fn<NonNullable<BillingModule["settle"]>>(
+    async () => undefined,
   ),
+  billingCharge: vi.fn<BillingModule["charge"]>(async () => undefined),
   billTeam: vi.fn(async () => undefined),
   logRequest: vi.fn(async () => undefined),
   logSearch: vi.fn(async () => undefined),
@@ -21,7 +31,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../lib/otel-tracer", () => ({
   SpanKind: { SERVER: 1 },
-  withSpan: (_name: string, fn: (span: any) => unknown) => fn({}),
+  withSpan: <T>(_name: string, fn: (span: unknown) => T): T => fn({}),
   setSpanAttributes: vi.fn(),
   recordSpanException: vi.fn(),
 }));
@@ -47,21 +57,26 @@ vi.mock("../../search/scrape", () => ({
   calculateScrapeCredits: vi.fn(() => 0),
 }));
 
+import { z } from "zod";
+import { jsonRecordSchema } from "../../lib/json-types";
+import type { JsonObject } from "../../lib/json-types";
 import { executeSearch } from "../../search/execute";
-import type { HookHandlers } from "../../service/hooks";
-import {
-  createService,
-  replaceService,
-  type Extension,
-} from "../../service/service";
+import type {
+  HookHandlers,
+  HookPoints,
+  ResponsePayload,
+} from "../../service/hooks";
+import { createService, replaceService } from "../../service/service";
+import type { Extension } from "../../service/service";
 import { searchController } from "./search";
+import type { SearchResponse, TeamFlags } from "./types";
 
 function installHooks(
-  hooks?: HookHandlers | HookHandlers[],
+  hooks?: HookHandlers | Array<HookHandlers>,
   report = vi.fn(),
   request?: Extension["request"],
 ) {
-  const extensions: Extension[] = hooks
+  const extensions: Array<Extension> = hooks
     ? (Array.isArray(hooks) ? hooks : [hooks]).map((h, i) => ({
         name: `test-hooks-${i}`,
         hooks: h,
@@ -91,24 +106,50 @@ function installHooks(
   return report;
 }
 
-function makeReq(body: Record<string, any>) {
-  return {
-    body,
-    headers: {},
-    auth: { team_id: "11111111-1111-1111-1111-111111111111" },
-    acuc: { api_key_id: 7, org_id: "org-1", flags: {} },
-  } as any;
+const jsonRecordListSchema = z.array(jsonRecordSchema);
+
+function expectJsonObject(value: unknown): JsonObject {
+  return jsonRecordSchema.parse(value);
 }
 
-function makeRes() {
-  const res: any = {
-    status: vi.fn(),
-    json: vi.fn(),
-    setHeader: vi.fn(),
-  };
-  res.status.mockReturnValue(res);
-  res.json.mockReturnValue(res);
-  return res;
+function expectObjectList(value: unknown): Array<JsonObject> {
+  return jsonRecordListSchema.parse(value);
+}
+
+async function postSearch(
+  body: JsonObject,
+  flags: TeamFlags = {},
+): Promise<{ status: number; body: JsonObject }> {
+  let captured: unknown;
+  const app = express();
+  app.use(express.json());
+  app.post(
+    "/v2/search",
+    async (req, res: Response<SearchResponse | ResponsePayload>) => {
+      const originalJson = res.json.bind(res);
+      res.json = (payload: SearchResponse | ResponsePayload) => {
+        captured = payload;
+        originalJson(payload);
+        return res;
+      };
+      const authedReq = Object.assign(req, {
+        auth: { team_id: "11111111-1111-1111-1111-111111111111" },
+        acuc: {
+          api_key: "test-key",
+          api_key_id: 7,
+          team_id: "11111111-1111-1111-1111-111111111111",
+          org_id: "org-1",
+          flags,
+          concurrency_limit: 10,
+          rate_limit_multiplier: 1,
+          is_paid_plan: false,
+        },
+      });
+      await searchController(authedReq, res);
+    },
+  );
+  const response = await request(app).post("/v2/search").send(body);
+  return { status: response.status, body: expectJsonObject(captured) };
 }
 
 describe("search lifecycle hooks", () => {
@@ -120,7 +161,7 @@ describe("search lifecycle hooks", () => {
     mocks.projectSearchTotalCredits.mockReturnValue(0);
     mocks.reserveKeylessCredits.mockResolvedValue({ ok: true });
     mocks.billingAuthorize.mockResolvedValue({ ok: true });
-    mocks.billingCharge.mockImplementation(async (event: any) =>
+    mocks.billingCharge.mockImplementation(async event =>
       mocks.skipBilling()
         ? undefined
         : event.kind === "search"
@@ -159,8 +200,8 @@ describe("search lifecycle hooks", () => {
   });
 
   it("runs search.plan -> search.results -> search.finished in order and applies transforms", async () => {
-    const order: string[] = [];
-    const finishedEvents: any[] = [];
+    const order: Array<string> = [];
+    const finishedEvents: Array<HookPoints["search.finished"]["payload"]> = [];
     let seenBodyQuery: string | undefined;
 
     installHooks({
@@ -196,14 +237,14 @@ describe("search lifecycle hooks", () => {
       },
     });
 
-    const res = makeRes();
-    await searchController(
-      makeReq({ query: "raw query", limit: 10, sources: ["web"] }),
-      res,
-    );
+    const { status, body: payload } = await postSearch({
+      query: "raw query",
+      limit: 10,
+      sources: ["web"],
+    });
 
     expect(seenBodyQuery).toBe("raw query");
-    expect(res.status).toHaveBeenCalledWith(200);
+    expect(status).toBe(200);
     expect(mocks.search).toHaveBeenCalledWith(
       expect.objectContaining({
         query: "planned query",
@@ -211,9 +252,9 @@ describe("search lifecycle hooks", () => {
       }),
     );
 
-    const payload = res.json.mock.calls[0][0];
+    const data = expectJsonObject(payload.data);
     expect(payload.success).toBe(true);
-    expect(payload.data.web).toEqual([
+    expect(data.web).toEqual([
       expect.objectContaining({
         url: "https://example.com/1",
         title: "One",
@@ -227,7 +268,7 @@ describe("search lifecycle hooks", () => {
         position: 2,
       }),
     ]);
-    expect(payload.data.news).toEqual([
+    expect(data.news).toEqual([
       expect.objectContaining({
         url: "https://news.example.com/1",
         title: "News One",
@@ -242,9 +283,10 @@ describe("search lifecycle hooks", () => {
       "results:11111111-1111-1111-1111-111111111111:3",
       "finished:11111111-1111-1111-1111-111111111111:3",
     ]);
+    const payloadId = typeof payload.id === "string" ? payload.id : undefined;
     expect(finishedEvents).toEqual([
       expect.objectContaining({
-        id: payload.id,
+        id: payloadId,
         ctx: expect.objectContaining({
           teamId: "11111111-1111-1111-1111-111111111111",
         }),
@@ -255,7 +297,7 @@ describe("search lifecycle hooks", () => {
   });
 
   it("reserves credits before search.plan runs, chains search.results handlers, and keeps URL-less positions", async () => {
-    const order: string[] = [];
+    const order: Array<string> = [];
     mocks.billingAuthorize.mockImplementation(async () => {
       order.push("reserve");
       return { ok: true as const };
@@ -304,18 +346,14 @@ describe("search lifecycle hooks", () => {
       ],
     });
 
-    const res = makeRes();
-    await searchController(
-      makeReq({
-        query: "test",
-        limit: 10,
-        sources: ["web", "news"],
-        safe: true,
-      }),
-      res,
-    );
+    const { status, body: payload } = await postSearch({
+      query: "test",
+      limit: 10,
+      sources: ["web", "news"],
+      safe: true,
+    });
 
-    expect(res.status).toHaveBeenCalledWith(200);
+    expect(status).toBe(200);
     expect(order).toEqual(["reserve", "plan"]);
     expect(mocks.billingAuthorize).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -333,11 +371,11 @@ describe("search lifecycle hooks", () => {
       }),
     );
 
-    const payload = res.json.mock.calls[0][0];
-    expect(payload.data.web.map((item: any) => item.url)).toEqual([
+    const data = expectJsonObject(payload.data);
+    expect(expectObjectList(data.web).map(item => item.url)).toEqual([
       "https://example.com/safe",
     ]);
-    expect(payload.data.news.map((item: any) => item.title)).toEqual([
+    expect(expectObjectList(data.news).map(item => item.title)).toEqual([
       "A",
       "URL-less middle",
       "B",
@@ -351,14 +389,14 @@ describe("search lifecycle hooks", () => {
         sources: [...plan.sources, "images"],
       }),
     });
-    const usOnlyMixedReq = makeReq({ query: "cats", sources: ["web"] });
-    usOnlyMixedReq.acuc.flags = { usOnly: true };
-    const usOnlyMixedRes = makeRes();
-    await searchController(usOnlyMixedReq, usOnlyMixedRes);
-    expect(usOnlyMixedRes.status).toHaveBeenCalledWith(200);
-    expect(usOnlyMixedRes.json.mock.calls[0][0].warning).toContain("US-only");
+    const usOnlyMixed = await postSearch(
+      { query: "cats", sources: ["web"] },
+      { usOnly: true },
+    );
+    expect(usOnlyMixed.status).toBe(200);
+    expect(usOnlyMixed.body.warning).toContain("US-only");
     expect(mocks.search).toHaveBeenCalledTimes(1);
-    expect(mocks.search.mock.calls[0][0].type).toEqual(["web"]);
+    expect(mocks.search.mock.calls[0]?.[0].type).toEqual(["web"]);
 
     mocks.search.mockClear();
     installHooks({
@@ -367,19 +405,17 @@ describe("search lifecycle hooks", () => {
         sources: ["images"],
       }),
     });
-    const usOnlyImagesReq = makeReq({ query: "cats", sources: ["web"] });
-    usOnlyImagesReq.acuc.flags = { usOnly: true };
-    const usOnlyImagesRes = makeRes();
-    await searchController(usOnlyImagesReq, usOnlyImagesRes);
-    expect(usOnlyImagesRes.status).toHaveBeenCalledWith(403);
-    expect(usOnlyImagesRes.json.mock.calls[0][0].code).toBe(
-      "US_ONLY_UNAVAILABLE",
+    const usOnlyImages = await postSearch(
+      { query: "cats", sources: ["web"] },
+      { usOnly: true },
     );
+    expect(usOnlyImages.status).toBe(403);
+    expect(usOnlyImages.body.code).toBe("US_ONLY_UNAVAILABLE");
     expect(mocks.search).not.toHaveBeenCalled();
   });
 
   it("omits charged when self-hosted and isolates search.finished observer errors", async () => {
-    const events: any[] = [];
+    const events: Array<HookPoints["search.finished"]["payload"]> = [];
     const report = installHooks({
       "search.finished": event => {
         events.push(event);
@@ -389,9 +425,8 @@ describe("search lifecycle hooks", () => {
 
     // Unbilled module: charged is undefined; observer error is isolated
     mocks.skipBilling.mockReturnValue(true);
-    const res1 = makeRes();
-    await searchController(makeReq({ query: "hello", limit: 5 }), res1);
-    expect(res1.status).toHaveBeenCalledWith(200);
+    const res1 = await postSearch({ query: "hello", limit: 5 });
+    expect(res1.status).toBe(200);
     expect(events[0]).toEqual(
       expect.objectContaining({
         results: 3,
@@ -402,12 +437,7 @@ describe("search lifecycle hooks", () => {
   });
 
   it("propagates search.plan and search.results vetoes and preserves output when unregistered", async () => {
-    const logger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    } as any;
+    const logger = createLogger({ silent: true });
     const baseOpts = {
       query: "firecrawl",
       limit: 5,
@@ -469,12 +499,7 @@ describe("search lifecycle hooks", () => {
       ],
     });
 
-    const logger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    } as any;
+    const logger = createLogger({ silent: true });
     const devResult = await executeSearch(
       {
         query: "sdk",
@@ -545,26 +570,22 @@ describe("search lifecycle hooks", () => {
       ],
     });
 
-    const res = makeRes();
-    await searchController(
-      makeReq({
-        query: "site:docs.example.com guide",
-        limit: 5,
-        sources: ["web", "images"],
-      }),
-      res,
-    );
+    const { status, body: payload } = await postSearch({
+      query: "site:docs.example.com guide",
+      limit: 5,
+      sources: ["web", "images"],
+    });
 
-    expect(res.status).toHaveBeenCalledWith(200);
-    const payload = res.json.mock.calls[0][0];
-    expect(payload.data.web).toEqual([
+    expect(status).toBe(200);
+    const data = expectJsonObject(payload.data);
+    expect(data.web).toEqual([
       expect.objectContaining({
         url: "https://docs.example.com/guide",
         category: "developer",
         position: 1,
       }),
     ]);
-    expect(payload.data.images).toEqual([
+    expect(data.images).toEqual([
       expect.objectContaining({
         url: "https://docs.example.com/guide",
         title: "img:Diagram",
@@ -587,11 +608,11 @@ describe("search lifecycle hooks", () => {
   });
 
   it("keeps empty web array for empty routedResults and returns 503 with reservation release when tools-only discovery is unavailable", async () => {
-    const finishedEvents: any[] = [];
+    const finishedEvents: Array<HookPoints["search.finished"]["payload"]> = [];
     mocks.billingAuthorize.mockResolvedValue({
-      ok: true as const,
+      ok: true,
       handle: "reservation-handle",
-    } as any);
+    });
     installHooks({
       "search.plan": (plan, info) => {
         if (info.state) {
@@ -606,11 +627,10 @@ describe("search lifecycle hooks", () => {
       },
     });
 
-    const res = makeRes();
-    await searchController(makeReq({ query: "tools", limit: 5 }), res);
+    const res = await postSearch({ query: "tools", limit: 5 });
 
-    expect(res.status).toHaveBeenCalledWith(503);
-    expect(res.json).toHaveBeenCalledWith(
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual(
       expect.objectContaining({
         success: false,
         code: "TOOL_DISCOVERY_UNAVAILABLE",
@@ -668,16 +688,16 @@ describe("search lifecycle hooks", () => {
       ],
     });
 
-    const res = makeRes();
-    await searchController(
-      makeReq({ query: "example", limit: 5, sources: ["web"] }),
-      res,
-    );
+    const { status, body: payload } = await postSearch({
+      query: "example",
+      limit: 5,
+      sources: ["web"],
+    });
 
-    expect(res.status).toHaveBeenCalledWith(200);
-    const payload = res.json.mock.calls[0][0];
+    expect(status).toBe(200);
+    const data = expectJsonObject(payload.data);
     expect(
-      payload.data.web.map((item: any) => ({
+      expectObjectList(data.web).map(item => ({
         url: item.url,
         position: item.position,
       })),
@@ -685,7 +705,7 @@ describe("search lifecycle hooks", () => {
       { url: "https://example.com/routed", position: 1 },
       { url: "https://example.com/shared", position: 2 },
     ]);
-    expect(payload.data.news).toEqual([
+    expect(data.news).toEqual([
       expect.objectContaining({
         url: "https://example.com/shared",
         title: "Added news",

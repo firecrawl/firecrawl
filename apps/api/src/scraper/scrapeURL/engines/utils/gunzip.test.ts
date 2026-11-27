@@ -35,7 +35,7 @@ describe("gunzipBounded", () => {
       await expect(gunzipBounded(bomb)).rejects.toThrow(RangeError);
     });
 
-    it.each([MAX_GUNZIPPED_FILE_SIZE * 2, Infinity, NaN])(
+    it.each([MAX_GUNZIPPED_FILE_SIZE * 2, Infinity, Number.NaN])(
       "never raises the cap past the ceiling (%s)",
       async cap => {
         await expect(gunzipBounded(bomb, cap)).rejects.toThrow(RangeError);

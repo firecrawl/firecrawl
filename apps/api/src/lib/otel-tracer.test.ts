@@ -4,10 +4,8 @@ import {
   SpanStatusCode,
   trace,
 } from "@opentelemetry/api";
-import {
-  InMemorySpanExporter,
-  type NodeTracerProvider,
-} from "@opentelemetry/sdk-trace-node";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-node";
+import type { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import {
   createTracerProvider,
   recordSpanException,
@@ -17,8 +15,8 @@ import {
   withSpan,
   withTraceContextAsync,
   withZeroDataRetention,
-  type SerializedTraceContext,
 } from "./otel-tracer";
+import type { SerializedTraceContext } from "./otel-tracer";
 
 describe("otel-tracer", () => {
   const exporter = new InMemorySpanExporter();
@@ -46,8 +44,11 @@ describe("otel-tracer", () => {
     context.disable();
     propagation.disable();
     for (const [key, value] of Object.entries(savedEnv)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
     }
   });
 
@@ -238,9 +239,11 @@ describe("otel-tracer", () => {
     await withTraceContextAsync(undefined, () =>
       withSpan("worker.none", async () => {}),
     );
-    await withTraceContextAsync(
-      { sentryTrace: "legacy" } as unknown as SerializedTraceContext,
-      () => withSpan("worker.legacy", async () => {}),
+    const legacyContext: SerializedTraceContext & { sentryTrace: string } = {
+      sentryTrace: "legacy",
+    };
+    await withTraceContextAsync(legacyContext, () =>
+      withSpan("worker.legacy", async () => {}),
     );
 
     const spans = await exportedSpans();

@@ -1,16 +1,30 @@
 import express from "express";
+import type { NextFunction, Request, Response } from "express";
 import request from "supertest";
+import type { config as AppConfig } from "../../config";
+import type { TeamFlags } from "../../controllers/v2/types";
+
+type MockAuthRequest = Request & {
+  auth?: { team_id: string };
+  acuc?: { flags: TeamFlags };
+  caller?: {
+    teamId: string;
+    kind: string;
+    auth: { team_id: string };
+    acuc?: { flags: TeamFlags };
+  };
+};
 
 const mocks = vi.hoisted(() => ({
   lookup: vi.fn(),
-  auth: { team_id: "team-1" } as { team_id: string },
-  acuc: undefined as { flags: Record<string, unknown> } | undefined,
+  auth: { team_id: "team-1" },
+  acuc: undefined as { flags: TeamFlags } | undefined,
 }));
 
 vi.mock("geoip-country", () => ({ lookup: mocks.lookup }));
 
 vi.mock("../../config", async importOriginal => {
-  const actual = await importOriginal<typeof import("../../config")>();
+  const actual = await importOriginal<{ config: typeof AppConfig }>();
   return {
     ...actual,
     config: {
@@ -23,31 +37,37 @@ vi.mock("../../config", async importOriginal => {
 // Real routers and country checks; auth is stubbed and the terminal handler
 // ends the chain with a 204, so a 204 means the request got past the country check.
 vi.mock("../../routes/shared", async importOriginal => {
-  const actual = await importOriginal<typeof import("../../routes/shared")>();
+  const actual = await importOriginal<{ countryCheck: typeof countryCheck }>();
   return {
     ...actual,
-    authMiddleware: () => (req: any, _res: any, next: any) => {
-      req.auth = mocks.auth;
-      req.acuc = mocks.acuc;
-      req.caller = {
-        teamId: mocks.auth.team_id,
-        kind: "api-key",
-        auth: mocks.auth,
-        acuc: mocks.acuc,
-      };
-      next();
+    authMiddleware:
+      () => (req: MockAuthRequest, _res: Response, next: NextFunction) => {
+        req.auth = mocks.auth;
+        req.acuc = mocks.acuc;
+        req.caller = {
+          teamId: mocks.auth.team_id,
+          kind: "api-key",
+          auth: mocks.auth,
+          acuc: mocks.acuc,
+        };
+        next();
+      },
+    checkCreditsMiddleware: () => (_req: Request, res: Response) => {
+      res.status(204).end();
     },
-    checkCreditsMiddleware: () => (_req: any, res: any) =>
-      res.status(204).end(),
   };
 });
 
 vi.mock("../../controllers/v2/scrape", () => ({
-  scrapeController: (_req: any, res: any) => res.status(204).end(),
+  scrapeController: (_req: Request, res: Response) => {
+    res.status(204).end();
+  },
 }));
 
 vi.mock("../../controllers/v2/crawl", () => ({
-  crawlController: (_req: any, res: any) => res.status(204).end(),
+  crawlController: (_req: Request, res: Response) => {
+    res.status(204).end();
+  },
 }));
 
 import {

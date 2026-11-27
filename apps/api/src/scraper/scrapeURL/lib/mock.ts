@@ -1,23 +1,31 @@
-import * as fs from "fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import type { Logger } from "winston";
+import { z } from "zod";
 import { config } from "../../../config";
-import * as path from "path";
 import { logger as _logger } from "../../../lib/logger";
-import { Logger } from "winston";
+
 const saveMocksDirPath = path.join(__dirname, "../mocks/").replace("dist/", "");
 const loadMocksDirPath = path
   .join(__dirname, "../../../__tests__/snips/mocks")
   .replace("dist/", "");
 
 export async function saveMock(options: unknown, result: unknown) {
-  if (config.FIRECRAWL_SAVE_MOCKS !== true) return;
+  if (config.FIRECRAWL_SAVE_MOCKS !== true) {
+    return;
+  }
 
-  await fs.mkdir(saveMocksDirPath, { recursive: true });
+  await mkdir(saveMocksDirPath, { recursive: true });
 
   const fileName = Date.now() + "-" + crypto.randomUUID() + ".json";
   const filePath = path.join(saveMocksDirPath, fileName);
-  console.log(filePath);
+  _logger.debug("Saved mock file", {
+    filePath,
+    module: "scrapeURL:mock",
+    method: "saveMock",
+  });
 
-  await fs.writeFile(
+  await writeFile(
     filePath,
     JSON.stringify(
       {
@@ -31,20 +39,30 @@ export async function saveMock(options: unknown, result: unknown) {
   );
 }
 
+const mockRequestSchema = z.object({
+  time: z.number(),
+  options: z.object({
+    url: z.string(),
+    method: z.string(),
+    body: z.unknown().optional(),
+    ignoreResponse: z.boolean().optional(),
+    ignoreFailure: z.boolean().optional(),
+    tryCount: z.number().optional(),
+    tryCooldown: z.number().optional(),
+  }),
+  result: z.object({
+    url: z.string().optional(),
+    body: z.string(),
+    status: z.number(),
+    headers: z.union([
+      z.array(z.tuple([z.string(), z.string()])),
+      z.record(z.string(), z.string()),
+    ]),
+  }),
+});
+
 export type MockState = {
-  requests: {
-    time: number;
-    options: {
-      url: string;
-      method: string;
-      body?: any;
-      ignoreResponse: boolean;
-      ignoreFailure: boolean;
-      tryCount: number;
-      tryCooldown?: number;
-    };
-    result: any;
-  }[];
+  requests: Array<z.infer<typeof mockRequestSchema>>;
   tracker: Record<string, number>;
 };
 
@@ -61,12 +79,13 @@ export async function loadMock(
       return null;
     }
 
-    const load = JSON.parse(await fs.readFile(mockPath, "utf8"));
+    const raw: unknown = JSON.parse(await readFile(mockPath, "utf8"));
+    const requests = mockRequestSchema.array().parse(raw);
     return {
-      requests: load,
+      requests,
       tracker: {},
     };
-  } catch (error) {
+  } catch (error: unknown) {
     logger.warn("Failed to load mock file!", {
       name,
       module: "scrapeURL:mock",

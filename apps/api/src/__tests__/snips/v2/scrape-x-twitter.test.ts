@@ -1,5 +1,6 @@
 import { concurrentIf, TEST_PRODUCTION } from "../lib";
-import { scrape, scrapeRaw, scrapeTimeout, idmux, Identity } from "./lib";
+import type { Identity } from "./lib";
+import { scrape, scrapeRaw, scrapeTimeout, idmux } from "./lib";
 
 let identity: Identity;
 
@@ -7,9 +8,9 @@ beforeAll(async () => {
   identity = await idmux({
     name: "scrape-x-twitter",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000 + scrapeTimeout);
+}, 10_000 + scrapeTimeout);
 
 // X/Twitter posts and profiles are served by the Exchange's X provider, the
 // same route LinkedIn profiles take, for every team.
@@ -27,7 +28,7 @@ describe("X/Twitter scrape through the Exchange", () => {
       expect(response.markdown).toMatch(/nasa/i);
       expect(response.metadata.creditsUsed).toBe(5);
     },
-    scrapeTimeout + 15000,
+    scrapeTimeout + 15_000,
   );
 
   concurrentIf(HAS_EXCHANGE_X)(
@@ -45,7 +46,7 @@ describe("X/Twitter scrape through the Exchange", () => {
       expect(response.markdown).toMatch(/n8n/i);
       expect(response.metadata.creditsUsed).toBe(5);
     },
-    scrapeTimeout + 15000,
+    scrapeTimeout + 15_000,
   );
 
   concurrentIf(HAS_EXCHANGE_X)(
@@ -61,6 +62,6 @@ describe("X/Twitter scrape through the Exchange", () => {
       expect(response.body.success).toBe(false);
       expect(response.body.code).toBe("THIRD_PARTY_DATA_NOT_FOUND");
     },
-    scrapeTimeout + 15000,
+    scrapeTimeout + 15_000,
   );
 });

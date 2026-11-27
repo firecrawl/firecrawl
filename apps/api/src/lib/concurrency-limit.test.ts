@@ -30,7 +30,16 @@ import { getNextConcurrentJob } from "./concurrency-limit";
 
 const queued = (id: string) => ({
   id,
-  data: { crawl_id: "crawl-1", team_id: "team-1" },
+  data: {
+    mode: "single_urls",
+    url: "https://example.com",
+    crawl_id: "crawl-1",
+    team_id: "team-1",
+    zeroDataRetention: false,
+    origin: "api",
+    apiKeyId: null,
+    scrapeOptions: {},
+  },
   priority: 0,
   listenable: false,
 });

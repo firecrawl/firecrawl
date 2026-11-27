@@ -1,20 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Engine as RegisteredEngine } from "../../service/engines";
-import type { ScrapeFinished } from "../../service/hooks";
+import { createLogger } from "winston";
+import { z } from "zod";
+import type {
+  Engine as RegisteredEngine,
+  EngineName,
+} from "../../service/engines";
+import type { ScrapeFinished, ScrapeState } from "../../service/hooks";
 import type { Extension } from "../../service/service";
 import { createService, replaceService } from "../../service/service";
 import { scrapeOptions } from "../../controllers/v2/types";
 import { CostTracking } from "../../lib/cost-tracking";
 import { ScrapeJobTimeoutError } from "../../lib/error";
+import { jsonRecordSchema, jsonValueSchema } from "../../lib/json-types";
 import { requestContext } from "../../lib/request-context";
+import type { htmlTransform as htmlTransformFn } from "./lib/removeUnwantedElements";
 
 vi.mock("../WebScraper/utils/blocklist", () => ({
   isUrlBlocked: vi.fn(() => false),
 }));
 
 vi.mock("./lib/removeUnwantedElements", async importOriginal => {
-  const actual =
-    await importOriginal<typeof import("./lib/removeUnwantedElements")>();
+  const actual = await importOriginal<{
+    htmlTransform: typeof htmlTransformFn;
+  }>();
   return {
     ...actual,
     htmlTransform: vi.fn(actual.htmlTransform),
@@ -22,42 +30,82 @@ vi.mock("./lib/removeUnwantedElements", async importOriginal => {
 });
 
 import { scrapeURL } from ".";
-import { coreEngineFeatures, type EngineScrapeResult } from "./engines";
+import { coreEngineFeatures } from "./engines";
+import type { EngineScrapeResult } from "./engines";
 import { EngineError, NoEnginesLeftError, SiteError } from "./error";
 import { createScrapeFinishedEmitter } from "./hooks";
 import { AbortManager, AbortManagerThrownError } from "./lib/abortManager";
 import { htmlTransform } from "./lib/removeUnwantedElements";
 import { executeTransformers } from "./transformers";
 
+type MutableEngine = {
+  -readonly [K in keyof RegisteredEngine]: RegisteredEngine[K];
+};
+
 const makeEngine = (
-  name: string,
+  name: EngineName,
   scrape: RegisteredEngine["scrape"],
   options: {
     quality?: number;
-    features?: Record<string, boolean>;
+    features?: RegisteredEngine["features"];
     enabled?: () => boolean;
     cache?: boolean;
     supportsProfile?: boolean;
     prefetchesFiles?: boolean;
     allowEmptyContent?: boolean;
   } = {},
-): RegisteredEngine =>
-  ({
+): RegisteredEngine => {
+  const engine: MutableEngine = {
     name,
     quality: options.quality ?? 10,
     features: options.features ?? {},
     enabled: options.enabled ?? (() => true),
-    maxReasonableTime: () => 5_000,
-    ...(options.cache ? { cache: true } : {}),
-    ...(options.supportsProfile ? { supportsProfile: true } : {}),
-    ...(options.prefetchesFiles ? { prefetchesFiles: true } : {}),
-    ...(options.allowEmptyContent ? { allowEmptyContent: true } : {}),
+    maxReasonableTime: () => 5000,
     scrape,
-  }) as unknown as RegisteredEngine;
+  };
+  if (options.cache) {
+    engine.cache = true;
+  }
+  if (options.supportsProfile) {
+    engine.supportsProfile = true;
+  }
+  if (options.prefetchesFiles) {
+    engine.prefetchesFiles = true;
+  }
+  if (options.allowEmptyContent) {
+    engine.allowEmptyContent = true;
+  }
+  return engine;
+};
+
+const traceStateSchema = z.object({
+  trace: z.array(z.string()).optional(),
+});
+
+const metadataProviderSchema = z.object({
+  provider: jsonValueSchema.optional(),
+});
+
+function pushTrace(state: ScrapeState, label: string): void {
+  const parsed = traceStateSchema.safeParse(state);
+  const trace =
+    parsed.success && parsed.data.trace ? [...parsed.data.trace] : [];
+  trace.push(label);
+  Object.assign(state, { trace });
+}
+
+function setStateField(state: ScrapeState, key: string, value: string): void {
+  Object.assign(state, { [key]: value });
+}
+
+function readStateField(state: ScrapeState | undefined, key: string) {
+  const parsed = jsonRecordSchema.safeParse(state);
+  return parsed.success ? parsed.data[key] : undefined;
+}
 
 const installTestService = (
-  engines: readonly RegisteredEngine[],
-  extensions: Extension[] = [],
+  engines: ReadonlyArray<RegisteredEngine>,
+  extensions: Array<Extension> = [],
 ) => {
   replaceService(
     createService(
@@ -87,22 +135,14 @@ describe("scrape pipeline hook points", () => {
     const fetchScrape = vi.fn(async (): Promise<EngineScrapeResult> => {
       throw new EngineError("fetch failed");
     });
-    const playwrightScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://example.com/page",
-        html: "<html><head><title>Initial</title></head><body><h1>Hello</h1></body></html>",
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
+    const playwrightScrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://example.com/page",
+      html: "<html><head><title>Initial</title></head><body><h1>Hello</h1></body></html>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    }));
 
-    const pushTrace = (state: Record<string, unknown>, label: string) => {
-      const trace = (state.trace as string[] | undefined) ?? [];
-      trace.push(label);
-      state.trace = trace;
-    };
-
-    const finishedEvents: ScrapeFinished[] = [];
+    const finishedEvents: Array<ScrapeFinished> = [];
 
     installTestService(
       [
@@ -114,7 +154,7 @@ describe("scrape pipeline hook points", () => {
           name: "test-hooks",
           hooks: {
             "scrape.start": (plan, meta) => {
-              pushTrace(meta.state as Record<string, unknown>, "scrape.start");
+              pushTrace(meta.state, "scrape.start");
               expect(meta.ctx.teamId).toBe("team-hooks");
               return {
                 ...plan,
@@ -122,37 +162,25 @@ describe("scrape pipeline hook points", () => {
               };
             },
             "scrape.engines.select": (plan, meta) => {
-              pushTrace(
-                meta.state as Record<string, unknown>,
-                "scrape.engines.select",
-              );
+              pushTrace(meta.state, "scrape.engines.select");
               expect(plan.candidates).toContain("fetch");
               return { candidates: ["fetch"] };
             },
             "scrape.engine.fallback": (_plan, info) => {
-              pushTrace(
-                info.state as Record<string, unknown>,
-                "scrape.engine.fallback",
-              );
+              pushTrace(info.state, "scrape.engine.fallback");
               expect(info.failed).toBe("fetch");
               expect(info.error).toBeInstanceOf(EngineError);
               return { candidates: ["playwright"] };
             },
             "scrape.fetched": (result, meta) => {
-              pushTrace(
-                meta.state as Record<string, unknown>,
-                "scrape.fetched",
-              );
+              pushTrace(meta.state, "scrape.fetched");
               return {
                 ...result,
                 html: result.html.replace("Hello", "FromFetchedHook"),
               };
             },
             "scrape.html.clean": (cleaning, meta) => {
-              pushTrace(
-                meta.state as Record<string, unknown>,
-                "scrape.html.clean",
-              );
+              pushTrace(meta.state, "scrape.html.clean");
               expect(cleaning.url).toBe("https://example.com/page");
               expect(cleaning.onlyMainContent).toBe(false);
               return {
@@ -161,47 +189,32 @@ describe("scrape pipeline hook points", () => {
               };
             },
             "scrape.document.markdown": (doc, meta) => {
-              pushTrace(
-                meta.state as Record<string, unknown>,
-                "scrape.document.markdown",
-              );
+              pushTrace(meta.state, "scrape.document.markdown");
               return {
                 ...doc,
                 markdown: `${doc.markdown ?? ""}\n<!-- md-hook -->`,
               };
             },
             "scrape.document.derived": (doc, meta) => {
-              pushTrace(
-                meta.state as Record<string, unknown>,
-                "scrape.document.derived",
-              );
+              pushTrace(meta.state, "scrape.document.derived");
               return {
                 ...doc,
                 metadata: { ...doc.metadata, title: "Derived Title" },
               };
             },
             "scrape.document.extracted": (doc, meta) => {
-              pushTrace(
-                meta.state as Record<string, unknown>,
-                "scrape.document.extracted",
-              );
+              pushTrace(meta.state, "scrape.document.extracted");
               return doc;
             },
             "scrape.document.final": (doc, meta) => {
-              pushTrace(
-                meta.state as Record<string, unknown>,
-                "scrape.document.final",
-              );
+              pushTrace(meta.state, "scrape.document.final");
               return {
                 ...doc,
                 warning: "final-hook-note",
               };
             },
             "scrape.finished": async event => {
-              pushTrace(
-                event.state as Record<string, unknown>,
-                "scrape.finished",
-              );
+              pushTrace(event.state, "scrape.finished");
               finishedEvents.push(event);
             },
           },
@@ -227,7 +240,9 @@ describe("scrape pipeline hook points", () => {
     );
 
     expect(result.success).toBe(true);
-    if (!result.success) return;
+    if (!result.success) {
+      return;
+    }
 
     const emitFinished = createScrapeFinishedEmitter({
       jobId: "scrape-hooks-e2e",
@@ -261,7 +276,7 @@ describe("scrape pipeline hook points", () => {
       timeTakenMs: 42,
     });
     expect(finishedEvents[0].state).toBe(result.state);
-    expect((result.state as Record<string, unknown>)?.trace).toEqual([
+    expect(readStateField(result.state, "trace")).toEqual([
       "scrape.start",
       "scrape.engines.select",
       "scrape.engine.fallback",
@@ -281,22 +296,18 @@ describe("scrape pipeline hook points", () => {
   });
 
   it("lets scrape.start add engine features that steer engine selection", async () => {
-    const fetchScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://example.com/basic",
-        html: "<html><body><p>From fetch</p></body></html>",
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
-    const playwrightScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://example.com/wait",
-        html: "<html><body><p>From playwright</p></body></html>",
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
+    const fetchScrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://example.com/basic",
+      html: "<html><body><p>From fetch</p></body></html>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    }));
+    const playwrightScrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://example.com/wait",
+      html: "<html><body><p>From playwright</p></body></html>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    }));
 
     installTestService(
       [
@@ -331,7 +342,9 @@ describe("scrape pipeline hook points", () => {
     );
 
     expect(result.success).toBe(true);
-    if (!result.success) return;
+    if (!result.success) {
+      return;
+    }
     expect(playwrightScrape).toHaveBeenCalledTimes(1);
     expect(fetchScrape).not.toHaveBeenCalled();
     expect(result.document.markdown).toContain("From playwright");
@@ -412,14 +425,16 @@ describe("scrape pipeline hook points", () => {
     );
 
     expect(result.success).toBe(false);
-    if (result.success) return;
+    if (result.success) {
+      return;
+    }
     expect(fetchScrape).toHaveBeenCalledTimes(1);
     expect(playwrightScrape).toHaveBeenCalledTimes(1);
     expect(result.error).toBeInstanceOf(NoEnginesLeftError);
-    expect((result.error as NoEnginesLeftError).fallbackList).toEqual([
-      "fetch",
-      "playwright",
-    ]);
+    if (!(result.error instanceof NoEnginesLeftError)) {
+      return;
+    }
+    expect(result.error.fallbackList).toEqual(["fetch", "playwright"]);
   });
 
   it("preserves skipTlsVerification=false for zero data retention scrapes after scrape.start", async () => {
@@ -469,14 +484,12 @@ describe("scrape pipeline hook points", () => {
   it("produces deterministic output with an empty hooks registry", async () => {
     const html =
       "<html><head><title>Baseline</title></head><body><h1>Hello World</h1></body></html>";
-    const scrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://example.com/baseline",
-        html,
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
+    const scrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://example.com/baseline",
+      html,
+      statusCode: 200,
+      proxyUsed: "basic",
+    }));
 
     installTestService([makeEngine("fetch", scrape, { quality: 20 })]);
 
@@ -503,7 +516,9 @@ describe("scrape pipeline hook points", () => {
 
     expect(first.success).toBe(true);
     expect(second.success).toBe(true);
-    if (!first.success || !second.success) return;
+    if (!first.success || !second.success) {
+      return;
+    }
     expect(first.document.markdown).toContain("Hello World");
     expect(first.document.html).toContain("<h1>Hello World</h1>");
     expect(first.document.metadata.title).toBe("Baseline");
@@ -515,30 +530,24 @@ describe("scrape pipeline hook points", () => {
   });
 
   it("enforces ZDR and profile engine safety policies on scrape.engines.select", async () => {
-    const wikiScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://en.wikipedia.org/wiki/Test",
-        html: "<html><body><p>Wiki</p></body></html>",
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
-    const fetchScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://en.wikipedia.org/wiki/Test",
-        html: "<html><body><p>Direct</p></body></html>",
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
-    const cdpScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://example.com/profile",
-        html: "<html><body><p>Authenticated</p></body></html>",
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
+    const wikiScrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://en.wikipedia.org/wiki/Test",
+      html: "<html><body><p>Wiki</p></body></html>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    }));
+    const fetchScrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://en.wikipedia.org/wiki/Test",
+      html: "<html><body><p>Direct</p></body></html>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    }));
+    const cdpScrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://example.com/profile",
+      html: "<html><body><p>Authenticated</p></body></html>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    }));
 
     installTestService(
       [
@@ -574,15 +583,16 @@ describe("scrape pipeline hook points", () => {
     expect(fetchScrape).toHaveBeenCalledTimes(1);
 
     fetchScrape.mockClear();
+    const profileOptions = {
+      ...scrapeOptions.parse({
+        formats: ["markdown"],
+      }),
+      profile: { name: "user-profile", saveChanges: false },
+    };
     const profileResult = await scrapeURL(
       "scrape-profile-policy",
       "https://example.com/profile",
-      {
-        ...scrapeOptions.parse({
-          formats: ["markdown"],
-        }),
-        profile: { name: "user-profile", saveChanges: false },
-      } as any,
+      profileOptions,
       { teamId: "team-profile", orgId: null },
       new CostTracking(),
     );
@@ -615,7 +625,7 @@ describe("scrape pipeline hook points", () => {
           hooks: {
             "scrape.start": plan => ({
               ...plan,
-              options: { ...plan.options, timeout: 2_500 },
+              options: { ...plan.options, timeout: 2500 },
             }),
           },
         },
@@ -633,7 +643,7 @@ describe("scrape pipeline hook points", () => {
     expect(shortened.success).toBe(true);
     expect(observedTimeout).toBeDefined();
     expect(observedTimeout!).toBeGreaterThan(0);
-    expect(observedTimeout!).toBeLessThanOrEqual(2_500);
+    expect(observedTimeout!).toBeLessThanOrEqual(2500);
 
     installTestService(
       [makeEngine("fetch", fetchScrape, { quality: 20 })],
@@ -669,11 +679,13 @@ describe("scrape pipeline hook points", () => {
       throwable: () => new ScrapeJobTimeoutError(),
     });
     const mapped = expiredManager.asSignal();
+    const reason: unknown = mapped.reason;
     expect(mapped.aborted).toBe(true);
-    expect(mapped.reason).toBeInstanceOf(AbortManagerThrownError);
-    expect((mapped.reason as AbortManagerThrownError).inner).toBeInstanceOf(
-      ScrapeJobTimeoutError,
-    );
+    expect(reason).toBeInstanceOf(AbortManagerThrownError);
+    if (!(reason instanceof AbortManagerThrownError)) {
+      return;
+    }
+    expect(reason.inner).toBeInstanceOf(ScrapeJobTimeoutError);
   });
 
   it("short-circuits before engine selection when scrape.start throws", async () => {
@@ -687,7 +699,7 @@ describe("scrape pipeline hook points", () => {
           name: "veto-start",
           hooks: {
             "scrape.start": (_plan, meta) => {
-              (meta.state as Record<string, unknown>).vetoedAt = "scrape.start";
+              setStateField(meta.state, "vetoedAt", "scrape.start");
               throw new Error("blocked at start");
             },
             "scrape.engines.select": selectHook,
@@ -705,8 +717,13 @@ describe("scrape pipeline hook points", () => {
     );
 
     expect(result.success).toBe(false);
-    if (result.success) return;
+    if (result.success) {
+      return;
+    }
     expect(result.error).toBeInstanceOf(Error);
+    if (!(result.error instanceof Error)) {
+      return;
+    }
     expect(result.error.message).toBe("blocked at start");
     expect(result.state).toEqual({ vetoedAt: "scrape.start" });
     expect(selectHook).not.toHaveBeenCalled();
@@ -730,8 +747,7 @@ describe("scrape pipeline hook points", () => {
           name: "veto-fetched",
           hooks: {
             "scrape.fetched": (_result, meta) => {
-              (meta.state as Record<string, unknown>).vetoedAt =
-                "scrape.fetched";
+              setStateField(meta.state, "vetoedAt", "scrape.fetched");
               throw new Error("blocked after fetch");
             },
             "scrape.document.markdown": markdownHook,
@@ -749,8 +765,13 @@ describe("scrape pipeline hook points", () => {
     );
 
     expect(result.success).toBe(false);
-    if (result.success) return;
+    if (result.success) {
+      return;
+    }
     expect(result.error).toBeInstanceOf(Error);
+    if (!(result.error instanceof Error)) {
+      return;
+    }
     expect(result.error.message).toBe("blocked after fetch");
     expect(result.state).toEqual({ vetoedAt: "scrape.fetched" });
     expect(markdownHook).not.toHaveBeenCalled();
@@ -774,7 +795,8 @@ describe("scrape pipeline hook points", () => {
       orgId: null,
     });
     const options = scrapeOptions.parse({ formats: ["markdown"] });
-    const sharedState: Record<string, unknown> = { stage: "done" };
+    const sharedState: ScrapeState = {};
+    setStateField(sharedState, "stage", "done");
 
     const emitSuccess = createScrapeFinishedEmitter({
       jobId: "job-1",
@@ -837,25 +859,36 @@ describe("scrape pipeline hook points", () => {
 
   it("allows executeTransformers and scrape.finished emitter to run without an installed service", async () => {
     replaceService(undefined);
-    const log = {
-      child: vi.fn(),
-      debug: vi.fn(),
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-    };
-    log.child.mockReturnValue(log);
+    const log = createLogger({ silent: true });
+    vi.spyOn(log, "child").mockReturnValue(log);
+    const ctx = requestContext({ teamId: "t", zeroDataRetention: false });
 
     const document = await executeTransformers(
       {
+        id: "no-service",
         url: "https://example.com/no-service",
+        ctx,
+        state: {},
         options: {
-          formats: [{ type: "markdown" }],
-          onlyMainContent: false,
+          ...scrapeOptions.parse({
+            formats: ["markdown"],
+            onlyMainContent: false,
+          }),
+          skipTlsVerification: false,
         },
-        internalOptions: {},
+        internalOptions: { teamId: "t", orgId: null },
         logger: log,
-      } as any,
+        abort: new AbortManager(),
+        featureFlags: new Set(),
+        mock: null,
+        imageOcrEnabled: async () => false,
+        pdfPrefetch: undefined,
+        documentPrefetch: undefined,
+        imagePrefetch: undefined,
+        fetchPrefetch: undefined,
+        costTracking: new CostTracking(),
+        threatDecisions: [],
+      },
       {
         rawHtml: "<html><body><h1>Standalone</h1></body></html>",
         markdown: "# Standalone",
@@ -863,8 +896,9 @@ describe("scrape pipeline hook points", () => {
           sourceURL: "https://example.com/no-service",
           url: "https://example.com/no-service",
           statusCode: 200,
+          proxyUsed: "basic",
         },
-      } as any,
+      },
     );
 
     expect(document.markdown).toBe("# Standalone");
@@ -872,7 +906,7 @@ describe("scrape pipeline hook points", () => {
     const emitFinished = createScrapeFinishedEmitter({
       jobId: "job-no-service",
       kind: "scrape",
-      ctx: requestContext({ teamId: "t", zeroDataRetention: false }),
+      ctx,
       url: "https://example.com/no-service",
       options: scrapeOptions.parse({ formats: ["markdown"] }),
       getState: () => undefined,
@@ -890,14 +924,12 @@ describe("scrape pipeline hook points", () => {
     const primaryScrape = vi.fn(async () => {
       throw new SiteError("ERR_TUNNEL_CONNECTION_FAILED");
     });
-    const fallbackScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://example.com/retry",
-        html: "<html><body><p>Recovered</p></body></html>",
-        statusCode: 200,
-        proxyUsed: "basic",
-      }),
-    );
+    const fallbackScrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://example.com/retry",
+      html: "<html><body><p>Recovered</p></body></html>",
+      statusCode: 200,
+      proxyUsed: "basic",
+    }));
 
     installTestService(
       [
@@ -932,7 +964,9 @@ describe("scrape pipeline hook points", () => {
     );
 
     expect(result.success).toBe(true);
-    if (!result.success) return;
+    if (!result.success) {
+      return;
+    }
     expect(result.document.markdown).toContain("Recovered");
     expect(primaryScrape).toHaveBeenCalledTimes(1);
     expect(fallbackScrape).toHaveBeenCalledTimes(1);
@@ -942,23 +976,21 @@ describe("scrape pipeline hook points", () => {
     const cacheScrape = vi.fn(async () => {
       throw new EngineError("cache miss");
     });
-    const emptyEngineScrape = vi.fn(
-      async (): Promise<EngineScrapeResult> => ({
-        url: "https://example.com/blank",
-        html: "",
-        markdown: "",
-        statusCode: 200,
-        proxyUsed: "basic",
-        exchange: {
-          accessEventId: "evt-1",
-          provider: {
-            id: "acme",
-            creditsCost: 5,
-            steps: [{ provider: "acme", status: "matched", creditsCost: 5 }],
-          },
+    const emptyEngineScrape = vi.fn(async (): Promise<EngineScrapeResult> => ({
+      url: "https://example.com/blank",
+      html: "",
+      markdown: "",
+      statusCode: 200,
+      proxyUsed: "basic",
+      exchange: {
+        accessEventId: "evt-1",
+        provider: {
+          id: "acme",
+          creditsCost: 5,
+          steps: [{ provider: "acme", status: "matched", creditsCost: 5 }],
         },
-      }),
-    );
+      },
+    }));
 
     installTestService(
       [
@@ -993,11 +1025,16 @@ describe("scrape pipeline hook points", () => {
     );
 
     expect(result.success).toBe(true);
-    if (!result.success) return;
+    if (!result.success) {
+      return;
+    }
     expect(result.document.metadata.cacheState).toBe("miss");
     expect(result.document.warning).toBeUndefined();
+    const parsedMetadata = metadataProviderSchema.safeParse(
+      result.document.metadata,
+    );
     expect(
-      (result.document.metadata as unknown as Record<string, unknown>).provider,
+      parsedMetadata.success ? parsedMetadata.data.provider : undefined,
     ).toEqual({
       id: "acme",
       creditsCost: 5,

@@ -7,14 +7,15 @@ import {
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
+import type { Identity } from "./lib";
 import {
   asyncCrawl,
   asyncCrawlWaitForFinish,
   crawl,
   crawlOngoing,
   crawlStart,
+  getMapLinks,
   map,
-  Identity,
   idmux,
   scrapeTimeout,
   TEST_API_URL,
@@ -25,8 +26,21 @@ import {
   MAX_TOTAL_PATH_PATTERNS,
 } from "../../../lib/crawl-regex";
 import { describe, it, expect } from "vitest";
+import { z } from "zod";
+
+const validationDetailsBodySchema = z.object({
+  details: z.array(z.object({ message: z.string().optional() })),
+});
 
 let identity: Identity;
+
+const hostOf = (value?: string) => {
+  try {
+    return new URL(value!).hostname.replace(/^www\./, "");
+  } catch {
+    return undefined;
+  }
+};
 
 const normalizeUrlForCompare = (value: string) => {
   const url = new URL(value);
@@ -39,9 +53,9 @@ beforeAll(async () => {
   identity = await idmux({
     name: "crawl",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000);
+}, 10_000);
 
 describe("Crawl tests", () => {
   const base = TEST_SUITE_WEBSITE;
@@ -116,7 +130,7 @@ describe("Crawl tests", () => {
       expect(mapResponse.body.success).toBe(true);
 
       const sitemapUrls = new Set(
-        mapResponse.body.links.map(link => normalizeUrlForCompare(link.url)),
+        getMapLinks(mapResponse).map(link => normalizeUrlForCompare(link.url)),
       );
       const baseNormalized = normalizeUrlForCompare(base);
 
@@ -252,9 +266,9 @@ describe("Crawl tests", () => {
       expect(res.statusCode).toBe(400);
       expect(res.body.success).toBe(false);
       // Schema-level (non-custom) issues are reported in details, not error.
-      expect(
-        res.body.details.map((issue: { message: string }) => issue.message),
-      ).toContainEqual(
+      const parsedBody = validationDetailsBodySchema.safeParse(res.body);
+      const details = parsedBody.success ? parsedBody.data.details : [];
+      expect(details.map(issue => issue.message)).toContainEqual(
         expect.stringMatching(
           new RegExp(`at most ${MAX_PATH_PATTERNS} patterns`),
         ),
@@ -365,7 +379,9 @@ describe("Crawl tests", () => {
       const afterCrawl = Date.now();
 
       expect(results.success).toBe(true);
-      if (!results.success) return;
+      if (!results.success) {
+        return;
+      }
       expect(results.status).not.toBe("scraping");
       expect(results.completed).toBe(0);
       expect(typeof results.createdAt).toBe("string");
@@ -444,13 +460,15 @@ describe("Crawl tests", () => {
       await asyncCrawlWaitForFinish(res.id, identity);
 
       // wait for crawl finish to happen on DB cron
-      await new Promise(resolve => setTimeout(resolve, 15000));
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 15_000);
+      });
 
       const ongoing2 = await crawlOngoing(identity);
 
       expect(ongoing2.crawls.find(x => x.id === res.id)).toBeUndefined();
     },
-    3 * scrapeTimeout + 15000,
+    3 * scrapeTimeout + 15_000,
   );
 
   // TEMP: Flaky
@@ -604,14 +622,6 @@ describe("Crawl tests", () => {
 
       expect(res.success).toBe(true);
       if (res.success) {
-        const hostOf = (value?: string) => {
-          try {
-            return new URL(value!).hostname.replace(/^www\./, "");
-          } catch {
-            return undefined;
-          }
-        };
-
         // The page reached via the external iana.org link (identified by its
         // pre-redirect sourceURL). Absent before the fix, when it was rejected
         // as EXTERNAL_LINK.
@@ -693,7 +703,7 @@ describe("Crawl tests", () => {
           // Test with various invalid prompts
           const invalidPrompts = [
             "", // Empty prompt
-            "a".repeat(10000), // Screaming
+            "a".repeat(10_000), // Screaming
             "!!!@@@###$$$%%%", // Gibberish
             "Generate me a million dollars", // Nonsensical crawl instruction
           ];
@@ -754,7 +764,7 @@ describe("Crawl tests", () => {
     async () => {
       const robotsIdentity = await idmux({
         name: "crawl/robotsUserAgent",
-        credits: 10000,
+        credits: 10_000,
         flags: { customRobotsAgent: "allowed" },
       });
 
@@ -808,21 +818,18 @@ describe("Crawl tests", () => {
   );
 
   describe("UUID validation", () => {
-    it.concurrent(
-      "should reject invalid UUID 'None' for crawl status",
-      async () => {
-        const response = await request(TEST_API_URL)
-          .get("/v2/crawl/None")
-          .set("Authorization", `Bearer ${identity.apiKey}`)
-          .send();
+    it.concurrent("should reject invalid UUID 'None' for crawl status", async () => {
+      const response = await request(TEST_API_URL)
+        .get("/v2/crawl/None")
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .send();
 
-        expect(response.statusCode).toBe(400);
-        expect(response.body.success).toBe(false);
-        expect(response.body.error).toBe(
-          "Invalid job ID format. Job ID must be a valid UUID.",
-        );
-      },
-    );
+      expect(response.statusCode).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toBe(
+        "Invalid job ID format. Job ID must be a valid UUID.",
+      );
+    });
 
     it.concurrent("should reject malformed UUID for crawl cancel", async () => {
       const response = await request(TEST_API_URL)

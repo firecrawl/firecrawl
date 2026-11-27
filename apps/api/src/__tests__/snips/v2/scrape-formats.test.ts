@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   concurrentIf,
@@ -6,7 +7,12 @@ import {
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { scrape, scrapeTimeout, idmux, Identity, scrapeRaw } from "./lib";
+import type { Identity } from "./lib";
+import { scrape, scrapeTimeout, idmux, scrapeRaw } from "./lib";
+
+const changeTrackingResponseSchema = z.object({
+  changeTracking: z.unknown().optional(),
+});
 
 let identity: Identity;
 
@@ -14,9 +20,9 @@ beforeAll(async () => {
   identity = await idmux({
     name: "scrape-formats",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000 + scrapeTimeout);
+}, 10_000 + scrapeTimeout);
 
 describeIf(ALLOW_TEST_SUITE_WEBSITE)("Scrape format variations", () => {
   const base = TEST_SUITE_WEBSITE;
@@ -239,7 +245,13 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Scrape format variations", () => {
         );
 
         expect(response.markdown).toBeDefined();
-        expect((response as any).changeTracking).toBeDefined();
+        const parsedChangeTracking =
+          changeTrackingResponseSchema.safeParse(response);
+        expect(
+          parsedChangeTracking.success
+            ? parsedChangeTracking.data.changeTracking
+            : undefined,
+        ).toBeDefined();
       },
       scrapeTimeout,
     );
@@ -268,7 +280,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Scrape format variations", () => {
         const raw = await scrapeRaw(
           {
             url: base,
-            formats: [{ type: "invalid-format" } as any],
+            formats: [{ type: "invalid-format" }],
           },
           identity,
         );

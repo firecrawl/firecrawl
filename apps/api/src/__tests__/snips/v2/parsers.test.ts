@@ -4,7 +4,8 @@ import {
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { scrape, scrapeRaw, scrapeTimeout, idmux, Identity } from "./lib";
+import type { Identity } from "./lib";
+import { scrape, scrapeRaw, scrapeTimeout, idmux } from "./lib";
 
 let identity: Identity;
 
@@ -12,9 +13,9 @@ beforeAll(async () => {
   identity = await idmux({
     name: "parsers",
     concurrency: 100,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000 + scrapeTimeout);
+}, 10_000 + scrapeTimeout);
 
 describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
   const pdfUrl = `${TEST_SUITE_WEBSITE}/example.pdf`;
@@ -135,7 +136,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const response = await scrape(
           {
             url: pdfUrl,
-            parsers: [{ type: "pdf", maxPages: 10000 }],
+            parsers: [{ type: "pdf", maxPages: 10_000 }],
           },
           identity,
         );
@@ -143,7 +144,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         expect(response.markdown).toBeDefined();
         expect(response.markdown).toContain("PDF Test File");
         expect(response.metadata.numPages).toBeGreaterThan(0);
-        expect(response.metadata.numPages).toBeLessThan(10000);
+        expect(response.metadata.numPages).toBeLessThan(10_000);
         // When the cap exceeds the real page count nothing is truncated, so
         // totalPages should be reported and equal numPages.
         expect(response.metadata.totalPages).toBe(response.metadata.numPages);
@@ -268,7 +269,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: ["invalid-parser" as any],
+            parsers: ["invalid-parser"],
           },
           identity,
         );
@@ -286,7 +287,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: "pdf" as any,
+            parsers: "pdf",
           },
           identity,
         );
@@ -304,7 +305,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: { pdf: true } as any,
+            parsers: { pdf: true },
           },
           identity,
         );
@@ -340,7 +341,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: [{ type: "pdf", maxPages: 10001 }],
+            parsers: [{ type: "pdf", maxPages: 10_001 }],
           },
           identity,
         );
@@ -358,7 +359,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: [{ type: "pdf", mode: "invalid" } as any],
+            parsers: [{ type: "pdf", mode: "invalid" }],
           },
           identity,
         );
@@ -376,7 +377,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: [{ type: "pdf", pages: "yes" } as any],
+            parsers: [{ type: "pdf", pages: "yes" }],
           },
           identity,
         );
@@ -398,7 +399,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const raw = await scrapeRaw(
           {
             url: pdfUrl,
-            parsers: ["pdf:fast" as any],
+            parsers: ["pdf:fast"],
           },
           identity,
         );

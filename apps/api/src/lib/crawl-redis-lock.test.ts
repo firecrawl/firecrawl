@@ -1,3 +1,4 @@
+import { createLogger } from "winston";
 import { vi } from "vitest";
 
 const { scard, exec, srem, pipeline, withSpan } = vi.hoisted(() => {
@@ -6,7 +7,7 @@ const { scard, exec, srem, pipeline, withSpan } = vi.hoisted(() => {
   const chain = {
     sadd: vi.fn(() => chain),
     expire: vi.fn(() => chain),
-    srem: (...args: unknown[]) => {
+    srem: (...args: Array<unknown>) => {
       srem(...args);
       return chain;
     },
@@ -17,9 +18,7 @@ const { scard, exec, srem, pipeline, withSpan } = vi.hoisted(() => {
     exec,
     srem,
     pipeline: vi.fn(() => chain),
-    withSpan: vi.fn(
-      async (_name: string, fn: (span: any) => any) => await fn({}),
-    ),
+    withSpan: vi.fn(),
   };
 });
 
@@ -32,19 +31,20 @@ vi.mock("../scraper/WebScraper/crawler", () => ({ WebCrawler: class {} }));
 vi.mock("./otel-tracer", () => ({
   withSpan,
   setSpanAttributes: vi.fn(),
-  withZeroDataRetention: (_zdr: unknown, fn: () => unknown) => fn(),
+  withZeroDataRetention: <T>(_zdr: unknown, fn: () => T): T => fn(),
 }));
 
-import { lockURL, tryLockURL, type StoredCrawl } from "./crawl-redis";
+import { baseScrapeOptions } from "../controllers/v2/types";
+import type { StoredCrawl } from "./crawl-redis";
+import { lockURL, tryLockURL } from "./crawl-redis";
 
-const crawl = (limit?: number) =>
-  ({
-    team_id: "team",
-    crawlerOptions: limit === undefined ? {} : { limit },
-    scrapeOptions: {},
-    internalOptions: {},
-    createdAt: 0,
-  }) as unknown as StoredCrawl;
+const crawl = (limit?: number): StoredCrawl => ({
+  team_id: "team",
+  crawlerOptions: limit === undefined ? {} : { limit },
+  scrapeOptions: baseScrapeOptions.parse({}),
+  internalOptions: { teamId: "team", orgId: null },
+  createdAt: 0,
+});
 
 describe("tryLockURL", () => {
   beforeEach(() => {
@@ -108,11 +108,13 @@ describe("tryLockURL when Redis misbehaves", () => {
     [null, 1],
     [null, 1],
   ];
-  const silentLogger = { error: vi.fn() } as any;
+  const silentLogger = createLogger({ silent: true });
+  let loggedErrors = vi.spyOn(silentLogger, "error");
 
   beforeEach(() => {
     vi.resetAllMocks();
     vi.useFakeTimers();
+    loggedErrors = vi.spyOn(silentLogger, "error");
   });
 
   afterEach(() => {
@@ -142,7 +144,7 @@ describe("tryLockURL when Redis misbehaves", () => {
     // The retry reads SADD=0, but the first attempt had already added it.
     expect(await result).toBe("locked");
     expect(exec).toHaveBeenCalledTimes(3);
-    expect(silentLogger.error).toHaveBeenCalledTimes(1);
+    expect(loggedErrors).toHaveBeenCalledTimes(1);
   });
 
   it("throws once the lock pipeline has been rejected three times", async () => {
