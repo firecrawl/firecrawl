@@ -1,6 +1,7 @@
-import * as undici from "undici";
-import { EngineScrapeResult } from "..";
-import { Meta } from "../..";
+import { fetch as undiciFetch } from "undici";
+import { z } from "zod";
+import type { EngineScrapeResult } from "..";
+import type { Meta } from "../..";
 import { SSLError } from "../../error";
 import { TLS_CERT_ERROR_CODES } from "../utils/safeFetch";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
@@ -8,28 +9,53 @@ import {
   getSecureDispatcher,
   InsecureConnectionError,
 } from "../utils/safeFetch";
-import { MockState, saveMock } from "../../lib/mock";
-import { TextDecoder } from "util";
+import type { MockState } from "../../lib/mock";
+import { saveMock } from "../../lib/mock";
+import { TextDecoder } from "node:util";
 
-function decodeHtmlBuffer(
-  buf: Buffer,
-  contentType?: string,
-): {
+interface DecodedHtmlResult {
   text: string;
   charset?: string;
   charsetSource?: "header" | "meta";
   decodeError?: unknown;
-} {
-  let text = buf.toString("utf8");
+}
 
-  const headerCharsetRaw = (contentType?.match(
-    /charset\s*=\s*["']?([^;"'\s]+)/i,
-  ) ?? [])[1];
+const fetchResponseDataSchema = z.object({
+  url: z.string(),
+  body: z.string(),
+  status: z.number(),
+  headers: z.array(z.tuple([z.string(), z.string()])),
+});
+
+type FetchResponseData = z.infer<typeof fetchResponseDataSchema>;
+
+function makeRequestTypeId(
+  request: MockState["requests"][number]["options"],
+): string {
+  return request.url + ";" + request.method;
+}
+
+const errorWithCodeSchema = z.object({ code: z.string() });
+
+function getErrorCode(value: unknown): string | undefined {
+  const parsed = errorWithCodeSchema.safeParse(value);
+  return parsed.success ? parsed.data.code : undefined;
+}
+
+function decodeHtmlBuffer(
+  buf: Buffer,
+  contentType?: string,
+): DecodedHtmlResult {
+  const text = buf.toString("utf8");
+
+  const headerCharsetRaw = (
+    contentType?.match(/charset\s*=\s*["']?([^;"'\s]+)/i) ?? []
+  )[1];
   const headerCharset = headerCharsetRaw?.trim();
 
-  const metaCharsetRaw = (text.match(
-    /<meta\b[^>]*charset\s*=\s*["']?([^"'\s\/>]+)/i,
-  ) ?? [])[1];
+  const metaCharsetRaw = (
+    text.match(/<meta\b[^>]*charset\s*=\s*["']?([^"'\s/>]+)/i) ?? []
+  )[1];
   const metaCharset = metaCharsetRaw?.trim();
 
   if (headerCharset) {
@@ -39,7 +65,7 @@ function decodeHtmlBuffer(
         charset: headerCharset,
         charsetSource: "header",
       };
-    } catch (headerDecodeError) {
+    } catch (headerDecodeError: unknown) {
       // If header charset is invalid/unsupported, fall back to meta charset.
       if (
         metaCharset &&
@@ -71,7 +97,7 @@ function decodeHtmlBuffer(
         charset: metaCharset,
         charsetSource: "meta",
       };
-    } catch (decodeError) {
+    } catch (decodeError: unknown) {
       return {
         text,
         charset: metaCharset,
@@ -97,12 +123,7 @@ export async function scrapeURLWithFetch(
     tryCount: 1,
   };
 
-  let response: {
-    url: string;
-    body: string;
-    status: number;
-    headers: [string, string][];
-  };
+  let response: FetchResponseData;
 
   if (meta.fetchPrefetch !== undefined && meta.fetchPrefetch !== null) {
     const { text, charset, charsetSource, decodeError } = decodeHtmlBuffer(
@@ -134,10 +155,6 @@ export async function scrapeURLWithFetch(
         : [],
     };
   } else if (meta.mock !== null) {
-    const makeRequestTypeId = (
-      request: MockState["requests"][number]["options"],
-    ) => request.url + ";" + request.method;
-
     const thisId = makeRequestTypeId(mockOptions);
     const matchingMocks = meta.mock.requests
       .filter(x => makeRequestTypeId(x.options) === thisId)
@@ -149,12 +166,13 @@ export async function scrapeURLWithFetch(
       throw new Error("Failed to mock request -- no mock targets found.");
     }
 
-    response = {
+    response = fetchResponseDataSchema.parse({
       ...matchingMocks[nextI].result,
-    };
+      url: matchingMocks[nextI].result.url ?? meta.rewrittenUrl ?? meta.url,
+    });
   } else {
     try {
-      const x = await undici.fetch(meta.rewrittenUrl ?? meta.url, {
+      const x = await undiciFetch(meta.rewrittenUrl ?? meta.url, {
         dispatcher: getSecureDispatcher(meta.options.skipTlsVerification),
         redirect: "follow",
         headers: meta.options.headers,
@@ -193,7 +211,9 @@ export async function scrapeURLWithFetch(
       if (meta.mock === null) {
         await saveMock(mockOptions, response);
       }
-    } catch (error) {
+    } catch (error: unknown) {
+      const causeCode =
+        error instanceof Error ? getErrorCode(error.cause) : undefined;
       if (
         error instanceof TypeError &&
         error.cause instanceof InsecureConnectionError
@@ -202,8 +222,8 @@ export async function scrapeURLWithFetch(
       } else if (
         error instanceof Error &&
         error.message === "fetch failed" &&
-        error.cause &&
-        TLS_CERT_ERROR_CODES.has((error.cause as any).code)
+        causeCode !== undefined &&
+        TLS_CERT_ERROR_CODES.has(causeCode)
       ) {
         throw new SSLError(meta.options.skipTlsVerification);
       } else {
@@ -214,7 +234,7 @@ export async function scrapeURLWithFetch(
 
   await specialtyScrapeCheck(
     meta.logger.child({ method: "scrapeURLWithFetch/specialtyScrapeCheck" }),
-    Object.fromEntries(response.headers as any),
+    Object.fromEntries(response.headers),
   );
 
   return {
@@ -222,13 +242,14 @@ export async function scrapeURLWithFetch(
     html: response.body,
     statusCode: response.status,
     contentType:
-      (response.headers.find(x => x[0].toLowerCase() === "content-type") ??
-        [])[1] ?? undefined,
+      (
+        response.headers.find(x => x[0].toLowerCase() === "content-type") ?? []
+      )[1] ?? undefined,
 
     proxyUsed: "basic",
   };
 }
 
 export function fetchMaxReasonableTime(meta: Meta): number {
-  return 15000;
+  return 15_000;
 }

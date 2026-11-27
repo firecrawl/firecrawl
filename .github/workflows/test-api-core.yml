@@ -51,7 +51,7 @@ jobs:
             apps/api/native/*.node
             apps/api/native/index.js
             apps/api/native/index.d.ts
-          key: ${{ runner.os }}-napi-${{ hashFiles('apps/api/native/Cargo.toml', 'apps/api/native/Cargo.lock', 'apps/api/native/build.rs', 'apps/api/native/.cargo/config.toml', 'apps/api/native/package.json', 'apps/api/native/src/**') }}
+          key: ${{ runner.os }}-napi-${{ hashFiles('apps/api/native/Cargo.toml', 'apps/api/native/Cargo.lock', 'apps/api/native/rust-toolchain.toml', 'apps/api/native/build.rs', 'apps/api/native/.cargo/config.toml', 'apps/api/native/package.json', 'apps/api/native/src/**', 'apps/api/native/crates/**') }}
 
       - name: Build native lib
         if: steps.napi_restore.outputs.cache-hit != 'true'
@@ -94,6 +94,18 @@ jobs:
 
       - name: Typecheck API
         run: pnpm exec tsc --noEmit
+        working-directory: apps/api
+        env:
+          npm_config_ignore_scripts: 'true' # keeps pnpm from rebuilding the cached native lib
+
+      - name: Lint API
+        run: pnpm run lint
+        working-directory: apps/api
+        env:
+          npm_config_ignore_scripts: 'true' # keeps pnpm from rebuilding the cached native lib
+
+      - name: Format check
+        run: pnpm run format:check
         working-directory: apps/api
         env:
           npm_config_ignore_scripts: 'true' # keeps pnpm from rebuilding the cached native lib

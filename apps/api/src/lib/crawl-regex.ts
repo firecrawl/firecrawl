@@ -3,9 +3,9 @@ import { z } from "zod";
 
 // Every pattern is compiled by the engine at request time (validation) and again
 // when links are filtered, so the amount of work a single request can demand is
-// count x per-pattern cost. The engine bounds per-pattern cost (see
-// compile_path_regex in native/src/crawler.rs); these bound the count and the
-// pattern length, which is what parsing cost scales with.
+// count x per-pattern cost. The engine bounds per-pattern cost in
+// firecrawl_core::crawler::compile_path_regex. These limits bound the count and
+// the pattern length, which is what parsing cost scales with.
 //
 // Keyword-style filtering (one short pattern per term) routinely needs a few
 // hundred patterns per field, so the count cap has headroom for that. Measured
@@ -51,7 +51,7 @@ type PathPatternIssue = {
   // "syntax": a pattern does not compile with the engine.
   kind: "shape" | "field-cap" | "budget" | "syntax";
   // Empty for request-wide (cross-field) issues.
-  path: PathPatternField[];
+  path: Array<PathPatternField>;
   message: string;
 };
 
@@ -67,11 +67,13 @@ type PathPatternIssue = {
 // validation and must meet the same limits before they reach the crawler.
 export function collectPathPatternIssues(
   fields: PathPatternFields,
-): PathPatternIssue[] {
-  const shapeIssues: PathPatternIssue[] = [];
-  const asPatterns = (field: PathPatternField): string[] => {
+): Array<PathPatternIssue> {
+  const shapeIssues: Array<PathPatternIssue> = [];
+  const asPatterns = (field: PathPatternField): Array<string> => {
     const value = fields[field];
-    if (value === undefined || value === null) return [];
+    if (value === undefined || value === null) {
+      return [];
+    }
     if (Array.isArray(value) && value.every(p => typeof p === "string")) {
       return value;
     }
@@ -84,10 +86,14 @@ export function collectPathPatternIssues(
   };
   const include = asPatterns("includePaths");
   const exclude = asPatterns("excludePaths");
-  if (shapeIssues.length > 0) return shapeIssues;
-  if (include.length === 0 && exclude.length === 0) return [];
+  if (shapeIssues.length > 0) {
+    return shapeIssues;
+  }
+  if (include.length === 0 && exclude.length === 0) {
+    return [];
+  }
 
-  const capIssues: PathPatternIssue[] = [];
+  const capIssues: Array<PathPatternIssue> = [];
   for (const [field, patterns] of [
     ["includePaths", include],
     ["excludePaths", exclude],
@@ -107,7 +113,9 @@ export function collectPathPatternIssues(
       });
     }
   }
-  if (capIssues.length > 0) return capIssues;
+  if (capIssues.length > 0) {
+    return capIssues;
+  }
 
   const totalCount = include.length + exclude.length;
   if (totalCount > MAX_TOTAL_PATH_PATTERNS) {
@@ -147,7 +155,9 @@ export function addPathRegexIssues(
   ctx: z.RefinementCtx,
 ): void {
   for (const issue of collectPathPatternIssues(fields)) {
-    if (issue.kind === "field-cap") continue;
+    if (issue.kind === "field-cap") {
+      continue;
+    }
     ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
   }
 }
@@ -158,10 +168,12 @@ export function addPathRegexIssues(
 // by the engine, so the paths it was meant to filter got crawled anyway. Reject
 // such patterns up front with a message that points at the actual limitation.
 function fieldRegexIssues(
-  patterns: string[],
+  patterns: Array<string>,
   field: PathPatternField,
-): PathPatternIssue[] {
-  if (patterns.length === 0) return [];
+): Array<PathPatternIssue> {
+  if (patterns.length === 0) {
+    return [];
+  }
   return validateRegexes(patterns).map(({ pattern, error }) => {
     const summary = summarizeRegexError(error);
     return {
@@ -195,7 +207,7 @@ function regexErrorHint(summary: string): string {
     return " The pattern expands to too many states when compiled, usually because of large or stacked counted repetitions such as {1000} or {5}{5}{5}. Lower the counts or use unbounded quantifiers like + and * instead.";
   }
   if (/Unicode not allowed/i.test(summary)) {
-    return " Patterns are matched against percent-encoded ASCII URLs, so Unicode-only constructs such as \\p{..} classes or non-ASCII characters inside [...] can never match. Remove them or match the percent-encoded form instead.";
+    return String.raw` Patterns are matched against percent-encoded ASCII URLs, so Unicode-only constructs such as \p{..} classes or non-ASCII characters inside [...] can never match. Remove them or match the percent-encoded form instead.`;
   }
   return "";
 }

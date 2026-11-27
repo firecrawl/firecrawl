@@ -1,58 +1,124 @@
 import { vi } from "vitest";
+import type { generateText as generateTextFn } from "ai";
+import type { encoding_for_model as encodingForModelFn } from "@dqbd/tiktoken";
+import { MockLanguageModelV3 } from "ai/test";
+import { createLogger } from "winston";
+
+type GenerateTextArgs = Parameters<typeof generateTextFn>[0];
+type MockGenerateTextResult = {
+  text: string;
+  usage: { inputTokens: number; outputTokens: number };
+};
+
+const mocks = vi.hoisted(() => ({
+  generateText:
+    vi.fn<(args: GenerateTextArgs) => Promise<MockGenerateTextResult>>(),
+  getModel: vi.fn<(name: string, provider?: string) => LlmModel>(),
+}));
 
 vi.mock("ai", async importOriginal => {
-  const actual = await importOriginal<typeof import("ai")>();
-  return { ...actual, generateText: vi.fn() };
+  const actual = await importOriginal<{
+    generateText: typeof generateTextFn;
+  }>();
+  return { ...actual, generateText: mocks.generateText };
 });
 vi.mock("@dqbd/tiktoken", async importOriginal => {
-  const actual = await importOriginal<typeof import("@dqbd/tiktoken")>();
+  const actual = await importOriginal<{
+    encoding_for_model: typeof encodingForModelFn;
+  }>();
   return {
     ...actual,
     encoding_for_model: vi.fn(actual.encoding_for_model),
   };
 });
 vi.mock("../../../lib/generic-ai", () => ({
-  getModel: vi.fn((name: string) => ({ modelId: name })),
+  getModel: mocks.getModel,
 }));
 
-import { generateText } from "ai";
 import { encoding_for_model } from "@dqbd/tiktoken";
-import type { Mock } from "vitest";
 import { keepWholeLines, performDirectQuoteQuery, performQuery } from "./query";
+import type { Meta } from "..";
+import type { Document, FormatObject } from "../../../controllers/v2/types";
+import {
+  applyScrapeOptionsDefaults,
+  scrapeOptions,
+} from "../../../controllers/v2/types";
 import { CostTracking } from "../../../lib/cost-tracking";
-import { getModel } from "../../../lib/generic-ai";
 import { modelPrices } from "../../../lib/model-prices";
+import { AbortManager } from "../lib/abortManager";
 import {
   createService,
   replaceService,
   service,
 } from "../../../service/service";
-import type { LlmModel, LlmProvider } from "../../../service/llm-providers";
+import type {
+  LlmModel,
+  LlmProvider,
+  LlmProviderName,
+} from "../../../service/llm-providers";
 
-const noopLogger = {
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  debug: () => {},
-} as any;
+const noopLogger = createLogger({ silent: true });
 
-function makeMeta(formats: any[]) {
+type TestFormatInput =
+  | FormatObject
+  | { type: "query"; prompt: string; mode?: "freeform" | "directQuote" };
+
+function makeMeta(formats: Array<TestFormatInput>): Meta {
+  const normalizedFormats: Array<FormatObject> = formats.map(f =>
+    f.type === "query" ? { ...f, mode: f.mode ?? "freeform" } : f,
+  );
   return {
     id: "scrape-id",
     url: "https://example.com",
-    options: { formats },
-    internalOptions: { teamId: "test-team", zeroDataRetention: false },
+    ctx: { teamId: "test-team", zeroDataRetention: false },
+    state: {},
+    options: {
+      ...applyScrapeOptionsDefaults(scrapeOptions.parse({})),
+      formats: normalizedFormats,
+    },
+    internalOptions: {
+      teamId: "test-team",
+      orgId: null,
+      zeroDataRetention: false,
+    },
     logger: noopLogger,
+    abort: new AbortManager(),
+    featureFlags: new Set(),
+    mock: null,
+    imageOcrEnabled: async () => false,
+    pdfPrefetch: undefined,
+    documentPrefetch: undefined,
+    imagePrefetch: undefined,
+    fetchPrefetch: undefined,
     costTracking: new CostTracking(),
-  } as any;
+    threatDecisions: [],
+  };
 }
 
-function calls() {
-  return (generateText as Mock).mock.calls.map(([args]) => args);
+function makeDocument(markdown: string): Document {
+  return {
+    markdown,
+    metadata: { statusCode: 200, proxyUsed: "basic" },
+  };
+}
+
+function calls(): Array<GenerateTextArgs> {
+  return mocks.generateText.mock.calls.map(([args]) => args);
+}
+
+function modelIdOf(model: GenerateTextArgs["model"]): string {
+  return typeof model === "string" ? model : model.modelId;
+}
+
+function stringPrompt(prompt: GenerateTextArgs["prompt"]): string {
+  if (typeof prompt !== "string") {
+    throw new Error("Expected string prompt");
+  }
+  return prompt;
 }
 
 function respond(text: string) {
-  (generateText as Mock).mockResolvedValueOnce({
+  mocks.generateText.mockResolvedValueOnce({
     text,
     usage: { inputTokens: 1, outputTokens: 1 },
   });
@@ -76,23 +142,32 @@ function countTokens(text: string): number {
 }
 
 // The numbered lines sent to the directQuote model.
-function sentLines(prompt: string): string[] {
-  return prompt.split("<lines")[1].split("\n").slice(1, -1);
+function sentLines(prompt: GenerateTextArgs["prompt"]): Array<string> {
+  return stringPrompt(prompt).split("<lines")[1].split("\n").slice(1, -1);
 }
 
 let realEncodingForModel: typeof encoding_for_model;
 
 beforeAll(async () => {
-  ({ encoding_for_model: realEncodingForModel } =
-    await vi.importActual<typeof import("@dqbd/tiktoken")>("@dqbd/tiktoken"));
+  ({ encoding_for_model: realEncodingForModel } = await vi.importActual<{
+    encoding_for_model: typeof encodingForModelFn;
+  }>("@dqbd/tiktoken"));
 });
 
-const stubProvider = (name: string, enabled: () => boolean): LlmProvider =>
-  ({
+function isExtensionProviderName(name: string): name is LlmProviderName {
+  return name.length > 0;
+}
+
+const stubProvider = (name: string, enabled: () => boolean): LlmProvider => {
+  if (!isExtensionProviderName(name)) {
+    throw new Error("Provider name must be non-empty");
+  }
+  return {
     name,
     enabled,
-    model: (id: string) => ({ modelId: id }) as unknown as LlmModel,
-  }) as unknown as LlmProvider;
+    model: (id: string): LlmModel => new MockLanguageModelV3({ modelId: id }),
+  };
+};
 
 let vertexEnabled = false;
 
@@ -125,9 +200,13 @@ beforeEach(() => {
       },
     ),
   );
-  (generateText as Mock).mockReset();
-  (getModel as Mock).mockClear();
-  (encoding_for_model as Mock)
+  mocks.generateText.mockReset();
+  mocks.getModel
+    .mockReset()
+    .mockImplementation(
+      (name: string) => new MockLanguageModelV3({ modelId: name }),
+    );
+  vi.mocked(encoding_for_model)
     .mockReset()
     .mockImplementation(realEncodingForModel);
 });
@@ -160,18 +239,19 @@ describe("keepWholeLines", () => {
 describe("performDirectQuoteQuery highlights", () => {
   it("keeps whole lines within the model's context window", async () => {
     respond("[0]");
-    const document: any = { markdown: page(40_000), metadata: {} };
+    const markdown = page(40_000);
+    const document = makeDocument(markdown);
 
     const highlights = await performDirectQuoteQuery(
       makeMeta([]),
       document,
       "what does line 0 say?",
-      document.markdown,
+      markdown,
       "highlights",
     );
 
     const [args] = calls();
-    expect(args.telemetry.functionId).toBe("performQuery/highlights");
+    expect(args.telemetry?.functionId).toBe("performQuery/highlights");
     const lines = sentLines(args.prompt);
     expect(lines.length).toBeLessThan(40_000);
     lines.forEach((line, i) =>
@@ -189,13 +269,14 @@ describe("performDirectQuoteQuery highlights", () => {
   it("keeps part of a single sentence longer than the window", async () => {
     respond("[0]");
     // One sentence (no punctuation), ~300k tokens.
-    const document: any = { markdown: "word ".repeat(300_000), metadata: {} };
+    const markdown = "word ".repeat(300_000);
+    const document = makeDocument(markdown);
 
     await performDirectQuoteQuery(
       makeMeta([]),
       document,
       "anything about words?",
-      document.markdown,
+      markdown,
       "highlights",
     );
 
@@ -206,17 +287,18 @@ describe("performDirectQuoteQuery highlights", () => {
   });
 
   it("trims by bytes when the tokenizer fails", async () => {
-    (encoding_for_model as Mock).mockImplementationOnce(() => {
+    vi.mocked(encoding_for_model).mockImplementationOnce(() => {
       throw new Error("tokenizer unavailable");
     });
     respond("[0]");
-    const document: any = { markdown: page(40_000), metadata: {} };
+    const markdown = page(40_000);
+    const document = makeDocument(markdown);
 
     const highlights = await performDirectQuoteQuery(
       makeMeta([]),
       document,
       "what does line 0 say?",
-      document.markdown,
+      markdown,
       "highlights",
     );
 
@@ -233,7 +315,7 @@ describe("performDirectQuoteQuery highlights", () => {
 
   it("sends small pages untouched", async () => {
     respond("[1]");
-    const document: any = { markdown: page(3), metadata: {} };
+    const document = makeDocument(page(3));
 
     await performQuery(
       makeMeta([
@@ -243,14 +325,14 @@ describe("performDirectQuoteQuery highlights", () => {
     );
 
     const [args] = calls();
-    expect(args.telemetry.functionId).toBe("performQuery/directQuote");
+    expect(args.telemetry?.functionId).toBe("performQuery/directQuote");
     expect(args.prompt).toContain("2: Line number 2");
     expect(document.warning).toBeUndefined();
   });
 
   it("trims long pages through performQuery and populates answer and warning", async () => {
     respond("[0]");
-    const document: any = { markdown: page(40_000), metadata: {} };
+    const document = makeDocument(page(40_000));
 
     await performQuery(
       makeMeta([
@@ -260,7 +342,7 @@ describe("performDirectQuoteQuery highlights", () => {
     );
 
     const [args] = calls();
-    expect(args.telemetry.functionId).toBe("performQuery/directQuote");
+    expect(args.telemetry?.functionId).toBe("performQuery/directQuote");
     expect(sentLines(args.prompt).length).toBeLessThan(40_000);
     expect(document.answer).toContain("Line number 0");
     expect(document.warning).toContain(
@@ -271,11 +353,11 @@ describe("performDirectQuoteQuery highlights", () => {
 
 describe("performQuery freeform", () => {
   it("trims the page separately for a smaller-window fallback model", async () => {
-    (generateText as Mock).mockRejectedValueOnce(new Error("unavailable"));
+    mocks.generateText.mockRejectedValueOnce(new Error("unavailable"));
     respond("the answer");
     // ~180k tokens: fits Gemini's window, not gpt-4o-mini's.
     const markdown = "lorem ipsum dolor sit amet ".repeat(36_000);
-    const document: any = { markdown, metadata: {} };
+    const document = makeDocument(markdown);
 
     await performQuery(
       makeMeta([{ type: "query", prompt: "what is this?" }]),
@@ -283,21 +365,21 @@ describe("performQuery freeform", () => {
     );
 
     const [gemini, mini] = calls();
-    expect(gemini.model.modelId).toBe("gemini-3.5-flash-lite");
+    expect(modelIdOf(gemini.model)).toBe("gemini-3.5-flash-lite");
     expect(gemini.providerOptions).toEqual({
       google: { thinkingConfig: { thinkingLevel: "minimal" } },
     });
     expect(gemini.prompt).toContain(markdown);
-    expect(mini.model.modelId).toBe("gpt-4o-mini");
+    expect(modelIdOf(mini.model)).toBe("gpt-4o-mini");
     // The page is trimmed to exactly 80% of gpt-4o-mini's window; the rest of
     // the prompt is a few tags.
     const budget = Math.floor(
       modelPrices["gpt-4o-mini"].max_input_tokens * 0.8,
     );
-    const miniTokens = countTokens(mini.prompt);
+    const miniTokens = countTokens(stringPrompt(mini.prompt));
     expect(miniTokens).toBeLessThanOrEqual(budget + 100);
     expect(miniTokens).toBeGreaterThan(budget - 100);
-    expect(mini.telemetry.functionId).toBe("performQuery/freeform");
+    expect(mini.telemetry?.functionId).toBe("performQuery/freeform");
     expect(document.answer).toBe("the answer");
     expect(document.warning).toContain(
       "the answer was generated from the first part of it",
@@ -306,19 +388,19 @@ describe("performQuery freeform", () => {
 
   it("picks vertex when the registered vertex provider is enabled, otherwise google", async () => {
     respond("from google");
-    const docGoogle: any = { markdown: "hello", metadata: {} };
+    const docGoogle = makeDocument("hello");
     await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), docGoogle);
-    expect((getModel as Mock).mock.calls[0]).toEqual([
+    expect(mocks.getModel.mock.calls[0]).toEqual([
       "gemini-3.5-flash-lite",
       "google",
     ]);
 
-    (getModel as Mock).mockClear();
+    mocks.getModel.mockClear();
     vertexEnabled = true;
     respond("from vertex");
-    const docVertex: any = { markdown: "hello", metadata: {} };
+    const docVertex = makeDocument("hello");
     await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), docVertex);
-    expect((getModel as Mock).mock.calls[0]).toEqual([
+    expect(mocks.getModel.mock.calls[0]).toEqual([
       "gemini-3.5-flash-lite",
       "vertex",
     ]);
@@ -342,10 +424,10 @@ describe("performQuery freeform", () => {
     );
 
     respond("from openai");
-    const doc: any = { markdown: "hello", metadata: {} };
+    const doc = makeDocument("hello");
     await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), doc);
 
-    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", "openai"]]);
+    expect(mocks.getModel.mock.calls).toEqual([["gpt-4o-mini", "openai"]]);
     expect(doc.answer).toBe("from openai");
   });
 
@@ -378,10 +460,10 @@ describe("performQuery freeform", () => {
     );
 
     respond("from openai");
-    const doc: any = { markdown: "hello", metadata: {} };
+    const doc = makeDocument("hello");
     await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), doc);
 
-    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", "openai"]]);
+    expect(mocks.getModel.mock.calls).toEqual([["gpt-4o-mini", "openai"]]);
     expect(doc.answer).toBe("from openai");
   });
 
@@ -403,10 +485,10 @@ describe("performQuery freeform", () => {
     );
 
     respond("from ollama");
-    const doc: any = { markdown: "hello", metadata: {} };
+    const doc = makeDocument("hello");
     await performQuery(makeMeta([{ type: "query", prompt: "hi" }]), doc);
 
-    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", "ollama"]]);
+    expect(mocks.getModel.mock.calls).toEqual([["gpt-4o-mini", "ollama"]]);
     expect(doc.answer).toBe("from ollama");
   });
 
@@ -428,16 +510,17 @@ describe("performQuery freeform", () => {
     );
 
     respond("[0]");
-    const doc: any = { markdown: "hello world.", metadata: {} };
+    const markdown = "hello world.";
+    const doc = makeDocument(markdown);
     const highlights = await performDirectQuoteQuery(
       makeMeta([]),
       doc,
       "what does it say?",
-      doc.markdown,
+      markdown,
       "highlights",
     );
 
-    expect((getModel as Mock).mock.calls).toEqual([["gpt-4o-mini", "openai"]]);
+    expect(mocks.getModel.mock.calls).toEqual([["gpt-4o-mini", "openai"]]);
     expect(highlights).toBe("hello world.");
   });
 
@@ -454,18 +537,16 @@ describe("performQuery freeform", () => {
         },
       ),
     );
-    (getModel as Mock).mockImplementationOnce(
-      (name: string, provider?: string) => {
-        const providerName = provider ?? "openai";
-        const registered = service.llmProviders.get(providerName);
-        if (!registered) {
-          throw new Error(`LLM provider "${providerName}" is not registered`);
-        }
-        return registered.model(name);
-      },
-    );
+    mocks.getModel.mockImplementationOnce((name: string, provider?: string) => {
+      const providerName = provider ?? "openai";
+      const registered = service.llmProviders.get(providerName);
+      if (!registered) {
+        throw new Error(`LLM provider "${providerName}" is not registered`);
+      }
+      return registered.model(name);
+    });
 
-    const doc: any = { markdown: "hello world.", metadata: {} };
+    const doc = makeDocument("hello world.");
     await performQuery(
       makeMeta([
         { type: "query", prompt: "what does it say?", mode: "directQuote" },

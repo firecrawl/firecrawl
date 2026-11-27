@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { logger } from "./logger";
 
 // xAI bills X Search per item fetched, on top of tokens
@@ -7,19 +8,30 @@ const X_SEARCH_USD_PER_PROFILE = 10 / 1000;
 
 type XSearchUsage = { posts: number; profiles: number };
 
-const INVALID = Symbol("invalid");
+const rawToolUsageResponseSchema = z.object({
+  usage: z.object({
+    server_side_tool_usage_details: z.object({
+      x_posts_fetched: z.unknown().optional(),
+      x_users_fetched: z.unknown().optional(),
+    }),
+  }),
+});
 
 // A missing field means nothing of that kind was fetched. A field that is
 // present but not a count means the provider changed shape, and reading it as
 // 0 would silently drop that fee.
-function count(value: unknown): number | typeof INVALID {
-  if (value === undefined || value === null) {
-    return 0;
-  }
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
-    ? Math.trunc(value)
-    : INVALID;
-}
+const itemCountSchema = z
+  .number()
+  .finite()
+  .nonnegative()
+  .transform(value => Math.trunc(value))
+  .nullish()
+  .transform(value => value ?? 0);
+
+const parsedToolUsageCountsSchema = z.object({
+  x_posts_fetched: itemCountSchema,
+  x_users_fetched: itemCountSchema,
+});
 
 // The Responses API reports fetched items under
 // `usage.server_side_tool_usage_details`. `@ai-sdk/xai` drops that block when
@@ -27,16 +39,19 @@ function count(value: unknown): number | typeof INVALID {
 export function xSearchUsageFromResponseBody(
   body: unknown,
 ): XSearchUsage | undefined {
-  const details = (body as any)?.usage?.server_side_tool_usage_details;
-  if (typeof details !== "object" || details === null) {
+  const raw = rawToolUsageResponseSchema.safeParse(body);
+  if (!raw.success) {
     return undefined;
   }
-  if (!("x_posts_fetched" in details) && !("x_users_fetched" in details)) {
+  const details = raw.data.usage.server_side_tool_usage_details;
+  if (
+    details.x_posts_fetched === undefined &&
+    details.x_users_fetched === undefined
+  ) {
     return undefined;
   }
-  const posts = count(details.x_posts_fetched);
-  const profiles = count(details.x_users_fetched);
-  if (posts === INVALID || profiles === INVALID) {
+  const counts = parsedToolUsageCountsSchema.safeParse(details);
+  if (!counts.success) {
     logger.warn("Unreadable X Search item counts in xAI usage", {
       module: "xai-x-search",
       x_posts_fetched: details.x_posts_fetched,
@@ -44,7 +59,10 @@ export function xSearchUsageFromResponseBody(
     });
     return undefined;
   }
-  return { posts, profiles };
+  return {
+    posts: counts.data.x_posts_fetched,
+    profiles: counts.data.x_users_fetched,
+  };
 }
 
 export function xSearchCost(usage: XSearchUsage): number {

@@ -1,4 +1,3 @@
-import type { MockedFunction } from "vitest";
 import "dotenv/config";
 
 import { config } from "../../config";
@@ -6,16 +5,19 @@ config.ENV = "test";
 
 import { scrapeURL } from ".";
 import { scrapeOptions } from "../../controllers/v2/types";
-import { coreEngineFeatures, coreEngines, Engine } from "./engines";
+import type { Engine } from "./engines";
+import { coreEngineFeatures, coreEngines } from "./engines";
 import { coreLlmProviders } from "../../lib/generic-ai";
 import { CostTracking } from "../../lib/cost-tracking";
 import { AgentIndexOnlyError, NoCachedDataError } from "./error";
 import { createService, replaceService } from "../../service/service";
+import type { parseMarkdown as parseMarkdownFn } from "../../lib/html-to-markdown";
 
 // Mock parseMarkdown but delegate to real implementation for other tests
 vi.mock("../../lib/html-to-markdown", async importOriginal => {
-  const actual =
-    await importOriginal<typeof import("../../lib/html-to-markdown")>();
+  const actual = await importOriginal<{
+    parseMarkdown: typeof parseMarkdownFn;
+  }>();
   return {
     ...actual,
     parseMarkdown: vi.fn(actual.parseMarkdown),
@@ -24,9 +26,22 @@ vi.mock("../../lib/html-to-markdown", async importOriginal => {
 
 import { parseMarkdown } from "../../lib/html-to-markdown";
 
-const testEngines: (Engine | undefined)[] = [undefined, "fetch"];
+const serializeErrorReplacer = (_key: string, value: unknown) => {
+  if (value instanceof Error) {
+    return {
+      ...Object.fromEntries(Object.entries(value)),
+      message: value.message,
+      name: value.name,
+      cause: value.cause,
+      stack: value.stack,
+    };
+  }
+  return value;
+};
 
-const testEnginesScreenshot: (Engine | undefined)[] = [undefined];
+const testEngines: Array<Engine | undefined> = [undefined, "fetch"];
+
+const testEnginesScreenshot: Array<Engine | undefined> = [undefined];
 
 describe("Standalone scrapeURL tests", () => {
   beforeAll(() => {
@@ -122,7 +137,7 @@ describe("Standalone scrapeURL tests", () => {
         );
         expect(out.document.metadata.statusCode).toBe(200);
       }
-    }, 30000);
+    }, 30_000);
 
     it("Scrape with formats markdown and html", async () => {
       const out = await scrapeURL(
@@ -147,7 +162,7 @@ describe("Standalone scrapeURL tests", () => {
         expect(out.document.metadata.statusCode).toBe(200);
         expect(out.document.metadata.error).toBeUndefined();
       }
-    }, 30000);
+    }, 30_000);
 
     it("Scrape with onlyMainContent disabled", async () => {
       const out = await scrapeURL(
@@ -170,7 +185,7 @@ describe("Standalone scrapeURL tests", () => {
         expect(out.document.markdown).toContain("[FAQ](/faq/)"); // .nav
         expect(out.document.markdown).toContain("Hartley Brody 2023"); // #footer
       }
-    }, 30000);
+    }, 30_000);
 
     it("Scrape with excludeTags", async () => {
       const out = await scrapeURL(
@@ -194,7 +209,7 @@ describe("Standalone scrapeURL tests", () => {
         expect(out.document.markdown).not.toContain("Hartley Brody 2023");
         expect(out.document.markdown).not.toContain("[FAQ](/faq/)");
       }
-    }, 30000);
+    }, 30_000);
 
     it("Scrape of a page with 400 status code", async () => {
       const out = await scrapeURL(
@@ -213,7 +228,7 @@ describe("Standalone scrapeURL tests", () => {
         expect(out.document).toHaveProperty("metadata");
         expect(out.document.metadata.statusCode).toBe(400);
       }
-    }, 30000);
+    }, 30_000);
 
     it("Scrape of a page with 401 status code", async () => {
       const out = await scrapeURL(
@@ -232,7 +247,7 @@ describe("Standalone scrapeURL tests", () => {
         expect(out.document).toHaveProperty("metadata");
         expect(out.document.metadata.statusCode).toBe(401);
       }
-    }, 30000);
+    }, 30_000);
 
     it("Scrape of a page with 403 status code", async () => {
       const out = await scrapeURL(
@@ -251,7 +266,7 @@ describe("Standalone scrapeURL tests", () => {
         expect(out.document).toHaveProperty("metadata");
         expect(out.document.metadata.statusCode).toBe(403);
       }
-    }, 30000);
+    }, 30_000);
 
     it("Scrape of a page with 404 status code", async () => {
       const out = await scrapeURL(
@@ -270,7 +285,7 @@ describe("Standalone scrapeURL tests", () => {
         expect(out.document).toHaveProperty("metadata");
         expect(out.document.metadata.statusCode).toBe(404);
       }
-    }, 30000);
+    }, 30_000);
 
     it("Scrape of a page with 405 status code", async () => {
       const out = await scrapeURL(
@@ -289,7 +304,7 @@ describe("Standalone scrapeURL tests", () => {
         expect(out.document).toHaveProperty("metadata");
         expect(out.document.metadata.statusCode).toBe(405);
       }
-    }, 30000);
+    }, 30_000);
 
     it("Scrape of a page with 500 status code", async () => {
       const out = await scrapeURL(
@@ -308,7 +323,7 @@ describe("Standalone scrapeURL tests", () => {
         expect(out.document).toHaveProperty("metadata");
         expect(out.document.metadata.statusCode).toBe(500);
       }
-    }, 30000);
+    }, 30_000);
 
     it("Scrape a redirected page", async () => {
       const out = await scrapeURL(
@@ -335,7 +350,7 @@ describe("Standalone scrapeURL tests", () => {
         expect(out.document.metadata.statusCode).toBe(200);
         expect(out.document.metadata.error).toBeUndefined();
       }
-    }, 30000);
+    }, 30_000);
   });
 
   describe.each(testEnginesScreenshot)(
@@ -368,7 +383,7 @@ describe("Standalone scrapeURL tests", () => {
           expect(out.document.metadata.statusCode).toBe(200);
           expect(out.document.metadata.error).toBeUndefined();
         }
-      }, 30000);
+      }, 30_000);
 
       it("Scrape with full-page screenshot", async () => {
         const out = await scrapeURL(
@@ -397,7 +412,7 @@ describe("Standalone scrapeURL tests", () => {
           expect(out.document.metadata.statusCode).toBe(200);
           expect(out.document.metadata.error).toBeUndefined();
         }
-      }, 30000);
+      }, 30_000);
     },
   );
 
@@ -419,7 +434,7 @@ describe("Standalone scrapeURL tests", () => {
       expect(out.document.metadata.statusCode).toBe(200);
       expect(out.document.metadata.error).toBeUndefined();
     }
-  }, 60000);
+  }, 60_000);
 
   it("Scrape a DOCX file", async () => {
     const out = await scrapeURL(
@@ -441,7 +456,7 @@ describe("Standalone scrapeURL tests", () => {
       expect(out.document.metadata.statusCode).toBe(200);
       expect(out.document.metadata.error).toBeUndefined();
     }
-  }, 60000);
+  }, 60_000);
 
   it("Scrapes a XLSX file", async () => {
     const out = await scrapeURL(
@@ -466,7 +481,7 @@ describe("Standalone scrapeURL tests", () => {
       expect(out.document.metadata.statusCode).toBe(200);
       expect(out.document.metadata.error).toBeUndefined();
     }
-  }, 60000);
+  }, 60_000);
 
   it("LLM extract with prompt and schema", async () => {
     const out = await scrapeURL(
@@ -498,14 +513,15 @@ describe("Standalone scrapeURL tests", () => {
     if (out.success) {
       expect(out.document.warning).toBeUndefined();
       expect(out.document).toHaveProperty("extract");
-      expect(out.document.extract).toHaveProperty("company_mission");
-      expect(out.document.extract).toHaveProperty("supports_sso");
-      expect(out.document.extract).toHaveProperty("is_open_source");
-      expect(typeof out.document.extract.company_mission).toBe("string");
-      expect(out.document.extract.supports_sso).toBe(false);
-      expect(out.document.extract.is_open_source).toBe(true);
+      expect(out.document.extract).toEqual(
+        expect.objectContaining({
+          company_mission: expect.any(String),
+          supports_sso: false,
+          is_open_source: true,
+        }),
+      );
     }
-  }, 120000);
+  }, 120_000);
 
   it("LLM extract with schema only", async () => {
     const out = await scrapeURL(
@@ -535,14 +551,15 @@ describe("Standalone scrapeURL tests", () => {
     if (out.success) {
       expect(out.document.warning).toBeUndefined();
       expect(out.document).toHaveProperty("extract");
-      expect(out.document.extract).toHaveProperty("company_mission");
-      expect(out.document.extract).toHaveProperty("supports_sso");
-      expect(out.document.extract).toHaveProperty("is_open_source");
-      expect(typeof out.document.extract.company_mission).toBe("string");
-      expect(out.document.extract.supports_sso).toBe(false);
-      expect(out.document.extract.is_open_source).toBe(true);
+      expect(out.document.extract).toEqual(
+        expect.objectContaining({
+          company_mission: expect.any(String),
+          supports_sso: false,
+          is_open_source: true,
+        }),
+      );
     }
-  }, 120000);
+  }, 120_000);
 
   test.concurrent.each(new Array(100).fill(0).map((_, i) => i))(
     "Concurrent scrape #%i",
@@ -557,21 +574,9 @@ describe("Standalone scrapeURL tests", () => {
         new CostTracking(),
       );
 
-      const replacer = (key: string, value: any) => {
-        if (value instanceof Error) {
-          return {
-            ...value,
-            message: value.message,
-            name: value.name,
-            cause: value.cause,
-            stack: value.stack,
-          };
-        } else {
-          return value;
-        }
-      };
-
-      if (!out.success) console.error(JSON.stringify(out, replacer));
+      if (!out.success) {
+        console.error(JSON.stringify(out, serializeErrorReplacer));
+      }
       expect(out.success).toBe(true);
 
       if (out.success) {
@@ -582,13 +587,11 @@ describe("Standalone scrapeURL tests", () => {
         expect(out.document.metadata.statusCode).toBe(200);
       }
     },
-    30000,
+    30_000,
   );
 
   it("Sitemap scrape should not convert to markdown", async () => {
-    const mockParseMarkdown = parseMarkdown as MockedFunction<
-      typeof parseMarkdown
-    >;
+    const mockParseMarkdown = vi.mocked(parseMarkdown);
     mockParseMarkdown.mockClear();
 
     const out = await scrapeURL(
@@ -614,5 +617,5 @@ describe("Standalone scrapeURL tests", () => {
       expect(out.document).toHaveProperty("metadata");
       expect(out.document.metadata.error).toBeUndefined();
     }
-  }, 30000);
+  }, 30_000);
 });

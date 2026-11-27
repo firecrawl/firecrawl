@@ -1,9 +1,9 @@
-import {
+import type {
   ConcurrencyCheckParams,
   ConcurrencyCheckResponse,
   RequestWithAuth,
 } from "./types";
-import { Response } from "express";
+import type { Response } from "express";
 import { getCombinedTeamActiveCount } from "../../services/worker/nuq-router";
 import { currentLimits } from "../../lib/limits";
 import { requestContext } from "../../lib/request-context";

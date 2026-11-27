@@ -89,8 +89,16 @@ describe("robots.txt denials", () => {
     );
 
     expect(robots).toBeInstanceOf(CrawlDenialError);
-    expect((robots as CrawlDenialError).robotsBlockedUrl).toBe(BLOCKED);
-    expect((robots as CrawlDenialError).reason).toBe("blocked");
-    expect((other as CrawlDenialError).robotsBlockedUrl).toBeNull();
+    if (!(robots instanceof CrawlDenialError)) {
+      throw new Error("Expected CrawlDenialError");
+    }
+    expect(robots.robotsBlockedUrl).toBe(BLOCKED);
+    expect(robots.reason).toBe("blocked");
+
+    expect(other).toBeInstanceOf(CrawlDenialError);
+    if (!(other instanceof CrawlDenialError)) {
+      throw new Error("Expected CrawlDenialError");
+    }
+    expect(other.robotsBlockedUrl).toBeNull();
   });
 });

@@ -1,30 +1,44 @@
 import express from "express";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
-const mocks = vi.hoisted(() => ({
-  config: {
-    ENV: "production" as string | undefined,
-    PARSE_UPLOAD_REF_SECRET: "test-upload-ref-secret" as string | undefined,
-    PARSE_UPLOAD_PUBLIC_BASE_URL: undefined as string | undefined,
-  },
-  redisEval: vi.fn(),
-  pipelineExec: vi.fn(),
-  imageOcrEnabled: false,
-  detectUploadedFileKind: vi.fn(
-    (
-      filename: string,
-      _contentType?: string,
-      _imageOcrEnabled?: boolean,
-    ): string | null => {
-      if (filename.endsWith(".html")) return "html";
-      if (filename.endsWith(".pdf")) return "pdf";
-      return null;
-    },
-  ),
-  loggerWarn: vi.fn(),
-  loggerError: vi.fn(),
-}));
+interface MockUploadConfig {
+  ENV: string | undefined;
+  PARSE_UPLOAD_REF_SECRET: string | undefined;
+  PARSE_UPLOAD_PUBLIC_BASE_URL: string | undefined;
+}
+
+const mocks = vi.hoisted(() => {
+  const config: MockUploadConfig = {
+    ENV: "production",
+    PARSE_UPLOAD_REF_SECRET: "test-upload-ref-secret",
+    PARSE_UPLOAD_PUBLIC_BASE_URL: undefined,
+  };
+  return {
+    config,
+    redisEval: vi.fn(),
+    pipelineExec: vi.fn(),
+    imageOcrEnabled: false,
+    detectUploadedFileKind: vi.fn(
+      (
+        filename: string,
+        _contentType?: string,
+        _imageOcrEnabled?: boolean,
+      ): string | null => {
+        if (filename.endsWith(".html")) {
+          return "html";
+        }
+        if (filename.endsWith(".pdf")) {
+          return "pdf";
+        }
+        return null;
+      },
+    ),
+    loggerWarn: vi.fn(),
+    loggerError: vi.fn(),
+  };
+});
 
 vi.mock("../../../config", () => ({
   config: mocks.config,
@@ -41,8 +55,10 @@ vi.mock("../../../lib/logger", () => ({
 }));
 
 vi.mock("../../../lib/otel-tracer", () => ({
-  withSpan: async (_name: string, fn: (span: unknown) => Promise<unknown>) =>
-    fn({}),
+  withSpan: async <T>(
+    _name: string,
+    fn: (span: unknown) => Promise<T>,
+  ): Promise<T> => fn({}),
   setSpanAttributes: vi.fn(),
 }));
 
@@ -80,22 +96,25 @@ import {
   parseUploadRefPayloadMiddleware,
   parseUploadUrlController,
 } from "../parse-upload";
-import {
-  coreParts,
-  createService,
-  defaultModules,
-  type UploadDriver,
-  type UploadsModule,
-} from "../../../service";
+import { coreParts, createService, defaultModules } from "../../../service";
+import type { UploadDriver, UploadsModule } from "../../../service";
 import { replaceService } from "../../../service/service";
 import { testService, withService } from "../../../service/testing";
+
+const parsedUploadBodySchema = z.object({
+  file: z.object({
+    buffer: z.custom<Buffer>(value => Buffer.isBuffer(value)),
+    filename: z.string().optional(),
+    kind: z.string().optional(),
+  }),
+});
 
 function buildApp() {
   const app = express();
   app.use(express.json());
   app.post("/v2/parse/upload-url", (req, res, next) => {
-    (req as any).auth = { team_id: "team-1" };
-    parseUploadUrlController(req as any, res).catch(next);
+    const authedReq = Object.assign(req, { auth: { team_id: "team-1" } });
+    parseUploadUrlController(authedReq, res).catch(next);
   });
   app.put(
     "/v2/parse/upload/:uploadId",
@@ -107,19 +126,21 @@ function buildApp() {
   );
   app.post(
     "/v2/parse",
-    (req, _res, next) => {
-      (req as any).auth = { team_id: "team-1" };
-      next();
-    },
     (req, res, next) => {
-      parseUploadRefPayloadMiddleware(req as any, res, next).catch(next);
+      const authedReq = Object.assign(req, { auth: { team_id: "team-1" } });
+      parseUploadRefPayloadMiddleware(authedReq, res, next).catch(next);
     },
     (req, res) => {
+      const parsed = parsedUploadBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(500).json({ success: false, error: "Missing parsed file" });
+        return;
+      }
       res.status(200).json({
         success: true,
-        filename: req.body.file.filename,
-        kind: req.body.file.kind,
-        content: req.body.file.buffer.toString("utf8"),
+        filename: parsed.data.file.filename,
+        kind: parsed.data.file.kind,
+        content: parsed.data.file.buffer.toString("utf8"),
       });
     },
   );
@@ -147,8 +168,12 @@ beforeEach(() => {
     [null, 1],
   ]);
   mocks.detectUploadedFileKind.mockReset().mockImplementation(filename => {
-    if (filename.endsWith(".html")) return "html";
-    if (filename.endsWith(".pdf")) return "pdf";
+    if (filename.endsWith(".html")) {
+      return "html";
+    }
+    if (filename.endsWith(".pdf")) {
+      return "pdf";
+    }
     return null;
   });
   mocks.loggerWarn.mockReset();

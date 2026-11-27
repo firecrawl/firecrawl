@@ -1,7 +1,8 @@
 import express from "express";
 import request from "supertest";
 import { authMiddleware } from "../../routes/shared";
-import { coreParts, type AuthModule } from "../../service";
+import { coreParts } from "../../service";
+import type { AuthModule } from "../../service";
 import { testService, withService } from "../../service/testing";
 import { RateLimiterMode } from "../../types";
 

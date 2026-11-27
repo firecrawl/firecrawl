@@ -1,6 +1,7 @@
 import { describeIf, TEST_PRODUCTION, TEST_SUITE_WEBSITE } from "../lib";
-import { Identity, idmux, scrapeTimeout, scrape, indexCooldown } from "./lib";
-import crypto from "crypto";
+import type { Identity } from "./lib";
+import { idmux, scrapeTimeout, scrape, indexCooldown } from "./lib";
+import crypto from "node:crypto";
 
 describeIf(TEST_PRODUCTION)(
   "V2 Scrape parsers[pdf].maxPages index caching",
@@ -11,9 +12,9 @@ describeIf(TEST_PRODUCTION)(
       identity = await idmux({
         name: "v2-parsers-maxpages-index-cache",
         concurrency: 100,
-        credits: 1000000,
+        credits: 1_000_000,
       });
-    }, 10000);
+    }, 10_000);
 
     test(
       "caches a PDF whose page count fits under maxPages",
@@ -23,7 +24,7 @@ describeIf(TEST_PRODUCTION)(
         const url = `${TEST_SUITE_WEBSITE}/example.pdf?testId=${crypto.randomUUID()}`;
         const body = {
           url,
-          parsers: [{ type: "pdf" as const, maxPages: 10000 }],
+          parsers: [{ type: "pdf" as const, maxPages: 10_000 }],
           maxAge: scrapeTimeout * 2,
           timeout: scrapeTimeout,
         };
@@ -31,12 +32,14 @@ describeIf(TEST_PRODUCTION)(
         const response1 = await scrape(body, identity);
         expect(response1.metadata.cacheState).toBe("miss");
 
-        await new Promise(resolve => setTimeout(resolve, indexCooldown));
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, indexCooldown);
+        });
 
         const response2 = await scrape(body, identity);
         expect(response2.metadata.cacheState).toBe("hit");
       },
-      scrapeTimeout * 2 + indexCooldown + 10000,
+      scrapeTimeout * 2 + indexCooldown + 10_000,
     );
 
     test(
@@ -55,12 +58,14 @@ describeIf(TEST_PRODUCTION)(
         expect(response1.metadata.totalPages).toBeGreaterThan(3);
         expect(response1.metadata.numPages).toBe(3);
 
-        await new Promise(resolve => setTimeout(resolve, indexCooldown));
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, indexCooldown);
+        });
 
         const response2 = await scrape(body, identity);
         expect(response2.metadata.cacheState).toBe("miss");
       },
-      scrapeTimeout * 2 + indexCooldown + 10000,
+      scrapeTimeout * 2 + indexCooldown + 10_000,
     );
 
     test(
@@ -77,12 +82,14 @@ describeIf(TEST_PRODUCTION)(
         const response1 = await scrape(body, identity);
         expect(response1.metadata.cacheState).toBe("miss");
 
-        await new Promise(resolve => setTimeout(resolve, indexCooldown));
+        await new Promise<void>(resolve => {
+          setTimeout(resolve, indexCooldown);
+        });
 
         const response2 = await scrape(body, identity);
         expect(response2.metadata.cacheState).toBe("hit");
       },
-      scrapeTimeout * 2 + indexCooldown + 10000,
+      scrapeTimeout * 2 + indexCooldown + 10_000,
     );
   },
 );

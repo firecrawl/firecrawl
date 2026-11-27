@@ -1,4 +1,6 @@
+import { z } from "zod";
 import { describeIf, itIf, TEST_PRODUCTION } from "../lib";
+import type { Identity } from "./lib";
 import {
   scrape,
   scrapeRaw,
@@ -6,11 +8,14 @@ import {
   search,
   searchRaw,
   idmux,
-  Identity,
   crawlStart,
   map,
   browserCreateRaw,
 } from "./lib";
+
+const highlightsResponseSchema = z.object({
+  highlights: z.unknown().optional(),
+});
 // Without a US OpenAI key or service account, every OpenAI-backed feature is
 // refused for US-only teams.
 const HAS_US_OPENAI =
@@ -27,10 +32,10 @@ describeIf(TEST_PRODUCTION)("US-only teams", () => {
     identity = await idmux({
       name: "us-only/scrape",
       concurrency: 100,
-      credits: 1000000,
+      credits: 1_000_000,
       flags: { usOnly: true },
     });
-  }, 10000 + scrapeTimeout);
+  }, 10_000 + scrapeTimeout);
 
   it.concurrent(
     "scrapes markdown and skips the query format with a warning",
@@ -70,7 +75,10 @@ describeIf(TEST_PRODUCTION)("US-only teams", () => {
       );
 
       expect(response.markdown).toBeDefined();
-      expect((response as any).highlights).toBeUndefined();
+      const parsedHighlights = highlightsResponseSchema.safeParse(response);
+      expect(
+        parsedHighlights.success ? parsedHighlights.data.highlights : undefined,
+      ).toBeUndefined();
       expect(response.warning).toContain(
         "Query mode is not supported for teams restricted to US-only processing.",
       );
@@ -121,8 +129,9 @@ describeIf(TEST_PRODUCTION)("US-only teams", () => {
         identity,
       );
 
-      expect(response.json).toBeDefined();
-      expect(typeof response.json.name).toBe("string");
+      expect(response.json).toEqual(
+        expect.objectContaining({ name: expect.any(String) }),
+      );
     },
     scrapeTimeout,
   );
@@ -290,10 +299,10 @@ describeIf(TEST_PRODUCTION)("US-only teams: search", () => {
     identity = await idmux({
       name: "us-only/search",
       concurrency: 100,
-      credits: 1000000,
+      credits: 1_000_000,
       flags: { usOnly: true },
     });
-  }, 10000 + scrapeTimeout);
+  }, 10_000 + scrapeTimeout);
 
   it.concurrent(
     "returns web results",

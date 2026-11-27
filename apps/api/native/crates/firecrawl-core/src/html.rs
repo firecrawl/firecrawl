@@ -1,23 +1,29 @@
-use std::collections::{HashMap, HashSet};
+// Pre-existing HTML processing code exempt from strict workspace clippy denies.
+#![allow(
+  clippy::arithmetic_side_effects,
+  clippy::collapsible_if,
+  clippy::expect_used,
+  clippy::indexing_slicing,
+  clippy::needless_borrow,
+  clippy::question_mark,
+  clippy::unwrap_used
+)]
 
+use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
-use kuchikiki::{iter::NodeEdge, parse_html, traits::TendrilSink, NodeRef};
-use napi_derive::napi;
-use nodesig::{get_node_signature, SignatureMode};
+use kuchikiki::{NodeRef, iter::NodeEdge, parse_html, traits::TendrilSink};
+use nodesig::{SignatureMode, get_node_signature};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::task;
 use url::Url;
 
 static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
   Regex::new(r#"url\(['"]?([^'")]+)['"]?\)"#).expect("URL_REGEX is a valid static regex pattern")
 });
 
-use crate::utils::to_napi_err;
-
-fn _extract_base_href_from_document(
+fn extract_base_href_from_document(
   document: &NodeRef,
   url: &Url,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -38,31 +44,17 @@ fn _extract_base_href_from_document(
 /// Base URL of an already-parsed document: its `<base href>` if it has one,
 /// otherwise the page URL.
 pub fn base_href_of_document(document: &NodeRef, url: &Url) -> String {
-  _extract_base_href_from_document(document, url).unwrap_or_else(|_| url.to_string())
+  extract_base_href_from_document(document, url).unwrap_or_else(|_| url.to_string())
 }
 
-fn _extract_base_href(
+/// Extract the base href from an HTML document.
+pub fn extract_base_href(
   html: &str,
   url: &str,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
   let document = parse_html().one(html).document_node;
   let url = Url::parse(url)?;
-  _extract_base_href_from_document(&document, &url)
-}
-
-/// Extract the base href from HTML document.
-#[napi]
-pub async fn extract_base_href(html: String, url: String) -> napi::Result<String> {
-  let res = task::spawn_blocking(move || _extract_base_href(&html, &url))
-    .await
-    .map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("extract_base_href join error: {e}"),
-      )
-    })?;
-
-  res.map_err(to_napi_err)
+  extract_base_href_from_document(&document, &url)
 }
 
 /// Raw `href` of every link in an already-parsed document.
@@ -92,25 +84,10 @@ pub fn extract_links_from_document(document: &NodeRef) -> Result<Vec<String>, St
   Ok(out)
 }
 
-/// Extract all links from HTML document.
-#[napi]
-pub async fn extract_links(html: Option<String>) -> napi::Result<Vec<String>> {
-  task::spawn_blocking(move || {
-    let html = match html {
-      Some(h) => h,
-      None => return Ok(Vec::new()),
-    };
-
-    let document = parse_html().one(html.as_str()).document_node;
-    extract_links_from_document(&document).map_err(to_napi_err)
-  })
-  .await
-  .map_err(|e| {
-    napi::Error::new(
-      napi::Status::GenericFailure,
-      format!("extract_links join error: {e}"),
-    )
-  })?
+/// Extract all links from an HTML document.
+pub fn extract_links(html: &str) -> Result<Vec<String>, String> {
+  let document = parse_html().one(html).document_node;
+  extract_links_from_document(&document)
 }
 
 macro_rules! insert_meta_name {
@@ -151,7 +128,8 @@ macro_rules! insert_meta_property {
   };
 }
 
-fn _extract_metadata(
+/// Extract metadata from an HTML document.
+pub fn extract_metadata(
   html: &str,
 ) -> Result<HashMap<String, Value>, Box<dyn std::error::Error + Send + Sync>> {
   let document = parse_html().one(html).document_node;
@@ -329,26 +307,6 @@ pub fn extract_metadata_from_document(
   Ok(out)
 }
 
-/// Extract metadata from HTML document.
-#[napi]
-pub async fn extract_metadata(html: Option<String>) -> napi::Result<HashMap<String, Value>> {
-  task::spawn_blocking(move || {
-    let html = match html {
-      Some(h) => h,
-      None => return Ok(HashMap::new()),
-    };
-
-    _extract_metadata(&html).map_err(to_napi_err)
-  })
-  .await
-  .map_err(|e| {
-    napi::Error::new(
-      napi::Status::GenericFailure,
-      format!("extract_metadata join error: {e}"),
-    )
-  })?
-}
-
 const EXCLUDE_NON_MAIN_TAGS: [&str; 48] = [
   "header",
   "footer",
@@ -423,8 +381,7 @@ const FORCE_INCLUDE_MAIN_TAGS: [&str; 13] = [
   ".swoogo-agenda",
 ];
 
-#[derive(Deserialize, Serialize)]
-#[napi(object)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TransformHtmlOptions {
   pub html: String,
   pub url: String,
@@ -442,7 +399,8 @@ struct ImageSource {
   is_x: bool,
 }
 
-fn _transform_html_inner(
+/// Transform and clean HTML content based on provided options.
+pub fn transform_html(
   opts: TransformHtmlOptions,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
   let document = parse_html().one(opts.html.as_ref()).document_node;
@@ -455,7 +413,7 @@ pub fn transform_document(
   mut document: NodeRef,
   opts: &TransformHtmlOptions,
 ) -> Result<NodeRef, Box<dyn std::error::Error + Send + Sync>> {
-  let url = Url::parse(&_extract_base_href_from_document(
+  let url = Url::parse(&extract_base_href_from_document(
     &document,
     &Url::parse(&opts.url)?,
   )?)?;
@@ -502,7 +460,8 @@ pub fn transform_document(
 
       let modes = signatures
         .iter()
-        .map(|x| Into::<SignatureMode>::into(x.split(':').nth(1).unwrap().to_string()))
+        .filter_map(|x| x.split(':').nth(1))
+        .map(|x| Into::<SignatureMode>::into(x.to_string()))
         .collect::<HashSet<_>>();
 
       for mode in modes {
@@ -596,41 +555,45 @@ pub fn transform_document(
         .map(|x| x.to_string())
     };
 
-    if let Some(srcset) = srcset {
-      let mut sizes: Vec<ImageSource> = srcset
-        .split(',')
-        .filter_map(|x| {
-          let tok: Vec<&str> = x.trim().split(' ').collect();
-          let last_token = tok[tok.len() - 1];
-          let (last_token, last_token_used) = if tok.len() > 1
-            && !last_token.is_empty()
-            && (last_token.ends_with('x') || last_token.ends_with('w'))
-          {
-            (last_token, true)
-          } else {
-            ("1x", false)
-          };
+    let mut sizes: Vec<ImageSource> = srcset
+      .map(|srcset| {
+        srcset
+          .split(',')
+          .filter_map(|x| {
+            let tok: Vec<&str> = x.trim().split(' ').collect();
+            let last_token = tok[tok.len() - 1];
+            let (last_token, last_token_used) = if tok.len() > 1
+              && !last_token.is_empty()
+              && (last_token.ends_with('x') || last_token.ends_with('w'))
+            {
+              (last_token, true)
+            } else {
+              ("1x", false)
+            };
 
-          if let Some((last_index, _)) = last_token.char_indices().last() {
-            if let Ok(parsed_size) = last_token[..last_index].parse() {
-              Some(ImageSource {
-                url: if last_token_used {
-                  tok[0..tok.len() - 1].join(" ")
-                } else {
-                  tok.join(" ")
-                },
-                size: parsed_size,
-                is_x: last_token.ends_with('x'),
-              })
+            if let Some((last_index, _)) = last_token.char_indices().last() {
+              last_token[..last_index]
+                .parse::<f64>()
+                .ok()
+                .filter(|x| x.is_finite())
+                .map(|parsed_size| ImageSource {
+                  url: if last_token_used {
+                    tok[0..tok.len() - 1].join(" ")
+                  } else {
+                    tok.join(" ")
+                  },
+                  size: parsed_size,
+                  is_x: last_token.ends_with('x'),
+                })
             } else {
               None
             }
-          } else {
-            None
-          }
-        })
-        .collect();
+          })
+          .collect()
+      })
+      .unwrap_or_default();
 
+    if !sizes.is_empty() {
       if sizes.iter().all(|x| x.is_x) {
         if let Some(src) = img.attributes.borrow().get("src").map(|x| x.to_string()) {
           sizes.push(ImageSource {
@@ -641,11 +604,7 @@ pub fn transform_document(
         }
       }
 
-      sizes.sort_by(|a, b| {
-        b.size
-          .partial_cmp(&a.size)
-          .unwrap_or(std::cmp::Ordering::Equal)
-      });
+      sizes.sort_by(|a, b| b.size.total_cmp(&a.size));
 
       if let Some(biggest) = sizes.first() {
         img
@@ -707,68 +666,36 @@ pub fn transform_document(
   Ok(document)
 }
 
-/// Transform and clean HTML content based on provided options.
-#[napi]
-pub async fn transform_html(opts: TransformHtmlOptions) -> napi::Result<String> {
-  let res = task::spawn_blocking(move || _transform_html_inner(opts))
-    .await
-    .map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("transform_html join error: {e}"),
-      )
-    })?;
-
-  res.map_err(to_napi_err)
-}
-
-fn _get_inner_json(html: &str) -> Result<String, ()> {
-  Ok(
-    parse_html()
-      .one(html)
-      .document_node
-      .select_first("body")?
-      .text_contents(),
-  )
-}
-
 /// Extract inner text content from HTML body.
-#[napi]
-pub async fn get_inner_json(html: String) -> napi::Result<String> {
-  let res = task::spawn_blocking(move || _get_inner_json(&html))
-    .await
-    .map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("get_inner_json join error: {e}"),
-      )
-    })?;
-
-  res.map_err(|_| to_napi_err("Failed to get inner JSON"))
+pub fn get_inner_json(html: &str) -> Result<String, &'static str> {
+  parse_html()
+    .one(html)
+    .document_node
+    .select_first("body")
+    .map(|body| body.text_contents())
+    .map_err(|_| "Failed to get inner JSON")
 }
 
-#[derive(Deserialize, Serialize)]
-#[napi(object)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AttributeSelector {
   pub selector: String,
   pub attribute: String,
 }
 
-#[derive(Deserialize, Serialize)]
-#[napi(object)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ExtractAttributesOptions {
   pub selectors: Vec<AttributeSelector>,
 }
 
-#[derive(Serialize)]
-#[napi(object)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ExtractedAttributeResult {
   pub selector: String,
   pub attribute: String,
   pub values: Vec<String>,
 }
 
-fn _extract_attributes(
+/// Extract specified attributes from HTML elements matching selectors.
+pub fn extract_attributes(
   html: &str,
   options: &ExtractAttributesOptions,
 ) -> Result<Vec<ExtractedAttributeResult>, Box<dyn std::error::Error + Send + Sync>> {
@@ -816,31 +743,14 @@ fn _extract_attributes(
   Ok(results)
 }
 
-/// Extract specified attributes from HTML elements matching selectors.
-#[napi]
-pub async fn extract_attributes(
-  html: String,
-  options: ExtractAttributesOptions,
-) -> napi::Result<Vec<ExtractedAttributeResult>> {
-  let res = task::spawn_blocking(move || _extract_attributes(&html, &options))
-    .await
-    .map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("extract_attributes join error: {e}"),
-      )
-    })?;
-
-  res.map_err(to_napi_err)
-}
-
-fn _extract_images(
+/// Extract all image URLs from an HTML document.
+pub fn extract_images(
   html: &str,
   base_url: &str,
 ) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
   let document = parse_html().one(html).document_node;
   let base_url = Url::parse(base_url)?;
-  let base_href = _extract_base_href_from_document(&document, &base_url)?;
+  let base_href = extract_base_href_from_document(&document, &base_url)?;
   let base_href_url = Url::parse(&base_href)?;
   let mut images = HashSet::<String>::new();
 
@@ -1002,21 +912,6 @@ fn _extract_images(
   Ok(filtered_images)
 }
 
-/// Extract all image URLs from HTML document.
-#[napi]
-pub async fn extract_images(html: String, base_url: String) -> napi::Result<Vec<String>> {
-  let res = task::spawn_blocking(move || _extract_images(&html, &base_url))
-    .await
-    .map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("extract_images join error: {e}"),
-      )
-    })?;
-
-  res.map_err(to_napi_err)
-}
-
 /// The synchronous body of `post_process_markdown`.
 pub fn post_process_markdown_text(markdown: &str) -> String {
   let mut link_open_count = 0usize;
@@ -1043,21 +938,6 @@ pub fn post_process_markdown_text(markdown: &str) -> String {
   }
 
   remove_skip_to_content_links(&out)
-}
-
-/// Process multi-line links in markdown.
-#[napi]
-pub async fn post_process_markdown(markdown: String) -> napi::Result<String> {
-  let res = task::spawn_blocking(move || post_process_markdown_text(&markdown))
-    .await
-    .map_err(|e| {
-      napi::Error::new(
-        napi::Status::GenericFailure,
-        format!("post_process_markdown join error: {e}"),
-      )
-    })?;
-
-  Ok(res)
 }
 
 fn remove_skip_to_content_links(input: &str) -> String {

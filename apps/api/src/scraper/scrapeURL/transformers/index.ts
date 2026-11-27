@@ -1,6 +1,6 @@
 import { parseMarkdown } from "../../../lib/html-to-markdown";
-import { Meta } from "..";
-import { Document } from "../../../controllers/v2/types";
+import type { Meta } from "..";
+import type { Document } from "../../../controllers/v2/types";
 import { htmlTransform } from "../lib/removeUnwantedElements";
 import { extractLinks } from "../lib/extractLinks";
 import { isMarkdownContentType } from "../lib/extractLinksFromMarkdown";
@@ -196,16 +196,35 @@ async function deriveMarkdownFromHTML(
   return document;
 }
 
+// NUL is never meaningful text, and storage such as PostgreSQL text columns rejects it.
+function stripNulCharacters(_meta: Meta, document: Document): Document {
+  if (document.markdown?.includes("\u0000")) {
+    document.markdown = document.markdown.replaceAll("\u0000", "");
+  }
+  if (document.html?.includes("\u0000")) {
+    document.html = document.html.replaceAll("\u0000", "");
+  }
+  if (document.rawHtml?.includes("\u0000")) {
+    document.rawHtml = document.rawHtml.replaceAll("\u0000", "");
+  }
+  return document;
+}
+
 async function deriveLinksFromHTML(
   meta: Meta,
   document: Document,
 ): Promise<Document> {
   const isMarkdown = isMarkdownContentType(document.metadata.contentType);
+  let source: string;
 
-  if (document.html === undefined && !isMarkdown) {
+  if (isMarkdown) {
+    source = document.markdown ?? document.rawHtml ?? "";
+  } else if (document.html === undefined) {
     throw new Error(
       "html is undefined -- this transformer is being called out of order",
     );
+  } else {
+    source = document.html;
   }
 
   const requiresLinks = !!hasFormatOfType(meta.options.formats, "links");
@@ -217,7 +236,7 @@ async function deriveLinksFromHTML(
   // Engines that carry markdown natively (exchange) put synthetic metadata in
   // rawHtml, so the markdown field is the only place their links live.
   document.links = await extractLinks(
-    isMarkdown ? (document.markdown ?? document.rawHtml ?? "") : document.html!,
+    source,
     document.metadata.url ??
       document.metadata.sourceURL ??
       meta.rewrittenUrl ??
@@ -429,9 +448,10 @@ type DocumentHookName =
 type TransformerStep = Transformer | { hook: DocumentHookName };
 
 // TODO: allow some of these to run in parallel
-const transformerStack: TransformerStep[] = [
+const transformerStack: Array<TransformerStep> = [
   deriveHTMLFromRawHTML,
   deriveMarkdownFromHTML,
+  stripNulCharacters,
   performCleanContent,
   { hook: "scrape.document.markdown" },
   performPromptInjectionGuard,
@@ -473,7 +493,7 @@ export async function executeTransformers(
     return coerceFieldsToFormats(meta, document);
   }
 
-  const executions: [string, number][] = [];
+  const executions: Array<[string, number]> = [];
 
   for (const step of transformerStack) {
     if (typeof step !== "function") {

@@ -9,7 +9,7 @@ export async function initializeApiStartupDependencies(): Promise<void> {
   try {
     await service.modules.blocklist.init();
     initializeEngineForcing();
-  } catch (error) {
+  } catch (error: unknown) {
     logger.error("Failed to initialize API startup dependencies", {
       error,
     });

@@ -8,7 +8,8 @@ import {
   TEST_SELF_HOST,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { crawl, crawlErrors, Identity, idmux, scrapeTimeout } from "./lib";
+import type { Identity } from "./lib";
+import { crawl, crawlErrors, idmux, scrapeTimeout } from "./lib";
 
 // The test site's robots.txt disallows /robots-test/blocked/. The
 // /robots-test/ page is allowed and links to the blocked page.
@@ -21,11 +22,16 @@ beforeAll(async () => {
   identity = await idmux({
     name: "crawl-robots",
     concurrency: 20,
-    credits: 1000000,
+    credits: 1_000_000,
   });
-}, 10000);
+}, 10_000);
 
 const isBlockedUrl = (url: string) => url.includes("/robots-test/blocked");
+
+const robotsBlockedPaths = async (crawlId: string) =>
+  (await crawlErrors(crawlId, identity)).robotsBlocked.map(
+    url => new URL(url).pathname,
+  );
 
 describe("Crawl robots.txt reporting", () => {
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
@@ -88,15 +94,15 @@ describe("Crawl robots.txt reporting", () => {
 // A local site whose robots.txt disallows /blocked/, so the tests can count
 // the requests a crawl makes. Proxies and remote engines cannot reach it.
 describeIf(TEST_SELF_HOST && !HAS_PROXY)("Crawl robots.txt requests", () => {
-  const LINKS: Record<string, string[]> = {
-    "/allowed/start/": ["/blocked/from-allowed/"],
-    "/allowed/redirect-links/": ["/redirect/discovered/"],
-    "/blocked/redirect-target/": ["/allowed/behind-redirect/"],
-  };
-  const REDIRECTS: Record<string, string> = {
-    "/redirect/start/": "/blocked/redirect-target/",
-    "/redirect/discovered/": "/blocked/discovered-target/",
-  };
+  const LINKS = new Map<string, Array<string>>([
+    ["/allowed/start/", ["/blocked/from-allowed/"]],
+    ["/allowed/redirect-links/", ["/redirect/discovered/"]],
+    ["/blocked/redirect-target/", ["/allowed/behind-redirect/"]],
+  ]);
+  const REDIRECTS = new Map<string, string>([
+    ["/redirect/start/", "/blocked/redirect-target/"],
+    ["/redirect/discovered/", "/blocked/discovered-target/"],
+  ]);
 
   const hits = new Map<string, number>();
   const hitsFor = (path: string) => hits.get(path) ?? 0;
@@ -108,6 +114,7 @@ describeIf(TEST_SELF_HOST && !HAS_PROXY)("Crawl robots.txt requests", () => {
       const path = new URL(req.url ?? "/", "http://fixture").pathname;
       hits.set(path, hitsFor(path) + 1);
 
+      const redirectTarget = REDIRECTS.get(path);
       if (path === "/robots.txt") {
         res.setHeader("Content-Type", "text/plain");
         res.end("User-agent: *\nDisallow: /blocked/\n");
@@ -117,11 +124,11 @@ describeIf(TEST_SELF_HOST && !HAS_PROXY)("Crawl robots.txt requests", () => {
         res.end(
           `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${locs.map(loc => `<url><loc>${base}${loc}</loc></url>`).join("")}</urlset>`,
         );
-      } else if (REDIRECTS[path]) {
-        res.writeHead(302, { Location: REDIRECTS[path] });
+      } else if (redirectTarget) {
+        res.writeHead(302, { Location: redirectTarget });
         res.end();
       } else {
-        const links = (LINKS[path] ?? [])
+        const links = (LINKS.get(path) ?? [])
           .map(link => `<a href="${link}">${link}</a>`)
           .join("");
         res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -131,7 +138,9 @@ describeIf(TEST_SELF_HOST && !HAS_PROXY)("Crawl robots.txt requests", () => {
       }
     });
 
-    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>(resolve => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
     const address = server.address();
     if (address === null || typeof address === "string") {
       throw new Error("Failed to start the robots.txt fixture site");
@@ -141,14 +150,14 @@ describeIf(TEST_SELF_HOST && !HAS_PROXY)("Crawl robots.txt requests", () => {
 
   afterAll(async () => {
     server.closeAllConnections();
-    await new Promise(resolve => server.close(resolve));
+    await new Promise<void>(resolve => {
+      server.close(() => {
+        resolve();
+      });
+    });
   });
 
-  const robotsBlockedPaths = async (crawlId: string) =>
-    (await crawlErrors(crawlId, identity)).robotsBlocked.map(
-      url => new URL(url).pathname,
-    );
-  const crawledPaths = (data: { metadata?: { url?: string } }[]) =>
+  const crawledPaths = (data: Array<{ metadata?: { url?: string } }>) =>
     data.map(doc => new URL(doc.metadata?.url ?? base).pathname);
 
   it.concurrent(
