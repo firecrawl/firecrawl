@@ -72,6 +72,26 @@ fn v6_embedded_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
       s[7] as u8,
     ));
   }
+  // 2002::/16 6to4 (IPv4 in segments 1 and 2).
+  if s[0] == 0x2002 {
+    return Some(Ipv4Addr::new(
+      (s[1] >> 8) as u8,
+      s[1] as u8,
+      (s[2] >> 8) as u8,
+      s[2] as u8,
+    ));
+  }
+  // 2001:0000::/32 Teredo (client IPv4 in segments 6 and 7, XOR with 0xffff).
+  if s[0] == 0x2001 && s[1] == 0 {
+    let s6 = s[6] ^ 0xffff;
+    let s7 = s[7] ^ 0xffff;
+    return Some(Ipv4Addr::new(
+      (s6 >> 8) as u8,
+      s6 as u8,
+      (s7 >> 8) as u8,
+      s7 as u8,
+    ));
+  }
   None
 }
 
@@ -213,6 +233,8 @@ mod tests {
       "http://localhost:3000/",
       "http://foo.localhost/",
       "http://printer.local/",
+      "http://[2002:7f00:1::]:8080/",
+      "http://[2001:0:0:0:0:0:80ff:fffe]:8080/",
     ] {
       assert!(
         check_url(&u(s), NetworkPolicy::PublicOnly).is_err(),
@@ -230,6 +252,8 @@ mod tests {
       "http://169.254.169.254/latest/meta-data/",
       "http://[fe80::1]/",
       "http://[::ffff:169.254.169.254]/",
+      "http://[2002:a9fe:a9fe::]:8080/",
+      "http://[2001:0:0:0:0:0:5601:5601]:8080/",
       "http://metadata.google.internal/",
     ] {
       assert!(

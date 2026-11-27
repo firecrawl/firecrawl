@@ -182,7 +182,13 @@ impl Fetcher {
       }
     });
 
+    // reqwest honours HTTP_PROXY, HTTPS_PROXY and ALL_PROXY by default.
+    // When a proxy is set, reqwest delegates DNS resolution to the proxy,
+    // sending the target hostname directly and bypassing GuardedResolver.
+    // Disabling proxy support ensures every destination is resolved locally
+    // through GuardedResolver and checked against the network policy.
     let client = Client::builder()
+      .no_proxy()
       .user_agent(user_agent.unwrap_or(USER_AGENT))
       .default_headers(default_headers)
       .redirect(redirect_policy)
@@ -323,5 +329,93 @@ mod tests {
   #[test]
   fn utf8_default() {
     assert_eq!(decode_body("héllo".as_bytes(), None), "héllo");
+  }
+
+  static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+  struct EnvGuard {
+    saved: Vec<(&'static str, Option<String>)>,
+  }
+
+  impl EnvGuard {
+    fn new(keys: &[&'static str]) -> Self {
+      let saved = keys.iter().map(|&k| (k, std::env::var(k).ok())).collect();
+      Self { saved }
+    }
+  }
+
+  impl Drop for EnvGuard {
+    fn drop(&mut self) {
+      for (k, v) in &self.saved {
+        match v {
+          Some(val) => std::env::set_var(k, val),
+          None => std::env::remove_var(k),
+        }
+      }
+    }
+  }
+
+  #[tokio::test]
+  async fn refused_targets_never_reach_upstream_proxy_even_with_env_proxy() {
+    let _lock = ENV_MUTEX.lock().unwrap();
+    let _guard = EnvGuard::new(&["HTTP_PROXY", "http_proxy", "ALL_PROXY"]);
+
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let reached = Arc::new(AtomicBool::new(false));
+    let reached_clone = reached.clone();
+
+    tokio::spawn(async move {
+      while let Ok((mut stream, _)) = listener.accept().await {
+        reached_clone.store(true, Ordering::SeqCst);
+        let mut buf = [0u8; 1024];
+        let _ = stream.read(&mut buf).await;
+        let _ = stream
+          .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+          .await;
+      }
+    });
+
+    std::env::set_var("HTTP_PROXY", format!("http://127.0.0.1:{port}"));
+    std::env::set_var("http_proxy", format!("http://127.0.0.1:{port}"));
+    std::env::set_var("ALL_PROXY", format!("http://127.0.0.1:{port}"));
+
+    let fetcher = Fetcher::new(NetworkPolicy::PublicOnly, None).unwrap();
+
+    // 1. Literal private IP
+    let url = Url::parse("http://127.0.0.1:8080/").unwrap();
+    let res = fetcher.fetch(&url, &FetchOptions::default()).await;
+    assert!(matches!(res, Err(FetchError::Blocked(_))));
+
+    // 2. Localhost hostname
+    let url = Url::parse("http://localhost:8080/").unwrap();
+    let res = fetcher.fetch(&url, &FetchOptions::default()).await;
+    assert!(matches!(res, Err(FetchError::Blocked(_))));
+
+    // 3. Metadata in AllowPrivate mode
+    let fetcher_private = Fetcher::new(NetworkPolicy::AllowPrivate, None).unwrap();
+    let url = Url::parse("http://169.254.169.254/latest/meta-data/").unwrap();
+    let res = fetcher_private.fetch(&url, &FetchOptions::default()).await;
+    assert!(matches!(res, Err(FetchError::Blocked(_))));
+
+    // 4. Wildcard-DNS name resolving to loopback
+    // In restricted or offline CI environments where external DNS is unavailable,
+    // lookup fails as a Network error rather than Blocked; either error confirms
+    // that the fetch was stopped without routing through the upstream proxy.
+    let url = Url::parse("http://localtest.me:8080/").unwrap();
+    let res = fetcher.fetch(&url, &FetchOptions::default()).await;
+    assert!(matches!(
+      res,
+      Err(FetchError::Blocked(_)) | Err(FetchError::Network(_))
+    ));
+
+    assert!(
+      !reached.load(Ordering::SeqCst),
+      "upstream proxy must not be contacted for refused targets"
+    );
   }
 }
