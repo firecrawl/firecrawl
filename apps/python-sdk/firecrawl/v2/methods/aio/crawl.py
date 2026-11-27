@@ -368,6 +368,9 @@ async def crawl_params_preview(client: AsyncHttpClient, request: CrawlParamsRequ
     if "webhook" in params_data:
         wk = params_data["webhook"]
         converted["webhook"] = wk
+    for key, value in params_data.items():
+        if key not in mapping:
+            converted[key] = value
     if "warning" in body:
         converted["warning"] = body["warning"]
     return CrawlParamsData(**converted)
