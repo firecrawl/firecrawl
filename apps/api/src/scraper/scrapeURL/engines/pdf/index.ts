@@ -37,6 +37,7 @@ import { reconcilePageCountWithPdfParse } from "./pageCount";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { completeTruncatedHandoff } from "./truncatedHandoff";
 import { withPdfExtractionPermit } from "./semaphore";
+import { AbortManagerThrownError } from "../../lib/abortManager";
 
 export {
   detectPdf,
@@ -232,8 +233,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         };
         const startedAt = Date.now();
         const detection = await withSpan("native.pdf.detect", async span => {
-          const detected = await withPdfExtractionPermit(() =>
-            detectPdf(tempFilePath, nativeCtx),
+          meta.abort.throwIfAborted();
+          const detected = await withPdfExtractionPermit(
+            () => detectPdf(tempFilePath, nativeCtx),
+            meta.abort.asSignal(),
           );
           setSpanAttributes(span, {
             "native.module": "pdf",
@@ -267,7 +270,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           throw new PDFOCRRequiredError(detection.pdfType);
         }
       } catch (error) {
-        if (error instanceof PDFOCRRequiredError) {
+        if (
+          error instanceof PDFOCRRequiredError ||
+          error instanceof AbortManagerThrownError
+        ) {
           throw error;
         }
         extractAndEmitNativeLogs(error, meta.logger, "pdf.detect");
@@ -284,8 +290,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         };
         const startedAt = Date.now();
         const pdfResult = await withSpan("native.pdf.process", async span => {
-          const processed = await withPdfExtractionPermit(() =>
-            processPdf(tempFilePath, maxPages ?? undefined, nativeCtx),
+          meta.abort.throwIfAborted();
+          const processed = await withPdfExtractionPermit(
+            () => processPdf(tempFilePath, maxPages ?? undefined, nativeCtx),
+            meta.abort.asSignal(),
           );
           setSpanAttributes(span, {
             "native.module": "pdf",
@@ -344,7 +352,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           result = { markdown: pdfResult.markdown, html };
         }
       } catch (error) {
-        if (error instanceof PDFOCRRequiredError) {
+        if (
+          error instanceof PDFOCRRequiredError ||
+          error instanceof AbortManagerThrownError
+        ) {
           throw error;
         }
         extractAndEmitNativeLogs(error, meta.logger, "pdf.process");
