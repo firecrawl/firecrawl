@@ -15,6 +15,8 @@ interface Sentence {
   text: string;
   source: SentenceSource;
   blockId: number;
+  // Keep scoring text trimmed, but preserve significant whitespace in output.
+  codeText?: string;
   lang?: string;
   isHeader?: boolean;
 }
@@ -148,6 +150,7 @@ export function parseMarkdownToSentences(markdown: string): Sentence[] {
             if (trimmed)
               result.push({
                 text: trimmed,
+                codeText: line,
                 source: "code",
                 blockId: bid,
                 lang,
@@ -217,8 +220,25 @@ export function assembleAnswer(
 
   function flushCode() {
     if (!codeRun) return;
-    const fence = codeRun.lang ? "```" + codeRun.lang : "```";
-    parts.push(fence + "\n" + codeRun.texts.join("\n") + "\n```");
+    // Backticks cannot occur in a backtick fence's info string. Use tildes
+    // there, and keep either delimiter longer than every run in the content.
+    const marker = codeRun.lang?.includes("`") ? "~" : "`";
+    const runs = marker === "`" ? /`+/g : /~+/g;
+    let fenceLength = 3;
+    for (const text of codeRun.texts) {
+      for (const run of text.matchAll(runs)) {
+        fenceLength = Math.max(fenceLength, run[0].length + 1);
+      }
+    }
+    const fence = marker.repeat(fenceLength);
+    parts.push(
+      fence +
+        (codeRun.lang ?? "") +
+        "\n" +
+        codeRun.texts.join("\n") +
+        "\n" +
+        fence,
+    );
     codeRun = null;
   }
 
@@ -270,10 +290,10 @@ export function assembleAnswer(
     if (cur.source === "code") {
       flushTable();
       if (samePrevBlock && codeRun) {
-        codeRun.texts.push(cur.text);
+        codeRun.texts.push(cur.codeText ?? cur.text);
       } else {
         flushCode();
-        codeRun = { texts: [cur.text], lang: cur.lang };
+        codeRun = { texts: [cur.codeText ?? cur.text], lang: cur.lang };
       }
       continue;
     }
