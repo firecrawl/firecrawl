@@ -18,6 +18,8 @@ jobs:
        (contains(github.event.pull_request.body, '#scrape-quality-eval') ||
         contains(github.event.pull_request.title, '#scrape-quality-eval')))
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
     steps:
       - name: Create evals App token
         id: app_token
@@ -41,19 +43,22 @@ jobs:
                 username: context.actor,
               });
               return true;
-            } catch {
-              return false;
+            } catch (error) {
+              if (error.status === 404) return false;
+              throw error;
             }
 
       - name: Dispatch quality eval
         if: steps.check-member.outputs.result == 'true'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           github-token: ${{ steps.app_token.outputs.token }}
           script: |
             let pr = context.payload.pull_request;
             if (context.eventName !== 'pull_request') {
-              ({ data: pr } = await github.rest.pulls.get({
+              ({ data: pr } = await getOctokit(process.env.GITHUB_TOKEN).rest.pulls.get({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: context.issue.number,
@@ -90,6 +95,8 @@ jobs:
        (contains(github.event.pull_request.body, '#scrape-ocr-eval') ||
         contains(github.event.pull_request.title, '#scrape-ocr-eval')))
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
     steps:
       - name: Create evals App token
         id: app_token
@@ -113,19 +120,22 @@ jobs:
                 username: context.actor,
               });
               return true;
-            } catch {
-              return false;
+            } catch (error) {
+              if (error.status === 404) return false;
+              throw error;
             }
 
       - name: Dispatch OCR eval
         if: steps.check-member.outputs.result == 'true'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           github-token: ${{ steps.app_token.outputs.token }}
           script: |
             let pr = context.payload.pull_request;
             if (context.eventName !== 'pull_request') {
-              ({ data: pr } = await github.rest.pulls.get({
+              ({ data: pr } = await getOctokit(process.env.GITHUB_TOKEN).rest.pulls.get({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: context.issue.number,
