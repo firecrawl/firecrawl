@@ -68,7 +68,7 @@ Without `--markdown`, `scrape` prints the same JSON the Firecrawl API returns. A
 firecrawl-local init
 ```
 
-It knows Claude Code, Claude Desktop, Cursor, Windsurf, Gemini CLI and Codex. It backs up each config file before changing it. Add `--dry-run` to see the changes without writing them, or `--agent cursor` to set up one tool. Restart the tool afterwards so it loads the new server.
+It knows Claude Code, Claude Desktop, Cursor, Windsurf, Gemini CLI, Antigravity and Codex. It backs up each config file before changing it. Add `--dry-run` to see the changes without writing them, or `--agent cursor` to set up one tool. Restart the tool afterwards so it loads the new server.
 
 To add it by hand, register `firecrawl-local mcp` as a stdio MCP server. In a JSON config that looks like this, with the full path to the binary.
 
