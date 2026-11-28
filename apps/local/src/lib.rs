@@ -45,5 +45,6 @@ pub mod login;
 pub mod markdown;
 pub mod mem;
 pub mod netguard;
+mod proxy;
 pub mod scrape;
 pub mod serve;
