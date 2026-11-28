@@ -183,7 +183,6 @@ export function isUrlAllowedByRobots(
     }
 
     if (isAllowed) {
-      //   console.log("isAllowed: true, " + userAgent);
       return true;
     }
   }
