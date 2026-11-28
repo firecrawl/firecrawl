@@ -114,7 +114,8 @@ def main():
         if not scrape_status:
             continue
         
-        extracted_info = extract_info(openai_client, scrape_status["content"])
+        # the current SDK exposes the scraped body as `markdown` (v1's `content` field is gone)
+        extracted_info = extract_info(openai_client, scrape_status["markdown"])
         if not extracted_info:
             continue
         
@@ -123,7 +124,7 @@ def main():
         scraped_data.append({
             "company": company_name,
             "url": url,
-            "markdown": scrape_status["content"],
+            "markdown": scrape_status["markdown"],
             "extracted_info": extracted_info
         })
         
