@@ -13,7 +13,7 @@ import { HttpClient } from "../utils/httpClient";
 import { ensureNoV1Options, ensureValidScrapeOptions } from "../utils/validation";
 import { normalizeAxiosError, throwForBadResponse, isRetryableError } from "../utils/errorHandler";
 import type { HttpClient as _Http } from "../utils/httpClient";
-import { fetchAllPages } from "../utils/pagination";
+import { fetchAllPages, isTerminalJobStatus } from "../utils/pagination";
 
 export type CrawlRequest = CrawlOptions & {
   url: string;
@@ -76,7 +76,9 @@ export async function getCrawlStatus(
     const body = res.data;
     const initialDocs = (body.data || []) as Document[];
 
-    const auto = pagination?.autoPaginate ?? true;
+    // Only auto-paginate by default once the job has reached a terminal status;
+    // following `next` while scraping can block as new pages are appended.
+    const auto = pagination?.autoPaginate ?? isTerminalJobStatus(body.status);
     if (!auto || !body.next) {
       return {
         id: jobId,
@@ -191,7 +193,7 @@ export async function waitForCrawlCompletion(
     try {
       const status = await raceAbort(getCrawlStatus(http, jobId), signal);
       
-      if (["completed", "failed", "cancelled"].includes(status.status)) {
+      if (isTerminalJobStatus(status.status)) {
         return status;
       }
     } catch (err: any) {

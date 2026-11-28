@@ -1,6 +1,15 @@
 import type { HttpClient } from "../utils/httpClient";
 import type { Document, PaginationConfig } from "../types";
 
+const TERMINAL_JOB_STATUSES = new Set(["completed", "failed", "cancelled"]);
+
+/**
+ * Returns true when a crawl or batch scrape job has reached a terminal status.
+ */
+export function isTerminalJobStatus(status: string): boolean {
+  return TERMINAL_JOB_STATUSES.has(status);
+}
+
 /**
  * Shared helper to follow `next` URLs and aggregate paginated result arrays.
  */

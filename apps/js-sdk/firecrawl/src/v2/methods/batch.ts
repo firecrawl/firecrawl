@@ -10,7 +10,7 @@ import {
 } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { ensureValidScrapeOptions } from "../utils/validation";
-import { fetchAllPages } from "../utils/pagination";
+import { fetchAllPages, isTerminalJobStatus } from "../utils/pagination";
 import {
   normalizeAxiosError,
   throwForBadResponse,
@@ -91,7 +91,9 @@ export async function getBatchScrapeStatus(
       throwForBadResponse(res, "get batch scrape status");
     const body = res.data;
     const initialDocs = (body.data || []) as Document[];
-    const auto = pagination?.autoPaginate ?? true;
+    // Only auto-paginate by default once the job has reached a terminal status;
+    // following `next` while scraping can block as new pages are appended.
+    const auto = pagination?.autoPaginate ?? isTerminalJobStatus(body.status);
     if (!auto || !body.next) {
       return {
         id: jobId,
@@ -179,7 +181,7 @@ export async function waitForBatchCompletion(
     try {
       const status = await getBatchScrapeStatus(http, jobId);
 
-      if (["completed", "failed", "cancelled"].includes(status.status)) {
+      if (isTerminalJobStatus(status.status)) {
         return status;
       }
     } catch (err: any) {

@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, type Mock } from "vitest";
-import { getCrawlStatus } from "../../../v2/methods/crawl";
-import { getBatchScrapeStatus } from "../../../v2/methods/batch";
+import { getCrawlStatus, waitForCrawlCompletion } from "../../../v2/methods/crawl";
+import { getBatchScrapeStatus, waitForBatchCompletion } from "../../../v2/methods/batch";
 import { getMonitorCheck } from "../../../v2/methods/monitor";
 
 describe("JS SDK v2 pagination", () => {
@@ -112,7 +112,7 @@ describe("JS SDK v2 pagination", () => {
     const first = { status: 200, data: { success: true, status: "scraping", completed: 2, total: 2, next, data: [{ markdown: "a" }, { markdown: "b" }] } };
     const stalled = { status: 200, data: { success: true, status: "scraping", next, data: [] } };
     const http = makeHttp((url) => (url === next ? stalled : first));
-    const res = await getCrawlStatus(http, "jobR");
+    const res = await getCrawlStatus(http, "jobR", { autoPaginate: true });
     expect(res.data.length).toBe(2);
     expect((http.get as Mock).mock.calls.length).toBe(2);
   });
@@ -122,9 +122,93 @@ describe("JS SDK v2 pagination", () => {
     const first = { status: 200, data: { success: true, status: "scraping", completed: 2, total: 2, next, data: [{ markdown: "a" }, { markdown: "b" }] } };
     const stalled = { status: 200, data: { success: true, status: "scraping", next, data: [] } };
     const http = makeHttp((url) => (url === next ? stalled : first));
-    const res = await getBatchScrapeStatus(http, "jobR");
+    const res = await getBatchScrapeStatus(http, "jobR", { autoPaginate: true });
     expect(res.data.length).toBe(2);
     expect((http.get as Mock).mock.calls.length).toBe(2);
+  });
+
+  test("crawl: does not auto-paginate by default while job is scraping", async () => {
+    const next = "https://api/v2/crawl/jobRun?skip=1";
+    const first = { status: 200, data: { success: true, status: "scraping", completed: 1, total: 5, next, data: [{ markdown: "a" }] } };
+    const second = { status: 200, data: { success: true, status: "scraping", next: "https://api/v2/crawl/jobRun?skip=2", data: [{ markdown: "b" }] } };
+    const http = makeHttp((url) => (url === next ? second : first));
+    const res = await getCrawlStatus(http, "jobRun");
+    expect(res.status).toBe("scraping");
+    expect(res.data.length).toBe(1);
+    expect(res.next).toBe(next);
+    expect((http.get as Mock).mock.calls.length).toBe(1);
+  });
+
+  test("crawl: auto-paginates while scraping when autoPaginate=true", async () => {
+    const next = "https://api/v2/crawl/jobRun?skip=1";
+    const first = { status: 200, data: { success: true, status: "scraping", completed: 1, total: 2, next, data: [{ markdown: "a" }] } };
+    const second = { status: 200, data: { success: true, status: "scraping", next: null, data: [{ markdown: "b" }] } };
+    const http = makeHttp((url) => (url === next ? second : first));
+    const res = await getCrawlStatus(http, "jobRun", { autoPaginate: true });
+    expect(res.data.length).toBe(2);
+    expect(res.next).toBeNull();
+    expect((http.get as Mock).mock.calls.length).toBe(2);
+  });
+
+  test("batch: does not auto-paginate by default while job is scraping", async () => {
+    const next = "https://api/v2/batch/scrape/jobRun?skip=1";
+    const first = { status: 200, data: { success: true, status: "scraping", completed: 1, total: 5, next, data: [{ markdown: "a" }] } };
+    const second = { status: 200, data: { success: true, status: "scraping", next: "https://api/v2/batch/scrape/jobRun?skip=2", data: [{ markdown: "b" }] } };
+    const http = makeHttp((url) => (url === next ? second : first));
+    const res = await getBatchScrapeStatus(http, "jobRun");
+    expect(res.status).toBe("scraping");
+    expect(res.data.length).toBe(1);
+    expect(res.next).toBe(next);
+    expect((http.get as Mock).mock.calls.length).toBe(1);
+  });
+
+  test("batch: auto-paginates while scraping when autoPaginate=true", async () => {
+    const next = "https://api/v2/batch/scrape/jobRun?skip=1";
+    const first = { status: 200, data: { success: true, status: "scraping", completed: 1, total: 2, next, data: [{ markdown: "a" }] } };
+    const second = { status: 200, data: { success: true, status: "scraping", next: null, data: [{ markdown: "b" }] } };
+    const http = makeHttp((url) => (url === next ? second : first));
+    const res = await getBatchScrapeStatus(http, "jobRun", { autoPaginate: true });
+    expect(res.data.length).toBe(2);
+    expect(res.next).toBeNull();
+    expect((http.get as Mock).mock.calls.length).toBe(2);
+  });
+
+  test("waitForCrawlCompletion: skips pagination while scraping and auto-paginates when completed", async () => {
+    let polls = 0;
+    const http = makeHttp((url) => {
+      if (url === "/v2/crawl/jobW") {
+        polls += 1;
+        if (polls === 1) {
+          return { status: 200, data: { success: true, status: "scraping", completed: 1, total: 2, next: "https://api/v2/crawl/jobW?skip=1", data: [{ markdown: "a" }] } };
+        }
+        return { status: 200, data: { success: true, status: "completed", completed: 2, total: 2, next: "https://api/v2/crawl/jobW?skip=1", data: [{ markdown: "a" }] } };
+      }
+      return { status: 200, data: { success: true, next: null, data: [{ markdown: "b" }] } };
+    });
+    const res = await waitForCrawlCompletion(http, "jobW", 0);
+    expect(res.status).toBe("completed");
+    expect(res.data.length).toBe(2);
+    expect(res.next).toBeNull();
+    expect((http.get as Mock).mock.calls.length).toBe(3); // 1 scraping poll + 1 completed poll + 1 next page
+  });
+
+  test("waitForBatchCompletion: skips pagination while scraping and auto-paginates when completed", async () => {
+    let polls = 0;
+    const http = makeHttp((url) => {
+      if (url === "/v2/batch/scrape/jobWB") {
+        polls += 1;
+        if (polls === 1) {
+          return { status: 200, data: { success: true, status: "scraping", completed: 1, total: 2, next: "https://api/v2/batch/scrape/jobWB?skip=1", data: [{ markdown: "a" }] } };
+        }
+        return { status: 200, data: { success: true, status: "completed", completed: 2, total: 2, next: "https://api/v2/batch/scrape/jobWB?skip=1", data: [{ markdown: "a" }] } };
+      }
+      return { status: 200, data: { success: true, next: null, data: [{ markdown: "b" }] } };
+    });
+    const res = await waitForBatchCompletion(http, "jobWB", 0);
+    expect(res.status).toBe("completed");
+    expect(res.data.length).toBe(2);
+    expect(res.next).toBeNull();
+    expect((http.get as Mock).mock.calls.length).toBe(3); // 1 scraping poll + 1 completed poll + 1 next page
   });
 
   test("batch: maxWaitTime stops pagination after first page", async () => {

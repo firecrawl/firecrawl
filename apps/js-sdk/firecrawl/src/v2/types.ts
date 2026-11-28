@@ -755,7 +755,7 @@ export interface Document {
 
 // Pagination configuration for auto-fetching pages from v2 endpoints that return a `next` URL
 export interface PaginationConfig {
-  /** When true (default), automatically follow `next` links and aggregate all documents. */
+  /** Automatically follow `next` links and aggregate all documents (defaults to `true` for terminal job statuses, `false` while a job is still running). */
   autoPaginate?: boolean;
   /** Maximum number of additional pages to fetch after the first response. */
   maxPages?: number;
