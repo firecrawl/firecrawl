@@ -2,6 +2,7 @@
 Error handling utilities for v2 API.
 """
 
+import math
 import requests
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
@@ -134,7 +135,7 @@ def _parse_retry_after(response: requests.Response) -> Optional[float]:
         return None
     try:
         seconds = float(value)
-        return seconds if seconds >= 0 else None
+        return seconds if math.isfinite(seconds) and seconds >= 0 else None
     except (TypeError, ValueError):
         pass
     try:
@@ -142,7 +143,7 @@ def _parse_retry_after(response: requests.Response) -> Optional[float]:
         if retry_at.tzinfo is None:
             retry_at = retry_at.replace(tzinfo=timezone.utc)
         return max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 

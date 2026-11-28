@@ -82,3 +82,18 @@ def test_past_http_date_yields_zero_not_negative():
 def test_retry_after_attribute_exists_on_plain_construction():
     error = RateLimitError("rate limited")
     assert error.retry_after is None
+
+
+def test_infinite_retry_after_yields_none():
+    for bad in ("inf", "1e309"):
+        response = _response(headers={"Retry-After": bad})
+        with pytest.raises(RateLimitError) as exc_info:
+            handle_response_error(response, "scrape")
+        assert exc_info.value.retry_after is None
+
+
+def test_out_of_range_http_date_yields_none():
+    response = _response(headers={"Retry-After": "Thu, 01 Jan 99999 00:00:00 GMT"})
+    with pytest.raises(RateLimitError) as exc_info:
+        handle_response_error(response, "scrape")
+    assert exc_info.value.retry_after is None
