@@ -1577,11 +1577,12 @@ class FirecrawlClient:
             job_id: Batch job ID
 
         Returns:
-            True if the job was cancelled
+            bool: True if the job was cancelled. False if the job was not
+            cancelled, for example because it already completed.
         """
         return batch_module.cancel_batch_scrape(self.http_client, job_id)
 
-    def get_batch_scrape_errors(self, job_id: str):
+    def get_batch_scrape_errors(self, job_id: str) -> CrawlErrorsResponse:
         """Retrieve error details for a batch scrape job.
 
         Args:
