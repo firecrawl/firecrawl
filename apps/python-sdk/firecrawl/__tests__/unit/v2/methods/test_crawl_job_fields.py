@@ -163,7 +163,9 @@ class TestAsyncCrawlJobFields:
         client = AsyncMock()
         client.get.return_value = _async_response(_status_body())
 
-        job = await async_crawl_module.get_crawl_status(client, JOB_ID)
+        job = await async_crawl_module.get_crawl_status(
+            client, JOB_ID, PaginationConfig(auto_paginate=True)
+        )
 
         assert job.id == JOB_ID
         assert job.warning == WARNING
@@ -176,7 +178,9 @@ class TestAsyncCrawlJobFields:
             _async_response(_status_body(warning=None)),
         ]
 
-        job = await async_crawl_module.get_crawl_status(client, JOB_ID)
+        job = await async_crawl_module.get_crawl_status(
+            client, JOB_ID, PaginationConfig(auto_paginate=True)
+        )
 
         assert client.get.call_count == 2
         assert len(job.data) == 2

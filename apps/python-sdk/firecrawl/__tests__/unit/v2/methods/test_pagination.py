@@ -99,6 +99,36 @@ class TestCrawlPagination:
         assert len(result.data) == 1
         assert isinstance(result.data[0], Document)
 
+    def test_get_crawl_status_default_does_not_paginate(self):
+        """Regression: get_crawl_status without pagination_config must not auto-paginate.
+
+        wait_for_crawl_completion polls status repeatedly and never passes a
+        pagination_config.  Previously the default was True, so every poll
+        materialized every result page even though only the status field is
+        needed.  The default must be False so callers opt in explicitly.
+        """
+        mock_response = Mock()
+        mock_response.ok = True
+        mock_response.json.return_value = {
+            "success": True,
+            "status": "scraping",
+            "completed": 5,
+            "total": 500,
+            "creditsUsed": 5,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": "https://api.firecrawl.dev/v2/crawl/test-crawl-123?page=2",
+            "data": [self.sample_doc],
+        }
+        self.mock_client.get.return_value = mock_response
+
+        result = get_crawl_status(self.mock_client, self.job_id)
+
+        # Only the single status request should have been made — no follow-up
+        # page fetches even though a next URL was present.
+        assert self.mock_client.get.call_count == 1
+        assert result.next == "https://api.firecrawl.dev/v2/crawl/test-crawl-123?page=2"
+        assert len(result.data) == 1
+
     def test_get_crawl_status_propagates_request_timeout(self):
         """Ensure request_timeout is forwarded to the HTTP client."""
         mock_response = Mock()
@@ -574,6 +604,34 @@ class TestAsyncPagination:
         assert self.mock_client.get.call_count == 2
 
     @pytest.mark.asyncio
+    async def test_get_crawl_status_async_default_does_not_paginate(self):
+        """Regression: async get_crawl_status without pagination_config must not auto-paginate.
+
+        The async wait_for_crawl loop in client_async.py polls get_crawl_status
+        without a pagination_config.  The default must be False so polling does
+        not materialize every result page on each tick.
+        """
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "success": True,
+            "status": "scraping",
+            "completed": 5,
+            "total": 500,
+            "creditsUsed": 5,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": "https://api.firecrawl.dev/v2/crawl/test-async-123?page=2",
+            "data": [self.sample_doc],
+        }
+        self.mock_client.get.return_value = mock_response
+
+        result = await get_crawl_status_async(self.mock_client, self.job_id)
+
+        assert self.mock_client.get.call_count == 1
+        assert result.next == "https://api.firecrawl.dev/v2/crawl/test-async-123?page=2"
+        assert len(result.data) == 1
+
+    @pytest.mark.asyncio
     async def test_get_crawl_status_async_propagates_request_timeout(self):
         """Ensure async request_timeout is forwarded to the HTTP client."""
         mock_response = Mock()
@@ -932,7 +990,9 @@ class TestRunningJobPagination:
         client = Mock()
         client.get.side_effect = self._running_responses(kind)
 
-        result = get_status(client, self.job_id)
+        result = get_status(
+            client, self.job_id, pagination_config=PaginationConfig(auto_paginate=True)
+        )
 
         assert client.get.call_count == 1
         assert result.status == "scraping"
@@ -946,7 +1006,9 @@ class TestRunningJobPagination:
         client = Mock()
         client.get.side_effect = self._running_responses(kind, first_page_docs=1)
 
-        result = get_status(client, self.job_id)
+        result = get_status(
+            client, self.job_id, pagination_config=PaginationConfig(auto_paginate=True)
+        )
 
         assert client.get.call_count == 2
         assert result.status == "scraping"
@@ -961,7 +1023,9 @@ class TestRunningJobPagination:
         client = AsyncMock()
         client.get.side_effect = self._running_responses(kind, async_client=True)
 
-        result = await get_status(client, self.job_id)
+        result = await get_status(
+            client, self.job_id, pagination_config=PaginationConfig(auto_paginate=True)
+        )
 
         assert client.get.call_count == 1
         assert result.status == "scraping"
@@ -976,7 +1040,9 @@ class TestRunningJobPagination:
         client = AsyncMock()
         client.get.side_effect = self._running_responses(kind, async_client=True, first_page_docs=1)
 
-        result = await get_status(client, self.job_id)
+        result = await get_status(
+            client, self.job_id, pagination_config=PaginationConfig(auto_paginate=True)
+        )
 
         assert client.get.call_count == 2
         assert result.status == "scraping"
@@ -995,7 +1061,9 @@ class TestRunningJobPagination:
             self._page("completed", [self.sample_doc], None),
         ]
 
-        result = get_status(client, self.job_id)
+        result = get_status(
+            client, self.job_id, pagination_config=PaginationConfig(auto_paginate=True)
+        )
 
         assert client.get.call_count == 3
         assert len(result.data) == 1
@@ -1039,7 +1107,11 @@ class TestPaginationInvalidLaterPage:
         client.get.side_effect = self._responses(kind)
 
         with pytest.raises(ValidationError):
-            get_status(client, self.job_id)
+            get_status(
+                client,
+                self.job_id,
+                pagination_config=PaginationConfig(auto_paginate=True),
+            )
 
         assert client.get.call_count == 2
 
@@ -1053,7 +1125,11 @@ class TestPaginationInvalidLaterPage:
         client.get.side_effect = self._responses(kind, async_client=True)
 
         with pytest.raises(ValidationError):
-            await get_status(client, self.job_id)
+            await get_status(
+                client,
+                self.job_id,
+                pagination_config=PaginationConfig(auto_paginate=True),
+            )
 
         assert client.get.call_count == 2
 
