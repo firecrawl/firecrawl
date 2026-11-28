@@ -932,7 +932,9 @@ class TestRunningJobPagination:
         client = Mock()
         client.get.side_effect = self._running_responses(kind)
 
-        result = get_status(client, self.job_id)
+        result = get_status(
+            client, self.job_id, pagination_config=PaginationConfig(auto_paginate=True)
+        )
 
         assert client.get.call_count == 1
         assert result.status == "scraping"
@@ -946,7 +948,9 @@ class TestRunningJobPagination:
         client = Mock()
         client.get.side_effect = self._running_responses(kind, first_page_docs=1)
 
-        result = get_status(client, self.job_id)
+        result = get_status(
+            client, self.job_id, pagination_config=PaginationConfig(auto_paginate=True)
+        )
 
         assert client.get.call_count == 2
         assert result.status == "scraping"
@@ -961,7 +965,9 @@ class TestRunningJobPagination:
         client = AsyncMock()
         client.get.side_effect = self._running_responses(kind, async_client=True)
 
-        result = await get_status(client, self.job_id)
+        result = await get_status(
+            client, self.job_id, pagination_config=PaginationConfig(auto_paginate=True)
+        )
 
         assert client.get.call_count == 1
         assert result.status == "scraping"
@@ -976,7 +982,9 @@ class TestRunningJobPagination:
         client = AsyncMock()
         client.get.side_effect = self._running_responses(kind, async_client=True, first_page_docs=1)
 
-        result = await get_status(client, self.job_id)
+        result = await get_status(
+            client, self.job_id, pagination_config=PaginationConfig(auto_paginate=True)
+        )
 
         assert client.get.call_count == 2
         assert result.status == "scraping"
@@ -995,7 +1003,9 @@ class TestRunningJobPagination:
             self._page("completed", [self.sample_doc], None),
         ]
 
-        result = get_status(client, self.job_id)
+        result = get_status(
+            client, self.job_id, pagination_config=PaginationConfig(auto_paginate=True)
+        )
 
         assert client.get.call_count == 3
         assert len(result.data) == 1
@@ -1039,7 +1049,11 @@ class TestPaginationInvalidLaterPage:
         client.get.side_effect = self._responses(kind)
 
         with pytest.raises(ValidationError):
-            get_status(client, self.job_id)
+            get_status(
+                client,
+                self.job_id,
+                pagination_config=PaginationConfig(auto_paginate=True),
+            )
 
         assert client.get.call_count == 2
 
@@ -1053,7 +1067,11 @@ class TestPaginationInvalidLaterPage:
         client.get.side_effect = self._responses(kind, async_client=True)
 
         with pytest.raises(ValidationError):
-            await get_status(client, self.job_id)
+            await get_status(
+                client,
+                self.job_id,
+                pagination_config=PaginationConfig(auto_paginate=True),
+            )
 
         assert client.get.call_count == 2
 
