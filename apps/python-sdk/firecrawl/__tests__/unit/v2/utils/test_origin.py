@@ -47,9 +47,9 @@ def test_sync_wait_crawl_polls_until_terminal(monkeypatch):
     from firecrawl.v2.methods import crawl as crawl_module
     from firecrawl.v2.types import CrawlJob
 
-    statuses = iter(["scraping", "completed"])
+    statuses = iter(["scraping", "completed", "completed"])
 
-    def fake_status(client, job_id, request_timeout=None):
+    def fake_status(client, job_id, request_timeout=None, **kwargs):
         return CrawlJob(status=next(statuses), completed=0, total=0, credits_used=0, data=[])
 
     monkeypatch.setattr(crawl_module, "get_crawl_status", fake_status)

@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from firecrawl.v2.types import PaginationConfig
 from firecrawl.v2.utils.http_client_async import AsyncHttpClient
 
 
@@ -105,7 +106,9 @@ def test_auto_paginated_crawl_status_never_leaves_api_host():
         side_effect=[MagicMock(status_code=200, json=MagicMock(return_value=p)) for p in pages]
     )
 
-    job = asyncio.run(get_crawl_status(client, "id"))
+    job = asyncio.run(
+        get_crawl_status(client, "id", PaginationConfig(auto_paginate=True))
+    )
 
     urls = [c.args[0] for c in client._client.get.await_args_list]
     assert urls == ["/v2/crawl/id", "https://api.firecrawl.dev/v2/crawl/id?skip=1"]
