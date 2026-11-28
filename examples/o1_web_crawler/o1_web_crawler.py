@@ -57,8 +57,10 @@ def find_relevant_page_via_map(objective, url, app, client):
         print(f"{Colors.YELLOW}Mapping website using the identified search parameter...{Colors.RESET}")
         map_website = app.map_url(url, params={"search": map_search_parameter})
         print(f"{Colors.GREEN}Website mapping completed successfully.{Colors.RESET}")
-        print(f"{Colors.GREEN}Located {len(map_website)} relevant links.{Colors.RESET}")
-        return map_website
+        # v2 map results carry link objects with a `url` field, not v1's plain URL strings
+        links = [link.url for link in map_website['links']]
+        print(f"{Colors.GREEN}Located {len(links)} relevant links.{Colors.RESET}")
+        return links
     except Exception as e:
         print(f"{Colors.RED}Error encountered during relevant page identification: {str(e)}{Colors.RESET}")
         return None
