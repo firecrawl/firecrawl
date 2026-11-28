@@ -517,6 +517,20 @@ impl Engine {
                 add_warning(&mut data, warning);
               }
             }
+            if challenged {
+              let mode = match self.browser_mode {
+                BrowserMode::Never => "browser use is disabled (FIRECRAWL_LOCAL_BROWSER=never)",
+                _ if self.browser.is_none() => "no Chrome or Chromium was found on this machine",
+                _ => "the local browser could not clear the check",
+              };
+              add_warning(
+                &mut data,
+                format!(
+                  "This page is behind a bot check (status {}), so this result is probably empty or incomplete. {} Install Chrome, or route the scrape through a machine that has one.",
+                  fetched.status, mode
+                ),
+              );
+            }
             finish_metadata(
               &mut metadata,
               &parsed,
@@ -1158,6 +1172,24 @@ mod tests {
     add_warning(&mut data, "First.");
     add_warning(&mut data, "Second.");
     assert_eq!(data["warning"], "First. Second.");
+  }
+
+  #[test]
+  fn a_blocked_page_carries_a_warning() {
+    // A bot check kept as the result must say so even when browser use is
+    // off, so API clients checking only top-level success can see it.
+    let mut data = Map::new();
+    let mode = "browser use is disabled (FIRECRAWL_LOCAL_BROWSER=never)";
+    add_warning(
+      &mut data,
+      format!(
+        "This page is behind a bot check (status {}), so this result is probably empty or incomplete. {} Install Chrome, or route the scrape through a machine that has one.",
+        403, mode
+      ),
+    );
+    let warning = data["warning"].as_str().unwrap();
+    assert!(warning.contains("bot check"));
+    assert!(warning.contains("403"));
   }
 
   #[test]
