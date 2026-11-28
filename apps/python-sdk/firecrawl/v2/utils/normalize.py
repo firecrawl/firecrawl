@@ -5,57 +5,57 @@ Normalization helpers for v2 API payloads to avoid relying on Pydantic aliases.
 from typing import Any, Dict, List
 from ..types import DocumentMetadata
 
+_METADATA_KEY_MAP = {
+    # OpenGraph
+    "ogTitle": "og_title",
+    "ogDescription": "og_description",
+    "ogUrl": "og_url",
+    "ogImage": "og_image",
+    "ogAudio": "og_audio",
+    "ogDeterminer": "og_determiner",
+    "ogLocale": "og_locale",
+    "ogLocaleAlternate": "og_locale_alternate",
+    "ogSiteName": "og_site_name",
+    "ogVideo": "og_video",
+    # Dublin Core and misc
+    "dcTermsCreated": "dc_terms_created",
+    "dcDateCreated": "dc_date_created",
+    "dcDate": "dc_date",
+    "dcTermsType": "dc_terms_type",
+    "dcType": "dc_type",
+    "dcTermsAudience": "dc_terms_audience",
+    "dcTermsSubject": "dc_terms_subject",
+    "dcSubject": "dc_subject",
+    "dcDescription": "dc_description",
+    "dcTermsKeywords": "dc_terms_keywords",
+    "modifiedTime": "modified_time",
+    "publishedTime": "published_time",
+    "articleTag": "article_tag",
+    "articleSection": "article_section",
+    # Response-level
+    "sourceURL": "source_url",
+    "statusCode": "status_code",
+    "scrapeId": "scrape_id",
+    "numPages": "num_pages",
+    "totalPages": "total_pages",
+    "contentType": "content_type",
+    "proxyUsed": "proxy_used",
+    "cacheState": "cache_state",
+    "cachedAt": "cached_at",
+    "creditsUsed": "credits_used",
+    "concurrencyLimited": "concurrency_limited",
+    "concurrencyQueueDurationMs": "concurrency_queue_duration_ms",
+}
+
 
 def _map_metadata_keys(md: Dict[str, Any]) -> Dict[str, Any]:
     """
     Convert API v2 camelCase metadata keys to snake_case expected by DocumentMetadata.
     Leaves unknown keys as-is.
     """
-    mapping = {
-        # OpenGraph
-        "ogTitle": "og_title",
-        "ogDescription": "og_description",
-        "ogUrl": "og_url",
-        "ogImage": "og_image",
-        "ogAudio": "og_audio",
-        "ogDeterminer": "og_determiner",
-        "ogLocale": "og_locale",
-        "ogLocaleAlternate": "og_locale_alternate",
-        "ogSiteName": "og_site_name",
-        "ogVideo": "og_video",
-        # Dublin Core and misc
-        "dcTermsCreated": "dc_terms_created",
-        "dcDateCreated": "dc_date_created",
-        "dcDate": "dc_date",
-        "dcTermsType": "dc_terms_type",
-        "dcType": "dc_type",
-        "dcTermsAudience": "dc_terms_audience",
-        "dcTermsSubject": "dc_terms_subject",
-        "dcSubject": "dc_subject",
-        "dcDescription": "dc_description",
-        "dcTermsKeywords": "dc_terms_keywords",
-        "modifiedTime": "modified_time",
-        "publishedTime": "published_time",
-        "articleTag": "article_tag",
-        "articleSection": "article_section",
-        # Response-level
-        "sourceURL": "source_url",
-        "statusCode": "status_code",
-        "scrapeId": "scrape_id",
-        "numPages": "num_pages",
-        "totalPages": "total_pages",
-        "contentType": "content_type",
-        "proxyUsed": "proxy_used",
-        "cacheState": "cache_state",
-        "cachedAt": "cached_at",
-        "creditsUsed": "credits_used",
-        "concurrencyLimited": "concurrency_limited",
-        "concurrencyQueueDurationMs": "concurrency_queue_duration_ms",
-    }
-
     out: Dict[str, Any] = {}
     for k, v in md.items():
-        snake = mapping.get(k, k)
+        snake = _METADATA_KEY_MAP.get(k, k)
         out[snake] = v
 
     # Light coercions where server may send strings/lists
