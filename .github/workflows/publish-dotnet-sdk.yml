@@ -68,17 +68,15 @@ jobs:
           published-step: Publish to NuGet
           paths: apps/dot-net-sdk
 
-  publish:
-    name: Publish to NuGet
+  build:
+    name: Build and pack
     needs: release-summary
     if: github.ref == 'refs/heads/main'
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    environment: release
-    concurrency:
-      group: ${{ github.workflow }}-release-${{ github.ref }}
-      cancel-in-progress: false
     permissions:
       contents: read
+    outputs:
+      version_incremented: ${{ steps.version_check.outputs.version_incremented }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -99,6 +97,7 @@ jobs:
         id: version_check
         run: |
           VERSION_INCREMENTED=$(python .github/scripts/check_version_has_incremented.py dotnet ./apps/dot-net-sdk/Firecrawl firecrawl-sdk)
+          echo "version_incremented=$VERSION_INCREMENTED" >> $GITHUB_OUTPUT
           echo "VERSION_INCREMENTED=$VERSION_INCREMENTED" >> $GITHUB_ENV
 
       - name: Set up .NET 8
@@ -122,9 +121,40 @@ jobs:
         working-directory: ./apps/dot-net-sdk/Firecrawl
         run: dotnet pack --no-build --configuration Release --output ../nupkgs
 
-      - name: Publish to NuGet
+      - name: Upload package
         if: ${{ env.VERSION_INCREMENTED == 'true' }}
-        working-directory: ./apps/dot-net-sdk
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nupkgs
+          path: apps/dot-net-sdk/nupkgs/*.nupkg
+          if-no-files-found: error
+
+  publish:
+    name: Publish to NuGet
+    needs: [release-summary, build]
+    if: github.ref == 'refs/heads/main' && needs.build.outputs.version_incremented == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    concurrency:
+      group: ${{ github.workflow }}-release-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: nupkgs
+          path: nupkgs
+
+      - name: NuGet login
+        id: nuget-login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        with:
+          user: micah_firecrawl
+
+      - name: Publish to NuGet
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: dotnet nuget push ./nupkgs/*.nupkg --api-key $NUGET_API_KEY --source https://api.nuget.org/v3/index.json --skip-duplicate
