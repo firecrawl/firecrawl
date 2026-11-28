@@ -189,7 +189,14 @@ async fn serve(mut client: TcpStream, policy: NetworkPolicy) -> std::io::Result<
   let mut request = [0u8; 4];
   client.read_exact(&mut request).await?;
   if request[0] != 5 || request[1] != 1 {
-    return reply(&mut client, REPLY_COMMAND_NOT_SUPPORTED).await;
+    reply(&mut client, REPLY_COMMAND_NOT_SUPPORTED).await?;
+    client.shutdown().await?;
+    // Closing with unread target bytes can reset the connection on Windows.
+    // Drain up to the largest SOCKS5 target (length, name, port) or peer EOF.
+    // A client that keeps its write side open must not hold the task forever.
+    let mut target = [0; 1 + 255 + 2];
+    let _ = tokio::time::timeout(Duration::from_secs(1), client.read_exact(&mut target)).await;
+    return Ok(());
   }
   let host = match request[3] {
     1 => {
@@ -366,20 +373,42 @@ mod tests {
 
   #[tokio::test]
   async fn only_connect_is_supported() {
-    let proxy = GuardProxy::start(NetworkPolicy::AllowPrivate)
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    // UDP ASSOCIATE sent whole, fragmented, or as a header that the peer never finishes.
+    let request = [5, 3, 0, 1, 127, 0, 0, 1, 0, 53];
+    for (initial, remainder) in [
+      (&request[..], Some(&[][..])),
+      (&request[..4], Some(&request[4..])),
+      (&request[..4], None),
+    ] {
+      let mut stream = TcpStream::connect(listener.local_addr().unwrap())
+        .await
+        .unwrap();
+      let (client, _) = listener.accept().await.unwrap();
+      let handler = tokio::spawn(serve(client, NetworkPolicy::AllowPrivate));
+      stream.write_all(&[5, 1, 0]).await.unwrap();
+      let mut chosen = [0u8; 2];
+      stream.read_exact(&mut chosen).await.unwrap();
+      assert_eq!(chosen, [5, 0]);
+      stream.write_all(initial).await.unwrap();
+      tokio::time::timeout(Duration::from_secs(3), async {
+        let mut answer = [0u8; 10];
+        stream.read_exact(&mut answer).await.unwrap();
+        assert_eq!(answer[1], REPLY_COMMAND_NOT_SUPPORTED);
+        assert_eq!(stream.read(&mut [0]).await.unwrap(), 0);
+      })
       .await
-      .unwrap();
-    let mut stream = TcpStream::connect(proxy.addr()).await.unwrap();
-    stream.write_all(&[5, 1, 0]).await.unwrap();
-    let mut chosen = [0u8; 2];
-    stream.read_exact(&mut chosen).await.unwrap();
-    // Command 3 is UDP associate.
-    stream
-      .write_all(&[5, 3, 0, 1, 127, 0, 0, 1, 0, 53])
-      .await
-      .unwrap();
-    let mut answer = [0u8; 10];
-    stream.read_exact(&mut answer).await.unwrap();
-    assert_eq!(answer[1], REPLY_COMMAND_NOT_SUPPORTED);
+      .expect("the client should receive the refusal and EOF before finishing the request");
+
+      if let Some(tail) = remainder {
+        stream.write_all(tail).await.unwrap();
+        stream.shutdown().await.unwrap();
+      }
+      tokio::time::timeout(Duration::from_secs(3), handler)
+        .await
+        .expect("the refused connection should close")
+        .unwrap()
+        .unwrap();
+    }
   }
 }
