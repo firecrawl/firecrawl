@@ -1140,11 +1140,16 @@ func (c *Client) GetCreditUsage(ctx context.Context) (*CreditUsage, error) {
 		return nil, err
 	}
 
-	var resp CreditUsage
-	if err := json.Unmarshal(raw, &resp); err != nil {
-		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	var response struct {
+		Data *CreditUsage `json:"data"`
 	}
-	return &resp, nil
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode data: %v", err)}
+	}
+	if response.Data == nil {
+		return nil, &FirecrawlError{Message: "missing credit usage data"}
+	}
+	return response.Data, nil
 }
 
 // ================================================================
