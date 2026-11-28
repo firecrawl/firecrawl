@@ -1,5 +1,6 @@
 from .client import FirecrawlClient
 from .client_async import AsyncFirecrawlClient
+from .utils.error_handler import CrawlJobFailedError
 from .methods.feedback import collect_feedback_tokens
 from .types import (
     DiscoveredTool,
@@ -20,6 +21,7 @@ from .types import (
 __all__ = [
     "FirecrawlClient",
     "AsyncFirecrawlClient",
+    "CrawlJobFailedError",
     "DiscoveredTool",
     "FindToolsData",
     "AlexandriaCall",
