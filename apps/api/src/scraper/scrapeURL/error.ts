@@ -478,7 +478,9 @@ export class UnsupportedFileError extends TransportableError {
   constructor(public reason: string) {
     super(
       "SCRAPE_UNSUPPORTED_FILE_ERROR",
-      `The URL returned a file type that Firecrawl cannot process: ${reason}. Firecrawl supports HTML web pages, PDFs, and common document formats. Raster images (PNG, JPEG, JPEG 2000, TIFF, GIF, BMP, WebP, AVIF) are OCR'd when the parsers option includes "image" (the default), where image parsing is available. Other binary files like videos, executables, archives, and other image formats are not supported. If you expected this URL to return a web page, the server may be misconfigured or returning the wrong content type.`,
+      reason.startsWith("File exceeds size limit")
+        ? `The URL returned a file that is too large for Firecrawl to process: ${reason}. Try a smaller version of the file, or split it into parts and scrape each one.`
+        : `The URL returned a file type that Firecrawl cannot process: ${reason}. Firecrawl supports HTML web pages, PDFs, and common document formats. Raster images (PNG, JPEG, JPEG 2000, TIFF, GIF, BMP, WebP, AVIF) are OCR'd when the parsers option includes "image" (the default), where image parsing is available. Other binary files like videos, executables, archives, and other image formats are not supported. If you expected this URL to return a web page, the server may be misconfigured or returning the wrong content type.`,
     );
   }
 
