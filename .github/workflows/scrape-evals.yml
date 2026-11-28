@@ -58,10 +58,11 @@ jobs:
           script: |
             let pr = context.payload.pull_request;
             if (context.eventName !== 'pull_request') {
-              ({ data: pr } = await getOctokit(process.env.GITHUB_TOKEN).rest.pulls.get({
+              ({ data: pr } = await github.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: context.issue.number,
+                headers: { authorization: `token ${process.env.GITHUB_TOKEN}` },
               }));
             }
             const thisRepo = `${context.repo.owner}/${context.repo.repo}`;
@@ -135,10 +136,11 @@ jobs:
           script: |
             let pr = context.payload.pull_request;
             if (context.eventName !== 'pull_request') {
-              ({ data: pr } = await getOctokit(process.env.GITHUB_TOKEN).rest.pulls.get({
+              ({ data: pr } = await github.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: context.issue.number,
+                headers: { authorization: `token ${process.env.GITHUB_TOKEN}` },
               }));
             }
             const thisRepo = `${context.repo.owner}/${context.repo.repo}`;
