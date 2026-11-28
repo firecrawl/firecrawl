@@ -385,3 +385,31 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
     60_000,
   );
 });
+
+// The CLI attaches cloud-only fields (toolDetail, domainTools) and the alexandria
+// source to every search request, no matter which server it points at. A
+// self-hosted schema is a strict object, so those turn into unrecognized_keys /
+// invalid_value and the whole request 400s. They have to be stripped instead.
+describeIf(!TEST_PRODUCTION)("Search tolerates cloud-only CLI fields", () => {
+  it.concurrent(
+    "accepts toolDetail, domainTools and the alexandria source",
+    async () => {
+      const res = await searchRaw(
+        {
+          query: "firecrawl",
+          limit: 3,
+          integration: "cli",
+          toolDetail: "compact",
+          sources: [{ type: "web" }, { type: "alexandria" }],
+          domainTools: true,
+          ignoreInvalidURLs: false,
+          origin: "cli.claude-code@1.30.0",
+        },
+        identity,
+      );
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+    },
+    60_000,
+  );
+});

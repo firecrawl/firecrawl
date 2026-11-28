@@ -11,7 +11,7 @@ import type { SearchRequest } from "../../service/request";
 import { v7 as uuidv7 } from "uuid";
 import { requestContext } from "../../lib/request-context";
 import type {} from "../../lib/billing-state";
-import { finalizeResponse, service } from "../../service";
+import { finalizeResponse, installedService, service } from "../../service";
 import type {
   RequestContext,
   ResponsePayload,
@@ -76,6 +76,45 @@ function readTeamPlanClass(caller: unknown): TeamPlanClass | undefined {
   return parsed.success ? parsed.data.planClass : undefined;
 }
 
+/**
+ * Cloud-only fields the CLI attaches to every search request no matter where it
+ * points. A self-hosted deployment has no use for them, and its request schema is
+ * a strict object, so they come back as `unrecognized_keys` and fail the request.
+ */
+const CLOUD_ONLY_SEARCH_FIELDS = ["toolDetail", "domainTools"] as const;
+
+/**
+ * Sources the self-hosted schema understands. `alexandria` is cloud-only and the
+ * CLI adds it whenever an API key is configured, which a self-hosted install needs
+ * even as a dummy value.
+ */
+const SELF_HOSTED_SEARCH_SOURCES = new Set(["web", "images", "news"]);
+
+function stripCloudOnlySearchFields(
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = { ...body };
+  for (const key of CLOUD_ONLY_SEARCH_FIELDS) {
+    delete next[key];
+  }
+  if (Array.isArray(next.sources)) {
+    const supported = next.sources.filter((entry) => {
+      const type =
+        typeof entry === "string"
+          ? entry
+          : (entry as { type?: unknown } | null)?.type;
+      return typeof type === "string" && SELF_HOSTED_SEARCH_SOURCES.has(type);
+    });
+    if (supported.length > 0) {
+      next.sources = supported;
+    } else {
+      // Drop the key so the schema's `.prefault(["web"])` applies.
+      delete next.sources;
+    }
+  }
+  return next;
+}
+
 function parseSearchRequestBody(body: unknown): SearchRequest {
   const parsed = jsonRecordSchema.safeParse(body);
   if (!parsed.success) {
@@ -86,7 +125,9 @@ function parseSearchRequestBody(body: unknown): SearchRequest {
     clientModel: _clientModel,
     ...rest
   } = parsed.data;
-  return getV2RequestSchemas().search.parse(rest);
+  return getV2RequestSchemas().search.parse(
+    installedService() ? rest : stripCloudOnlySearchFields(rest),
+  );
 }
 
 export async function searchController(
@@ -101,7 +142,7 @@ export async function searchController(
 
   return withSpan(
     "api.search.request",
-    span => searchControllerInner(req, res, span),
+    (span) => searchControllerInner(req, res, span),
     {
       kind: SpanKind.SERVER,
       attributes: {
@@ -270,10 +311,10 @@ async function searchControllerInner(
     if (planHooks?.has("search.plan")) {
       if (
         (ctx.usOnly || ctx.flags?.usOnly) &&
-        planned.sources.some(source => source.type === "images")
+        planned.sources.some((source) => source.type === "images")
       ) {
         planned.sources = planned.sources.filter(
-          source => source.type !== "images",
+          (source) => source.type !== "images",
         );
         if (
           planned.sources.length === 0 &&
