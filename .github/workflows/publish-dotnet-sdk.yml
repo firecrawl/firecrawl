@@ -133,7 +133,7 @@ jobs:
     name: Publish to NuGet
     needs: [release-summary, build]
     if: github.ref == 'refs/heads/main' && needs.build.outputs.version_incremented == 'true'
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     environment: release
     concurrency:
       group: ${{ github.workflow }}-release-${{ github.ref }}
@@ -147,11 +147,6 @@ jobs:
         with:
           name: nupkgs
           path: nupkgs
-
-      - name: Set up .NET 8
-        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
-        with:
-          dotnet-version: '8.0.x'
 
       - name: NuGet login
         id: nuget-login
