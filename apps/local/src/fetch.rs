@@ -187,6 +187,7 @@ impl Fetcher {
       .default_headers(default_headers)
       .redirect(redirect_policy)
       .dns_resolver(Arc::new(GuardedResolver { policy }))
+      .no_proxy()
       .connect_timeout(Duration::from_secs(10))
       .pool_idle_timeout(Duration::from_secs(60))
       .pool_max_idle_per_host(64)
