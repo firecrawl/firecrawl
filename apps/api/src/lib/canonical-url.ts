@@ -1,5 +1,14 @@
 export function normalizeUrl(url: string) {
-  url = url.replace(/^https?:\/\//, "").replace(/^www\./, "");
+  // Scheme and host are case-insensitive (RFC 3986 section 6.2.2.1) while the
+  // path is not, so only those two components are folded to lower case. The
+  // regex keeps matching case-sensitively spread "HTTPS://Host" spellings out
+  // of the result, which previously survived both the scheme and "www." strips.
+  const schemeMatch = /^(https?):\/\/([^/?#]*)(.*)$/i.exec(url);
+  if (schemeMatch) {
+    url = schemeMatch[2].replace(/^www\./i, "").toLowerCase() + schemeMatch[3];
+  } else {
+    url = url.replace(/^www\./i, "");
+  }
   if (url.endsWith("/")) {
     url = url.slice(0, -1);
   }
