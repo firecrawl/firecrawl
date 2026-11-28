@@ -148,7 +148,7 @@ Every other `/v2` route, such as `/v2/search`, is passed on to Firecrawl Cloud, 
 Run `firecrawl-local <command> --help` for every option. The ones you will reach for most are below.
 
 - **scrape.** `--markdown` prints only the markdown, `--format` picks output formats, `--full-page` keeps navigation and footers, and `--timeout` sets the per-page limit in milliseconds.
-- **crawl.** `--limit` caps the page count (default 100), `--max-depth` caps link depth, `--include` and `--exclude` take path regexes, `--entire-domain` follows links outside the start path, and `--out` writes markdown files instead of JSON.
+- **crawl.** `--limit` caps the page count (default 100), `--max-depth` caps link depth, `--sitemap include|skip|only` controls sitemap discovery (default `include`), `--include` and `--exclude` take path regexes, `--entire-domain` follows links outside the start path, and `--out` writes markdown files instead of JSON. `include` uses both sitemaps and page links; `skip` discovers pages through links only; `only` crawls sitemap URLs without following page links. `--max-depth` does not exclude URLs discovered through sitemaps. To crawl just the starting page, use `--max-depth 0 --sitemap skip`.
 - **map.** `--search` keeps only URLs containing some text, and `--limit` caps the count.
 - **serve.** `--port` (default 3002), `--host`, `--token` and `--allow-private`, covered in [Security](#security).
 - **Any command.** `--browser auto|never|always` decides when to use Chrome.

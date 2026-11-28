@@ -73,9 +73,12 @@ enum Command {
     /// Maximum pages.
     #[arg(long, short = 'l', default_value_t = 100)]
     limit: usize,
-    /// How many links deep to follow.
+    /// How many links deep to follow. Does not limit sitemap URLs.
     #[arg(long)]
     max_depth: Option<u32>,
+    /// Include sitemap URLs, skip them, or crawl only sitemap URLs.
+    #[arg(long, default_value = "include", value_parser = ["include", "skip", "only"])]
+    sitemap: String,
     /// Follow links anywhere on the site, not only under the start path.
     #[arg(long)]
     entire_domain: bool,
@@ -381,6 +384,7 @@ async fn run(cli: Cli) -> ExitCode {
       url,
       limit,
       max_depth,
+      sitemap,
       entire_domain,
       include_paths,
       exclude_paths,
@@ -395,6 +399,7 @@ async fn run(cli: Cli) -> ExitCode {
       let opts = CrawlOptions {
         limit,
         max_discovery_depth: max_depth,
+        sitemap,
         include_paths,
         exclude_paths,
         crawl_entire_domain: entire_domain,
@@ -686,5 +691,113 @@ async fn run(cli: Cli) -> ExitCode {
         }
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use axum::{response::Html, routing::get, Router};
+
+  #[test]
+  fn crawl_rejects_invalid_sitemap_modes() {
+    for value in ["invalid", "INCLUDE", ""] {
+      let err = Cli::try_parse_from([
+        "firecrawl-local",
+        "crawl",
+        "https://example.com",
+        "--sitemap",
+        value,
+      ])
+      .err()
+      .expect("invalid sitemap mode should fail");
+      assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
+    }
+  }
+
+  #[test]
+  fn crawl_requires_a_sitemap_value() {
+    assert!(Cli::try_parse_from([
+      "firecrawl-local",
+      "crawl",
+      "https://example.com",
+      "--sitemap",
+    ])
+    .is_err());
+  }
+
+  #[tokio::test]
+  async fn crawl_sitemap_modes_control_discovery() {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+      .await
+      .unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let sitemap = format!(
+      "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"><url><loc>{base}/docs/mapped</loc></url></urlset>"
+    );
+    let app = Router::new()
+      .route("/robots.txt", get(|| async { "User-agent: *\nAllow: /\n" }))
+      .route("/sitemap.xml", get(move || async move {
+        ([("content-type", "application/xml")], sitemap)
+      }))
+      .route("/docs", get(|| async {
+        Html("<html><body><h1>Start page</h1><a href=\"/docs/linked\">Linked page</a></body></html>")
+      }))
+      .route("/docs/mapped", get(|| async {
+        Html("<html><body><h1>Sitemap page</h1><a href=\"/docs/unlisted\">Unlisted page</a></body></html>")
+      }))
+      .route("/docs/linked", get(|| async {
+        Html("<html><body><h1>Linked page</h1></body></html>")
+      }))
+      .route("/docs/unlisted", get(|| async {
+        Html("<html><body><h1>Unlisted page</h1></body></html>")
+      }));
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    for (mode, depth, expected) in [
+      (None, "0", vec!["/docs", "/docs/mapped"]),
+      (Some("include"), "0", vec!["/docs", "/docs/mapped"]),
+      (Some("skip"), "0", vec!["/docs"]),
+      (Some("skip"), "1", vec!["/docs", "/docs/linked"]),
+      (Some("only"), "2", vec!["/docs/mapped"]),
+    ] {
+      let dir = std::env::temp_dir().join(format!("fc-local-sitemap-{}", uuid::Uuid::new_v4()));
+      let url = format!("{base}/docs");
+      let out = dir.to_str().unwrap();
+      let mut args = vec![
+        "firecrawl-local",
+        "--browser",
+        "never",
+        "crawl",
+        &url,
+        "--max-depth",
+        depth,
+        "--out",
+        out,
+      ];
+      if let Some(mode) = mode {
+        args.extend(["--sitemap", mode]);
+      }
+      let cli = Cli::try_parse_from(args).unwrap();
+      assert_eq!(run(cli).await, ExitCode::SUCCESS);
+      let mut pages = tokio::fs::read_dir(&dir).await.unwrap();
+      let mut urls = Vec::new();
+      while let Some(page) = pages.next_entry().await.unwrap() {
+        let text = tokio::fs::read_to_string(page.path()).await.unwrap();
+        let url = text
+          .lines()
+          .find_map(|line| line.strip_prefix("url: "))
+          .unwrap();
+        urls.push(serde_json::from_str::<String>(url).unwrap());
+      }
+      tokio::fs::remove_dir_all(&dir).await.unwrap();
+      urls.sort();
+      let expected: Vec<_> = expected
+        .iter()
+        .map(|path| format!("{base}{path}"))
+        .collect();
+      assert_eq!(urls, expected, "mode={mode:?}, depth={depth}");
+    }
+    server.abort();
   }
 }
