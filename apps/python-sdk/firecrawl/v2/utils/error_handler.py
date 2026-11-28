@@ -2,8 +2,11 @@
 Error handling utilities for v2 API.
 """
 
+import math
 import requests
 from typing import Dict, Any, Optional, List
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from .agent_hints import agent_hint_metadata
 
 PROVIDER_TERMS_REQUIRED_CODE = "THIRD_PARTY_DATA_TERMS_REQUIRED"
@@ -98,8 +101,50 @@ class CrawlJobTimeoutError(TimeoutError):
 
 
 class RateLimitError(FirecrawlError):
-    """Raised when the rate limit is exceeded (429)."""
-    pass
+    """Raised when the rate limit is exceeded (429).
+
+    Attributes:
+        retry_after: Seconds to wait before retrying, parsed from the
+            ``Retry-After`` response header when the API provides one.
+            ``None`` when the header is absent or unparsable.
+    """
+
+    def __init__(self, message: str, status_code: Optional[int] = None, response: Optional[requests.Response] = None, *, retry_after: Optional[float] = None, **kwargs):
+        super().__init__(message, status_code, response, **kwargs)
+        self.retry_after = retry_after
+
+
+def _parse_retry_after(response: requests.Response) -> Optional[float]:
+    """Parse the Retry-After header of a response into seconds.
+
+    Supports both forms RFC 9110 allows: a number of seconds and an
+    HTTP date. Returns None when the header is missing or unparsable;
+    negative delays and dates in the past clamp to zero (date) or None
+    (negative number, which is malformed).
+    """
+    headers = getattr(response, "headers", None) or {}
+    value = None
+    for key in ("Retry-After", "retry-after"):
+        try:
+            value = headers.get(key)
+        except AttributeError:
+            value = None
+        if value:
+            break
+    if not value:
+        return None
+    try:
+        seconds = float(value)
+        return seconds if math.isfinite(seconds) and seconds >= 0 else None
+    except (TypeError, ValueError):
+        pass
+    try:
+        retry_at = parsedate_to_datetime(value)
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        return max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 class InternalServerError(FirecrawlError):
@@ -191,7 +236,7 @@ def handle_response_error(response: requests.Response, action: str) -> None:
         raise FirecrawlError(error_message, response.status_code, response, code=code, charge_id=charge_id, **hints)
     elif response.status_code == 429:
         message = f"Rate Limit Exceeded: Failed to {action}. {error_message} - {error_details}"
-        raise RateLimitError(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
+        raise RateLimitError(message, response.status_code, response, retry_after=_parse_retry_after(response), code=code, charge_id=charge_id, **hints)
     elif response.status_code == 500:
         message = f"Internal Server Error: Failed to {action}. {error_message} - {error_details}"
         raise InternalServerError(message, response.status_code, response, code=code, charge_id=charge_id, **hints)
