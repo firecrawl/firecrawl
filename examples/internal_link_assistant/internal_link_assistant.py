@@ -37,7 +37,8 @@ def main():
     site_map = app.map_url(top_level_domain)
 
     # Get the list of URLs from the site map
-    site_links = site_map.get('links', [])
+    # v2 map results carry link objects with a `url` field, not v1's plain URL strings
+    site_links = [link.url for link in site_map.get('links', [])]
 
 
     prompt = f"""
