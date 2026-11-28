@@ -47,6 +47,8 @@ def _prepare_payload(request: Any) -> Dict[str, Any]:
     payload = _dump(request)
     if not isinstance(payload, dict):
         raise ValueError("Monitor request must be an object")
+    if isinstance(request, MonitorUpdateRequest) and "goal" in request.model_fields_set:
+        payload["goal"] = request.goal
     if "targets" in payload:
         payload["targets"] = [
             _prepare_target(_dump(target))

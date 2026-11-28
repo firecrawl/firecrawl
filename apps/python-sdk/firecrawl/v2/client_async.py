@@ -59,6 +59,8 @@ from .types import (
     MonitorSchedule,
     MonitorTarget,
     MonitorUpdateRequest,
+    _UNSET,
+    _Unset,
 )
 from .utils.http_client import HttpClient
 from .utils.http_client_async import AsyncHttpClient
@@ -721,11 +723,13 @@ class AsyncFirecrawlClient:
         notification: Optional[Union[MonitorNotification, Dict[str, Any]]] = None,
         targets: Optional[List[Union[MonitorTarget, Dict[str, Any]]]] = None,
         retention_days: Optional[int] = None,
-        goal: Optional[str] = None,
+        goal: Union[str, None, _Unset] = _UNSET,
         judge_enabled: Optional[bool] = None,
     ) -> Monitor:
+        """Update a monitor. Omit goal to keep it, or pass None to clear it."""
         if isinstance(schedule, dict):
             schedule = MonitorSchedule(**schedule)
+        goal_options = {} if isinstance(goal, _Unset) else {"goal": goal}
         request = MonitorUpdateRequest(
             name=name,
             status=status,
@@ -734,8 +738,8 @@ class AsyncFirecrawlClient:
             notification=notification,
             targets=targets,
             retention_days=retention_days,
-            goal=goal,
             judge_enabled=judge_enabled,
+            **goal_options,
         )
         return await async_monitor.update_monitor(
             self.async_http_client,
