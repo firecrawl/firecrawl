@@ -58,12 +58,17 @@ jobs:
           script: |
             let pr = context.payload.pull_request;
             if (context.eventName !== 'pull_request') {
-              ({ data: pr } = await github.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.issue.number,
-                headers: { authorization: `token ${process.env.GITHUB_TOKEN}` },
-              }));
+              const res = await fetch(
+                `${process.env.GITHUB_API_URL}/repos/${context.repo.owner}/${context.repo.repo}/pulls/${context.issue.number}`,
+                {
+                  headers: {
+                    authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+                    accept: 'application/vnd.github+json',
+                  },
+                },
+              );
+              if (!res.ok) throw new Error(`PR lookup failed: ${res.status}`);
+              pr = await res.json();
             }
             const thisRepo = `${context.repo.owner}/${context.repo.repo}`;
             if (pr.head.repo?.full_name !== thisRepo) {
@@ -136,12 +141,17 @@ jobs:
           script: |
             let pr = context.payload.pull_request;
             if (context.eventName !== 'pull_request') {
-              ({ data: pr } = await github.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.issue.number,
-                headers: { authorization: `token ${process.env.GITHUB_TOKEN}` },
-              }));
+              const res = await fetch(
+                `${process.env.GITHUB_API_URL}/repos/${context.repo.owner}/${context.repo.repo}/pulls/${context.issue.number}`,
+                {
+                  headers: {
+                    authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+                    accept: 'application/vnd.github+json',
+                  },
+                },
+              );
+              if (!res.ok) throw new Error(`PR lookup failed: ${res.status}`);
+              pr = await res.json();
             }
             const thisRepo = `${context.repo.owner}/${context.repo.repo}`;
             if (pr.head.repo?.full_name !== thisRepo) {
