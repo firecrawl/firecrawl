@@ -76,6 +76,9 @@ enum Command {
     /// How many links deep to follow.
     #[arg(long)]
     max_depth: Option<u32>,
+    /// Include sitemap URLs, skip them, or crawl only sitemap URLs.
+    #[arg(long, default_value = "include", value_parser = ["include", "skip", "only"])]
+    sitemap: String,
     /// Follow links anywhere on the site, not only under the start path.
     #[arg(long)]
     entire_domain: bool,
@@ -381,6 +384,7 @@ async fn run(cli: Cli) -> ExitCode {
       url,
       limit,
       max_depth,
+      sitemap,
       entire_domain,
       include_paths,
       exclude_paths,
@@ -395,6 +399,7 @@ async fn run(cli: Cli) -> ExitCode {
       let opts = CrawlOptions {
         limit,
         max_discovery_depth: max_depth,
+        sitemap,
         include_paths,
         exclude_paths,
         crawl_entire_domain: entire_domain,
@@ -686,5 +691,66 @@ async fn run(cli: Cli) -> ExitCode {
         }
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn crawl_sitemap_option_defaults_to_include() {
+    let cli = Cli::try_parse_from(["firecrawl-local", "crawl", "https://example.com"]).unwrap();
+    match cli.command {
+      Command::Crawl { sitemap, .. } => assert_eq!(sitemap, "include"),
+      _ => panic!("expected Command::Crawl"),
+    }
+  }
+
+  #[test]
+  fn crawl_sitemap_option_accepts_valid_modes() {
+    for mode in ["include", "skip", "only"] {
+      let cli = Cli::try_parse_from([
+        "firecrawl-local",
+        "crawl",
+        "https://example.com",
+        "--sitemap",
+        mode,
+      ])
+      .unwrap();
+      match cli.command {
+        Command::Crawl { sitemap, .. } => assert_eq!(sitemap, mode),
+        _ => panic!("expected Command::Crawl"),
+      }
+    }
+  }
+
+  #[test]
+  fn crawl_sitemap_option_rejects_invalid_modes() {
+    for mode in ["invalid", "INCLUDE", "all", ""] {
+      let err = Cli::try_parse_from([
+        "firecrawl-local",
+        "crawl",
+        "https://example.com",
+        "--sitemap",
+        mode,
+      ])
+      .err()
+      .expect("expected error for invalid sitemap mode");
+      assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
+    }
+  }
+
+  #[test]
+  fn crawl_sitemap_option_requires_value() {
+    let err = Cli::try_parse_from([
+      "firecrawl-local",
+      "crawl",
+      "https://example.com",
+      "--sitemap",
+    ])
+    .err()
+    .expect("expected error for missing sitemap value");
+    assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
   }
 }
