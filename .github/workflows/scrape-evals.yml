@@ -18,12 +18,24 @@ jobs:
        (contains(github.event.pull_request.body, '#scrape-quality-eval') ||
         contains(github.event.pull_request.title, '#scrape-quality-eval')))
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
     steps:
+      - name: Create evals App token
+        id: app_token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.SCRAPE_EVALS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SCRAPE_EVALS_APP_PRIVATE_KEY }}
+          repositories: scrape-evals
+          permission-contents: write
+          permission-members: read
+
       - name: Check org membership
         id: check-member
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
-          github-token: ${{ secrets.SCRAPE_EVALS_PAT }}
+          github-token: ${{ steps.app_token.outputs.token }}
           script: |
             try {
               await github.rest.orgs.checkMembershipForUser({
@@ -31,23 +43,32 @@ jobs:
                 username: context.actor,
               });
               return true;
-            } catch {
-              return false;
+            } catch (error) {
+              if (error.status === 404) return false;
+              throw error;
             }
 
       - name: Dispatch quality eval
         if: steps.check-member.outputs.result == 'true'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
-          github-token: ${{ secrets.SCRAPE_EVALS_PAT }}
+          github-token: ${{ steps.app_token.outputs.token }}
           script: |
             let pr = context.payload.pull_request;
             if (context.eventName !== 'pull_request') {
-              ({ data: pr } = await github.rest.pulls.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.issue.number,
-              }));
+              const res = await fetch(
+                `${process.env.GITHUB_API_URL}/repos/${context.repo.owner}/${context.repo.repo}/pulls/${context.issue.number}`,
+                {
+                  headers: {
+                    authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+                    accept: 'application/vnd.github+json',
+                  },
+                },
+              );
+              if (!res.ok) throw new Error(`PR lookup failed: ${res.status}`);
+              pr = await res.json();
             }
             const thisRepo = `${context.repo.owner}/${context.repo.repo}`;
             if (pr.head.repo?.full_name !== thisRepo) {
@@ -80,12 +101,24 @@ jobs:
        (contains(github.event.pull_request.body, '#scrape-ocr-eval') ||
         contains(github.event.pull_request.title, '#scrape-ocr-eval')))
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
     steps:
+      - name: Create evals App token
+        id: app_token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.SCRAPE_EVALS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SCRAPE_EVALS_APP_PRIVATE_KEY }}
+          repositories: scrape-evals
+          permission-contents: write
+          permission-members: read
+
       - name: Check org membership
         id: check-member
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
-          github-token: ${{ secrets.SCRAPE_EVALS_PAT }}
+          github-token: ${{ steps.app_token.outputs.token }}
           script: |
             try {
               await github.rest.orgs.checkMembershipForUser({
@@ -93,23 +126,32 @@ jobs:
                 username: context.actor,
               });
               return true;
-            } catch {
-              return false;
+            } catch (error) {
+              if (error.status === 404) return false;
+              throw error;
             }
 
       - name: Dispatch OCR eval
         if: steps.check-member.outputs.result == 'true'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
-          github-token: ${{ secrets.SCRAPE_EVALS_PAT }}
+          github-token: ${{ steps.app_token.outputs.token }}
           script: |
             let pr = context.payload.pull_request;
             if (context.eventName !== 'pull_request') {
-              ({ data: pr } = await github.rest.pulls.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.issue.number,
-              }));
+              const res = await fetch(
+                `${process.env.GITHUB_API_URL}/repos/${context.repo.owner}/${context.repo.repo}/pulls/${context.issue.number}`,
+                {
+                  headers: {
+                    authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+                    accept: 'application/vnd.github+json',
+                  },
+                },
+              );
+              if (!res.ok) throw new Error(`PR lookup failed: ${res.status}`);
+              pr = await res.json();
             }
             const thisRepo = `${context.repo.owner}/${context.repo.repo}`;
             if (pr.head.repo?.full_name !== thisRepo) {
