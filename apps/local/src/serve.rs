@@ -613,6 +613,13 @@ async fn job_cancel(State(state): State<Arc<AppState>>, Path(id): Path<String>) 
     return error_response(StatusCode::NOT_FOUND, "JOB_NOT_FOUND", "Job not found.");
   };
   let mut j = locked(&job);
+  if matches!(j.status, "completed" | "failed") {
+    return error_response(
+      StatusCode::CONFLICT,
+      "JOB_ALREADY_FINISHED",
+      format!("Job is already {}.", j.status),
+    );
+  }
   if j.status == "scraping" {
     if let Some(task) = j.task.take() {
       task.abort();
@@ -838,6 +845,80 @@ mod tests {
     };
     tokio::spawn(serve_on(listener, engine, cfg, std::future::pending()));
     format!("http://{addr}")
+  }
+
+  async fn assert_finished_job_cannot_be_cancelled(
+    path: &str,
+    input: Value,
+    expected_status: &str,
+  ) {
+    let base = start(cloud::CloudMode::Off).await;
+    let http = reqwest::Client::builder()
+      .timeout(Duration::from_secs(5))
+      .build()
+      .unwrap();
+    let started: Value = http
+      .post(format!("{base}{path}"))
+      .json(&input)
+      .send()
+      .await
+      .unwrap()
+      .error_for_status()
+      .unwrap()
+      .json()
+      .await
+      .unwrap();
+    let job_url = format!("{base}{path}/{}", started["id"].as_str().unwrap());
+    tokio::time::timeout(Duration::from_secs(5), async {
+      loop {
+        let job: Value = http
+          .get(&job_url)
+          .send()
+          .await
+          .unwrap()
+          .json()
+          .await
+          .unwrap();
+        if job["status"] != "scraping" {
+          assert_eq!(job["status"], expected_status);
+          break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+      }
+    })
+    .await
+    .expect("job did not finish");
+
+    let cancelled = http.delete(&job_url).send().await.unwrap();
+    assert_eq!(cancelled.status(), StatusCode::CONFLICT);
+    let error: Value = cancelled.json().await.unwrap();
+    assert_eq!(error["success"], false);
+    assert_eq!(error["code"], "JOB_ALREADY_FINISHED");
+    let job: Value = http
+      .get(&job_url)
+      .send()
+      .await
+      .unwrap()
+      .json()
+      .await
+      .unwrap();
+    assert_eq!(job["status"], expected_status);
+  }
+
+  #[tokio::test]
+  async fn cannot_cancel_a_completed_batch() {
+    assert_finished_job_cannot_be_cancelled(
+      "/v2/batch/scrape",
+      json!({ "urls": ["invalid url"] }),
+      "completed",
+    )
+    .await;
+  }
+
+  #[tokio::test]
+  async fn cannot_cancel_a_failed_crawl() {
+    assert_finished_job_cannot_be_cancelled("/v2/crawl", json!({ "url": "invalid url" }), "failed")
+      .await;
   }
 
   #[tokio::test]
