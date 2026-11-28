@@ -1,10 +1,9 @@
-from typing import Dict, Any, Union, List, TypeVar, Type
+from typing import Dict, Any
 from ...types import (
     DiscoveredTool,
     SkillCard,
     SearchRequest,
     SearchData,
-    Document,
     SearchResultWeb,
     SearchResultNews,
     SearchResultImages,
@@ -12,10 +11,9 @@ from ...types import (
 from ...utils.agent_hints import agent_hint_metadata
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.error_handler import handle_response_error
-from ...utils.normalize import normalize_document_input
 from ...utils.validation import validate_scrape_options, prepare_scrape_options
+from ..search import _transform_array
 
-T = TypeVar("T")
 
 async def search(
     client: AsyncHttpClient,
@@ -60,33 +58,6 @@ async def search(
         if response is not None:
             handle_response_error(response, "search")
         raise err
-
-def _transform_array(arr: List[Any], result_type: Type[T]) -> List[Union[T, Document]]:
-    """
-    Transforms an array of items into a list of result_type or Document.
-    If the item dict contains any of the special keys, it is treated as a Document.
-    Otherwise, it is treated as result_type.
-    If the item is not a dict, it is wrapped as result_type with url=item.
-    """
-    results: List[Union[T, Document]] = []
-    for item in arr:
-        if item and isinstance(item, dict):
-            if (
-                "markdown" in item or
-                "html" in item or
-                "rawHtml" in item or
-                "links" in item or
-                "screenshot" in item or
-                "changeTracking" in item or
-                "summary" in item or
-                "json" in item
-            ):
-                results.append(Document(**normalize_document_input(item)))
-            else:
-                results.append(result_type(**item))
-        else:
-            results.append(result_type(url=item))
-    return results
 
 def _validate_search_request(request: SearchRequest) -> SearchRequest:
     """
