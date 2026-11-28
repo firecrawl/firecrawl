@@ -1,7 +1,18 @@
-import type { BatchScrapeJob, CrawlJob, Document } from "./types";
+import { SdkError, type BatchScrapeJob, type CrawlJob, type Document } from "./types";
 import type { HttpClient } from "./utils/httpClient";
+import { isRetryableError } from "./utils/errorHandler";
 import { getBatchScrapeStatus } from "./methods/batch";
 import { getCrawlStatus } from "./methods/crawl";
+
+const isNonRetryablePollingError = (err: unknown): boolean => {
+  if (!isRetryableError(err)) return true;
+  // Application-level failures returned with HTTP 2xx (e.g. { success: false })
+  // are thrown as SdkError(status: 200) by throwForBadResponse.
+  if (err instanceof SdkError && err.status !== undefined && err.status >= 200 && err.status < 300) {
+    return true;
+  }
+  return false;
+};
 
 type WebSocketConstructor = new (url: string, protocols?: string | string[]) => WebSocket;
 
@@ -325,8 +336,17 @@ export class Watcher extends Emitter {
           this.close();
           break;
         }
-      } catch {
-        // ignore polling errors
+      } catch (err: any) {
+        if (this.closed) {
+          break;
+        }
+        if (isNonRetryablePollingError(err)) {
+          const message = err instanceof Error ? err.message : String(err);
+          this.emit("error", { status: "failed", data: [], error: message, id: this.jobId });
+          this.close();
+          break;
+        }
+        // ignore transient polling errors
       }
       if (timeoutMs && Date.now() - startTs > timeoutMs) {
         this.emit("error", { status: "failed", data: [], error: "Watcher timeout", id: this.jobId });
