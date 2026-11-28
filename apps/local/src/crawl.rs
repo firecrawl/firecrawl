@@ -50,8 +50,8 @@ pub struct CrawlOptions {
   pub ignore_robots_txt: bool,
   /// Pages fetched at once.
   pub max_concurrency: Option<usize>,
-  /// Milliseconds to wait between requests.
-  pub delay: Option<u64>,
+  /// Seconds to wait between requests (at most 60s).
+  pub delay: Option<f64>,
   pub scrape_options: ScrapeOptions,
 }
 
@@ -296,6 +296,24 @@ pub async fn sitemap_urls(
   out
 }
 
+/// Resolves effective crawl delay. If both user and robots.txt specify a delay,
+/// the larger (more polite) delay is respected so crawler never runs faster than robots.txt.
+pub(crate) fn resolve_delay(
+  user_delay: Option<f64>,
+  robots_delay: Option<f32>,
+) -> Option<Duration> {
+  let user = user_delay
+    .filter(|&d| d.is_finite() && d > 0.0)
+    .map(|d| Duration::from_secs_f64(d.clamp(0.0, 60.0)));
+  let robots = robots_delay.map(|d| Duration::from_secs_f32(d.clamp(0.0, 30.0)));
+  match (user, robots) {
+    (Some(u), Some(r)) => Some(u.max(r)),
+    (Some(u), None) => Some(u),
+    (None, Some(r)) => Some(r),
+    (None, None) => None,
+  }
+}
+
 /// Crawl from `start`. `on_page` runs as each page finishes, so callers can
 /// stream results or write files while the crawl is still going.
 pub async fn crawl<F>(
@@ -307,6 +325,15 @@ pub async fn crawl<F>(
 where
   F: FnMut(&Value),
 {
+  if let Some(d) = opts.delay {
+    if !d.is_finite() || d <= 0.0 || d > 60.0 {
+      return Err(ScrapeError::new(
+        400,
+        "INVALID_ARGUMENT",
+        "The delay parameter is measured in seconds and cannot exceed 60 seconds.",
+      ));
+    }
+  }
   let seed = parse_url(start)?;
   let scope = Scope::new(&seed, opts)?;
   let limit = opts.limit.max(1);
@@ -322,10 +349,7 @@ where
   };
 
   // robots.txt Crawl-delay means one request at a time, spaced out.
-  let robots_delay = robots
-    .delay
-    .map(|d| Duration::from_secs_f32(d.clamp(0.0, 30.0)));
-  let delay = opts.delay.map(Duration::from_millis).or(robots_delay);
+  let delay = resolve_delay(opts.delay, robots.delay);
   let concurrency = if delay.is_some() {
     1
   } else {
@@ -669,5 +693,48 @@ mod tests {
   fn canonical_drops_fragment_and_trailing_slash() {
     assert_eq!(canonical(&u("https://a.dev/x/#top")), "https://a.dev/x");
     assert_eq!(canonical(&u("https://a.dev/")), "https://a.dev/");
+  }
+
+  #[test]
+  fn resolve_delay_respects_seconds_fractions_and_robots() {
+    assert_eq!(resolve_delay(Some(1.0), None), Some(Duration::from_secs(1)));
+    assert_eq!(
+      resolve_delay(Some(0.5), None),
+      Some(Duration::from_millis(500))
+    );
+    assert_eq!(resolve_delay(None, Some(2.0)), Some(Duration::from_secs(2)));
+    assert_eq!(
+      resolve_delay(Some(1.0), Some(3.0)),
+      Some(Duration::from_secs(3))
+    );
+    assert_eq!(
+      resolve_delay(Some(5.0), Some(3.0)),
+      Some(Duration::from_secs(5))
+    );
+    assert_eq!(
+      resolve_delay(Some(120.0), None),
+      Some(Duration::from_secs(60))
+    );
+    assert_eq!(resolve_delay(Some(0.0), None), None);
+    assert_eq!(resolve_delay(Some(-1.0), None), None);
+    assert_eq!(resolve_delay(Some(f64::NAN), None), None);
+    assert_eq!(resolve_delay(None, None), None);
+  }
+
+  #[test]
+  fn crawl_options_deserializes_fractional_and_integer_delay() {
+    let json = serde_json::json!({
+      "url": "https://example.com",
+      "delay": 0.5
+    });
+    let opts: CrawlOptions = serde_json::from_value(json).unwrap();
+    assert_eq!(opts.delay, Some(0.5));
+
+    let json_int = serde_json::json!({
+      "url": "https://example.com",
+      "delay": 2
+    });
+    let opts_int: CrawlOptions = serde_json::from_value(json_int).unwrap();
+    assert_eq!(opts_int.delay, Some(2.0));
   }
 }
