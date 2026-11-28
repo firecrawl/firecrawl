@@ -490,6 +490,7 @@ class AsyncFirecrawl:
         self.cancel_crawl = self._v2_client.cancel_crawl
         self.crawl = self._v2_client.crawl
         self.get_crawl_errors = self._v2_client.get_crawl_errors
+        self.get_active_crawls = self._v2_client.get_active_crawls
         self.active_crawls = self._v2_client.active_crawls
         self.crawl_params_preview = self._v2_client.crawl_params_preview
 
