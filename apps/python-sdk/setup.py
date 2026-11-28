@@ -4,12 +4,12 @@ from pathlib import Path
 from setuptools import find_packages, setup
 
 this_directory = Path(__file__).parent
-long_description_content = (this_directory / "README.md").read_text()
+long_description_content = (this_directory / "README.md").read_text(encoding="utf-8")
 
 
 def get_version():
     """Dynamically set version"""
-    version_file = (this_directory / "firecrawl" / "__init__.py").read_text()
+    version_file = (this_directory / "firecrawl" / "__init__.py").read_text(encoding="utf-8")
     version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", version_file, re.M)
     if version_match:
         return version_match.group(1)
