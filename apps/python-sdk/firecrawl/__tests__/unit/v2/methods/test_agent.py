@@ -327,8 +327,8 @@ class TestAgentMethods:
         
         self.mock_client.get.return_value = mock_response
         
-        # Mock time.time to simulate timeout
-        with patch('time.time', side_effect=[0, 0, 5]):  # Start at 0, timeout at 5
+        # Mock elapsed time to simulate timeout
+        with patch('time.monotonic', side_effect=[0, 0, 5]):  # Start at 0, timeout at 5
             result = wait_agent(
                 self.mock_client,
                 self.job_id,
