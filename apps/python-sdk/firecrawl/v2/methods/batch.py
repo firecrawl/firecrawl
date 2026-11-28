@@ -489,6 +489,9 @@ def chunk_urls(urls: List[str], chunk_size: int = 100) -> List[List[str]]:
     Returns:
         List of URL chunks
     """
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive")
+
     chunks = []
     for i in range(0, len(urls), chunk_size):
         chunks.append(urls[i:i + chunk_size])
