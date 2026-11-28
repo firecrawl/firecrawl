@@ -23,6 +23,61 @@ describe("parseMarkdownToSentences", () => {
 });
 
 describe("assembleAnswer", () => {
+  it("finds headers in bounded work when selecting rows from many tables", () => {
+    const tableCount = 1000;
+    let blockReads = 0;
+    const sentences = Array.from({ length: tableCount }, (_, blockId) => [
+      {
+        text: `Header ${blockId}`,
+        source: "table" as const,
+        blockId,
+        isHeader: true,
+      },
+      { text: `Value ${blockId}`, source: "table" as const, blockId },
+    ]).flat();
+    for (const sentence of sentences) {
+      const blockId = sentence.blockId;
+      Object.defineProperty(sentence, "blockId", {
+        enumerable: true,
+        get() {
+          blockReads++;
+          return blockId;
+        },
+      });
+    }
+    const indices = Array.from(
+      { length: tableCount },
+      (_, index) => 2 * index + 1,
+    );
+
+    const result = assembleAnswer(sentences, indices);
+
+    expect(result).toBe(
+      Array.from(
+        { length: tableCount },
+        (_, index) => `| Header ${index} |\n| --- |\n| Value ${index} |`,
+      ).join("\n\n"),
+    );
+    expect(blockReads).toBeLessThanOrEqual(sentences.length * 10);
+  });
+
+  it("keeps the first matching header and source order for repeated selections", () => {
+    const sentences = [
+      { text: "First header", source: "table" as const, blockId: 7, isHeader: true },
+      {
+        text: "Repeated header",
+        source: "table" as const,
+        blockId: 7,
+        isHeader: true,
+      },
+      { text: "Value", source: "table" as const, blockId: 7 },
+      { text: "No header", source: "table" as const, blockId: 9 },
+    ];
+    expect(assembleAnswer(sentences, [3, 2, 2, 0])).toBe(
+      "| First header |\n| --- |\n| Value |\n\n| No header |",
+    );
+  });
+
   it("rebuilds a table and auto-includes its header when only a row is selected", () => {
     const md =
       "| Size | Price |\n| --- | --- |\n| 128GB | $799 |\n| 256GB | $899 |";
