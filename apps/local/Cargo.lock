@@ -936,6 +936,8 @@ dependencies = [
  "firecrawl-core",
  "futures",
  "getrandom 0.3.4",
+ "http",
+ "hyper-util",
  "kuchikiki",
  "libmimalloc-sys",
  "mimalloc",
