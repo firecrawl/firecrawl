@@ -13,6 +13,20 @@ public class CrawlJob
     [JsonPropertyName("status")]
     public string? Status { get; set; }
 
+    /// <summary>
+    /// The failure reason reported when the job could not start.
+    /// </summary>
+    [JsonPropertyName("error")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Error { get; set; }
+
+    /// <summary>
+    /// A warning reported with the job status, such as incomplete coverage.
+    /// </summary>
+    [JsonPropertyName("warning")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Warning { get; set; }
+
     [JsonPropertyName("completed")]
     public int? Completed { get; set; }
 
