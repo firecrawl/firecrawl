@@ -61,7 +61,7 @@ async def test_wait_batch_scrape_polling_interval(monkeypatch):
         def __init__(self, status):
             self.status = status
 
-    states = ["scraping", "completed"]
+    states = ["scraping", "completed", "completed"]
 
     async def fake_status(client, job_id, **kwargs):
         state = states.pop(0)
