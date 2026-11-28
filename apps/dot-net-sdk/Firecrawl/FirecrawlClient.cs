@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Firecrawl.Exceptions;
 using Firecrawl.Models;
@@ -809,9 +810,10 @@ public class FirecrawlClient
         int timeoutSec,
         CancellationToken cancellationToken)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(timeoutSec);
+        var elapsed = Stopwatch.StartNew();
+        var timeout = TimeSpan.FromSeconds(timeoutSec);
 
-        while (DateTime.UtcNow < deadline)
+        while (elapsed.Elapsed < timeout)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -819,7 +821,8 @@ public class FirecrawlClient
             if (job.IsDone)
                 return await PaginateCrawlAsync(job, cancellationToken);
 
-            await Task.Delay(TimeSpan.FromSeconds(pollIntervalSec), cancellationToken);
+            if (!await WaitForNextPollAsync(timeout - elapsed.Elapsed, pollIntervalSec, cancellationToken))
+                break;
         }
 
         throw new JobTimeoutException(jobId, timeoutSec, "Crawl");
@@ -831,9 +834,10 @@ public class FirecrawlClient
         int timeoutSec,
         CancellationToken cancellationToken)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(timeoutSec);
+        var elapsed = Stopwatch.StartNew();
+        var timeout = TimeSpan.FromSeconds(timeoutSec);
 
-        while (DateTime.UtcNow < deadline)
+        while (elapsed.Elapsed < timeout)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -841,7 +845,8 @@ public class FirecrawlClient
             if (job.IsDone)
                 return await PaginateBatchScrapeAsync(job, cancellationToken);
 
-            await Task.Delay(TimeSpan.FromSeconds(pollIntervalSec), cancellationToken);
+            if (!await WaitForNextPollAsync(timeout - elapsed.Elapsed, pollIntervalSec, cancellationToken))
+                break;
         }
 
         throw new JobTimeoutException(jobId, timeoutSec, "Batch scrape");
@@ -853,9 +858,10 @@ public class FirecrawlClient
         int timeoutSec,
         CancellationToken cancellationToken)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(timeoutSec);
+        var elapsed = Stopwatch.StartNew();
+        var timeout = TimeSpan.FromSeconds(timeoutSec);
 
-        while (DateTime.UtcNow < deadline)
+        while (elapsed.Elapsed < timeout)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -863,10 +869,23 @@ public class FirecrawlClient
             if (status.IsDone)
                 return status;
 
-            await Task.Delay(TimeSpan.FromSeconds(pollIntervalSec), cancellationToken);
+            if (!await WaitForNextPollAsync(timeout - elapsed.Elapsed, pollIntervalSec, cancellationToken))
+                break;
         }
 
         throw new JobTimeoutException(jobId, timeoutSec, "Agent");
+    }
+
+    private static async Task<bool> WaitForNextPollAsync(
+        TimeSpan remaining, int pollIntervalSec, CancellationToken cancellationToken)
+    {
+        if (remaining <= TimeSpan.Zero)
+            return false;
+
+        var pollInterval = TimeSpan.FromSeconds(pollIntervalSec);
+        var canPollAgain = pollInterval < remaining;
+        await Task.Delay(canPollAgain ? pollInterval : remaining, cancellationToken);
+        return canPollAgain;
     }
 
     private async Task<CrawlJob> PaginateCrawlAsync(
