@@ -19,11 +19,21 @@ jobs:
         contains(github.event.pull_request.title, '#scrape-quality-eval')))
     runs-on: ubuntu-latest
     steps:
+      - name: Create evals App token
+        id: app_token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.SCRAPE_EVALS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SCRAPE_EVALS_APP_PRIVATE_KEY }}
+          repositories: scrape-evals
+          permission-contents: write
+          permission-members: read
+
       - name: Check org membership
         id: check-member
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
-          github-token: ${{ secrets.SCRAPE_EVALS_PAT }}
+          github-token: ${{ steps.app_token.outputs.token }}
           script: |
             try {
               await github.rest.orgs.checkMembershipForUser({
@@ -39,7 +49,7 @@ jobs:
         if: steps.check-member.outputs.result == 'true'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
-          github-token: ${{ secrets.SCRAPE_EVALS_PAT }}
+          github-token: ${{ steps.app_token.outputs.token }}
           script: |
             let pr = context.payload.pull_request;
             if (context.eventName !== 'pull_request') {
@@ -81,11 +91,21 @@ jobs:
         contains(github.event.pull_request.title, '#scrape-ocr-eval')))
     runs-on: ubuntu-latest
     steps:
+      - name: Create evals App token
+        id: app_token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.SCRAPE_EVALS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SCRAPE_EVALS_APP_PRIVATE_KEY }}
+          repositories: scrape-evals
+          permission-contents: write
+          permission-members: read
+
       - name: Check org membership
         id: check-member
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
-          github-token: ${{ secrets.SCRAPE_EVALS_PAT }}
+          github-token: ${{ steps.app_token.outputs.token }}
           script: |
             try {
               await github.rest.orgs.checkMembershipForUser({
@@ -101,7 +121,7 @@ jobs:
         if: steps.check-member.outputs.result == 'true'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
-          github-token: ${{ secrets.SCRAPE_EVALS_PAT }}
+          github-token: ${{ steps.app_token.outputs.token }}
           script: |
             let pr = context.payload.pull_request;
             if (context.eventName !== 'pull_request') {
