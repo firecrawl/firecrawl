@@ -76,8 +76,34 @@ pub struct ParsedDocument {
   pub markdown: String,
   pub title: Option<String>,
   pub pages: Option<u32>,
-  /// Pages a text extraction could not read (scanned images).
+  /// Pages recommended for OCR, including missing or unreliable text.
   pub pages_needing_ocr: usize,
+  /// OCR pages explicitly classified as scanned images.
+  pub scanned_pages: usize,
+}
+
+impl ParsedDocument {
+  pub fn ocr_warning(&self) -> Option<String> {
+    let mut warnings = Vec::new();
+    if self.scanned_pages > 0 {
+      warnings.push(format!(
+        "{} page(s) of this PDF are scanned images; their text could not be extracted.",
+        self.scanned_pages
+      ));
+    }
+    let other_pages = self.pages_needing_ocr.saturating_sub(self.scanned_pages);
+    if other_pages > 0 {
+      warnings.push(format!(
+        "{other_pages} page(s) of this PDF may have missing or unreliable text and are recommended for OCR."
+      ));
+    }
+    if warnings.is_empty() {
+      None
+    } else {
+      warnings.push("The local engine has no OCR.".into());
+      Some(warnings.join(" "))
+    }
+  }
 }
 
 pub fn parse(kind: &DocKind, body: &[u8]) -> Result<ParsedDocument, String> {
@@ -90,6 +116,16 @@ pub fn parse(kind: &DocKind, body: &[u8]) -> Result<ParsedDocument, String> {
         title: result.title.filter(|t| !t.trim().is_empty()),
         pages: Some(result.page_count),
         pages_needing_ocr: result.pages_needing_ocr.len(),
+        scanned_pages: result
+          .ocr_reasons_by_page
+          .iter()
+          .filter(|page| {
+            page
+              .reasons
+              .iter()
+              .any(|r| r == pdf_inspector::OCR_REASON_SCANNED)
+          })
+          .count(),
       })
     }
     DocKind::Office(ext) => {
@@ -100,6 +136,7 @@ pub fn parse(kind: &DocKind, body: &[u8]) -> Result<ParsedDocument, String> {
         title: None,
         pages: None,
         pages_needing_ocr: 0,
+        scanned_pages: 0,
       })
     }
   }
@@ -108,6 +145,138 @@ pub fn parse(kind: &DocKind, body: &[u8]) -> Result<ParsedDocument, String> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  // A tiny PDF with a standard font and an optional decorative image. Keep
+  // fixtures generated here so the tests need no downloads or binary assets.
+  fn pdf_fixture(text: &str, image: bool, broken_font: bool) -> Vec<u8> {
+    let content = format!(
+      "BT /F1 12 Tf 72 720 Td {text} ET {}",
+      if image {
+        "q 20 0 0 20 10 10 cm /Im1 Do Q"
+      } else {
+        ""
+      }
+    );
+    let font = if broken_font {
+      "<< /Type /Font /Subtype /Type0 /BaseFont /Unknown /Encoding /Identity-H /DescendantFonts [7 0 R] >>"
+    } else {
+      "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+    };
+    let objects = [
+      "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+      format!("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> {} >> /Contents 5 0 R >>",
+        if image { "/XObject << /Im1 6 0 R >>" } else { "" }),
+      font.to_string(),
+      format!("<< /Length {} >>\nstream\n{content}\nendstream", content.len()),
+      "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 1 >>\nstream\nx\nendstream".to_string(),
+      "<< /Type /Font /Subtype /CIDFontType2 /BaseFont /Unknown /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> >>".to_string(),
+    ];
+    let mut pdf = String::from("%PDF-1.4\n");
+    let mut offsets = Vec::new();
+    for (i, object) in objects.iter().enumerate() {
+      offsets.push(pdf.len());
+      pdf.push_str(&format!("{} 0 obj\n{object}\nendobj\n", i + 1));
+    }
+    let xref = pdf.len();
+    pdf.push_str(&format!(
+      "xref\n0 {}\n0000000000 65535 f \n",
+      objects.len() + 1
+    ));
+    for offset in offsets {
+      pdf.push_str(&format!("{offset:010} 00000 n \n"));
+    }
+    pdf.push_str(&format!(
+      "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+      objects.len() + 1
+    ));
+    pdf.into_bytes()
+  }
+
+  #[tokio::test]
+  async fn pdf_warnings_distinguish_scans_from_unreliable_text() {
+    use crate::guard::NetworkPolicy;
+    use crate::scrape::{BrowserMode, Engine, EngineConfig, ScrapeOptions};
+    use axum::{routing::get, Router};
+
+    let text =
+      "(This page contains readable body text alongside a small decorative logo.) Tj 0 -8 Td "
+        .repeat(60);
+    let readable = pdf_fixture(&text, true, false);
+    let scanned = pdf_fixture("", true, false);
+    let broken = pdf_fixture("<00010002000300040005> Tj", false, true);
+    let app = Router::new()
+      .route(
+        "/readable.pdf",
+        get(move || async move { ([("content-type", "application/pdf")], readable) }),
+      )
+      .route(
+        "/scanned.pdf",
+        get(move || async move { ([("content-type", "application/pdf")], scanned) }),
+      )
+      .route(
+        "/broken.pdf",
+        get(move || async move { ([("content-type", "application/pdf")], broken) }),
+      );
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+      .await
+      .unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let engine = Engine::new(EngineConfig {
+      policy: NetworkPolicy::AllowPrivate,
+      browser: BrowserMode::Never,
+      user_agent: None,
+    })
+    .unwrap();
+    let opts = ScrapeOptions::default();
+    let readable = engine
+      .scrape(&format!("{base}/readable.pdf"), &opts)
+      .await
+      .unwrap();
+    assert!(readable.get("warning").is_none(), "{readable}");
+    assert!(readable["markdown"]
+      .as_str()
+      .unwrap()
+      .contains("readable body text"));
+    let scanned = engine
+      .scrape(&format!("{base}/scanned.pdf"), &opts)
+      .await
+      .unwrap();
+    assert!(scanned["warning"]
+      .as_str()
+      .unwrap()
+      .contains("1 page(s) of this PDF are scanned images"));
+    let broken = engine
+      .scrape(&format!("{base}/broken.pdf"), &opts)
+      .await
+      .unwrap();
+    let warning = broken["warning"].as_str().unwrap();
+    assert!(!warning.contains("scanned images"), "{warning}");
+    assert!(warning.contains("unreliable text"), "{warning}");
+    engine.shutdown().await;
+    server.abort();
+  }
+
+  #[test]
+  fn mixed_ocr_reasons_keep_separate_page_counts() {
+    let doc = ParsedDocument {
+      markdown: "Extracted body text".into(),
+      title: None,
+      pages: Some(64),
+      pages_needing_ocr: 60,
+      scanned_pages: 3,
+    };
+    let warning = doc.ocr_warning().unwrap();
+    assert!(warning.starts_with("3 page(s) of this PDF are scanned images;"));
+    assert!(warning.contains("57 page(s) of this PDF may have missing or unreliable text"));
+    assert!(!warning.contains("60 page(s)"));
+  }
+
+  #[test]
+  fn invalid_pdf_returns_a_parse_error() {
+    assert!(parse(&DocKind::Pdf, b"not a PDF").is_err());
+  }
 
   fn u(s: &str) -> Url {
     Url::parse(s).unwrap()
