@@ -1,8 +1,19 @@
-from unittest.mock import Mock
+import json
+from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
+import requests
 
-from firecrawl import DNSResolutionError, FirecrawlError, InternalServerError, TLSError
+from firecrawl import (
+    BadRequestError,
+    DNSResolutionError,
+    FirecrawlError,
+    InternalServerError,
+    RateLimitError,
+    TLSError,
+)
+from firecrawl.v2.methods.aio.scrape import scrape as async_scrape
 from firecrawl.v2.methods.scrape import scrape
 
 
@@ -59,3 +70,59 @@ def test_unmapped_server_error_still_raises_internal_server_error():
         scrape(client, "https://down.example", auto_resume=False)
 
     assert exc_info.value.code == "SCRAPE_SITE_ERROR"
+
+
+def _structured_error_body(code):
+    return {
+        "success": False,
+        "code": code,
+        "error": "The upstream request failed.",
+        "details": "Please retry the request.",
+        "chargeId": "charge-123",
+        "agent_hints": ["Check the response status before retrying."],
+    }
+
+
+def _assert_structured_error(error, response, body):
+    assert error.response is response
+    assert error.status_code == response.status_code
+    assert error.code is None
+    assert error.response.json()["code"] == body["code"]
+    assert error.charge_id == body["chargeId"]
+    assert error.agent_hints == body["agent_hints"]
+    assert body["error"] in str(error)
+    assert body["details"] in str(error)
+
+
+@pytest.mark.parametrize("code", [[], {}, ["SCRAPE_SSL_ERROR"], {"source": "proxy"}, 123, True, None])
+@pytest.mark.parametrize("status_code,error_type", [
+    (400, BadRequestError),
+    (429, RateLimitError),
+    (500, InternalServerError),
+])
+def test_structured_error_code_preserves_status_error(code, status_code, error_type):
+    body = _structured_error_body(code)
+    response = requests.Response()
+    response.status_code = status_code
+    response._content = json.dumps(body).encode("utf-8")
+    client = Mock()
+    client.post.return_value = response
+
+    with pytest.raises(error_type) as exc_info:
+        scrape(client, "https://example.com", auto_resume=False)
+
+    _assert_structured_error(exc_info.value, response, body)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", [["SCRAPE_SSL_ERROR"], {"source": "proxy"}])
+async def test_async_structured_error_code_preserves_status_error(code):
+    body = _structured_error_body(code)
+    response = httpx.Response(429, json=body)
+    client = Mock()
+    client.post = AsyncMock(return_value=response)
+
+    with pytest.raises(RateLimitError) as exc_info:
+        await async_scrape(client, "https://example.com", auto_resume=False)
+
+    _assert_structured_error(exc_info.value, response, body)

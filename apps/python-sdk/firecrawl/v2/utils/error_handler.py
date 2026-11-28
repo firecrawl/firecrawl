@@ -145,6 +145,8 @@ def handle_response_error(response: requests.Response, action: str) -> None:
         error_details = response_json.get('details', 'No additional error details provided.')
         # Exchange-mediated scrape errors: { success: false, error, code?, chargeId?, requiresAction? }
         code = response_json.get('code')
+        if not isinstance(code, str):
+            code = None
         charge_id = response_json.get('chargeId')
         requires_action = RequiresAction.from_payload(response_json.get('requiresAction'))
     except:
