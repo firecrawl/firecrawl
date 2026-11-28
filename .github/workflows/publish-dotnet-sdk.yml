@@ -79,6 +79,7 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: read
+      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -122,9 +123,16 @@ jobs:
         working-directory: ./apps/dot-net-sdk/Firecrawl
         run: dotnet pack --no-build --configuration Release --output ../nupkgs
 
+      - name: NuGet login
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        id: nuget-login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        with:
+          user: micah_firecrawl
+
       - name: Publish to NuGet
         if: ${{ env.VERSION_INCREMENTED == 'true' }}
         working-directory: ./apps/dot-net-sdk
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: dotnet nuget push ./nupkgs/*.nupkg --api-key $NUGET_API_KEY --source https://api.nuget.org/v3/index.json --skip-duplicate
