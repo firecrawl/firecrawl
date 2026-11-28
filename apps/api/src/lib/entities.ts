@@ -1,5 +1,4 @@
-import type { Action, Document as V2Document } from "../controllers/v2/types";
-import type { JsonObject, JsonValue, StrictJsonValue } from "./json-types";
+import type { Document as V2Document } from "../controllers/v2/types";
 
 export type SkillCard = {
   id: string;
@@ -9,102 +8,6 @@ export type SkillCard = {
   provider?: string;
   similarity?: number;
 };
-
-export type PageOptions = {
-  includeMarkdown?: boolean;
-  includeExtract?: boolean;
-  onlyMainContent?: boolean;
-  includeHtml?: boolean;
-  includeRawHtml?: boolean;
-  fallback?: boolean;
-  fetchPageContent?: boolean;
-  waitFor?: number;
-  screenshot?: boolean;
-  fullPageScreenshot?: boolean;
-  headers?: Record<string, string>;
-  replaceAllPathsWithAbsolutePaths?: boolean;
-  parsePDF?: boolean;
-  removeTags?: string | Array<string>;
-  onlyIncludeTags?: string | Array<string>;
-  includeLinks?: boolean;
-  useFastMode?: boolean; // beta
-  disableJsDom?: boolean; // beta
-  atsv?: boolean; // anti-bot solver, beta
-  actions?: Array<Action>; // beta
-  geolocation?: {
-    country?: string;
-  };
-  skipTlsVerification?: boolean;
-  removeBase64Images?: boolean;
-  mobile?: boolean;
-};
-
-export type ExtractorOptions = {
-  mode:
-    | "markdown"
-    | "llm-extraction"
-    | "llm-extraction-from-markdown"
-    | "llm-extraction-from-raw-html";
-  extractionPrompt?: string;
-  extractionSchema?: JsonObject;
-  userPrompt?: string;
-};
-
-export type SearchOptions = {
-  limit?: number;
-  tbs?: string;
-  filter?: string;
-  lang?: string;
-  country?: string;
-  location?: string;
-};
-
-export class Document {
-  id?: string;
-  url?: string; // Used only in /search for now
-  content: string;
-  markdown?: string;
-  html?: string;
-  rawHtml?: string;
-  llm_extraction?: StrictJsonValue;
-  createdAt?: Date;
-  updatedAt?: Date;
-  type?: string;
-  metadata: {
-    sourceURL?: string;
-    [key: string]: JsonValue | undefined;
-  };
-  childrenLinks?: Array<string>;
-  provider?: string;
-  warning?: string;
-  actions?: {
-    screenshots?: Array<string>;
-    scrapes?: Array<ScrapeActionContent>;
-    javascriptReturns?: Array<{
-      type: string;
-      value: unknown;
-    }>;
-    pdfs?: Array<string>;
-  };
-
-  index?: number;
-  linksOnPage?: Array<string>; // Add this new field as a separate property
-
-  constructor(data: Partial<Document>) {
-    if (!data.content) {
-      throw new Error("Missing required fields");
-    }
-    this.content = data.content;
-    this.createdAt = data.createdAt || new Date();
-    this.updatedAt = data.updatedAt || new Date();
-    this.type = data.type || "unknown";
-    this.metadata = data.metadata || { sourceURL: "" };
-    this.markdown = data.markdown || "";
-    this.childrenLinks = data.childrenLinks || undefined;
-    this.provider = data.provider || undefined;
-    this.linksOnPage = data.linksOnPage; // Assign linksOnPage if provided
-  }
-}
 
 export class SearchResult {
   url: string;
