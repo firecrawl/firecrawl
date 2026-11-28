@@ -35,6 +35,7 @@ function prepareCrawlPayload(request: CrawlRequest): Record<string, unknown> {
   if (request.crawlEntireDomain != null) data.crawlEntireDomain = request.crawlEntireDomain;
   if (request.allowExternalLinks != null) data.allowExternalLinks = request.allowExternalLinks;
   if (request.allowSubdomains != null) data.allowSubdomains = request.allowSubdomains;
+  if (request.ignoreRobotsTxt != null) data.ignoreRobotsTxt = request.ignoreRobotsTxt;
   if (request.delay != null) data.delay = request.delay;
   if (request.maxConcurrency != null) data.maxConcurrency = request.maxConcurrency;
   if (request.regexOnFullURL != null) data.regexOnFullURL = request.regexOnFullURL;
